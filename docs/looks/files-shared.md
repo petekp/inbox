@@ -29,14 +29,15 @@ Part of [the look map](../looks.md#files).
 | `hooks/arrivals.ts` | Shared module. Which rows are new, and where a look moves for them. |
 | `hooks/ledger.ts` | Shared module. The empty ledger, how many sessions each host keeps, and the upgrade of a saved ledger. |
 | `hooks/reply-parse.ts` | Shared module. The parser that reads the inbox model's answer into an `Update`: its update lines, help steps, commands and todos. |
-| `hooks/ask-match.ts` | Shared module. Whether two asks say the same thing, whether a new ask repeats an open or closed one, and which option a recommendation names. |
+| `hooks/ask-match.ts` | Shared module. Whether two asks say the same thing, whether a new ask repeats an open or closed one, which option a recommendation names, and whether an answer is a question back. |
 | `hooks/ledger-close.ts` | Shared module. Closing and reopening items and findings, pruning closed records, and whether a closed record counts as handled, dismissed or lapsed. |
 | `hooks/ledger-update.ts` | Shared module. Applying a parsed update to the ledger, and adding findings and the items the agent records. |
 | `hooks/host-tasks.ts` | Shared module. The agent's own task list: how each host's tool calls become `Session.hostTasks`, and the `<tasks>` lines the Status call reads. |
 | `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds no operation. A line that is not an operation is left out. |
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
-| `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: GOAL and RETIRE lines and when code takes them, MILESTONE and SERVES lines, milestones moved by id and closed when their work closes, met, Remove goal and its Undo, and a typed goal. |
+| `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: GOAL and RETIRE lines, MILESTONE and SERVES lines, milestones moved by id and closed when their work closes, met, Remove goal and its Undo, and a typed goal. |
+| `hooks/status-goal-gate.ts` | Shared module. When code takes a GOAL or RETIRE line, and why it refuses one: the work the goal still holds, when it last moved forward, how long the work has left it, and whether there is work for a new goal. |
 | `hooks/status-goal-page.ts` | Shared module. The goal's parts of the Status page: the goal block with its Now line and its milestone rows, the section's heading, and the line drawn while no goal is set. |
 | `hooks/status-keys.ts` | Shared module. The Status page's buttons: View on a held subject or milestone, the goal's buttons, the order j and k move through them, and which one is selected. |
 | `hooks/goal-press.ts` | Shared module. Remove, its Undo and a typed goal as presses on the id `goal`, for `pressed`. |
@@ -83,8 +84,10 @@ Part of [the look map](../looks.md#files).
 | `hooks/pr-order.ts` | Shared module. The agent's PR order: the rank before a PR's number, the order's lines above the PR blocks, the statuses it records, and its Rank again button. |
 | `hooks/pr-press.ts` | Shared module. The PR press types, the open or refresh each press runs, the row each press records on, and the helpers the PR button plans share, which add "again" to a label, add Try again, and mark the button whose press is out. |
 | `hooks/tools.ts` | Shared module. The record and close tools, and `agentTools`, the one list of their names, descriptions and schemas that every host and eval probe registers. Each call's answer holds the text the agent reads and the line the person sees under the call. |
+| `hooks/tool-schemas.ts` | Shared module. The input schemas of the record, close and order_prs tools, with the description of each argument the agent reads. |
+| `hooks/question-checks.ts` | Shared module. A recorded question's body, its context and a note on each option, and how a record of the open question replaces them. What a recorded question or task lacks, which the record tool's answer names so the agent can record it again, including an approval with nothing to look at. |
 | `hooks/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |
-| `hooks/dialogs.ts` | Shared module. Notes the questions of a Codex dialog or a dismissed dialog, and links each to the inbox question that copies it: a Codex dialog's link, and the dialog's option descriptions. |
+| `hooks/dialogs.ts` | Shared module. Notes the questions of a Codex dialog, or of a dialog the person answered or dismissed, and links each to the inbox question that copies it: a Codex dialog's link, the dialog's option descriptions, and the close of an answered dialog's copy with the person's answer. |
 | `hooks/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
 | `hooks/marks.ts` | Shared module. Shapes and glyphs for marks a font draws poorly: desktop draws its toned Svg marks from `markShape`, desktop and Codex draw ✗, ◌ and ⊘ from `mutedMarkShape`, and the terminal and omp draw ✗ as ⊘ from `textMark`. |
 | `hooks/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. Also the banner tints the terminal and omp draw. |

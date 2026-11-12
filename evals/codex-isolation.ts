@@ -8,6 +8,12 @@ import { PROBE } from './agent-cli'
 import { IsolationError } from './harness'
 
 /**
+ * A top-level config key, so it goes before any table. It turns web search off, and `assertCodexUsedOnlyProbe` stays
+ * as the backstop.
+ */
+export const CODEX_WEB_SEARCH_CONFIG = 'web_search = "disabled"'
+
+/**
  * Config that keeps a Codex run's tools to its shell and the probe. Apps are the account's connectors, served as the
  * `codex_apps` MCP server, which `codex mcp list` leaves out. Plugins bring their own skills and apps. Bundled skills
  * come with Codex.

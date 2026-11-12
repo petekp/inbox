@@ -130,6 +130,7 @@ export function contextOf(scene: Scene): RuleContext {
     facts: scene.facts,
     calls: scene.calls ?? [],
     isStatusFailed: scene.isStatusFailed,
+    readSetAt: scene.step.call ? (scene.before.goal?.setAt ?? null) : null,
   }
   const beforeFacts = { ...scene.facts, changed: [] }
 

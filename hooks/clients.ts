@@ -15,6 +15,7 @@ export type FeatureId =
   | 'ledger-behind-state'
   | 'dialog-outcome'
   | 'dialog-answer'
+  | 'dialog-answer-closes-copy'
   | 'dialog-descriptions'
   | 'tool-output-urls'
   | 'pr-link-from-output'
@@ -47,6 +48,7 @@ export type FeatureId =
   | 'status-failed-warning'
   | 'asks-holds-up-line'
   | 'asks-rec-reason-line'
+  | 'asks-context-line'
   | 'status-mid-turn-refresh'
   | 'ran-call-activity'
   | 'ran-call-delegates'
@@ -63,6 +65,7 @@ export type FeatureId =
   | 'status-named-fold'
   | 'seen-on-screen'
   | 'status-idle-age'
+  | 'question-back-stays-open'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -80,6 +83,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
       },
+      'dialog-answer-closes-copy': { kind: 'full' },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
@@ -123,6 +127,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },
@@ -143,6 +148,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': { kind: 'full' },
     },
   },
   codex: {
@@ -164,6 +170,11 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded.",
       },
       'dialog-answer': { kind: 'full' },
+      'dialog-answer-closes-copy': {
+        kind: 'different',
+        reason:
+          "Codex's dialog tool returns before the person answers, so the inbox sees no answer when the dialog ends. The copy stays open until the person's reply in the dialog's form arrives, and the agent closes it then.",
+      },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': {
@@ -244,6 +255,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': {
         kind: 'different',
@@ -284,6 +296,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': {
+        kind: 'different',
+        reason:
+          "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere.",
+      },
     },
   },
   omp: {
@@ -297,6 +314,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
       },
+      'dialog-answer-closes-copy': { kind: 'full' },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
@@ -354,6 +372,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },
@@ -373,6 +392,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': { kind: 'full' },
     },
   },
 }

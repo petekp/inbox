@@ -145,7 +145,8 @@ var EMPTY_SESSION_STATUS = {
   goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
-  serves: {}
+  serves: {},
+  goalRefused: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -158,6 +159,13 @@ function words(text) {
   return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 var NUMBER_KINDS = new Set(["pr", "prs", "pull", "request", "issue", "issues", "ticket", "gh"]);
+var VERSION = /^v?\d+(\.\d+)+$/;
+function namesOtherVersion(name, other) {
+  const versions = (text) => [...words(text)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const mine = versions(name);
+  const theirs = new Set(versions(other));
+  return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
+}
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
 }
@@ -260,6 +268,11 @@ function recommendedOption(options, rec) {
   const label = (text) => text.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
+}
+var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
+function isQuestionBack(answer, options) {
+  const text = answer.trim();
+  return text.endsWith("?") && (QUESTION_WORD.test(text) || recommendedOption(options, text) === null);
 }
 var FILLER = new Set([
   "the",
@@ -388,6 +401,22 @@ var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
 // ../hooks/status-upgrade-goal.ts
+var REFUSAL_LINES = ["goal", "retire"];
+var REFUSAL_WHYS = [
+  "typed",
+  "met",
+  "work-open",
+  "moved",
+  "no-work",
+  "restates",
+  "few-milestones"
+];
+function goalRefusedOf(saved) {
+  const r = saved;
+  const line = REFUSAL_LINES.find((x) => x === r?.line);
+  const why = REFUSAL_WHYS.find((x) => x === r?.why);
+  return line && why ? { line, why } : null;
+}
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -448,12 +477,16 @@ function goalRemovedOf(saved) {
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
-function goalFields(o, subjectIds) {
+function goalFields(o, subjects) {
   const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
-  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
+  const live = new Map(milestones.filter((m) => !dropped.has(m.id)).map((m) => [m.id, m]));
+  const names = new Map(subjects.map((s) => [s.id, s.name]));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
-  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))));
+  const serves = Object.fromEntries(savedServes.filter((e) => names.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || live.has(e[1]))).map(([id, to]) => {
+    const milestone = live.get(to);
+    return [id, milestone && namesOtherVersion(names.get(id), milestone.name) ? "none" : to];
+  }));
   const saved = [
     ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
     ...Array.isArray(o.removedGoals) ? o.removedGoals : []
@@ -466,7 +499,8 @@ function goalFields(o, subjectIds) {
     goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
-    serves
+    serves,
+    goalRefused: goalRefusedOf(o.goalRefused)
   };
 }
 
@@ -587,7 +621,7 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const goal = goalFields(o, subjects);
   const dropped = droppedMilestoneIds(goal.milestones);
   const askLinks = savedLinks.map(([ask, to]) => [
     ask,
@@ -1012,7 +1046,8 @@ function quotedAsk(item) {
 Options: ${item.options.join(" / ")}` : ""}`;
 }
 var messages = {
-  answer: (item, answer) => `Re "${item.ask}": ${answer}`,
+  answer: (item, answer) => isQuestionBack(answer, item.options) ? `About this question you asked me: ${answer}
+${quotedAsk(item)}` : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
@@ -2865,7 +2900,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {
@@ -3570,6 +3606,7 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
 }
 function rowBody(row, isAllShown, isNextBuild) {
   const lines = [
+    { text: row.contextLine, tone: "muted" },
     { text: row.detail, tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: "dim" },
     ...shownOptionDescriptions(row, isAllShown).map((o) => ({ text: `${o.label}: ${o.description}`, tone: null })),

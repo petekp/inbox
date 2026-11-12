@@ -46,7 +46,8 @@ A case is a starting state, then steps, with the fact list beside them.
 - **A step** has a time, and runs in this order:
   - host events: a child starts, acts or ends, the person looks at the page for some seconds, or the person presses the goal's Remove or types a goal, through the host's own `goalPressed`;
   - fixture events, in a replay that skips the ledger call: an ask opens or closes;
-  - at most one call: a reply, a mid-turn call or a catch-up, each with its exchange or conversation, or a recorded call's exchange as it was.
+  - at most one call: a reply, a mid-turn call or a catch-up, each with its exchange or conversation, or a recorded call's exchange as it was;
+  - host events while the call runs, as a goal the person types then: they apply after the call reads the session and before its answer applies, so the answer applies to the session they leave.
 - **The fact list** gives, for each step, the session's focus, the goal and each milestone's real state, every piece of work with its aliases, its real state and the milestone it serves, the asks and the pieces each holds up, the running work and the piece each serves, what is not work, and any goal the person stated at that step. A step lists only what it changes, and the pieces it changes are the step's changes.
 - **Targets:** each step names the rules or judge checks it tests.
 - **A short case** is marked `isShort`. It runs 5 times per model, and each model's runs are judged apart. A replay runs 3 times per model, and both models' runs are judged together.
@@ -172,7 +173,8 @@ These make no model calls.
 | `goal-awaiting-milestones`, 1 call, 3 runs | 6 | 0 | 0 |
 | `ask-holds-two`, 2 calls, 3 runs | 12 | 0 | 0 |
 | The three goal short cases, 4 calls, 5 runs, 2 models | 40 | 0 | 10 |
+| `next-release`, 3 calls, 3 runs | 18 | 0 | 0 |
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
-| **Total** | **214** | **54** | **82** |
+| **Total** | **232** | **54** | **82** |
 
-An answer with no operation is asked once more, and a call that fails outside the model is tried again. The runner stops at 220 Status calls, so 6 calls are left for both.
+An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run makes 189 Status calls before re-asks and retries. The runner stops at 220 Status calls, so a release run takes one model at a time, with `--agent claude` and then `--agent codex`.

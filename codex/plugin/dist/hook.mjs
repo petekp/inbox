@@ -87,7 +87,8 @@ var EMPTY_SESSION_STATUS = {
   goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
-  serves: {}
+  serves: {},
+  goalRefused: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -98,6 +99,13 @@ function clipWords(text2, limit) {
 function words(text2) {
   const matches = text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
   return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
+}
+var VERSION = /^v?\d+(\.\d+)+$/;
+function namesOtherVersion(name, other) {
+  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const mine = versions(name);
+  const theirs = new Set(versions(other));
+  return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -174,6 +182,35 @@ function sameAsk(a, b) {
 
 // ../hooks/ledger-close.ts
 var MAX_CLOSED = 12;
+function closedRecord(item, closing, now) {
+  const { id, kind, ask, label } = item;
+  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
+}
+function closeItem(ledger, id, closing, now) {
+  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
+  return reopenAskedFindings(
+    { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
+    records
+  );
+}
+var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
+function leavesWorkOpen(c) {
+  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
+}
+function reopenAskedFindings(ledger, closes) {
+  return closes.filter(leavesWorkOpen).reduce((l, c) => {
+    const record2 = l.closedFindings.findLast((f) => f.askedAs === c.id);
+    if (!record2) return l;
+    const reopened = reopenFinding(l, record2.id);
+    return {
+      ...reopened,
+      findings: reopened.findings.map((f) => {
+        const { askedAs: _askedAs, ...rest } = f;
+        return f.id === record2.id ? rest : f;
+      })
+    };
+  }, ledger);
+}
 function pruneClosed(ledger, keep) {
   const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
   return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
@@ -210,6 +247,9 @@ function closedState(d) {
 }
 function closedAt(c) {
   return "closedAt" in c ? c.closedAt : c.at;
+}
+function isLapsed(d) {
+  return closedState(d) !== "handled";
 }
 
 // ../hooks/text.ts
@@ -263,6 +303,22 @@ var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
 // ../hooks/status-upgrade-goal.ts
+var REFUSAL_LINES = ["goal", "retire"];
+var REFUSAL_WHYS = [
+  "typed",
+  "met",
+  "work-open",
+  "moved",
+  "no-work",
+  "restates",
+  "few-milestones"
+];
+function goalRefusedOf(saved) {
+  const r = saved;
+  const line = REFUSAL_LINES.find((x) => x === r?.line);
+  const why = REFUSAL_WHYS.find((x) => x === r?.why);
+  return line && why ? { line, why } : null;
+}
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -322,15 +378,19 @@ function goalRemovedOf(saved) {
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
-function goalFields(o, subjectIds) {
+function goalFields(o, subjects) {
   const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
-  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
+  const live = new Map(milestones.filter((m) => !dropped.has(m.id)).map((m) => [m.id, m]));
+  const names = new Map(subjects.map((s) => [s.id, s.name]));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
   const serves = Object.fromEntries(
     savedServes.filter(
-      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
-    )
+      (e) => names.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || live.has(e[1]))
+    ).map(([id, to]) => {
+      const milestone = live.get(to);
+      return [id, milestone && namesOtherVersion(names.get(id), milestone.name) ? "none" : to];
+    })
   );
   const saved = [
     ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
@@ -344,7 +404,8 @@ function goalFields(o, subjectIds) {
     goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
-    serves
+    serves,
+    goalRefused: goalRefusedOf(o.goalRefused)
   };
 }
 
@@ -458,7 +519,7 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const goal = goalFields(o, subjects);
   const dropped = droppedMilestoneIds(goal.milestones);
   const askLinks = savedLinks.map(([ask, to]) => [
     ask,
@@ -2110,10 +2171,10 @@ function asCopyOf(item, q) {
   return {
     ...item,
     ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
+    ...descriptions ? { optionDescriptions: { ...descriptions, ...item.optionDescriptions } } : {}
   };
 }
-function linkDialogs(s) {
+function linkDialogs(s, now = Date.now()) {
   if (s.dialogQuestions.length === 0) return s;
   let items = s.ledger.items;
   const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
@@ -2126,12 +2187,17 @@ function linkDialogs(s) {
       s.dialogQuestions.filter((o) => o.turn === q.turn)
     );
     if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    if (q.answer !== void 0 && !restates(copy.ask, q.question)) return q;
     linked.add(copy.id);
     items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
     return { ...q, itemId: copy.id };
   });
   const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+  const ledger = questions.reduce(
+    (l, q) => q.answer !== void 0 && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l,
+    { ...s.ledger, items }
+  );
+  return { ...s, ledger, dialogQuestions: kept };
 }
 function noteDialog(s, callId, questions) {
   const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
@@ -2241,7 +2307,7 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/tools.ts
+// ../hooks/tool-schemas.ts
 var ORDER_SCHEMA = {
   type: "object",
   properties: {
@@ -2492,7 +2558,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {

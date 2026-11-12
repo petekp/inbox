@@ -72,7 +72,7 @@ import type { Ask, CatchUpReply, SessionHost } from './session-host'
 import { callReport, MODEL } from './inbox-model'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
-import { noteDialog } from './dialogs'
+import { noteAnsweredDialog, noteDialog } from './dialogs'
 import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
 import { openPrViews } from './pr-views'
 import { prBlockRows, threadSentIn } from './pr-rows'
@@ -2585,9 +2585,12 @@ export const register: Register = on => {
       const wasDismissed = outcome.kind === 'dismissed'
       if (wasDismissed) sessionState.isDialogDismissed = true
       const line = dialogActivity(asked, outcome)
+      const endedAt = await $.clock.now()
       await commit($, currentOwner(), s => {
         const noted = noteTurnActivity(s, line)
-        return wasDismissed ? noteDialog(noted, null, asked) : noted
+        if (wasDismissed) return noteDialog(noted, null, asked)
+
+        return outcome.kind === 'answered' ? noteAnsweredDialog(noted, asked, outcome.answer, endedAt) : noted
       }).catch(() => undefined)
 
       return ran
