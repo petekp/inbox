@@ -4,6 +4,7 @@ import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
+import { isDismissed } from './pr-views'
 import type { Closed, Help, Item, LastAction, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
@@ -154,7 +155,7 @@ export function toolAnswer(
     case 'close':
       return recordClose(host, ledger, input, now, presses)
     case 'order_prs':
-      return orderPrs(host, ledger, input, now)
+      return orderPrs(host, ledger, input, now, presses.lastActions)
   }
 }
 
@@ -394,9 +395,16 @@ function prNumber(value: unknown): number | null {
 
 /**
  * Sets the PRs tab's order from an `order_prs` call. The tab shows and fetches each PR the order ranks, without
- * linking it, so a new order or an empty list, which clears it, takes the old order's PRs off the tab.
+ * linking it, so a new order or an empty list, which clears it, takes the old order's PRs off the tab. A PR the
+ * person or a fetch dismissed stays off it.
  */
-function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
+function orderPrs(
+  host: Host,
+  ledger: Ledger,
+  input: Record<string, unknown>,
+  now: number,
+  lastActions: Record<string, LastAction>,
+): ToolAnswer {
   if (!Array.isArray(input.numbers)) return unchanged(ledger, 'Not set: numbers must be a list of PR numbers.')
   if (input.numbers.length === 0) {
     if (ledger.prOrder === null) return unchanged(ledger, 'No order was set.')
@@ -417,6 +425,7 @@ function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, no
   if (!label) return unchanged(ledger, 'Not set: give label, what the user does with the order.')
   const why = cut(input.why, MAX_ORDER_WHY)
   if (!why) return unchanged(ledger, 'Not set: give why, the reason for this order.')
+  const dismissed = refs.filter(ref => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref))
   const onTab = tabPrs(ledger)
   const added = refs.filter(ref => !onTab.includes(ref))
   const addedText =
@@ -429,7 +438,7 @@ function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, no
   return {
     ledger: {
       ...ledger,
-      prOrder: { refs, label, why, statuses: {}, dismissed: [], by: host.agent, at: now },
+      prOrder: { refs, label, why, statuses: {}, dismissed, by: host.agent, at: now },
     },
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
     personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? 'PR' : 'PRs'}`,

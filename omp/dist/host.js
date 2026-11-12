@@ -5686,7 +5686,7 @@ function toolAnswer(host, ledger, tool, input, now, presses) {
     case "close":
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
-      return orderPrs(host, ledger, input, now);
+      return orderPrs(host, ledger, input, now, presses.lastActions);
   }
 }
 function cut(value, max) {
@@ -5840,7 +5840,7 @@ function prNumber(value) {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
   return Number.isInteger(n) && n > 0 ? n : null;
 }
-function orderPrs(host, ledger, input, now) {
+function orderPrs(host, ledger, input, now, lastActions) {
   if (!Array.isArray(input.numbers))
     return unchanged(ledger, "Not set: numbers must be a list of PR numbers.");
   if (input.numbers.length === 0) {
@@ -5867,13 +5867,14 @@ function orderPrs(host, ledger, input, now) {
   const why = cut(input.why, MAX_ORDER_WHY);
   if (!why)
     return unchanged(ledger, "Not set: give why, the reason for this order.");
+  const dismissed = refs.filter((ref) => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref));
   const onTab = tabPrs(ledger);
   const added = refs.filter((ref) => !onTab.includes(ref));
   const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
   return {
     ledger: {
       ...ledger,
-      prOrder: { refs, label, why, statuses: {}, dismissed: [], by: host.agent, at: now }
+      prOrder: { refs, label, why, statuses: {}, dismissed, by: host.agent, at: now }
     },
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
     personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
