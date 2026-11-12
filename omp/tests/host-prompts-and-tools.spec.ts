@@ -177,6 +177,20 @@ test('an ask dialog becomes turn activity with the answer, and marks only a reco
   ])
 })
 
+test('an answered ask dialog closes the question that copies it with the option the person chose', async () => {
+  createInbox(pi(), deps())
+  await prompt('hello')
+  await record({ kind: 'question', ask: 'Which runtime?', options: ['Node', 'Python'] })
+  await call('tool_result', {
+    toolName: 'ask',
+    input: { questions: [{ question: 'Which runtime?', options: [{ label: 'Node' }, { label: 'Python' }] }] },
+    content: [{ type: 'text', text: 'User selected: Python' }],
+    isError: false,
+  })
+  expect(state().ledger.items).toEqual([])
+  expect(state().ledger.closed.at(-1)).toMatchObject({ ask: 'Which runtime?', how: 'answered', outcome: 'Python' })
+})
+
 const LICENSE_FORM = `<form>
   <fieldset><legend>License</legend>
     <label><input type="radio" name="license" value="mit"> MIT</label>
