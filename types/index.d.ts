@@ -205,14 +205,16 @@ export type DialogQuestion = { question: string; options: string[]; descriptions
 
 /**
  * A dialog question from ledger turn `turn` that an item may copy: a question of a Codex dialog, which stays open, or
- * of a dialog the person dismissed in another host. `callId` and `index` name a Codex dialog question, and `callId` is
- * null in other hosts. `itemId` is the item that copies it, once linked.
+ * of a dialog the person answered or dismissed in another host. `callId` and `index` name a Codex dialog question, and
+ * `callId` is null in other hosts. `itemId` is the item that copies it, once linked. `answer` is what the person chose
+ * in a dialog they answered; the copy closes with it.
  */
 export type TurnDialogQuestion = DialogQuestion & {
   callId: string | null
   index: number
   turn: number
   itemId: string | null
+  answer?: string
 }
 
 /**
