@@ -50,6 +50,7 @@ export type FeatureId =
   | 'status-failed-warning'
   | 'asks-holds-up-line'
   | 'asks-rec-reason-line'
+  | 'asks-context-line'
   | 'status-mid-turn-refresh'
   | 'ran-call-activity'
   | 'ran-call-delegates'
@@ -130,6 +131,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },
@@ -259,6 +261,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': {
         kind: 'different',
@@ -377,6 +380,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },

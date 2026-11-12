@@ -5147,7 +5147,7 @@ function asCopyOf(item, q) {
   return {
     ...item,
     ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
+    ...descriptions ? { optionDescriptions: { ...descriptions, ...item.optionDescriptions } } : {}
   };
 }
 function linkDialogs(s, now = Date.now()) {
@@ -5621,8 +5621,75 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
   }
 }
 
-// ../hooks/tools.ts
-var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
+// ../hooks/question-checks.ts
+var MAX_CONTEXT = 200;
+var MAX_OPTION_NOTE = 120;
+function questionBody(input, options) {
+  const context = typeof input.context === "string" ? input.context.trim().slice(0, MAX_CONTEXT) : "";
+  const notes = Array.isArray(input.option_notes) ? input.option_notes : [];
+  const noted = options.flatMap((option, i) => {
+    const note = notes[i];
+    const text = typeof note === "string" ? note.trim().slice(0, MAX_OPTION_NOTE) : "";
+    return text === "" ? [] : [[option, text]];
+  });
+  return {
+    ...context ? { context } : {},
+    ...noted.length > 0 ? { optionDescriptions: Object.fromEntries(noted) } : {}
+  };
+}
+function withBody(item, body) {
+  const notes = body.optionDescriptions ? descriptionsFor(item.options, body.optionDescriptions) : null;
+  const optionDescriptions = notes ? { ...item.optionDescriptions, ...notes } : item.optionDescriptions;
+  return {
+    ...item,
+    ...body.context ? { context: body.context } : {},
+    ...optionDescriptions ? { optionDescriptions } : {}
+  };
+}
+function bodyChanges(before, after) {
+  const isNoteChanged = after.options.some((o) => after.optionDescriptions?.[o] !== before.optionDescriptions?.[o]);
+  return [
+    ...after.context !== before.context ? ["gave it your context"] : [],
+    ...isNoteChanged ? ["gave its options your notes"] : []
+  ];
+}
+var APPROVAL_ASK = /^\s*(?:approve|ok(?:ay)? to|go ahead|ship|sign off)\b/i;
+function isApproval(item) {
+  const firstWords = item.options.map((o) => words2(o)[0]).toSorted();
+  const isYesNo = item.options.length === 2 && firstWords[0] === "no" && firstWords[1] === "yes";
+  return APPROVAL_ASK.test(item.ask) || isYesNo;
+}
+function missingText(item) {
+  if (item?.kind === "task")
+    return item.helps.length === 0 ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
+  if (!item)
+    return "";
+  return bodyText(item) + recText(item) + approvalText(item);
+}
+function bodyText(item) {
+  const unnoted = item.options.filter((o) => !item.optionDescriptions?.[o]);
+  const isUnnoted = unnoted.length > 0;
+  const noNotes = unnoted.length === item.options.length ? "option_notes" : `note on ${quoted(unnoted)}`;
+  const lacks = [...item.context ? [] : ["context"], ...isUnnoted ? [noNotes] : []];
+  const asks = [
+    ...item.context ? [] : ["context (why it came up)"],
+    ...isUnnoted ? ["option_notes (what picking each option does)"] : []
+  ];
+  return lacks.length === 0 ? "" : ` It has no ${lacks.join(" or ")}: record it again with ${asks.join(" and ")}.`;
+}
+function quoted(options) {
+  return options.map((o) => `"${o}"`).join(" or ");
+}
+function recText(item) {
+  if (!item.rec)
+    return " It has no rec: when you can recommend an option, record it again with rec and why.";
+  return item.recReason ? "" : " It has no why: record it again with why, so the user sees your reason.";
+}
+function approvalText(item) {
+  return isApproval(item) && item.helps.length === 0 ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
+}
+
+// ../hooks/tool-schemas.ts
 var RECORD_SCHEMA = {
   type: "object",
   properties: {
@@ -5635,10 +5702,19 @@ var RECORD_SCHEMA = {
       type: "string",
       description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
     },
+    context: {
+      type: "string",
+      description: "For a question: why it came up, in at most 20 plain words, so the user can answer without reading back through the conversation."
+    },
     options: {
       type: "array",
       items: { type: "string" },
       description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
+    },
+    option_notes: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a question: one note for each option, in the order of options, saying what picking it does, in at most 12 words each."
     },
     rec: {
       type: "string",
@@ -5706,6 +5782,9 @@ var ORDER_SCHEMA = {
   },
   required: ["numbers"]
 };
+
+// ../hooks/tools.ts
+var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
 function orderDescription(host) {
   return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
 }
@@ -5772,32 +5851,28 @@ function recordItem(host, ledger, input, now) {
   const kind = input.kind;
   const entry = { kind, ask, options, rec, helps, isDesignChoice, ...recReason ? { recReason } : {} };
   const r = addAgentItem(ledger, entry, now);
+  if (r.is === "closed")
+    return unchanged(ledger, "title" in r.record ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.` : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
+  const body = input.kind === "question" ? questionBody(input, options) : {};
+  const before = r.ledger.items.find((i) => i.id === r.id);
+  const after = before && withBody(before, body);
+  const recorded = { ...r.ledger, items: r.ledger.items.map((i) => i === before && after ? after : i) };
   if (r.is === "open") {
     const changes = [
       ...r.addedSteps > 0 ? ["added its new steps"] : [],
       ...r.isNewlyMarked ? ["marked it as a design choice"] : [],
       ...r.newRec ? [`changed its recommendation to ${r.newRec}`] : [],
-      ...r.isNewReason ? ["gave its recommendation your reason"] : []
+      ...r.isNewReason ? ["gave its recommendation your reason"] : [],
+      ...before && after ? bodyChanges(before, after) : []
     ];
     const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
-    return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`);
+    return unchanged(recorded, `Already open, so this record updated it${updated}.${leftOut}`);
   }
-  if (r.is === "closed")
-    return unchanged(ledger, "title" in r.record ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.` : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
   return {
-    ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(r.ledger.items.find((i) => i.id === r.id)) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
+    ledger: recorded,
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
     personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
   };
-}
-function missingText(item) {
-  if (item?.kind === "task")
-    return item.helps.length === 0 ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
-  if (!item)
-    return "";
-  if (!item.rec)
-    return " It has no rec: when you can recommend an option, record it again with rec and why.";
-  return item.recReason ? "" : " It has no why: record it again with why, so the user sees your reason.";
 }
 function recordFinding(host, ledger, input, now) {
   const title = cut(input.title, 120);
@@ -6274,7 +6349,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {
@@ -7656,6 +7732,9 @@ function drawLine(line, isSelected, d) {
   if (line.settled || isShut(line, ui))
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
+  const contextLine = isSelected ? line.row?.contextLine : null;
+  if (contextLine)
+    out.push(...indented(contextLine, indent, width, Infinity, s.dim));
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
   if (holdsUp)
     out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
@@ -8245,6 +8324,7 @@ function demoView(now, agent) {
           label: "1",
           from: "update",
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
+          context: "A glance stays up until it times out, and testers asked for a way to clear it sooner.",
           options: ["Pinch", "Flick"],
           rec: "Pinch",
           recReason: "a flick fires by accident while walking",
@@ -8689,6 +8769,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-rec-reason-line": { kind: "full" },
+      "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
       "ran-call-delegates": { kind: "full" },
@@ -8804,6 +8885,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-rec-reason-line": { kind: "full" },
+      "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": {
         kind: "different",
@@ -8910,6 +8992,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-rec-reason-line": { kind: "full" },
+      "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
       "ran-call-delegates": { kind: "full" },

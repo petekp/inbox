@@ -2199,7 +2199,7 @@ function asCopyOf(item, q) {
   return {
     ...item,
     ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
+    ...descriptions ? { optionDescriptions: { ...descriptions, ...item.optionDescriptions } } : {}
   };
 }
 function linkDialogs(s, now = Date.now()) {
@@ -2335,7 +2335,7 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/tools.ts
+// ../hooks/tool-schemas.ts
 var ORDER_SCHEMA = {
   type: "object",
   properties: {
@@ -2586,7 +2586,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {

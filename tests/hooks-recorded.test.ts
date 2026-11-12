@@ -86,7 +86,9 @@ test('a question Claude records waits in the pane with its recommendation, a rep
     tool: 'mcp__inbox__record',
     kind: 'question',
     ask: 'Which cache should the API use?',
+    context: 'The price lookups are slow, and a cache is the next step',
     options: ['Redis', 'In-memory'],
+    option_notes: ['Adds a Redis server to each stack', 'Keeps prices in each process'],
     rec: 'Redis',
     why: 'it survives restarts',
   } as const
@@ -123,7 +125,9 @@ test('a question Claude records waits in the pane with its recommendation, a rep
     (
       await $.tool.call({
         ...placement,
+        context: 'The cleanup job needs a schedule before it ships',
         options: ['Nightly', 'Hourly'],
+        option_notes: ['Runs once at 2 a.m.', 'Runs at the top of each hour'],
         rec: 'Nightly',
         why: 'traffic is low at night',
       })

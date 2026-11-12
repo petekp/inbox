@@ -45,6 +45,19 @@ test('only the selected row shows buttons, and with no selection the first waiti
   expect(rows.filter(r => !r.isSelected && r.depth === 0).every(r => r.buttons.length === 0)).toBe(true)
 })
 
+test('a selected question draws why it came up first under its title, in the Why line’s tone, and a collapsed one draws none', () => {
+  const screen = demoScreen()
+  const question = screen.view.needsYou.questions.find(r => r.contextLine)!
+  const selected = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: question.id }))).find(
+    b => b.id === question.id,
+  )!
+  expect(selected.body[0]).toEqual({ text: question.contextLine!, tone: 'muted' })
+  expect(selected.body.find(l => l.text === question.recLine)?.tone).toBe('muted')
+  const other = screen.view.needsYou.questions.find(r => r.id !== question.id && r.state.is === 'open')!
+  const collapsed = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: other.id }))).find(b => b.id === question.id)!
+  expect(collapsed.body.some(l => l.text === question.contextLine)).toBe(false)
+})
+
 test('the tabs follow the build’s shared tab plan, with their counts', () => {
   for (const isNextBuild of [false, true]) {
     const cells = tabCells(demoScreen(isNextBuild), 'needsYou')

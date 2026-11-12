@@ -26,7 +26,7 @@ test('a question the desktop app’s box shows reaches the update, even when the
   )
 })
 
-test('a dialog reaches the model with its questions, whether answered or dismissed, and a dismissed one’s copy, added by the update or recorded by Claude, shows its option descriptions', async ($, on) => {
+test('a dialog reaches the model with its questions, whether answered or dismissed, and a dismissed one’s copy, added by the update or recorded by Claude, shows its option descriptions under the notes Claude recorded', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
@@ -122,12 +122,13 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
         kind: 'question',
         ask: 'Which port should the server use?',
         options: ['3000', '8080'],
+        option_notes: ['Matches the README'],
       } as never)
     },
     'aborted',
   )
   expect(itemAsking('Which port should the server use?')?.optionDescriptions).toEqual({
-    3000: 'The default the docs use',
+    3000: 'Matches the README',
     8080: 'Free on the staging box',
   })
 })

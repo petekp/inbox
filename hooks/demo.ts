@@ -194,6 +194,7 @@ export function demoView(now: number, agent: string): DemoCopy {
           label: '1',
           from: 'update',
           ask: 'Dismiss a glance with a pinch, or a flick of the wrist?',
+          context: 'A glance stays up until it times out, and testers asked for a way to clear it sooner.',
           options: ['Pinch', 'Flick'],
           rec: 'Pinch',
           recReason: 'a flick fires by accident while walking',

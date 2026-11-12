@@ -74,6 +74,8 @@ export const SHARED = [
   'text',
   'tones',
   'tools',
+  'tool-schemas',
+  'question-checks',
   'view',
   'timing',
   'rows',
