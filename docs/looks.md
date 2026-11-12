@@ -8,9 +8,10 @@ The inbox has five looks: `terminal`, `desktop`, `codex`, `omp` and `herdr`. A l
 
 Shared modules are in `hooks/`. Every host consumes them, directly or through a build. They import only shared modules and shared types. `scripts/check-structure.mjs` checks those boundaries, including type imports. Codex and omp type checking need no generated Claude engine types.
 
-Every source file in `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the five parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
+Every source file in `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the six parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
 
 - [Shared modules](looks/files-shared.md)
+- [Shared modules for Herdr](looks/files-shared-herdr.md)
 - [The mod](looks/files-mod.md)
 - [Codex](looks/files-codex.md)
 - [omp](looks/files-omp.md)
@@ -40,6 +41,7 @@ The parts below hold the main table, split by subject. The omp table is in the p
 - [Rows, tabs, banners and motion](looks/differences-drawing.md)
 - [The Status page and marks](looks/differences-status-and-marks.md)
 - [How each host runs](looks/differences-hosts.md)
+- [How each host runs in Herdr](looks/differences-hosts-herdr.md)
 - [The agent and its turns](looks/differences-agent-and-turns.md)
 
 ### omp

@@ -26,6 +26,8 @@ export type PanelSource = {
   ): Promise<{ error: string | null; note: 'stale' | null; isUnconfirmed: boolean }>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
+  /** Answers the question before omp installs the inbox's Herdr mod. */
+  answerHerdr?(isYes: boolean): Promise<void>
   fetchPrsWhenDue(isTabShown: boolean): void
   /** Asks Herdr about the running delegates, when a check is due. */
   checkDelegatesWhenDue(): void
@@ -139,6 +141,7 @@ export function createPanel(deps: PanelDeps): Panel {
 
   async function press(p: PanelPress): Promise<void> {
     if (p.action === 'resume') return resume()
+    if (p.action === 'herdr-ask') return source.answerHerdr?.(p.isYes).then(() => refresh())
     if (p.action === 'all-options') return
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())

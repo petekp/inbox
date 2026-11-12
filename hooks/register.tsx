@@ -103,6 +103,8 @@ import { applyHerdrFile } from './herdr-app'
 import {
   followDelegates as followHerdrDelegates,
   listenForHerdrPresses,
+  startInHerdr,
+  askHerdrModAgain,
   openInHerdr,
   publishToHerdr,
   type HerdrCalls,
@@ -373,12 +375,13 @@ function herdrCalls($: EngineInterface): HerdrCalls {
     write: (path, text) => $.fs.write(path, text),
     read: path => $.fs.read(path),
     list: folder => $.fs.list(folder),
-    isFile: path => $.fs.stat(path).then(s => s.kind === 'file'),
+    stat: path => $.fs.stat(path),
     spawn: argv => $.process.spawn({ argv }),
     now: () => $.clock.now(),
     after: (ms, fn) => void $.clock.after(ms, fn),
     every: (ms, fn) => $.clock.every(ms, fn),
     log: text => void $.ui.log(text, { to: 'debug' }),
+    pluginRoot: $.plugin.root,
   }
 }
 
@@ -2132,6 +2135,7 @@ async function initializeInbox($: EngineInterface) {
     }),
   ]
   await loadConversation($, await $.session.id())
+  void startInHerdr(herdrCalls($), () => redrawPane($))
   mod.stopHerdrPresses?.()
   mod.stopHerdrPresses = await listenForHerdrPresses(
     herdrCalls($),
@@ -2759,6 +2763,7 @@ export const register: Register = on => {
     await ensureOn($)
     const isShown = (await read($, DEMO)) !== null
     const args = e.args.trim().split(/\s+/).join(' ')
+    if (args === 'herdr') return { text: await askHerdrModAgain(herdrCalls($), () => showInbox($, null)) }
     if (args === 'demo' || args === 'demo recording') await setDemo($, !isShown, args === 'demo recording')
     else if ((await read($, TAB)) === 'prs') await findPrs($)
     const [isDemo, isDemoRecording] = await Promise.all([read($, DEMO).then(d => d !== null), read($, DEMO_RECORDING)])

@@ -36,7 +36,8 @@ import { OMP, TOOL_LABELS } from './texts'
 import { activityHandlers } from './host-activity'
 import { isUnattended, sessionIdOf } from './host-context'
 import type { HostContext } from './host-context'
-import { herdrLog, ompPresses } from './host-presses'
+import { herdrLog, ompPresses, startOmpInHerdrApp } from './host-presses'
+import { ompHerdrAsk } from './host-herdr-ask'
 import { panelCalls } from './host-panel'
 import type { Inbox } from './host-panel'
 import { sessionCalls } from './host-sessions'
@@ -283,7 +284,15 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     logHerdr,
     presses: ompPresses(deps.herdrTarget, (ctx, file) => inbox.herdrFile(ctx, file), logHerdr),
     run,
-    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
+    memory: {
+      isGhMissing: false,
+      prShared: NO_PR_SHARED,
+      shownId: null,
+      framesFor: null,
+      shownCwd: null,
+      herdrModFailure: null,
+      herdrAsk: null,
+    },
     sendToAgent,
     askFor,
     dropTools,
@@ -300,11 +309,22 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   const turns = turnHandlers(context, sessions)
   const { start } = turns
   const activity = activityHandlers(context, sessions)
-  const { inbox, liveSource } = panelCalls(context, sessions)
+  const herdrAsk = ompHerdrAsk(deps.herdrTarget, context.memory, () => {
+    for (const listeners of context.listeners.values()) for (const listener of listeners) listener()
+  })
+  const { inbox, liveSource } = panelCalls(context, sessions, herdrAsk)
 
   pi.events.on('task:subagent:lifecycle', activity.onSubagentLifecycle)
   pi.events.on('task:subagent:progress', activity.onSubagentProgress)
-  pi.on('session_start', (_event, ctx) => start(ctx))
+  let isHerdrStarted = false
+  pi.on('session_start', (_event, ctx) => {
+    if (!isHerdrStarted)
+      void startOmpInHerdrApp(deps.herdrTarget, run, logHerdr)
+        .then(result => herdrAsk.started(result))
+        .catch(() => undefined)
+    isHerdrStarted = true
+    return start(ctx)
+  })
   pi.on('session_switch', (event, ctx) => start(ctx, event.reason === 'fork' ? event.previousSessionFile : undefined))
   // A `/btw` promotion, a fork from an entry and a command's branch give the session a new id, with the old file as
   // `previousSessionFile`. A `/branch` in the same file keeps the id, and the fork step then finds nothing to copy.
@@ -451,6 +471,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.registerCommand('inbox', {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
+      if (args.trim() === 'herdr') {
+        const again = await herdrAsk.again()
+        ctx.ui.notify(again.text, 'info')
+        if (again.isShown && ctx.mode === 'tui') await openPanelUi(ctx, false)
+        return
+      }
       const isDemo = args.trim() === 'demo'
       const target = deps.herdrTarget
       const isHerdrApp = ctx.mode === 'tui' && !args.trim() && target?.kind === 'terminal'

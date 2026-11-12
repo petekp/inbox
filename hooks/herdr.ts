@@ -203,7 +203,7 @@ function paneReport(pane: string, tokens: HerdrTokens, seq?: number): string[] {
 }
 
 /** The label that names the session a terminal runs, so the Herdr look can find its published file. */
-const SESSION_LABEL = 'inbox.session'
+export const SESSION_LABEL = 'inbox.session'
 
 /**
  * What a host reports: where, its tokens, and the session whose published file the labels name, which is null when no
@@ -337,14 +337,21 @@ export type HerdrTarget =
   | { kind: 'pane'; pane: string }
   | { kind: 'terminal'; terminal: string; appHome: string | null; hc: readonly string[]; herdrApp: readonly string[] }
 
+/** The Herdr app's settings folder: `HERDR_APP_HOME`, else `~/.config/herdr-app`. Null unless it is an absolute path. */
+export function herdrAppHome(env: Readonly<Record<string, string | undefined>>): string | null {
+  const home = env.HOME?.startsWith('/') ? env.HOME : null
+  const named = env.HERDR_APP_HOME
+
+  return named ? (named.startsWith('/') ? named : null) : home && `${home}/.config/herdr-app`
+}
+
 export function herdrTarget(env: Readonly<Record<string, string | undefined>>): HerdrTarget | null {
   const pane = env.HERDR_PANE_ID
   if (pane) return { kind: 'pane', pane }
   const terminal = env.HC_TERMINAL_ID
   if (!terminal) return null
   const home = env.HOME?.startsWith('/') ? env.HOME : null
-  const named = env.HERDR_APP_HOME
-  const appHome = named ? (named.startsWith('/') ? named : null) : home && `${home}/.config/herdr-app`
+  const appHome = herdrAppHome(env)
 
   const installed = (name: string) => (home ? [name, `${home}/.local/bin/${name}`] : [name])
 

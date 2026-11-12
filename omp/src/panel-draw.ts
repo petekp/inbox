@@ -32,13 +32,12 @@ export function boxed(inner: string[], tone: BannerTone, width: number, s: Style
 /** The most lines a selected review thread's comment takes. */
 const BODY_LINES = 8
 
-const LEAD_TONES: Record<BannerTone, Tone | null> = { error: 'error', warning: 'needsYou', notice: null }
+const LEAD_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'needsYou', notice: 'key', ask: 'key' }
 
 /** A banner's lines: its lead in bold, in the tone's color, then its body, wrapped inside the box. */
 export function bannerLines(b: BannerView, width: number, s: Style): string[] {
   const text = b.body ? `${b.lead} ${b.body}` : b.lead
-  const leadTone = LEAD_TONES[b.tone]
-  const lead = (w: string) => (leadTone ? s.tone(leadTone, s.bold(w)) : s.bold(w))
+  const lead = (w: string) => s.tone(LEAD_TONES[b.tone], s.bold(w))
   let leadWords = b.lead.split(/\s+/).length
   const lines = wrapText(text, width - 4).map(line =>
     line
@@ -160,7 +159,13 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const shownTitle = line.mark
     ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after))
     : line.title
-  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle
+  const title = line.isDim
+    ? s.dim(shownTitle)
+    : line.titleTone
+      ? s.tone(line.titleTone, s.bold(shownTitle))
+      : isSelected
+        ? s.bold(shownTitle)
+        : shownTitle
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad

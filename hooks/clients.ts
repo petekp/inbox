@@ -43,6 +43,7 @@ export type FeatureId =
   | 'herdr-sidebar'
   | 'herdr-look'
   | 'herdr-open'
+  | 'herdr-install'
   | 'status-children'
   | 'child-names'
   | 'status-failed-warning'
@@ -123,6 +124,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-sidebar': { kind: 'full' },
       'herdr-look': { kind: 'full' },
       'herdr-open': { kind: 'full' },
+      'herdr-install': { kind: 'full' },
       'status-children': { kind: 'full' },
       'child-names': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
@@ -248,6 +250,11 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app. A `$inbox` skill that has the model call an MCP tool could open the Herdr look, but only after a model turn, so the press could not show what it did at once. It is left as an option.',
       },
+      'herdr-install': {
+        kind: 'different',
+        reason:
+          "The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. So the app's tab asks when the Herdr app's settings folder exists, and Codex has no `/inbox herdr`. At start, Codex updates an installed inbox build, installs after a saved yes, and logs a failure only.",
+      },
       'status-children': {
         kind: 'different',
         reason:
@@ -366,6 +373,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-sidebar': { kind: 'full' },
       'herdr-look': { kind: 'full' },
       'herdr-open': { kind: 'full' },
+      'herdr-install': { kind: 'full' },
       'status-children': {
         kind: 'different',
         reason:

@@ -1,4 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
+// Built at 2026-11-12T17:50:13.462Z. 190146 characters follow.
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";
@@ -48,7 +49,9 @@ var BANNER_TONES = {
   "server-gone": "error",
   "server-load-failed": "error",
   "server-builds-differ": "warning",
-  "tab-update-failed": "warning"
+  "tab-update-failed": "warning",
+  "herdr-mod-failed": "warning",
+  "herdr-mod-ask": "ask"
 };
 function bannerOf(kind, text) {
   const end = text.indexOf(". ");
@@ -4139,8 +4142,9 @@ function tabsEl(tabs, status, isHelpShown, p) {
   const help = helpButton(isHelpShown);
   return h_flex().flex_none().flex_wrap().pl(SPINE - TAB_X).pr(EDGE_X).pt(12).gap(4).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).px(TAB_X).py(6).items_center().rounded(6).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div().ml(6).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div().flex_1()).when(status !== null, (e) => e.child(div().px(4).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
 }
+var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
-  const tone = colorOf(t, b.tone);
+  const tone = colorOf(t, BANNER_TONES2[b.tone]);
   const text = v_flex().flex_1().min_w(0).whitespace_normal().child(div().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div().child(b.body ?? "")));
   const row = h_flex().gap(12).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)));
   return v_flex().mx(BANNER_X).mt(BANNER_GAP_PT).pl(SPINE - BANNER_X - 1).pr(EDGE_X - BANNER_X - 1).py(BANNER_PAD_Y_PT).rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);

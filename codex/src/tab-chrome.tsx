@@ -13,6 +13,7 @@ import { switchTab, drawnTab } from './tab-selection'
 import { swapPage } from './tab-swap'
 import { read } from './tab-read'
 import { pulseInStep, MarkGlyph, legendMarkClass, GroupTitle, Banner } from './tab-parts'
+import { HerdrAskBanner } from './tab-herdr-ask'
 
 /** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
 export function HelpPage({ v }: { v: View }) {
@@ -126,6 +127,7 @@ export function TabBar({ v }: { v: View }) {
           ...(tabState.serverNote ? [bannerOf(tabState.serverNote.kind, tabState.serverNote.text)] : []),
           ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
           ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
+          ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
         ],
         error,
         tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
@@ -149,6 +151,7 @@ export function TabBar({ v }: { v: View }) {
           <Banner banner={b} />
         ),
       )}
+      <HerdrAskBanner v={v} />
     </nav>
   )
 }

@@ -1,13 +1,18 @@
 import { watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
-import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { appendFile, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
+import type { Run } from '../../hooks/gh'
 import { pressFolder } from '../../hooks/herdr'
 import type { HerdrTarget } from '../../hooks/herdr'
 import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
 import type { PressFiles } from '../../hooks/herdr-app'
+import type { HerdrModResult, ModFiles } from '../../hooks/herdr-install'
+import { startInHerdrApp } from '../../hooks/herdr-start'
+import type { SweepFiles } from '../../hooks/herdr-sweep'
 import { sessionIdOf } from './host-context'
 import type { OmpContext } from './host-context'
 
@@ -44,6 +49,42 @@ const pressFiles: PressFiles = {
   move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
 }
+
+export const startFiles: ModFiles & SweepFiles = {
+  kind: path =>
+    lstat(path).then(
+      s => (s.isSymbolicLink() ? 'link' : s.isDirectory() ? 'folder' : s.isFile() ? 'file' : 'other'),
+      () => null,
+    ),
+  read: path => readFile(path, 'utf8'),
+  write: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, text)
+  },
+  makeFolder: async path => void (await mkdir(path, { recursive: true })),
+  move: (from, to) => rename(from, to),
+  remove: path => rm(path, { force: true }),
+  removeFolder: path => rm(path, { recursive: true, force: true }),
+  list: async folder =>
+    (await readdir(folder, { withFileTypes: true })).filter(e => e.isFile() || e.isDirectory()).map(e => e.name),
+}
+
+/**
+ * In a Herdr app terminal, keeps the inbox's mod in the app current with the copy beside the bundle, in
+ * `dist/herdr-mod`, and removes the published sessions no live terminal can show, as `startInHerdrApp` says. Does
+ * nothing outside an app terminal.
+ */
+export async function startOmpInHerdrApp(
+  target: HerdrTarget | null,
+  run: Run,
+  log: (text: string) => void,
+): Promise<HerdrModResult | null> {
+  if (target?.kind !== 'terminal') return null
+  return startInHerdrApp(run, startFiles, target, bundledHerdrMod(), Date.now(), log)
+}
+
+/** The copy of the inbox's Herdr mod beside the bundle. */
+export const bundledHerdrMod = () => join(dirname(fileURLToPath(import.meta.url)), 'herdr-mod')
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 

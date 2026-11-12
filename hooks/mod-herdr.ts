@@ -22,7 +22,13 @@ import {
 import type { ApplyPress, PressFiles, PublishFiles } from './herdr-app'
 import { hasHerdrMod, herdrPanelOpener, noHerdrModText } from './herdr-open'
 import type { HerdrOpened } from './herdr-open'
+import type { ModFiles } from './herdr-install'
+import { answerHerdrAsk, answeringOf, askHerdrAgain, herdrAskOf, isHerdrAskOpen } from './herdr-ask'
+import type { HerdrAsk } from './herdr-ask'
+import { startInHerdrApp } from './herdr-start'
+import type { SweepFiles } from './herdr-sweep'
 import { CLAUDE_CODE } from './model-text'
+import { mod } from './mod-state'
 import { sessionView } from './session-view'
 import { SETTLED_MS } from './timing'
 
@@ -31,8 +37,9 @@ type DrawnForHerdr = { id: string; root: string; session: Session; dialogs: read
 
 /**
  * The engine calls the mod's Herdr code needs. `env` reads `HERDR_PANE_ID`, `HC_TERMINAL_ID`, `HERDR_APP_HOME` and
- * `HOME`, in that order, because the engine takes only a literal name. `spawn` streams a command's output, and the
- * stream's `return` ends the command.
+ * `HOME`, in that order, because the engine takes only a literal name. `stat` follows a link and says whether the
+ * path is one. `spawn` streams a command's output, and the stream's `return` ends the command. `pluginRoot` is the
+ * mod's install folder, which holds the Herdr mod at `herdr/mod/inbox`.
  */
 export type HerdrCalls = {
   run: Run
@@ -40,12 +47,13 @@ export type HerdrCalls = {
   write: (path: string, text: string) => Promise<void>
   read: (path: string) => Promise<string>
   list: (folder: string) => Promise<readonly { name: string; kind: string }[]>
-  isFile: (path: string) => Promise<boolean>
+  stat: (path: string) => Promise<{ kind: 'file' | 'dir' | 'other'; isLink: boolean }>
   spawn: (argv: string[]) => AsyncIterator<{ text: string }, unknown>
   now: () => Promise<number>
   after: (ms: number, fn: () => void) => void
   every: (ms: number, fn: () => void) => Timer
   log: (text: string) => void
+  pluginRoot: string
 }
 
 const FILE_TIMEOUT_MS = 5000
@@ -57,7 +65,7 @@ const isHerdrCheckDue = herdrCheckGate()
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 /** The engine has no call that moves or removes a file, so those run `mv` and `rm`. A `mv` whose file is gone fails. */
-function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
+function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles & ModFiles & SweepFiles {
   const runOrThrow = async (argv: string[]) => {
     const r = await calls.run(argv, { cwd: '/', timeoutMs: FILE_TIMEOUT_MS })
     if (r.code !== 0) throw new Error(`${argv[0]} exited ${r.code}: ${r.stderr.trim()}`)
@@ -66,12 +74,24 @@ function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
   return {
     write: calls.write,
     read: calls.read,
-    list: async folder => (await calls.list(folder)).filter(e => e.kind === 'file').map(e => e.name),
+    list: async folder =>
+      (await calls.list(folder)).filter(e => e.kind === 'file' || e.kind === 'dir').map(e => e.name),
     move: (from, to) => runOrThrow(['mv', '-f', '--', from, to]),
     remove: path => runOrThrow(['rm', '-f', '--', path]),
     removeFolder: path => runOrThrow(['rm', '-rf', '--', path]),
+    makeFolder: path => runOrThrow(['mkdir', '-p', '--', path]),
+    kind: path =>
+      calls.stat(path).then(
+        s => (s.isLink ? 'link' : s.kind === 'dir' ? 'folder' : s.kind),
+        () => null,
+      ),
   }
 }
+
+const openCalls = (calls: HerdrCalls) => ({
+  run: calls.run,
+  isFile: (path: string) => calls.stat(path).then(s => s.kind === 'file'),
+})
 
 /**
  * The Herdr app terminal the mod runs in, once `targetOf` has read the environment, with whether its app home holds the
@@ -79,12 +99,15 @@ function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
  * whether the Herdr look can open.
  */
 let appTerminal: { target: Extract<HerdrTarget, { kind: 'terminal' }>; hasMod: boolean } | null | undefined
+let home: string | undefined
 const openHerdrPanel = herdrPanelOpener()
 
 async function targetOf(calls: HerdrCalls) {
   const [HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME] = await calls.env()
+  home = HOME
   const target = herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME })
-  appTerminal = target?.kind === 'terminal' ? { target, hasMod: await hasHerdrMod(calls.isFile, target) } : null
+  appTerminal =
+    target?.kind === 'terminal' ? { target, hasMod: await hasHerdrMod(openCalls(calls).isFile, target) } : null
 
   return target
 }
@@ -102,7 +125,86 @@ export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | HerdrOpen
   }
   if (!appTerminal.hasMod) return logged({ isShown: false, text: noHerdrModText(appTerminal.target) })
 
-  return openHerdrPanel(calls, appTerminal.target).then(logged)
+  return openHerdrPanel(openCalls(calls), appTerminal.target).then(logged)
+}
+
+/**
+ * In a Herdr app terminal, keeps the inbox's mod in the app current with the one this install holds, and removes the
+ * published sessions no live terminal can show, as `startInHerdrApp` says. The mod runs it as it turns on. A failed
+ * install or update shows as a banner until the next turn-on, and `redraw` runs when that banner changes.
+ */
+export async function startInHerdr(calls: HerdrCalls, redraw: () => unknown): Promise<void> {
+  askHost = { calls, redraw }
+  const target = await targetOf(calls)
+  if (target?.kind !== 'terminal') return
+  const result = await startInHerdrApp(
+    calls.run,
+    herdrFiles(calls),
+    target,
+    bundledMod(calls),
+    await calls.now(),
+    calls.log,
+  )
+  const failure = result?.is === 'failed' ? result.text : null
+  if (failure !== mod.herdrModFailure) {
+    mod.herdrModFailure = failure
+    redraw()
+  }
+  if (result?.is === 'ask' && target.appHome) showAsk(herdrAskOf(target.appHome, home, null))
+  if (appTerminal) appTerminal.hasMod = await hasHerdrMod(openCalls(calls).isFile, target)
+}
+
+const bundledMod = (calls: HerdrCalls) => `${calls.pluginRoot}/herdr/mod/inbox`
+
+/** The calls the install question runs its presses with, and the pane's redraw, from the turn-on. */
+let askHost: { calls: HerdrCalls; redraw: () => unknown } | null = null
+let askCheck: Timer | null = null
+
+/**
+ * Shows the install question in `ask` and redraws the pane. While it asks, it checks every `PRESS_POLL_MS` whether
+ * another session answered it, and an answer's result leaves after `SETTLED_MS`.
+ */
+function showAsk(ask: HerdrAsk | null) {
+  mod.herdrAsk = ask
+  askCheck?.cancel()
+  askCheck = null
+  if (!askHost) return
+  const { calls, redraw } = askHost
+  const isShown = () => mod.herdrAsk === ask
+  if (ask?.is === 'asking') {
+    const files = herdrFiles(calls)
+    askCheck = calls.every(PRESS_POLL_MS, () => {
+      void isHerdrAskOpen(files, ask).then(isOpen => !isOpen && isShown() && showAsk(null))
+    })
+  }
+  if (ask?.is === 'answered') calls.after(SETTLED_MS, () => isShown() && showAsk(null))
+  redraw()
+}
+
+/** Answers the install question with Install or Don't install, and shows the result on its banner. */
+export async function pressHerdrAsk(isYes: boolean): Promise<void> {
+  const ask = mod.herdrAsk
+  if (!askHost || ask?.is !== 'asking') return
+  const { calls } = askHost
+  showAsk(answeringOf(ask, isYes))
+  const now = await calls.now()
+  const answered = await answerHerdrAsk(herdrFiles(calls), ask, bundledMod(calls), isYes, now, 'Run /inbox herdr')
+  mod.herdrModFailure = answered.failure
+  showAsk(answered.ask)
+  if (appTerminal) appTerminal.hasMod = await hasHerdrMod(openCalls(calls).isFile, appTerminal.target)
+}
+
+/** For `/inbox herdr`: shows the install question again with `show`, even after a no, or says why it cannot. */
+export async function askHerdrModAgain(calls: HerdrCalls, show: () => Promise<unknown>): Promise<string> {
+  const target = await targetOf(calls)
+  const appHome = target?.kind === 'terminal' ? (target.appHome ?? null) : null
+  const ask = await askHerdrAgain(herdrFiles(calls), appHome, home)
+  if (typeof ask === 'string') return ask
+  askHost ??= { calls, redraw: () => undefined }
+  showAsk(ask)
+  await show()
+
+  return 'Showing the question about the inbox mod for Herdr in the inbox.'
 }
 
 /**
