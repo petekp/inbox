@@ -1,5 +1,5 @@
 import { actionLines } from './action-plan'
-import { DESKTOP_BUTTON_EXTRA_PT, desktopTextPt } from './desktop-metrics'
+import { desktopButtonPt, desktopTextPt } from './desktop-metrics'
 import type { LinksProps } from './links-client'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { followUpPresses, type KeyAction } from './pane-keys'
@@ -50,7 +50,7 @@ export function paneRowKeys(
   // A native Button cuts a label wider than its row.
   const fittedDesktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
     const icon = a.icon ? `${a.icon} ` : ''
-    const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt
+    const fits = (label: string) => desktopButtonPt(icon + label, a.variant === 'primary') <= desktopRowTextPt
 
     return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
   }

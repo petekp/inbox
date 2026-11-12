@@ -31,7 +31,7 @@ import { pressLine } from './tab-pr-lines'
 import type { PressLine } from './tab-pr-lines'
 import { PR_GROUPS, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
 import type { DrawnPrBlock, DrawnPrs, PrGroup } from './tab-pr-steps'
-import type { RowTrack } from './rows'
+import type { RowTrack } from '../../hooks/row-motion'
 
 /** The order's changed line's buttons: Rank again. */
 export function prOrderKeys(v: View): Key[] {

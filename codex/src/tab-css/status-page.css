@@ -156,8 +156,11 @@
 .status-head .actions {
   margin-top: 6px;
 }
-/* A blank line's space between the goal's buttons and its milestones, as the terminal and omp leave. */
-.status-head.goal + .list {
+/* A blank line's space between the goal's buttons and its milestones, before each milestone after the first, and
+   between a milestone and the rows under it, as the terminal and omp leave. */
+.status-head.goal + .list,
+.status-page .row.milestone ~ .row.milestone,
+.status-page .row.milestone + .row {
   margin-top: var(--look-gap);
 }
 /* A changed milestone's name, bold without the gap and stall word after it. */

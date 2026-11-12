@@ -1,7 +1,6 @@
 import type { ToolResultOf } from 'claude-code'
 import type { Child } from '../types'
 import { activityGate } from './children'
-import { herdrCheckGate, herdrReporter } from './herdr'
 import { clipLabel } from './text'
 import { baseName } from './open-targets'
 
@@ -46,7 +45,6 @@ export const spawnedBy = new Map<string, string>()
 export const workflowTasks = new Map<string, string>()
 /** Each background `herdr agent wait`'s task id and tool_use_id to the delegate it waits on. */
 export const delegateWaits = new Map<string, string>()
-export const reportToHerdr = herdrReporter()
 
 export function callKey(tool: string, input: Record<string, unknown>): string {
   const main = ['command', 'file_path', 'notebook_path', 'url', 'pattern', 'query', 'skill', 'description'].find(
@@ -92,8 +90,6 @@ export function permissionText(tool: string, input: Record<string, unknown>): st
       return tool.startsWith('mcp__') ? tool.slice(5).replace(/__/g, ' ') : tool
   }
 }
-
-export const isHerdrCheckDue = herdrCheckGate()
 
 /** A tool's structured result, or undefined when the call answered with text alone. */
 export function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResultOf<Name> | undefined {

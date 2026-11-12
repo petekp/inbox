@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
@@ -199,6 +199,44 @@ test('/inbox demo draws the shared demo data and sends nothing', async () => {
   panel.handleInput('\x1b')
   await opened
   panel.dispose()
+})
+
+test('in a Herdr app terminal, /inbox opens the Herdr panel beside the terminal and no omp panel, and opens its own panel when Herdr refuses the split', async () => {
+  const appHome = join(w.dir, 'app')
+  mkdirSync(join(appHome, 'mods/inbox'), { recursive: true })
+  writeFileSync(join(appHome, 'mods/inbox/main.js'), '')
+  const ls = { spaces: [{ machine: null, tabs: [{ terminals: [{ terminal: 't1', pane: 'p1' }] }] }] }
+  let split = { code: 0, stdout: '{"pane":"p9"}' }
+  const api = pi() as { exec: (command: string, args: string[]) => Promise<unknown> }
+  api.exec = async (command, args) => {
+    w.execCalls.push({ command, args })
+    if (command !== 'herdr-app') return { code: 0, stdout: '', stderr: '', killed: false }
+    const gone = { code: 1, stdout: '{"error":"no such pane"}' }
+    const answer = args[0] === 'ls' ? { code: 0, stdout: JSON.stringify(ls) } : args[1] === 'pane.focus' ? gone : split
+    return { stderr: '', killed: false, ...answer }
+  }
+  createInbox(api as never, {
+    ...deps(),
+    herdrTarget: { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] },
+  })
+  const { ctx, components } = tuiCtx()
+
+  await w.commands.get('inbox').handler('', ctx)
+  expect(w.execCalls.slice(-2)).toEqual([
+    { command: 'herdr-app', args: ['do', 'pane.split', '{"direction":"right","pane":"p1","mod":"inbox"}'] },
+    { command: 'hc', args: ['label', 't1', 'inbox.panel=p9'] },
+  ])
+  expect(w.notices).toEqual(['Opened the inbox in Herdr, to the right of this terminal.'])
+  expect(components).toHaveLength(0)
+
+  split = { code: 1, stdout: '{"error":"unknown mod inbox"}' }
+  const opened = w.commands.get('inbox').handler('', ctx)
+  await until(() => components.length > 0)
+  await until(() => components[0].render(80).join('\n').includes('Nothing needed'))
+  expect(w.notices.at(-1)).toBe('Opened the inbox here, since Herdr did not split the pane: unknown mod inbox.')
+  components[0].handleInput('\x1b')
+  await opened
+  components[0].dispose()
 })
 
 test('a look starts when the panel shows the Status and ends on another tab or when the panel closes, counts once it lasted five seconds, and each new tab saves the showing the panel started', async () => {
