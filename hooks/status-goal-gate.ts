@@ -25,12 +25,15 @@ export function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
 
 /**
  * Whether the goal is met: it holds its met time, or every milestone it keeps is done, as after a DROP in the same
- * answer closes the last open one, before `settleGoal` writes the time.
+ * answer closes the last open one, before `settleGoal` writes the time. A goal that still waits for its milestones is
+ * not met, since the milestones it carries are the goal's before it.
  */
 function isGoalMet(o: SessionStatus): boolean {
+  const g = o.goal
+  if (g === null || g.isAwaitingMilestones) return false
   const kept = o.milestones.filter(m => m.status !== 'dropped')
 
-  return o.goal?.metAt != null || (kept.length > 0 && kept.every(m => m.status === 'done'))
+  return g.metAt != null || (kept.length > 0 && kept.every(m => m.status === 'done'))
 }
 
 /**

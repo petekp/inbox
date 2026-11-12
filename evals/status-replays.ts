@@ -12,6 +12,7 @@ import { idleWork } from './replays/idle-work'
 import { milestoneWorkDone } from './replays/milestone-work-done'
 import { noGoalYet } from './replays/no-goal-yet'
 import { typedGoalKept } from './replays/typed-goal-kept'
+import { goalTypedWhileRunning } from './replays/goal-typed-while-running'
 import { goalAwaitingMilestones } from './replays/goal-awaiting-milestones'
 import { goalOnBusyPage } from './replays/goal-on-busy-page'
 import { longTurn } from './replays/long-turn'
@@ -43,6 +44,7 @@ export const REPLAYS: Replay[] = [
   goalFromWork,
   goalWorkLeft,
   typedGoalKept,
+  goalTypedWhileRunning,
   idleWork,
   staleGoal,
   goalOutcomeDropped,

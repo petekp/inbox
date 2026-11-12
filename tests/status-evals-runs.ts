@@ -124,6 +124,16 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: Dark theme | Dark theme ready',
     ].join('\n'),
   ],
+  'goal-typed-while-running': [
+    [
+      'HEAD: 2.6 beta | Getting widgets and a dark theme into 2.6',
+      'NEW: working | Notes widget | lists newest notes',
+      'NEW: queued | Dark theme | not started',
+      'GOAL: Notes 2.6 on TestFlight | working Widgets built; queued Dark theme ready; queued Beta uploaded',
+      'SERVES: Notes widget | Widgets built',
+      'SERVES: Dark theme | Dark theme ready',
+    ].join('\n'),
+  ],
   'goal-wait': [
     'NEW: working | Footer typo | fixed\nDONE: Footer typo | fixed\nNEW: working | Slow share sheet | loading attachments lazily',
   ],
