@@ -47,7 +47,7 @@ The look draws the buttons each shared plan lists, in the plan's order. It style
 | `statusKeyPlan` | The View button on a Status subject |
 | `helpKeys(look)` | The Help page's key list |
 
-Emphasis maps to Herdr's own button styles. `primary` uses `solid` and `solid_foreground`, the colors Herdr's primary buttons use. `normal` is `raised` with a `border`. `quiet` is text only. A whole button takes clicks, with `on_click` on its outer element and `cursor_pointer`. Each button sets `accessibility_label` to its full label.
+Emphasis maps to Herdr's own button styles. `primary` uses `solid` and `solid_foreground`, the colors Herdr's primary buttons use. `normal` is outlined with `input`. `quiet` is text only, with no side padding. A pressed button dims, or for `normal` takes the `selected` fill. A button whose press is out keeps its size, loses its fill and border, draws its label muted at half strength, and takes no hover and no click. A whole button takes clicks, with `on_click` on its outer element. Every control keeps the default arrow cursor, as in the Codex tab, though Herdr's own mods show a hand. A text field keeps the cursor its `Input` draws. Each button sets `accessibility_label` to its full label.
 
 Text uses Herdr's UI font, so `rowTitle(r, 'herdr')` follows the desktop look's rules rather than the terminal's.
 
@@ -59,8 +59,8 @@ GPUI animates natively, with no script running during the motion:
 
 - `transition(property, { duration, easing })` animates later changes to `opacity`, `width`, `height`, `left` and `top`. The spike drew a row's opacity going from 1 to 0.35 over 1.5 s. Window shots during the fade read the row's text falling from 238 out of 255 before the press to 132 at 601 ms. So the transition runs in the app.
 - `spring(property)` for a move that should settle with a little give.
-- `.frames(list, ms)` for running marks: `RUNNING_FRAMES` at `RUNNING_FRAME_MS`, drawn natively and only while shown.
-- `.loop(property, { from, to, period })` for a pulse.
+- `.frames(list, ms)` for a spinner, drawn natively and only while shown.
+- `.loop(property, { from, to, period })` for a pulse. A running mark keeps its row's color and fades from 1 to 0.3 and back every `RUNNING_PULSE_MS`, as in the Codex tab.
 
 A row's height animates between pixel values. The look learns a row's content height from `on_size_change` on the row's inner element, then animates the outer element's `h` from that height to 0 as the row leaves. Not checked in the spike.
 
@@ -79,14 +79,51 @@ Herdr is a desktop app, so the look is click-first, and every move works with th
 
 ## Light and dark
 
-The look draws only with `theme()` colors, which every light and dark theme names alike. The inbox's tones map onto Herdr's agent colors, so a count means the same thing in the inbox and in Herdr's sidebar:
+The look draws only with `theme()` colors, which every light and dark theme names alike. Needs you and warnings take the theme's yellow, as the other looks draw them in amber. Findings, PRs and errors take the theme's magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. So a banner reads by its color: a notice in blue, a warning in yellow, an error in red. Done takes the color Herdr's sidebar gives an agent that is done. A running mark keeps its row's color and fades in and out, so needs you never reads as running. The look draws nothing in `blocked`, which is red in many themes and would make a count read as an error:
 
 | Inbox tone | Herdr color |
 | --- | --- |
-| Needs you | `blocked` |
+| Needs you, issue | `ansi3` |
 | Done | `done` |
-| Running | `working` |
-| Muted text | `muted`, and `dim` for the quietest |
-| Row fill | `background` on `surface` |
+| Findings | `ansi5` |
+| PRs | `ansi6` |
+| A notice: information or an offer | `ansi4` |
+| Warning | `ansi3` |
+| Error | `ansi1` |
+| Muted text, ages and hints | `muted` |
+| Selected row | `selected` |
+
+The look draws no text in `dim`. In the Tokyo Night theme, `dim` on the pane's background is 3.3:1, under the 4.5:1 text needs.
 
 Each state is checked in Herdr's light and dark themes in the VM.
+
+## Help in the pane header
+
+The look draws Help at the right end of its tab row, because a mod pane cannot put a button into Herdr's pane header. A mod pane is a pane that shows a mod instead of a terminal. A layout is the set of mods that draws Herdr's window, and its `pane` mod draws the header above each pane. The shipped `pane` mod finds its pane in `panes()` by `props().pane`. When the pane runs no program, it draws `PaneInfo.title` as the name. For a mod pane that title is the mod's name, so the inbox's header reads "inbox". `herdr.d.ts` has no call that lets a mod set its pane's title or add to its header.
+
+A mod pane needs two things from the header: a title it sets, such as "Inbox", and a few actions the header draws at its right end, such as Help. `PaneInfo` would carry both to the header mod, which draws them as it draws a terminal pane's split, zoom and close. A press on an action would reach the mod pane that set it. Then Help costs the look no row, and the header names the panel the way it names a terminal.
+
+### The route without a change in Herdr
+
+Any mod can set a value with `setShared(key, value)`, and every mod can read it with `shared(key)`. Every mod re-renders when one is set. So a header mod that reads a key the look sets could draw Help, and send `inbox.help` back with `run`. That route has two limits:
+
+1. The shipped `pane` mod reads no shared value. The person would switch to a copy of the layout whose `pane` mod reads the key. A copied layout stops getting Herdr's fixes to the header.
+2. `nextCommand()` gives a copy of the mod the command with no pane id, so a copy cannot tell whether the press came from its own header. `herdr.d.ts` says `run('<mod>.<command>')` delivers to that mod's `nextCommand()`. That every shown copy receives it is inferred from that wording, not checked. If so, a Help button in one pane's header would toggle Help in every inbox pane on screen.
+
+### Draft request to Herdr's maintainers
+
+Sent on 2026-11-11 through the Herdr app's feedback form.
+
+> **Let a mod pane set its header's title and actions**
+>
+> A mod opened with `pane.split {mod}` draws inside the pane frame the layout gives it. The frame's header is the layout's `pane` mod. For a mod pane, it shows the mod's name as the title, from `PaneInfo.title`, and nothing the mod sets. So a mod that wants a title or a button in its header draws a second header inside its own pane, which reads as a frame within a frame.
+>
+> The inbox is a mod pane that lists what waits on the person in an agent session. It has one control that belongs in the header: Help, which shows a legend of its marks. Today it costs a place in the panel's own tab row.
+>
+> Proposal: a mod pane can set a title and a short list of actions for its header, such as with a `setPaneHeader({ title, actions: [{ id, label }] })` call. `PaneInfo` carries them to the header mod, which draws the title in place of the mod's name and the actions at the header's right end. A press on an action reaches that pane's copy of the mod, such as through `nextCommand()` with the action's id.
+>
+> The alternative we found is a shared value that a cloned header mod reads. It needs a cloned layout. And since `"<mod>.<command>"` reaches every shown copy of a mod, a button in one header would act on every copy.
+>
+> Questions: should actions be text, icons from the app's set, or both? Should the shipped `pane` mod draw them, or only layouts that opt in?
+>
+> _Written by Claude_

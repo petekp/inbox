@@ -89,6 +89,29 @@ export type Milestone = {
 /** What a subject serves: one milestone by its id, or `none` for work the goal does not need. */
 export type Serves = string | 'none'
 
+/**
+ * Why code did not apply the last answer's GOAL or RETIRE line. The next Status call reads it, with the reason
+ * written out as it stands then, so the call can fix the cause.
+ */
+export type GoalRefusal = {
+  line: 'goal' | 'retire'
+  why:
+    /** The person typed the goal, and it is not met. */
+    | 'typed'
+    /** RETIRE on a met goal, which stays until the next goal is set. */
+    | 'met'
+    /** A subject linked to an open milestone is still open. */
+    | 'work-open'
+    /** The goal moved forward under `GOAL_LEFT_MS` ago. */
+    | 'moved'
+    /** No open subject is outside the goal, so there is no work for a new one. */
+    | 'no-work'
+    /** The GOAL line restates the goal, the goal before it or a removed goal. */
+    | 'restates'
+    /** The GOAL line names under `MILESTONES_MIN` milestones. */
+    | 'few-milestones'
+}
+
 /** A goal the person removed, with its milestones and the links to them, so Undo can bring it back. */
 export type GoalRemoved = {
   goal: StatusGoal
@@ -116,6 +139,8 @@ export type SessionStatus = {
   nextMilestoneId: number
   /** What each subject serves, by subject id, as the Status call linked them. A subject with no entry is not linked yet. */
   serves: Record<string, Serves>
+  /** Why the last applied answer's GOAL or RETIRE line was not applied. Null when it was, or when the answer wrote none. */
+  goalRefused: GoalRefusal | null
 
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null

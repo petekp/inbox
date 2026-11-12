@@ -1,5 +1,5 @@
 import { dialogActivity } from '../../hooks/catch-up-text'
-import { noteDialog } from '../../hooks/dialogs'
+import { noteAnsweredDialog, noteDialog } from '../../hooks/dialogs'
 import { noteActivity, noteCommandOutput } from '../../hooks/session-turns'
 import { claimedStatusRefresh, statusChanged } from '../../hooks/session-status'
 import {
@@ -134,9 +134,12 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
     if (!outcome) return
     const questions = askQuestions(event.input)
     const line = dialogActivity(questions, outcome)
+    const endedAt = deps.now()
     await change(sessionIdOf(ctx), s => {
       const noted = noteActivity(s, line)
-      return outcome.kind === 'dismissed' ? noteDialog(noted, null, questions) : noted
+      if (outcome.kind === 'dismissed') return noteDialog(noted, null, questions)
+
+      return outcome.kind === 'answered' ? noteAnsweredDialog(noted, questions, outcome.answer, endedAt) : noted
     }).catch(() => undefined)
   }
 
