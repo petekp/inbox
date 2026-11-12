@@ -331,6 +331,25 @@ test('the head is a title and a one-line description', () => {
   expect(page.head).toEqual({ title: 'Offline sync', description: 'Adding offline sync to the notes app' })
 })
 
+test('other-work-place fails a subject not linked yet that draws above Other work while the goal shows milestones', () => {
+  const withGoal = SCENES['other-work-place']!.good!
+  const unlinked = (s: Scene) => {
+    withGoal(s)
+    delete s.after.serves.s2
+  }
+
+  expect(failuresOf('other-work-place', unlinked)).toEqual([])
+  expect(
+    failuresOf('other-work-place', s => {
+      unlinked(s)
+      s.page = p => {
+        const s2 = p.rows.find(r => r.kind === 'subject' && r.id === 's2')!
+        p.rows = [s2, ...p.rows.filter(r => r !== s2)]
+      }
+    }),
+  ).toEqual(['"Sync conflicts" sits above Other work, and belongs under it'])
+})
+
 test('serves-linked counts a link to a dropped or unknown milestone as no link', () => {
   const withGoal = SCENES['serves-linked']!.good!
 

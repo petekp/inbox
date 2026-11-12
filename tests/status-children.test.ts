@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   childActive,
   childEnded,
+  isSubjectSeen,
   lookEnded,
   lookStarted,
   LOOK_MIN_MS,
@@ -123,7 +124,7 @@ test('a working subject with a child at work draws the running mark, and one wit
   expect(rows.filter(r => r.kind === 'subject').map(r => r.isRunning)).toEqual([false, true])
 })
 
-test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, and one Herdr no longer lists leaves', () => {
+test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, its subject unseen, and one Herdr no longer lists leaves', () => {
   let o: SessionStatus | null = {
     ...after(null, 'NEW: working | Export | layout next', 10 * MIN),
     lastLookAt: 20 * MIN,
@@ -157,8 +158,9 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   const finished = delegatesSettled(blocked, herdr('done'), 4 * 60 * MIN)
   expect(page(finished, 4 * 60 * MIN).rows).toMatchObject([
     { kind: 'subject', isRunning: false },
-    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' }, isLast: true },
+    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' } },
   ])
+  expect(isSubjectSeen(finished!, finished!.subjects[0]!)).toBe(false)
   const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS, 'all')
   expect(rows(looked, 6 * 60 * MIN)).toEqual(['◐ Export: layout next'])
   const gone = delegatesSettled(blocked, new Map(), 4 * 60 * MIN)

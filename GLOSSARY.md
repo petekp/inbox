@@ -163,8 +163,9 @@ seconds. A shorter pass through the tab counts nothing. A row counts as seen
 when the last look that showed it came after its last change. A seen row leaves
 out its merged and was lines. A seen done row folds into its part's done fold,
 a seen dropped row leaves the page, and a seen open row may fold into "○ N
-more". The code keeps its time in `lastLookAt`, and the rows it did not show in
-`missedInLastLook`.
+more". Under Other work, a seen open row the goal does not need folds into the
+count of its mark, or leaves the page when it is queued. The code keeps its
+time in `lastLookAt`, and the rows it did not show in `missedInLastLook`.
 _Avoid_: Seen line, look line
 
 **Done fold**:

@@ -75,7 +75,7 @@ test('on the Status in the terminal, the rows under a subject hang from its mark
   expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be · waiting'])
 })
 
-test('on the Status, while the goal shows milestones, work linked to none of them draws under Other work, and no look draws a rule of its own between the goal and that list', async ($, on) => {
+test('on the Status, while the goal shows milestones, work linked to none of them draws under Other work, and the desktop hairline between the goal and that list draws no line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -93,19 +93,15 @@ test('on the Status, while the goal shows milestones, work linked to none of the
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
-  const rules = async (pane: Pick<Mounted, 'findAll'>) =>
-    (await pane.findAll({ type: 'Box' })).flatMap(b => (b.key?.startsWith('status-rule-') ? [b.key] : []))
   const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
   await docked.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(await rules(docked)).toEqual([])
   expect(await docked.find({ key: 'status-other' })).toBeDefined()
   await docked.unmount()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  expect(await rules(desktop)).toEqual([])
   expect(await desktop.find({ key: 'rule-1' })).toBeDefined()
   expect((await desktop.find({ key: 'rule-1' }))?.props.backgroundColor).toBeUndefined()
   await desktop.unmount()
@@ -114,5 +110,4 @@ test('on the Status, while the goal shows milestones, work linked to none of the
   await inline.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(await inline.find({ key: 'status-s2' })).toBeDefined()
-  expect(await rules(inline)).toEqual([])
 })

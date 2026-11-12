@@ -2,7 +2,7 @@ import type { Child, Item, Subject } from '../types'
 import { HELD_MARK, IDLE_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { IDLE_AFTER_MS, isOpen } from './status-limits'
-import type { StatusBranch, StatusCount, StatusRow, StatusRowParts, StatusStall } from './status-page'
+import type { StatusBranch, StatusCount, StatusRow, StatusStall } from './status-page'
 
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
@@ -58,7 +58,7 @@ function childStall(c: Child): StatusStall | null {
   return null
 }
 
-export function childRow(c: Child, branch: StatusBranch | null, depth: number): StatusRowParts {
+export function childRow(c: Child, branch: StatusBranch | null, depth: number): StatusRow {
   const marks =
     c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
@@ -92,10 +92,10 @@ export function partRows(
   shown: Subject[],
   c: ListContext,
   depth: number,
-  afterOpen: StatusRowParts[] = [],
-  afterClosed: StatusRowParts[] = [],
-): StatusRowParts[] {
-  const rows: StatusRowParts[] = []
+  afterOpen: StatusRow[] = [],
+  afterClosed: StatusRow[] = [],
+): StatusRow[] {
+  const rows: StatusRow[] = []
   const firstClosed = shown.findIndex(x => !isOpen(x))
   for (const [i, x] of shown.entries()) {
     if (i === firstClosed) rows.push(...afterOpen)
@@ -139,19 +139,7 @@ export function partRows(
   return rows
 }
 
-/** The rows of one list with its last row marked. */
-export function endedList(rows: StatusRowParts[]): StatusRow[] {
-  return rows.map((r, n) => ({ ...r, isLast: n === rows.length - 1 }))
-}
-
-/**
- * `rows` as a look draws them: each done fold that `isUnfolded` names by id followed by the finished rows it holds. The
- * last row drawn ends the list.
- */
+/** `rows` as a look draws them: each done fold that `isUnfolded` names by id followed by the finished rows it holds. */
 export function unfoldedRows(rows: StatusRow[], isUnfolded: (id: string) => boolean): StatusRow[] {
-  return rows.flatMap(r =>
-    r.kind === 'done-fold' && isUnfolded(r.id)
-      ? [{ ...r, isLast: false }, ...r.rows.map((x, n) => ({ ...x, isLast: r.isLast && n === r.rows.length - 1 }))]
-      : [r],
-  )
+  return rows.flatMap(r => (r.kind === 'done-fold' && isUnfolded(r.id) ? [r, ...r.rows] : [r]))
 }

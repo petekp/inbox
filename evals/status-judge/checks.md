@@ -96,7 +96,7 @@ Each mark on a subject row fits its piece's state in the facts, and every open p
 Judge it in two steps:
 
 1. Check the mark of each row of work against the list of marks above. For a `◆` row, check only that an open ask in the facts holds up that piece. Do not compare a `◆` row's mark with the piece's state.
-2. List the open pieces in the facts that have no row on the page. The `○ N more` fold accounts for them. The check fails when that list is not empty and the page has no `○ N more` fold, or the fold counts fewer pieces than the list holds.
+2. List the open pieces in the facts that have no row on the page. Leave out each piece whose line says `The goal does not need it.`: Other work's counts line counts those that are under way, and those not started yet or set aside leave the page with no count. The `○ N more` fold accounts for the rest. The check fails when that list is not empty and the page has no `○ N more` fold, or the fold counts fewer pieces than the list holds.
 
 The check fails when any of these is on the page:
 
