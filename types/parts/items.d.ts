@@ -4,6 +4,8 @@ export type Item = {
   /** The agent's own number or id for it ("1", "D3"), so "1. yes" maps back. */
   label: string | null
   ask: string
+  /** Why the agent asked a question, from its record's `context`. A record of the open question replaces it. */
+  context?: string
   options: string[]
   /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
@@ -29,7 +31,8 @@ export type Item = {
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
   /**
-   * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
+   * What picking each option does, by its label as `options` has it: from the `option_notes` of the agent's records,
+   * else from a dialog question this item copies.
    */
   optionDescriptions?: Record<string, string>
 }
@@ -45,14 +48,16 @@ export type DialogQuestion = { question: string; options: string[]; descriptions
 
 /**
  * A dialog question from ledger turn `turn` that an item may copy: a question of a Codex dialog, which stays open, or
- * of a dialog the person dismissed in another host. `callId` and `index` name a Codex dialog question, and `callId` is
- * null in other hosts. `itemId` is the item that copies it, once linked.
+ * of a dialog the person answered or dismissed in another host. `callId` and `index` name a Codex dialog question, and
+ * `callId` is null in other hosts. `itemId` is the item that copies it, once linked. `answer` is what the person chose
+ * in a dialog they answered; the copy closes with it.
  */
 export type TurnDialogQuestion = DialogQuestion & {
   callId: string | null
   index: number
   turn: number
   itemId: string | null
+  answer?: string
 }
 
 /**

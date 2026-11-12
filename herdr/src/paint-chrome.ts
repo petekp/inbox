@@ -3,146 +3,138 @@ import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import type { BannerView } from '../../hooks/banners'
 import { HELP_COPY } from '../../hooks/help'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from '../../hooks/layout'
 import type { Button } from './blocks'
 import type { TabCell } from './draw'
 import type { Message } from './screen'
+import { BUTTON_GAP, EDGE_X, SMALL_TEXT, SPINE, colorOf, tint } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 
-/** The pane's top line: the inbox and its agent, the status line, and Help. */
-export function headerEl(agent: string | null, status: string | null, isHelpShown: boolean | null, p: Paint): Element {
+/** A tab's side padding, so its label sits on the spine. */
+const TAB_X = 12
+
+const helpButton = (isHelpShown: boolean): Button => ({
+  id: 'help',
+  label: isHelpShown ? HELP_COPY.close : HELP_COPY.open,
+  emphasis: 'quiet',
+  isOut: false,
+  hotkey: null,
+  does: { is: 'view', change: { toggleHelp: true } },
+})
+
+/**
+ * The tab row: the tabs with their counts, then the status line and Help at its right end. A tab's label sits on the
+ * spine, and only the selected tab's label is bold. Herdr's pane header names the pane, so the look draws no title.
+ */
+export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: boolean, p: Paint): Element {
   const { t } = p
-  const help: Button = {
-    id: 'help',
-    label: isHelpShown ? HELP_COPY.close : HELP_COPY.open,
-    emphasis: 'quiet',
-    isOut: false,
-    hotkey: null,
-    does: { is: 'view', change: { toggleHelp: true } },
-  }
+  const help = helpButton(isHelpShown)
 
   return h_flex()
-    .h(42)
     .flex_none()
-    .px(14)
-    .gap(8)
+    .flex_wrap()
+    .pl(SPINE - TAB_X)
+    .pr(EDGE_X)
+    .pt(12)
+    .gap(4)
     .items_center()
-    .border_b(1)
-    .border_color(t.border)
-    .child(div().font_semibold().child('Inbox'))
-    .when(agent !== null, e =>
-      e.child(
-        div()
-          .text_size(12)
-          .text_color(t.muted)
-          .child(agent ?? ''),
+    .children(
+      tabs.map(tab =>
+        h_flex()
+          .id(`tab ${tab.id}`)
+          .px(TAB_X)
+          .py(6)
+          .items_center()
+          .rounded(6)
+          .accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label)
+          .when(tab.isSelected, e => e.bg(t.raised).text_color(t.foreground).font_semibold())
+          .when(!tab.isSelected, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
+          .on_click((_e, cx) => p.pick(tab.id, cx))
+          .child(tab.label)
+          .when(tab.badge !== null, e =>
+            e.child(
+              div()
+                .ml(6)
+                .font_normal()
+                .text_color(colorOf(t, tab.id === 'overview' ? null : tab.id))
+                .child(tab.badge ?? ''),
+            ),
+          ),
       ),
     )
     .child(div().flex_1())
     .when(status !== null, e =>
       e.child(
         div()
-          .text_size(11)
-          .text_color(t.dim)
+          .px(4)
+          .text_size(SMALL_TEXT)
+          .text_color(t.muted)
           .child(status ?? ''),
       ),
     )
-    .when(isHelpShown !== null, e =>
-      e.child(
-        h_flex()
-          .id('help')
-          .h(26)
-          .px(8)
-          .items_center()
-          .rounded(7)
-          .text_size(12)
-          .text_color(t.muted)
-          .cursor_pointer()
-          .hover(s => s.bg(t.hover))
-          .accessibility_label(help.label)
-          .on_click((_e, cx) => p.press(help, cx))
-          .child(help.label),
-      ),
+    .child(
+      h_flex()
+        .id('help')
+        .text_color(t.muted)
+        .hover(s => s.text_color(t.foreground))
+        .accessibility_label(help.label)
+        .on_click((_e, cx) => p.press(help, cx))
+        .child(help.label),
     )
 }
 
-export function bannerEl(b: BannerView, t: Theme): Element {
-  const color = b.tone === 'error' ? t.ansi1 : b.tone === 'warning' ? t.blocked : t.muted
+/**
+ * A message in a box tinted with the tone of what it says. The buttons that act on its problem draw at its right end,
+ * as the Codex tab's banner draws its key. `under`, such as a press's result, goes below the text and the buttons, so
+ * the buttons stay still when it appears.
+ */
+export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under: Element | null = null): Element {
+  const tone = colorOf(t, b.tone)
+  const text = v_flex()
+    .flex_1()
+    .min_w(0)
+    .whitespace_normal()
+    .child(div().font_semibold().text_color(tone).child(b.lead))
+    .when(b.body !== null, e => e.child(div().child(b.body ?? '')))
+  const row = h_flex()
+    .gap(12)
+    .items_center()
+    .child(text)
+    .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)))
 
   return v_flex()
-    .px(14)
-    .py(8)
-    .border_b(1)
-    .border_color(t.border)
-    .bg(t.raised)
-    .text_size(12)
-    .child(div().font_semibold().text_color(color).child(b.lead))
-    .when(b.body !== null, e =>
-      e.child(
-        div()
-          .whitespace_normal()
-          .text_color(t.muted)
-          .child(b.body ?? ''),
-      ),
-    )
+    .mx(BANNER_X)
+    .mt(BANNER_GAP_PT)
+    .pl(SPINE - BANNER_X - 1)
+    .pr(EDGE_X - BANNER_X - 1)
+    .py(BANNER_PAD_Y_PT)
+    .rounded(10)
+    .border_1()
+    .border_color(tint(tone, 0.3))
+    .bg(tint(tone, 0.09))
+    .child(row)
+    .children(under ? [under] : [])
 }
+
+/** A banner's box starts this far in. Inside its 1 px border, its text starts on the spine and its buttons end on the right edge. */
+const BANNER_X = 12
 
 /** A line under the tabs that says something about the whole session, such as that the host trimmed it. */
 export const sessionNoteEl = (text: string, t: Theme): Element =>
-  div()
-    .px(14)
-    .py(6)
-    .border_b(1)
-    .border_color(t.border)
-    .text_size(12)
-    .whitespace_normal()
-    .text_color(t.muted)
-    .child(text)
+  div().pl(SPINE).pr(EDGE_X).pt(8).whitespace_normal().text_color(t.muted).child(text)
 
-export function tabsEl(tabs: TabCell[], p: Paint): Element {
-  const { t } = p
-
-  return h_flex()
-    .h(40)
-    .flex_none()
-    .px(8)
-    .gap(4)
-    .items_center()
-    .border_b(1)
-    .border_color(t.border)
-    .children(
-      tabs.map(tab =>
-        h_flex()
-          .id(`tab ${tab.id}`)
-          .h(28)
-          .px(10)
-          .gap(6)
-          .items_center()
-          .rounded(7)
-          .cursor_pointer()
-          .accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label)
-          .when(tab.isSelected, e => e.bg(t.selected).font_semibold())
-          .when(!tab.isSelected, e => e.text_color(t.muted).hover(s => s.bg(t.hover)))
-          .on_click((_e, cx) => p.pick(tab.id, cx))
-          .child(tab.label)
-          .when(tab.badge !== null, e =>
-            e.child(
-              div()
-                .text_size(11)
-                .text_color(t.blocked)
-                .child(tab.badge ?? ''),
-            ),
-          ),
-      ),
-    )
-}
-
+/** What the look shows in place of an inbox, centred in the pane as the Codex tab's empty page. */
 export function messageEl(m: Message, t: Theme): Element {
   return v_flex()
-    .p(16)
+    .flex_1()
+    .justify_center()
+    .items_center()
+    .p(32)
     .gap(4)
     .child(
       div()
         .font_semibold()
+        .text_center()
         .text_color(m.isError ? t.ansi1 : t.foreground)
         .child(m.title),
     )
@@ -150,6 +142,7 @@ export function messageEl(m: Message, t: Theme): Element {
       e.child(
         div()
           .whitespace_normal()
+          .text_center()
           .text_color(t.muted)
           .child(m.hint ?? ''),
       ),
