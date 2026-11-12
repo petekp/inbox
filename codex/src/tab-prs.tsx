@@ -140,7 +140,7 @@ function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
   return (
     <section class="pr-order">
       <div class="pr-order-changed pr-refresh-line">
-        {refresh.text ? <span>{refresh.text}</span> : null}
+        {refresh.text ? <span class="pr-refresh-text">{refresh.text}</span> : null}
         {keys.length > 0 ? (
           <span class="pr-actions keys">
             {keys.map(k => (
