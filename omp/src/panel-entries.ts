@@ -8,6 +8,7 @@ import {
   checkRowText,
   RANK_AGAIN_ID,
   PR_REFRESH_ID,
+  CLEAR_FINISHED_ID,
   prCheckId,
   isBlockPressShown,
   prBlockRows,
@@ -131,6 +132,18 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const ghNotice = ghNoticeOf(ghState)
   if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
   if (prs.refresh) out.push(...refreshEntries(screen, prs.refresh, now))
+  const clearButtons = prButtons(prs.clear)
+  if (clearButtons.length > 0)
+    out.push({
+      kind: 'row',
+      line: {
+        ...blankLine(CLEAR_FINISHED_ID),
+        lead: null,
+        buttons: clearButtons,
+        isWaiting: false,
+        isTabButtons: true,
+      },
+    })
   if (prs.order) out.push(...orderEntries(screen, prs.order, now))
   for (const d of prs.drawn) {
     const { pr, state } = d
@@ -302,8 +315,9 @@ function pageEntries(page: StatusPage, typing: string | null, isUnfolded: (id: s
       : []
   const top = [...goalSection(page, typing, isUnfolded), ...(head.length > 0 ? [blank, ...head] : [])]
   const rows = unfoldedRows(page.rows, isUnfolded).map((row): Entry => ({ kind: 'page', row }))
+  const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== 'part'
 
-  return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows]
+  return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows]
 }
 
 /** Help in place of the tab's lines: the keys the panel takes, what each mark means, then each tab's symbol. */

@@ -99,6 +99,7 @@ const LIGHT_ANSI_PALETTE: Palette = {
   line: 'userMessageBackground',
   divider: 'userMessageBackground',
   tone: {},
+  // Red, magenta, blue, green and red: the theme's yellow and cyan fall under 3:1 on bright white.
   mark: { needsYou: 'error', issue: 'error', findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
   banner: THEME_KEY_BANNERS,
 }
@@ -152,7 +153,7 @@ const DESKTOP_PALETTE: Palette = {
   line: 'subtle',
   divider: 'rgba(128, 128, 128, 0.25)',
   tone: { error: 'error' },
-  mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
+  mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
   banner: {
     error: { line: 'rgba(214, 69, 80, 0.32)', fill: 'rgba(214, 69, 80, 0.1)' },
     warning: { line: 'rgba(212, 160, 23, 0.36)', fill: 'rgba(212, 160, 23, 0.1)' },

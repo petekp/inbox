@@ -205,6 +205,23 @@ test('a fetch that finds a ranked PR merged settles its block as Merged under th
   expect(withFetchedPrs(kept, mergedView, null, false, at + 1).ledger.prOrder?.dismissed).toEqual([])
 })
 
+test('a new order that ranks a PR a fetch settled or the person dismissed keeps it off the tab, and a PR kept with Undo shows again', () => {
+  const at = 1_000_000
+  const ordered = orderedAndFetched(linkedSession([1, 2]), [40, 1], at)
+  const mergedView = { 'acme/app#40': { ...openPr(40), state: 'MERGED' as const } }
+  const merged = withFetchedPrs(ordered, mergedView, null, false, at)
+  const dismissed = pressed(merged, { action: 'pr-dismiss', ref: 'acme/app#2' }, at)!
+  const order = { repo: 'acme/app', numbers: [40, 2, 1], label: 'Review in this order', why: 'Smallest first.' }
+  const reorder = (x: Session) => recorded(CLAUDE_CODE, x, 'order_prs', order, at)
+
+  const reordered = reorder(dismissed)
+  expect(reordered.state.ledger.prOrder?.dismissed).toEqual(['acme/app#40', 'acme/app#2'])
+  expect(drawnNumbers(reordered.state, at)).toEqual([1])
+
+  const kept = pressed(reordered.state, { action: 'pr-undo', ref: 'acme/app#40' }, at)!
+  expect(drawnNumbers(reorder(kept).state, at)).toEqual([1, 40])
+})
+
 test('an order reads as changed once a ranked open PR is newly blocked, gains a waiting thread or failing check, or becomes ready, and Rank again asks the agent to rank its open PRs again until a new order replaces it', () => {
   const base = emptySession()
   const refs = [1, 2, 3, 4].map(n => `acme/app#${n}`)

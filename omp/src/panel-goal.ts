@@ -14,8 +14,8 @@ import { cellWidth } from '../../hooks/text'
 
 /**
  * A part of the goal's section on the Status page: its heading row with the goal's buttons, the goal's text with its
- * was, Now and awaiting lines, a blank line before a milestone or its rows, a milestone, or on the empty page New or its
- * field.
+ * was, Now and awaiting lines, a blank line before a milestone or its rows, a milestone, or on the empty page New or
+ * its field.
  */
 export type GoalPart =
   | { is: 'heading'; text: string; page: StatusPage | null }
@@ -131,7 +131,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   if (part.is === 'milestone') {
     const m = part.row
     const mark = paintMark({ ...m, isRunning: false }, now, s)
-    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, m.isChanged ? s.bold : t => t, { stall: m.stall, text: m.text })
+    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, t => t, { stall: m.stall, text: m.text })
     if (m.was) out.push(...indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim))
 
     return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]

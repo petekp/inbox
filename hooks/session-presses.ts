@@ -132,8 +132,16 @@ export function recorded<S extends Session>(
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt }
   const r = toolAnswer(host, s.ledger, tool, args, now, presses)
   const ledger = withOrderStatuses(r.ledger, s.prViews.views)
+  const state = linkDialogs({ ...s, ledger }, now)
+  const answered = ledger.items.find(i => !state.ledger.items.some(o => o.id === i.id))
+  if (!answered) return { state, result: r.result, personLine: r.personLine }
+  const outcome = state.ledger.closed.findLast(c => c.id === answered.id)?.outcome ?? ''
 
-  return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine }
+  return {
+    state,
+    result: `Not shown as open: the user already answered this in your dialog (${outcome}), so it closed with that answer.`,
+    personLine: `Closed: ${answered.ask}`,
+  }
 }
 
 /** `s` with the rows a look holds in place and the start of its showing, which `pruned` keeps the records of. */
@@ -186,7 +194,10 @@ export function withFetchedPrs<S extends Session>(
 ): S {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
   const views = { ...s.prViews.views, ...fetched }
-  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, { now, turnsStarted: s.presence.turnsStarted })
+  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, branchRef, {
+    now,
+    turnsStarted: s.presence.turnsStarted,
+  })
   const stillUnread = Object.fromEntries(Object.entries(unread).filter(([ref]) => !(ref in views)))
 
   return {

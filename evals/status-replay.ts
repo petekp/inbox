@@ -58,6 +58,8 @@ export type Step = {
   time?: number
   /** Host events, run at `at` before the call. */
   events?: HostEvent[]
+  /** Host events, run at `at` after the Status call reads the session and before its answer applies. */
+  eventsDuringCall?: HostEvent[]
   call?: StepCall
   facts?: FactsChange
   /** The judge reads the page after this step. */
@@ -124,6 +126,8 @@ export type StepResult = {
   calls: CallLog[]
   /** The Status call wrote nothing at this step. */
   isStatusFailed: boolean
+  /** When the goal the step's Status call read was set, or null when it read none or the step ran no call. */
+  readSetAt: number | null
 }
 
 /** When every replay starts. A fixed time, so a replay's prompts are the same from run to run. */
@@ -198,14 +202,18 @@ async function timed(
   return { ...answer, text, log }
 }
 
-/** Runs the Status call on `read`, and applies its answer or saves that it wrote nothing, as a host does. */
+/**
+ * Runs the Status call on `read`, and applies its answer or saves that it wrote nothing, as a host does. `during` is
+ * what changed the session while the call ran: the answer applies to the session it left.
+ */
 async function statusCall(
   deps: ReplayDeps,
   s: Session,
   read: StatusExchange,
   tasks: HostTask[],
   now: number,
-): Promise<{ session: Session; log: CallLog; isFailed: boolean }> {
+  during: (s: Session) => Session,
+): Promise<{ session: Session; log: CallLog; isFailed: boolean; readSetAt: number | null }> {
   const input: StatusCallInput = { last: s.ledger.overview, asks: s.ledger.items, tasks, now }
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
@@ -227,12 +235,14 @@ async function statusCall(
   }
   const answer = last.text === null ? null : parseStatus(last.text)
   const turns = s.presence.turnsApplied
+  const current = during(s)
+  const readSetAt = input.last?.goal?.setAt ?? null
   const session =
     answer === null
-      ? failedStatus(s, last.text, turns, now)
-      : appliedStatus(s, answer, turns, now, input.last?.goal?.setAt ?? null)
+      ? failedStatus(current, last.text, turns, now)
+      : appliedStatus(current, answer, turns, now, readSetAt)
 
-  return { session, log, isFailed: answer === null }
+  return { session, log, isFailed: answer === null, readSetAt }
 }
 
 function exchangeOf(call: Extract<StepCall, { kind: 'reply' }>, agent: Agent, turn: number): Exchange {
@@ -273,8 +283,10 @@ async function runStep(
 ): Promise<StepResult> {
   const now = step.time ?? minutes(step.at)
   let session = (step.events ?? []).reduce((x, e) => withEvent(x, e, now), s)
+  const during = (x: Session) => (step.eventsDuringCall ?? []).reduce((y, e) => withEvent(y, e, now), x)
   const calls: CallLog[] = []
   let isStatusFailed = false
+  let readSetAt: number | null = null
   const call = step.call
   if (call?.kind === 'reply') {
     const turn = session.ledger.turn + 1
@@ -298,8 +310,8 @@ async function runStep(
       const fixed = call.answer
       const statusDeps =
         fixed === undefined ? deps : { ...deps, ask: async () => ({ text: fixed, model: 'fixed answer' }) }
-      const r = await statusCall(statusDeps, session, { kind: 'reply', exchange: ex }, ex.tasks, now)
-      ;({ session, isFailed: isStatusFailed } = r)
+      const r = await statusCall(statusDeps, session, { kind: 'reply', exchange: ex }, ex.tasks, now, during)
+      ;({ session, isFailed: isStatusFailed, readSetAt } = r)
       calls.push(r.log)
     }
   } else if (call?.kind === 'mid-turn') {
@@ -308,22 +320,22 @@ async function runStep(
       presence: { ...session.presence, isTurnRunning: true, turnStartedAt: minutes(call.turnStartedAt) },
     }
     const turn = { person: call.person, trigger: null, activity: call.activity }
-    const r = await statusCall(deps, session, { kind: 'mid-turn', turn }, call.tasks ?? [], now)
-    ;({ session, isFailed: isStatusFailed } = r)
+    const r = await statusCall(deps, session, { kind: 'mid-turn', turn }, call.tasks ?? [], now, during)
+    ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   } else if (call?.kind === 'catch-up') {
     session = {
       ...session,
       presence: { ...session.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt: now },
     }
-    const r = await statusCall(deps, session, { kind: 'catch-up', conversation: call.conversation }, [], now)
-    ;({ session, isFailed: isStatusFailed } = r)
+    const r = await statusCall(deps, session, { kind: 'catch-up', conversation: call.conversation }, [], now, during)
+    ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   } else if (call?.kind === 'recorded') {
     const isTurnRunning = call.read.kind === 'mid-turn'
     session = { ...session, presence: { ...session.presence, isTurnRunning, lastReplyAt: isTurnRunning ? null : now } }
-    const r = await statusCall(deps, session, call.read, call.tasks, now)
-    ;({ session, isFailed: isStatusFailed } = r)
+    const r = await statusCall(deps, session, call.read, call.tasks, now, during)
+    ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   }
   const page = statusPage(session, now)
@@ -338,6 +350,7 @@ async function runStep(
     facts: factsAfter(facts, step.facts),
     calls,
     isStatusFailed,
+    readSetAt,
   }
 }
 

@@ -28,7 +28,7 @@ import type { BannerView } from '../../hooks/banners'
 import { isMaybeStale } from '../../hooks/band'
 import { isFailure, rowFeedbackText } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
-import { FINDING_GROUPS } from '../../hooks/help'
+import { FINDING_GROUPS, HELD_MARK } from '../../hooks/help'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
@@ -79,11 +79,13 @@ export type LookScreen = {
   isGhMissing: boolean
 }
 
+const HOLDS_UP_MARK: Mark = { text: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false }
+
 const toneOfFeedback = (f: Feedback): Tone =>
   isFailure(f) ? 'error' : f.is === 'done' || (f.is === 'local' && f.result.state === 'done') ? 'done' : 'muted'
 
 const markOf = (m: ResultMark | null): Mark | null =>
-  m ? { text: m.text, tone: m.isRunning ? 'running' : (m.tone ?? 'muted'), isRunning: m.isRunning } : null
+  m ? { text: m.text, tone: m.tone ?? 'muted', isRunning: m.isRunning } : null
 
 /** What a row's press does. A Local step lists its opens and copies, which the look runs itself. */
 function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string): Does {
@@ -124,15 +126,16 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
 }
 
 function rowBody(row: RowView, isAllShown: boolean, isNextBuild: boolean): RowBlock['body'] {
-  const lines: { text: string | null; tone: Tone }[] = [
+  const lines: { text: string | null; tone: Tone; mark?: Mark }[] = [
+    { text: row.contextLine, tone: 'muted' },
     { text: row.detail, tone: null },
-    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: 'dim' },
+    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: 'muted' },
     ...shownOptionDescriptions(row, isAllShown).map(o => ({ text: `${o.label}: ${o.description}`, tone: null })),
     { text: row.recLine, tone: 'muted' },
-    { text: isNextBuild ? row.holdsUpLine : null, tone: 'needsYou' },
+    { text: isNextBuild ? row.holdsUpLine : null, tone: 'muted', mark: HOLDS_UP_MARK },
   ]
 
-  return lines.flatMap(l => (l.text ? [{ text: l.text, tone: l.tone }] : []))
+  return lines.flatMap(l => (l.text ? [{ ...l, text: l.text }] : []))
 }
 
 function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: LookScreen): RowBlock {
@@ -206,10 +209,12 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
     {
       kind: 'heading',
       id: `group ${g.kind}`,
+      depth: 0,
       text: g.title,
       count: count > 0 ? count : null,
       mark: g.mark,
       buttons: [],
+      isLabel: false,
     },
     ...g.rows.map(r => rowBlock(r, ui, selected, screen)),
   ]
@@ -218,7 +223,9 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
       kind: 'note',
       id: `empty ${g.kind}`,
       text: groupEmptyText(g.title),
-      tone: 'dim',
+      count: null,
+      tone: 'muted',
+      isHead: false,
       isStrong: false,
       depth: 0,
     })
@@ -273,14 +280,14 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
   const isEmpty = groups.every(g => g.rows.length === 0 && g.closed.length === 0)
   if (isEmpty) {
     const empty = emptyText(tab, screen.agent, isMaybeStale(screen.view))
-    return [
-      { kind: 'note', id: 'empty title', text: empty.title, tone: null, isStrong: true, depth: 0 },
-      { kind: 'note', id: 'empty hint', text: empty.hint, tone: 'muted', isStrong: false, depth: 0 },
-    ]
+    return [{ kind: 'empty', id: `empty ${tab}`, title: empty.title, hint: empty.hint, buttons: [] }]
   }
   const selected = selectedOf(groups, ui.selected)
 
-  return groups.flatMap(g => groupBlocks(g, ui, selected, screen))
+  return groups.flatMap((g, n): Block[] => [
+    ...(n > 0 ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null } as const] : []),
+    ...groupBlocks(g, ui, selected, screen),
+  ])
 }
 
 export type TabCell = { id: ShownTab; label: string; badge: string | null; isSelected: boolean }

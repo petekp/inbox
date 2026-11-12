@@ -112,6 +112,7 @@ export type PrView = {
     isGhSignedOut: boolean
     failure: PrFetchFailure | null
     refresh: { text: string | null; actions: { label: string }[]; showsPress: boolean } | null
+    clear: { label: string }[]
     order: {
       title: string
       why: string | null

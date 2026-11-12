@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Mounted } from 'claude-code/testing'
-import { STATUS_TEXT_LINES, LOOK_DASH, LOOK_TEXT } from '../hooks/status-page'
+import { STATUS_TEXT_LINES } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
@@ -75,7 +75,7 @@ test('on the Status in the terminal, the rows under a subject hang from its mark
   expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be · waiting'])
 })
 
-test('on the Status, a rule sets each item apart in the docked terminal and on desktop, and the inline pane draws none', async ($, on) => {
+test('on the Status, while the goal shows milestones, work linked to none of them draws under Other work, and the desktop hairline between the goal and that list draws no line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -85,69 +85,29 @@ test('on the Status, a rule sets each item apart in the docked terminal and on d
     'NEW: working | Help text | being written',
     'NEW: working | Loud flag | parsing done',
     'NEW: queued | Docs | after help',
+    'GOAL: Greeting CLI ships | working Help ready; queued Docs written',
+    'SERVES: s1 | m1',
   ].join('\n')
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
-  const ruledAbove = async (pane: Pick<Mounted, 'findAll'>) =>
-    (await pane.findAll({ type: 'Box' })).flatMap(b =>
-      b.key?.startsWith('status-rule-') ? [b.key.slice('status-rule-'.length)] : [],
-    )
   const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
   await docked.press({ key: 'tab-key-overview' })
   await clock.settle()
-  const ruled = await ruledAbove(docked)
-  expect(ruled).toHaveLength(2)
+  expect(await docked.find({ key: 'status-other' })).toBeDefined()
   await docked.unmount()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  expect(await ruledAbove(desktop)).toEqual(ruled)
+  expect(await desktop.find({ key: 'rule-1' })).toBeDefined()
+  expect((await desktop.find({ key: 'rule-1' }))?.props.backgroundColor).toBeUndefined()
   await desktop.unmount()
 
   const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 90 } })
   await inline.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(await inline.find({ key: 'status-s1' })).toBeDefined()
-  expect(await ruledAbove(inline)).toEqual([])
-})
-
-test('on the Status, the look line is a dashed rule, unlike the solid rules between items, with a blank line above and below it in the terminal and space above and below it on desktop', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-  w.files = ['/.next-build']
-  expect(LOOK_DASH).not.toBe('─')
-
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'inbox', args: 'demo' } as never)
-  const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
-  await docked.press({ key: 'tab-key-overview' })
-  await clock.settle()
-  const gaps = async (pane: Pick<Mounted, 'findAll'>) =>
-    (await pane.findAll({ type: 'Box' })).flatMap(b =>
-      b.key === 'look-above' || b.key === 'look-below' ? [[b.key, b.props.height]] : [],
-    )
-  expect(await gaps(docked)).toEqual([
-    ['look-above', 1],
-    ['look-below', 1],
-  ])
-  const [left, right] = (await docked.find({ key: 'status-look' }))!.text.trim().split(` ${LOOK_TEXT} `)
-  expect(left).toMatch(new RegExp(`^${LOOK_DASH}+$`))
-  expect(right).toMatch(new RegExp(`^${LOOK_DASH}+$`))
-  await docked.unmount()
-
-  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
-  await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
-  await clock.settle()
-  const [above, below] = (await gaps(desktop)).map(([, height]) => height as number)
-  expect(above).toBeGreaterThan(0)
-  expect(above).toBeLessThan(1)
-  expect(below).toBe(above)
-  const keys = (await desktop.findAll({ type: 'Box' })).map(b => b.key ?? '')
-  const dashes = keys.filter(k => /^dash-\d+$/.test(k)).length
-  expect(dashes).toBeGreaterThan(4)
-  expect(keys.filter(k => k.startsWith('dash-gap-')).length).toBe(dashes - 2)
+  expect(await inline.find({ key: 'status-s2' })).toBeDefined()
 })

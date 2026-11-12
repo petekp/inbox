@@ -153,6 +153,16 @@
 .row.selected .line .rec-line {
   white-space: normal;
 }
+/* Drawn while the row is open and while it closes, so collapse() measures the closed line without it. */
+.line .context-line {
+  display: none;
+  color: var(--muted);
+  font-weight: 400;
+}
+.row.selected .line .context-line,
+.row.closing .line .context-line {
+  display: block;
+}
 .row.closing .closed-only,
 .row.collapsed:not(.closing) .open-only {
   display: none;

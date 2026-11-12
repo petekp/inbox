@@ -19,7 +19,6 @@ type Screen =
   | { is: 'message'; message: Message }
   | {
       is: 'inbox'
-      agent: string
       view: SessionView
       tabs: TabCell[]
       banners: BannerView[]
@@ -101,7 +100,6 @@ export function screenOf(
 
   return {
     is: 'inbox',
-    agent: screen.agent,
     view,
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),

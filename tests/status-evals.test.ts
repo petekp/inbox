@@ -125,6 +125,14 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     ),
     breaks: 'marks-true',
   },
+  'goal-typed-while-running': {
+    at: 0,
+    answer: GOOD_RUNS['goal-typed-while-running']![0]!.replace(
+      'NEW: working | Notes widget',
+      'NEW: queued | Notes widget',
+    ),
+    breaks: 'marks-true',
+  },
   'goal-awaiting-milestones': {
     at: 0,
     answer: 'DONE: s3 | merged\nSET: s4 | working | wider layout in',
@@ -155,7 +163,28 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: GOOD_RUNS['goal-outcome-dropped']![4]!.replace(/\nRETIRE: [^\n]*/, ''),
     breaks: 'goal-left',
   },
+  'next-release': {
+    at: 0,
+    answer: `${GOOD_RUNS['next-release']![0]!.replace(/^RETIRE: [^\n]*\n/, '')}\nSERVES: Share extension | -`,
+    breaks: 'goal-left',
+  },
 }
+
+test('goal-left also fails work newly linked to a left goal that reads met, and passes a link that was there before', () => {
+  const scene = baseScene()
+  SCENES['goal-left']!.bad(scene)
+  scene.after.goal = { ...scene.after.goal!, metAt: minutes(10) }
+  scene.after.milestones = scene.after.milestones.map(m => ({ ...m, status: 'done' as const }))
+  scene.after.serves = { ...scene.after.serves, s2: scene.after.milestones[0]!.id }
+  scene.before = { ...scene.before, serves: { s1: scene.after.serves.s1! } }
+
+  expect(failuresOf('goal-left', () => undefined)).toEqual([])
+  expect(gradeStep(contextOf(scene)).find(r => r.rule === 'goal-left')!.failures).toEqual([
+    `"Sync conflicts: not started" is newly linked to the left goal "${scene.after.goal.text}"`,
+  ])
+  scene.before = { ...scene.before, serves: scene.after.serves }
+  expect(gradeStep(contextOf(scene)).find(r => r.rule === 'goal-left')!.failures).toEqual([])
+})
 
 test('a good run of each replay passes every rule that is built, at every step', async () => {
   expect(Object.keys(GOOD_RUNS).sort()).toEqual(REPLAYS.map(r => r.name).sort())
@@ -329,6 +358,25 @@ test('the head is a title and a one-line description', () => {
   const page = statusPage(sessionOf(statusOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5), minutes(5))
 
   expect(page.head).toEqual({ title: 'Offline sync', description: 'Adding offline sync to the notes app' })
+})
+
+test('other-work-place fails a subject not linked yet that draws above Other work while the goal shows milestones', () => {
+  const withGoal = SCENES['other-work-place']!.good!
+  const unlinked = (s: Scene) => {
+    withGoal(s)
+    delete s.after.serves.s2
+  }
+
+  expect(failuresOf('other-work-place', unlinked)).toEqual([])
+  expect(
+    failuresOf('other-work-place', s => {
+      unlinked(s)
+      s.page = p => {
+        const s2 = p.rows.find(r => r.kind === 'subject' && r.id === 's2')!
+        p.rows = [s2, ...p.rows.filter(r => r !== s2)]
+      }
+    }),
+  ).toEqual(['"Sync conflicts" sits above Other work, and belongs under it'])
 })
 
 test('serves-linked counts a link to a dropped or unknown milestone as no link', () => {
