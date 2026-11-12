@@ -489,11 +489,11 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('agent.spawn', () => ({ model: 'sonnet', agentId: w.spawnedAgentId }))
   on('agent.list', () => ({ value: w.listedAgents as never }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
-  on('ui.press', async (_$, e, next) => {
+  on('ui.press', { plugin: 'inbox' }, async (_$, e, next) => {
     await runBeforeAct()
     return next(e)
   })
-  on('ui.input', async (_$, e, next) => {
+  on('ui.input', { plugin: 'inbox' }, async (_$, e, next) => {
     if (e.kind === 'submit') await runBeforeAct()
     return next(e)
   })
