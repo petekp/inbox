@@ -16,7 +16,7 @@ import {
   REPLY_ROWS,
 } from './pane-sizes'
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
-import { LOOK_GAP_PT } from './layout'
+import { SECTION_GAP_PT } from './layout'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
 import {
@@ -206,8 +206,8 @@ export function paneStatusGoal(
       ])}
     </Box>
   )
-  /** A blank line in the terminal, and on desktop the space Codex leaves there, `LOOK_GAP_PT`. */
-  const milestoneGap = look === 'terminal' ? 1 : LOOK_GAP_PT / DESKTOP_LINE_PT
+  /** A blank line in the terminal, and on desktop the space Codex leaves there, `SECTION_GAP_PT`. */
+  const milestoneGap = look === 'terminal' ? 1 : SECTION_GAP_PT / DESKTOP_LINE_PT
   const gap = (key: string): Drawn => ({ el: <Box key={key} height={milestoneGap} />, lines: exactly(milestoneGap) })
   /** A milestone, then a blank line's space and the work that serves it, one step in. */
   const milestoneLines = (m: MilestoneRow): Drawn[] => [
@@ -215,7 +215,7 @@ export function paneStatusGoal(
       key: `status-${m.id}`,
       mark: markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted),
       content: [
-        statusNameLine(`goal-${m.id}-name`, { text: m.name, ...(m.isChanged ? { bold: true } : {}) }, m.stall, 0),
+        statusNameLine(`goal-${m.id}-name`, { text: m.name }, m.stall, 0),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
         ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),

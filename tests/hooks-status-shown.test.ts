@@ -110,7 +110,7 @@ test('on a next build, a look at the terminal Status counts as seen only the sub
   await clock.settle()
 
   const o = seen as unknown as SessionStatus
-  const inWindow = [0, 1, 8, 9, 10, 11].map(n => o.subjects[n]!.id)
+  const inWindow = [0, 1, 11, 12, 13, 14, 15, 16].map(n => o.subjects[n]!.id)
   expect(o.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
   expect(o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.id)).toEqual(inWindow)
 })

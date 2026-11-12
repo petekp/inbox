@@ -15,7 +15,6 @@ import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { herdrReporter, herdrTarget } from '../../hooks/herdr'
 import type { HerdrTarget } from '../../hooks/herdr'
 import { herdrPanelOpener } from '../../hooks/herdr-open'
-import type { PressFile } from '../../hooks/herdr-press-file'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { recorded } from '../../hooks/session-presses'
@@ -36,7 +35,7 @@ import type { OmpState } from './state'
 import { OMP, TOOL_LABELS } from './texts'
 import { activityHandlers } from './host-activity'
 import { isUnattended, sessionIdOf } from './host-context'
-import type { HostContext, OmpContext } from './host-context'
+import type { HostContext } from './host-context'
 import { herdrLog, ompPresses, startOmpInHerdrApp } from './host-presses'
 import { ompHerdrAsk } from './host-herdr-ask'
 import { panelCalls } from './host-panel'
@@ -274,10 +273,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   const logHerdr = herdrLog(dir)
-  const applyHerdrPress = async (ctx: OmpContext, file: PressFile) => {
-    await inbox.press(ctx, file.press, file.holds, file)
-  }
-
   const context: HostContext = {
     deps,
     dir,
@@ -287,7 +282,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     listeners: new Map(),
     reportToHerdr: herdrReporter(logHerdr),
     logHerdr,
-    presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
+    presses: ompPresses(deps.herdrTarget, (ctx, file) => inbox.herdrFile(ctx, file), logHerdr),
     run,
     memory: {
       isGhMissing: false,

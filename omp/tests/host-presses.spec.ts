@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { isSubjectSeen } from '../../hooks/status-children'
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
 import {
@@ -292,6 +293,36 @@ test('in a Herdr app terminal, a press the look ran itself records its result an
   await record({ kind: 'task', ask: 'Write the notes' })
   await settle()
   expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
+})
+
+test('in a Herdr app terminal, a look file the look wrote counts the Status subjects it showed as seen, and saves no press', async () => {
+  const appHome = join(w.dir, 'herdr-app')
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
+  createInbox(pi(), { ...deps(), herdrTarget: target })
+  await call('session_start', { type: 'session_start' })
+  const sessionFile = join(appHome, 'inbox/sessions/s1.json')
+  for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
+  w.statusReply =
+    'HEAD: Offline sync | Adding offline sync\nNEW: working | Queue | built\nNEW: queued | Docs | not started'
+  await prompt('add offline sync')
+  await endAgent('Queue built.')
+  await settle()
+  const changedAt = state().ledger.overview.subjects[0].changedAt as number
+  const folder = join(appHome, 'inbox/presses/s1')
+  mkdirSync(folder, { recursive: true })
+  const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
+  writeFileSync(join(folder, 'l1.json'), JSON.stringify({ format: 1, id: 'l1', look }))
+
+  for (let waited = 0; existsSync(join(folder, 'l1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await settle()
+
+  const overview = state().ledger.overview
+  expect(
+    overview.subjects
+      .filter((s: { id: string; changedAt: number }) => isSubjectSeen(overview, s))
+      .map((s: { id: string }) => s.id),
+  ).toEqual(['s1'])
+  expect(state().lastHerdrPress).toBeUndefined()
 })
 
 test('a goal the Status call writes is set at once, Remove goal clears it, a typed goal sets the saved goal, and none sends a message', async () => {

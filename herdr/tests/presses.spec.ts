@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { pressFile } from '../../hooks/herdr-press-file'
+import { isLookFile, pressFile } from '../../hooks/herdr-press-file'
 import { prCheckId, prMarkId, prThreadId, splitFollowUps, threadSentIn } from '../../hooks/pr-rows'
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { pendingResult } from '../../hooks/pressed'
@@ -28,7 +28,7 @@ test('a press file the look writes reads as a press in the hosts’ format, with
     holds: { replies: { q1: NOW }, shownSince: NOW },
     result: { error: null },
   })
-  expect(read.ok && 'undoShown' in read.file.holds).toBe(false)
+  expect(read.ok && !isLookFile(read.file) && 'undoShown' in read.file.holds).toBe(false)
   const sent = pressFile(pressFileText('p2', NOW, { action: 'pr-refresh' }, NO_HOLDS))
   expect(sent.ok && 'result' in sent.file).toBe(false)
 })

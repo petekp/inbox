@@ -91,6 +91,7 @@ export function prRefreshFailedText(error: string): string {
 /** The row ids of the tab's own presses. Each starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
 export const RANK_AGAIN_ID = 'pr:order'
 export const PR_REFRESH_ID = 'pr:refresh'
+export const CLEAR_FINISHED_ID = 'pr:finished'
 
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks', cancelled: 'Cancelled checks' }
 

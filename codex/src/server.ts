@@ -8,7 +8,7 @@ import { statusChanged } from '../../hooks/session-status'
 import { recorded, withHolds } from '../../hooks/session-presses'
 import { drawnTabOf } from '../../hooks/tabs'
 import type { RowNote } from '../../types'
-import type { PressFile } from '../../hooks/herdr-press-file'
+import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import type { HooksTrust } from './hook-trust'
@@ -66,7 +66,7 @@ export type ServerDeps = {
   /** Reports each state the server writes to the Herdr app terminal Codex runs in. */
   onWrite?: OnWrite
   /** Starts applying the presses the Herdr look writes, with `apply`. */
-  followHerdrPresses?: (apply: (sessionId: string, file: PressFile) => Promise<void>) => void
+  followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<void>) => void
   /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
   herdrAsk?: CodexHerdrAsk
 }
@@ -95,16 +95,14 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
   const catchUpOnOpen = makeCatchUpOnOpen(deps)
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
-  const { wakeAfterSettle, fetchPrsWhenDue, served, onPress } = makeSessionHost(
+  const { wakeAfterSettle, fetchPrsWhenDue, served, onPress, onHerdrFile } = makeSessionHost(
     deps,
     newestTurns,
     hooksTrustNow,
     currentPage,
   )
   const { demoOf, onDemoPress } = makeDemo(deps, served)
-  deps.followHerdrPresses?.(async (id, file) => {
-    await onPress(id, file.press, id, file.holds, file)
-  })
+  deps.followHerdrPresses?.(onHerdrFile)
 
   const isHerdrCheckDue = herdrCheckGate()
 

@@ -65,9 +65,6 @@ export const DESKTOP_HAIR_LINES = 1 / DESKTOP_LINE_PT
 export const DESKTOP_TREE_AT = 0.73
 /** The room the tree's arm leaves before a child's mark on desktop, in cells. */
 export const DESKTOP_ARM_GAP = 0.4
-/** A dash of a dashed line on desktop, and the room between two, in points. */
-export const DESKTOP_DASH_PT = 3
-export const DESKTOP_DASH_GAP_PT = 3
 export const STATUS_PAD_Y = STATUS_ROW_PAD_PT / DESKTOP_LINE_PT
 /** How far a row frame's transparent border insets its content on each side, in points, measured on app 3.6556.2. */
 export const FRAME_INSET_PT = 17.6

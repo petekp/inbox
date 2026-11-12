@@ -138,3 +138,52 @@ test('an order_prs call ranks the PRs it names without linking them, the next vi
     ],
   )
 })
+
+test('Clear merged and closed unlinks the merged and closed PRs and settles each block with its own Undo', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const runner = fakeRunner(() => ({ code: -1, stdout: '', stderr: '' }))
+  const handle = makeServer({
+    dir,
+    now: () => 100,
+    exec: runner.exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    comparePage: '/plugin/dist/compare-page.html',
+  })
+  const d = demoView(100, 'Codex')
+  const [merged, closed] = d.ledger.prs.filter(r => r !== d.prViews.branchRef)
+  const finished: Record<string, string> = { [merged!]: 'MERGED', [closed!]: 'CLOSED' }
+  const views = Object.fromEntries(
+    Object.entries(d.prViews.views).map(([ref, v]) => [ref, finished[ref] ? { ...v, state: finished[ref] } : v]),
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: d.ledger.prs },
+    prViews: { ...d.prViews, views } as typeof d.prViews,
+  }))
+  const r = (await handle({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: {
+      name: 'inbox_press',
+      arguments: { press: { action: 'pr-clear-finished' }, thread: 's1', shownSince: 0 },
+      _meta: { thread_id: 's1' },
+    },
+  })) as PrReply
+  const states = r.result.structuredContent.view.prs.drawn.map(x => [
+    x.pr.ref,
+    x.state.is,
+    x.state.is === 'settled' ? x.state.canUndo : null,
+  ])
+  assert.deepEqual(
+    states.filter(([ref]) => ref === merged || ref === closed),
+    [
+      [merged, 'settled', true],
+      [closed, 'settled', true],
+    ],
+  )
+  assert.deepEqual(r.result.structuredContent.view.prs.clear, [])
+  assert.deepEqual((await readState(dir, 's1')).ledger.prs, [d.prViews.branchRef])
+})

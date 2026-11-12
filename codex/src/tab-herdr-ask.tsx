@@ -36,12 +36,12 @@ export function HerdrAskBanner({ v }: { v: View }) {
   return (
     <Banner
       banner={banner}
-      actions={
+      keys={
         asked
           ? HERDR_ASK_BUTTONS.map(a => ({
               label: a.label,
-              isPrimary: a.isYes,
-              press: () => void answerHerdrAsk(asked, a.isYes),
+              emphasis: a.isYes ? 'primary' : 'normal',
+              run: () => void answerHerdrAsk(asked, a.isYes),
             }))
           : []
       }

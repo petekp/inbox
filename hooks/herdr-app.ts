@@ -2,10 +2,11 @@ import type { Session } from '../types'
 import type { ClientId } from './clients'
 import { herdrEnvelope, pressFolder, publishedSessionPath } from './herdr'
 import type { EnvelopeSource } from './herdr'
-import { pressFile } from './herdr-press-file'
-import type { PressFile } from './herdr-press-file'
+import { fileTime, isLookFile, pressFile } from './herdr-press-file'
+import type { HerdrFile } from './herdr-press-file'
 import { press } from './host-press'
 import type { PressHost, PressOutcome } from './host-press'
+import { lookReportedOn } from './session-status'
 import { rowsInPlace } from './session-presses'
 import { clipLabel } from './text'
 
@@ -163,10 +164,10 @@ export async function unpublishSession(
 }
 
 /**
- * Applies one press for `sessionId`. False leaves its file for later, as when the host no longer runs that session.
- * A rejection is logged, and the file is removed as for an applied press.
+ * Applies one press file for `sessionId`: a press, or a look at the Status. False leaves the file for later, as when the
+ * host no longer runs that session. A rejection is logged, and the file is removed as for an applied press.
  */
-export type ApplyPress = (sessionId: string, file: PressFile) => Promise<boolean>
+export type ApplyPress = (sessionId: string, file: HerdrFile) => Promise<boolean>
 
 /** The most characters of a name or reason from a press file that a log line holds. */
 const LOGGED_CHARS = 100
@@ -175,7 +176,7 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 const logged = (text: string) => clipLabel(text, LOGGED_CHARS)
 
 /**
- * Returns a drain: it applies each press file waiting for a session, oldest press first, and removes the file. It
+ * Returns a drain: it applies each press file waiting for a session, oldest first by `fileTime`, and removes the file. It
  * reads a folder only when `owns` says this process runs the session there. It takes each file first by moving it to a
  * name only this process uses and no list keeps, so of two processes draining one folder only one applies a press. A
  * file `pressFile` refuses or that cannot be read is logged and removed. One drain of a folder runs at a time, and a
@@ -193,7 +194,7 @@ export function pressDrainer(
   const drainOnce = async (folder: string, sessionId: string) => {
     const names = [...(await files.list(folder).catch(() => []))].filter(name => name.endsWith('.json')).sort()
     if (names.length === 0 || !(await owns(sessionId).catch(() => false))) return
-    const waiting: { path: string; taken: string; file: PressFile }[] = []
+    const waiting: { path: string; taken: string; file: HerdrFile }[] = []
     for (const name of names) {
       const path = `${folder}/${name}`
       const taken = `${path}${takenMark}`
@@ -214,7 +215,7 @@ export function pressDrainer(
         await files.remove(taken).catch(() => undefined)
       }
     }
-    for (const { path, taken, file } of waiting.sort((a, b) => a.file.pressedAt - b.file.pressedAt)) {
+    for (const { path, taken, file } of waiting.sort((a, b) => fileTime(a.file) - fileTime(b.file))) {
       const isTaken = await apply(sessionId, file).catch((err: unknown) => {
         log(`Herdr press ${logged(file.id)} failed: ${message(err)}`)
         return true
@@ -279,12 +280,27 @@ export function followPresses(
   }
 }
 
+/** What a look file's report comes to as a press outcome: nothing to show, copy or wait for. */
+const LOOK_OUTCOME: PressOutcome = {
+  copy: null,
+  error: null,
+  note: null,
+  isUnconfirmed: false,
+  isRowFailed: false,
+  wakesAfterSettle: false,
+}
+
 /**
- * Applies a press the Herdr look wrote, then saves it as the session's `lastHerdrPress`, so the next publish tells the
- * look the outcome even when the press changed nothing. When the look ran the press's opens and copies, `perform`
- * answers with their result instead of running them again.
+ * Applies a file the Herdr look wrote. A look at the Status counts as `lookReportedOn` counts it. A press is applied,
+ * then saved as the session's `lastHerdrPress`, so the next publish tells the look the outcome even when the press
+ * changed nothing. When the look ran the press's opens and copies, `perform` answers with their result instead of
+ * running them again.
  */
-export async function applyLookPress<S extends Session>(host: PressHost<S>, file: PressFile): Promise<PressOutcome> {
+export async function applyHerdrFile<S extends Session>(host: PressHost<S>, file: HerdrFile): Promise<PressOutcome> {
+  if (isLookFile(file)) {
+    await host.update(s => lookReportedOn(s, file.look))
+    return LOOK_OUTCOME
+  }
   const { result } = file
   const outcome = await press(
     result ? { ...host, perform: async () => result.error } : host,

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { pressFile } from '../../hooks/herdr-press-file'
+import { isLookFile, pressFile } from '../../hooks/herdr-press-file'
 import { NO_HOLDS } from '../../hooks/timing'
 import type { LocalResult } from '../../types'
 import { GIVE_UP_MS } from '../src/out'
@@ -63,7 +63,7 @@ test('a press shows its own opens’ result at once, then writes its file with i
   const [out] = queue.outs
   expect(out?.result?.state).toBe('done')
   const file = pressFile([...files.values()][0]!)
-  expect(file.ok && file.file.result).toEqual({ error: null })
+  expect(file.ok && !isLookFile(file.file) && file.file.result).toEqual({ error: null })
   expect(woken).toEqual([['t9', out!.pressId]])
   await queue.settle(view, null, AGENT)
   expect(queue.outs).toEqual([out!])

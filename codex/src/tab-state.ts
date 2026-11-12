@@ -44,6 +44,8 @@ export type Row = {
   holdsUp?: string
   /** Why the agent recommends an answer, as "Why Redis: it survives restarts". */
   recLine?: string
+  /** Why the agent asked, which the row draws first under its title while it is open. */
+  context?: string
   age?: string
   body?: JSX.Element | null
   keys: Key[]

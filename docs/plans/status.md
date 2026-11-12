@@ -11,7 +11,7 @@ The Status is the inbox's first tab on a next build. It is about the session's w
 - **Which pieces wait on me?**
 - **What moved since I last looked?**
 
-The page is one list of subjects. A subject is one piece of the work, such as a feature, a fix or a release. Each row shows a status mark, a short name and a few words on where the work stands. A Seen line marks where the person last looked. Every row above it changed since then. On each side of the line, rows run from what needs the person to what is finished. Within each status, the newest change comes first. The inbox model adds, updates and closes subjects. Code owns every time, the order, the Seen line, the folds and the rows of running work.
+The page is one list of subjects. A subject is one piece of the work, such as a feature, a fix or a release. Each row shows a status mark, a short name and a few words on where the work stands. Rows run from what needs the person to what is finished. Within each status, the newest change comes first. The inbox model adds, updates and closes subjects. Code owns every time, the order, the folds and the rows of running work.
 
 All four looks draw the same page from one shared view: the Claude Code terminal, the Claude desktop app's pane, the Codex tab and the omp panel. `docs/looks.md` says where they differ.
 
@@ -26,14 +26,14 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
 
 ## Terms
 
-From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Seen line, Look, Host and Catch-up. The new terms:
+From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Last look, Look, Host and Catch-up. The new terms:
 
 - **Status call:** the inbox model call after the ledger call. It reads the open subjects and the new exchange, and answers with edits.
 - **Where it stands:** the few words on the line under a subject's name.
 - **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
 - **Link:** the Status call's tie from an open ask or a child to the subject it belongs to.
 - **Fold:** one line that stands for several rows: "○ 2 more", or a done fold, "▸ 3 done", which a press opens to list them.
-- **Last changed:** when a subject's status or meaning last changed. It sets which side of the Seen line a row sits on, and its place among rows of the same status.
+- **Last changed:** when a subject's status or meaning last changed. It sets whether a row changed since the last look, and its place among rows of the same status.
 - **Last checked:** when an Status call last read the work, whatever it answered.
 - **Property:** something true of a good Status that a person can check by reading the page, knowing what happened in the session.
 - **Fact list:** what really happened in an eval case, written by the case's author: each piece of work, its state at each step, the asks and the pieces each holds up, and what is not work.

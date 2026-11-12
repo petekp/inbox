@@ -50,7 +50,7 @@ export function keyMove(key: string, tabs: TabCell[], blocks: Block[], typing: s
     return id ? { is: 'select', id } : null
   }
   const selected = blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelected)
-  const lines = blocks.flatMap(b => (b.kind === 'line' ? b.buttons : []))
+  const lines = blocks.flatMap(b => (b.kind === 'line' || b.kind === 'banner' ? b.buttons : []))
   const pressed = [...(selected?.buttons ?? []), ...lines].find(b => b.hotkey === key && !b.isOut)
 
   return pressed ? { is: 'press', button: pressed } : null
@@ -62,6 +62,13 @@ export const withSelected = (ui: LookUi, id: string): LookUi => ({
   selected: id,
   typing: ui.typing === id ? id : null,
 })
+
+/**
+ * Whether a click in the list gives the keys to the open text field rather than to the look: while the field is open
+ * and drawn, which it is not under Help. GPUI delivers a click to every handler on its path, so a click on the field,
+ * on its box or anywhere else in the list reaches the list's handler.
+ */
+export const isFieldDrawn = (ui: LookUi, isHelpShown: boolean): boolean => ui.typing !== null && !isHelpShown
 
 /** Switching tabs closes the open text field. Its draft is kept. */
 export const withTab = (ui: LookUi, tab: ShownTab): LookUi => ({ ...ui, tab, selected: null, typing: null })

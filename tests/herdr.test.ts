@@ -144,8 +144,10 @@ describe('pressFile', () => {
   test('a press file reads back with its press and holds, and no list use holding a row', () => {
     const read = (file: object) => ({ ok: true, file: { ...file, holds: { ...PRESS.holds, listInput: null } } })
     expect(pressFile(JSON.stringify(PRESS))).toEqual(read(PRESS))
-    const rankAgain = { ...PRESS, press: { action: 'pr-rank-again' } }
-    expect(pressFile(JSON.stringify(rankAgain))).toEqual(read(rankAgain))
+    for (const action of ['pr-rank-again', 'pr-clear-finished']) {
+      const tabPress = { ...PRESS, press: { action } }
+      expect(pressFile(JSON.stringify(tabPress))).toEqual(read(tabPress))
+    }
     for (const error of [null, 'no browser']) {
       const opened = { ...PRESS, result: { error } }
       expect(pressFile(JSON.stringify(opened))).toEqual(read(opened))

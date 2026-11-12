@@ -22,7 +22,7 @@ import { resolveSelected, withTab } from './panel-keys'
 import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 import { drawGoalPart, goalPartId } from './panel-goal'
-import { drawPageRow, pageRule } from './panel-page'
+import { drawPageRow } from './panel-page'
 import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { fit, indented, spread } from './panel-text'
 
@@ -224,7 +224,6 @@ export function drawPanel(
         ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
     else if (e.kind === 'page' || e.kind === 'goal') {
-      if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))
       const start = body.length
       if (e.kind === 'page') subjectAt.push(...seenSubjectIds(e.row).map(id => [id, start] as [string, number]))
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)

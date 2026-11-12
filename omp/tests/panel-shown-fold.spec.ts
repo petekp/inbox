@@ -25,7 +25,7 @@ const closed = (n: number): Subject => ({
 test('the panel reports as shown the work a named fold stands for while the fold is in its window', () => {
   const overview = { ...EMPTY_SESSION_STATUS, subjects: [1, 2, 3, 4, 5].map(closed), lastLookAt: NOW - 30 * MIN }
   const page = statusPage({ ledger: { overview, items: [] }, presence: emptySession().presence }, NOW)
-  expect(page.rows.map(r => r.kind)).toEqual(['subject', 'subject', 'fold', 'look'])
+  expect(page.rows.map(r => r.kind)).toEqual(['subject', 'subject', 'fold'])
   const screen = screenOf()
   const withFold = { ...screen, view: { ...screen.view, statusPage: page } }
 

@@ -152,6 +152,22 @@ for (const isNextBuild of [false, true])
     expect(keys(screen, INITIAL_UI, String(tabs.length + 1)).tab).toBe(INITIAL_UI.tab)
   })
 
+test('a question’s context draws whole and dim, first under its title, on its selected row only', () => {
+  const screen = screenOf()
+  const row = firstQuestion(screen)
+  const other = screen.view.needsYou.questions.find(r => r.state.is === 'open' && r.id !== row.id)!
+  const context = row.contextLine!
+  const flat = (ui: PanelUi) => text(screen, ui, 50).replace(/\s+/g, ' ')
+  const shown = flat(onRow(row))
+  const at = shown.indexOf(context)
+
+  expect(at).toBeGreaterThan(shown.indexOf('Dismiss a glance'))
+  expect(at).toBeLessThan(shown.indexOf(`Why ${row.item!.rec}`))
+  const firstWords = context.split(' ').slice(0, 3).join(' ')
+  expect(drawn(screen, onRow(row), 50).find(l => strip(l).trim().startsWith(firstWords))).toContain(`${ESC}2m`)
+  expect(flat(onRow(other))).not.toContain(firstWords)
+})
+
 for (const isNextBuild of [false, true])
   test(`on a ${isNextBuild ? 'next' : 'release'} build, an Asks row ${isNextBuild ? 'names' : 'leaves out'} the open subject it holds up`, () => {
     const shown = text(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: 'needsYou' })

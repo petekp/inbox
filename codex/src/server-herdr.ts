@@ -9,7 +9,7 @@ import { answerHerdrAsk, herdrAskInApp } from '../../hooks/herdr-ask'
 import type { ModFiles } from '../../hooks/herdr-install'
 import { startInHerdrApp } from '../../hooks/herdr-start'
 import type { SweepFiles } from '../../hooks/herdr-sweep'
-import type { PressFile } from '../../hooks/herdr-press-file'
+import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
 import type { PressFiles } from '../../hooks/herdr-app'
 import { isSessionFile } from '../../hooks/session-files'
@@ -91,7 +91,7 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  */
 export function followCodexPresses(
   env: NodeJS.ProcessEnv,
-  apply: (sessionId: string, file: PressFile) => Promise<void>,
+  apply: (sessionId: string, file: HerdrFile) => Promise<void>,
   log: (text: string) => void,
 ): (() => void) | null {
   const target = herdrTarget(env)

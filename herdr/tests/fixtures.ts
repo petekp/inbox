@@ -26,3 +26,13 @@ export function demoScreen(isNextBuild = true): LookScreen {
 }
 
 export const uiOn = (tab: ShownTab, changes: Partial<LookUi> = {}): LookUi => ({ ...freshUi(tab), ...changes })
+
+export function finishedScreen(states: Record<string, 'MERGED' | 'CLOSED'>): LookScreen {
+  const s = demoSession(NOW, AGENT)
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).map(([ref, v]) => [ref, states[ref] ? { ...v, state: states[ref] } : v]),
+  )
+  const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
+
+  return { ...demoScreen(), view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, holds) }
+}
