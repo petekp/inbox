@@ -11,6 +11,7 @@ export function helpBlocks(isNextBuild: boolean, tab: ShownTab, hasStatusButtons
   const heading = (id: string, text: string): Block => ({
     kind: 'heading',
     id,
+    depth: 0,
     text,
     count: null,
     mark: null,

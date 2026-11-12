@@ -144,8 +144,8 @@ function settledPr(d: DrawnPr & { state: { is: 'settled' } }): RowBlock {
     id,
     depth: 0,
     mark: { text: mark.text, tone: mark.tone ?? 'muted', isRunning: mark.isRunning },
-    title: `#${pr.number} ${pr.title}`,
-    age: null,
+    title: pr.title,
+    age: `#${pr.number}`,
     feedback: null,
     settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: 'muted' },
     isDim: true,
@@ -177,6 +177,7 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
           {
             kind: 'heading',
             id: `${pr.ref} ${key}`,
+            depth: 1,
             text: title,
             count: rows.length,
             mark: null,
@@ -207,7 +208,6 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
     ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, 'threads'),
     ...rowsOf(PR_GROUP_TITLES.checks, groups.checks, 'checks'),
     ...rowsOf(PR_GROUP_TITLES.cancelled, groups.cancelled, 'cancelled'),
-    { kind: 'gap', id: `gap ${pr.ref}` },
   ]
 }
 
@@ -266,6 +266,16 @@ function orderLines(screen: LookScreen): Block[] {
   return [...lines, { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }]
 }
 
+/** The rule that separates two PRs, from the spine, in the middle of a section's space. */
+const ruleBetween = (ref: string): Block => ({
+  kind: 'rule',
+  id: `rule ${ref}`,
+  text: null,
+  isDashed: false,
+  depth: 0,
+  isBetweenGroups: true,
+})
+
 /** The first row the PRs tab can open, which it opens while the person has opened none of its rows. */
 function firstSelectable(blocks: Block[]): string | null {
   return blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelectable)?.id ?? null
@@ -288,8 +298,8 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   const draw = (open: string | null) => [
     ...noticeBlocks(screen, notice),
     ...orderLines(screen),
-    ...prs.drawn.flatMap(d => prBlocks(screen, d, presses, open)),
-    ...(prs.olderText ? [note('older prs', prs.olderText, 'muted')] : []),
+    ...prs.drawn.flatMap((d, n) => [...(n > 0 ? [ruleBetween(d.pr.ref)] : []), ...prBlocks(screen, d, presses, open)]),
+    ...(prs.olderText ? [ruleBetween('older prs'), note('older prs', prs.olderText, 'muted')] : []),
   ]
   const blocks = draw(selected)
   const isShown = blocks.some(b => b.kind === 'row' && b.isSelected)

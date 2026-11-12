@@ -41,7 +41,7 @@ import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
 import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
-import { LINE, TEXT } from './paint-theme'
+import { EDGE_X, END_SPACE, LINE, MEASURE_MAX, NARROW_PANE, SPINE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PRESS_LABEL } from './press-file'
 import { PressQueue, claimedPath } from './press-queue'
@@ -112,6 +112,7 @@ export default class Inbox extends View {
   shownSince = Date.now()
   isNextBuild = false
   isHelpShown = false
+  isNarrow = false
   drafts: Record<string, Draft> = {}
   input: { rowId: string; state: InputState } | null = null
   discarded: Record<string, number> = {}
@@ -370,6 +371,7 @@ export default class Inbox extends View {
       },
       motion: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
+      isNarrow: this.isNarrow,
     }
     const root = v_flex()
       .id('inbox')
@@ -379,6 +381,12 @@ export default class Inbox extends View {
       .text_color(t.foreground)
       .text_size(TEXT)
       .line_height(LINE)
+      .on_size_change((size, cx) => {
+        const isNarrow = size.width < NARROW_PANE
+        if (isNarrow === this.isNarrow) return
+        this.isNarrow = isNarrow
+        cx.notify()
+      })
     if (screen.is === 'message') return root.child(messageEl(screen.message, t))
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks
@@ -410,11 +418,16 @@ export default class Inbox extends View {
               .inset_0()
               .overflow_y_scroll()
               .pt(8)
-              .pb(4)
+              .pb(END_SPACE)
               .on_click((_e, _cx) => {
                 if (doesListClickTakeKeys(this.ui)) this.focus?.focus()
               })
-              .children(moved.blocks.map(b => blockEl(b, paint))),
+              .child(
+                v_flex()
+                  .w_full()
+                  .max_w(SPINE + MEASURE_MAX + EDGE_X)
+                  .children(moved.blocks.map(b => blockEl(b, paint))),
+              ),
           )
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )

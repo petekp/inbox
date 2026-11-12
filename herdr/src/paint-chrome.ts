@@ -7,8 +7,11 @@ import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from '../../hooks/layout'
 import type { Button } from './blocks'
 import type { TabCell } from './draw'
 import type { Message } from './screen'
-import { EDGE_X, SMALL_TEXT, colorOf, tint } from './paint-theme'
+import { BUTTON_GAP, EDGE_X, SMALL_TEXT, SPINE, colorOf, tint } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
+
+/** A tab's side padding, so its label sits on the spine. */
+const TAB_X = 12
 
 const helpButton = (isHelpShown: boolean): Button => ({
   id: 'help',
@@ -20,8 +23,8 @@ const helpButton = (isHelpShown: boolean): Button => ({
 })
 
 /**
- * The tab row: the tabs with their counts, then the status line and Help at its right end. Herdr's pane header names
- * the pane, so the look draws no title of its own.
+ * The tab row: the tabs with their counts, then the status line and Help at its right end. A tab's label sits on the
+ * spine, and only the selected tab's label is bold. Herdr's pane header names the pane, so the look draws no title.
  */
 export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: boolean, p: Paint): Element {
   const { t } = p
@@ -30,7 +33,8 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
   return h_flex()
     .flex_none()
     .flex_wrap()
-    .px(12)
+    .pl(SPINE - TAB_X)
+    .pr(EDGE_X)
     .pt(12)
     .gap(4)
     .items_center()
@@ -38,7 +42,7 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
       tabs.map(tab =>
         h_flex()
           .id(`tab ${tab.id}`)
-          .px(12)
+          .px(TAB_X)
           .py(6)
           .items_center()
           .rounded(6)
@@ -51,7 +55,7 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
             e.child(
               div()
                 .ml(6)
-                .font_semibold()
+                .font_normal()
                 .text_color(colorOf(t, tab.id === 'overview' ? null : tab.id))
                 .child(tab.badge ?? ''),
             ),
@@ -71,10 +75,8 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
     .child(
       h_flex()
         .id('help')
-        .px(6)
-        .rounded(5)
         .text_color(t.muted)
-        .hover(s => s.bg(t.hover).text_color(t.foreground))
+        .hover(s => s.text_color(t.foreground))
         .accessibility_label(help.label)
         .on_click((_e, cx) => p.press(help, cx))
         .child(help.label),
@@ -96,9 +98,9 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
     .children(under ? [under] : [])
 
   return h_flex()
-    .mx(12)
+    .mx(BANNER_X)
     .mt(BANNER_GAP_PT)
-    .px(12)
+    .px(SPINE - BANNER_X - 1)
     .py(BANNER_PAD_Y_PT)
     .gap(12)
     .items_center()
@@ -107,17 +109,15 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
     .border_color(tint(tone, 0.3))
     .bg(tint(tone, 0.09))
     .child(text)
-    .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(6).children(buttons)))
+    .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)))
 }
+
+/** A banner's box starts this far in, so its text, inside its 1 px border, sits on the spine. */
+const BANNER_X = 12
 
 /** A line under the tabs that says something about the whole session, such as that the host trimmed it. */
 export const sessionNoteEl = (text: string, t: Theme): Element =>
-  div()
-    .px(EDGE_X + 2)
-    .pt(10)
-    .whitespace_normal()
-    .text_color(t.muted)
-    .child(text)
+  div().pl(SPINE).pr(EDGE_X).pt(8).whitespace_normal().text_color(t.muted).child(text)
 
 /** What the look shows in place of an inbox, centred in the pane as the Codex tab's empty page. */
 export function messageEl(m: Message, t: Theme): Element {

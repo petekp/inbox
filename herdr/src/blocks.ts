@@ -61,7 +61,7 @@ export type Field = { rowId: string; buttons: Button[] }
 export type RowBlock = {
   kind: 'row'
   id: string
-  /** One step in, for a Closed list's lines. */
+  /** One step in, for a Closed list's lines and the rows under a PR. */
   depth: 0 | 1
   mark: Mark | null
   title: string
@@ -122,10 +122,14 @@ export type LineBlock = {
 }
 
 export type Block =
-  /** A group's title with its count, or with `isLabel` a quiet label over a part, such as the goal's, ruled to its buttons. */
+  /**
+   * A group's title with its count, or with `isLabel` a quiet label over a part, such as the goal's, ruled to its
+   * buttons. `depth` 1 nests it under a PR.
+   */
   | {
       kind: 'heading'
       id: string
+      depth: 0 | 1
       text: string
       count: number | null
       mark: Mark | null

@@ -53,19 +53,41 @@ export const tint = (c: Color, share: number): Color =>
     .padStart(2, '0')}` as Color
 
 /**
- * The look's text sizes and line heights, as the Codex tab's: text, the status line, and the Status page's head. gpui
- * reads a bare number given to `line_height` as a multiplier, so the line heights are px strings.
+ * The look's text sizes and line heights: one text size, and the Status page's head. gpui reads a bare number given to
+ * `line_height` as a multiplier, so the line heights are px strings.
  */
 export const TEXT = 13
 export const LINE = '20px'
 export const SMALL_TEXT = 12
 export const HEAD_TEXT = 15
-export const HEAD_LINE = '22px'
+export const HEAD_LINE = '24px'
 
-/** Where a row's mark column starts and its text starts, and the space at the right edge, as in the Codex tab. */
-export const MARK_X = 18
-export const TEXT_X = 44
-export const EDGE_X = 14
+/**
+ * The one left edge every title, line and button row starts on, on every tab. The tab labels and a banner's text sit
+ * on it too. Marks hang in the column before it, and a nested row steps in by `NEST`.
+ */
+export const SPINE = 24
+export const MARK_W = 16
+export const MARK_X = SPINE - MARK_W
+export const NEST = 20
+export const EDGE_X = 16
+
+/** The widest the list's text column grows, so a line on a wide pane stays readable, about 75 characters. */
+export const MEASURE_MAX = 480
+/** Under this pane width, a PR's number moves from the end of its title line to the start of its status line. */
+export const NARROW_PANE = 280
+
+/** The space between two sections, and under the list's last row, so the last line never meets the pane's edge. */
+export const SECTION_GAP = 32
+export const END_SPACE = SECTION_GAP
+
+/** A button's height, the space between two buttons, and a pill's side padding. */
+export const BUTTON_H = 24
+export const BUTTON_GAP = 12
+export const PILL_X = 12
+
+/** The separator between a status and its reasons, and between a heading and its count. */
+export const SEP = ' · '
 
 /** What a paint needs besides the blocks: the theme, the look's handlers, each row's move, and the open field. */
 export type Paint = {
@@ -75,4 +97,6 @@ export type Paint = {
   pick: (tab: ShownTab, cx: Context) => void
   motion: ReadonlyMap<string, RowMotion>
   input: (rowId: string) => InputState | null
+  /** Whether the pane is under `NARROW_PANE` wide. */
+  isNarrow: boolean
 }
