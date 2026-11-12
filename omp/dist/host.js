@@ -2980,7 +2980,10 @@ function tabLegend(isNextBuild) {
   return shownTabs(isNextBuild).map((t) => ({ keys: t.symbol, does: t.label }));
 }
 var UNDO_KEY = "u";
-var PR_TAB_HELP_KEYS = [{ keys: "g", does: "Rank the PRs again, once a ranked PR changed" }];
+var PR_TAB_HELP_KEYS = [
+  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
+  { keys: "m", does: "Clear the merged and closed PRs" }
+];
 function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
@@ -4183,7 +4186,7 @@ function feedbackText(f, look) {
 // ../hooks/pr-press.ts
 var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 function isPrPress(p) {
-  return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh";
+  return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh" || p.action === "pr-clear-finished";
 }
 function commentEffect(pr, t) {
   return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
@@ -4227,6 +4230,8 @@ function prRowId(p) {
     return RANK_AGAIN_ID;
   if (p.action === "pr-refresh")
     return PR_REFRESH_ID;
+  if (p.action === "pr-clear-finished")
+    return CLEAR_FINISHED_ID;
   if ("check" in p)
     return checkRowId(p.ref, p.check);
   if ("thread" in p)
@@ -4389,6 +4394,7 @@ function prRefreshFailedText(error) {
 }
 var RANK_AGAIN_ID = "pr:order";
 var PR_REFRESH_ID = "pr:refresh";
+var CLEAR_FINISHED_ID = "pr:finished";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks", cancelled: "Cancelled checks" };
 function prBlockRows(pr, isSettled, rowOf) {
   const threads = isSettled ? [] : waitingThreads(pr).map(rowOf.thread);
@@ -5369,6 +5375,26 @@ function withUndismissed(ledger, ref, wasLinked) {
     prOrder: order && isDismissedFromOrder ? { ...order, dismissed: order.dismissed.filter((r) => r !== ref) } : order
   };
 }
+function finishedTabPrs(prState, links) {
+  return splitLinked(prState, links).tracked.filter((ref) => {
+    const view = prState.views[ref];
+    return view !== undefined && view.state !== "OPEN" && ref !== prState.branchRef;
+  });
+}
+function prClearActions(prState, links) {
+  if (finishedTabPrs(prState, links).length === 0)
+    return [];
+  return [
+    {
+      press: { action: "pr-clear-finished" },
+      label: "Clear merged and closed",
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ];
+}
 function withFinishedPrsSettled(s, fetched, ctx) {
   const finished = Object.values(fetched).filter((pr) => pr.state !== "OPEN" && s.prViews.views[pr.ref]?.state === "OPEN" && pr.ref !== s.prViews.branchRef && tabPrs(s.ledger).includes(pr.ref));
   if (finished.length === 0)
@@ -5417,6 +5443,16 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
     const result = pendingResult(effects, ctx.now, ctx.localPressId);
     const last = localLast(lastActions[PR_REFRESH_ID], { action: p.action, text: PR_REFRESH_LABEL }, result);
     return applied({ lasts: { [PR_REFRESH_ID]: last }, effects });
+  }
+  if (p.action === "pr-clear-finished") {
+    const refs = finishedTabPrs(prState, ledger);
+    if (refs.length === 0)
+      return stale;
+    const lasts = refs.map((ref) => {
+      const id = prMarkId(ref);
+      return [id, dismissPress(ledger, ref, ctx, lastActions[id])];
+    });
+    return applied({ ledger: withDismissed(ledger, refs), lasts: Object.fromEntries(lasts) });
   }
   const pr = prState.views[p.ref];
   const markId = prMarkId(p.ref);
@@ -6359,6 +6395,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
     isGhSignedOut: s.prViews.isGhSignedOut === true,
     failure: s.prViews.failure ?? null,
     refresh: prRefreshView({ ...s.prViews, isGhMissing: s.prViews.isGhMissing === true }, s.ledger, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
+    clear: prClearActions(s.prViews, s.ledger),
     pressOutSince
   };
 }
@@ -7090,6 +7127,18 @@ function prEntries(screen, ui, now) {
     out.push({ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) });
   if (prs.refresh)
     out.push(...refreshEntries(screen, prs.refresh, now));
+  const clearButtons = prButtons(prs.clear);
+  if (clearButtons.length > 0)
+    out.push({
+      kind: "row",
+      line: {
+        ...blankLine(CLEAR_FINISHED_ID),
+        lead: null,
+        buttons: clearButtons,
+        isWaiting: false,
+        isTabButtons: true
+      }
+    });
   if (prs.order)
     out.push(...orderEntries(screen, prs.order, now));
   for (const d of prs.drawn) {
@@ -8596,6 +8645,7 @@ var CLIENTS = {
       "status-call-records": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
       "pr-check-rerun": { kind: "full" },
       "pr-fetch-notice": { kind: "full" },
       "help-page": {
@@ -8715,6 +8765,7 @@ var CLIENTS = {
       "status-call-records": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
       "pr-check-rerun": { kind: "full" },
       "pr-fetch-notice": { kind: "full" },
       "help-page": { kind: "full" },
@@ -8807,6 +8858,7 @@ var CLIENTS = {
       "status-call-records": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
       "pr-check-rerun": { kind: "full" },
       "pr-fetch-notice": { kind: "full" },
       "help-page": {
@@ -10579,7 +10631,8 @@ var PRESS_TARGETS = {
   "check-rerun": "ref",
   log: "ref",
   "pr-rank-again": null,
-  "pr-refresh": null
+  "pr-refresh": null,
+  "pr-clear-finished": null
 };
 var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");

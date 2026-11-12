@@ -2269,6 +2269,27 @@ function prOrderActions(row) {
   ]);
 }
 
+// ../hooks/pr-tab.ts
+function finishedTabPrs(prState, links) {
+  return splitLinked(prState, links).tracked.filter((ref) => {
+    const view = prState.views[ref];
+    return view !== void 0 && view.state !== "OPEN" && ref !== prState.branchRef;
+  });
+}
+function prClearActions(prState, links) {
+  if (finishedTabPrs(prState, links).length === 0) return [];
+  return [
+    {
+      press: { action: "pr-clear-finished" },
+      label: "Clear merged and closed",
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ];
+}
+
 // ../hooks/tools.ts
 var ORDER_SCHEMA = {
   type: "object",
@@ -2687,6 +2708,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
+    clear: prClearActions(s.prViews, s.ledger),
     pressOutSince
   };
 }

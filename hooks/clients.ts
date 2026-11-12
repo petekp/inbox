@@ -56,6 +56,7 @@ export type FeatureId =
   | 'status-call-records'
   | 'pr-order'
   | 'pr-rank-again'
+  | 'clear-merged-and-closed-prs'
   | 'pr-check-rerun'
   | 'pr-fetch-notice'
   | 'help-page'
@@ -134,6 +135,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-call-records': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'clear-merged-and-closed-prs': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
       'pr-fetch-notice': { kind: 'full' },
       'help-page': {
@@ -269,6 +271,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-call-records': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'clear-merged-and-closed-prs': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
       'pr-fetch-notice': { kind: 'full' },
       'help-page': { kind: 'full' },
@@ -369,6 +372,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-call-records': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'clear-merged-and-closed-prs': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
       'pr-fetch-notice': { kind: 'full' },
       'help-page': {

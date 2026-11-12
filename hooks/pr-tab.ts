@@ -9,7 +9,8 @@ import type { PressState } from './feedback'
 import { prCheckId, prMarkId, PR_REFRESH_ID, prThreadId, RANK_AGAIN_ID, threadRowId, threadSentIn } from './pr-rows'
 import { PR_REFRESH_LABEL } from './pr-refresh'
 import { isTracked, PR_CLOSED_LABEL, PR_DISMISSED_LABEL, PR_MERGED_LABEL } from './pr-views'
-import { tabPrs } from './pr-fetch'
+import { splitLinked, tabPrs } from './pr-fetch'
+import type { PrLinks } from './pr-fetch'
 import { changedRankedPrs, RANK_AGAIN_LABEL } from './pr-order'
 import {
   again,
@@ -214,6 +215,37 @@ function withUndismissed(ledger: Ledger, ref: string, wasLinked: boolean): Ledge
 }
 
 /**
+ * The tab's merged and closed PRs that Dismiss takes: those it draws as open blocks, but the branch's own, which has
+ * no Dismiss.
+ */
+function finishedTabPrs(prState: PrViews, links: PrLinks): string[] {
+  return splitLinked(prState, links).tracked.filter(ref => {
+    const view = prState.views[ref]
+
+    return view !== undefined && view.state !== 'OPEN' && ref !== prState.branchRef
+  })
+}
+
+/**
+ * The button at the top of the PRs tab, under the notices and Refresh PRs, while the tab draws a merged or closed PR
+ * it can dismiss. Its press dismisses each as the PR's own Dismiss does, so each settles with its own Undo.
+ */
+export function prClearActions(prState: PrViews, links: PrLinks): PrAction[] {
+  if (finishedTabPrs(prState, links).length === 0) return []
+
+  return [
+    {
+      press: { action: 'pr-clear-finished' },
+      label: 'Clear merged and closed',
+      kind: 'mark',
+      emphasis: 'normal',
+      hotkey: 'm',
+      isOut: false,
+    },
+  ]
+}
+
+/**
  * The session after a fetch: each tab PR the fetch first finds merged or closed leaves the tab as Dismiss would take
  * it, so its block settles with "Merged" or "Closed" and offers Undo, which keeps it on the tab. Nothing waits on the
  * person for a finished PR. The branch's own PR stays, since the tab shows it while the branch has it.
@@ -251,7 +283,8 @@ export function withFinishedPrsSettled(
  * Pure. Stale when the PR
  * is no longer tracked or drawn, its thread or check is gone, or what the
  * press acts on is over: the PR no longer conflicts, or no thread waits on the
- * person. Undo is stale unless the PR's block still holds its Dismiss and `withUndismissed` brings it back.
+ * person. Undo is stale unless the PR's block still holds its Dismiss and `withUndismissed` brings it back. Clear
+ * merged and closed is stale when no PR it dismisses is left.
  */
 export function applyPrPress(
   ledger: Ledger,
@@ -295,6 +328,15 @@ export function applyPrPress(
     const last = localLast(lastActions[PR_REFRESH_ID], { action: p.action, text: PR_REFRESH_LABEL }, result)
 
     return applied({ lasts: { [PR_REFRESH_ID]: last }, effects })
+  }
+  if (p.action === 'pr-clear-finished') {
+    const refs = finishedTabPrs(prState, ledger)
+    if (refs.length === 0) return stale
+    const lasts = refs.map(ref => {
+      const id = prMarkId(ref)
+      return [id, dismissPress(ledger, ref, ctx, lastActions[id])] as const
+    })
+    return applied({ ledger: withDismissed(ledger, refs), lasts: Object.fromEntries(lasts) })
   }
   const pr = prState.views[p.ref]
   const markId = prMarkId(p.ref)

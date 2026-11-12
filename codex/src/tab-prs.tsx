@@ -4,6 +4,7 @@ import type { SettledState } from '../../hooks/rows'
 import { prBlockActions } from '../../hooks/pr-tab'
 import {
   RANK_AGAIN_ID,
+  CLEAR_FINISHED_ID,
   PR_REFRESH_ID,
   ghNoticeOf,
   PR_GROUP_TITLES,
@@ -29,9 +30,14 @@ import type { PrRefreshView } from '../../hooks/pr-refresh'
 import { ListRow } from './tab-list'
 import { pressLine } from './tab-pr-lines'
 import type { PressLine } from './tab-pr-lines'
-import { PR_GROUPS, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
+import { PR_CLEAR_MOTION, PR_GROUPS, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
 import type { DrawnPrBlock, DrawnPrs, PrGroup } from './tab-pr-steps'
 import type { RowTrack } from '../../hooks/row-motion'
+
+/** Clear merged and closed, on its line under Refresh PRs. */
+export function prClearKeys(v: View): Key[] {
+  return v.prs.clear.map(a => tabKey(CLEAR_FINISHED_ID, a))
+}
 
 /** The order's changed line's buttons: Rank again. */
 export function prOrderKeys(v: View): Key[] {
@@ -293,6 +299,17 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
         </div>
       ) : null}
       {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
+      {prs.clear ? (
+        <section class="pr-entry" data-motion={PR_CLEAR_MOTION}>
+          <div class="pr-entry-content" inert={v.prs.clear.length === 0}>
+            <div class="pr-actions keys">
+              {prs.clear.map(a => (
+                <KeyButton k={tabKey(CLEAR_FINISHED_ID, a)} />
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
       {prs.blocks.map(b => (
         <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />

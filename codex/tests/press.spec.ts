@@ -38,6 +38,40 @@ test('a fetch that finds tab PRs merged settles each but the branch’s own as M
   assert.deepEqual(undone.ledger.prs, ['acme/visor#31', 'acme/visor#29'])
 })
 
+test('Clear merged and closed dismisses every merged and closed PR but the branch’s own, each with its own Undo, and is stale once none is left', () => {
+  const d = demoView(100, 'Codex')
+  const views = d.prViews.views
+  const open = { ...views['acme/visor#33']!, ref: 'acme/visor#35', number: 35 }
+  const prViews = {
+    ...d.prViews,
+    views: {
+      'acme/visor#31': { ...views['acme/visor#31']!, state: 'MERGED' as const },
+      'acme/visor#29': { ...views['acme/visor#29']!, state: 'MERGED' as const },
+      'acme/visor#33': { ...views['acme/visor#33']!, state: 'CLOSED' as const },
+      [open.ref]: open,
+    },
+  }
+  const ledger = { ...d.ledger, prs: [...d.ledger.prs, open.ref] }
+  const ctx = { now: 200, turnsStarted: 0 }
+
+  const r = applyPrPress(ledger, prViews, {}, { action: 'pr-clear-finished' }, ctx)
+  assert.ok(!('stale' in r))
+  assert.deepEqual(r.ledger.prs, ['acme/visor#31', 'acme/visor#35'])
+  assert.deepEqual(
+    Object.entries(r.lasts).map(([id, l]) => [id, l.kind, l.action, l.text]),
+    [
+      ['pr:acme/visor#29', 'mark', 'pr-dismiss', 'Dismissed'],
+      ['pr:acme/visor#33', 'mark', 'pr-dismiss', 'Dismissed'],
+    ],
+  )
+  assert.deepEqual(r.effects, [])
+
+  const undone = applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-undo', ref: 'acme/visor#33' }, ctx)
+  assert.ok(!('stale' in undone))
+  assert.deepEqual(undone.ledger.prs, ['acme/visor#31', 'acme/visor#35', 'acme/visor#33'])
+  assert.deepEqual(applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-clear-finished' }, ctx), { stale: true })
+})
+
 test('Fix hands a finding off and settles it as the choice made, each press with no ✓ until its message arrives, then lists it in the Closed fold though an applied turn leaves it open; File issue folds it until the reply, which leaves it Still open or closes it with the issue; Discuss keeps it open; a close moves it to Closed', () => {
   const w = withItems()
   const s = {

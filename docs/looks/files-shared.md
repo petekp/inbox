@@ -76,7 +76,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/text.ts` | Shared module. Clipping, code-block formatting, relative ages and a turn's reply. |
 | `hooks/prs.ts` | Shared module. PR parsing, readiness and prompts. |
 | `hooks/pr-checks.ts` | Shared module. Which checks fail, which were cancelled, the GitHub Actions run a check belongs to, the failing check that cancelled another, and `blockingChecks`, the checks that wait on the person. |
-| `hooks/pr-tab.ts` | Shared module. What each PR press does, in `applyPrPress`, and the PR button plans: `threadActions`, `checkActions` and `prBlockActions`. `withFinishedPrsSettled` settles a tab PR that a fetch first finds merged or closed. |
+| `hooks/pr-tab.ts` | Shared module. What each PR press does, in `applyPrPress`, and the PR button plans: `threadActions`, `checkActions`, `prBlockActions`, and `prClearActions` for Clear merged and closed. `withFinishedPrsSettled` settles a tab PR that a fetch first finds merged or closed. |
 | `hooks/pr-fetch.ts` | Shared module. Which linked PRs the tab tracks, the line that names the older ones it leaves out, the Open PR help step for any linked PR, and `fetchTracked`, which reads the tracked PRs through a host's gh runner in one query, skips merged and lately read ones, and names the cause when a whole fetch fails. |
 | `hooks/pr-rows.ts` | Shared module. PR row ids, each PR row's mark, title and meta line, which PR rows wait on the person, the gh notices, the PRs tab's empty text, and the tone of each PR status. |
 | `hooks/pr-views.ts` | Shared module. The PR blocks a look draws and their order, which PR views a session keeps, and whether the person dismissed a PR. |

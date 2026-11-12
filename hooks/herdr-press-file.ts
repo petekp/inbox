@@ -48,6 +48,7 @@ const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref'
   log: 'ref',
   'pr-rank-again': null,
   'pr-refresh': null,
+  'pr-clear-finished': null,
 }
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)

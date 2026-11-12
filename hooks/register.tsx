@@ -74,7 +74,7 @@ import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
-import { openPrViews } from './pr-views'
+import { openPrViews, prUndoBlockAfter } from './pr-views'
 import { prBlockRows, threadSentIn } from './pr-rows'
 import { prRefs, prNeedsYou } from './prs'
 import { EMPTY, isBlankLedger } from './ledger'
@@ -1806,8 +1806,8 @@ async function undoKeyAfterPress(
   if (surface !== 'terminal' || !paneState.isInlineTerminalPane) return null
   const { view } = await drawnState($)
   if (isPrPress(p)) {
-    if (p.action !== 'pr-dismiss') return null
-    return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
+    const block = prUndoBlockAfter(view.prs.drawn, p)
+    return block ? `undo-${block}` : null
   }
   const row = allRows(view).find(r => r.id === p.id)
   return row?.state.is === 'settled' && row.actions.some(a => a.press.action === 'undo')
@@ -3155,6 +3155,7 @@ export const register: Register = on => {
     }))
     const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
     const prRefreshKeys = (view.prs.refresh?.actions ?? []).map(a => prKeyAction(a, 'prs'))
+    const prClearKeys = view.prs.clear.map(a => prKeyAction(a, 'prs'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -3415,6 +3416,7 @@ export const register: Register = on => {
       view,
       prOrderKeys,
       prRefreshKeys,
+      prClearKeys,
       prGroups,
       section,
       undoPlace,
@@ -3531,7 +3533,7 @@ export const register: Register = on => {
     const rowKeys = [
       ...statusRowKeys,
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
-      ...(tab === 'prs' && !isHelpShown ? prOrderKeys : []),
+      ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prClearKeys] : []),
       // The goal's Undo takes the undo key on the Status, where no list row closes.
       ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)
         ? []

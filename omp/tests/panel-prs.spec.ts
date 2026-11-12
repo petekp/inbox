@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import {
   GH_MISSING_TEXT,
   GH_SIGNED_OUT_TEXT,
+  CLEAR_FINISHED_ID,
   prCheckId,
   prMarkId,
   PR_REFRESH_ID,
@@ -98,6 +99,40 @@ test('a ranked PR that changed since the order draws the changed line with Rank 
   expect(narrow[at]).toContain('g Rank again')
   expect(narrow[at + 1]?.trim()).toBe('Ranking…')
   expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('g')
+})
+
+function withFinished(states: Record<string, 'MERGED' | 'CLOSED'>): PanelScreen {
+  const s = demoState(NOW)
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).map(([ref, v]) => [ref, states[ref] ? { ...v, state: states[ref] } : v]),
+  )
+
+  return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, NO_HOLDS) })
+}
+
+test('Clear merged and closed draws above the PR blocks, and m from any row or Enter on it returns the press', () => {
+  const screen = withFinished({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' })
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  const lines = text(screen, ui).split('\n')
+  const at = lines.findIndex(l => l.includes('m Clear merged and closed'))
+  expect(at).toBeGreaterThan(-1)
+  expect(at).toBeLessThan(lines.findIndex(l => /#(29|31|33) /.test(l)))
+  const onThread = {
+    ...ui,
+    selectedId: screen.view.prs.drawn.flatMap(d => waitingThreads(d.pr).map(t => `${d.pr.ref} thread ${t.id}`))[0]!,
+  }
+  expect(handleKey(screen, onThread, 'm', NOW).press).toEqual({ action: 'pr-clear-finished' })
+  expect(handleKey(screen, { ...ui, selectedId: CLEAR_FINISHED_ID }, 'enter', NOW).press).toEqual({
+    action: 'pr-clear-finished',
+  })
+  expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('m')
+})
+
+test('Clear merged and closed does not show when the only finished PR is the branch’s own', () => {
+  const screen = withFinished({ 'acme/visor#31': 'MERGED' })
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  expect(text(screen, ui)).not.toContain('Clear merged and closed')
+  expect(handleKey(screen, ui, 'm', NOW).press).toBeUndefined()
 })
 
 test('a PR a fetch finds merged settles as ✓ Merged while the PRs tab shows, and u presses its Undo', () => {

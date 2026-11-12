@@ -89,6 +89,95 @@ for (const look of ['terminal', 'desktop'] as const) {
 }
 
 for (const look of ['terminal', 'desktop'] as const) {
+  test(`in the ${look} look, Clear merged and closed draws above the PR blocks while the agent links a merged and a closed PR again, and settles each with its own Undo`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN' }
+    const url = (n: number) => `https://github.com/acme/greet/pull/${n}`
+    w.ghAnswers.push(
+      ...[12, 14, 15].map(n => ({
+        match: (argv: readonly string[]) => argv.includes('view') && argv.includes(String(n)),
+        get stdout() {
+          return JSON.stringify({
+            number: n,
+            title: `Work ${n}`,
+            url: url(n),
+            isDraft: false,
+            state: states[n],
+            baseRefName: 'main',
+            mergeable: 'MERGEABLE',
+            reviewDecision: '',
+            statusCheckRollup: [],
+          })
+        },
+      })),
+      {
+        match: argv => argv.includes('graphql'),
+        stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+      },
+    )
+    const answer = async (text: string, turnId: string) => {
+      await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+      await $.turn.complete({ answer: text, durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+      await clock.settle()
+    }
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    await answer(`Opened ${url(12)}, ${url(14)} and ${url(15)}.`, 't1')
+    await $.command.run({ command: 'inbox', args: '' } as never)
+    await clock.settle()
+    w.paneState = { isShown: true, isFocused: true }
+    const pane =
+      look === 'terminal'
+        ? await $.ui.mount(PANE)
+        : await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+    const show = async (id: string) => {
+      if (look === 'terminal') return pane.press({ key: `tab-${id}` })
+      const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = bar
+        .slice(
+          0,
+          bar.findIndex(t => t.id === id),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+
+      return pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await show('prs')
+    await clock.settle()
+    const linked = () => (JSON.parse(w.stored.get('s:session-1') ?? '{}') as { ledger?: { prs: string[] } }).ledger?.prs
+    const buttonKeys = async () =>
+      (await pane.findAll({ type: 'Button' })).map(b => b.key ?? '').filter(k => !k.endsWith('-key'))
+    expect(await buttonKeys()).not.toContain('clear-finished-prs')
+
+    states[12] = 'MERGED'
+    states[14] = 'CLOSED'
+    await show('needsYou')
+    await show('prs')
+    await clock.settle()
+    expect(linked()).toEqual(['acme/greet#15'])
+    await answer(`${url(12)} merged and ${url(14)} closed.`, 't2')
+    expect(linked()).toEqual(['acme/greet#15', 'acme/greet#12', 'acme/greet#14'])
+    const keys = await buttonKeys()
+    expect(keys.filter(k => k === 'clear-finished-prs')).toHaveLength(1)
+    expect(keys.indexOf('clear-finished-prs')).toBeLessThan(keys.findIndex(k => /-acme\/greet#\d+$/.test(k)))
+
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'clear-finished-prs' })
+    await clock.settle()
+    expect(linked()).toEqual(['acme/greet#15'])
+    expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
+    expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
+    expect(await buttonKeys()).not.toContain('clear-finished-prs')
+    if (look === 'desktop') return
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'undo-pr:acme/greet#12' })
+    await clock.settle()
+    expect(linked()).toEqual(['acme/greet#15', 'acme/greet#12'])
+    expect(await buttonKeys()).toContain('clear-finished-prs')
+  })
+}
+
+for (const look of ['terminal', 'desktop'] as const) {
   test(`in the ${look} look, an order_prs call draws its order's lines and a rank before each ranked PR, ahead of the rest, a changed PR draws Rank again until the agent ranks again, and a merge, a later link, Dismiss, Undo and a clear each redraw it`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])

@@ -7,6 +7,8 @@ import type { DrawnPr } from './pr-views'
 import type { PrOrderView } from './pr-order'
 import { prRefreshView } from './pr-refresh'
 import type { PrRefreshView } from './pr-refresh'
+import { prClearActions } from './pr-tab'
+import type { PrAction } from './pr-press'
 import { prNeedsYou } from './prs'
 import { isPrRowId } from './presses'
 import { feedbackOf, pressUnderWaySince } from './feedback'
@@ -39,6 +41,8 @@ type PrTab = {
   failure: PrFetchFailure | null
   /** The line at the top of the tab while a PR could not be read, with Refresh PRs, or null. `prRefreshView`. */
   refresh: PrRefreshView | null
+  /** Clear merged and closed, drawn under the refresh line and above the order, or none. `prClearActions`. */
+  clear: PrAction[]
   /** When the oldest press still under way on a PR row began, or null. A settled PR block that was in place then waits for it. */
   pressOutSince: number | null
 }
@@ -169,6 +173,7 @@ function prTabOf(
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince,
     ),
+    clear: prClearActions(s.prViews, s.ledger),
     pressOutSince,
   }
 }

@@ -10,6 +10,7 @@ import {
   PR_REFRESH_ID,
   PR_TONES,
   RANK_AGAIN_ID,
+  CLEAR_FINISHED_ID,
   checkRowText,
   ghNoticeOf,
   isBlockPressShown,
@@ -236,6 +237,15 @@ function orderLines(screen: LookScreen): Block[] {
   return [...lines, { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }]
 }
 
+/** Clear merged and closed, on its own line under Refresh PRs. */
+function clearLine(screen: LookScreen): Block[] {
+  const buttons = screen.view.prs.clear.map((a, n) => prButton(null, a, `clear ${n}`))
+
+  return buttons.length === 0
+    ? []
+    : [{ kind: 'line', id: CLEAR_FINISHED_ID, text: null, under: null, buttons, feedback: null }]
+}
+
 /** The first row the PRs tab can open, which it opens while the person has opened none of its rows. */
 function firstSelectable(blocks: Block[]): string | null {
   return blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelectable)?.id ?? null
@@ -259,6 +269,7 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   const draw = (open: string | null) => [
     ...(notice ? [note('gh notice', notice.text, 'warning')] : []),
     ...refreshLine(screen),
+    ...clearLine(screen),
     ...orderLines(screen),
     ...prs.drawn.flatMap(d => prBlocks(screen, d, presses, open)),
     ...(prs.olderText ? [note('older prs', prs.olderText, 'muted')] : []),
