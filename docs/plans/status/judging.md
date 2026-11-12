@@ -102,7 +102,7 @@ The goal adds these:
 - The goal shows met exactly while every milestone that is not dropped is done.
 - A milestone shows ◆ exactly while it is open and an open ask holds it up, itself or through a subject that serves it.
 - Under Other work, an open subject that changed since the person looked, or that an ask holds up, has its own row.
-- A subject not linked yet sits in the main list.
+- While the goal shows milestones, every subject not under one sits under Other work. While it shows none, a subject not linked yet sits above Other work.
 
 ### The judge
 

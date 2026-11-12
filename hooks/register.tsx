@@ -3467,7 +3467,6 @@ export const register: Register = on => {
         drafts,
         now,
         markWidth,
-        desktopHairline,
         markGlyph,
         desktopFrame,
         keyRow,

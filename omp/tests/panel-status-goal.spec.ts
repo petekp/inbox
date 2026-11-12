@@ -115,7 +115,7 @@ test('New is the only button on a page with no goal and no held subject, at the 
   expect(lineAt(lines, 'An outcome to work toward:')).toBeLessThan(lineAt(lines, screen.view.statusPage.head!.title))
 })
 
-test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen open ones fold into a count by mark, with the done ones in a done fold after it', () => {
+test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen open ones fold into a count by mark after the open rows, with the done ones in a done fold at the end', () => {
   const s = demoState(NOW)
   const serves = Object.fromEntries(s.ledger.overview!.subjects.map(x => [x.id, 'none']))
   const screen = screenWith({
@@ -135,10 +135,11 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   expect(rule.length).toBeLessThanOrEqual(60)
   expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting')
   expect(lines.slice(lineAt(lines, '1 waiting') + 1, lineAt(lines, '1 waiting') + 3)).toEqual([
-    `   ${'─'.repeat(56)}`,
-    ' ▸ 2 more done',
+    ' ✓ Fade-out',
+    '   dismissed glances fade',
   ])
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
+  expect(lineAt(lines, '▸ 2 more done')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
 })
 
 test('in a short panel, after Remove its New shows, even from a page scrolled past it', () => {

@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   childActive,
   childEnded,
+  isSubjectSeen,
   lookEnded,
   lookStarted,
   LOOK_MIN_MS,
@@ -123,7 +124,7 @@ test('a working subject with a child at work draws the running mark, and one wit
   expect(rows.filter(r => r.kind === 'subject').map(r => r.isRunning)).toEqual([false, true])
 })
 
-test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, its subject moved above the Seen line, and one Herdr no longer lists leaves', () => {
+test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, its subject unseen, and one Herdr no longer lists leaves', () => {
   let o: SessionStatus | null = {
     ...after(null, 'NEW: working | Export | layout next', 10 * MIN),
     lastLookAt: 20 * MIN,
@@ -157,16 +158,16 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   const finished = delegatesSettled(blocked, herdr('done'), 4 * 60 * MIN)
   expect(page(finished, 4 * 60 * MIN).rows).toMatchObject([
     { kind: 'subject', isRunning: false },
-    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' }, isLast: false },
-    { kind: 'look', isLast: true },
+    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' } },
   ])
+  expect(isSubjectSeen(finished!, finished!.subjects[0]!)).toBe(false)
   const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS, 'all')
   expect(rows(looked, 6 * 60 * MIN)).toEqual(['◐ Export: layout next'])
   const gone = delegatesSettled(blocked, new Map(), 4 * 60 * MIN)
   expect(rows(gone, 4 * 60 * MIN)).toEqual(['◐ Export: layout next'])
 })
 
-test('a rule sets each item on the page apart: a subject and the rows under it are one item, and the look line takes none beside it', () => {
+test('the page lists running work linked to no subject first, then each subject with the rows under it', () => {
   const now = 100 * MIN
   let o = after(after(null, 'NEW: working | Fade-out | glances fade', 0), 'DONE: s1 | glances fade', 5 * MIN)
   o = after(o, 'NEW: queued | Docs | outline ready', 10 * MIN)
@@ -181,15 +182,14 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   o = after(o, 'LINK: c1 | s3\nLINK: c2 | s3', 80 * MIN, new Set(['i1']))
   const rows = page({ ...o, lastLookAt: 50 * MIN }, now, {}, [askItem('i1')]).rows
 
-  expect(rows.map(r => `${r.isRuledAbove ? '── ' : ''}${shape([r])[0]}`)).toEqual([
+  expect(shape(rows)).toEqual([
     '● Review loose',
-    '── ◆ Sync: needs a pick · waiting',
-    '── ● Offline mode: queue built ┐',
+    '◆ Sync: needs a pick · waiting',
+    '● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
-    '-- Last seen',
     '○ Docs: outline ready',
-    '── ▸ 1 done',
+    '▸ 1 done',
   ])
 })
 
@@ -243,10 +243,9 @@ test('a subject an ask holds up or that changed since the last look never folds,
   const draw = (o: SessionStatus) => shape(page(o, 20 * MIN, {}, asks.map(askItem)).rows)
 
   expect(draw(changedOne)).toEqual([
-    '○ Part 8: started over',
-    '-- Last seen',
     '◆ Part 7: step 7 · waiting',
     ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
+    '○ Part 8: started over',
     '○ 3 more',
   ])
   expect(draw(heldSeven)).toEqual([...[6, 5, 4, 3, 2, 1, 0].map(n => `◆ Part ${n}: step ${n} · waiting`), '○ 2 more'])

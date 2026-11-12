@@ -147,12 +147,6 @@ function StatusLine({ row }: { row: StatusRow }) {
       </>
     )
   }
-  if (row.kind === 'look')
-    return (
-      <div class={`row look-line${row.isLast ? ' last' : ''}`} style={depthStyle(row)}>
-        <div class="look-rule">{row.text}</div>
-      </div>
-    )
   if (row.kind === 'part')
     return (
       <div class="row part-line">
@@ -260,7 +254,7 @@ function MilestoneLine({ m }: { m: MilestoneRow }) {
       <span class={markClassOf(m.tone, false)}>
         <MarkGlyph text={m.mark} />
       </span>
-      <div class={m.isChanged ? 'content tight changed' : 'content tight'}>
+      <div class="content tight">
         <NameLine name={m.name} stall={m.stall} />
         {m.text ? (
           <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
@@ -374,18 +368,20 @@ export function StatusTab({ page }: { page: StatusPage }) {
         {page.head.description ? <p class="muted">{page.head.description}</p> : null}
       </div>
     ) : null
+  // The list after a goal draws no line between sections: Other work's own rule sets it apart while the goal shows
+  // milestones, and nothing does while it shows none.
+  const isUnruledAfterGoal = page.goal !== null
 
   return (
     <main class="status-page">
       <GoalSection page={page} />
       {head ? <section>{head}</section> : null}
       {page.rows.length > 0 ? (
-        <section>
+        <section class={isUnruledAfterGoal ? 'unruled' : undefined}>
           <div class="list">
-            {page.rows.flatMap(r => [
-              ...(r.isRuledAbove ? [<div key={`rule-${r.id}`} class="status-rule" />] : []),
-              <StatusLine key={r.id} row={r} />,
-            ])}
+            {page.rows.map(r => (
+              <StatusLine key={r.id} row={r} />
+            ))}
           </div>
         </section>
       ) : null}

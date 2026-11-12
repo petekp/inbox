@@ -11,8 +11,8 @@ Part of [the look map](../looks.md#files).
 | `hooks/feedback.ts` | Shared module. A press's feedback on its row: `feedbackOf`, its text in each look, the working and done labels, and whether the press is still out. |
 | `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
 | `hooks/tabs.ts` | Shared module. The tabs each build shows, with their names, symbols and badges, how the tab bar fits them, and the `/inbox` command's description. |
-| `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the Last seen line, the merged line and the text before a stall. |
-| `hooks/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order with the Seen line, the counts by mark, and the rules between rows. |
+| `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the merged line and the text before a stall. |
+| `hooks/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order, with each part's folds after its open or its closed rows, and the counts by mark. |
 | `hooks/action-plan.ts` | Shared module. A row's actions in order, from `actionsOf`, and the key plans `rowKeyPlan` and `statusKeyPlan`. `actionLines` wraps a row's buttons. `drawnLists` gives each tab's drawn rows, `rowAfterClose` the row that opens after a close, and `tabUndos` with `latestUndo` the Undo the undo key presses. |
 | `hooks/help.ts` | Shared module. The marks that rows and group titles draw, the Help legend, Help's labels, and the keys Help lists in each look. |
 | `hooks/presses.ts` | Shared module. The press types `RowPress` and `PrActionId`, and `isPrRowId`, which tells whether a row id is a PR row's. |
