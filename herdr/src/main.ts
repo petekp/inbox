@@ -41,7 +41,7 @@ import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
 import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
-import { EDGE_X, END_SPACE, LINE, MEASURE_MAX, NARROW_PANE, SPINE, TEXT } from './paint-theme'
+import { END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PRESS_LABEL } from './press-file'
 import { PressQueue, claimedPath } from './press-queue'
@@ -422,12 +422,7 @@ export default class Inbox extends View {
               .on_click((_e, _cx) => {
                 if (doesListClickTakeKeys(this.ui)) this.focus?.focus()
               })
-              .child(
-                v_flex()
-                  .w_full()
-                  .max_w(SPINE + MEASURE_MAX + EDGE_X)
-                  .children(moved.blocks.map(b => blockEl(b, paint))),
-              ),
+              .children(moved.blocks.map(b => blockEl(b, paint))),
           )
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )

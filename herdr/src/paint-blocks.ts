@@ -381,7 +381,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
 }
 
 /**
- * A rule from the spine to the pane's edge. Between groups and between PRs it sits in the middle of a section's space.
+ * A rule from the spine to the right edge. Between groups and between PRs it sits in the middle of a section's space.
  * A Status rule sits between two lines, and a labelled one gives it room above and below.
  */
 function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
@@ -389,6 +389,7 @@ function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
   if (b.text === null)
     return h_flex()
       .pl(indent)
+      .pr(EDGE_X)
       .when(b.isBetweenGroups, e => e.pt(SECTION_GAP / 2).pb(8))
       .child(ruleLine(t, false))
   const label = div().flex_none().text_color(t.muted).child(b.text)

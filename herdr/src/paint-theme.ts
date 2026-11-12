@@ -70,10 +70,9 @@ export const SPINE = 24
 export const MARK_W = 16
 export const MARK_X = SPINE - MARK_W
 export const NEST = 20
+/** The one right edge: Help, a row's age, a PR's number, a line's last button and a rule's end all stop this far in. */
 export const EDGE_X = 16
 
-/** The widest the list's text column grows, so a line on a wide pane stays readable, about 75 characters. */
-export const MEASURE_MAX = 480
 /** Under this pane width, a PR's number moves from the end of its title line to the start of its status line. */
 export const NARROW_PANE = 280
 

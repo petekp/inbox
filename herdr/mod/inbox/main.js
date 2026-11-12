@@ -4078,7 +4078,6 @@ var MARK_W = 16;
 var MARK_X = SPINE - MARK_W;
 var NEST = 20;
 var EDGE_X = 16;
-var MEASURE_MAX = 480;
 var NARROW_PANE = 280;
 var SECTION_GAP = 32;
 var END_SPACE = SECTION_GAP;
@@ -4209,7 +4208,7 @@ function foldEl(b, p) {
 function ruleEl(b, t) {
   const indent = SPINE + b.depth * NEST;
   if (b.text === null)
-    return h_flex2().pl(indent).when(b.isBetweenGroups, (e) => e.pt(SECTION_GAP / 2).pb(8)).child(ruleLine(t, false));
+    return h_flex2().pl(indent).pr(EDGE_X).when(b.isBetweenGroups, (e) => e.pt(SECTION_GAP / 2).pb(8)).child(ruleLine(t, false));
   const label = div2().flex_none().text_color(t.muted).child(b.text);
   return h_flex2().pl(indent).pr(EDGE_X).py(12).gap(8).items_center().when(b.isDashed, (e) => e.child(ruleLine(t, true))).child(label).child(ruleLine(t, b.isDashed));
 }
@@ -4815,7 +4814,7 @@ class Inbox extends View {
     return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div3().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(END_SPACE).on_click((_e, _cx) => {
       if (doesListClickTakeKeys(this.ui))
         this.focus?.focus();
-    }).child(v_flex3().w_full().max_w(SPINE + MEASURE_MAX + EDGE_X).children(moved.blocks.map((b) => blockEl(b, paint))))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    }).children(moved.blocks.map((b) => blockEl(b, paint)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
   }
 }
 export {
