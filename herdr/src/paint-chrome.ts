@@ -83,22 +83,33 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
     )
 }
 
-/** A message about the inbox's own state, in a box tinted with the tone of what it says. */
-export function bannerEl(b: BannerView, t: Theme): Element {
+/**
+ * A message in a box tinted with the tone of what it says. The buttons that act on its problem draw at its right end,
+ * as the Codex tab's banner draws its key, and `under` follows its text.
+ */
+export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under: Element | null = null): Element {
   const tone = colorOf(t, b.tone)
+  const text = v_flex()
+    .flex_1()
+    .min_w(0)
+    .whitespace_normal()
+    .child(div().font_semibold().text_color(tone).child(b.lead))
+    .when(b.body !== null, e => e.child(div().child(b.body ?? '')))
+    .children(under ? [under] : [])
 
-  return v_flex()
+  return h_flex()
     .mx(12)
     .mt(BANNER_GAP_PT)
     .px(12)
     .py(BANNER_PAD_Y_PT)
+    .gap(12)
+    .items_center()
     .rounded(10)
     .border_1()
     .border_color(tint(tone, 0.3))
     .bg(tint(tone, 0.09))
-    .whitespace_normal()
-    .child(div().font_semibold().text_color(tone).child(b.lead))
-    .when(b.body !== null, e => e.child(div().child(b.body ?? '')))
+    .child(text)
+    .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(6).children(buttons)))
 }
 
 /** A line under the tabs that says something about the whole session, such as that the host trimmed it. */

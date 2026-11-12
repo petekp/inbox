@@ -161,5 +161,5 @@ export type Block =
   /** A rule `depth` Status steps in. `isBetweenGroups` closes the group above with its space, as a section does. */
   | { kind: 'rule'; id: string; text: string | null; isDashed: boolean; depth: number; isBetweenGroups: boolean }
   | { kind: 'gap'; id: string }
-  /** A message in the list, as the PRs tab's GitHub notice. */
-  | { kind: 'banner'; id: string; banner: BannerView }
+  /** A message in the list, as the PRs tab's GitHub notice, with the buttons that act on its problem at its end. */
+  | { kind: 'banner'; id: string; banner: BannerView; buttons: Button[]; feedback: { text: string; tone: Tone } | null }

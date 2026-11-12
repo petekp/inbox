@@ -207,27 +207,39 @@ function statusEl(s: StatusLine, p: Paint): Element {
 function prEl(b: PrBlock, p: Paint): Element {
   const { t } = p
   const title = h_flex()
-    .flex_wrap()
     .gap(6)
     .items_start()
     .when(b.rank !== null, e =>
       e.child(
         div()
+          .flex_none()
           .text_color(t.muted)
           .child(b.rank ?? ''),
       ),
     )
-    .child(div().text_color(colorOf(t, 'prs')).child(b.number))
-    .child(div().font_semibold().whitespace_normal().child(b.title))
-    .child(div().text_color(colorOf(t, b.status.tone)).child(b.status.text))
-    .children(b.unlisted.map(u => div().text_color(t.muted).child(`${DOT}${u}`)))
+    .child(div().flex_none().text_color(colorOf(t, 'prs')).child(b.number))
+    .child(div().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title))
+  const status = h_flex()
+    .items_start()
+    .child(div().flex_none().text_color(colorOf(t, b.status.tone)).child(b.status.text))
+    .when(b.unlisted.length > 0, e =>
+      e.child(
+        div()
+          .flex_1()
+          .min_w(0)
+          .whitespace_normal()
+          .text_color(t.muted)
+          .child(b.unlisted.map(u => `${DOT}${u}`).join('')),
+      ),
+    )
 
   return v_flex()
-    .pl(TEXT_X)
+    .pl(MARK_X)
     .pr(EDGE_X)
     .pt(10)
     .pb(4)
     .child(title)
+    .child(status)
     .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
     .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0)))
     .when(b.feedback !== null, e => e.child(lineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)))
@@ -237,22 +249,30 @@ function textLineEl(b: LineBlock, p: Paint): Element {
   const { t } = p
 
   return v_flex()
-    .pl(TEXT_X)
+    .pl(MARK_X)
     .pr(EDGE_X)
     .py(4)
     .child(
       h_flex()
-        .flex_wrap()
         .gap(8)
         .items_center()
         .when(b.text !== null, e =>
           e.child(
             div()
+              .flex_1()
+              .min_w(0)
               .whitespace_normal()
               .child(b.text ?? ''),
           ),
         )
-        .children(b.buttons.map(x => buttonEl(x, p))),
+        .when(b.buttons.length > 0, e =>
+          e.child(
+            h_flex()
+              .flex_none()
+              .gap(6)
+              .children(b.buttons.map(x => buttonEl(x, p))),
+          ),
+        ),
     )
     .when(b.under !== null, e => e.child(lineEl(b.under ?? '', t.muted, 0)))
     .when(b.feedback !== null, e => e.child(lineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)))
@@ -414,7 +434,13 @@ export function blockEl(b: Block, p: Paint): Element {
       .pr(EDGE_X)
       .child(fieldEl(b.field, p, 0))
   if (b.kind === 'note') return noteEl(b, t)
-  if (b.kind === 'banner') return bannerEl(b.banner, t)
+  if (b.kind === 'banner')
+    return bannerEl(
+      b.banner,
+      t,
+      b.buttons.map(x => buttonEl(x, p)),
+      b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null,
+    )
 
   return div().h(8)
 }

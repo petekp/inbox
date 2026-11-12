@@ -32,7 +32,7 @@ import { bannerOf } from '../../hooks/banners'
 import { DOT, ROW_COPY, settledLabel, settledMark, shortAgo } from '../../hooks/rows'
 import { clipLabel } from '../../hooks/text'
 import { button } from './blocks'
-import type { Block, Button, Mark, RowBlock, Tone } from './blocks'
+import type { Block, Button, LineBlock, Mark, RowBlock, Tone } from './blocks'
 import type { LookScreen } from './draw'
 
 const LOOK = 'herdr'
@@ -217,19 +217,38 @@ const note = (id: string, text: string, tone: Tone): Block => ({
   text,
   count: null,
   tone,
-  isHead: false,
+  isHead: true,
   isStrong: false,
   depth: 0,
 })
 
-/** The line while a PR could not be read, with Refresh PRs. */
-function refreshLine(screen: LookScreen): Block[] {
+/** Refresh PRs and its press's result, while a PR could not be read. */
+function refreshParts(screen: LookScreen): Pick<LineBlock, 'text' | 'buttons' | 'feedback'> | null {
   const refresh = screen.view.prs.refresh
-  if (!refresh) return []
+  if (!refresh) return null
   const buttons = refresh.actions.map((a, n) => prButton(null, a, `refresh ${n}`))
   const feedback = refresh.showsPress ? prFeedback(screen, PR_REFRESH_ID) : null
 
-  return [{ kind: 'line', id: PR_REFRESH_ID, text: refresh.text, under: null, buttons, feedback }]
+  return { text: refresh.text, buttons, feedback }
+}
+
+const refreshLine = (screen: LookScreen): Block[] => {
+  const refresh = refreshParts(screen)
+  return refresh ? [{ kind: 'line', id: PR_REFRESH_ID, under: null, ...refresh }] : []
+}
+
+/**
+ * The GitHub notice, and Refresh PRs. While the notice gives the problem Refresh PRs acts on, the button draws at the
+ * notice's end, and the notice takes the refresh's id so the press's result shows there.
+ */
+function noticeBlocks(screen: LookScreen, notice: ReturnType<typeof ghNoticeOf>): Block[] {
+  if (!notice) return refreshLine(screen)
+  const banner = bannerOf(notice.kind, notice.text)
+  const refresh = refreshParts(screen)
+  if (!refresh || refresh.text !== null)
+    return [{ kind: 'banner', id: 'gh notice', banner, buttons: [], feedback: null }, ...refreshLine(screen)]
+
+  return [{ kind: 'banner', id: PR_REFRESH_ID, banner, buttons: refresh.buttons, feedback: refresh.feedback }]
 }
 
 /** The agent's order: its title and reason, then the changed line with Rank again. */
@@ -267,8 +286,7 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   const presses: PressState = { lastActions: view.lastActions, turns: view.turns, now: screen.now }
   const notice = ghNoticeOf(gh)
   const draw = (open: string | null) => [
-    ...(notice ? [{ kind: 'banner', id: 'gh notice', banner: bannerOf(notice.kind, notice.text) } as const] : []),
-    ...refreshLine(screen),
+    ...noticeBlocks(screen, notice),
     ...orderLines(screen),
     ...prs.drawn.flatMap(d => prBlocks(screen, d, presses, open)),
     ...(prs.olderText ? [note('older prs', prs.olderText, 'muted')] : []),

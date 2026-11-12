@@ -3323,17 +3323,30 @@ var note = (id, text, tone) => ({
   text,
   count: null,
   tone,
-  isHead: false,
+  isHead: true,
   isStrong: false,
   depth: 0
 });
-function refreshLine(screen) {
+function refreshParts(screen) {
   const refresh = screen.view.prs.refresh;
   if (!refresh)
-    return [];
+    return null;
   const buttons = refresh.actions.map((a, n) => prButton(null, a, `refresh ${n}`));
   const feedback = refresh.showsPress ? prFeedback(screen, PR_REFRESH_ID) : null;
-  return [{ kind: "line", id: PR_REFRESH_ID, text: refresh.text, under: null, buttons, feedback }];
+  return { text: refresh.text, buttons, feedback };
+}
+var refreshLine = (screen) => {
+  const refresh = refreshParts(screen);
+  return refresh ? [{ kind: "line", id: PR_REFRESH_ID, under: null, ...refresh }] : [];
+};
+function noticeBlocks(screen, notice) {
+  if (!notice)
+    return refreshLine(screen);
+  const banner = bannerOf(notice.kind, notice.text);
+  const refresh = refreshParts(screen);
+  if (!refresh || refresh.text !== null)
+    return [{ kind: "banner", id: "gh notice", banner, buttons: [], feedback: null }, ...refreshLine(screen)];
+  return [{ kind: "banner", id: PR_REFRESH_ID, banner, buttons: refresh.buttons, feedback: refresh.feedback }];
 }
 function orderLines(screen) {
   const order = screen.view.prs.order;
@@ -3366,8 +3379,7 @@ function prTabBlocks(screen, selected) {
   const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
   const notice = ghNoticeOf(gh);
   const draw = (open) => [
-    ...notice ? [{ kind: "banner", id: "gh notice", banner: bannerOf(notice.kind, notice.text) }] : [],
-    ...refreshLine(screen),
+    ...noticeBlocks(screen, notice),
     ...orderLines(screen),
     ...prs.drawn.flatMap((d) => prBlocks(screen, d, presses, open)),
     ...prs.olderText ? [note("older prs", prs.olderText, "muted")] : []
@@ -3902,7 +3914,7 @@ function keyMove(key, tabs, blocks, typing) {
     return id ? { is: "select", id } : null;
   }
   const selected = blocks.find((b) => b.kind === "row" && b.isSelected);
-  const lines = blocks.flatMap((b) => b.kind === "line" ? b.buttons : []);
+  const lines = blocks.flatMap((b) => b.kind === "line" || b.kind === "banner" ? b.buttons : []);
   const pressed = [...selected?.buttons ?? [], ...lines].find((b) => b.hotkey === key && !b.isOut);
   return pressed ? { is: "press", button: pressed } : null;
 }
@@ -4070,9 +4082,10 @@ function tabsEl(tabs, status, isHelpShown, p) {
   const help = helpButton(isHelpShown);
   return h_flex().flex_none().flex_wrap().px(12).pt(12).gap(4).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).px(12).py(6).items_center().rounded(6).cursor_pointer().accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div().ml(6).font_semibold().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div().flex_1()).when(status !== null, (e) => e.child(div().px(4).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").px(6).rounded(5).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
 }
-function bannerEl(b, t) {
+function bannerEl(b, t, buttons = [], under = null) {
   const tone = colorOf(t, b.tone);
-  return v_flex().mx(12).mt(BANNER_GAP_PT).px(12).py(BANNER_PAD_Y_PT).rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).whitespace_normal().child(div().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div().child(b.body ?? "")));
+  const text = v_flex().flex_1().min_w(0).whitespace_normal().child(div().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div().child(b.body ?? ""))).children(under ? [under] : []);
+  return h_flex().mx(12).mt(BANNER_GAP_PT).px(12).py(BANNER_PAD_Y_PT).gap(12).items_center().rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(6).children(buttons)));
 }
 var sessionNoteEl = (text, t) => div().px(EDGE_X + 2).pt(10).whitespace_normal().text_color(t.muted).child(text);
 function messageEl(m, t) {
@@ -4134,12 +4147,13 @@ function statusEl(s, p) {
 }
 function prEl(b, p) {
   const { t } = p;
-  const title = h_flex2().flex_wrap().gap(6).items_start().when(b.rank !== null, (e) => e.child(div2().text_color(t.muted).child(b.rank ?? ""))).child(div2().text_color(colorOf(t, "prs")).child(b.number)).child(div2().font_semibold().whitespace_normal().child(b.title)).child(div2().text_color(colorOf(t, b.status.tone)).child(b.status.text)).children(b.unlisted.map((u) => div2().text_color(t.muted).child(`${DOT}${u}`)));
-  return v_flex2().pl(TEXT_X).pr(EDGE_X).pt(10).pb(4).child(title).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  const title = h_flex2().gap(6).items_start().when(b.rank !== null, (e) => e.child(div2().flex_none().text_color(t.muted).child(b.rank ?? ""))).child(div2().flex_none().text_color(colorOf(t, "prs")).child(b.number)).child(div2().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title));
+  const status = h_flex2().items_start().child(div2().flex_none().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div2().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${DOT}${u}`).join(""))));
+  return v_flex2().pl(MARK_X).pr(EDGE_X).pt(10).pb(4).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p) {
   const { t } = p;
-  return v_flex2().pl(TEXT_X).pr(EDGE_X).py(4).child(h_flex2().flex_wrap().gap(8).items_center().when(b.text !== null, (e) => e.child(div2().whitespace_normal().child(b.text ?? ""))).children(b.buttons.map((x) => buttonEl(x, p)))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex2().pl(MARK_X).pr(EDGE_X).py(4).child(h_flex2().gap(8).items_center().when(b.text !== null, (e) => e.child(div2().flex_1().min_w(0).whitespace_normal().child(b.text ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(6).children(b.buttons.map((x) => buttonEl(x, p)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 var ruleLine = (t, isDashed) => div2().flex_1().border_t(1).when(isDashed, (e) => e.border_dashed()).border_color(t.border);
 function headingEl(b, p) {
@@ -4202,7 +4216,7 @@ function blockEl(b, p) {
   if (b.kind === "note")
     return noteEl(b, t);
   if (b.kind === "banner")
-    return bannerEl(b.banner, t);
+    return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p)), b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
   return div2().h(8);
 }
 
@@ -4279,7 +4293,7 @@ function drawOuts(blocks, outs, lines) {
     return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted" };
   };
   return blocks.map((b) => {
-    if (b.kind === "row" || b.kind === "pr" || b.kind === "line") {
+    if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
       const line = lineOf(b.id);
       return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
     }
