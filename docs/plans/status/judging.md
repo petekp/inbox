@@ -172,7 +172,8 @@ These make no model calls.
 | `goal-awaiting-milestones`, 1 call, 3 runs | 6 | 0 | 0 |
 | `ask-holds-two`, 2 calls, 3 runs | 12 | 0 | 0 |
 | The three goal short cases, 4 calls, 5 runs, 2 models | 40 | 0 | 10 |
+| `next-release`, 3 calls, 3 runs | 18 | 0 | 0 |
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
-| **Total** | **214** | **54** | **82** |
+| **Total** | **232** | **54** | **82** |
 
-An answer with no operation is asked once more, and a call that fails outside the model is tried again. The runner stops at 220 Status calls, so 6 calls are left for both.
+An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run makes 189 Status calls before re-asks and retries. The runner stops at 220 Status calls, so a release run takes one model at a time, with `--agent claude` and then `--agent codex`.

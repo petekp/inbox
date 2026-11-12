@@ -27,6 +27,7 @@ export const SHARED = [
   'status-limits',
   'status-ops',
   'status-goal-ops',
+  'status-goal-gate',
   'status-goal-page',
   'status-keys',
   'goal-press',
