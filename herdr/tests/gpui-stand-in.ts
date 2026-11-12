@@ -16,7 +16,7 @@ export type Painted = {
   kids: Painted[]
 }
 
-export class StandInField {
+class StandInField {
   text: string
   constructor(options?: { value?: string }) {
     this.text = options?.value ?? ''
@@ -42,7 +42,7 @@ export const giveKeysElsewhere = () => {
   keys = null
 }
 
-export type StandInContext = ReturnType<typeof standInContext>
+type StandInContext = ReturnType<typeof standInContext>
 
 function standInContext() {
   const timer = { cancel() {} }
@@ -115,7 +115,7 @@ function element(field: StandInField | null = null): unknown {
   return proxy
 }
 
-export const nodeOf = (e: unknown): Painted | null =>
+const nodeOf = (e: unknown): Painted | null =>
   typeof e === 'object' && e !== null && NODE in e ? (e as Record<typeof NODE, Painted>)[NODE] : null
 
 export const allOf = (root: Painted): Painted[] => [root, ...root.kids.flatMap(allOf)]

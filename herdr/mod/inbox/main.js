@@ -4042,8 +4042,8 @@ var EDGE_X = 24;
 var NARROW_PANE = 280;
 var GROUP_GAP = 32;
 var END_SPACE = GROUP_GAP;
-var BUTTON_H = 24;
-var BUTTON_GAP = 12;
+var BUTTON_H = 28;
+var BUTTON_GAP = 8;
 var PILL_X = 12;
 var SEP = " · ";
 

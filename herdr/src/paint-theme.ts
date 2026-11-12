@@ -82,8 +82,8 @@ export const GROUP_GAP = 32
 export const END_SPACE = GROUP_GAP
 
 /** A button's height, the space between two buttons, and a pill's side padding. */
-export const BUTTON_H = 24
-export const BUTTON_GAP = 12
+export const BUTTON_H = 28
+export const BUTTON_GAP = 8
 export const PILL_X = 12
 
 /** The separator between a status and its reasons, and between a heading and its count. */
