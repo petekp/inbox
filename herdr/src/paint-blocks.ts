@@ -17,9 +17,13 @@ const MARK_W = TEXT_X - MARK_X
 const CLOSED_STEP = 23
 const STATUS_STEP = MARK_W
 
-/** A button of a row that is leaving draws but takes no clicks, so the row keeps its height as it fades. */
+/**
+ * A button of a row that is leaving draws but takes no clicks, so the row keeps its height as it fades. A button that
+ * takes no clicks shows no hover change, so it never reads as pressable.
+ */
 function buttonEl(b: Button, p: Paint, isInert = false): Element {
   const { t } = p
+  const isPressable = !b.isOut && !isInert
   const base = h_flex()
     .id(`button ${b.id}`)
     .flex_none()
@@ -37,7 +41,7 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
           .border_color(t.solid)
           .bg(t.solid)
           .text_color(t.solid_foreground)
-          .hover(s => s.opacity(0.85))
+          .when(isPressable, e => e.hover(s => s.opacity(0.85)))
       : b.emphasis === 'normal'
         ? base
             .px(11)
@@ -46,14 +50,14 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
             .border_1()
             .border_color(t.input)
             .text_color(t.foreground)
-            .hover(s => s.bg(t.hover))
+            .when(isPressable, e => e.hover(s => s.bg(t.hover)))
         : base
             .px(4)
             .rounded(5)
             .text_color(t.muted)
-            .hover(s => s.text_color(t.foreground))
+            .when(isPressable, e => e.hover(s => s.text_color(t.foreground)))
   if (b.isOut) return styled.opacity(0.4)
-  if (isInert) return styled
+  if (!isPressable) return styled
 
   return styled.on_click((_e, cx) => {
     cx.stop_propagation()

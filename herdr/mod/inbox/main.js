@@ -4098,11 +4098,12 @@ var CLOSED_STEP = 23;
 var STATUS_STEP = MARK_W;
 function buttonEl(b, p, isInert = false) {
   const { t } = p;
+  const isPressable = !b.isOut && !isInert;
   const base = h_flex2().id(`button ${b.id}`).flex_none().items_center().justify_center().accessibility_label(b.label).child(b.label);
-  const styled = b.emphasis === "primary" ? base.px(11).py(3).rounded(13).border_1().border_color(t.solid).bg(t.solid).text_color(t.solid_foreground).hover((s) => s.opacity(0.85)) : b.emphasis === "normal" ? base.px(11).py(3).rounded(13).border_1().border_color(t.input).text_color(t.foreground).hover((s) => s.bg(t.hover)) : base.px(4).rounded(5).text_color(t.muted).hover((s) => s.text_color(t.foreground));
+  const styled = b.emphasis === "primary" ? base.px(11).py(3).rounded(13).border_1().border_color(t.solid).bg(t.solid).text_color(t.solid_foreground).when(isPressable, (e) => e.hover((s) => s.opacity(0.85))) : b.emphasis === "normal" ? base.px(11).py(3).rounded(13).border_1().border_color(t.input).text_color(t.foreground).when(isPressable, (e) => e.hover((s) => s.bg(t.hover))) : base.px(4).rounded(5).text_color(t.muted).when(isPressable, (e) => e.hover((s) => s.text_color(t.foreground)));
   if (b.isOut)
     return styled.opacity(0.4);
-  if (isInert)
+  if (!isPressable)
     return styled;
   return styled.on_click((_e, cx) => {
     cx.stop_propagation();
