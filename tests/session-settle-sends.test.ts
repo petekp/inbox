@@ -78,3 +78,28 @@ test('a typed reply to a question while its answer is held for Undo sends the an
   expect(sent[0]).toContain('Redis')
   expect(sent[1]).toContain('and keep it warm')
 })
+
+test('a typed question back goes to the agent as a question about the ask, and the question stays open', async () => {
+  const clock = 1_000_000
+  const sent: string[] = []
+  const scripted = fakeHost(async () => null).host
+  const host = {
+    ...scripted,
+    now: () => clock,
+    deliver: async (_s: unknown, text: string) => {
+      sent.push(text)
+      return { state: 'accepted' as const, queuedId: null }
+    },
+  }
+  const question = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'In-memory'] }
+  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, clock).state)
+  const id = (await host.read()).ledger.items[0]!.id
+  await press(host, { action: 'type', id, text: 'Why not Redis?' }, false, NO_HOLDS)
+  await press(host, { action: 'type', id, text: 'Redis?' }, false, NO_HOLDS)
+
+  expect(sent).toEqual([
+    'About this question you asked me: Why not Redis?\n"Which cache should the API use?"\nOptions: Redis / In-memory',
+    'Re "Which cache should the API use?": Redis?',
+  ])
+  expect((await host.read()).ledger.items.map(i => i.id)).toEqual([id])
+})

@@ -269,6 +269,11 @@ function recommendedOption(options, rec) {
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
+var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
+function isQuestionBack(answer, options) {
+  const text = answer.trim();
+  return text.endsWith("?") && (QUESTION_WORD.test(text) || recommendedOption(options, text) === null);
+}
 var FILLER = new Set([
   "the",
   "and",
@@ -1041,7 +1046,8 @@ function quotedAsk(item) {
 Options: ${item.options.join(" / ")}` : ""}`;
 }
 var messages = {
-  answer: (item, answer) => `Re "${item.ask}": ${answer}`,
+  answer: (item, answer) => isQuestionBack(answer, item.options) ? `About this question you asked me: ${answer}
+${quotedAsk(item)}` : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
