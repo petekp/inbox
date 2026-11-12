@@ -1,14 +1,15 @@
-import type { Milestone, SessionStatus, StatusGoal, Subject } from '../types'
+import type { GoalRefusal, Milestone, SessionStatus, StatusGoal, Subject } from '../types'
 import type { Op } from './status'
+import { goalRefusal, hasWorkForGoal } from './status-goal-gate'
 import {
   clipWords,
   DESCRIPTION_KEPT,
-  GOAL_LEFT_MS,
   isOpen,
   MILESTONES_MAX,
   MILESTONES_MIN,
   NAME_KEPT,
   nameKey,
+  namesOtherVersion,
   NL,
   REMOVED_KEPT,
   stems,
@@ -172,62 +173,6 @@ export function withRestatedGoalAsMilestones(o: SessionStatus | null, ops: Op[],
   )
 }
 
-/** The subjects linked to one of the goal's milestones that is not dropped. */
-function linkedSubjects(o: SessionStatus): Subject[] {
-  const live = new Set(o.milestones.filter(m => m.status !== 'dropped').map(m => m.id))
-
-  return o.subjects.filter(s => live.has(o.serves[s.id] ?? ''))
-}
-
-/**
- * When the goal last moved forward: when it was set, a milestone that is not dropped changed, or a linked subject was
- * done. Dropping work is not progress, so a goal whose last work was dropped counts from its last real step.
- */
-function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
-  const milestones = o.milestones.filter(m => m.status !== 'dropped').map(m => m.changedAt)
-  const done = linkedSubjects(o).flatMap(s => (s.status === 'done' && s.closedAt !== null ? [s.closedAt] : []))
-
-  return Math.max(g.setAt, ...milestones, ...done)
-}
-
-/**
- * How long the work has left the goal, in ms, or null while it has not. The work has left an inferred goal that is not
- * met when none of its linked work is open and it has not moved forward for `GOAL_LEFT_MS`, so a goal between
- * milestones, or one just set, stays. A goal whose milestones are all done is met, whether or not a saved copy holds
- * its met time. A typed goal is the person's until it is met. The Status call reads this time, and a GOAL or RETIRE
- * line may replace or clear the goal while it is set.
- */
-export function goalLeftFor(o: SessionStatus, now: number): number | null {
-  const g = o.goal
-  if (g === null || isGoalMet(o) || g.source !== 'inferred' || linkedSubjects(o).some(isOpen)) return null
-  const left = now - lastProgressAt(o, g)
-
-  return left >= GOAL_LEFT_MS ? left : null
-}
-
-/**
- * Whether the goal is met: it holds its met time, or every milestone it keeps is done, as after a DROP in the same
- * answer closes the last open one, before `settleGoal` writes the time.
- */
-function isGoalMet(o: SessionStatus): boolean {
-  const kept = o.milestones.filter(m => m.status !== 'dropped')
-
-  return o.goal?.metAt != null || (kept.length > 0 && kept.every(m => m.status === 'done'))
-}
-
-/**
- * Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and
- * either once the work has left it. The page is read as the answer's earlier lines left it, and as the answer found
- * it, so a DROP or DONE line in the same answer never closes a gate that was open. A goal the same answer set is read
- * only as it stands, so a RETIRE after it never clears it.
- */
-function mayReplaceGoal(o: SessionStatus, start: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
-  const may = (s: SessionStatus) => (s.goal === null || isGoalMet(s) ? kind === 'goal' : goalLeftFor(s, now) !== null)
-  const isSameGoal = o.goal?.setAt === start.goal?.setAt
-
-  return may(o) || (start !== o && isSameGoal && may(start))
-}
-
 /** The goal a GOAL line sets, with its milestones as it wrote them and no subject linked yet. */
 function inferredGoal(
   o: SessionStatus,
@@ -254,27 +199,41 @@ function inferredGoal(
   }
 
   return withoutLinksTo(
-    { ...o, goal, goalRemoved: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} },
+    {
+      ...o,
+      goal,
+      goalRemoved: null,
+      goalRefused: null,
+      milestones,
+      nextMilestoneId: o.nextMilestoneId + milestones.length,
+      serves: {},
+    },
     milestones,
   )
 }
 
-/**
- * Whether the session holds open work for a new goal: an open subject the current goal does not hold, once the answer's
- * subject lines apply. So a fix the same answer finished gets no goal.
- */
-function hasWorkForGoal(o: SessionStatus): boolean {
-  const held = new Set(linkedSubjects(o).map(s => s.id))
+/** Why a GOAL line may not set the goal as `o` stands, or null when it may, apart from the gate `goalRefusal` keeps. */
+function goalLineRefusal(o: SessionStatus, op: Extract<Op, { kind: 'goal' }>): GoalRefusal['why'] | null {
+  const text = clipWords(op.text, DESCRIPTION_KEPT)
+  const milestones = op.milestones.slice(0, MILESTONES_MAX).map(m => ({ name: clipWords(m.name, NAME_KEPT) }))
+  const g = o.goal
+  const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones))
+  const isPrevious = g?.was != null && restatesGoal(text, g.was)
+  const isRemoved = o.removedGoals.some(key => restatesGoal(text, key))
+  if (op.milestones.length < MILESTONES_MIN) return 'few-milestones'
+  if (isCurrent || isPrevious || isRemoved) return 'restates'
 
-  return o.subjects.some(s => isOpen(s) && !held.has(s.id))
+  return hasWorkForGoal(o) ? null : 'no-work'
 }
 
 /**
- * Applies a GOAL, RETIRE, MILESTONE or SERVES line. A GOAL line sets the goal when `mayReplaceGoal` allows it,
+ * Applies a GOAL, RETIRE, MILESTONE or SERVES line. A GOAL line sets the goal when `goalRefusal` allows it,
  * `hasWorkForGoal` holds, it has `MILESTONES_MIN` milestones, and it restates neither the goal, in its words or its
- * milestones, nor the goal it replaced, nor a removed one. RETIRE clears the goal when `mayReplaceGoal` allows it, so
- * never a goal the same answer set.
- * Milestones and links need a goal.
+ * milestones, nor the goal it replaced, nor a removed one. RETIRE clears the goal when `goalRefusal` allows it, so
+ * never a goal the same answer set. The gate reads the milestones as the answer's subject lines close them, so a GOAL
+ * may follow the DONE that finishes the goal's last work. A refused line is saved for the next call to read.
+ * Milestones and links need a goal. A SERVES line whose subject names another version than its milestone, as "2.6
+ * beta" under "2.5 published", links the subject under none: another version's work is never part of the outcome.
  */
 export function applyGoalOp(
   o: SessionStatus,
@@ -283,28 +242,25 @@ export function applyGoalOp(
   findSubject: (ref: string) => Subject | null,
   start: SessionStatus = o,
 ): SessionStatus {
-  if (op.kind === 'goal') {
-    const text = clipWords(op.text, DESCRIPTION_KEPT)
+  if (op.kind === 'goal' || op.kind === 'retire') {
+    const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now)
+    const why = (op.kind === 'goal' && goalLineRefusal(settled, op)) || goalRefusal(settled, start, op.kind, now)
+    if (why !== null) return { ...o, goalRefused: { line: op.kind, why } }
+    if (op.kind === 'retire') return withoutGoal(o)
     const milestones = op.milestones
       .slice(0, MILESTONES_MAX)
       .map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }))
-    const g = o.goal
-    const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones))
-    const isPrevious = g?.was != null && restatesGoal(text, g.was)
-    const isRemoved = o.removedGoals.some(key => restatesGoal(text, key))
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, start, 'goal', now)
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o
 
-    return inferredGoal(o, text, milestones, now)
+    return inferredGoal(o, clipWords(op.text, DESCRIPTION_KEPT), milestones, now)
   }
-  if (op.kind === 'retire') return mayReplaceGoal(o, start, 'retire', now) ? withoutGoal(o) : o
   if (o.goal === null) return o
   if (op.kind === 'milestone') return addMilestone(o, op, now)
   const subject = findSubject(op.subject)
   const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone)
   if (!subject || (op.milestone !== null && !milestone)) return o
+  const isOtherVersion = milestone !== null && namesOtherVersion(subject.name, milestone.name)
 
-  return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? 'none' } }
+  return { ...o, serves: { ...o.serves, [subject.id]: milestone === null || isOtherVersion ? 'none' : milestone.id } }
 }
 
 /**
@@ -387,7 +343,7 @@ function withoutLinksTo(o: SessionStatus, milestones: readonly Milestone[]): Ses
 
 /** The Status with no goal: its milestones go, and so do the links to them. */
 function withoutGoal(o: SessionStatus): SessionStatus {
-  return withoutLinksTo({ ...o, goal: null, milestones: [], serves: {} }, [])
+  return withoutLinksTo({ ...o, goal: null, goalRefused: null, milestones: [], serves: {} }, [])
 }
 
 /** Remove goal: the goal goes, the call is told not to set it again, and Undo can bring it back. */
@@ -438,5 +394,5 @@ export function setTypedGoal(o: SessionStatus, text: string, now: number): Sessi
     source: 'typed',
   }
 
-  return { ...o, goal, goalRemoved: null, serves: {} }
+  return { ...o, goal, goalRemoved: null, goalRefused: null, serves: {} }
 }
