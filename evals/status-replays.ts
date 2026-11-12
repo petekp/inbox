@@ -21,6 +21,7 @@ import { oneTaskPlan } from './replays/one-task-plan'
 import { singleTask } from './replays/single-task'
 import { goalOutcomeDropped } from './replays/goal-outcome-dropped'
 import { staleGoal } from './replays/stale-goal'
+import { nextRelease } from './replays/next-release'
 
 export const REPLAYS: Replay[] = [
   coordinatorDay,
@@ -45,4 +46,5 @@ export const REPLAYS: Replay[] = [
   idleWork,
   staleGoal,
   goalOutcomeDropped,
+  nextRelease,
 ]

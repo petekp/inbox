@@ -131,7 +131,8 @@ _Avoid_: target, objective
 **Inferred goal**:
 A goal the inbox model set from the session, from the person's words or the
 work itself, with no press. The model replaces it with the next goal once it is
-met, or once none of its linked work is open and the work has moved on.
+met, or once none of the work under its open milestones is open and the work
+has moved on.
 
 **Typed goal**:
 A goal the person typed in the goal's field, or an inferred goal they edited.

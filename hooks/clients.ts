@@ -15,6 +15,7 @@ export type FeatureId =
   | 'ledger-behind-state'
   | 'dialog-outcome'
   | 'dialog-answer'
+  | 'dialog-answer-closes-copy'
   | 'dialog-descriptions'
   | 'tool-output-urls'
   | 'pr-link-from-output'
@@ -84,6 +85,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
       },
+      'dialog-answer-closes-copy': { kind: 'full' },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
@@ -172,6 +174,11 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded.",
       },
       'dialog-answer': { kind: 'full' },
+      'dialog-answer-closes-copy': {
+        kind: 'different',
+        reason:
+          "Codex's dialog tool returns before the person answers, so the inbox sees no answer when the dialog ends. The copy stays open until the person's reply in the dialog's form arrives, and the agent closes it then.",
+      },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': {
@@ -313,6 +320,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
       },
+      'dialog-answer-closes-copy': { kind: 'full' },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },

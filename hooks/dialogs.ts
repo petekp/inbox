@@ -3,6 +3,7 @@
 import type { DialogQuestion, Item, Session, TurnDialogQuestion } from '../types'
 import { restates } from './ask-match'
 import { RECOMMENDED_SUFFIX } from './catch-up-text'
+import { closeItem } from './ledger-close'
 
 type AskedQuestion = Pick<DialogQuestion, 'question' | 'options'>
 
@@ -67,10 +68,12 @@ function asCopyOf(item: Item, q: TurnDialogQuestion): Item {
 /**
  * Links each dialog question to the open question that copies it, from the same ledger turn: one the agent recorded,
  * or one the per-reply update added from the dialog's activity line. A question whose copy is ambiguous stays
- * unlinked, so a Codex answer goes as a plain message and no descriptions show. A past turn's questions are dropped
- * once no exchange of that turn waits for the update, since no item for them can come after that.
+ * unlinked, so a Codex answer goes as a plain message and no descriptions show. The copy of a question the person
+ * answered closes with that answer, so it must restate the question: shared options, such as Yes and No, are not
+ * proof that two questions are one. A past turn's questions are dropped once no exchange of that turn waits for the
+ * update, since no item for them can come after that.
  */
-export function linkDialogs<S extends Session>(s: S): S {
+export function linkDialogs<S extends Session>(s: S, now = Date.now()): S {
   if (s.dialogQuestions.length === 0) return s
   let items = s.ledger.items
   const linked = new Set(s.dialogQuestions.flatMap(q => q.itemId ?? []))
@@ -83,14 +86,49 @@ export function linkDialogs<S extends Session>(s: S): S {
       s.dialogQuestions.filter(o => o.turn === q.turn),
     )
     if (!copy || copy.dialog || linked.has(copy.id)) return q
+    if (q.answer !== undefined && !restates(copy.ask, q.question)) return q
     linked.add(copy.id)
     items = items.map(i => (i.id === copy.id ? asCopyOf(i, q) : i))
 
     return { ...q, itemId: copy.id }
   })
   const kept = questions.filter(q => q.turn === s.ledger.turn || s.pending.some(p => p.ex.turn === q.turn))
+  const ledger = questions.reduce(
+    (l, q) =>
+      q.answer !== undefined && q.itemId !== null && l.items.some(i => i.id === q.itemId)
+        ? closeItem(l, q.itemId, { how: 'answered', outcome: q.answer }, now)
+        : l,
+    { ...s.ledger, items },
+  )
 
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept }
+  return { ...s, ledger, dialogQuestions: kept }
+}
+
+const ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected):?\s*/i
+const MAX_DIALOG_ANSWER = 80
+
+/**
+ * What the person chose in a dialog of one question: the one option the dialog's answer text names, else the text
+ * itself, which the person typed in the dialog's own field. A dialog of several questions answers them in one text,
+ * so each copy closes with that text.
+ */
+function answerOf(q: AskedQuestion | null, text: string): string {
+  const named = q?.options.filter(o => text.toLowerCase().includes(optionKey(o))) ?? []
+  const [only] = named
+  if (only && named.length === 1) return only.replace(RECOMMENDED_SUFFIX, '').trim()
+
+  return text.replace(ANSWER_PREFIX, '').trim().slice(0, MAX_DIALOG_ANSWER)
+}
+
+/**
+ * Notes the questions of a dialog the person answered, with their answers, then links them. The copy of each closes
+ * with the person's answer, whether the agent recorded it before the dialog or records it later in the turn.
+ */
+export function noteAnsweredDialog<S extends Session>(s: S, questions: DialogQuestion[], text: string, now: number): S {
+  const answer = answerOf(questions.length === 1 ? questions[0]! : null, text)
+  const added = questions.map((q, index) => ({ ...q, callId: null, index, turn: s.ledger.turn, itemId: null, answer }))
+
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now)
 }
 
 /**

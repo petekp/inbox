@@ -130,6 +130,7 @@ export function applyOps(
     milestones: (last?.milestones ?? []).map(m => ({ ...m })),
     serves: { ...last?.serves },
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
+    goalRefused: null,
   }
   const find = (ref: string) => {
     const key = nameKey(clipWords(ref, NAME_KEPT))
@@ -268,7 +269,8 @@ export function applyOps(
 
 /**
  * The Status after an answer, applied at `now`. `askIds` are the open asks. A removed goal's Undo lasts until an answer
- * from a call that did not read that goal applies: the call moved on from it.
+ * from a call that did not read that goal applies: the call moved on from it. A refused GOAL or RETIRE line is kept
+ * for one call: the answer after it, with lines or NO CHANGE, read it.
  */
 export function applyStatus(
   last: SessionStatus | null,
@@ -277,7 +279,8 @@ export function applyStatus(
   askIds: ReadonlySet<string>,
   readSetAt: number | null = last?.goal?.setAt ?? null,
 ): SessionStatus | null {
-  const o = answer.kind === 'ops' ? applyOps(last, answer.ops, now, askIds, readSetAt) : last
+  const read = last?.goalRefused ? { ...last, goalRefused: null } : last
+  const o = answer.kind === 'ops' ? applyOps(last, answer.ops, now, askIds, readSetAt) : read
   if (o === null) return null
   const settled = answer.kind === 'ops' ? o : settleGoal(o, now, readSetAt, new Set())
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
