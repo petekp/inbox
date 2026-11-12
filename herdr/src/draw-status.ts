@@ -135,7 +135,7 @@ const note = (id: string, text: string, tone: Tone): Extract<Block, { kind: 'not
   depth: 0,
 })
 
-/** A line of the page's head, which starts where the marks start. */
+/** A line of the page's head, with no padding above or below. */
 const headNote = (id: string, text: string, tone: Tone): Block => ({ ...note(id, text, tone), isHead: true })
 
 /** The head's title: the goal, or what the session is for, with the goal's count after it. */

@@ -85,7 +85,8 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
 
 /**
  * A message in a box tinted with the tone of what it says. The buttons that act on its problem draw at its right end,
- * as the Codex tab's banner draws its key, and `under` follows its text.
+ * as the Codex tab's banner draws its key. `under`, such as a press's result, goes below the text and the buttons, so
+ * the buttons stay still when it appears.
  */
 export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under: Element | null = null): Element {
   const tone = colorOf(t, b.tone)
@@ -95,22 +96,24 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
     .whitespace_normal()
     .child(div().font_semibold().text_color(tone).child(b.lead))
     .when(b.body !== null, e => e.child(div().child(b.body ?? '')))
-    .children(under ? [under] : [])
+  const row = h_flex()
+    .gap(12)
+    .items_center()
+    .child(text)
+    .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)))
 
-  return h_flex()
+  return v_flex()
     .mx(BANNER_X)
     .mt(BANNER_GAP_PT)
     .pl(SPINE - BANNER_X - 1)
     .pr(EDGE_X - BANNER_X - 1)
     .py(BANNER_PAD_Y_PT)
-    .gap(12)
-    .items_center()
     .rounded(10)
     .border_1()
     .border_color(tint(tone, 0.3))
     .bg(tint(tone, 0.09))
-    .child(text)
-    .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)))
+    .child(row)
+    .children(under ? [under] : [])
 }
 
 /** A banner's box starts this far in. Inside its 1 px border, its text starts on the spine and its buttons end on the right edge. */

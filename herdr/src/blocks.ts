@@ -147,7 +147,7 @@ export type Block =
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
   /**
-   * A line of text. `isHead` starts it where the marks start, as the Status page's head does, and `isStrong` draws it
+   * A line of text. `isHead` drops its padding above and below, as the Status page's head does, and `isStrong` draws it
    * as the head's title: the goal, or what the session is for. `count` follows the text, quiet, as the goal's does.
    */
   | {

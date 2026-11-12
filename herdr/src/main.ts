@@ -36,7 +36,7 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { afterSend, doesListClickTakeKeys, keyMove, withSelected, withTab } from './keys'
+import { afterSend, isFieldDrawn, keyMove, withSelected, withTab } from './keys'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
@@ -420,7 +420,9 @@ export default class Inbox extends View {
               .pt(8)
               .pb(END_SPACE)
               .on_click((_e, _cx) => {
-                if (doesListClickTakeKeys(this.ui)) this.focus?.focus()
+                const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null
+                if (field) field.state.focus()
+                else this.focus?.focus()
               })
               .children(moved.blocks.map(b => blockEl(b, paint))),
           )

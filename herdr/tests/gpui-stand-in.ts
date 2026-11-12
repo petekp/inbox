@@ -38,6 +38,9 @@ export class StandInField {
 
 let keys: 'panel' | StandInField | null = null
 export const keysHolder = () => keys
+export const giveKeysElsewhere = () => {
+  keys = null
+}
 
 export type StandInContext = ReturnType<typeof standInContext>
 

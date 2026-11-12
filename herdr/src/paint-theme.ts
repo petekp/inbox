@@ -63,8 +63,8 @@ export const HEAD_TEXT = 15
 export const HEAD_LINE = '24px'
 
 /**
- * The one left edge every title, line and button row starts on, on every tab. The tab labels and a banner's text sit
- * on it too. Marks hang in the column before it, and a nested row steps in by `NEST`.
+ * The one left edge every title, line and button row starts on, on every tab. The first tab's label and a banner's
+ * text sit on it too. Marks hang in the column before it, and a nested row steps in by `NEST`.
  */
 export const SPINE = 40
 /** Where the column of hanging marks starts. A mark sits centred in it, with room on both sides. */
@@ -77,9 +77,9 @@ export const EDGE_X = 24
 /** Under this pane width, a PR's number moves from the end of its title line to the start of its status line. */
 export const NARROW_PANE = 280
 
-/** The space between two sections, and under the list's last row, so the last line never meets the pane's edge. */
-export const SECTION_GAP = 32
-export const END_SPACE = SECTION_GAP
+/** The space between two groups or two PRs, and under the list's last row, so the last line never meets the pane's edge. */
+export const GROUP_GAP = 32
+export const END_SPACE = GROUP_GAP
 
 /** A button's height, the space between two buttons, and a pill's side padding. */
 export const BUTTON_H = 24

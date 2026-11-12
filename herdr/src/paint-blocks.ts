@@ -16,7 +16,7 @@ import {
   MARK_X,
   NEST,
   PILL_X,
-  SECTION_GAP,
+  GROUP_GAP,
   SEP,
   SPINE,
   colorOf,
@@ -24,7 +24,7 @@ import {
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 
-/** A Status line's padding above and below, and the space a line under a title or a row of buttons leaves above it. */
+/** The space a line under a title, or a row of buttons, leaves above it. */
 const LINE_PAD = 4
 
 /**
@@ -226,9 +226,10 @@ function prEl(b: PrBlock, p: Paint): Element {
     .child(div().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title))
     .when(!p.isNarrow, e => e.child(div().flex_none().ml(12).text_color(t.muted).child(label)))
   const status = h_flex()
+    .flex_wrap()
     .items_start()
     .when(p.isNarrow, e => e.child(div().flex_none().text_color(t.muted).child(`${label}${SEP}`)))
-    .child(div().flex_none().text_color(colorOf(t, b.status.tone)).child(b.status.text))
+    .child(div().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text))
     .when(b.unlisted.length > 0, e =>
       e.child(
         div()
@@ -387,7 +388,7 @@ function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
     return h_flex()
       .pl(SPINE)
       .pr(EDGE_X)
-      .pt(SECTION_GAP / 2)
+      .pt(GROUP_GAP / 2)
       .pb(8)
       .child(ruleLine(t))
 

@@ -3895,7 +3895,7 @@ var withSelected = (ui, id) => ({
   selected: id,
   typing: ui.typing === id ? id : null
 });
-var doesListClickTakeKeys = (ui) => ui.typing === null;
+var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
 function afterSend(ui, drafts, rowId, isSent) {
   if (!isSent)
@@ -4040,8 +4040,8 @@ var MARK_W = SPINE - MARK_X;
 var NEST = 20;
 var EDGE_X = 24;
 var NARROW_PANE = 280;
-var SECTION_GAP = 32;
-var END_SPACE = SECTION_GAP;
+var GROUP_GAP = 32;
+var END_SPACE = GROUP_GAP;
 var BUTTON_H = 24;
 var BUTTON_GAP = 12;
 var PILL_X = 12;
@@ -4066,8 +4066,9 @@ function tabsEl(tabs, status, isHelpShown, p) {
 }
 function bannerEl(b, t, buttons = [], under = null) {
   const tone = colorOf(t, b.tone);
-  const text = v_flex().flex_1().min_w(0).whitespace_normal().child(div().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div().child(b.body ?? ""))).children(under ? [under] : []);
-  return h_flex().mx(BANNER_X).mt(BANNER_GAP_PT).pl(SPINE - BANNER_X - 1).pr(EDGE_X - BANNER_X - 1).py(BANNER_PAD_Y_PT).gap(12).items_center().rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)));
+  const text = v_flex().flex_1().min_w(0).whitespace_normal().child(div().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div().child(b.body ?? "")));
+  const row = h_flex().gap(12).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)));
+  return v_flex().mx(BANNER_X).mt(BANNER_GAP_PT).pl(SPINE - BANNER_X - 1).pr(EDGE_X - BANNER_X - 1).py(BANNER_PAD_Y_PT).rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);
 }
 var BANNER_X = 12;
 var sessionNoteEl = (text, t) => div().pl(SPINE).pr(EDGE_X).pt(8).whitespace_normal().text_color(t.muted).child(text);
@@ -4136,7 +4137,7 @@ function prEl(b, p) {
   const { t } = p;
   const label = b.rank === null ? b.number : `${b.rank.trim()} ${b.number}`;
   const title = h_flex2().items_start().child(div2().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div2().flex_none().ml(12).text_color(t.muted).child(label)));
-  const status = h_flex2().items_start().when(p.isNarrow, (e) => e.child(div2().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(div2().flex_none().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div2().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
+  const status = h_flex2().flex_wrap().items_start().when(p.isNarrow, (e) => e.child(div2().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(div2().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div2().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
   return v_flex2().pl(SPINE).pr(EDGE_X).pt(8).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p) {
@@ -4170,7 +4171,7 @@ function foldEl(b, p) {
 }
 function ruleEl(b, t) {
   if (b.text === null)
-    return h_flex2().pl(SPINE).pr(EDGE_X).pt(SECTION_GAP / 2).pb(8).child(ruleLine(t));
+    return h_flex2().pl(SPINE).pr(EDGE_X).pt(GROUP_GAP / 2).pb(8).child(ruleLine(t));
   return h_flex2().pl(SPINE).pr(EDGE_X).py(12).gap(8).items_center().child(div2().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t) {
@@ -4773,7 +4774,10 @@ class Inbox extends View {
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
     return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div3().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(END_SPACE).on_click((_e, _cx) => {
-      if (doesListClickTakeKeys(this.ui))
+      const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
+      if (field)
+        field.state.focus();
+      else
         this.focus?.focus();
     }).children(moved.blocks.map((b) => blockEl(b, paint)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
   }

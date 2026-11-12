@@ -5,11 +5,10 @@ import { prCheckId, prMarkId, prThreadId, splitFollowUps, threadSentIn } from '.
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { pendingResult } from '../../hooks/pressed'
 import { EXIT_MS } from '../../hooks/row-motion'
-import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import { NO_HOLDS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
-import { afterSend, doesListClickTakeKeys, keyMove, withSelected, withTab } from '../src/keys'
+import { afterSend, keyMove, withSelected, withTab } from '../src/keys'
 import { moveRows } from '../src/motion'
 import { GIVE_UP_MS, SENDING, drawOuts, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
@@ -198,14 +197,4 @@ test('a relative open runs in the look against the session’s project folder, a
   }
   expect((await runHere([...open], pendingResult([...open], NOW), io)).state).toBe('done')
   expect(ran.flat()).toContain('/work/app/docs/plan.md')
-})
-
-test('a click in the list leaves the keys with an open text field, and gives them to the look once it closes', () => {
-  const blocks = tabBlocks(demoScreen(), uiOn('needsYou'))
-  const row = rowsOf(blocks).find(r => r.isSelectable)!
-  const replying = withSelected(uiOn('needsYou', { selected: row.id, typing: row.id }), row.id)
-  const editingGoal = uiOn('overview', { typing: GOAL_KEYS_ID })
-  expect([replying, editingGoal].map(doesListClickTakeKeys)).toEqual([false, false])
-  expect(doesListClickTakeKeys(withTab(replying, 'findings'))).toBe(true)
-  expect(doesListClickTakeKeys(uiOn('needsYou'))).toBe(true)
 })

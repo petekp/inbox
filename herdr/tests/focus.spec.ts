@@ -2,7 +2,7 @@ import { expect, setSystemTime, test } from 'bun:test'
 
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import { NOW } from './fixtures'
-import { allOf, keysHolder, openPanel } from './gpui-stand-in'
+import { allOf, giveKeysElsewhere, keysHolder, openPanel } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 
 setSystemTime(new Date(NOW))
@@ -10,10 +10,12 @@ setSystemTime(new Date(NOW))
 const idsOf = (root: Painted, prefix: string) =>
   allOf(root).flatMap(n => (n.id?.startsWith(prefix) && n.click ? [n.id] : []))
 
+const byId = (root: Painted, id: string) => allOf(root).find(n => n.id === id)
+
 async function reach(path: string[]) {
   const panel = await openPanel()
   for (const id of path) {
-    const target = allOf(panel.paint()).find(n => n.id === id)
+    const target = byId(panel.paint(), id)
     if (target === undefined) return null
     panel.click(target)
     await panel.settle()
@@ -23,7 +25,7 @@ async function reach(path: string[]) {
 }
 
 async function sweep() {
-  const fields: { rowId: string; keepsKeys: boolean }[] = []
+  const fields: { rowId: string; misses: string[] }[] = []
   const outButtons: Painted[] = []
   const first = await openPanel()
   for (const tab of idsOf(first.paint(), 'tab ')) {
@@ -39,9 +41,26 @@ async function sweep() {
         const painted = allOf(panel.paint())
         outButtons.push(...painted.filter(n => n.isDisabled))
         const field = painted.find(n => n.field !== null)
-        if (field?.field == null || panel.panel.input === null) continue
-        panel.click(field)
-        fields.push({ rowId: panel.panel.input.rowId, keepsKeys: keysHolder() === field.field })
+        const state = field?.field
+        if (field === undefined || !state || field.parent === null || panel.panel.input === null) continue
+        const rowId = panel.panel.input.rowId
+        const misses: string[] = []
+        const clicks: [string, Painted][] = [
+          ['its text', field],
+          ['its box', field.parent],
+          ['the list', painted.find(n => n.id === 'inbox-list')!],
+        ]
+        for (const [where, target] of clicks) {
+          giveKeysElsewhere()
+          panel.click(target)
+          if (keysHolder() !== state) misses.push(`a click on ${where}`)
+        }
+        if (!allOf(panel.paint()).some(n => n.field === state)) misses.push('the field drawn again')
+        panel.click(byId(panel.paint(), 'help')!)
+        await panel.settle()
+        panel.click(byId(panel.paint(), 'inbox-list')!)
+        if (keysHolder() !== 'panel') misses.push('the look taking the keys under Help')
+        fields.push({ rowId, misses })
       }
     }
   }
@@ -51,11 +70,11 @@ async function sweep() {
 
 const swept = await sweep()
 
-test('a click into an open text field leaves the keys with the field', () => {
+test('a click on an open text field, on its box or in the list gives the field the keys, and under Help the look', () => {
   const rowIds = swept.fields.map(f => f.rowId)
   expect(rowIds).toContain(GOAL_KEYS_ID)
   expect(rowIds.some(id => id !== GOAL_KEYS_ID)).toBe(true)
-  expect(swept.fields.filter(f => !f.keepsKeys).map(f => f.rowId)).toEqual([])
+  expect(swept.fields.filter(f => f.misses.length > 0)).toEqual([])
 })
 
 test('a button whose press is out takes no hover and no click', () => {
