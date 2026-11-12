@@ -131,7 +131,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   if (part.is === 'milestone') {
     const m = part.row
     const mark = paintMark({ ...m, isRunning: false }, now, s)
-    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, m.isChanged ? s.bold : t => t, { stall: m.stall, text: m.text })
+    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, t => t, { stall: m.stall, text: m.text })
     if (m.was) out.push(...indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim))
 
     return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]

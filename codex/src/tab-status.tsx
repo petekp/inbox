@@ -147,12 +147,6 @@ function StatusLine({ row }: { row: StatusRow }) {
       </>
     )
   }
-  if (row.kind === 'look')
-    return (
-      <div class={`row look-line${row.isLast ? ' last' : ''}`} style={depthStyle(row)}>
-        <div class="look-rule">{row.text}</div>
-      </div>
-    )
   if (row.kind === 'part')
     return (
       <div class="row part-line">
@@ -260,7 +254,7 @@ function MilestoneLine({ m }: { m: MilestoneRow }) {
       <span class={markClassOf(m.tone, false)}>
         <MarkGlyph text={m.mark} />
       </span>
-      <div class={m.isChanged ? 'content tight changed' : 'content tight'}>
+      <div class="content tight">
         <NameLine name={m.name} stall={m.stall} />
         {m.text ? (
           <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>

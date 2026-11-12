@@ -1,7 +1,6 @@
 import type { UiPressArgument } from 'claude-code'
-import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { foldKey } from './fold-keys'
-import { LOOK_GAP_PT } from './layout'
+import { SECTION_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
 import type { PaneBase, PaneHandlers } from './pane-context'
 import type { KeyAction } from './pane-keys'
@@ -11,8 +10,6 @@ import type { PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import {
   DESKTOP_CELL_PT,
-  DESKTOP_DASH_GAP_PT,
-  DESKTOP_DASH_PT,
   DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
   DESKTOP_MARK_CELLS,
@@ -35,15 +32,7 @@ import {
 import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import {
-  LOOK_DASH,
-  mergedLine,
-  seenSubjectIds,
-  STALL_GAP,
-  type StatusCount,
-  type StatusRow,
-  WAS_PREFIX,
-} from './status-page'
+import { mergedLine, seenSubjectIds, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
 import { unfoldedRows } from './status-page-parts'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
@@ -165,66 +154,12 @@ export function paneStatus(
   })
   /** A line of text that never wraps, in a Box padded by a frame's edge above and below, as a frame's text sits. */
   const desktopEdgedLine = 1 + 2 * desktopSpaceLines(statusFrameEdge)
-  /**
-   * A dashed 1 pt line on desktop, about `cells` wide: dashes that grow to share the room, so the line fills it at any
-   * width. Desktop has no dashed border, and a run of a dash glyph wraps.
-   */
-  const desktopDashes = (key: string, cells: number) => {
-    const count = Math.max(1, Math.round((cells * DESKTOP_CELL_PT) / (DESKTOP_DASH_PT + DESKTOP_DASH_GAP_PT)))
-    const dashes = Array.from({ length: count }, (_, n) => [
-      ...(n > 0 ? [<Box key={`dash-gap-${n}`} width={DESKTOP_DASH_GAP_PT / DESKTOP_CELL_PT} flexShrink={0} />] : []),
-      <Box key={`dash-${n}`} flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />,
-    ]).flat()
-
-    return (
-      <Box key={key} flexGrow={1} flexDirection="row" height={DESKTOP_HAIR_LINES}>
-        {dashes}
-      </Box>
-    )
-  }
   /** The space above a labeled rule. The terminal draws whole lines, so its space is a blank line. */
   const gap = (key: string) =>
     oneLine(
-      <Box key={key} height={look === 'desktop' ? LOOK_GAP_PT / DESKTOP_LINE_PT : 1} />,
-      LOOK_GAP_PT / DESKTOP_LINE_PT,
+      <Box key={key} height={look === 'desktop' ? SECTION_GAP_PT / DESKTOP_LINE_PT : 1} />,
+      SECTION_GAP_PT / DESKTOP_LINE_PT,
     )
-  /**
-   * The look line: "Last seen" in the middle of a dashed rule that spans what the rule above a row spans, with space
-   * above it, and below it unless it ends the list. At `depth` it starts that many steps in, as the rows beside it do.
-   */
-  const statusLookLine = (id: string, text: string, isLast: boolean, depth: number) => {
-    const label = ` ${text} `
-    const fill = Math.max(4, statusRuleCells - markWidth * depth - cellWidth(label))
-    const before = Math.floor(fill / 2)
-    const desktopLeft = desktopStatusRuleLeft + DESKTOP_MARK_CELLS * 2 * depth
-    const ruleCells = (listColumns - desktopLeft - 2 - text.length / DESKTOP_CHARS_PER_CELL) / 2
-    // On desktop it sits outside a frame, whose border would inset the rule's right end, so the padding stands in for
-    // the frame's.
-    const rule =
-      look === 'desktop' ? (
-        <Box flexDirection="row" alignItems="center" marginLeft={desktopLeft} paddingY={statusFrameEdge}>
-          {desktopDashes('look-before', ruleCells)}
-          <Box flexShrink={0} paddingX={1}>
-            <Text color={pal.muted}>{text}</Text>
-          </Box>
-          {desktopDashes('look-after', ruleCells)}
-        </Box>
-      ) : (
-        <Box flexDirection="row">
-          <Box width={statusRuleAt + markWidth * depth} flexShrink={0} />
-          <Text color={pal.divider}>{`${LOOK_DASH.repeat(before)}${label}${LOOK_DASH.repeat(fill - before)}`}</Text>
-        </Box>
-      )
-
-    const parts = [gap('look-above'), oneLine(rule, desktopEdgedLine), ...(isLast ? [] : [gap('look-below')])]
-
-    return stackedIn(
-      <Box key={`status-${id}`} flexDirection="column">
-        {parts.map(p => p.el)}
-      </Box>,
-      parts,
-    )
-  }
   /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
   const statusPartLine = (id: string, text: string) => {
     const above = [gap('part-above')]
@@ -481,7 +416,6 @@ export function paneStatus(
             isFold: true,
           })
     }
-    if (r.kind === 'look') return statusLookLine(r.id, r.text, r.isLast, r.depth)
     if (r.kind === 'part') return statusPartLine(r.id, r.text)
     if (r.kind === 'counts')
       return statusRowLine({

@@ -76,7 +76,6 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
     ]
   if (row.kind === 'more')
     return [{ kind: 'note', id: row.id, text: row.text, tone: 'dim', isStrong: false, depth: row.depth }]
-  if (row.kind === 'look') return [{ kind: 'rule', id: row.id, text: row.text, isDashed: true }]
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
@@ -130,7 +129,7 @@ function milestoneBlock(m: MilestoneRow): Block {
     depth: 0,
     mark: markOf(m.mark, m.tone, false),
     name: m.name,
-    isBold: m.isChanged,
+    isBold: false,
     stall: m.stall,
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),

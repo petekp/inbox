@@ -83,33 +83,23 @@ export type ListContext = {
   running: Child[]
   isTurnRunning: boolean
   now: number
-  /** The id of the part's look line, or null while the person has never looked. */
-  lookId: string | null
-  lookText: string
-  /**
-   * Whether the look line ends a part whose rows all changed. It does in a part folds can follow. Under a milestone it
-   * only splits changed rows from seen ones, so a page of busy milestones does not draw a look line under each.
-   */
-  isLookAtEnd: boolean
 }
 
 /**
- * A part of the list at `depth`: its subjects in order, with their children one step in under them and the look line
- * between them. `afterNew` follows the rows that changed since the last look, before the look line.
+ * A part of the list at `depth`: its subjects in order, with their children one step in under them. `afterOpen`
+ * follows the open subjects, and `afterClosed` the closed ones, which come last.
  */
 export function partRows(
   shown: Subject[],
   c: ListContext,
   depth: number,
-  afterNew: StatusRowParts[] = [],
+  afterOpen: StatusRowParts[] = [],
+  afterClosed: StatusRowParts[] = [],
 ): StatusRowParts[] {
   const rows: StatusRowParts[] = []
-  const lookRow: StatusRowParts | null =
-    c.lookId === null ? null : { kind: 'look', id: c.lookId, depth, text: c.lookText }
-  const firstSeen = shown.findIndex(x => !c.isNew(x))
+  const firstClosed = shown.findIndex(x => !isOpen(x))
   for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0
-    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...(lookRow ? [lookRow] : []))
+    if (i === firstClosed) rows.push(...afterOpen)
     const under = c.running.filter(ch => ch.subjectId === x.id)
     const shownUnder = under.slice(0, CHILD_ROWS)
     const isMore = under.length > CHILD_ROWS
@@ -144,20 +134,17 @@ export function partRows(
         branch: 'last',
       })
   }
-  const isEveryShownNew = firstSeen === -1
-  if (isEveryShownNew) rows.push(...afterNew)
-  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow)
+  if (firstClosed === -1) rows.push(...afterOpen)
+  rows.push(...afterClosed)
 
   return rows
 }
 
-/** Whether `row` starts an item after another, with no look line between them. */
+/** Whether `row` starts an item after another, with no part's rule between them. */
 function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined): boolean {
   const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
 
-  const isLine = (r: StatusRowParts) => r.kind === 'look' || r.kind === 'part'
-
-  return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject
+  return prev !== undefined && prev.kind !== 'part' && row.kind !== 'part' && !isUnderSubject
 }
 
 /**

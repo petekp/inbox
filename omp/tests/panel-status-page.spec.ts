@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { parseStatus } from '../../hooks/status'
 import { applyStatus } from '../../hooks/status-ops'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
-import { STATUS_TEXT_LINES, LOOK_DASH } from '../../hooks/status-page'
+import { STATUS_TEXT_LINES } from '../../hooks/status-page'
 import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { render } from '../src/panel'
@@ -21,7 +21,7 @@ function noGoalScreen() {
   return screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
-test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Last seen in the middle of its dashed rule with a blank line above and below it', () => {
+test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that', () => {
   const screen = noGoalScreen()
   const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
@@ -39,26 +39,6 @@ test('the Status page shows the head’s title and description, then its rows in
     expect(lines[at(row.name) + 1]).toContain(row.text!)
     expect(lines[at(row.name) + 2]).toContain(`was: ${row.was}`)
   }
-  const seenAt = at(' Last seen ')
-  const [left, right] = lines[seenAt]!.trim().split(' Last seen ')
-  expect(left!.length - right!.length).toBeLessThanOrEqual(1)
-  expect(LOOK_DASH).not.toBe('─')
-  expect(left).toMatch(new RegExp(`^${LOOK_DASH}+$`))
-  expect([lines[seenAt - 1], lines[seenAt + 1]].map(l => l!.trim())).toEqual(['', ''])
-})
-
-test('on the Status page, Last seen at the end of the list leaves no blank line below it', () => {
-  const screen = screenOf()
-  const page = screen.view.statusPage
-  const through = page.rows.findIndex(r => r.kind === 'look')
-  const rows = page.rows.slice(0, through + 1).map(r => ({ ...r, isLast: r.kind === 'look' }))
-  const ending = { ...screen, view: { ...screen.view, statusPage: { ...page, rows } } }
-  const lines = text(ending, onPage).split('\n')
-  const seenAt = lines.findIndex(l => l.includes(' Last seen '))
-
-  expect(lines[seenAt - 1]!.trim()).toBe('')
-  expect(lines[seenAt + 1]).not.toBe(undefined)
-  expect(lines[seenAt + 1]!.trim()).not.toBe('')
 })
 
 test('on the Status page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
@@ -96,14 +76,14 @@ test('on the Status page, a row’s stall word follows its name on the line of i
   }
 })
 
-test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
+test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree', () => {
   const lines = text(noGoalScreen(), onPage, 40).split('\n')
   const subject = lines.find(l => l.includes('Dismiss gesture'))!
   const rule = new RegExp(`^ {${subject.indexOf('Dismiss')}}─+$`)
   const rowsAfterRules = lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))
 
-  expect(rowsAfterRules).toHaveLength(4)
-  for (const [n, row] of ['Flick option', 'Dismiss gesture', 'Fade-out', 'more done'].entries())
+  expect(rowsAfterRules).toHaveLength(5)
+  for (const [n, row] of ['Flick option', 'Dismiss gesture', 'Glasses trial', 'Fade-out', 'more done'].entries())
     expect(rowsAfterRules[n]).toContain(row)
 })
 
