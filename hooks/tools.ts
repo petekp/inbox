@@ -1,107 +1,14 @@
-import { recommendedOption } from './ask-match'
+import { isQuestionBack, recommendedOption } from './ask-match'
 import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
+import { bodyChanges, missingText, questionBody, withBody } from './question-checks'
+import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA } from './tool-schemas'
 import type { Closed, Help, Item, LastAction, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
-
-const RECORD_SCHEMA = {
-  type: 'object',
-  properties: {
-    kind: {
-      type: 'string',
-      enum: ['question', 'task', 'finding'],
-      description:
-        'question: a decision only the user can make. task: a step only the user can do. finding: something outside the current task that deserves their attention.',
-    },
-    ask: {
-      type: 'string',
-      description:
-        'For a question or task: what you need from the user, in at most 12 plain words, readable without your reply.',
-    },
-    options: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'For a question: the answers the user can pick, at most 5 words each. Give at least one.',
-    },
-    rec: {
-      type: 'string',
-      description:
-        'For a question: the option you recommend, copied from options. Leave it out when you recommend none.',
-    },
-    why: {
-      type: 'string',
-      description:
-        'For a question with rec: why you recommend it, as a short clause of at most 12 words, such as "it keeps the old API".',
-    },
-    steps: {
-      type: 'array',
-      items: { type: 'string' },
-      description:
-        'For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path.',
-    },
-    design_choice: {
-      type: 'boolean',
-      description:
-        'For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference.',
-    },
-    finding_kind: {
-      type: 'string',
-      enum: ['issue', 'opportunity'],
-      description: 'For a finding. issue: something wrong or risky. opportunity: something that could be better.',
-    },
-    title: { type: 'string', description: 'For a finding: what it is, in at most 12 plain words.' },
-    detail: {
-      type: 'string',
-      description: 'For a finding: why it matters and what you would do, in one or two sentences.',
-    },
-    path: { type: 'string', description: 'For a finding: the file it is about, if one.' },
-  },
-  required: ['kind'],
-}
-
-const CLOSE_SCHEMA = {
-  type: 'object',
-  properties: {
-    id: { type: 'string', description: 'The id of the open item or finding, such as i35 or f32.' },
-    answer: {
-      type: 'string',
-      description:
-        'The user\'s answer, at most 8 words, when their own message answered it. Use their words, but when they picked by position or pointing, as "the second one", give the option they picked.',
-    },
-    reason: {
-      type: 'string',
-      description: 'Otherwise, why it is closed, in at most 8 words, such as "no longer applies: Inbox kept".',
-    },
-  },
-  required: ['id'],
-}
-
-const ORDER_SCHEMA = {
-  type: 'object',
-  properties: {
-    repo: { type: 'string', description: 'The repository, as owner/name.' },
-    numbers: {
-      type: 'array',
-      items: { type: 'integer' },
-      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`,
-    },
-    label: {
-      type: 'string',
-      description:
-        'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.',
-    },
-    why: {
-      type: 'string',
-      description:
-        'The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order.',
-    },
-  },
-  required: ['numbers'],
-}
 
 function orderDescription(host: Host): string {
   return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`
@@ -183,6 +90,9 @@ function list(value: unknown, max: number, each: number): string[] {
  */
 export type ToolAnswer = { ledger: Ledger; result: string; personLine: string | null }
 
+/** What follows an answer whose change the user sees now, when the store refused to save the session as full. */
+export const NOT_SAVED = "Not saved: the inbox's store is full, so this change is lost if this session restarts."
+
 function unchanged(ledger: Ledger, result: string): ToolAnswer {
   return { ledger, result, personLine: null }
 }
@@ -217,17 +127,6 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
   const kind: Item['kind'] = input.kind
   const entry = { kind, ask, options, rec, helps, isDesignChoice, ...(recReason ? { recReason } : {}) }
   const r = addAgentItem(ledger, entry, now)
-  if (r.is === 'open') {
-    const changes = [
-      ...(r.addedSteps > 0 ? ['added its new steps'] : []),
-      ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
-      ...(r.newRec ? [`changed its recommendation to ${r.newRec}`] : []),
-      ...(r.isNewReason ? ['gave its recommendation your reason'] : []),
-    ]
-    const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
-
-    return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`)
-  }
   if (r.is === 'closed')
     return unchanged(
       ledger,
@@ -235,31 +134,32 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
         ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.`
         : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`,
     )
+  const body = input.kind === 'question' ? questionBody(input, options) : {}
+  const before = r.ledger.items.find(i => i.id === r.id)
+  const after = before && withBody(before, body)
+  const recorded = { ...r.ledger, items: r.ledger.items.map(i => (i === before && after ? after : i)) }
+  if (r.is === 'open') {
+    const changes = [
+      ...(r.addedSteps > 0 ? ['added its new steps'] : []),
+      ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
+      ...(r.newRec ? [`changed its recommendation to ${r.newRec}`] : []),
+      ...(r.isNewReason ? ['gave its recommendation your reason'] : []),
+      ...(before && after ? bodyChanges(before, after) : []),
+    ]
+    const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
+
+    return unchanged(recorded, `Already open, so this record updated it${updated}.${leftOut}`)
+  }
 
   return {
-    ledger: r.ledger,
+    ledger: recorded,
     result:
       `Recorded. The user sees it in ${host.surface}.` +
       leftOut +
-      missingText(r.ledger.items.find(i => i.id === r.id)) +
+      missingText(after) +
       (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ''),
     personLine: `${input.kind === 'question' ? 'Question' : 'Task'}: ${ask}`,
   }
-}
-
-/**
- * What a recorded question or task lacks for the user to act on it in one press, said so the agent can record it
- * again with it. A task may have no command, file or link, so its sentence says when to add one.
- */
-function missingText(item: Item | undefined): string {
-  if (item?.kind === 'task')
-    return item.helps.length === 0
-      ? ' It has no steps: when a command, file or link would help the user do it, record it again with steps.'
-      : ''
-  if (!item) return ''
-  if (!item.rec) return ' It has no rec: when you can recommend an option, record it again with rec and why.'
-
-  return item.recReason ? '' : ' It has no why: record it again with why, so the user sees your reason.'
 }
 
 function recordFinding(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
@@ -356,6 +256,12 @@ export function recordClose(
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.")
   if (answer === '' && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, 'Not closed: your record updated this question, and it stays open for the user.')
+  const item = ledger.items.find(i => i.id === id)
+  if (item?.kind === 'question' && answer !== '' && isQuestionBack(answer, item.options))
+    return unchanged(
+      ledger,
+      'Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.',
+    )
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now)
   if (r.closed && 'item' in r.closed)
     return {

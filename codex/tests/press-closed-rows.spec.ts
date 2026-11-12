@@ -8,7 +8,7 @@ import { firstWaiting, keptOpen, listWaits, rowAfterClose } from '../../hooks/ac
 import { QUEUED_AFTER_MS, NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
 import type { RowWait } from '../../hooks/action-plan'
 import { viewOf } from '../src/core'
-import { EXIT_MS } from '../src/rows'
+import { EXIT_MS } from '../../hooks/row-motion'
 import { drawnSettled, SETTLE_WINDOW_MS } from '../src/settle'
 import { CODEX } from '../src/texts'
 import { after, withItems } from './press-fixtures'

@@ -132,8 +132,16 @@ export function recorded<S extends Session>(
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt }
   const r = toolAnswer(host, s.ledger, tool, args, now, presses)
   const ledger = withOrderStatuses(r.ledger, s.prViews.views)
+  const state = linkDialogs({ ...s, ledger }, now)
+  const answered = ledger.items.find(i => !state.ledger.items.some(o => o.id === i.id))
+  if (!answered) return { state, result: r.result, personLine: r.personLine }
+  const outcome = state.ledger.closed.findLast(c => c.id === answered.id)?.outcome ?? ''
 
-  return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine }
+  return {
+    state,
+    result: `Not shown as open: the user already answered this in your dialog (${outcome}), so it closed with that answer.`,
+    personLine: `Closed: ${answered.ask}`,
+  }
 }
 
 /** `s` with the rows a look holds in place and the start of its showing, which `pruned` keeps the records of. */
@@ -141,16 +149,21 @@ export function withHolds<S extends Session>(s: S, holds: Holds): S {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince }
 }
 
-/**
- * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of the rows a look
- * still draws: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. A PR's view goes once
- * `isViewKept` no longer keeps it.
- */
-export function pruned<S extends Session>(s: S): S {
-  const inPlace = [
+/** The rows a look still draws in place: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. */
+export function rowsInPlace(s: Session): Set<string> {
+  const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
   ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
+
+  return new Set([...s.heldRows, ...since])
+}
+
+/**
+ * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of `rowsInPlace`.
+ * A PR's view goes once `isViewKept` no longer keeps it.
+ */
+export function pruned<S extends Session>(s: S): S {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) =>
       isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince),
@@ -160,7 +173,7 @@ export function pruned<S extends Session>(s: S): S {
 
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, new Set([...s.heldRows, ...inPlace])),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews,
   }
 }

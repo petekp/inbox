@@ -30,6 +30,7 @@ import {
   assertCodexOffersOnlyProbe,
   assertCodexUsedOnlyProbe,
   CODEX_ISOLATION_CONFIG,
+  CODEX_WEB_SEARCH_CONFIG,
   codexEnv,
 } from './codex-isolation'
 import {
@@ -224,6 +225,7 @@ function codexHome(s: ReturnType<typeof sandbox>): string {
     [
       `model = ${tomlString(MODEL)}`,
       `model_reasoning_effort = ${tomlString(CODEX_EFFORT)}`,
+      CODEX_WEB_SEARCH_CONFIG,
       ...(isGuided ? [`developer_instructions = ${tomlString(guidance(CODEX))}`] : []),
       `[mcp_servers.${PROBE}]`,
       `command = ${tomlString(process.execPath)}`,

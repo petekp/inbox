@@ -216,3 +216,58 @@ test('on desktop at 30 and 56 columns, an unselected row’s title keeps every w
   expect(await shownTitle('i3')).toBe(titles[2])
   expect(await shownTitle('i4')).toMatch(/…$/)
 })
+
+test('in the terminal and desktop looks, a question’s context draws whole, muted like its Why line, first under its title, on its selected row only', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const context = 'Price lookups take 900 ms, and the checkout page waits on them while the cache is cold.'
+  const question = {
+    tool: 'mcp__inbox__record',
+    kind: 'question',
+    rec: 'In-memory',
+    why: 'the API runs as one process',
+  } as const
+  await $.tool.call({
+    ...question,
+    ask: 'Which cache should the price API use?',
+    context,
+    options: ['Redis', 'In-memory'],
+  })
+  await $.tool.call({
+    ...question,
+    ask: 'Where should the cache keep its keys?',
+    options: ['In-memory', 'On disk'],
+    rec: 'On disk',
+    why: 'keys outlive restarts',
+  })
+  await clock.settle()
+
+  for (const look of ['terminal', 'desktop'] as const) {
+    const pane = await $.ui.mount(
+      look === 'terminal' ? PANE : { ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } },
+    )
+    const select = async (id: string) => {
+      await clock.advance(PRESS_GUARD_MS)
+      if (look === 'terminal') await selectRow(pane, id)
+      else if (await pane.find({ key: `select-${id}` }))
+        await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: `select-${id}` })
+      await clock.settle()
+    }
+    const texts = async () => (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
+
+    await select('i1')
+    const shown = await texts()
+    const title = shown.findIndex(t => t.includes('Which cache should the price API use?'))
+    const why = shown.indexOf('Why In-memory: the API runs as one process')
+    expect([title < shown.indexOf(context), shown.indexOf(context) < why], look).toEqual([true, true])
+    const contextColor = (await pane.find({ type: 'Text', text: context }))?.props.color
+    const whyColor = (await pane.find({ type: 'Text', text: 'Why In-memory: the API runs as one process' }))?.props
+      .color
+    expect(contextColor, look).toBe(whyColor)
+
+    await select('i2')
+    expect(await texts(), look).not.toContain(context)
+  }
+})

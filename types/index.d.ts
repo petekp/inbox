@@ -164,6 +164,8 @@ export type Item = {
   /** The agent's own number or id for it ("1", "D3"), so "1. yes" maps back. */
   label: string | null
   ask: string
+  /** Why the agent asked a question, from its record's `context`. A record of the open question replaces it. */
+  context?: string
   options: string[]
   /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
@@ -189,7 +191,8 @@ export type Item = {
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
   /**
-   * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
+   * What picking each option does, by its label as `options` has it: from the `option_notes` of the agent's records,
+   * else from a dialog question this item copies.
    */
   optionDescriptions?: Record<string, string>
 }
@@ -205,14 +208,16 @@ export type DialogQuestion = { question: string; options: string[]; descriptions
 
 /**
  * A dialog question from ledger turn `turn` that an item may copy: a question of a Codex dialog, which stays open, or
- * of a dialog the person dismissed in another host. `callId` and `index` name a Codex dialog question, and `callId` is
- * null in other hosts. `itemId` is the item that copies it, once linked.
+ * of a dialog the person answered or dismissed in another host. `callId` and `index` name a Codex dialog question, and
+ * `callId` is null in other hosts. `itemId` is the item that copies it, once linked. `answer` is what the person chose
+ * in a dialog they answered; the copy closes with it.
  */
 export type TurnDialogQuestion = DialogQuestion & {
   callId: string | null
   index: number
   turn: number
   itemId: string | null
+  answer?: string
 }
 
 /**
@@ -630,6 +635,9 @@ export type CallFailure = {
  */
 export type CallRecord = { lastFailure: CallFailure | null; recoveredAt: number | null }
 
+/** A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed. */
+export type HerdrPressOutcome = { id: string; outcome: 'applied' | 'stale' }
+
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
@@ -695,6 +703,11 @@ export type Session = {
     phase?: 'attempting' | 'accepted' | 'uncertain'
   }[]
   lastActions: Record<string, LastAction>
+  /**
+   * The last press from the Herdr look this host applied. The session published for the look carries it as
+   * `lastPress`, so the look can tell a press whose row had already changed from one no host applied.
+   */
+  lastHerdrPress?: HerdrPressOutcome
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**
@@ -727,13 +740,6 @@ export type Session = {
 }
 
 declare module 'claude-code' {
-  /**
-   * The inbox's `order_prs` call, as `hooks/tools.ts:ORDER_SCHEMA` gives it. A session writes the MCP tool types only
-   * for the tools it had connected, so an older build's session leaves this one out.
-   */
-  interface McpToolInputs {
-    mcp__inbox__order_prs: { repo?: string; numbers: number[]; label?: string; why?: string }
-  }
   interface PluginState {
     inbox: {
       /** The Claude Code theme in use, such as `dark` or `light-ansi`; '' until read. */
@@ -793,6 +799,41 @@ declare module 'claude-code' {
       lastActions: Record<string, LastAction>
       sent: SentPrompt[]
       untrackedSent: { sessionId: string; text: string }[]
+    }
+  }
+}
+
+// Built by scripts/build-tool-inputs.mjs from the schemas in hooks/tools.ts. Edit a schema, then run it and
+// scripts/build-types.mjs.
+
+declare module 'claude-code' {
+  /** The arguments of the agent's tools, as their schemas in `hooks/tools.ts` give them. */
+  interface McpToolInputs {
+    mcp__inbox__record: {
+      kind: 'question' | 'task' | 'finding'
+      ask?: string
+      context?: string
+      options?: string[]
+      option_notes?: string[]
+      rec?: string
+      why?: string
+      steps?: string[]
+      design_choice?: boolean
+      finding_kind?: 'issue' | 'opportunity'
+      title?: string
+      detail?: string
+      path?: string
+    }
+    mcp__inbox__close: {
+      id: string
+      answer?: string
+      reason?: string
+    }
+    mcp__inbox__order_prs: {
+      repo?: string
+      numbers: number[]
+      label?: string
+      why?: string
     }
   }
 }

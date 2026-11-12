@@ -78,7 +78,7 @@ Namespaces and methods. [R#mods-api-methods; T]
 - `set` round-trips through JSON (a Date becomes a string, a Map becomes `{}`). It "Rejects a function, a cycle, or a store over 4 MiB". [T: `store`]
 - Live, file names only: store files are `~/.claude/plugins/store/<name>_<source>-<hash>.json`, where `<hash>` is the first 12 hex characters of sha256 of `<name>@<source>`. Verified for `inbox@inline` → `7e8589075f50`. So the store is keyed by plugin id, not name. Every folder copy named `inbox` shares `inbox@inline`. Inference: a marketplace install would be `inbox@<marketplace>` with a separate store, so a move to marketplace installs needs a store migration. The file was about 70 KB on 2026-10-08.
 - Inference: "every session on the machine" holds only for one `CLAUDE_CONFIG_DIR`.
-- The inbox saves per session under `s:${owner.id}` (`hooks/mod-saves.ts:save`) and prunes to `KEPT_SESSIONS = 40` (`hooks/ledger.ts:KEPT_SESSIONS`, used in `hooks/mod-saves.ts:save`).
+- The inbox saves per session under `s:${owner.id}` (`hooks/mod-saves.ts:save`). Its prune keeps every running conversation's saved session and the newest `KEPT_SESSIONS = 40` of the rest (`hooks/ledger.ts:KEPT_SESSIONS`, used in `hooks/mod-saves.ts:pruneSaves`). [The sessions folder](../claude-code-mods.md#the-sessions-folder) says how it tells which run.
 - `$.state`: "Named values held by the host for the session, each with a version: plain data that survives a hot reload of the plugin's code." A `get` in `ui.render` subscribes that render. "Any plugin reads any value; its owner alone writes it. Persist through `$.store`." `set` is refused during render and takes `ifVersion`. `plugin` and `key` must be literals. [T: `state`]
 
 ### `$.process`, `$.fs`, `$.http`, `$.session`

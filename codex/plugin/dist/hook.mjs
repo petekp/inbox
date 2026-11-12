@@ -1,7 +1,7 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
 // src/hook-main.ts
-import { dirname as dirname3, join as join4 } from "node:path";
+import { dirname as dirname4, join as join5 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/detached-update.ts
@@ -17,6 +17,10 @@ function detachedUpdate(dir, env, script) {
     child.unref();
   };
 }
+
+// src/host.ts
+import { appendFile, mkdir as mkdir2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
+import { dirname as dirname2, join as join2 } from "node:path";
 
 // src/state.ts
 import { execFileSync } from "node:child_process";
@@ -178,6 +182,35 @@ function sameAsk(a, b) {
 
 // ../hooks/ledger-close.ts
 var MAX_CLOSED = 12;
+function closedRecord(item, closing, now) {
+  const { id, kind, ask, label } = item;
+  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
+}
+function closeItem(ledger, id, closing, now) {
+  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
+  return reopenAskedFindings(
+    { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
+    records
+  );
+}
+var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
+function leavesWorkOpen(c) {
+  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
+}
+function reopenAskedFindings(ledger, closes) {
+  return closes.filter(leavesWorkOpen).reduce((l, c) => {
+    const record2 = l.closedFindings.findLast((f) => f.askedAs === c.id);
+    if (!record2) return l;
+    const reopened = reopenFinding(l, record2.id);
+    return {
+      ...reopened,
+      findings: reopened.findings.map((f) => {
+        const { askedAs: _askedAs, ...rest } = f;
+        return f.id === record2.id ? rest : f;
+      })
+    };
+  }, ledger);
+}
 function pruneClosed(ledger, keep) {
   const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
   return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
@@ -215,6 +248,9 @@ function closedState(d) {
 function closedAt(c) {
   return "closedAt" in c ? c.closedAt : c.at;
 }
+function isLapsed(d) {
+  return closedState(d) !== "handled";
+}
 
 // ../hooks/text.ts
 var NL = "\n";
@@ -229,7 +265,19 @@ function clip(text2, max) {
 function clipLabel(text2, max) {
   return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
 }
-var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
+var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
+var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
+var TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`;
+var SYLLABLE = String.raw`[\uAC00-\uD7A3]`;
+var OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(44032 + i * 28)).join("")}]`;
+var HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`;
+var FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`;
+var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`;
+var GRAPHEME = new RegExp(
+  String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
+  "gu"
+);
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -1369,6 +1417,7 @@ var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
+var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
@@ -1430,7 +1479,8 @@ function statusPage(s, now) {
   const lookId = (id) => look === null ? null : id;
   const foldCtx = { ...ctx, lookId: null, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const closed = named.filter((x) => x.status === status);
+    const names = closed.map((x) => x.name);
     const hidden = names.length - NAMED_FOLD_NAMES;
     const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
     return names.length === 0 ? [] : [
@@ -1439,7 +1489,8 @@ function statusPage(s, now) {
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
       }
     ];
   });
@@ -1463,7 +1514,8 @@ function statusPage(s, now) {
         id: `${prefix}open`,
         depth,
         ...SUBJECT_MARKS.queued,
-        text: `${p.foldedOpen.length} more`
+        text: `${p.foldedOpen.length} more`,
+        subjectIds: []
       }
     ] : [],
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
@@ -2002,6 +2054,7 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {
@@ -2146,10 +2199,10 @@ function asCopyOf(item, q) {
   return {
     ...item,
     ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
+    ...descriptions ? { optionDescriptions: { ...descriptions, ...item.optionDescriptions } } : {}
   };
 }
-function linkDialogs(s) {
+function linkDialogs(s, now = Date.now()) {
   if (s.dialogQuestions.length === 0) return s;
   let items = s.ledger.items;
   const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
@@ -2162,12 +2215,17 @@ function linkDialogs(s) {
       s.dialogQuestions.filter((o) => o.turn === q.turn)
     );
     if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    if (q.answer !== void 0 && !restates(copy.ask, q.question)) return q;
     linked.add(copy.id);
     items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
     return { ...q, itemId: copy.id };
   });
   const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+  const ledger = questions.reduce(
+    (l, q) => q.answer !== void 0 && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l,
+    { ...s.ledger, items }
+  );
+  return { ...s, ledger, dialogQuestions: kept };
 }
 function noteDialog(s, callId, questions) {
   const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
@@ -2277,7 +2335,7 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/tools.ts
+// ../hooks/tool-schemas.ts
 var ORDER_SCHEMA = {
   type: "object",
   properties: {
@@ -2333,18 +2391,18 @@ function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
-  const action = (press, label, kind, flags = {}) => {
-    const pressAction = actionId(press);
+  const action = (press2, label, kind, flags = {}) => {
+    const pressAction = actionId(press2);
     return {
-      press,
-      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      press: press2,
+      label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
-      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
+      emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
-      isFollowUp: FOLLOW_UPS.has(press.action),
-      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
+      isFollowUp: FOLLOW_UPS.has(press2.action),
+      ...ACTION_KEYS[press2.action] ? { hotkey: ACTION_KEYS[press2.action] } : {},
       isOut: out === pressAction
     };
   };
@@ -2528,7 +2586,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {
@@ -2700,11 +2759,14 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
 }
 
 // ../hooks/session-presses.ts
-function pruned(s) {
-  const inPlace = [
+function rowsInPlace(s) {
+  const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  return /* @__PURE__ */ new Set([...s.heldRows, ...since]);
+}
+function pruned(s) {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
       ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
@@ -2713,7 +2775,7 @@ function pruned(s) {
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
@@ -3438,7 +3500,7 @@ function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
     ...Object.fromEntries(counts)
   };
 }
-function herdrReport(pane, tokens, seq) {
+function paneReport(pane, tokens, seq) {
   return [
     "herdr",
     "pane",
@@ -3452,16 +3514,40 @@ function herdrReport(pane, tokens, seq) {
     ...seq === void 0 ? [] : ["--seq", String(seq)]
   ];
 }
-function herdrReportKey(pane, tokens) {
-  return herdrReport(pane, tokens).join("\n");
+var SESSION_LABEL = "inbox.session";
+function reportCommand(r, hc = "hc") {
+  if (r.target.kind === "pane") return paneReport(r.target.pane, r.tokens, r.seq);
+  const labels = { [SESSION_LABEL]: r.session ?? "", ...herdrLabels(r.tokens) };
+  return [
+    hc,
+    "label",
+    r.target.terminal,
+    ...Object.entries(labels).map(([name, value]) => `${name}=${value.replace(new RegExp("\\p{Cc}", "gu"), " ")}`)
+  ];
+}
+function herdrReportKey(r) {
+  return reportCommand({ ...r, seq: void 0 }).join("\n");
 }
 var HERDR_RETRY_MS = [5e3, 3e4, 12e4];
-function herdrReporter() {
+function herdrReporter(log) {
   let sent = null;
   let retries = 0;
   let isRetryWaiting = false;
   let sending = Promise.resolve();
   let newest = null;
+  let hcFound = null;
+  let logged = null;
+  const runReport = async (run2, r) => {
+    const options = { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS };
+    if (r.target.kind === "pane") return run2(reportCommand(r), options);
+    for (const hc of hcFound ? [hcFound] : r.target.hc) {
+      const result = await run2(reportCommand(r, hc), options);
+      if (result.code === UNSTARTABLE_CODE) continue;
+      hcFound = hc;
+      return result;
+    }
+    return null;
+  };
   const retryLater = (after) => {
     const wait = HERDR_RETRY_MS[retries];
     if (!after || isRetryWaiting || wait === void 0) return;
@@ -3475,13 +3561,14 @@ function herdrReporter() {
   const send = async (run2, report, after) => {
     const r = await report();
     if (!r) return false;
-    const key = herdrReportKey(r.pane, r.tokens);
+    const key = herdrReportKey(r);
     if (key === sent) return true;
     sent = null;
-    const result = await run2(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS }).catch(
-      () => null
-    );
+    const result = await runReport(run2, r).catch(() => null);
     const isTaken = result?.code === 0;
+    const problem = isTaken ? null : reportProblem(r, result);
+    if (problem && problem !== logged) log?.(problem);
+    logged = problem;
     if (isTaken) {
       sent = key;
       retries = 0;
@@ -3495,6 +3582,110 @@ function herdrReporter() {
     return result;
   };
   return reportToHerdr;
+}
+function reportProblem(r, result) {
+  if (!result && r.target.kind === "terminal")
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(", then ")}.`;
+  if (!result) return "Herdr report did not run.";
+  const why = result.stderr.trim();
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : "."}`;
+}
+function herdrTarget(env) {
+  const pane = env.HERDR_PANE_ID;
+  if (pane) return { kind: "pane", pane };
+  const terminal = env.HC_TERMINAL_ID;
+  if (!terminal) return null;
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const named = env.HERDR_APP_HOME;
+  const appHome = named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
+  const installed = (name) => home ? [name, `${home}/.local/bin/${name}`] : [name];
+  return { kind: "terminal", terminal, appHome, hc: installed("hc"), herdrApp: installed("herdr-app") };
+}
+function herdrLabels(tokens) {
+  return Object.fromEntries(
+    Object.entries(tokens).map(([name, value]) => [
+      name === STATUS_TOKEN ? "inbox.status" : name.replace(/^inbox-/, "inbox."),
+      value ?? ""
+    ])
+  );
+}
+var HERDR_FORMAT = 1;
+var SESSION_FIELDS = Object.keys(emptySession());
+function herdrEnvelope(source, session, isTrimmed = false) {
+  const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+  const { lastHerdrPress } = session;
+  const { projectFolder, ...rest } = source;
+  return {
+    format: HERDR_FORMAT,
+    ...rest,
+    ...projectFolder?.startsWith("/") && { projectFolder },
+    ...isTrimmed && { trimmed: true },
+    ...lastHerdrPress && { lastPress: lastHerdrPress },
+    session: shared
+  };
+}
+function publishedSessionsFolder(appHome) {
+  return `${appHome}/inbox/sessions`;
+}
+function publishedSessionPath(appHome, sessionId) {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
+}
+
+// ../hooks/host-prs.ts
+var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
+
+// ../hooks/herdr-app.ts
+var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
+var PUBLISH_LIMIT_BYTES = 1024 * 1024;
+function utf8Bytes(text2) {
+  let bytes = 0;
+  for (const char of text2) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
+  }
+  return bytes;
+}
+var isOverLimit = (text2) => text2.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text2) > PUBLISH_LIMIT_BYTES;
+function withoutFoldedClosed(s) {
+  const inPlace = rowsInPlace(s);
+  const { closed, closedFindings } = s.ledger;
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      closed: closed.filter((c) => inPlace.has(c.id)),
+      closedFindings: closedFindings.filter((f) => inPlace.has(f.id))
+    }
+  };
+}
+function publishedText(source, session, log) {
+  const text2 = JSON.stringify(herdrEnvelope(source, session));
+  if (!isOverLimit(text2)) return text2;
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true));
+  if (isOverLimit(trimmed))
+    log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
+  return trimmed;
+}
+async function publishSession(files, appHome, source, session, log) {
+  const path = publishedSessionPath(appHome, source.sessionId);
+  const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files.write(temporary, publishedText(source, session, log));
+    await files.move(temporary, path);
+  } catch (err) {
+    await files.remove(temporary).catch(() => void 0);
+    throw err;
+  }
+}
+function publishedSession(files, appHome, source, session, log) {
+  if (!appHome) return Promise.resolve(false);
+  return publishSession(files, appHome, source, session, log).then(
+    () => true,
+    (err) => {
+      log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  );
 }
 
 // src/host.ts
@@ -3514,22 +3705,60 @@ function codexStore(dir, sessionId, now, onWrite) {
     exclusive: (fn) => tryWithLock(`${statePath(dir, sessionId)}.updating`, fn)
   };
 }
-function herdrOnWrite(env, run2, dir, now) {
-  const pane = env.HERDR_PANE_ID;
-  if (!pane) return void 0;
-  const report = herdrReporter();
-  return async (s) => {
-    const at = now();
-    const seq = s.writtenAt ?? at;
-    const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
-    const key = herdrReportKey(pane, tokens);
-    if (key === s.herdrReport?.key) return;
-    if (!await report(run2, async () => ({ pane, tokens, seq }))) return;
-    await updateState(
-      dir,
-      s.sessionId,
-      (saved) => saved.herdrReport && saved.herdrReport.seq >= seq ? saved : { ...saved, herdrReport: { key, seq } }
+var publishFiles = {
+  write: async (path, text2) => {
+    await mkdir2(dirname2(path), { recursive: true });
+    await writeFile2(path, text2);
+  },
+  move: (from, to) => rename2(from, to),
+  remove: (path) => rm(path, { force: true }),
+  removeFolder: (path) => rm(path, { recursive: true, force: true })
+};
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join2(dir, "herdr.log");
+  return (text2) => void (async () => {
+    const size = await stat2(path).then(
+      (s) => s.size,
+      () => 0
     );
+    const line = `${(/* @__PURE__ */ new Date()).toISOString()} ${text2}
+`;
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+  })().catch(() => void 0);
+}
+function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
+  const target = herdrTarget(env);
+  if (!target) return void 0;
+  const report = herdrReporter(log);
+  return async (written) => {
+    const id = written.sessionId;
+    await withLock(`${statePath(dir, id)}.herdr`, async () => {
+      const s = await readState(dir, id);
+      const at = now();
+      const seq = s.writtenAt ?? at;
+      const isPublished = target.kind === "terminal" && await publishedSession(
+        publishFiles,
+        target.appHome,
+        {
+          host: "codex",
+          agent: CODEX.agent,
+          sessionId: id,
+          terminal: target.terminal,
+          writtenAt: seq,
+          projectFolder: s.root
+        },
+        s,
+        log
+      );
+      const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
+      const r = { target, tokens, session: isPublished ? id : null, seq };
+      const key = herdrReportKey(r);
+      if (key === s.herdrReport?.key) return;
+      if (!await report(run2, async () => r)) return;
+      await updateState(dir, id, (saved) => ({ ...saved, herdrReport: { key, seq } }));
+    }).catch(() => void 0);
   };
 }
 
@@ -3615,7 +3844,7 @@ function unranDelegatesTakenBack(s, refs) {
 
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
-import { open, stat as stat2 } from "node:fs/promises";
+import { open, stat as stat3 } from "node:fs/promises";
 import * as zlib from "node:zlib";
 var canReadZstd = typeof zlib.createZstdDecompress === "function";
 var isCompressed = (path) => path.endsWith(".zst");
@@ -3662,7 +3891,7 @@ var TAIL_KEPT_BYTES = 8 * 1024 * 1024;
 async function bytesBefore(path, bytes, end = Infinity) {
   if (!isCompressed(path)) return plainBytesBefore(path, bytes, end);
   if (end !== Infinity || bytes > TAIL_KEPT_BYTES) return compressedBytesBefore(path, bytes, end);
-  const info = await stat2(path);
+  const info = await stat3(path);
   const version = `${info.size}:${info.mtimeMs}`;
   let known = tails.get(path);
   if (known?.version !== version) {
@@ -4127,8 +4356,8 @@ function rolloutOfLines(lines, cwd, currentTurnId) {
 }
 
 // src/transcript.ts
-import { readdir as readdir2, stat as stat3 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname2, join as join2 } from "node:path";
+import { readdir as readdir2, stat as stat4 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname3, join as join3 } from "node:path";
 async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
@@ -4141,23 +4370,23 @@ async function rolloutsIn(folder, isWanted) {
   return names.sort(byNewest);
 }
 async function newestRollout(codexHome, isWanted) {
-  const sessions = join2(codexHome, "sessions");
+  const sessions = join3(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
-    for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
-      for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
-        const folder = join2(sessions, year, month, day);
+    for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
+        const folder = join3(sessions, year, month, day);
         const [name] = await rolloutsIn(folder, isWanted);
-        if (name !== void 0) return join2(folder, name);
+        if (name !== void 0) return join3(folder, name);
       }
-  const archive = join2(codexHome, "archived_sessions");
+  const archive = join3(codexHome, "archived_sessions");
   const [archived] = await rolloutsIn(archive, isWanted);
-  return archived === void 0 ? null : join2(archive, archived);
+  return archived === void 0 ? null : join3(archive, archived);
 }
 function codexHomeOf(path) {
-  const folder = dirname2(path);
-  if (basename2(folder) === "archived_sessions") return dirname2(folder);
-  const sessions = dirname2(dirname2(dirname2(folder)));
-  return basename2(sessions) === "sessions" ? dirname2(sessions) : null;
+  const folder = dirname3(path);
+  if (basename2(folder) === "archived_sessions") return dirname3(folder);
+  const sessions = dirname3(dirname3(dirname3(folder)));
+  return basename2(sessions) === "sessions" ? dirname3(sessions) : null;
 }
 async function historyBase(path) {
   const base = (await readSessionMeta(path))?.payload?.history_base;
@@ -4302,9 +4531,12 @@ async function handleHook(input, deps) {
         readHistoryAhead(read)
       ]);
       const withPlace = (s2) => folder === null ? s2 : placed(s2, folder, branch);
+      const unreported = ({ herdrReport: _, ...s2 }) => s2;
       const s = await write(
         async (s2) => noteHook(
-          withHost(await withHistory(endsTurn(withPlace({ ...input.source === "clear" ? cleared(s2) : s2, root })))),
+          withHost(
+            await withHistory(endsTurn(withPlace({ ...unreported(input.source === "clear" ? cleared(s2) : s2), root })))
+          ),
           "start",
           now()
         )
@@ -4412,13 +4644,13 @@ async function handleHook(input, deps) {
 
 // src/data-dir.ts
 import { homedir as homedir2 } from "node:os";
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 function dataDir(env, pluginRoot) {
   const fromEnv = env.INBOX_DATA || env.PLUGIN_DATA;
   if (fromEnv) return fromEnv;
   const m = pluginRoot.match(/^(.*)\/plugins\/cache\/([^/]+)\/([^/]+)\/[^/]+$/);
   if (m) return `${m[1]}/plugins/data/${m[3]}-${m[2]}`;
-  return join3(homedir2(), ".codex", "inbox-dev");
+  return join4(homedir2(), ".codex", "inbox-dev");
 }
 
 // src/run.ts
@@ -4466,9 +4698,9 @@ function exitCodeOf(err) {
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const dist = dirname3(fileURLToPath(import.meta.url));
-  const dir = dataDir(process.env, dirname3(dist));
-  const startUpdate = detachedUpdate(dir, process.env, join4(dist, "update.mjs"));
+  const dist = dirname4(fileURLToPath(import.meta.url));
+  const dir = dataDir(process.env, dirname4(dist));
+  const startUpdate = detachedUpdate(dir, process.env, join5(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {
     dir,
     env: process.env,

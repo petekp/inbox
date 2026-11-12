@@ -8,7 +8,7 @@ import type { ShownTab } from '../../hooks/tabs'
 import type { Draft, Finding, Tab } from '../../types'
 import type { FoldGroup, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
-import type { RowTrack } from './rows'
+import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
 import type { DrawnPrs, OpenPrBlock } from './tab-pr-steps'
 
@@ -43,6 +43,8 @@ export type Row = {
   holdsUp?: string
   /** Why the agent recommends an answer, as "Why Redis: it survives restarts". */
   recLine?: string
+  /** Why the agent asked, which the row draws first under its title while it is open. */
+  context?: string
   age?: string
   body?: JSX.Element | null
   keys: Key[]

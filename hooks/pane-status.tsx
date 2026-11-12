@@ -35,7 +35,15 @@ import {
 import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import { LOOK_DASH, mergedLine, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
+import {
+  LOOK_DASH,
+  mergedLine,
+  seenSubjectIds,
+  STALL_GAP,
+  type StatusCount,
+  type StatusRow,
+  WAS_PREFIX,
+} from './status-page'
 import { unfoldedRows } from './status-page-parts'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
@@ -394,6 +402,9 @@ export function paneStatus(
   )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
+  // On desktop a row's first line starts under its frame's border and padding.
+  const firstLine = look === 'desktop' ? desktopSpaceLines(STATUS_PAD_Y) + DESKTOP_HAIR_LINES : 0
+  const seenTops = (r: StatusRow) => seenSubjectIds(r).map(id => [id, exactly(firstLine)] as [string, RowTop])
   const statusRow = (r: StatusRow) => {
     if (r.kind === 'subject') {
       const mark = statusMark(r)
@@ -423,10 +434,7 @@ export function paneStatus(
         isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
       })
 
-      // On desktop the row's first line starts under its frame's border and padding.
-      const firstLine = look === 'desktop' ? desktopSpaceLines(STATUS_PAD_Y) + DESKTOP_HAIR_LINES : 0
-
-      return { ...line, tops: [[r.id, exactly(firstLine)] as [string, RowTop]] }
+      return { ...line, tops: seenTops(r) }
     }
     if (r.kind === 'child') {
       const mark = statusMark(r)
@@ -491,12 +499,14 @@ export function paneStatus(
         },
       })
 
-    return statusRowLine({
+    const fold = statusRowLine({
       key: `status-${r.id}`,
       depth: r.depth,
       mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
       content: plainText(<Text color={pal.muted}>{r.text}</Text>, r.text, r.depth),
     })
+
+    return { ...fold, tops: seenTops(r) }
   }
   /** Rows of the Status's list, each after its rule when it has one. The inline pane draws no rules. */
   const statusRows = (rows: StatusRow[]): Drawn[] =>

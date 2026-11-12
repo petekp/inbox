@@ -367,5 +367,63 @@
       { "calls": "record", "kind": "question", "count": 1, "match": { "ask": "merg" } },
       { "noIds": true }
     ]
+  },
+  {
+    "name": "record-question-gives-context",
+    "about": "A recorded question carries why it came up and a note on each option, given at once or after the record's answer names what it lacks.",
+    "prompt": "Task: speed up the product API's price lookups, which take 900 ms each and hold up the checkout page. A cache is the fix. Before you can go on, I have to choose between Redis and an in-process memory cache. Redis adds a server to each environment. The memory cache keeps prices in each process and can serve them up to five minutes stale. You recommend the memory cache because the service runs as a single process. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "has": ["ask", "options", "context", "option_notes"],
+        "match": {
+          "context": "900|slow|checkout|lookup|price"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "\\?"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "approval-gives-something-to-look-at",
+    "about": "An approval of something the user can look at is recorded with that page in steps, given at once or after the record's answer says the user can't approve what they can't see.",
+    "files": {
+      ".scratch/settings/layout.html": "<!doctype html><title>Settings layout</title><nav><a>Account</a><a>Billing</a><a>Team</a><a>Alerts</a><a>API keys</a></nav><main><h1>Account</h1></main>\n"
+    },
+    "prompt": "Task: redesign the settings page of the web app. You built the new layout, with a tab for each of its five sections, and saved a static copy of it at .scratch/settings/layout.html in this checkout. Before you open the PR, I have to approve the new layout. Ask me for my OK.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "match": {
+          "steps": "^/\\S*settings/layout\\.html"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "task",
+        "count": 0
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "noIds": true
+      }
+    ]
   }
 ]

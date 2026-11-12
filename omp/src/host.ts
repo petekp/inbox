@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { NO_PR_SHARED } from '../../hooks/pr-fetch'
 import { existsSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,7 +12,10 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
-import { herdrReporter } from '../../hooks/herdr'
+import { herdrReporter, herdrTarget } from '../../hooks/herdr'
+import type { HerdrTarget } from '../../hooks/herdr'
+import { herdrPanelOpener } from '../../hooks/herdr-open'
+import type { PressFile } from '../../hooks/herdr-press-file'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { recorded } from '../../hooks/session-presses'
@@ -32,7 +36,8 @@ import type { OmpState } from './state'
 import { OMP, TOOL_LABELS } from './texts'
 import { activityHandlers } from './host-activity'
 import { isUnattended, sessionIdOf } from './host-context'
-import type { HostContext } from './host-context'
+import type { HostContext, OmpContext } from './host-context'
+import { herdrLog, ompPresses } from './host-presses'
 import { panelCalls } from './host-panel'
 import type { Inbox } from './host-panel'
 import { sessionCalls } from './host-sessions'
@@ -71,8 +76,8 @@ export type HostDeps = {
   after: (ms: number, fn: () => Promise<unknown>) => void
   /** Whether a failed request hit the account's usage limit, by omp's own rule. */
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
-  /** The Herdr pane omp runs in, from `HERDR_PANE_ID`, or null outside Herdr. */
-  herdrPane: string | null
+  /** The Herdr pane or app terminal omp runs in, from `herdrTarget`, or null outside Herdr. */
+  herdrTarget: HerdrTarget | null
 }
 
 async function defaultComplete(
@@ -123,7 +128,7 @@ const defaultDeps: HostDeps = {
   background: work => void work.catch(() => undefined),
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
-  herdrPane: process.env.HERDR_PANE_ID || null,
+  herdrTarget: herdrTarget(process.env),
 }
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -169,15 +174,41 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
-  /** Sends text to the agent as if the person typed it. Returns why it could not, or null. */
-  const sendToAgent = (ctx: ExtensionContext, text: string): string | null => {
-    try {
-      pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: 'followUp' })
+  /** The sends of each session that wait for its next run to start. */
+  const runStartWaiters = new Map<string, Set<() => void>>()
 
-      return null
+  /**
+   * Sends text to the agent as if the person typed it. Returns why it could not, or null. From omp 18.18.2,
+   * `sendUserMessage` rejects when omp drops the message before a run starts, as for the cost cap. Sent while the
+   * agent is idle, it settles only when the whole run ends, so this also returns null once the session's next run
+   * starts. omp 18.18.1 and older return nothing, and a send that does not throw has gone.
+   */
+  const sendToAgent = async (ctx: ExtensionContext, text: string): Promise<string | null> => {
+    const id = sessionIdOf(ctx)
+    const waiters = runStartWaiters.get(id) ?? new Set<() => void>()
+    runStartWaiters.set(id, waiters)
+    let started = () => {}
+    const runStarted = new Promise<null>(resolve => {
+      started = () => resolve(null)
+    })
+    waiters.add(started)
+    try {
+      const options = ctx.isIdle() ? undefined : { deliverAs: 'followUp' as const }
+      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(
+        () => null,
+        (err: unknown) => messageOf(err),
+      )
+
+      return await Promise.race([sent, runStarted])
     } catch (err) {
       return messageOf(err)
+    } finally {
+      waiters.delete(started)
     }
+  }
+
+  const onRunStart = (ctx: ExtensionContext) => {
+    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? []) started()
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
@@ -241,6 +272,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     return model ? (model.name ?? model.id) : null
   }
 
+  const logHerdr = herdrLog(dir)
+  const applyHerdrPress = async (ctx: OmpContext, file: PressFile) => {
+    await inbox.press(ctx, file.press, file.holds, file)
+  }
+
   const context: HostContext = {
     deps,
     dir,
@@ -248,9 +284,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     prepared: new Set(),
     prFetches: prFetchTracker(deps.now),
     listeners: new Map(),
-    reportToHerdr: herdrReporter(),
+    reportToHerdr: herdrReporter(logHerdr),
+    logHerdr,
+    presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
     run,
-    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null },
+    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
     sendToAgent,
     askFor,
     dropTools,
@@ -279,7 +317,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.on('session_shutdown', turns.onSessionShutdown)
   pi.on('before_agent_start', turns.onBeforeAgentStart)
   pi.on('input', turns.onInput)
-  pi.on('agent_start', turns.onAgentStart)
+  pi.on('agent_start', (event, ctx) => {
+    onRunStart(ctx)
+
+    return turns.onAgentStart(event, ctx)
+  })
   pi.on('turn_start', turns.onTurnStart)
   pi.on('tool_execution_start', activity.onToolExecutionStart)
   pi.on('tool_execution_end', activity.onToolExecutionEnd)
@@ -408,10 +450,18 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
+  const openHerdrPanel = herdrPanelOpener()
+  const isFile = (path: string) => stat(path).then(s => s.isFile())
+
   pi.registerCommand('inbox', {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
       const isDemo = args.trim() === 'demo'
+      const target = deps.herdrTarget
+      const isHerdrApp = ctx.mode === 'tui' && !args.trim() && target?.kind === 'terminal'
+      const herdr = isHerdrApp ? await openHerdrPanel({ run, isFile }, target) : null
+      if (herdr) ctx.ui.notify(herdr.text, herdr.isShown ? 'info' : 'warning')
+      if (herdr?.isShown) return
       if (ctx.mode === 'tui') return openPanelUi(ctx, isDemo)
       const screen = isDemo
         ? await demoSource({

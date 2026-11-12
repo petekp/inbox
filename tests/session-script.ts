@@ -198,3 +198,13 @@ export function reportedTokens(argv: readonly string[]): Record<string, string |
     }),
   )
 }
+
+export function reportedLabels(argv: readonly string[]): Record<string, string> {
+  return Object.fromEntries(
+    argv.slice(3).map(label => {
+      const at = label.indexOf('=')
+
+      return [label.slice(0, at), label.slice(at + 1)]
+    }),
+  )
+}

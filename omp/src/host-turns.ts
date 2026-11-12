@@ -1,7 +1,7 @@
 import { isSameTaskList, ompTodoFromBranch } from '../../hooks/host-tasks'
 import { guidanceText } from '../../hooks/model-text'
 import { branchIn } from '../../hooks/gh'
-import { CLEARED_TOKENS, delegatesInHerdr } from '../../hooks/herdr'
+import { delegatesInHerdr } from '../../hooks/herdr'
 import { messageTyped, notePrompt, turnStarted, placed, cutOffTurn } from '../../hooks/session-turns'
 import { needsUpdate, statusChanged } from '../../hooks/session-status'
 import { childrenCutOff, delegatesSettled } from '../../hooks/children'
@@ -20,8 +20,9 @@ import type { Reply } from './omp-messages'
 export const MESSAGE_TYPE = 'inbox'
 
 export function turnHandlers(context: HostContext, sessions: SessionCalls) {
-  const { deps, dir, openPanels, prepared, reportToHerdr, run, memory, dropTools, showBand, sendNotes } = context
-  const { change, endedTurn, hostFor, updateHostFor, reportCounts, prepare, continueFork, catchUpUnseen } = sessions
+  const { deps, dir, openPanels, prepared, run, memory, dropTools, showBand, sendNotes } = context
+  const { change, endedTurn, hostFor, updateHostFor, reportCounts, reportEnded, prepare, continueFork, catchUpUnseen } =
+    sessions
 
   let noted: { id: string; prompt: string; notes: string[] } | null = null
 
@@ -66,9 +67,12 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     if (isUnattended(ctx)) return dropTools()
     // No turn runs as a session starts, so a running turn saved here was cut off by a process that ended.
     const id = sessionIdOf(ctx)
+    const left = memory.shownId ?? undefined
     memory.shownId = id
     memory.framesFor = id
-    reportCounts(id)
+    memory.shownCwd = () => ctx.cwd
+    reportCounts(id, left === id ? undefined : left)
+    context.presses.follow(ctx)
     // Subagents run in this process, so the ones a saved session lists running ended with the process that ran them.
     const saved = await readState(dir, id).catch(() => null)
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some(c => c.endedAt === null)
@@ -97,10 +101,11 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     prepared.delete(id)
     if (noted?.id === id) noted = null
     if (agentTexts?.id === id) agentTexts = null
-    const pane = deps.herdrPane
-    if (id !== memory.shownId || !pane) return
+    if (id !== memory.shownId) return
     memory.shownId = null
-    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }), deps.after)
+    memory.shownCwd = null
+    context.presses.stop()
+    await reportEnded(id)
   }
 
   const onBeforeAgentStart = async (event: { prompt: string; systemPrompt: string[] }, ctx: OmpContext) => {

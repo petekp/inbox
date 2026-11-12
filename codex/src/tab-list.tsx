@@ -9,8 +9,8 @@ import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
-import { stepRow } from './rows'
-import type { RowTarget, RowTrack } from './rows'
+import { stepRow } from '../../hooks/row-motion'
+import type { RowTarget, RowTrack } from '../../hooks/row-motion'
 import { isUndoLeft } from './settle'
 import { tabState, drafts, sending, SENDING, errors, copies, entering, undoing, drawnRows } from './tab-state'
 import type { Row, Entry, Lists } from './tab-state'
@@ -177,6 +177,7 @@ export function ListRow({
           {row.meta ? <span class="meta">{row.meta}</span> : null}
           {after(drawn, closed ? ' open-only' : '')}
           {closed ? after(closed, ' closed-only') : null}
+          {row.context ? <span class="context-line">{row.context}</span> : null}
           {row.holdsUp ? (
             <span class="holds-up">
               <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
