@@ -112,7 +112,7 @@ Any mod can set a value with `setShared(key, value)`, and every mod can read it 
 
 ### Draft request to Herdr's maintainers
 
-Not filed. Pete approves the exact text before it is filed.
+Sent on 2026-11-11 through the Herdr app's feedback form.
 
 > **Let a mod pane set its header's title and actions**
 >
