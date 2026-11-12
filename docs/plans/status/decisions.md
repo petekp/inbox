@@ -6,7 +6,7 @@ Status: built.
 
 ## Decisions
 
-1. **One list of subjects, with no sections. On each side of the Seen line, rows are ordered by status, then newest change first.** The order is: held by an open ask (◆), working (●), waits on something other than the person (◌), queued (○), then done (✓) and dropped (✗).
+1. **One list of subjects, with no sections. Rows are ordered by status, then newest change first.** The order is: held by an open ask (◆), working (●), waits on something other than the person (◌), queued (○), then done (✓) and dropped (✗).
    - Reason: each piece of work shows once, with its change attached. The earlier six-section page showed one subject in up to six places. Each part reads from what needs the person to what is finished.
    - This replaces ordering each side of the line by last change alone. That put a queued row whose text had just changed above work that had finished, so the marks ran out of order down the page.
 2. **The inbox model edits subjects by id. Code applies each edit.**

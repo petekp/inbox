@@ -127,6 +127,7 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
 
 function rowBody(row: RowView, isAllShown: boolean, isNextBuild: boolean): RowBlock['body'] {
   const lines: { text: string | null; tone: Tone; mark?: Mark }[] = [
+    { text: row.contextLine, tone: 'muted' },
     { text: row.detail, tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: 'muted' },
     ...shownOptionDescriptions(row, isAllShown).map(o => ({ text: `${o.label}: ${o.description}`, tone: null })),

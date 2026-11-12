@@ -4,6 +4,7 @@ import { EMPTY } from '../hooks/ledger'
 import { allRows } from '../hooks/rows'
 import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
+import { withChild } from '../hooks/status-children'
 import { setTypedGoal } from '../hooks/status-goal-ops'
 import { statusKeyRows } from '../hooks/status-keys'
 import { unfoldedRows } from '../hooks/status-page-parts'
@@ -149,7 +150,7 @@ test('while the goal shows milestones, a subject linked to none of them draws un
   expect(page(noGoal, 30).rows.some(r => r.kind === 'part')).toBe(false)
 })
 
-test('under Other work, a queued subject an ask holds up stays a row, whether the goal does not need it or it serves no milestone, and seen queued work with nothing else to count leaves no counts row', () => {
+test('under Other work, a queued subject an ask holds up stays a row, seen queued work the goal needs folds as it did above Other work, and seen queued work the goal does not need leaves the page with no count', () => {
   const held = after(
     after(
       withGoal(),
@@ -157,7 +158,7 @@ test('under Other work, a queued subject an ask holds up stays a row, whether th
       30,
       new Set(['i1', 'i2']),
     ),
-    'NEW: queued | Release notes | not started',
+    'NEW: queued | Release notes | not started\nNEW: queued | Sticker sheet | not started\nSERVES: s6 | -',
     32,
     new Set(['i1', 'i2']),
   )
@@ -167,8 +168,34 @@ test('under Other work, a queued subject an ask holds up stays a row, whether th
     '== Other work',
     '◆ Error copy: not started · waiting',
     '◆ Logo refresh: not started · waiting',
+    '○ Release notes: not started',
   ])
-  expect(page({ ...held, lastLookAt: 40 }, 45).rows).toEqual([])
+  expect(shape(page({ ...held, lastLookAt: 40 }, 45).rows)).toEqual([
+    '== Other work',
+    '○ Release notes: not started',
+    '○ Error copy: not started',
+  ])
+})
+
+test('running work draws with the milestone its subject serves, also when the subject sits in its done fold, and running work linked to no subject starts Other work', () => {
+  const MIN = 60_000
+  let o = after(after(withGoal(), 'SERVES: s1 | m2', 30), 'DONE: s1 | bad rows skipped', 31)
+  for (const ref of ['review', 'loose'])
+    o = withChild(
+      o,
+      { ref, kind: 'subagent', name: `Check ${ref}`, startedAt: 32, endedAt: null, lastActivityAt: 10 * MIN },
+      10 * MIN,
+    )
+  const p = page({ ...after(o, 'LINK: c1 | s1', 33), lastLookAt: 40 }, 10 * MIN)
+  const m2 = p.goal?.milestones.find(m => m.id === 'm2')
+
+  expect(m2?.rows[0]).toMatchObject({ kind: 'child', name: 'Check review', depth: 1, branch: null })
+  expect(m2?.rows.map(r => r.kind)).toEqual(['child', 'done-fold'])
+  expect(p.rows.slice(0, 2)).toMatchObject([
+    { kind: 'part', text: 'Other work' },
+    { kind: 'child', name: 'Check loose', depth: 0, branch: null },
+  ])
+  expect(p.rows.filter(r => r.kind === 'child')).toHaveLength(1)
 })
 
 test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met', () => {
@@ -190,10 +217,15 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
   ).toEqual(['New', 'Remove'])
 })
 
-test('an ask linked to a milestone names it as what it holds up', () => {
+test('an ask linked to a milestone names it as what it holds up, and a milestone shows its was line only once it changed after the goal was set and since the last look', () => {
   const o = { ...after(withGoal(), 'LINK: i1 | m3', 30, new Set(['i1'])), lastLookAt: 15 }
   const held = { ...emptySession(), ledger: { ...EMPTY, items: [askItem('i1')], overview: o } }
   const view = sessionView(held, 40, 0, NO_HOLDS)
+  const wasOf = (x: SessionStatus) => page(x, 60, {}, [askItem('i1')]).goal?.milestones.map(m => m.was)
 
   expect(allRows(view).find(r => r.id === 'i1')?.holdsUpLine).toBe('Holds up Demo script')
+  expect(wasOf({ ...after(withGoal(), 'WAS: m2 | demo by hand', 20), lastLookAt: 15 })).toEqual([null, null, null])
+  const changed = after(o, 'WAS: m2 | demo by hand', 50, new Set(['i1']))
+  expect(wasOf(changed)).toEqual([null, 'demo by hand', null])
+  expect(wasOf({ ...changed, lastLookAt: 55 })).toEqual([null, null, null])
 })

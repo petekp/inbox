@@ -26,6 +26,31 @@ describe('items the agent recorded', () => {
     expect(answered.closed.map(c => [c.id, c.outcome, c.how])).toEqual([['i1', 'Redis', 'update']])
   })
 
+  test('a question back closes no question, from a CLOSED line or the close tool, while a named option closes it', () => {
+    const presses = { lastActions: {}, turnStartedAt: null }
+    const asked = applyUpdate(
+      { ...EMPTY, turn: 1 },
+      parseReply('NEW: decide | - | Which cache should the API use? | Redis / Memcached | -')!,
+      1000,
+      1,
+    )
+    for (const ledger of [recorded(), asked])
+      for (const outcome of ['Why not Memcached?', 'Is that the cheaper one?'])
+        expect(applyUpdate(ledger, parseReply(`CLOSED: i1 | ${outcome}`)!, 2000, 1).items.map(i => i.id)).toEqual([
+          'i1',
+        ])
+    const refused = recordClose(CLAUDE_CODE, recorded(), { id: 'i1', answer: 'Why not Memcached?' }, 2000, presses)
+    expect(refused.result).toBe(
+      'Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.',
+    )
+    expect(refused.ledger.items.map(i => i.id)).toEqual(['i1'])
+    expect(refused.personLine).toBeNull()
+    for (const answer of ['Redis?', 'Redis', 'What you recommended'])
+      expect(
+        recordClose(CLAUDE_CODE, recorded(), { id: 'i1', answer }, 2000, presses).ledger.closed.map(c => c.outcome),
+      ).toEqual([answer])
+  })
+
   test('a recommendation keeps its reason until it moves to another option, and the answer names what a row lacks', () => {
     const input = { kind: 'question', ask: ask.ask, options: ask.options }
     const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000)
@@ -45,6 +70,47 @@ describe('items the agent recorded', () => {
     expect(moved.items[0]!.recReason).toBeUndefined()
     const task = recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Plug in the test phone' }, 1000)
     expect(task.result).toContain('It has no steps')
+  })
+
+  test("a question keeps why it came up and what each option does, a record of it again replaces them, and the answer names what's missing", () => {
+    const input = { kind: 'question', ask: ask.ask, options: ask.options, rec: 'Redis', why: 'it survives restarts' }
+    const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000)
+    expect(bare.result).toBe(
+      'Recorded. The user sees it in the /inbox pane. It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does).',
+    )
+    const body = { context: 'The price lookups are slow', option_notes: ['Adds a server', ''] }
+    const halfNoted = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, { ...input, ...body }, 1000)
+    expect(halfNoted.result).toContain(
+      'It has no note on "Memcached": record it again with option_notes (what picking each option does).',
+    )
+    const enriched = recordItem(CLAUDE_CODE, bare.ledger, { ...input, ...body }, 1100)
+    expect(enriched.result).toBe(
+      'Already open, so this record updated it and gave it your context and gave its options your notes.',
+    )
+    expect(enriched.ledger.items[0]).toMatchObject({
+      context: 'The price lookups are slow',
+      optionDescriptions: { Redis: 'Adds a server' },
+    })
+    const renoted = recordItem(
+      CLAUDE_CODE,
+      enriched.ledger,
+      { ...input, options: ['memcached', 'redis'], option_notes: ['Keeps prices in memory'] },
+      1200,
+    )
+    expect(renoted.ledger.items[0]).toMatchObject({
+      context: 'The price lookups are slow',
+      optionDescriptions: { Redis: 'Adds a server', Memcached: 'Keeps prices in memory' },
+    })
+
+    const approval = { kind: 'question', ask: 'Approve the new settings layout?', options: ['Yes', 'No'] }
+    const unseen = recordItem(CLAUDE_CODE, EMPTY, approval, 1000)
+    expect(unseen.result).toContain(
+      "The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps.",
+    )
+    const seen = recordItem(CLAUDE_CODE, EMPTY, { ...approval, steps: ['/tmp/settings.png'] }, 1000)
+    expect(seen.result).not.toContain("can't approve")
+    const choice = recordItem(CLAUDE_CODE, EMPTY, input, 1000)
+    expect(choice.result).not.toContain("can't approve")
   })
 
   test("one stays open after 12 prompts, when the update's items expire", () => {

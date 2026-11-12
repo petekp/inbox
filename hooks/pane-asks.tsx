@@ -47,16 +47,22 @@ export function paneAskRows(
     const isHandedOff = r.state.is === 'handedOff'
     const holdsUpLine = holdsUpLineOf(r)
     const holdsUp = holdsUpLine ? (
-      <Text color={pal.muted} wrap="wrap">
+      <Text key="holds-up" color={pal.muted} wrap="wrap">
         <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
         {holdsUpLine}
       </Text>
     ) : null
     const recLine = r.recLine ? (
-      <Text color={pal.muted} wrap="wrap">
+      <Text key="rec" color={pal.muted} wrap="wrap">
         {r.recLine}
       </Text>
     ) : null
+    const contextLine = r.contextLine ? (
+      <Text key="context" color={pal.muted} wrap="wrap">
+        {r.contextLine}
+      </Text>
+    ) : null
+    const subtitleLines = [contextLine, holdsUp, recLine].filter(line => line !== null)
 
     return {
       id: r.id,
@@ -66,17 +72,10 @@ export function paneAskRows(
       title: rowTitle(r, look),
       titleAfter: asked,
       ...(r.at === null ? {} : { at: r.at }),
-      ...(holdsUp && recLine
-        ? {
-            subtitle: (
-              <Box flexDirection="column">
-                {holdsUp}
-                {recLine}
-              </Box>
-            ),
-          }
-        : holdsUp || recLine
-          ? { subtitle: holdsUp ?? recLine! }
+      ...(subtitleLines.length > 1
+        ? { subtitle: <Box flexDirection="column">{subtitleLines}</Box> }
+        : subtitleLines.length === 1
+          ? { subtitle: subtitleLines[0] }
           : {}),
       hasSecondLine: r.replyKind === 'answer',
       body: null,

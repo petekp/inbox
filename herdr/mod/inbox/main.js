@@ -145,7 +145,8 @@ var EMPTY_SESSION_STATUS = {
   goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
-  serves: {}
+  serves: {},
+  goalRefused: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -158,6 +159,13 @@ function words(text) {
   return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 var NUMBER_KINDS = new Set(["pr", "prs", "pull", "request", "issue", "issues", "ticket", "gh"]);
+var VERSION = /^v?\d+(\.\d+)+$/;
+function namesOtherVersion(name, other) {
+  const versions = (text) => [...words(text)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const mine = versions(name);
+  const theirs = new Set(versions(other));
+  return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
+}
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
 }
@@ -260,6 +268,11 @@ function recommendedOption(options, rec) {
   const label = (text) => text.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
+}
+var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
+function isQuestionBack(answer, options) {
+  const text = answer.trim();
+  return text.endsWith("?") && (QUESTION_WORD.test(text) || recommendedOption(options, text) === null);
 }
 var FILLER = new Set([
   "the",
@@ -388,6 +401,22 @@ var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
 // ../hooks/status-upgrade-goal.ts
+var REFUSAL_LINES = ["goal", "retire"];
+var REFUSAL_WHYS = [
+  "typed",
+  "met",
+  "work-open",
+  "moved",
+  "no-work",
+  "restates",
+  "few-milestones"
+];
+function goalRefusedOf(saved) {
+  const r = saved;
+  const line = REFUSAL_LINES.find((x) => x === r?.line);
+  const why = REFUSAL_WHYS.find((x) => x === r?.why);
+  return line && why ? { line, why } : null;
+}
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -448,12 +477,16 @@ function goalRemovedOf(saved) {
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
-function goalFields(o, subjectIds) {
+function goalFields(o, subjects) {
   const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
-  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
+  const live = new Map(milestones.filter((m) => !dropped.has(m.id)).map((m) => [m.id, m]));
+  const names = new Map(subjects.map((s) => [s.id, s.name]));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
-  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))));
+  const serves = Object.fromEntries(savedServes.filter((e) => names.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || live.has(e[1]))).map(([id, to]) => {
+    const milestone = live.get(to);
+    return [id, milestone && namesOtherVersion(names.get(id), milestone.name) ? "none" : to];
+  }));
   const saved = [
     ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
     ...Array.isArray(o.removedGoals) ? o.removedGoals : []
@@ -466,7 +499,8 @@ function goalFields(o, subjectIds) {
     goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
-    serves
+    serves,
+    goalRefused: goalRefusedOf(o.goalRefused)
   };
 }
 
@@ -587,7 +621,7 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const goal = goalFields(o, subjects);
   const dropped = droppedMilestoneIds(goal.milestones);
   const askLinks = savedLinks.map(([ask, to]) => [
     ask,
@@ -1012,7 +1046,8 @@ function quotedAsk(item) {
 Options: ${item.options.join(" / ")}` : ""}`;
 }
 var messages = {
-  answer: (item, answer) => `Re "${item.ask}": ${answer}`,
+  answer: (item, answer) => isQuestionBack(answer, item.options) ? `About this question you asked me: ${answer}
+${quotedAsk(item)}` : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
@@ -1470,11 +1505,8 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   rows.push(...afterClosed);
   return rows;
 }
-function endedList(rows) {
-  return rows.map((r, n) => ({ ...r, isLast: n === rows.length - 1 }));
-}
 function unfoldedRows(rows, isUnfolded) {
-  return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [{ ...r, isLast: false }, ...r.rows.map((x, n) => ({ ...x, isLast: r.isLast && n === r.rows.length - 1 }))] : [r]);
+  return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
 }
 
 // ../hooks/status-page.ts
@@ -1510,13 +1542,15 @@ function statusPage(s, now) {
     return to !== undefined && milestoneIds.has(to) ? to : null;
   };
   const hasMilestones = milestoneIds.size > 0;
-  const isOther = (x) => servedBy(x) === "none" || hasMilestones && milestoneOf(x) === null;
+  const isUnneeded = (x) => servedBy(x) === "none";
+  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const main = subjects.filter((x) => !isOther(x));
+  const needed = subjects.filter((x) => !isUnneeded(x));
+  const main = needed.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open = main.filter(isOpen).sort(pageOrder);
+  const open = needed.filter(isOpen).sort(pageOrder);
   const foldable = open.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
   const split = (part) => {
@@ -1534,7 +1568,7 @@ function statusPage(s, now) {
   const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id)));
   const otherUnseenClosed = unseenClosedOf(other);
   const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !isNew(x);
+  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
   const otherFolded = other.filter(isOtherFolded);
   const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
   const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
@@ -1563,13 +1597,13 @@ function statusPage(s, now) {
       }
     ];
   });
-  const openFold = (prefix, p, depth) => p.foldedOpen.length === 0 ? [] : [
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
     {
       kind: "fold",
       id: `${prefix}open`,
       depth,
       ...SUBJECT_MARKS.queued,
-      text: `${p.foldedOpen.length} more`,
+      text: `${foldedOpen.length} more`,
       subjectIds: []
     }
   ];
@@ -1579,27 +1613,34 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: endedList(partRows([...done].sort(pageOrder), foldCtx, depth + 1))
+      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
     }
   ];
   const foldedPart = (prefix, p, depth) => [
-    ...partRows(p.shown, ctx, depth, openFold(prefix, p, depth), namedFolds(prefix, p.named, depth)),
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0));
-  const otherCounts = countsByMark(otherFolded.filter(isOpen));
-  const counts = otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }];
+  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
+    const x = subjects.find((y) => y.id === c.subjectId);
+    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
+  });
+  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
+  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
+  const afterOtherOpen = [
+    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
+    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
+  ];
   const otherRows = [
-    ...hasMilestones ? loose : [],
-    ...partRows(otherShown, ctx, 0, counts, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...hasMilestones ? looseRows(null, 0) : [],
+    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
     ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
   ];
   const rows = [
-    ...hasMilestones ? [] : loose,
+    ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
-  const milestoneRows = (id, p) => endedList(foldedPart(`${id}-`, p, 1));
+  const milestoneRows = (id, p) => [...looseRows(id, 1), ...foldedPart(`${id}-`, p, 1)];
   const g = goalParts.goal;
   const goal = g && {
     ...g,
@@ -1611,7 +1652,7 @@ function statusPage(s, now) {
     head,
     ...goalParts,
     goal,
-    rows: endedList(rows),
+    rows,
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -2859,7 +2900,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {
@@ -3590,6 +3632,7 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
 }
 function rowBody(row, isAllShown, isNextBuild) {
   const lines = [
+    { text: row.contextLine, tone: "muted" },
     { text: row.detail, tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: "muted" },
     ...shownOptionDescriptions(row, isAllShown).map((o) => ({ text: `${o.label}: ${o.description}`, tone: null })),

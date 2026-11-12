@@ -17,6 +17,18 @@ _Avoid_: Needs you, waiting
 Something the agent asked that only the person can answer.
 _Avoid_: decide, decision
 
+**Context**:
+Why the agent asked a question, in at most 20 words, from the `context` the
+agent gave when it recorded the question. The question's row draws it first
+under its title while the row is selected.
+_Avoid_: background, body
+
+**Option note**:
+What picking one of a question's options does, in at most 12 words. The agent
+gives one for each option when it records the question, and a dialog's option
+descriptions fill in where it gave none. The selected row draws each one beside
+its option's name. Stored as `Item.optionDescriptions`.
+
 **Design choice**:
 A question whose options the agent could try and show side by side, such as
 two layouts. The agent marks it when it records the question, and the inbox
@@ -119,7 +131,8 @@ _Avoid_: target, objective
 **Inferred goal**:
 A goal the inbox model set from the session, from the person's words or the
 work itself, with no press. The model replaces it with the next goal once it is
-met, or once none of its linked work is open and the work has moved on.
+met, or once none of the work under its open milestones is open and the work
+has moved on.
 
 **Typed goal**:
 A goal the person typed in the goal's field, or an inferred goal they edited.
@@ -163,8 +176,9 @@ seconds. A shorter pass through the tab counts nothing. A row counts as seen
 when the last look that showed it came after its last change. A seen row leaves
 out its merged and was lines. A seen done row folds into its part's done fold,
 a seen dropped row leaves the page, and a seen open row may fold into "○ N
-more". The code keeps its time in `lastLookAt`, and the rows it did not show in
-`missedInLastLook`.
+more". Under Other work, a seen open row the goal does not need folds into the
+count of its mark, or leaves the page when it is queued. The code keeps its
+time in `lastLookAt`, and the rows it did not show in `missedInLastLook`.
 _Avoid_: Seen line, look line
 
 **Done fold**:

@@ -5,9 +5,9 @@ export const ROW_PAD_PT = 8
 export const STATUS_ROW_PAD_PT = 19 / 4
 
 /**
- * The space where the terminal and omp leave a blank line on the Status page, in points: above Other work, before each
- * milestone, and between a milestone and the rows under it. It is half the desktop pane's 19-point line, past a row's
- * padding.
+ * The space where the terminal and omp leave a blank line on the Status page, in points: above Other work when rows
+ * come before it, before each milestone, and between a milestone and the rows under it. It is half the desktop pane's
+ * 19-point line, past a row's padding.
  */
 export const SECTION_GAP_PT = 19 / 2
 

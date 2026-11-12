@@ -23,6 +23,7 @@ Change a rule in its owner. Do not change it in a reader.
 - [Tabs, lists, banners and the footer](looks/owners-tabs-and-lists.md)
 - [Rows, presses and feedback](looks/owners-rows-and-feedback.md)
 - [The Status page](looks/owners-status.md)
+- [The Status call](looks/owners-status-call.md)
 - [The ledger, sessions and model-read texts](looks/owners-ledger-and-sessions.md)
 - [PRs](looks/owners-prs.md)
 - [Rules still written in two places](looks/owners-written-twice.md)

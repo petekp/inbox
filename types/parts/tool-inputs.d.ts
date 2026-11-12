@@ -9,7 +9,9 @@ declare module 'claude-code' {
     mcp__inbox__record: {
       kind: 'question' | 'task' | 'finding'
       ask?: string
+      context?: string
       options?: string[]
+      option_notes?: string[]
       rec?: string
       why?: string
       steps?: string[]
