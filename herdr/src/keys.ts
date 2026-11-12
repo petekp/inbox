@@ -63,6 +63,12 @@ export const withSelected = (ui: LookUi, id: string): LookUi => ({
   typing: ui.typing === id ? id : null,
 })
 
+/**
+ * Whether a click in the list gives the keys back to the look. While a text field is open, it keeps them: GPUI delivers
+ * a click to every handler on its path, so a click inside the field reaches the list's handler too.
+ */
+export const doesListClickTakeKeys = (ui: LookUi): boolean => ui.typing === null
+
 /** Switching tabs closes the open text field. Its draft is kept. */
 export const withTab = (ui: LookUi, tab: ShownTab): LookUi => ({ ...ui, tab, selected: null, typing: null })
 

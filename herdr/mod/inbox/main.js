@@ -3911,6 +3911,7 @@ var withSelected = (ui, id) => ({
   selected: id,
   typing: ui.typing === id ? id : null
 });
+var doesListClickTakeKeys = (ui) => ui.typing === null;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
 function afterSend(ui, drafts, rowId, isSent) {
   if (!isSent)
@@ -4764,7 +4765,10 @@ class Inbox extends View {
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div3().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(4).on_click((_e, _cx) => this.focus?.focus()).children(moved.blocks.map((b) => blockEl(b, paint)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div3().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(4).on_click((_e, _cx) => {
+      if (doesListClickTakeKeys(this.ui))
+        this.focus?.focus();
+    }).children(moved.blocks.map((b) => blockEl(b, paint)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
   }
 }
 export {

@@ -36,7 +36,7 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { afterSend, keyMove, withSelected, withTab } from './keys'
+import { afterSend, doesListClickTakeKeys, keyMove, withSelected, withTab } from './keys'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
@@ -411,7 +411,9 @@ export default class Inbox extends View {
               .overflow_y_scroll()
               .pt(8)
               .pb(4)
-              .on_click((_e, _cx) => this.focus?.focus())
+              .on_click((_e, _cx) => {
+                if (doesListClickTakeKeys(this.ui)) this.focus?.focus()
+              })
               .children(moved.blocks.map(b => blockEl(b, paint))),
           )
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
