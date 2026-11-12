@@ -224,7 +224,9 @@ export function paneFrame(
                         {label}
                       </Text>
                     ) : (
-                      <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab(id)} />
+                      <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab(id)}>
+                        <Text color={pal.muted}>{label}</Text>
+                      </Button>
                     )}
                     {badge === null ? null : shownTab === id ? (
                       <Text bold color={tabTone(id)}>
@@ -298,7 +300,9 @@ export function paneFrame(
                   </Button>
                   <Box flexDirection="row" backgroundColor={pal.tab}>
                     {pad ? <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} /> : null}
-                    <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
+                    <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show}>
+                      <Text color={pal.muted}>{label}</Text>
+                    </Button>
                     {badge !== null ? (
                       <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
                         <Text color={tabTone(id)}> {badge}</Text>
@@ -351,7 +355,9 @@ export function paneFrame(
         return (
           <Box key={`rail-${id}`} flexDirection="row">
             <Button plain key={`tab-${id}-before`} label={TAB_PAD} hover={raise} onPress={show} />
-            <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
+            <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show}>
+              <Text color={pal.muted}>{label}</Text>
+            </Button>
             {badge !== null ? (
               <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
                 <Text color={tabTone(id)}> {badge}</Text>
