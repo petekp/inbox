@@ -3567,16 +3567,8 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   rows.push(...afterClosed);
   return rows;
 }
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  return prev !== undefined && prev.kind !== "part" && row.kind !== "part" && !isUnderSubject;
-}
-function ruledRows(rows, isRuled) {
-  return rows.map((r, n) => ({
-    ...r,
-    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
-    isLast: n === rows.length - 1
-  }));
+function endedList(rows) {
+  return rows.map((r, n) => ({ ...r, isLast: n === rows.length - 1 }));
 }
 function unfoldedRows(rows, isUnfolded) {
   return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [{ ...r, isLast: false }, ...r.rows.map((x, n) => ({ ...x, isLast: r.isLast && n === r.rows.length - 1 }))] : [r]);
@@ -3689,7 +3681,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
+      rows: endedList(partRows([...done].sort(pageOrder), foldCtx, depth + 1))
     }
   ];
   const foldedPart = (prefix, p, depth) => [
@@ -3707,7 +3699,7 @@ function statusPage(s, now) {
     rows.push(...partRows(otherShown, ctx, 0, counts, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)));
     rows.push(...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0));
   }
-  const milestoneRows = (id, p) => ruledRows(foldedPart(`${id}-`, p, 1), false);
+  const milestoneRows = (id, p) => endedList(foldedPart(`${id}-`, p, 1));
   const g = goalParts.goal;
   const goal = g && {
     ...g,
@@ -3719,7 +3711,8 @@ function statusPage(s, now) {
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows: endedList(rows),
+    isRuledAfterGoal: (goal?.milestones.length ?? 0) > 0 && rows.length > 0 && rows[0].kind !== "part",
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -6779,6 +6772,8 @@ function drawGoalPart(part, d, isSelected) {
     return headingLines(part, d, isSelected);
   if (part.is === "gap")
     return [""];
+  if (part.is === "rule")
+    return [pageRule(width, s)];
   if (part.is === "title") {
     const g = part.goal;
     const text = part.isTyping ? fieldLines(d) : g ? textWithCount(g, d) : at(NO_GOAL_TEXT, s.dim);
@@ -7225,7 +7220,8 @@ function pageEntries(page, typing, isUnfolded) {
   ] : [];
   const top = [...goalSection(page, typing, isUnfolded), ...head.length > 0 ? [blank, ...head] : []];
   const rows = unfoldedRows(page.rows, isUnfolded).map((row) => ({ kind: "page", row }));
-  return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows];
+  const goalEnd = page.isRuledAfterGoal ? [{ kind: "goal", part: { is: "rule" } }] : [];
+  return top.length > 0 && rows.length > 0 ? [...top, blank, ...goalEnd, ...rows] : [...top, ...rows];
 }
 function helpEntries(screen, tab) {
   const keys = helpKeys("omp", screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0);
@@ -7749,8 +7745,6 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     if (e.kind === "heading")
       body.push(` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page" || e.kind === "goal") {
-      if (e.kind === "page" && e.row.isRuledAbove)
-        body.push(pageRule(width, style));
       const start = body.length;
       if (e.kind === "page")
         subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));

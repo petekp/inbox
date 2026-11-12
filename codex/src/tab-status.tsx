@@ -368,18 +368,19 @@ export function StatusTab({ page }: { page: StatusPage }) {
         {page.head.description ? <p class="muted">{page.head.description}</p> : null}
       </div>
     ) : null
+  // The line between sections is the rule after the goal, so the list after the goal draws none unless the page rules it.
+  const isUnruledAfterGoal = page.goal !== null && !page.isRuledAfterGoal
 
   return (
     <main class="status-page">
       <GoalSection page={page} />
       {head ? <section>{head}</section> : null}
       {page.rows.length > 0 ? (
-        <section>
+        <section class={isUnruledAfterGoal ? 'unruled' : undefined}>
           <div class="list">
-            {page.rows.flatMap(r => [
-              ...(r.isRuledAbove ? [<div key={`rule-${r.id}`} class="status-rule" />] : []),
-              <StatusLine key={r.id} row={r} />,
-            ])}
+            {page.rows.map(r => (
+              <StatusLine key={r.id} row={r} />
+            ))}
           </div>
         </section>
       ) : null}

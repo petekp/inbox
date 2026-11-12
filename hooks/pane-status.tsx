@@ -64,7 +64,6 @@ export function paneStatus(
     markWidth,
     keyLines,
     terminalKeyCells,
-    desktopHairline,
     markGlyph,
     desktopFrame,
     keyRow,
@@ -105,7 +104,7 @@ export function paneStatus(
       | 'statusTree'
       | 'statusHead'
     > &
-    Pick<PaneRowLines, 'markWidth' | 'desktopHairline' | 'markGlyph'> &
+    Pick<PaneRowLines, 'markWidth' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
     Pick<PaneRowKeys, 'keyRow' | 'keyLines' | 'terminalKeyCells'> &
     Pick<PaneAskTabs, 'emptyState'> &
@@ -131,22 +130,16 @@ export function paneStatus(
   const statusRuleAt = statusMarkAt + markWidth
   const statusRuleCells = Math.max(0, listColumns - statusRuleAt)
   const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
-  /** The rule above a Status row that starts an item. */
-  const statusRule = (id: string): Drawn =>
-    look === 'desktop'
-      ? {
-          el: desktopHairline(`status-rule-${id}`, 'across', { marginLeft: desktopStatusRuleLeft }),
-          lines: exactly(DESKTOP_HAIR_LINES),
-        }
-      : {
-          el: (
-            <Box key={`status-rule-${id}`} flexDirection="row">
-              <Box width={statusRuleAt} flexShrink={0} />
-              <Text color={pal.divider}>{'─'.repeat(statusRuleCells)}</Text>
-            </Box>
-          ),
-          lines: exactly(1),
-        }
+  /** The terminal's rule between the goal's milestones and the list after them. */
+  const terminalGoalEndRule: Drawn = {
+    el: (
+      <Box key="status-rule-goal-end" flexDirection="row">
+        <Box width={statusRuleAt} flexShrink={0} />
+        <Text color={pal.divider}>{'─'.repeat(statusRuleCells)}</Text>
+      </Box>
+    ),
+    lines: exactly(1),
+  }
   /** A part drawn on one terminal line, and in `desktopLines` on desktop. */
   const oneLine = (el: JSX.Element, desktopLines: number): Drawn => ({
     el,
@@ -442,11 +435,7 @@ export function paneStatus(
 
     return { ...fold, tops: seenTops(r) }
   }
-  /** Rows of the Status's list, each after its rule when it has one. The inline pane draws no rules. */
-  const statusRows = (rows: StatusRow[]): Drawn[] =>
-    unfoldedRows(rows, isUnfolded).flatMap(r =>
-      r.isRuledAbove && !isInline ? [statusRule(r.id), statusRow(r)] : [statusRow(r)],
-    )
+  const statusRows = (rows: StatusRow[]): Drawn[] => unfoldedRows(rows, isUnfolded).map(statusRow)
   /** The padding a desktop section starts with, above its first part. */
   const desktopSectionPad: Drawn[] =
     look === 'desktop' ? [{ el: <Box key="section-pad" />, lines: exactly(desktopSpaceLines(isInline ? 0 : 1)) }] : []
@@ -466,15 +455,31 @@ export function paneStatus(
         tops: new Map(),
       }
     const head = page.goal === null && page.head ? [statusHead(page.head)] : []
-    const parts = [goalSection(page), head, ...(page.rows.length > 0 ? [statusRows(page.rows)] : [])]
+    const rows = page.rows.length > 0 ? statusRows(page.rows) : []
+    // In the terminal the rule after the goal takes the last of the blank lines between the two sections, so the
+    // goal and the list after it draw as one section. On desktop the hairline between sections is that rule.
+    const isTerminalRuled = look === 'terminal' && page.isRuledAfterGoal
+    const terminalRuled = (goal: Drawn[]) => [
+      ...goal,
+      ...Array.from({ length: terminalSectionGap - 1 }, (_, n) => gap(`goal-end-${n}`)),
+      terminalGoalEndRule,
+      ...rows,
+    ]
+    const parts = isTerminalRuled ? [terminalRuled(goalSection(page))] : [goalSection(page), head, rows]
     const shown = parts
       .filter(lines => lines.length > 0)
       .map(lines => stackedIn(section(lines.map(p => p.el)), [...desktopSectionPad, ...lines]))
     // A hairline between two desktop sections sits a margin under the one above.
     const sectionGap = look === 'desktop' ? DESKTOP_HAIR_LINES + desktopSpaceLines(1) : terminalSectionGap
+    // The goal's section and the list after it draw no hairline between them unless the page rules the goal's end.
+    const isUnruledAfterGoal = page.goal !== null && rows.length > 0 && !page.isRuledAfterGoal
 
     return {
-      el: sections(shown.map(p => p.el)),
+      el: sections(
+        shown.map(p => p.el),
+        1,
+        isUnruledAfterGoal ? [1] : [],
+      ),
       tops: new Map(stacked(shown, sectionGap).tops),
     }
   }

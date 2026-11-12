@@ -8,14 +8,14 @@ import { paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import type { Entry } from './panel-lines'
 import { PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
-import { GLUE, pageButtonLines, pageLine, partHeading } from './panel-page'
+import { GLUE, pageButtonLines, pageLine, pageRule, partHeading } from './panel-page'
 import { indented, visibleLength, wrapText } from './panel-text'
 import { cellWidth } from '../../hooks/text'
 
 /**
  * A part of the goal's section on the Status page: its heading row with the goal's buttons, the goal's text with its
- * was, Now and awaiting lines, a blank line before a milestone or its rows, a milestone, or on the empty page New or its
- * field.
+ * was, Now and awaiting lines, a blank line before a milestone or its rows, a milestone, the rule after the
+ * milestones, or on the empty page New or its field.
  */
 export type GoalPart =
   | { is: 'heading'; text: string; page: StatusPage | null }
@@ -23,6 +23,7 @@ export type GoalPart =
   | { is: 'milestone'; row: MilestoneRow }
   | { is: 'keys'; page: StatusPage }
   | { is: 'gap' }
+  | { is: 'rule' }
   | { is: 'field' }
 
 /** The id of the Status target a part draws the buttons of, or null for a part with none. */
@@ -117,6 +118,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
     indented(text, PAGE_MARK_AT, width, lines, paint)
   if (part.is === 'heading') return headingLines(part, d, isSelected)
   if (part.is === 'gap') return ['']
+  if (part.is === 'rule') return [pageRule(width, s)]
   if (part.is === 'title') {
     const g = part.goal
     const text = part.isTyping ? fieldLines(d) : g ? textWithCount(g, d) : at(NO_GOAL_TEXT, s.dim)

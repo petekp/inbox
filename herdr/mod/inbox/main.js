@@ -1471,16 +1471,8 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   rows.push(...afterClosed);
   return rows;
 }
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  return prev !== undefined && prev.kind !== "part" && row.kind !== "part" && !isUnderSubject;
-}
-function ruledRows(rows, isRuled) {
-  return rows.map((r, n) => ({
-    ...r,
-    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
-    isLast: n === rows.length - 1
-  }));
+function endedList(rows) {
+  return rows.map((r, n) => ({ ...r, isLast: n === rows.length - 1 }));
 }
 function unfoldedRows(rows, isUnfolded) {
   return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [{ ...r, isLast: false }, ...r.rows.map((x, n) => ({ ...x, isLast: r.isLast && n === r.rows.length - 1 }))] : [r]);
@@ -1587,7 +1579,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
+      rows: endedList(partRows([...done].sort(pageOrder), foldCtx, depth + 1))
     }
   ];
   const foldedPart = (prefix, p, depth) => [
@@ -1605,7 +1597,7 @@ function statusPage(s, now) {
     rows.push(...partRows(otherShown, ctx, 0, counts, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)));
     rows.push(...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0));
   }
-  const milestoneRows = (id, p) => ruledRows(foldedPart(`${id}-`, p, 1), false);
+  const milestoneRows = (id, p) => endedList(foldedPart(`${id}-`, p, 1));
   const g = goalParts.goal;
   const goal = g && {
     ...g,
@@ -1617,7 +1609,8 @@ function statusPage(s, now) {
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows: endedList(rows),
+    isRuledAfterGoal: (goal?.milestones.length ?? 0) > 0 && rows.length > 0 && rows[0].kind !== "part",
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -3373,7 +3366,6 @@ function keyButtons(id, keys) {
   return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)));
 }
 function rowBlocks(row, isUnfolded) {
-  const rule = row.isRuledAbove ? [{ kind: "rule", id: `rule ${row.id}`, text: null, isDashed: false }] : [];
   if (row.kind === "subject") {
     const under = [
       row.text,
@@ -3381,7 +3373,6 @@ function rowBlocks(row, isUnfolded) {
       row.was ? `${WAS_PREFIX}${row.was}` : null
     ].filter((l) => l !== null);
     return [
-      ...rule,
       {
         kind: "status",
         id: row.id,
@@ -3397,7 +3388,6 @@ function rowBlocks(row, isUnfolded) {
   }
   if (row.kind === "child")
     return [
-      ...rule,
       {
         kind: "status",
         id: row.id,
@@ -3419,7 +3409,6 @@ function rowBlocks(row, isUnfolded) {
     ];
   if (row.kind === "counts")
     return [
-      ...rule,
       {
         kind: "note",
         id: row.id,
@@ -3431,7 +3420,6 @@ function rowBlocks(row, isUnfolded) {
     ];
   if (row.kind === "done-fold")
     return [
-      ...rule,
       {
         kind: "fold",
         id: row.id,
@@ -3442,7 +3430,6 @@ function rowBlocks(row, isUnfolded) {
       }
     ];
   return [
-    ...rule,
     {
       kind: "status",
       id: row.id,
@@ -3525,7 +3512,8 @@ function statusBlocks(page, ui) {
   ] : [];
   const top = [...goalBlocks(page, ui), ...head.length > 0 ? [{ kind: "gap", id: "gap head" }, ...head] : []];
   const rows = unfoldedRows(page.rows, isUnfolded).flatMap((r) => rowBlocks(r, isUnfolded));
-  return rows.length > 0 ? [...top, { kind: "gap", id: "gap rows" }, ...rows] : top;
+  const goalEnd = page.isRuledAfterGoal ? [{ kind: "rule", id: "rule goal end", text: null, isDashed: false }] : [];
+  return rows.length > 0 ? [...top, { kind: "gap", id: "gap rows" }, ...goalEnd, ...rows] : top;
 }
 
 // src/draw.ts

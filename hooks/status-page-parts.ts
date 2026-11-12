@@ -140,23 +140,9 @@ export function partRows(
   return rows
 }
 
-/** Whether `row` starts an item after another, with no part's rule between them. */
-function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined): boolean {
-  const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
-
-  return prev !== undefined && prev.kind !== 'part' && row.kind !== 'part' && !isUnderSubject
-}
-
-/**
- * The rows of one list with their rules and their end marked. The list under a milestone draws no rules, as the
- * milestones above it draw none: its step in sets it apart.
- */
-export function ruledRows(rows: StatusRowParts[], isRuled: boolean): StatusRow[] {
-  return rows.map((r, n) => ({
-    ...r,
-    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
-    isLast: n === rows.length - 1,
-  }))
+/** The rows of one list with its last row marked. */
+export function endedList(rows: StatusRowParts[]): StatusRow[] {
+  return rows.map((r, n) => ({ ...r, isLast: n === rows.length - 1 }))
 }
 
 /**

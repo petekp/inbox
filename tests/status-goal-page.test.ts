@@ -50,7 +50,7 @@ test('a goal shows how far the work is after its text, its Edit comes before its
   ])
 })
 
-test('work that serves a milestone draws under it one step in, and work the goal does not need sits under Other work, where seen rows fold into a count for each mark', () => {
+test('work that serves a milestone draws under it one step in, and work the goal does not need sits under Other work, whose own rule follows the milestones and where seen rows fold into a count for each mark', () => {
   const seen = { ...linked(), lastLookAt: 35 }
   const changed = after(seen, 'SET: s4 | working | new logo drawn', 50, new Set(['i1']))
   const p = page(seen, 40, {}, [askItem('i1')])
@@ -60,10 +60,7 @@ test('work that serves a milestone draws under it one step in, and work the goal
     ['◆ Error copy: not started · waiting', '◐ CSV import: bad rows skipped'],
     [],
   ])
-  expect(p.goal?.milestones[1]?.rows.map(r => [r.depth, r.isRuledAbove])).toEqual([
-    [1, false],
-    [1, false],
-  ])
+  expect(p.isRuledAfterGoal).toBe(false)
   expect(shape(p.rows)).toEqual(['== Other work', '● 1 working · ○ 1 queued'])
   expect(shape(page(changed, 60, {}, [askItem('i1')]).rows)).toEqual([
     '== Other work',
@@ -133,15 +130,17 @@ test('under a milestone and under Other work, closed work past two rows that the
   ])
 })
 
-test('a subject not linked yet stays in the main list, and nothing splits without a goal', () => {
+test('a subject not linked yet stays in the list after the goal, which one rule sets apart, and without a goal nothing splits or takes a rule', () => {
   const unlinked = { ...withGoal(), lastLookAt: 25 }
   const noGoal = { ...after(null, START, 10), serves: { s3: 'none' }, lastLookAt: 25 }
 
   expect(page(unlinked, 30).rows.some(r => r.kind === 'part')).toBe(false)
+  expect(page(unlinked, 30).isRuledAfterGoal).toBe(true)
   expect(page(noGoal, 30).rows.some(r => r.kind === 'part')).toBe(false)
+  expect(page(noGoal, 30).isRuledAfterGoal).toBe(false)
 })
 
-test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met', () => {
+test('a typed goal waits for its milestones with no rule under it, and a goal whose milestones are all done reads met', () => {
   const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45)
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
 
@@ -152,6 +151,7 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     awaiting: 'Milestones after the next reply',
     milestones: [],
   })
+  expect(page(typed, 46).isRuledAfterGoal).toBe(false)
   expect(page(met, 55).goal).toMatchObject({ label: 'Goal met', count: null, isMet: true, awaiting: null })
   expect(
     statusKeyRows(page(met, 55))

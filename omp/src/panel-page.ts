@@ -113,7 +113,7 @@ export function partHeading(text: string, width: number, s: Style, at = PAGE_TEX
   return `${' '.repeat(at)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`
 }
 
-/** The rule above a Status row that starts an item. */
+/** The rule between the goal's milestones and the list after them. */
 export function pageRule(width: number, s: Style): string {
   return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(pageRuleCells(width)))}`
 }

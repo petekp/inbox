@@ -6,7 +6,7 @@ import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, oldestAsk } from './status-goal-page'
 import type { GoalParts } from './status-goal-page'
-import { childRow, countsByMark, isFinishedUnseen, partRows, ruledRows } from './status-page-parts'
+import { childRow, countsByMark, isFinishedUnseen, partRows, endedList } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
@@ -27,8 +27,6 @@ export type StatusStall = { text: string; tone: 'needsYou' | 'done' | 'muted' }
  * stands on the line under its name.
  */
 export type StatusRow = StatusRowParts & {
-  /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item. */
-  isRuledAbove: boolean
   /** Whether it ends the list. */
   isLast: boolean
 }
@@ -107,6 +105,11 @@ export type StatusPage = GoalParts & {
   head: { title: string; description: string | null } | null
   /** The list after the goal: work not linked to a milestone, then Other work. Rows under a milestone are its `rows`. */
   rows: StatusRow[]
+  /**
+   * Whether one rule sets the list after the goal apart from the goal's milestones: while the goal shows a milestone
+   * and work follows them. Other work's own rule serves when only Other work follows. Rows draw no rules of their own.
+   */
+  isRuledAfterGoal: boolean
   /** The status line's error while the last Status call wrote nothing. */
   error: string | null
   empty: { title: string; hint: string }
@@ -291,7 +294,7 @@ export function statusPage(
             id: `${prefix}done`,
             depth,
             text: `${done.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
-            rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false),
+            rows: endedList(partRows([...done].sort(pageOrder), foldCtx, depth + 1)),
           },
         ]
   /** A part's rows `depth` steps in: its work in the page's order with its folds, as the list after the goal folds. */
@@ -323,7 +326,7 @@ export function statusPage(
     )
   }
   /** A milestone's rows, one step in. */
-  const milestoneRows = (id: string, p: PartSplit): StatusRow[] => ruledRows(foldedPart(`${id}-`, p, 1), false)
+  const milestoneRows = (id: string, p: PartSplit): StatusRow[] => endedList(foldedPart(`${id}-`, p, 1))
   const g = goalParts.goal
   const goal = g && {
     ...g,
@@ -336,7 +339,8 @@ export function statusPage(
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows: endedList(rows),
+    isRuledAfterGoal: (goal?.milestones.length ?? 0) > 0 && rows.length > 0 && rows[0]!.kind !== 'part',
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: 'Status',

@@ -165,7 +165,7 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   expect(rows(gone, 4 * 60 * MIN)).toEqual(['◐ Export: layout next'])
 })
 
-test('a rule sets each item on the page apart: a subject and the rows under it are one item', () => {
+test('the page lists running work linked to no subject first, then each subject with the rows under it', () => {
   const now = 100 * MIN
   let o = after(after(null, 'NEW: working | Fade-out | glances fade', 0), 'DONE: s1 | glances fade', 5 * MIN)
   o = after(o, 'NEW: queued | Docs | outline ready', 10 * MIN)
@@ -180,14 +180,14 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   o = after(o, 'LINK: c1 | s3\nLINK: c2 | s3', 80 * MIN, new Set(['i1']))
   const rows = page({ ...o, lastLookAt: 50 * MIN }, now, {}, [askItem('i1')]).rows
 
-  expect(rows.map(r => `${r.isRuledAbove ? '── ' : ''}${shape([r])[0]}`)).toEqual([
+  expect(shape(rows)).toEqual([
     '● Review loose',
-    '── ◆ Sync: needs a pick · waiting',
-    '── ● Offline mode: queue built ┐',
+    '◆ Sync: needs a pick · waiting',
+    '● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
-    '── ○ Docs: outline ready',
-    '── ▸ 1 done',
+    '○ Docs: outline ready',
+    '▸ 1 done',
   ])
 })
 

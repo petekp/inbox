@@ -10,6 +10,7 @@ import { render } from '../src/panel'
 import type { Style } from '../src/panel'
 import { demoState } from '../src/demo'
 import { emptyState } from '../src/state'
+import { PAGE_TEXT_AT } from '../src/panel-entries'
 import { drawn, ESC, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 const toneNamed: Style = { ...style, tone: (name, s) => `<${name}>${s}</${name}>` }
@@ -76,15 +77,19 @@ test('on the Status page, a row’s stall word follows its name on the line of i
   }
 })
 
-test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree', () => {
-  const lines = text(noGoalScreen(), onPage, 40).split('\n')
-  const subject = lines.find(l => l.includes('Dismiss gesture'))!
-  const rule = new RegExp(`^ {${subject.indexOf('Dismiss')}}─+$`)
-  const rowsAfterRules = lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))
+test('on the Status page, one rule from the text column sets the list after the goal apart from the milestones, and none falls between rows', () => {
+  const rowsAfterRules = (screen: ReturnType<typeof screenOf>) => {
+    const lines = text(screen, onPage, 40).split('\n')
+    const rule = new RegExp(`^ {${PAGE_TEXT_AT}}─+$`)
 
-  expect(rowsAfterRules).toHaveLength(5)
-  for (const [n, row] of ['Flick option', 'Dismiss gesture', 'Glasses trial', 'Fade-out', 'more done'].entries())
-    expect(rowsAfterRules[n]).toContain(row)
+    return lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))
+  }
+  const screen = screenOf()
+  const first = screen.view.statusPage.rows[0]!
+
+  expect(screen.view.statusPage.isRuledAfterGoal).toBe(true)
+  expect(rowsAfterRules(screen)).toEqual([expect.stringContaining(labelOf(first))])
+  expect(rowsAfterRules(noGoalScreen())).toEqual([])
 })
 
 test('on the Status page, a subject’s name stays plain, and where it stands goes dim under it, wrapped to three lines and cut with an ellipsis past them', () => {

@@ -83,10 +83,8 @@
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
 }
-.status-page .status-rule {
-  height: 1px;
-  background: var(--soft);
-  margin-left: calc(var(--text-x) + var(--depth, 0) * var(--step));
+.status-page section.unruled::before {
+  content: none;
 }
 .status-head h1 {
   margin: 0;

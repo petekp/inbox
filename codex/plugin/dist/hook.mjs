@@ -1332,16 +1332,8 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   rows.push(...afterClosed);
   return rows;
 }
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  return prev !== void 0 && prev.kind !== "part" && row.kind !== "part" && !isUnderSubject;
-}
-function ruledRows(rows, isRuled) {
-  return rows.map((r, n) => ({
-    ...r,
-    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
-    isLast: n === rows.length - 1
-  }));
+function endedList(rows) {
+  return rows.map((r, n) => ({ ...r, isLast: n === rows.length - 1 }));
 }
 
 // ../hooks/status-page.ts
@@ -1439,7 +1431,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
+      rows: endedList(partRows([...done].sort(pageOrder), foldCtx, depth + 1))
     }
   ];
   const foldedPart = (prefix, p, depth) => [
@@ -1466,7 +1458,7 @@ function statusPage(s, now) {
       )
     );
   }
-  const milestoneRows = (id, p) => ruledRows(foldedPart(`${id}-`, p, 1), false);
+  const milestoneRows = (id, p) => endedList(foldedPart(`${id}-`, p, 1));
   const g = goalParts.goal;
   const goal = g && {
     ...g,
@@ -1478,7 +1470,8 @@ function statusPage(s, now) {
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows: endedList(rows),
+    isRuledAfterGoal: (goal?.milestones.length ?? 0) > 0 && rows.length > 0 && rows[0].kind !== "part",
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",

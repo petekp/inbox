@@ -135,8 +135,8 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   expect(rule.length).toBeLessThanOrEqual(60)
   expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting')
   expect(lines.slice(lineAt(lines, '1 waiting') + 1, lineAt(lines, '1 waiting') + 3)).toEqual([
-    `   ${'─'.repeat(56)}`,
     ' ✓ Fade-out',
+    '   dismissed glances fade',
   ])
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
   expect(lineAt(lines, '▸ 2 more done')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
