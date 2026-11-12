@@ -2,9 +2,10 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import type { BannerView } from '../../hooks/banners'
+import type { BannerTone } from '../../hooks/tones'
 import { HELP_COPY } from '../../hooks/help'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from '../../hooks/layout'
-import type { Button } from './blocks'
+import type { Button, Tone } from './blocks'
 import type { TabCell } from './draw'
 import type { Message } from './screen'
 import { BUTTON_GAP, EDGE_X, SMALL_TEXT, SPINE, colorOf, tint } from './paint-theme'
@@ -83,13 +84,16 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
     )
 }
 
+/** A question draws in a notice's blue, as in the other looks. */
+const BANNER_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'warning', notice: 'notice', ask: 'notice' }
+
 /**
  * A message in a box tinted with the tone of what it says. The buttons that act on its problem draw at its right end,
  * as the Codex tab's banner draws its key. `under`, such as a press's result, goes below the text and the buttons, so
  * the buttons stay still when it appears.
  */
 export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under: Element | null = null): Element {
-  const tone = colorOf(t, b.tone)
+  const tone = colorOf(t, BANNER_TONES[b.tone])
   const text = v_flex()
     .flex_1()
     .min_w(0)
