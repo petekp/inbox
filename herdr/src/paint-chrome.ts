@@ -100,7 +100,8 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
   return h_flex()
     .mx(BANNER_X)
     .mt(BANNER_GAP_PT)
-    .px(SPINE - BANNER_X - 1)
+    .pl(SPINE - BANNER_X - 1)
+    .pr(EDGE_X - BANNER_X - 1)
     .py(BANNER_PAD_Y_PT)
     .gap(12)
     .items_center()
@@ -112,7 +113,7 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
     .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)))
 }
 
-/** A banner's box starts this far in, so its text, inside its 1 px border, sits on the spine. */
+/** A banner's box starts this far in. Inside its 1 px border, its text starts on the spine and its buttons end on the right edge. */
 const BANNER_X = 12
 
 /** A line under the tabs that says something about the whole session, such as that the host trimmed it. */

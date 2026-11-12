@@ -66,12 +66,13 @@ export const HEAD_LINE = '24px'
  * The one left edge every title, line and button row starts on, on every tab. The tab labels and a banner's text sit
  * on it too. Marks hang in the column before it, and a nested row steps in by `NEST`.
  */
-export const SPINE = 24
-export const MARK_W = 16
-export const MARK_X = SPINE - MARK_W
+export const SPINE = 40
+/** Where the column of hanging marks starts. A mark sits centred in it, with room on both sides. */
+export const MARK_X = 16
+export const MARK_W = SPINE - MARK_X
 export const NEST = 20
 /** The one right edge: Help, a row's age, a PR's number, a line's last button and a rule's end all stop this far in. */
-export const EDGE_X = 16
+export const EDGE_X = 24
 
 /** Under this pane width, a PR's number moves from the end of its title line to the start of its status line. */
 export const NARROW_PANE = 280

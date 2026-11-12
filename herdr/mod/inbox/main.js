@@ -4073,11 +4073,11 @@ var LINE = "20px";
 var SMALL_TEXT = 12;
 var HEAD_TEXT = 15;
 var HEAD_LINE = "24px";
-var SPINE = 24;
-var MARK_W = 16;
-var MARK_X = SPINE - MARK_W;
+var SPINE = 40;
+var MARK_X = 16;
+var MARK_W = SPINE - MARK_X;
 var NEST = 20;
-var EDGE_X = 16;
+var EDGE_X = 24;
 var NARROW_PANE = 280;
 var SECTION_GAP = 32;
 var END_SPACE = SECTION_GAP;
@@ -4106,7 +4106,7 @@ function tabsEl(tabs, status, isHelpShown, p) {
 function bannerEl(b, t, buttons = [], under = null) {
   const tone = colorOf(t, b.tone);
   const text = v_flex().flex_1().min_w(0).whitespace_normal().child(div().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div().child(b.body ?? ""))).children(under ? [under] : []);
-  return h_flex().mx(BANNER_X).mt(BANNER_GAP_PT).px(SPINE - BANNER_X - 1).py(BANNER_PAD_Y_PT).gap(12).items_center().rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)));
+  return h_flex().mx(BANNER_X).mt(BANNER_GAP_PT).pl(SPINE - BANNER_X - 1).pr(EDGE_X - BANNER_X - 1).py(BANNER_PAD_Y_PT).gap(12).items_center().rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)));
 }
 var BANNER_X = 12;
 var sessionNoteEl = (text, t) => div().pl(SPINE).pr(EDGE_X).pt(8).whitespace_normal().text_color(t.muted).child(text);
