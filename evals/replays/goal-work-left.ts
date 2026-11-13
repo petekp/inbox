@@ -76,7 +76,18 @@ export const goalWorkLeft: Replay = {
         focusMatch: 'search|100 ms|3\\.1',
         pastMatch: 'demo',
         goalClear: { text: 'Search under 100 ms in 3.1', match: '100 ms|3\\.1|search' },
-        goal: { text: 'Search under 100 ms in 3.1', match: '100 ms|3\\.1|search', milestones: [] },
+        goal: {
+          text: 'Search under 100 ms in 3.1',
+          match: '100 ms|3\\.1|search',
+          milestones: [
+            {
+              id: 'ms-search',
+              name: 'Search under 100 ms',
+              match: '100 ms|speed|fast|search',
+              state: 'working',
+            },
+          ],
+        },
         pieces: [
           { id: 'demo', state: 'dropped', stands: 'demo is off', serves: undefined },
           { id: 'import', serves: undefined },

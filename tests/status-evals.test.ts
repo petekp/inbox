@@ -354,6 +354,15 @@ test('the facts read the same pieces, asks and running work the judge is told ab
   expect(text).toMatch(/- Review the sync engine diff, for Sync engine/)
 })
 
+test('a goal that replaces another names the goal it replaced in the facts, from its step on', () => {
+  const start: Facts = { ...baseScene().facts, goal: { text: 'Import ready to demo', match: 'import', milestones: [] } }
+  const replaced = factsAfter(start, { goal: { text: 'Search under 100 ms in 3.1', match: '100 ms', milestones: [] } })
+
+  expect(factsText(start)).not.toMatch(/It replaced the goal/)
+  expect(factsText(replaced)).toMatch(/Goal: Search under 100 ms in 3\.1\nIt replaced the goal: Import ready to demo\n/)
+  expect(factsText(factsAfter(replaced, { focus: 'search' }))).toMatch(/It replaced the goal: Import ready to demo/)
+})
+
 test('the head is a title and a one-line description', () => {
   const page = statusPage(sessionOf(statusOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5), minutes(5))
 

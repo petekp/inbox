@@ -22,9 +22,9 @@ Status: built.
 6. **◆ comes from a link between an open ask and the subjects it holds up.** The Status call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
    - Reason: a ◆ set by the model could not see Asks, so it went stale and could disagree with Asks. A problem nobody is fixing is a to-do for the person, so it belongs in Asks, or in Finds when it is outside the task.
    - This replaces the rule that the Status call reads no inbox text. It now reads each open ask's id and first words, so it can link the ask. It never restates one.
-7. **Work filed for later closes with a mark of its own, not ✓.**
-   - Reason: filing a piece does not finish it. ✓ and the done count mean work that was delivered.
-   - Until #137 builds the mark, the Status call closes a piece the person files out of the session's plan with DONE and the text "filed for later". A piece set aside to come back to in the session stays queued.
+7. **Work filed for later closes as done, with ✓.** The Status call closes a piece the person files out of the session's plan with DONE and the text "filed for later". A piece set aside to come back to in the session stays queued.
+   - Reason: filed work left open sat as ○ beside the work still to do. Where it stands says it was filed, so the person can tell it from delivered work.
+   - A mark of its own for filed work would be a new feature. [#137](https://github.com/petekp/inbox/issues/137) is closed as not planned.
 8. **No buttons that act on an ask or a finding.**
    - Reason: an Answer or Fix button on a row would make the Status a weaker copy of Asks and Finds, with less context.
 9. **Code follows running work from host events, and draws each as a child row under its subject.** A child is a subagent, a workflow run or a Herdr delegate. A background command or a Monitor task is not one. The model only links a child to a subject.

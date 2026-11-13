@@ -204,12 +204,11 @@ const FIXED_RULES: Rule[] = [
     id: 'marks-true',
     reads: 'facts',
     property: 5,
-    text: "Each piece's subject has a status its state allows. Filed work closed as done is left to filed-mark.",
+    text: "Each piece's subject has a status its state allows.",
     failures: ({ result }) =>
       result.facts.pieces.flatMap(p =>
         subjectsFor(p, result.session.ledger.overview)
           .filter(s => !rightStatuses(p).includes(s.status))
-          .filter(s => !(p.state === 'filed' && s.status === 'done'))
           .map(s => `${label(s)} is ${s.status}, and ${p.names[0]} is ${p.state}`),
       ),
     key: failure => failure.slice(0, failure.lastIndexOf(', and ')),
@@ -423,19 +422,6 @@ const FIXED_RULES: Rule[] = [
           : []),
       ]
     },
-  },
-  {
-    id: 'filed-mark',
-    reads: 'facts',
-    property: 5,
-    text: 'Work filed for later closes with its own mark, not ✓.',
-    until: '#137',
-    failures: ({ result }) =>
-      result.facts.pieces
-        .filter(p => p.state === 'filed')
-        .flatMap(p => subjectsFor(p, result.session.ledger.overview))
-        .filter(s => s.status === 'done' || s.status === 'dropped')
-        .map(s => `filed work closed as ${s.status}: ${label(s)}`),
   },
   {
     id: 'finished-named',

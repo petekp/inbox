@@ -120,8 +120,38 @@ export const longTurn: Replay = {
         pieces: [
           { id: 'rank', state: 'done', stands: 'pinned first, then by last edit' },
           { id: 'typo', state: 'working', stands: 'short typos match' },
+          piece({
+            id: 'speed',
+            names: ['Search speed'],
+            match: 'speed|100 ms',
+            state: 'queued',
+            stands: '0.3 s on large libraries, the target is 100 ms',
+            serves: 'ms-fast',
+          }),
+          piece({
+            id: 'r31',
+            names: ['3.1 release'],
+            match: '3\\.1',
+            state: 'queued',
+            stands: 'not started',
+            serves: 'ms-live31',
+          }),
         ],
         goalClear: { text: 'Search under 100 ms on big libraries, shipped in 3.1', match: '100 ms|3\\.1' },
+        goal: {
+          text: 'Search under 100 ms on big libraries, shipped in 3.1',
+          match: '100 ms|3\\.1',
+          milestones: [
+            {
+              id: 'ms-fast',
+              name: 'Under 100 ms',
+              match: '100 ms|speed|fast',
+              state: 'queued',
+              alsoRight: ['working'],
+            },
+            { id: 'ms-live31', name: '3.1 shipped', match: '3\\.1', state: 'queued' },
+          ],
+        },
       },
       checkpoint: true,
       targets: ['goal-when-clear', 'milestones-shape', 'marks-true', 'changes-move'],

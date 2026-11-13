@@ -42,7 +42,6 @@ export const coordinatorDayLater: Step[] = [
       ],
     },
     checkpoint: true,
-    judgeUntil: { marks: '#137' },
     targets: ['piece-once', 'text-no-ids', 'children-linked', 'each-once', 'where-it-stands'],
   },
   {
@@ -61,7 +60,7 @@ export const coordinatorDayLater: Step[] = [
     facts: {
       focus: 'shipping 2.5',
       focusMatch: '2\\.5',
-      pastMatch: 'vanish|archiv',
+      pastMatch: 'vanish|disappear|archiv',
       pieces: [
         { id: 'vanish', state: 'done', stands: 'fixed' },
         { id: 'r25', state: 'working', stands: 'release candidate building', alsoRight: ['waits-on-other'] },
@@ -110,7 +109,6 @@ export const coordinatorDayLater: Step[] = [
       milestones: [{ id: 'ms-live25', state: 'done' }],
     },
     checkpoint: true,
-    judgeUntil: { marks: '#137' },
     targets: ['head-follows', 'milestones-true', 'open-pieces-kept', 'marks-true', 'head'],
   },
   {
@@ -161,7 +159,6 @@ export const coordinatorDayLater: Step[] = [
       ],
     },
     checkpoint: true,
-    judgeUntil: { marks: '#137' },
     targets: ['milestones-true', 'serves-linked', 'head-follows', 'marks-true', 'head'],
   },
 ]

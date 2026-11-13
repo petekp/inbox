@@ -61,6 +61,14 @@ export const singleTask: Replay = {
             stands: 'not started',
             serves: 'ms-offline',
           }),
+          piece({
+            id: 'r25',
+            names: ['2.5 release'],
+            match: '2\\.5|release',
+            state: 'queued',
+            stands: 'not started',
+            serves: 'ms-live',
+          }),
         ],
       },
       targets: ['goal-when-clear', 'milestones-shape', 'head-no-status', 'head-follows', 'open-pieces-kept'],
@@ -201,7 +209,7 @@ export const singleTask: Replay = {
         person: 'Drop the web question. Run the device tests.',
         activity: ['Ran: npm run test:devices'],
         reply:
-          'Device tests: on Android, edits made before a crash sync once the app restarts. On iOS, the last edit made before a crash is lost.',
+          'The offline banner is done: it shows on phones, and web goes without it. Device tests: on Android, edits made before a crash sync once the app restarts. On iOS, the last edit made before a crash is lost.',
       },
       facts: {
         pieces: [

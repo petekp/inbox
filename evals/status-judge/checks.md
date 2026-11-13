@@ -1,6 +1,6 @@
 ## The checks
 
-The examples come from one invented session. It adds two-factor sign-in to a web app. Its pieces are SMS codes, authenticator setup, recovery codes and the 3.0 release. A subagent checks the recovery code tests. The person set the goal "Two-factor sign-in in 3.0", with the milestones SMS codes work, Recovery codes shown and 3.0 shipped. A pricing page tweak is work the goal does not need. The open question "Offer SMS codes outside the US?" holds up SMS codes. A finding says the password reset link expires too fast. The person has a task: add the SMS provider's key to staging. A standing rule says no deploys on Fridays. The examples write a row on one line, as `Name: where it stands`.
+The examples come from one invented session. It adds two-factor sign-in to a web app. Its pieces are SMS codes, authenticator setup, recovery codes and the 3.0 release. A subagent checks the recovery code tests. The goal is "Two-factor sign-in in 3.0", with the milestones SMS codes work, Recovery codes shown and 3.0 shipped. A pricing page tweak is work the goal does not need. The open question "Offer SMS codes outside the US?" holds up SMS codes. A finding says the password reset link expires too fast. The person has a task: add the SMS provider's key to staging. A standing rule says no deploys on Fridays. The examples write a row on one line, as `Name: where it stands`.
 
 **`n/a`.** A check has nothing to judge in these cases and no others. Its answer is then `n/a`, never `pass`:
 
@@ -8,9 +8,9 @@ The examples come from one invented session. It adds two-factor sign-in to a web
 - `child-labels`: the page has no child rows.
 - `no-restating`: the facts have no open ask and no finding.
 - `was-lines`: the page has no was line under a subject row.
-- `goal`: the page shows no goal and no proposed goal.
+- `goal`: the page shows no goal.
 - `milestones`: the page shows no milestone rows.
-- `split`: no goal is set, so nothing is split. A proposed goal alone splits nothing.
+- `split`: no goal is set, so nothing is split.
 
 `head` is never `n/a`: a page with no head while the facts give a focus fails it.
 
@@ -102,7 +102,7 @@ The check fails when any of these is on the page:
 
 - A mark that does not fit its piece's state.
 - An open mark on a row for a piece the facts say is closed, under one of the piece's names or the name its row had on the previous page.
-- `✓` or an open mark on filed work.
+- An open mark on filed work.
 - `◆` on a piece that no open ask holds up.
 - Open pieces that are missing, as step 2 finds.
 
@@ -114,7 +114,7 @@ Examples:
 - Pass: `◆ SMS codes: US numbers work`, while "Offer SMS codes outside the US?" holds up SMS codes.
 - Pass: `✗ Email codes: dropped, too easy to phish`.
 - Fail: `● 3.0 release: live, billing bug next`, when the facts say the release is delivered.
-- Fail: `✓ Passkeys: filed for later`. Filed work is not delivered.
+- Pass: `✓ Passkeys: filed for later`. Filed work closes as delivered, and its words say it is filed.
 - Fail: `○ Passkeys: filed for later`. Filed work is closed.
 - Fail: `◆ Recovery codes`, when no open ask holds up recovery codes.
 - Fail: the facts list nine open pieces. The page shows six open rows and no `○ N more` fold.
@@ -226,51 +226,60 @@ Examples:
 
 ### goal
 
-The goal is the one outcome the person is working toward. The person owns it. The model may only propose one, from the person's own words.
+The goal is the one outcome the session's work is for, with a finish line. The inbox model sets it from the person's words or from the work, and the person may type one. Compare it with the facts' `Goal:` line, and with `This step makes the next goal clear:` when the facts have it.
 
-A goal the person set passes in any words. Judge it only for `was:`: a `was:` line under the goal names the goal it replaced.
+The check passes when the goal names the outcome the facts give, in any words, and its `was:` line, when it has one, names the goal the facts say it replaced.
 
-A proposed goal passes when all of these hold:
+The check fails when any of these hold:
 
-- The facts say the person stated a goal, at this step or before, and the proposal names that outcome. Its words may differ.
-- It is an outcome someone could check as met or not, with a finish line, such as `3.0 shipped` or `Sign-in ready to demo`.
-
-A proposed goal fails when it does any of these:
-
-- It comes from the agent's words, or from a summary of the work, when the facts give no goal the person stated.
-- It names a direction with no finish line, such as `Better sign-in security` or `Keep the code clean`.
-- It names an activity in place of an outcome, such as `Reviewing sign-in`.
-- It names a different outcome from the one the person stated, or adds an aim the person did not state.
-- It proposes the goal already set, in other words.
+- The goal names an outcome other than the facts' goal, or adds an aim the facts do not give.
+- The page shows a goal while the facts say `Goal: none set` and this step makes no goal clear.
+- The goal names a direction with no finish line, such as `Better sign-in security`, or an activity, such as `Reviewing sign-in`.
+- The page shows the goal open and not met, while the note after the facts' goal says the page shows it met or shows no goal.
+- A `was:` line names a goal the facts do not say it replaced.
 
 Examples:
 
-- Pass: the goal `Two-factor sign-in in 3.0`, which the person set.
-- Pass: `Proposed goal · from your message` over `Recovery codes ready to demo`, when the person stated: get recovery codes ready to demo.
-- Fail: the same proposal when the person stated no goal and the agent wrote "the goal now is a recovery code demo".
-- Fail: a proposal of `Stronger account security`, when the person asked to make sign-in safer.
-- Fail: a proposal of `Recovery codes and SMS outside the US ready`, when the person stated only the recovery code demo.
+- Pass: `Two-factor sign-in in 3.0`.
+- Pass: `2FA shipped in 3.0`, other words for the same outcome.
+- Pass: `was: Password reset fixed` under the goal, when the facts say it replaced the goal Password reset fixed.
+- Fail: `Stronger account security`, a direction with no finish line.
+- Fail: `Two-factor sign-in and passkeys in 3.0`, which adds an aim the facts do not give.
+- Fail: `Recovery codes ready to demo`, while the facts say `Goal: none set` and this step makes no goal clear.
+- Fail: `was: 2.9 shipped`, when the facts name no goal it replaced.
 
 ### milestones
 
-Milestones are the outcomes the goal needs, in order. Each is something that is either true or not yet, such as `SMS codes work`, never a step or a task such as `Write SMS tests`. Compare each with the facts' `Milestones:` lines. A proposal's milestones have no `Milestones:` lines: compare them with what the person stated, and judge their marks by the pieces of work that would make each one true.
+Milestones are the outcomes the goal needs, in order. Each is something that is either true or not yet, such as `SMS codes work`, never a step or a task such as `Write SMS tests`. The model plans the milestones itself, so their names and number may differ from the facts' `Milestones:` lines. Those lines give the outcomes the goal needs as the case's author sees them. A milestone row may stand for one of them, for a part of one, or for several together.
 
-The check passes when every milestone row is an outcome the goal needs, its mark fits its state as the marks list says, and together the rows show what is done, what is left and what is held up. A milestone held up by an open ask shows `◆` and `waiting`, as a subject row does.
+Judge a milestone's mark by the work it stands for: the facts' milestones it covers, and the pieces of the subject rows under it.
+
+- `✓` fits when all of that work is delivered.
+- `●` or `◐` fits when any of it is being worked on now.
+- `○` fits when none of it has started, or all of it is set aside.
+- `◌` fits when it waits on something outside the session and none of it is being worked on.
+- `◆` and `waiting` fit when an open ask holds up the milestone, or a piece that serves it.
+
+The check passes when every milestone row is an outcome the goal needs, its mark fits the work it stands for, and together the rows cover every outcome the goal needs.
 
 The check fails when any of these hold:
 
 - A milestone names a task, a step, a tool or a file, in place of an outcome.
 - A milestone names something the goal does not need.
-- A milestone's mark does not fit its state in the facts, such as `○ SMS codes work` when the facts say SMS codes work is delivered.
-- A milestone in the facts has no row, or two rows stand for one milestone.
-- An open ask holds up a milestone, or a piece that serves it, and the milestone shows no `◆`.
+- A milestone's mark does not fit the work it stands for.
+- An outcome the goal needs, as the facts' milestones give it, has no milestone row that covers it.
+- Two milestone rows stand for the same outcome.
 
 Examples:
 
 - Pass: `✓ SMS codes work`, `● Recovery codes shown`, `○ 3.0 shipped`, matching the facts.
+- Pass: `● Codes work` and `○ 3.0 shipped`, when `Codes work` covers the facts' SMS codes work and Recovery codes shown, and recovery codes are being worked on.
 - Fail: `● Write recovery code tests`, a task.
-- Fail: `○ SMS codes work`, when the facts say it is delivered.
+- Fail: `○ Store review`, a step on the way to 3.0 shipped.
+- Fail: `○ Recovery codes shown`, with `● Recovery codes` under it.
+- Fail: `✓ SMS codes work`, when the facts say SMS codes work is not delivered.
 - Fail: `● SMS codes work`, while the open question "Offer SMS codes outside the US?" holds up SMS codes, which serves it.
+- Fail: `✓ SMS codes work` and `● Recovery codes shown`, with no row that covers 3.0 shipped.
 
 ### split
 

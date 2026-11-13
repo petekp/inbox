@@ -98,7 +98,6 @@ export const coordinatorDay: Replay = {
         children: [{ ref: 'herdr:vn2', does: 'Fix notes that vanish after archiving', serves: 'vanish' }],
       },
       checkpoint: true,
-      judgeUntil: { marks: '#137' },
       targets: [
         'goal-when-clear',
         'milestones-shape',

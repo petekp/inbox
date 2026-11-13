@@ -29,7 +29,6 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 | `evals/status-run.ts` | The runner and its results file |
 | `tests/status-evals.test.ts`, `tests/status-bar.test.ts` | The checks with no model calls |
 | `tests/status-evals-scenes.ts` | The pages and Status call answers those checks grade |
-| `tests/status-evals-known-failing.test.ts` | The known failing cases, each of which fails until the issue it names is built |
 
 ### What goes in the suite
 
@@ -119,7 +118,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 - No text repeats an ask or a finding in any words, or says that its piece waits on the person's decision.
 - A was line names the plan that was replaced, or the piece that merged in.
 
-**Checkpoints:** Replay A after steps 3, 9, 12 and 14. Replay B after steps 4 and 8. Replay C after steps 1 and 4. The short case `mid-turn-activity` after its one step. The judge runs there only with `--judge`. The judge does not yet check the goal, the milestones or the split into Other work: those three checks, and an `n/a` verdict for a page with nothing a check judges, come with its next revision.
+**Checkpoints:** Replay A after steps 3, 9, 12 and 14. Replay B after steps 4 and 8. Replay C after steps 1 and 4. The short case `mid-turn-activity` after its one step. The judge runs there only with `--judge`. The judge also checks the goal, the milestones and the split into Other work, and answers `n/a` for a check with nothing to judge on the page. The case's facts give the goal and its milestones as the author sees them. The model plans its own milestones, so the judge accepts any milestones that are outcomes the goal needs, with marks that follow the pieces under them.
 
 **How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of Git, in `.scratch/status-judge-pages/` in the main checkout, and the judge's author is not given that folder. `build-pages.ts` in that folder holds each page as saved state and draws it with `statusPage`, so after a change to how the page is drawn, one run draws every page again. `./scripts/eval.sh --suite status --judge-pages <folder>` runs the check, once on each page. A revision round adds `--judge-set 1`, so the second set is judged only at the end. It runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
 
@@ -154,11 +153,7 @@ These make no model calls.
 - **The rules catch what they claim.** Each fixed rule runs on a hand-written good page and a bad one.
 - **The replay harness grades a known run.** A recorded good run of each replay passes every rule. A recorded bad run fails at the step and property it was written to break.
 - **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Status call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. A Status answer that lands after a clear writes into the cleared session: #152. When two update processes run their Status calls newer-first, the older answer overwrites the newer one: #153.
-- **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
-  - work filed for later closes with its own mark, #137;
-  - a look marks as seen only the rows that were on screen, #139.
-
-  The rules for the same changes in the replays name their issue too. Until it is built, such a rule's failures are listed apart and block nothing. A replay step marks a judge check the same way: at Replay A's checkpoints, the judge's marks check waits on #137, since filed work there can only close as ✓ or ✗.
+- **Known failing cases.** A rule for a failure that code owns names its issue, as `child-labels` names #149. Until it is built, the rule's failures are listed apart and block nothing. A replay step marks a judge check the same way, with `judgeUntil`: at `mid-turn-activity`'s step, the judge's where-it-stands check waits on the mid-turn wording follow-up.
 
 ### Calls for one release run
 
