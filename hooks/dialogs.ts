@@ -104,20 +104,59 @@ export function linkDialogs<S extends Session>(s: S, now = Date.now()): S {
   return { ...s, ledger, dialogQuestions: kept }
 }
 
-const ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected):?\s*/i
+const ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected)(?: your questions?)?:?\s*/i
+const ANSWER_SUFFIX = /\.?\s*you can now continue with the user's answers in mind\.?\s*$/i
 const MAX_DIALOG_ANSWER = 80
 
+/** The text of Claude Code's dialog answer without its wrapper sentences. */
+function unwrapped(text: string): string {
+  return text.replace(ANSWER_PREFIX, '').replace(ANSWER_SUFFIX, '').trim()
+}
+
 /**
- * What the person chose in a dialog of one question: the one option the dialog's answer text names, else the text
- * itself, which the person typed in the dialog's own field. A dialog of several questions answers them in one text,
- * so each copy closes with that text.
+ * Each question's answer in Claude Code's `"<question>"="<answer>"` pairs, or null when the text does not hold a pair
+ * for every question, in order. An answer may hold quote marks: it ends at the quote mark before the next pair, or at
+ * the last one.
  */
-function answerOf(q: AskedQuestion | null, text: string): string {
+function pairedAnswers(questions: AskedQuestion[], text: string): string[] | null {
+  const body = unwrapped(text)
+  const starts: number[] = []
+  let from = 0
+  for (const q of questions) {
+    const lead = `"${q.question}"="`
+    const at = body.indexOf(lead, from)
+    if (at < 0) return null
+    starts.push(at + lead.length)
+    from = at + lead.length
+  }
+  const answers = questions.map((_, i) => {
+    const next = starts[i + 1]
+    const end = next === undefined ? body.length : next - `"${questions[i + 1]!.question}"="`.length
+    const closed = body.slice(starts[i], end).match(/^([\s\S]*)",?\s*$/)
+
+    return closed ? closed[1]! : null
+  })
+
+  return answers.every(a => a !== null) ? (answers as string[]) : null
+}
+
+/** The option `answer` names whole, else `answer` itself, which the person typed in the dialog's own field. */
+function chosenOf(q: AskedQuestion, answer: string): string {
+  const chosen = q.options.find(o => optionKey(o) === answer.trim().toLowerCase())
+
+  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, '').trim().slice(0, MAX_DIALOG_ANSWER)
+}
+
+/**
+ * What the person chose in a dialog of one question when the answer text has no pair: the one option the text names,
+ * else the text itself.
+ */
+function fallbackAnswerOf(q: AskedQuestion | null, text: string): string {
   const named = q?.options.filter(o => text.toLowerCase().includes(optionKey(o))) ?? []
   const [only] = named
   if (only && named.length === 1) return only.replace(RECOMMENDED_SUFFIX, '').trim()
 
-  return text.replace(ANSWER_PREFIX, '').trim().slice(0, MAX_DIALOG_ANSWER)
+  return text.slice(0, MAX_DIALOG_ANSWER)
 }
 
 /**
@@ -125,8 +164,16 @@ function answerOf(q: AskedQuestion | null, text: string): string {
  * with the person's answer, whether the agent recorded it before the dialog or records it later in the turn.
  */
 export function noteAnsweredDialog<S extends Session>(s: S, questions: DialogQuestion[], text: string, now: number): S {
-  const answer = answerOf(questions.length === 1 ? questions[0]! : null, text)
-  const added = questions.map((q, index) => ({ ...q, callId: null, index, turn: s.ledger.turn, itemId: null, answer }))
+  const paired = pairedAnswers(questions, text)
+  const fallback = fallbackAnswerOf(questions.length === 1 ? questions[0]! : null, unwrapped(text))
+  const added = questions.map((q, index) => ({
+    ...q,
+    callId: null,
+    index,
+    turn: s.ledger.turn,
+    itemId: null,
+    answer: paired ? chosenOf(q, paired[index]!) : fallback,
+  }))
 
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now)
 }

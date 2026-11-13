@@ -194,3 +194,58 @@ test('a dialog the person answers closes the question that copies it with their 
   })
   expect(stored().ledger.items.map(i => i.ask)).toEqual(['Delete the cache?'])
 })
+
+test('a dialog’s answer text closes each copy with that question’s own answer, a typed one as typed', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const stored = () => JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[]; closed: Closed[] } }
+  const ask = (...questions: { question: string; options: string[] }[]) =>
+    $.tool.call({
+      tool: 'AskUserQuestion',
+      questions: questions.map(q => ({ question: q.question, options: q.options.map(label => ({ label })) })),
+    } as never)
+  const record = (ask: string, options: string[]) =>
+    $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask, options } as never)
+  const answered = (pairs: string) =>
+    `User has answered your questions: ${pairs}. You can now continue with the user's answers in mind.`
+  const turn = async (turnId: string, text: string, body: () => Promise<unknown>) => {
+    w.dialogAnswer = { result: {}, text }
+    await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text: 'go on', turnId })
+    await body()
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  const outcomes = () => stored().ledger.closed.map(c => [c.ask, c.outcome])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await turn('t1', answered('"Use Node or Python?"="Node"'), async () => {
+    await record('Use Node or Python?', ['Node', 'Python'])
+    await ask({ question: 'Use Node or Python?', options: ['Node', 'Python'] })
+  })
+  await turn('t2', answered('"Delete the cache?"="Only the old entries"'), async () => {
+    await record('Delete the cache?', ['Yes', 'No'])
+    await ask({ question: 'Delete the cache?', options: ['Yes', 'No'] })
+  })
+  await turn('t3', answered('"Which name?"="the "blue" one"'), async () => {
+    await record('Which name?', ['red', 'green'])
+    await ask({ question: 'Which name?', options: ['red', 'green'] })
+  })
+  await turn('t4', answered('"Which branch?"="next", "Push it now?"="No"'), async () => {
+    await record('Which branch?', ['main', 'next'])
+    await record('Push it now?', ['Yes', 'No'])
+    await ask(
+      { question: 'Which branch?', options: ['main', 'next'] },
+      { question: 'Push it now?', options: ['Yes', 'No'] },
+    )
+  })
+
+  expect(stored().ledger.items).toEqual([])
+  expect(outcomes()).toEqual([
+    ['Use Node or Python?', 'Node'],
+    ['Delete the cache?', 'Only the old entries'],
+    ['Which name?', 'the "blue" one'],
+    ['Which branch?', 'next'],
+    ['Push it now?', 'No'],
+  ])
+})

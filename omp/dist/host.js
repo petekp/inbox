@@ -5195,18 +5195,54 @@ function linkDialogs(s, now = Date.now()) {
   const ledger = questions.reduce((l, q) => q.answer !== undefined && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l, { ...s.ledger, items });
   return { ...s, ledger, dialogQuestions: kept };
 }
-var ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected):?\s*/i;
+var ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected)(?: your questions?)?:?\s*/i;
+var ANSWER_SUFFIX = /\.?\s*you can now continue with the user's answers in mind\.?\s*$/i;
 var MAX_DIALOG_ANSWER = 80;
-function answerOf(q, text) {
+function unwrapped(text) {
+  return text.replace(ANSWER_PREFIX, "").replace(ANSWER_SUFFIX, "").trim();
+}
+function pairedAnswers(questions, text) {
+  const body = unwrapped(text);
+  const starts = [];
+  let from = 0;
+  for (const q of questions) {
+    const lead = `"${q.question}"="`;
+    const at = body.indexOf(lead, from);
+    if (at < 0)
+      return null;
+    starts.push(at + lead.length);
+    from = at + lead.length;
+  }
+  const answers = questions.map((_, i) => {
+    const next = starts[i + 1];
+    const end = next === undefined ? body.length : next - `"${questions[i + 1].question}"="`.length;
+    const closed = body.slice(starts[i], end).match(/^([\s\S]*)",?\s*$/);
+    return closed ? closed[1] : null;
+  });
+  return answers.every((a) => a !== null) ? answers : null;
+}
+function chosenOf(q, answer) {
+  const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
+  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
+}
+function fallbackAnswerOf(q, text) {
   const named = q?.options.filter((o) => text.toLowerCase().includes(optionKey(o))) ?? [];
   const [only] = named;
   if (only && named.length === 1)
     return only.replace(RECOMMENDED_SUFFIX, "").trim();
-  return text.replace(ANSWER_PREFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
+  return text.slice(0, MAX_DIALOG_ANSWER);
 }
 function noteAnsweredDialog(s, questions, text, now) {
-  const answer = answerOf(questions.length === 1 ? questions[0] : null, text);
-  const added = questions.map((q, index) => ({ ...q, callId: null, index, turn: s.ledger.turn, itemId: null, answer }));
+  const paired = pairedAnswers(questions, text);
+  const fallback = fallbackAnswerOf(questions.length === 1 ? questions[0] : null, unwrapped(text));
+  const added = questions.map((q, index) => ({
+    ...q,
+    callId: null,
+    index,
+    turn: s.ledger.turn,
+    itemId: null,
+    answer: paired ? chosenOf(q, paired[index]) : fallback
+  }));
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now);
 }
 function noteDialog(s, callId, questions) {
