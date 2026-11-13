@@ -8,6 +8,7 @@ import { EXIT_MS } from '../../hooks/row-motion'
 import { demoSession } from '../../hooks/demo'
 import { sessionView } from '../../hooks/session-view'
 import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
+import { button } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import { afterSend, keyMove, tabUndo, withSelected, withTab } from '../src/keys'
@@ -15,6 +16,7 @@ import { moveRows } from '../src/motion'
 import { GIVE_UP_MS, SENDING, drawOuts, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
+import { isTimeShown, timeLeftShare } from '../src/paint-timer'
 import { isRunHere, runHere } from '../src/run-here'
 import type { HereIo } from '../src/run-here'
 import { AGENT, NOW, demoScreen, uiOn } from './fixtures'
@@ -172,9 +174,23 @@ test('a dismissed row draws its Undo and u presses it, and once Undo ends the ro
   expect(fresh.row?.buttons.map(b => [b.label, b.isOut])).toEqual([['Undo', false]])
   expect(fresh.move?.is === 'press' && fresh.move.button).toBe(fresh.row?.buttons[0]!)
   expect(fresh.row?.buttons[0]?.does).toMatchObject({ is: 'press', press: { action: 'undo', id: 'd8' } })
+  expect(fresh.row?.buttons[0]?.runsOutAt).toBe(NOW - 500 + SETTLED_MS)
+  expect(isTimeShown(fresh.row!.buttons[0]!, NOW)).toBe(true)
   const spent = dismissedAt(NOW - SETTLED_MS - 500)
   expect(spent.row).toBeUndefined()
   expect(spent.move).toBeNull()
+})
+
+test('an Undo’s fill shows the whole of its time at the start, half in the middle, and none at the end or after', () => {
+  const runsOutAt = NOW + SETTLED_MS
+  expect(timeLeftShare(runsOutAt, NOW)).toBe(1)
+  expect(timeLeftShare(runsOutAt, NOW + SETTLED_MS / 2)).toBe(0.5)
+  expect(timeLeftShare(runsOutAt, runsOutAt)).toBe(0)
+  expect(timeLeftShare(runsOutAt, runsOutAt + 1000)).toBe(0)
+  const undo = { ...button('d8 undo', 'Undo', 'quiet'), runsOutAt }
+  expect(isTimeShown(undo, NOW + SETTLED_MS / 2)).toBe(true)
+  expect(isTimeShown(undo, runsOutAt)).toBe(false)
+  expect(isTimeShown({ ...undo, isOut: true }, NOW)).toBe(false)
 })
 
 test('while a field is open, keys type into it and escape closes it, and moving to another row or tab closes it', () => {

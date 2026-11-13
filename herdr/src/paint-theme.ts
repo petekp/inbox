@@ -96,6 +96,9 @@ export type Paint = {
   select: (id: string, cx: Context) => void
   pick: (tab: ShownTab, cx: Context) => void
   motion: ReadonlyMap<string, RowMotion>
+  now: number
+  /** The timed buttons an earlier draw showed, whose fill now empties. */
+  timersStarted: ReadonlySet<string>
   input: (rowId: string) => InputState | null
   /** Whether the pane is under `NARROW_PANE` wide. */
   isNarrow: boolean

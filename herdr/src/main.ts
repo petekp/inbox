@@ -40,6 +40,7 @@ import { afterSend, isFieldDrawn, keyMove, tabUndo, withSelected, withTab } from
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
+import { timedIds } from './paint-timer'
 import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
 import { END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
@@ -120,6 +121,7 @@ export default class Inbox extends View {
   queue = new PressQueue(queueIo)
   tracks: Tracks = new Map()
   tracksOf = ''
+  timersStarted: ReadonlySet<string> = new Set()
   focus: FocusHandle | null = null
   /** The next read for the presses still out, and the next draw for a fold or a move. */
   outTimer: Timer | null = null
@@ -371,6 +373,8 @@ export default class Inbox extends View {
         cx.notify()
       },
       motion: new Map(),
+      now,
+      timersStarted: this.timersStarted,
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
       isNarrow: this.isNarrow,
     }
@@ -397,7 +401,11 @@ export default class Inbox extends View {
     this.tracksOf = tracksOf
     paint.motion = moved.motion
     const isStarting = [...moved.motion.values()].some(m => m.isStart)
-    const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, screen.foldAt].filter(at => at !== null)
+    const timed = timedIds(moved.blocks, now)
+    const isTimerStarting = timed.some(id => !this.timersStarted.has(id))
+    this.timersStarted = new Set(timed)
+    const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt].filter(at => at !== null)
     if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
     const focus = this.focus
 

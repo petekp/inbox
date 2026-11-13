@@ -32,7 +32,7 @@ import { FINDING_GROUPS, HELD_MARK } from '../../hooks/help'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
-import { isDrawnInPlace } from '../../hooks/timing'
+import { SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerStatus } from '../../hooks/view'
 import type { PressKind } from '../../types'
 import { button } from './blocks'
@@ -119,16 +119,18 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
 function undoButtons(row: RowView, agent: string): Button[] {
   if (row.state.is !== 'settled') return []
   const id = `${row.id} undo`
+  const runsOutAt = row.state.at + SETTLED_MS
   const undo = row.actions.find(a => a.press.action === 'undo')
   if (undo)
     return [
       {
         ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
         isOut: undo.isOut,
+        runsOutAt,
       },
     ]
 
-  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isOut: true }] : []
+  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isOut: true, runsOutAt }] : []
 }
 
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */

@@ -23,6 +23,7 @@ import {
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
+import { TIMED_W, isTimeShown, timeLeftEl } from './paint-timer'
 
 /** The space a line under a title, or a row of buttons, leaves above it. */
 const LINE_PAD = 4
@@ -36,6 +37,7 @@ const LINE_PAD = 4
 function buttonEl(b: Button, p: Paint, isInert = false): Element {
   const { t } = p
   const isPill = b.emphasis !== 'quiet'
+  const runsOutAt = b.runsOutAt
   const base = h_flex()
     .id(`button ${b.id}`)
     .flex_none()
@@ -43,13 +45,23 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
     .items_center()
     .justify_center()
     .accessibility_label(b.label)
+    .when(runsOutAt !== undefined, e =>
+      e
+        .relative()
+        .w(TIMED_W)
+        .rounded(BUTTON_H / 2),
+    )
+    .when(runsOutAt !== undefined && isTimeShown(b, p.now), e =>
+      e.child(timeLeftEl(runsOutAt ?? 0, p.timersStarted.has(b.id), p.now, t)),
+    )
     .child(b.label)
-  const shaped = isPill
-    ? base
-        .px(PILL_X)
-        .rounded(BUTTON_H / 2)
-        .border_1()
-    : base
+  const shaped =
+    isPill && runsOutAt === undefined
+      ? base
+          .px(PILL_X)
+          .rounded(BUTTON_H / 2)
+          .border_1()
+      : base
   if (b.isOut) return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true)
   const styled =
     b.emphasis === 'primary'

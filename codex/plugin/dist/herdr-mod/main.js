@@ -1,8 +1,8 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-13T06:28:04.196Z. 193341 characters follow.
+// Built at 2026-11-13T06:32:13.223Z. 194764 characters follow.
 
 // src/main.ts
-import { View, div as div3 } from "gpui-kit";
+import { View, div as div4 } from "gpui-kit";
 import { InputState, Scrollbar, v_flex as v_flex3 } from "gpui-base";
 import {
   appHome,
@@ -3342,11 +3342,14 @@ function settledPr(d) {
   const { pr, state } = d;
   const id = prMarkId(pr.ref);
   const undo = state.canUndo ? [
-    button(`${id} undo`, ROW_COPY.undo, "quiet", {
-      is: "press",
-      press: { action: "pr-undo", ref: pr.ref },
-      effects: []
-    })
+    {
+      ...button(`${id} undo`, ROW_COPY.undo, "quiet", {
+        is: "press",
+        press: { action: "pr-undo", ref: pr.ref },
+        effects: []
+      }),
+      runsOutAt: state.at + SETTLED_MS
+    }
   ] : [];
   const mark = settledMark(state);
   return {
@@ -3706,15 +3709,17 @@ function undoButtons(row, agent) {
   if (row.state.is !== "settled")
     return [];
   const id = `${row.id} undo`;
+  const runsOutAt = row.state.at + SETTLED_MS;
   const undo = row.actions.find((a) => a.press.action === "undo");
   if (undo)
     return [
       {
         ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
-        isOut: undo.isOut
+        isOut: undo.isOut,
+        runsOutAt
       }
     ];
-  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, "quiet"), isOut: true }] : [];
+  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, "quiet"), isOut: true, runsOutAt }] : [];
 }
 function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
@@ -4158,7 +4163,7 @@ function moveRows(blocks, tracks, now, isFirst) {
 }
 
 // src/paint-blocks.ts
-import { div as div2 } from "gpui-kit";
+import { div as div3 } from "gpui-kit";
 import { Input, h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
 
 // ../hooks/layout.ts
@@ -4230,13 +4235,26 @@ function messageEl(m, t) {
   return v_flex().flex_1().justify_center().items_center().p(32).gap(4).child(div().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
 }
 
+// src/paint-timer.ts
+import { div as div2 } from "gpui-kit";
+var TIMED_W = 64;
+function timeLeftShare(runsOutAt, now) {
+  return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
+}
+var isTimeShown = (b, now) => b.runsOutAt !== undefined && !b.isOut && b.runsOutAt > now;
+var timedIds = (blocks, now) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).flatMap((b) => isTimeShown(b, now) ? [b.id] : []);
+function timeLeftEl(runsOutAt, isStarted, now, t) {
+  return div2().absolute().top(0).left(0).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover).w(isStarted ? 0 : timeLeftShare(runsOutAt, now) * TIMED_W).transition("width", { duration: Math.max(0, runsOutAt - now), easing: "linear" });
+}
+
 // src/paint-blocks.ts
 var LINE_PAD = 4;
 function buttonEl(b, p, isInert = false) {
   const { t } = p;
   const isPill = b.emphasis !== "quiet";
-  const base = h_flex2().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).child(b.label);
-  const shaped = isPill ? base.px(PILL_X).rounded(BUTTON_H / 2).border_1() : base;
+  const runsOutAt = b.runsOutAt;
+  const base = h_flex2().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(runsOutAt !== undefined && isTimeShown(b, p.now), (e) => e.child(timeLeftEl(runsOutAt ?? 0, p.timersStarted.has(b.id), p.now, t))).child(b.label);
+  const shaped = isPill && runsOutAt === undefined ? base.px(PILL_X).rounded(BUTTON_H / 2).border_1() : base;
   if (b.isOut)
     return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true);
   const styled = b.emphasis === "primary" ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? shaped.border_color(t.input).text_color(t.foreground) : shaped.text_color(t.muted);
@@ -4250,13 +4268,13 @@ function buttonEl(b, p, isInert = false) {
 }
 var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex2().flex_wrap().items_center().gap(BUTTON_GAP).pt(LINE_PAD).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t) => div2().w(MARK_W).pr(4).flex_none().text_center().text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
-var lineEl = (text, color, indent = MARK_W) => div2().pl(indent).pt(LINE_PAD).whitespace_normal().text_color(color).child(text);
-var bodyLineEl = (l, t) => l.mark ? h_flex2().pt(LINE_PAD).items_start().child(markEl(l.mark, t)).child(div2().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
+var markEl = (m, t) => div3().w(MARK_W).pr(4).flex_none().text_center().text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
+var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(LINE_PAD).whitespace_normal().text_color(color).child(text);
+var bodyLineEl = (l, t) => l.mark ? h_flex2().pt(LINE_PAD).items_start().child(markEl(l.mark, t)).child(div3().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
 function fieldEl(f, p, indent, isInert = false) {
   const { t } = p;
   const state = p.input(f.rowId);
-  const input = state ? [div2().min_h(28).px(10).py(4).rounded(10).border_1().border_color(t.input).child(Input.new(state).w_full())] : [];
+  const input = state ? [div3().min_h(28).px(10).py(4).rounded(10).border_1().border_color(t.input).child(Input.new(state).w_full())] : [];
   return v_flex2().pt(LINE_PAD).pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
 }
 function opacityOf(r, p) {
@@ -4269,7 +4287,7 @@ function opacityOf(r, p) {
 }
 function rowEl(r, p) {
   const { t } = p;
-  const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div2().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div2().flex_none().ml(12).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div3().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div3().flex_none().ml(12).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback ? [r.feedback] : [],
@@ -4280,35 +4298,35 @@ function rowEl(r, p) {
   const hasControls = r.buttons.length > 0 || r.field !== null;
   const padTop = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2;
   const padBottom = r.depth === 0 || hasControls ? ROW_PAD_PT : ROW_PAD_PT / 2;
-  return v_flex2().id(`row ${r.id}`).pl(MARK_X + r.depth * NEST).pr(EDGE_X).pt(padTop).pb(padBottom).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div2()));
+  return v_flex2().id(`row ${r.id}`).pl(MARK_X + r.depth * NEST).pr(EDGE_X).pt(padTop).pb(padBottom).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div3()));
 }
 function statusEl(s, p) {
   const { t } = p;
-  const stall = s.stall ? [div2().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
-  return v_flex2().pl(MARK_X + s.depth * NEST).pr(EDGE_X).py(ROW_PAD_PT).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(div2().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => div2().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
+  const stall = s.stall ? [div3().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
+  return v_flex2().pl(MARK_X + s.depth * NEST).pr(EDGE_X).py(ROW_PAD_PT).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(div3().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => div3().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
 }
 function prEl(b, p) {
   const { t } = p;
   const label = b.rank === null ? b.number : `${b.rank.trim()} ${b.number}`;
-  const title = h_flex2().items_start().child(div2().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div2().flex_none().ml(12).text_color(t.muted).child(label)));
-  const status = h_flex2().flex_wrap().items_start().when(p.isNarrow, (e) => e.child(div2().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(div2().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div2().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
+  const title = h_flex2().items_start().child(div3().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div3().flex_none().ml(12).text_color(t.muted).child(label)));
+  const status = h_flex2().flex_wrap().items_start().when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(div3().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div3().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
   return v_flex2().pl(SPINE).pr(EDGE_X).pt(8).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p) {
   const { t } = p;
-  return v_flex2().pl(SPINE).pr(EDGE_X).py(LINE_PAD).child(h_flex2().gap(BUTTON_GAP).items_center().child(div2().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(BUTTON_GAP).children(b.buttons.map((x) => buttonEl(x, p)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex2().pl(SPINE).pr(EDGE_X).py(LINE_PAD).child(h_flex2().gap(BUTTON_GAP).items_center().child(div3().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(BUTTON_GAP).children(b.buttons.map((x) => buttonEl(x, p)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
-var ruleLine = (t) => div2().flex_1().border_t(1).border_color(t.border);
+var ruleLine = (t) => div3().flex_1().border_t(1).border_color(t.border);
 function headingEl(b, p) {
   const { t } = p;
   const buttons = h_flex2().flex_none().gap(BUTTON_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p)));
   if (b.isLabel)
-    return h_flex2().flex_wrap().pl(SPINE).pr(EDGE_X).pt(8).pb(LINE_PAD).gap(8).items_center().child(div2().text_color(t.muted).child(b.text)).child(ruleLine(t).min_w(32)).child(buttons);
-  return h_flex2().pl(MARK_X + b.depth * NEST).pr(EDGE_X).pt(b.depth > 0 ? 16 : 8).pb(LINE_PAD).items_center().child(markEl(b.mark, t)).child(div2().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div2().text_color(t.muted).child(`${SEP}${b.count}`))).child(div2().flex_1()).child(buttons);
+    return h_flex2().flex_wrap().pl(SPINE).pr(EDGE_X).pt(8).pb(LINE_PAD).gap(8).items_center().child(div3().text_color(t.muted).child(b.text)).child(ruleLine(t).min_w(32)).child(buttons);
+  return h_flex2().pl(MARK_X + b.depth * NEST).pr(EDGE_X).pt(b.depth > 0 ? 16 : 8).pb(LINE_PAD).items_center().child(markEl(b.mark, t)).child(div3().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div3().text_color(t.muted).child(`${SEP}${b.count}`))).child(div3().flex_1()).child(buttons);
 }
 function emptyEl(b, p) {
   const { t } = p;
-  return v_flex2().items_center().px(32).py(32).gap(4).child(div2().font_semibold().text_center().whitespace_normal().child(b.title)).when(b.hint !== null, (e) => e.child(div2().text_center().whitespace_normal().text_color(t.muted).child(b.hint ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(BUTTON_GAP).pt(8).children(b.buttons.map((x) => buttonEl(x, p)))));
+  return v_flex2().items_center().px(32).py(32).gap(4).child(div3().font_semibold().text_center().whitespace_normal().child(b.title)).when(b.hint !== null, (e) => e.child(div3().text_center().whitespace_normal().text_color(t.muted).child(b.hint ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(BUTTON_GAP).pt(8).children(b.buttons.map((x) => buttonEl(x, p)))));
 }
 var FOLD_ARROW_GAP = 8;
 function foldEl(b, p) {
@@ -4321,16 +4339,16 @@ function foldEl(b, p) {
     hotkey: null,
     does: { is: "view", change: b.change }
   };
-  return h_flex2().id(`fold ${b.id}`).pl(SPINE + b.depth * NEST).pr(EDGE_X).py(ROW_PAD_PT).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(div2().mr(FOLD_ARROW_GAP).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div2().child(b.text));
+  return h_flex2().id(`fold ${b.id}`).pl(SPINE + b.depth * NEST).pr(EDGE_X).py(ROW_PAD_PT).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(div3().mr(FOLD_ARROW_GAP).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div3().child(b.text));
 }
 function ruleEl(b, t) {
   if (b.text === null)
     return h_flex2().pl(SPINE).pr(EDGE_X).pt(GROUP_GAP / 2).pb(8).child(ruleLine(t));
-  return h_flex2().pl(SPINE).pr(EDGE_X).py(12).gap(8).items_center().child(div2().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
+  return h_flex2().pl(SPINE).pr(EDGE_X).py(12).gap(8).items_center().child(div3().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t) {
-  const text = div2().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  const count = b.count === null ? [] : [div2().whitespace_nowrap().text_color(t.muted).child(b.count)];
+  const text = div3().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+  const count = b.count === null ? [] : [div3().whitespace_nowrap().text_color(t.muted).child(b.count)];
   return h_flex2().flex_wrap().items_baseline().pl(SPINE + b.depth * NEST).pr(EDGE_X).py(b.isHead ? 0 : LINE_PAD).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
 }
 function blockEl(b, p) {
@@ -4352,12 +4370,12 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div2().pl(SPINE).pr(EDGE_X).child(fieldEl(b.field, p, 0));
+    return div3().pl(SPINE).pr(EDGE_X).child(fieldEl(b.field, p, 0));
   if (b.kind === "note")
     return noteEl(b, t);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p)), b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
-  return div2().h(8);
+  return div3().h(8);
 }
 
 // src/press-file.ts
@@ -4669,6 +4687,7 @@ class Inbox extends View {
   queue = new PressQueue(queueIo);
   tracks = new Map;
   tracksOf = "";
+  timersStarted = new Set;
   focus = null;
   outTimer = null;
   drawTimer = null;
@@ -4904,6 +4923,8 @@ class Inbox extends View {
         cx.notify();
       },
       motion: new Map,
+      now,
+      timersStarted: this.timersStarted,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
       isNarrow: this.isNarrow
     };
@@ -4924,11 +4945,15 @@ class Inbox extends View {
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
     const isStarting = [...moved.motion.values()].some((m) => m.isStart);
-    const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, screen.foldAt].filter((at) => at !== null);
+    const timed = timedIds(moved.blocks, now);
+    const isTimerStarting = timed.some((id) => !this.timersStarted.has(id));
+    this.timersStarted = new Set(timed);
+    const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null;
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div3().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(END_SPACE).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div4().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(END_SPACE).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

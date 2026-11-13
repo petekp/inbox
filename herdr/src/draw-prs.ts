@@ -31,6 +31,7 @@ import type { DrawnPr } from '../../hooks/pr-views'
 import { checkKey, commentParts, readableComment, readiness, threadWhere } from '../../hooks/prs'
 import { bannerOf } from '../../hooks/banners'
 import { DOT, ROW_COPY, settledLabel, settledMark, shortAgo } from '../../hooks/rows'
+import { SETTLED_MS } from '../../hooks/timing'
 import { clipLabel } from '../../hooks/text'
 import { button } from './blocks'
 import type { Block, Button, LineBlock, Mark, RowBlock, Tone } from './blocks'
@@ -131,11 +132,14 @@ function settledPr(d: DrawnPr & { state: { is: 'settled' } }): RowBlock {
   const id = prMarkId(pr.ref)
   const undo = state.canUndo
     ? [
-        button(`${id} undo`, ROW_COPY.undo, 'quiet', {
-          is: 'press',
-          press: { action: 'pr-undo', ref: pr.ref },
-          effects: [],
-        }),
+        {
+          ...button(`${id} undo`, ROW_COPY.undo, 'quiet', {
+            is: 'press',
+            press: { action: 'pr-undo', ref: pr.ref },
+            effects: [],
+          }),
+          runsOutAt: state.at + SETTLED_MS,
+        },
       ]
     : []
   const mark = settledMark(state)
