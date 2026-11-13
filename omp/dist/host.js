@@ -925,15 +925,22 @@ function asksForSignIn(r) {
 }
 var LIMIT = /rate limit/i;
 var UNREACHABLE = /error connecting to|dial tcp|no such host|connection refused|network is unreachable|TLS handshake|i\/o timeout|lookup .* failed/i;
+function errorsOf(stdout) {
+  try {
+    return JSON.stringify(JSON.parse(stdout).errors ?? "");
+  } catch {
+    return "";
+  }
+}
 function runFailureOf(r, timedOutCode, at) {
   if (r.exitCode === timedOutCode)
     return { kind: "timed-out", at };
-  if (LIMIT.test(r.stderr) || LIMIT.test(r.stdout.slice(0, 2000)))
+  if (/"data"\s*:\s*\{/.test(r.stdout))
+    return null;
+  if (LIMIT.test(r.stderr) || LIMIT.test(errorsOf(r.stdout)))
     return { kind: "limit", at, resetsAt: null };
   if (UNREACHABLE.test(r.stderr))
     return { kind: "unreachable", at };
-  if (/"data"\s*:\s*\{/.test(r.stdout))
-    return null;
   const line = r.stderr.trim().split(`
 `)[0]?.replace(/^gh:\s*/, "").replace(/\s*\(https?:\/\/\S+\)\s*$/, "").trim();
   const text = line || (r.exitCode === 0 ? "GitHub's answer could not be read" : `gh exited with ${r.exitCode}`);
@@ -941,8 +948,10 @@ function runFailureOf(r, timedOutCode, at) {
 }
 function limitResetOf(json) {
   try {
-    const reset = JSON.parse(json).resources?.graphql?.reset;
-    return typeof reset === "number" && reset > 0 ? reset * 1000 : null;
+    const graphql = JSON.parse(json).resources?.graphql;
+    const reset = graphql?.reset;
+    const isUsedUp = graphql?.remaining === undefined || graphql.remaining === 0;
+    return typeof reset === "number" && reset > 0 && isUsedUp ? reset * 1000 : null;
   } catch {
     return null;
   }

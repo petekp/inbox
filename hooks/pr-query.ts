@@ -306,6 +306,15 @@ const LIMIT = /rate limit/i
 const UNREACHABLE =
   /error connecting to|dial tcp|no such host|connection refused|network is unreachable|TLS handshake|i\/o timeout|lookup .* failed/i
 
+/** The `errors` array of a GraphQL answer as text, or an empty string when the answer has none. */
+function errorsOf(stdout: string): string {
+  try {
+    return JSON.stringify((JSON.parse(stdout) as { errors?: unknown }).errors ?? '')
+  } catch {
+    return ''
+  }
+}
+
 /**
  * Why a whole gh run gave no PRs, or null when its answer holds data. The limit and an unreachable GitHub come from
  * gh's words; any other failure keeps gh's first line, without its "gh:" prefix and the link it adds.
@@ -316,9 +325,9 @@ export function runFailureOf(
   at: number,
 ): PrFetchFailure | null {
   if (r.exitCode === timedOutCode) return { kind: 'timed-out', at }
-  if (LIMIT.test(r.stderr) || LIMIT.test(r.stdout.slice(0, 2000))) return { kind: 'limit', at, resetsAt: null }
-  if (UNREACHABLE.test(r.stderr)) return { kind: 'unreachable', at }
   if (/"data"\s*:\s*\{/.test(r.stdout)) return null
+  if (LIMIT.test(r.stderr) || LIMIT.test(errorsOf(r.stdout))) return { kind: 'limit', at, resetsAt: null }
+  if (UNREACHABLE.test(r.stderr)) return { kind: 'unreachable', at }
   const line = r.stderr
     .trim()
     .split('\n')[0]
@@ -330,11 +339,17 @@ export function runFailureOf(
   return { kind: 'error', at, text }
 }
 
-/** When GitHub's GraphQL limit resets, from `gh api rate_limit`, or null when the answer does not say. */
+/**
+ * When GitHub's GraphQL limit resets, from `gh api rate_limit`, or null when the answer does not say or the hourly
+ * budget is not used up, as after a request to slow down.
+ */
 export function limitResetOf(json: string): number | null {
   try {
-    const reset = (JSON.parse(json) as { resources?: { graphql?: { reset?: number } } }).resources?.graphql?.reset
-    return typeof reset === 'number' && reset > 0 ? reset * 1000 : null
+    const graphql = (JSON.parse(json) as { resources?: { graphql?: { reset?: number; remaining?: number } } }).resources
+      ?.graphql
+    const reset = graphql?.reset
+    const isUsedUp = graphql?.remaining === undefined || graphql.remaining === 0
+    return typeof reset === 'number' && reset > 0 && isUsedUp ? reset * 1000 : null
   } catch {
     return null
   }
