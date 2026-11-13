@@ -380,6 +380,14 @@ test('an answer that holds data is never a limit, whatever its titles say, and a
   expect(runFailureOf(LIMIT_ANSWER, 124, NOW)).toEqual(limit)
   expect(runFailureOf({ ...LIMIT_ANSWER, stderr: '' }, 124, NOW)).toEqual(limit)
   expect(runFailureOf({ ...LIMIT_ANSWER, stdout: '' }, 124, NOW)).toEqual(limit)
+
+  const limitedError = { type: 'RATE_LIMITED', message: 'API rate limit exceeded for user ID 1.' }
+  const partial = { data: { viewer: { login: 'me' }, pr0: null }, errors: [limitedError] }
+  expect(runFailureOf({ exitCode: 0, stdout: JSON.stringify(partial), stderr: '' }, 124, NOW)).toEqual(limit)
+
+  const titledError = { type: 'NOT_FOUND', message: 'Could not resolve "Handle GitHub rate limits".' }
+  const notFound = { data: { viewer: { login: 'me' }, pr0: titled }, errors: [titledError] }
+  expect(runFailureOf({ exitCode: 0, stdout: JSON.stringify(notFound), stderr: '' }, 124, NOW)).toBeNull()
 })
 
 test('a limit that leaves the hourly budget unspent does not wait for the hourly reset', async () => {

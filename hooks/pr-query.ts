@@ -306,13 +306,22 @@ const LIMIT = /rate limit/i
 const UNREACHABLE =
   /error connecting to|dial tcp|no such host|connection refused|network is unreachable|TLS handshake|i\/o timeout|lookup .* failed/i
 
-/** The `errors` array of a GraphQL answer as text, or an empty string when the answer has none. */
-function errorsOf(stdout: string): string {
+/** The `errors` array of a GraphQL answer, or an empty array when the answer has none or does not parse. */
+function errorsOf(stdout: string): unknown[] {
   try {
-    return JSON.stringify((JSON.parse(stdout) as { errors?: unknown }).errors ?? '')
+    const errors = (JSON.parse(stdout) as { errors?: unknown }).errors
+    return Array.isArray(errors) ? errors : []
   } catch {
-    return ''
+    return []
   }
+}
+
+/** GitHub's error `type` or `code` for its limit, as in `RATE_LIMITED`, `RATE_LIMIT` and `graphql_rate_limit`. */
+const LIMIT_KIND = /rate_?limit/i
+
+function isLimitError(error: unknown): boolean {
+  const { type, code } = (error ?? {}) as { type?: unknown; code?: unknown }
+  return [type, code].some(kind => typeof kind === 'string' && LIMIT_KIND.test(kind))
 }
 
 /**
@@ -325,8 +334,11 @@ export function runFailureOf(
   at: number,
 ): PrFetchFailure | null {
   if (r.exitCode === timedOutCode) return { kind: 'timed-out', at }
+  const errors = errorsOf(r.stdout)
+  const limit: PrFetchFailure = { kind: 'limit', at, resetsAt: null }
+  if (errors.some(isLimitError)) return limit
   if (/"data"\s*:\s*\{/.test(r.stdout)) return null
-  if (LIMIT.test(r.stderr) || LIMIT.test(errorsOf(r.stdout))) return { kind: 'limit', at, resetsAt: null }
+  if (LIMIT.test(r.stderr) || LIMIT.test(JSON.stringify(errors))) return limit
   if (UNREACHABLE.test(r.stderr)) return { kind: 'unreachable', at }
   const line = r.stderr
     .trim()

@@ -927,18 +927,28 @@ var LIMIT = /rate limit/i;
 var UNREACHABLE = /error connecting to|dial tcp|no such host|connection refused|network is unreachable|TLS handshake|i\/o timeout|lookup .* failed/i;
 function errorsOf(stdout) {
   try {
-    return JSON.stringify(JSON.parse(stdout).errors ?? "");
+    const errors = JSON.parse(stdout).errors;
+    return Array.isArray(errors) ? errors : [];
   } catch {
-    return "";
+    return [];
   }
+}
+var LIMIT_KIND = /rate_?limit/i;
+function isLimitError(error) {
+  const { type, code } = error ?? {};
+  return [type, code].some((kind) => typeof kind === "string" && LIMIT_KIND.test(kind));
 }
 function runFailureOf(r, timedOutCode, at) {
   if (r.exitCode === timedOutCode)
     return { kind: "timed-out", at };
+  const errors = errorsOf(r.stdout);
+  const limit = { kind: "limit", at, resetsAt: null };
+  if (errors.some(isLimitError))
+    return limit;
   if (/"data"\s*:\s*\{/.test(r.stdout))
     return null;
-  if (LIMIT.test(r.stderr) || LIMIT.test(errorsOf(r.stdout)))
-    return { kind: "limit", at, resetsAt: null };
+  if (LIMIT.test(r.stderr) || LIMIT.test(JSON.stringify(errors)))
+    return limit;
   if (UNREACHABLE.test(r.stderr))
     return { kind: "unreachable", at };
   const line = r.stderr.trim().split(`
