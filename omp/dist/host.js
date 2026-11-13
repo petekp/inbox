@@ -1955,11 +1955,8 @@ function addFinding(ledger, finding) {
 function addAgentItem(ledger, entry, now) {
   const candidate = { ...entry, label: null };
   const recordedThisTurn = new Set(ledger.items.filter((i) => i.turn === ledger.turn).map((i) => i.id));
-  const optionSet = (options) => options.map((o) => o.trim().toLowerCase()).sort().join(`
-`);
-  const isRerecord = (i) => recordedThisTurn.has(i.id) && i.kind === "question" && entry.kind === "question" && entry.options.length > 0 && optionSet(i.options) === optionSet(entry.options) && restates(i.ask, entry.ask);
-  const matched = matchOpen(ledger.items, candidate, recordedThisTurn);
-  const openItem = ledger.items[matched] ?? ledger.items.find(isRerecord);
+  const open = matchOpen(ledger.items, candidate, recordedThisTurn);
+  const openItem = ledger.items[open];
   if (openItem) {
     const helps = entry.helps.reduce(withHelp, openItem.helps);
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;

@@ -262,8 +262,7 @@ type AgentItemResult =
 /**
  * Adds a question or task the agent recorded. One that an open item restates adds its steps and its design-choice mark
  * to that item, gives it the recommendation when that names one of the item's options, and stamps its `reportedAt`.
- * A question recorded again in the turn that recorded it, with the same options and an ask that restates the first,
- * updates that item too. One that repeats a closed item is skipped, unless that item expired or the agent closed it. So is one that raises a
+ * One that repeats a closed item is skipped, unless that item expired or the agent closed it. So is one that raises a
  * finding the person dismissed.
  * The list keeps its newest MAX_OPEN items. A finding the new ask restates closes, so one thing shows in one list.
  */
@@ -274,20 +273,8 @@ export function addAgentItem(
 ): AgentItemResult {
   const candidate = { ...entry, label: null }
   const recordedThisTurn = new Set(ledger.items.filter(i => i.turn === ledger.turn).map(i => i.id))
-  const optionSet = (options: string[]) =>
-    options
-      .map(o => o.trim().toLowerCase())
-      .sort()
-      .join('\n')
-  const isRerecord = (i: Item) =>
-    recordedThisTurn.has(i.id) &&
-    i.kind === 'question' &&
-    entry.kind === 'question' &&
-    entry.options.length > 0 &&
-    optionSet(i.options) === optionSet(entry.options) &&
-    restates(i.ask, entry.ask)
-  const matched = matchOpen(ledger.items, candidate, recordedThisTurn)
-  const openItem = ledger.items[matched] ?? ledger.items.find(isRerecord)
+  const open = matchOpen(ledger.items, candidate, recordedThisTurn)
+  const openItem = ledger.items[open]
   if (openItem) {
     const helps = entry.helps.reduce(withHelp, openItem.helps)
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true
