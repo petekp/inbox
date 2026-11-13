@@ -3,17 +3,14 @@ import { expect, setSystemTime, test } from 'bun:test'
 import { isLookFile, pressFile } from '../../hooks/herdr-press-file'
 import { seenSubjectIds, statusListRows } from '../../hooks/status-page'
 import { StatusLook, isPanelShown } from '../src/look'
-import type { LookCheck, Shown } from '../src/look'
+import type { LookBlock, LookCheck, Shown } from '../src/look'
 import { PRESS_LABEL } from '../src/press-file'
 import { NOW } from './fixtures'
 import { allOf, app, openPanel } from './gpui-stand-in'
 
 const S = 1_000
-const ROWS = new Map([
-  ['a', ['subject a']],
-  ['b', ['subject b']],
-  ['c', ['subject c']],
-])
+const block = (id: string, content = id): [string, LookBlock] => [id, { subjects: [`subject ${id}`], content }]
+const ROWS = new Map([block('a'), block('b'), block('c')])
 
 function lookAt(heights: [string, number][], viewport = 100) {
   const look = new StatusLook()
@@ -68,9 +65,13 @@ test('a row the pointer keeps on screen counts from five seconds before its last
   })
 })
 
-test('an offset measured once counts no row, however long a scrolled list stays on screen', () => {
+test.each([
+  ['an offset measured once', [S]],
+  ['readings that stop after two seconds', [S, 2 * S, 3 * S]],
+  ['readings five seconds apart', [S, 6 * S, 11 * S, 16 * S, 21 * S, 26 * S]],
+])('%s count no row, however long a scrolled list stays on screen', (_name, readings) => {
   const look = scrolledList()
-  runEachSecond(look, 0, 30 * S, at => at === S && point(look, at))
+  runEachSecond(look, 0, 30 * S, at => readings.includes(at) && point(look, at))
   expect(shownBy(look)).toEqual({})
 })
 
@@ -88,19 +89,25 @@ test('a list that fits its pane counts its rows without the pointer', () => {
 
 test.each([
   ['no change', () => {}],
-  ['a wheel step', (look: StatusLook) => look.place.wheel(NOW + 3 * S)],
+  ['a wheel step', (look: StatusLook) => look.place.wheel(NOW + 4 * S)],
   ['a change of the list’s size', (look: StatusLook) => look.place.listSized(300, 120)],
   ['a change of the content above the rows', (look: StatusLook) => look.place.drawn(['x', 'a', 'b', 'c'])],
   ['a block above changing height', (look: StatusLook) => look.place.blockSized('a', 44)],
-])('%s at 3 s starts the rows’ time on screen again', (name, change) => {
-  const look = scrolledList()
-  runEachSecond(look, 0, 8 * S, at => {
-    point(look, at)
-    if (at === 3 * S) change(look)
-  })
-  const isRestarted = name !== 'no change'
-  expect(shownBy(look)?.['subject b']).toBe(isRestarted ? undefined : NOW + 3 * S)
-})
+  ['a change of the row’s content', () => new Map([...ROWS, block('b', 'b changed')])],
+])(
+  '%s at 4 s starts the rows’ time on screen again',
+  (name, change: (look: StatusLook) => LookCheck['rows'] | void) => {
+    const look = scrolledList()
+    let rows = ROWS
+    for (let at = 0; at <= 8 * S; at += S) {
+      point(look, at)
+      if (at === 4 * S) rows = change(look) ?? rows
+      check(look, at, { rows })
+    }
+    const isRestarted = name !== 'no change'
+    expect(shownBy(look)?.['subject b']).toBe(isRestarted ? undefined : NOW + 3 * S)
+  },
+)
 
 test('a hide ends the look at the last check that saw it, and a short look reports nothing', () => {
   const look = scrolledList()
@@ -114,8 +121,14 @@ test('a hide ends the look at the last check that saw it, and a short look repor
 test('a typed message ends the look when it came, unless the person used the list just before', () => {
   const typedAt = NOW + 6.5 * S
   const typing = (listInputAt: number | null) => {
-    const look = scrolledList()
-    runEachSecond(look, 0, 7 * S, at => at <= 4 * S && point(look, at))
+    const look = lookAt(
+      [
+        ['a', 40],
+        ['b', 40],
+      ],
+      200,
+    )
+    runEachSecond(look, 0, 7 * S)
     const ended = check(look, 8 * S, { typedAt, listInputAt })
     return [...ended, ...look.close()].map(r => r.look)
   }

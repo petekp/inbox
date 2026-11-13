@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-13T05:07:21.770Z. 198762 characters follow.
+// Built at 2026-11-13T05:26:10.146Z. 199434 characters follow.
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";
@@ -4052,7 +4052,14 @@ function isPanelShown(tab, s) {
   const own = inboxPanes.find((p) => p.pane === s.ownPane) ?? (inboxPanes.length === 1 ? inboxPanes[0] : undefined);
   return own?.zoomed === true;
 }
-var blockSubjects = (page) => new Map(statusListRows(page).map((row) => [row.id, seenSubjectIds(row)]));
+var CHANGING_ALONE = new Set(["isRunning", "stall"]);
+var lookBlocks = (page) => new Map(statusListRows(page).map((row) => [
+  row.id,
+  {
+    subjects: seenSubjectIds(row),
+    content: JSON.stringify(row, (key, value) => CHANGING_ALONE.has(key) ? undefined : value)
+  }
+]));
 
 class ListPlace {
   heights = new Map;
@@ -4130,11 +4137,12 @@ class ListPlace {
     if (viewport === null)
       return null;
     const isTrusted = this.offset !== null && now - this.offset.at < OFFSET_TRUST_MS;
-    const offset = isTrusted ? this.offset?.px ?? 0 : this.isWhole() ? 0 : null;
-    if (offset === null)
+    const isWhole = this.isWhole();
+    const place = isWhole ? { px: 0, at: now } : isTrusted ? this.offset : null;
+    if (place === null)
       return null;
     const shown = [];
-    let top = LIST_TOP_PAD - offset;
+    let top = LIST_TOP_PAD - place.px;
     for (const id of this.order) {
       const height = this.heights.get(id);
       if (height === undefined)
@@ -4144,7 +4152,7 @@ class ListPlace {
         shown.push(id);
       top += height;
     }
-    return shown;
+    return { ids: shown, until: place.at, isWhole };
   }
 }
 
@@ -4184,20 +4192,27 @@ class StatusLook {
     return this.look ? this.end(this.look.lastRunningAt) : [];
   }
   note(look, c) {
-    const visible = this.place.visible(c.now) ?? [];
+    const { ids, until, isWhole } = this.place.visible(c.now) ?? { ids: [], until: c.now, isWhole: false };
     const epoch = this.place.epoch;
     for (const id of [...look.streaks.keys()])
-      if (!visible.includes(id))
+      if (!ids.includes(id))
         look.streaks.delete(id);
-    for (const id of visible) {
-      const was = look.streaks.get(id);
-      const isUnbroken = was !== undefined && was.epoch === epoch && c.now - was.last <= MAX_CHECK_GAP_MS;
-      const streak = isUnbroken ? { ...was, last: c.now } : { since: c.now, last: c.now, epoch };
-      look.streaks.set(id, streak);
-      if (c.now - streak.since < ROW_SEEN_MS)
+    for (const id of ids) {
+      const block = c.rows.get(id);
+      if (block === undefined)
         continue;
-      for (const subject of c.rows.get(id) ?? [])
-        look.shown.set(subject, { since: streak.since, last: c.now });
+      const was = look.streaks.get(id);
+      const isUnbroken = was !== undefined && (isWhole || was.epoch === epoch) && was.content === block.content && c.now - was.checkedAt <= MAX_CHECK_GAP_MS;
+      const since = isUnbroken ? was.since : c.now;
+      look.streaks.set(id, { since, until, checkedAt: c.now, epoch, content: block.content });
+      if (until - since < ROW_SEEN_MS)
+        continue;
+      for (const subject of block.subjects) {
+        const stretches = look.shown.get(subject) ?? [];
+        if (stretches.at(-1)?.since === since)
+          stretches.pop();
+        look.shown.set(subject, [...stretches, { since, until }]);
+      }
     }
   }
   end(endedAt) {
@@ -4207,10 +4222,13 @@ class StatusLook {
       return [];
     const { sessionId, terminal, startedAt } = look;
     const shown = {};
-    for (const [subject, stretch] of look.shown) {
-      const from = Math.min(stretch.last, endedAt) - ROW_SEEN_MS;
-      if (from >= stretch.since)
-        shown[subject] = from;
+    for (const [subject, stretches] of look.shown) {
+      const froms = stretches.flatMap((s) => {
+        const from = Math.min(s.until, endedAt) - ROW_SEEN_MS;
+        return from >= s.since ? [from] : [];
+      });
+      if (froms.length > 0)
+        shown[subject] = Math.max(...froms);
     }
     return [{ sessionId, terminal, look: { startedAt, endedAt, shown } }];
   }
@@ -4859,7 +4877,7 @@ class Inbox extends View {
       }),
       typedAt: read?.session.presence.lastTypedMessageAt ?? null,
       listInputAt: this.listInput?.last ?? null,
-      rows: page ? blockSubjects(page) : new Map
+      rows: page ? lookBlocks(page) : new Map
     });
     this.sendLooks(ended);
   }

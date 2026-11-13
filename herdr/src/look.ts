@@ -11,8 +11,9 @@ export const ROW_SEEN_MS = LOOK_MIN_MS
 
 /**
  * How long a measured scroll offset is trusted after the pointer event that measured it. A drag on the scrollbar may
- * reach none of the look's handlers, and then the offset it leaves is unknown. The trust is shorter than
- * `ROW_SEEN_MS`, so the time counted at an offset a drag left stale can never make a row seen alone.
+ * reach none of the look's handlers. A row's time on screen ends at the last reading, so the time after a stale reading
+ * never counts. A check this long after the last reading breaks the row's time, so a drag no handler saw can hide only
+ * between readings that came close together.
  */
 export const OFFSET_TRUST_MS = 4_000
 
@@ -66,15 +67,33 @@ export function isPanelShown(tab: string | null, s: Shown): boolean {
   return own?.zoomed === true
 }
 
-/** The subjects each Status block stands for, by block id: a subject row's own, and a fold's. */
-export const blockSubjects = (page: StatusPage): Map<string, string[]> =>
-  new Map(statusListRows(page).map(row => [row.id, seenSubjectIds(row)]))
+/** The row fields that change while the subject does not, which a row's content leaves out. */
+const CHANGING_ALONE = new Set(['isRunning', 'stall'])
+
+/** A Status block as a look counts it: the subjects it stands for, and what it shows of them. */
+export type LookBlock = { subjects: string[]; content: string }
+
+/**
+ * Each Status block by id: the subjects it stands for, a subject row's own and a fold's, and its content without the
+ * running mark and the idle time, which change while the subject does not.
+ */
+export const lookBlocks = (page: StatusPage): Map<string, LookBlock> =>
+  new Map(
+    statusListRows(page).map(row => [
+      row.id,
+      {
+        subjects: seenSubjectIds(row),
+        content: JSON.stringify(row, (key, value) => (CHANGING_ALONE.has(key) ? undefined : value)),
+      },
+    ]),
+  )
 
 /**
  * Where the Status list's blocks sit on screen. The scroll offset is the area's top minus the list's top, which one
  * pointer event over both gives. Each block's height comes from its own size listener. Anything that can move a row
  * without a pointer event makes the offset unknown until the next one: a wheel step, a change of the list's size or of
- * its blocks, and the look's `forget`. `epoch` counts those changes, so a row's time on screen restarts at each.
+ * its blocks, and the look's `forget`. `epoch` counts those changes, so in a list that scrolls a row's time on screen
+ * restarts at each.
  */
 export class ListPlace {
   heights = new Map<string, number>()
@@ -152,17 +171,19 @@ export class ListPlace {
   }
 
   /**
-   * The blocks whose first line is surely on screen at `now`, or null when the offset is not trusted. A block without
-   * a height yet, and every block below it, counts as off screen.
+   * The blocks whose first line is surely on screen at `now`, and the time they are known to stay there until: `now`
+   * for a list that fits, else the reading of the offset. Null when the offset is not trusted. A block without a height
+   * yet, and every block below it, counts as off screen.
    */
-  visible(now: number): string[] | null {
+  visible(now: number): { ids: string[]; until: number; isWhole: boolean } | null {
     const viewport = this.viewport
     if (viewport === null) return null
     const isTrusted = this.offset !== null && now - this.offset.at < OFFSET_TRUST_MS
-    const offset = isTrusted ? (this.offset?.px ?? 0) : this.isWhole() ? 0 : null
-    if (offset === null) return null
+    const isWhole = this.isWhole()
+    const place = isWhole ? { px: 0, at: now } : isTrusted ? this.offset : null
+    if (place === null) return null
     const shown: string[] = []
-    let top = LIST_TOP_PAD - offset
+    let top = LIST_TOP_PAD - place.px
     for (const id of this.order) {
       const height = this.heights.get(id)
       if (height === undefined) break
@@ -171,11 +192,11 @@ export class ListPlace {
       top += height
     }
 
-    return shown
+    return { ids: shown, until: place.at, isWhole }
   }
 }
 
-/** What the look reads at each check. `rows` names the subjects each Status block stands for. */
+/** What the look reads at each check. `rows` gives each Status block, as `lookBlocks` does. */
 export type LookCheck = {
   now: number
   sessionId: string | null
@@ -186,7 +207,7 @@ export type LookCheck = {
   typedAt: number | null
   /** The last press, key or click in the panel's list. */
   listInputAt: number | null
-  rows: Map<string, string[]>
+  rows: Map<string, LookBlock>
 }
 
 /** A look that ended, for the session's press folder. */
@@ -197,17 +218,20 @@ type Running = {
   terminal: string
   startedAt: number
   lastRunningAt: number
-  /** For each subject, the latest stretch on screen long enough to count. */
-  shown: Map<string, { since: number; last: number }>
-  streaks: Map<string, { since: number; last: number; epoch: number }>
+  /** For each subject, the stretches on screen long enough to count, oldest first. */
+  shown: Map<string, Stretch[]>
+  streaks: Map<string, Stretch & { checkedAt: number; epoch: number; content: string }>
 }
+
+type Stretch = { since: number; until: number }
 
 /**
  * The person's looks at the Status in the Herdr panel. A look runs while the panel shows a session's Status on screen
  * in the focused window. It ends when that stops, and when the person types a message to the agent without using the
  * panel's list just before or since. It ends at the last check that saw it running, so a stretch with no checks counts
- * nothing. A row counts as shown once it stayed on screen for `ROW_SEEN_MS` before the look ended. `shown` gives the
- * latest time the row then stayed on screen for `ROW_SEEN_MS` from, so a subject that changed later counts as not shown.
+ * nothing. A row counts as shown once it stayed on screen for `ROW_SEEN_MS`, with the same content, before the look
+ * ended. `shown` gives the latest time the row then stayed on screen for `ROW_SEEN_MS` from, so a subject that changed
+ * later counts as not shown.
  */
 export class StatusLook {
   place = new ListPlace()
@@ -247,16 +271,26 @@ export class StatusLook {
   }
 
   private note(look: Running, c: LookCheck): void {
-    const visible = this.place.visible(c.now) ?? []
+    const { ids, until, isWhole } = this.place.visible(c.now) ?? { ids: [], until: c.now, isWhole: false }
     const epoch = this.place.epoch
-    for (const id of [...look.streaks.keys()]) if (!visible.includes(id)) look.streaks.delete(id)
-    for (const id of visible) {
+    for (const id of [...look.streaks.keys()]) if (!ids.includes(id)) look.streaks.delete(id)
+    for (const id of ids) {
+      const block = c.rows.get(id)
+      if (block === undefined) continue
       const was = look.streaks.get(id)
-      const isUnbroken = was !== undefined && was.epoch === epoch && c.now - was.last <= MAX_CHECK_GAP_MS
-      const streak = isUnbroken ? { ...was, last: c.now } : { since: c.now, last: c.now, epoch }
-      look.streaks.set(id, streak)
-      if (c.now - streak.since < ROW_SEEN_MS) continue
-      for (const subject of c.rows.get(id) ?? []) look.shown.set(subject, { since: streak.since, last: c.now })
+      const isUnbroken =
+        was !== undefined &&
+        (isWhole || was.epoch === epoch) &&
+        was.content === block.content &&
+        c.now - was.checkedAt <= MAX_CHECK_GAP_MS
+      const since = isUnbroken ? was.since : c.now
+      look.streaks.set(id, { since, until, checkedAt: c.now, epoch, content: block.content })
+      if (until - since < ROW_SEEN_MS) continue
+      for (const subject of block.subjects) {
+        const stretches = look.shown.get(subject) ?? []
+        if (stretches.at(-1)?.since === since) stretches.pop()
+        look.shown.set(subject, [...stretches, { since, until }])
+      }
     }
   }
 
@@ -266,9 +300,12 @@ export class StatusLook {
     if (look === null || endedAt - look.startedAt < LOOK_MIN_MS) return []
     const { sessionId, terminal, startedAt } = look
     const shown: Record<string, number> = {}
-    for (const [subject, stretch] of look.shown) {
-      const from = Math.min(stretch.last, endedAt) - ROW_SEEN_MS
-      if (from >= stretch.since) shown[subject] = from
+    for (const [subject, stretches] of look.shown) {
+      const froms = stretches.flatMap(s => {
+        const from = Math.min(s.until, endedAt) - ROW_SEEN_MS
+        return from >= s.since ? [from] : []
+      })
+      if (froms.length > 0) shown[subject] = Math.max(...froms)
     }
 
     return [{ sessionId, terminal, look: { startedAt, endedAt, shown } }]

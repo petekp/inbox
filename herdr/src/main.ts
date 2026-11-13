@@ -39,7 +39,7 @@ import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
 import { afterSend, isFieldDrawn, keyMove, withSelected, withTab } from './keys'
-import { LOOK_CHECK_MS, StatusLook, blockSubjects, isPanelShown } from './look'
+import { LOOK_CHECK_MS, StatusLook, lookBlocks, isPanelShown } from './look'
 import type { LookReport } from './look'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
@@ -172,7 +172,7 @@ export default class Inbox extends View {
         }),
       typedAt: read?.session.presence.lastTypedMessageAt ?? null,
       listInputAt: this.listInput?.last ?? null,
-      rows: page ? blockSubjects(page) : new Map(),
+      rows: page ? lookBlocks(page) : new Map(),
     })
     void this.sendLooks(ended)
   }
