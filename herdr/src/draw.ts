@@ -112,6 +112,25 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
   })
 }
 
+/**
+ * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button stays drawn
+ * as out, as the Codex tab keeps a spent Undo, so the row does not change shape before it folds.
+ */
+function undoButtons(row: RowView, agent: string): Button[] {
+  if (row.state.is !== 'settled') return []
+  const id = `${row.id} undo`
+  const undo = row.actions.find(a => a.press.action === 'undo')
+  if (undo)
+    return [
+      {
+        ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
+        isOut: undo.isOut,
+      },
+    ]
+
+  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isOut: true }] : []
+}
+
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */
 function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send): Field {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel
@@ -155,13 +174,17 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
     settled: isSettled
-      ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state), at: state.at }
+      ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) }
       : null,
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
     body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSettled || (isSelected && !isTyping) ? rowButtons(row, isAllShown, screen.agent) : [],
+    buttons: isSettled
+      ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent)]
+      : isSelected && !isTyping
+        ? rowButtons(row, isAllShown, screen.agent)
+        : [],
     field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
   }
 }

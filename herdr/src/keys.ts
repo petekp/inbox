@@ -1,5 +1,9 @@
-import { latestUndo, steppedIndex } from '../../hooks/action-plan'
+import { drawnLists, latestUndo, steppedIndex, tabUndos } from '../../hooks/action-plan'
 import { UNDO_KEY } from '../../hooks/help'
+import type { PrPress } from '../../hooks/pr-press'
+import type { RowPress } from '../../hooks/presses'
+import type { SessionView } from '../../hooks/session-view'
+import { isDrawnInPlace } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft } from '../../types'
 import type { Block, Button, RowBlock } from './blocks'
@@ -31,17 +35,29 @@ function stepRow(blocks: Block[], by: 1 | -1): string | null {
   return rows[next]?.id ?? null
 }
 
-const isUndo = (b: Button) =>
-  b.does.is === 'press' && (b.does.press.action === 'undo' || b.does.press.action === 'pr-undo')
-
-/** The Undo the undo key presses: the one of the tab's settled rows and PRs that closed last. */
-function lastUndo(blocks: Block[]): Button | null {
-  const shown = blocks.flatMap(b =>
-    b.kind === 'row' && b.settled ? b.buttons.filter(isUndo).map(button => ({ button, at: b.settled!.at })) : [],
+/** The press of the Undo the undo key presses on a row tab: the one whose row or PR closed last. */
+export function tabUndo(view: SessionView, tab: ShownTab, shownSince: number): RowPress | PrPress | null {
+  if (tab === 'overview') return null
+  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows]
+  const drawn = new Set(rows.filter(r => isDrawnInPlace(r, shownSince)).map(r => r.id))
+  const lists = drawnLists(
+    view,
+    id => drawn.has(id),
+    r => r,
   )
-  const undo = latestUndo(shown)?.button
 
-  return undo && !undo.isOut ? undo : null
+  return latestUndo(tabUndos(tab, lists, view.prs.drawn))?.press ?? null
+}
+
+const isSamePress = (a: RowPress | PrPress, b: RowPress | PrPress) => JSON.stringify(a) === JSON.stringify(b)
+
+/** The drawn button of that Undo, unless its press is out. */
+function undoButton(blocks: Block[], undo: RowPress | PrPress): Button | null {
+  const drawn = blocks
+    .flatMap(b => (b.kind === 'row' ? b.buttons : []))
+    .find(b => b.does.is === 'press' && isSamePress(b.does.press, undo))
+
+  return drawn && !drawn.isOut ? drawn : null
 }
 
 function stepTab(tabs: TabCell[], by: 1 | -1): ShownTab | null {
@@ -51,11 +67,18 @@ function stepTab(tabs: TabCell[], by: 1 | -1): ShownTab | null {
 }
 
 /**
- * The move a key makes, as the Herdr look's Help lists: ← → switch tabs, j k move between rows, u presses the Undo of
- * the row that closed last, a selected row's hotkeys press its buttons, the tab's own keys such as g press its line's buttons, and escape leaves the look. While
- * a text field is open, `typing` names its row: the keys type into it, and escape closes it.
+ * The move a key makes, as the Herdr look's Help lists: ← → switch tabs, j k move between rows, u presses `undo`,
+ * the Undo of the row that closed last, a selected row's hotkeys press its buttons, the tab's own keys such as g
+ * press its line's buttons, and escape leaves the look. While a text field is open, `typing` names its row: the keys
+ * type into it, and escape closes it.
  */
-export function keyMove(key: string, tabs: TabCell[], blocks: Block[], typing: string | null): KeyMove {
+export function keyMove(
+  key: string,
+  tabs: TabCell[],
+  blocks: Block[],
+  typing: string | null,
+  undo: RowPress | PrPress | null = null,
+): KeyMove {
   if (typing !== null) return key === 'escape' ? { is: 'close' } : null
   if (key === 'escape') return { is: 'leave' }
   if (key === 'left' || key === 'right') {
@@ -67,8 +90,8 @@ export function keyMove(key: string, tabs: TabCell[], blocks: Block[], typing: s
     return id ? { is: 'select', id } : null
   }
   if (key === UNDO_KEY) {
-    const undo = lastUndo(blocks)
-    return undo ? { is: 'press', button: undo } : null
+    const button = undo ? undoButton(blocks, undo) : null
+    return button ? { is: 'press', button } : null
   }
   const selected = blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelected)
   const lines = blocks.flatMap(b => (b.kind === 'line' || b.kind === 'banner' ? b.buttons : []))

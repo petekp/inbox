@@ -69,7 +69,7 @@ export type RowBlock = {
   /** The row's press status, or a Closed line's outcome. */
   feedback: { text: string; tone: Tone } | null
   /** Shown once the row has closed, until it folds. */
-  settled: { label: string; tone: Tone; at: number } | null
+  settled: { label: string; tone: Tone } | null
   isDim: boolean
   /** Whether the person can select it to see its body and buttons. */
   isSelectable: boolean

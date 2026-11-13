@@ -5,18 +5,19 @@ import { prCheckId, prMarkId, prThreadId, splitFollowUps, threadSentIn } from '.
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { pendingResult } from '../../hooks/pressed'
 import { EXIT_MS } from '../../hooks/row-motion'
-import { NO_HOLDS } from '../../hooks/timing'
-import { button } from '../src/blocks'
+import { demoSession } from '../../hooks/demo'
+import { sessionView } from '../../hooks/session-view'
+import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
-import { afterSend, keyMove, withSelected, withTab } from '../src/keys'
+import { afterSend, keyMove, tabUndo, withSelected, withTab } from '../src/keys'
 import { moveRows } from '../src/motion'
 import { GIVE_UP_MS, SENDING, drawOuts, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
 import { isRunHere, runHere } from '../src/run-here'
 import type { HereIo } from '../src/run-here'
-import { NOW, demoScreen, uiOn } from './fixtures'
+import { AGENT, NOW, demoScreen, uiOn } from './fixtures'
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
 
@@ -151,31 +152,29 @@ test('keys switch tabs, step rows, press a selected row’s hotkey, and leave th
   expect(keyMove('k', tabs, onFirst, null)).toEqual({ is: 'select', id: last.id })
 })
 
-test('u presses the Undo of the row that closed last, whichever row is selected, and nothing once Undo is gone', () => {
+test('a dismissed row draws its Undo and u presses it, and once Undo ends the row folds and u does nothing', () => {
   const tabs = [{ id: 'needsYou' as const, label: 'Asks', badge: null, isSelected: true }]
-  const settledRow = (id: string, at: number, isUndoShown = true): RowBlock => ({
-    kind: 'row',
-    id,
-    depth: 0,
-    mark: null,
-    title: id,
-    age: null,
-    feedback: null,
-    settled: { label: 'Dismissed', tone: 'muted', at },
-    isDim: true,
-    isSelectable: false,
-    isSelected: false,
-    body: [],
-    buttons: isUndoShown
-      ? [button(`${id} undo`, 'Undo', 'quiet', { is: 'press', press: { action: 'undo', id }, effects: [] })]
-      : [],
-    field: null,
-  })
-  const open = tabBlocks(demoScreen(), uiOn('needsYou'))
-  const blocks = [settledRow('q1', NOW - 2000), settledRow('q2', NOW - 1000), ...open]
-  const pressed = keyMove('u', tabs, blocks, null)
-  expect(pressed?.is === 'press' && pressed.button.does).toMatchObject({ press: { action: 'undo', id: 'q2' } })
-  expect(keyMove('u', tabs, [settledRow('q1', NOW, false), ...open], null)).toBeNull()
+  const dismissedAt = (at: number) => {
+    const s = demoSession(NOW, AGENT)
+    const closed = s.ledger.closed.map(c =>
+      c.id === 'd8' ? { ...c, at, item: { ...s.ledger.items[0]!, id: 'd8', ask: c.ask } } : c,
+    )
+    const holds = { replies: {}, discarded: {}, shownSince: NOW - 1000, listInput: null }
+    const view = sessionView({ ...s, ledger: { ...s.ledger, closed } }, NOW, SETTLED_MS, holds)
+    const ui = uiOn('needsYou')
+    const blocks = tabBlocks({ ...demoScreen(), view, shownSince: NOW - 1000 }, ui)
+    const row = rowsOf(blocks).find(r => r.id === 'd8')
+
+    return { row, move: keyMove('u', tabs, blocks, null, tabUndo(view, 'needsYou', NOW - 1000)) }
+  }
+  const fresh = dismissedAt(NOW - 500)
+  expect(fresh.row?.settled).not.toBeNull()
+  expect(fresh.row?.buttons.map(b => [b.label, b.isOut])).toEqual([['Undo', false]])
+  expect(fresh.move?.is === 'press' && fresh.move.button).toBe(fresh.row?.buttons[0]!)
+  expect(fresh.row?.buttons[0]?.does).toMatchObject({ is: 'press', press: { action: 'undo', id: 'd8' } })
+  const spent = dismissedAt(NOW - SETTLED_MS - 500)
+  expect(spent.row).toBeUndefined()
+  expect(spent.move).toBeNull()
 })
 
 test('while a field is open, keys type into it and escape closes it, and moving to another row or tab closes it', () => {

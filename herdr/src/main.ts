@@ -36,7 +36,7 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { afterSend, isFieldDrawn, keyMove, withSelected, withTab } from './keys'
+import { afterSend, isFieldDrawn, keyMove, tabUndo, withSelected, withTab } from './keys'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
@@ -330,7 +330,8 @@ export default class Inbox extends View {
   }
 
   onKey(key: string, tabs: TabCell[], blocks: Block[], cx: Context): void {
-    const move = keyMove(key, tabs, blocks, this.ui.typing)
+    const undo = this.view ? tabUndo(this.view, this.ui.tab, this.shownSince) : null
+    const move = keyMove(key, tabs, blocks, this.ui.typing, undo)
     if (move === null) return
     if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
     else if (move.is === 'tab') this.ui = withTab(this.ui, move.tab)

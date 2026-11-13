@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-13T06:15:59.244Z. 190881 characters follow.
+// Built at 2026-11-13T06:28:04.196Z. 193341 characters follow.
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";
@@ -2832,6 +2832,18 @@ var ACTION_KEYS = {
 function latestUndo(undos) {
   return undos.reduce((latest, u) => latest === null || u.at >= latest.at ? u : latest, null);
 }
+function tabUndos(tab, lists, prs) {
+  return tab === "prs" ? prUndos(prs) : listUndos(tab === "needsYou" ? [...lists.questions, ...lists.tasks] : lists.findings);
+}
+function listUndos(entries) {
+  return entries.flatMap((x) => {
+    const undo = "settled" in x ? x.settled.actions.find((a) => a.press.action === "undo") : undefined;
+    return undo && "settled" in x ? [{ press: undo.press, at: x.state.at }] : [];
+  });
+}
+function prUndos(prs) {
+  return prs.flatMap((d) => d.state.is === "settled" && d.state.canUndo ? [{ press: { action: "pr-undo", ref: d.pr.ref }, at: d.state.at }] : []);
+}
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps } = row;
   const pressing = pressOutAction(last, feedback);
@@ -2890,6 +2902,29 @@ function actionsOf(row, last, state, feedback) {
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
 }
+function drawnLists(v, isSettledDrawn, toRow) {
+  const entries = (rows) => rows.flatMap((r) => {
+    if (r.state.is === "settled")
+      return isSettledDrawn(r.id) ? [{ settled: r, state: r.state }] : [];
+    const row = toRow(r);
+    return row === null ? [] : [{ row }];
+  });
+  const questions = entries(v.needsYou.questions);
+  const tasks = entries(v.needsYou.tasks);
+  const findingGroups = Object.keys(FINDING_GROUPS).map((kind) => ({
+    kind,
+    title: FINDING_GROUPS[kind].title,
+    entries: entries(v.findings.rows.filter((r) => r.finding?.kind === kind))
+  }));
+  const findings = findingGroups.flatMap((g) => g.entries);
+  return {
+    questions,
+    tasks,
+    findings,
+    findingGroups,
+    byTab: { needsYou: [...rowsIn(questions), ...rowsIn(tasks)], findings: rowsIn(findings) }
+  };
+}
 function firstWaiting(rows) {
   return rows.find((r) => r.isWaiting)?.id ?? null;
 }
@@ -2898,6 +2933,9 @@ function steppedIndex(at, step, count) {
     return -1;
   const from = at < 0 ? step > 0 ? -1 : 0 : at;
   return ((from + step) % count + count) % count;
+}
+function rowsIn(entries) {
+  return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
 function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
@@ -3319,7 +3357,7 @@ function settledPr(d) {
     title: pr.title,
     age: `#${pr.number}`,
     feedback: null,
-    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted", at: state.at },
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted" },
     isDim: true,
     isSelectable: false,
     isSelected: false,
@@ -3664,6 +3702,20 @@ function rowButtons(row, isAllShown, agent) {
     return { ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null), isOut: action.isOut };
   });
 }
+function undoButtons(row, agent) {
+  if (row.state.is !== "settled")
+    return [];
+  const id = `${row.id} undo`;
+  const undo = row.actions.find((a) => a.press.action === "undo");
+  if (undo)
+    return [
+      {
+        ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
+        isOut: undo.isOut
+      }
+    ];
+  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, "quiet"), isOut: true }] : [];
+}
 function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
   return {
@@ -3700,12 +3752,12 @@ function rowBlock(row, ui, selected, screen) {
     title: rowTitle(row, LOOK2),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
-    settled: isSettled ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state), at: state.at } : null,
+    settled: isSettled ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) } : null,
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
     body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSettled || isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
+    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent)] : isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
     field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
   };
 }
@@ -3952,17 +4004,24 @@ function stepRow(blocks, by) {
   const next = steppedIndex(rows.findIndex((r) => r.isSelected), by, rows.length);
   return rows[next]?.id ?? null;
 }
-var isUndo = (b) => b.does.is === "press" && (b.does.press.action === "undo" || b.does.press.action === "pr-undo");
-function lastUndo(blocks) {
-  const shown = blocks.flatMap((b) => b.kind === "row" && b.settled ? b.buttons.filter(isUndo).map((button) => ({ button, at: b.settled.at })) : []);
-  const undo = latestUndo(shown)?.button;
-  return undo && !undo.isOut ? undo : null;
+function tabUndo(view, tab, shownSince) {
+  if (tab === "overview")
+    return null;
+  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
+  const drawn = new Set(rows.filter((r) => isDrawnInPlace(r, shownSince)).map((r) => r.id));
+  const lists = drawnLists(view, (id) => drawn.has(id), (r) => r);
+  return latestUndo(tabUndos(tab, lists, view.prs.drawn))?.press ?? null;
+}
+var isSamePress = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function undoButton(blocks, undo) {
+  const drawn = blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).find((b) => b.does.is === "press" && isSamePress(b.does.press, undo));
+  return drawn && !drawn.isOut ? drawn : null;
 }
 function stepTab(tabs, by) {
   const at = tabs.findIndex((t) => t.isSelected);
   return tabs[(at + by + tabs.length) % tabs.length]?.id ?? null;
 }
-function keyMove(key, tabs, blocks, typing) {
+function keyMove(key, tabs, blocks, typing, undo = null) {
   if (typing !== null)
     return key === "escape" ? { is: "close" } : null;
   if (key === "escape")
@@ -3976,8 +4035,8 @@ function keyMove(key, tabs, blocks, typing) {
     return id ? { is: "select", id } : null;
   }
   if (key === UNDO_KEY) {
-    const undo = lastUndo(blocks);
-    return undo ? { is: "press", button: undo } : null;
+    const button = undo ? undoButton(blocks, undo) : null;
+    return button ? { is: "press", button } : null;
   }
   const selected = blocks.find((b) => b.kind === "row" && b.isSelected);
   const lines = blocks.flatMap((b) => b.kind === "line" || b.kind === "banner" ? b.buttons : []);
@@ -4799,7 +4858,8 @@ class Inbox extends View {
     cx.notify();
   }
   onKey(key, tabs, blocks, cx) {
-    const move = keyMove(key, tabs, blocks, this.ui.typing);
+    const undo = this.view ? tabUndo(this.view, this.ui.tab, this.shownSince) : null;
+    const move = keyMove(key, tabs, blocks, this.ui.typing, undo);
     if (move === null)
       return;
     if (move.is === "close")
