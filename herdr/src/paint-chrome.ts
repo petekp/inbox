@@ -46,6 +46,7 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
     .flex_wrap()
     .px(EDGE)
     .pt(EDGE)
+    .pb(CONTROL_GAP)
     .gap_x(LINE_GAP)
     .gap_y(CONTROL_GAP)
     .items_center()
@@ -130,7 +131,7 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
 
 /** A line under the tabs that says something about the whole session, such as that the host trimmed it. */
 export const sessionNoteEl = (text: string, t: Theme): Element =>
-  div().px(EDGE).pt(CONTROL_GAP).whitespace_normal().text_color(t.muted).child(text)
+  div().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text)
 
 /** What the look shows in place of an inbox, centred in the pane as the Codex tab's empty page. */
 export function messageEl(m: Message, t: Theme): Element {
