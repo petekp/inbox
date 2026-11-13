@@ -205,4 +205,16 @@ describe('items the agent recorded', () => {
     for (const [closing, result] of refusals)
       expect(recordItem(CLAUDE_CODE, closeItem(recorded(), 'i1', closing, 1500), ask, 2000).result).toStartWith(result)
   })
+
+  test('a question recorded again in its turn with reworded text and the same options updates its row, and another option set adds one', () => {
+    const first = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, { ...ask }, 1000)
+    const again = (input: Record<string, unknown>) => recordItem(CLAUDE_CODE, first.ledger, { ...ask, ...input }, 2000)
+    const reworded = { ask: 'Which cache should the API use here?', context: 'Reads dominate the load.' }
+
+    const same = again(reworded)
+    expect(same.ledger.items.map(i => [i.id, i.context])).toEqual([['i1', 'Reads dominate the load.']])
+
+    const otherOptions = again({ ...reworded, options: ['Redis', 'Valkey'] })
+    expect(otherOptions.ledger.items.map(i => i.id)).toEqual(['i1', 'i2'])
+  })
 })
