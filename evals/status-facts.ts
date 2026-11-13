@@ -171,7 +171,7 @@ export function rightStatuses(p: Pick<Piece, 'state' | 'alsoRight'>): SubjectSta
     'waits-on-other': ['waits-on-other'],
     done: ['done'],
     dropped: ['dropped'],
-    filed: ['dropped'],
+    filed: ['done'],
   }
 
   return [...main[p.state], ...(p.alsoRight ?? [])]

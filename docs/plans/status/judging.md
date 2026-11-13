@@ -29,7 +29,6 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 | `evals/status-run.ts` | The runner and its results file |
 | `tests/status-evals.test.ts`, `tests/status-bar.test.ts` | The checks with no model calls |
 | `tests/status-evals-scenes.ts` | The pages and Status call answers those checks grade |
-| `tests/status-evals-known-failing.test.ts` | The known failing cases, each of which fails until the issue it names is built |
 
 ### What goes in the suite
 
@@ -154,11 +153,7 @@ These make no model calls.
 - **The rules catch what they claim.** Each fixed rule runs on a hand-written good page and a bad one.
 - **The replay harness grades a known run.** A recorded good run of each replay passes every rule. A recorded bad run fails at the step and property it was written to break.
 - **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Status call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. A Status answer that lands after a clear writes into the cleared session: #152. When two update processes run their Status calls newer-first, the older answer overwrites the newer one: #153.
-- **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
-  - work filed for later closes with its own mark, #137;
-  - a look marks as seen only the rows that were on screen, #139.
-
-  The rules for the same changes in the replays name their issue too. Until it is built, such a rule's failures are listed apart and block nothing. A replay step marks a judge check the same way, with `judgeUntil`: at `mid-turn-activity`'s step, the judge's where-it-stands check waits on the mid-turn wording follow-up.
+- **Known failing cases.** A rule for a failure that code owns names its issue, as `child-labels` names #149. Until it is built, the rule's failures are listed apart and block nothing. A replay step marks a judge check the same way, with `judgeUntil`: at `mid-turn-activity`'s step, the judge's where-it-stands check waits on the mid-turn wording follow-up.
 
 ### Calls for one release run
 

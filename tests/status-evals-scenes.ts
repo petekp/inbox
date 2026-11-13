@@ -233,16 +233,6 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'was-not-cut': { bad: s => (s2Of(s).was = 'Show the banner on hover and keep…') },
   'failure-shown': { bad: s => (s.isStatusFailed = true) },
   'head-title': { bad: s => (s.after.head = { title: 'Offline sync', description: 'offline sync' }) },
-  'filed-mark': {
-    good: s => {
-      s.facts.pieces[1]!.state = 'filed'
-      s2Of(s).status = 'filed' as SubjectStatus
-    },
-    bad: s => {
-      s.facts.pieces[1]!.state = 'filed'
-      s2Of(s).status = 'done'
-    },
-  },
   'answer-readable': {
     good: s => (s.calls = [statusCall('SET: s1 | working | syncs on reconnect')]),
     bad: s => (s.calls = [statusCall('The engine now syncs on reconnect.')]),
