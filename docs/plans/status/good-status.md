@@ -105,6 +105,11 @@ The person can trust a mark at a glance. A piece that is delivered, dropped or f
 - **Bad:** `✓ Dark mode toggle: filed for later`, counted with delivered work in "▸ 4 done".
 - **Bad:** nine pieces are open, and the page shows six, with no fold and no ✓ or ✗ for the other three.
 
+A milestone's mark follows the work that serves it. It reads as being worked on while any of that work is, and it closes once that work is closed and some of it was delivered. The person reads the goal block first, so a `○` milestone over a `●` row tells them nothing has started on it when it has.
+
+- **Good:** `● Under 100 ms`, over `● Search index: 0.3 s, the target is 100 ms`.
+- **Bad:** `○ Under 100 ms`, over `● Search index: 0.3 s, the target is 100 ms`.
+
 #### 6. Where it stands says the state of the work
 
 A few words on what works, what is left or what it waits on, in the work's own terms. It does not name the step that ran, the tool that runs now, an id, or what was said in the conversation. A row that covers several parts keeps every part whose state differs. When those parts do not fit in a few words, each gets its own row.

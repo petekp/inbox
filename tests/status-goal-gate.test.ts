@@ -65,6 +65,20 @@ test('the outcome happened: DONE on the last open milestones meets the goal in t
   expect(after(o, 'DONE: m4 | live in the store\nRETIRE: shipped', soon).goal?.metAt).toBe(soon)
 })
 
+test('the goal is met once every milestone left is done, and unmet when one opens again', () => {
+  const withGoal = after(
+    null,
+    'NEW: working | Import | CSV works\nGOAL: Import ready to demo | done Import works; working Error messages; queued Demo script',
+    20,
+  )
+  const met = after(withGoal, 'DONE: m2 | named\nDROP: m3 | not needed', 30)
+  const reopened = after(met, 'SET: m1 | working | broke on Excel', 40)
+
+  expect(met.goal?.metAt).toBe(30)
+  expect(after(met, 'SET: s1 | working | XLSX next', 35).goal?.metAt).toBe(30)
+  expect(reopened.goal?.metAt).toBeNull()
+})
+
 test('a GOAL applies in the answer whose subject DONE closes the goal’s last milestone', () => {
   const o = after(
     linked(),

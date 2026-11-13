@@ -17,7 +17,7 @@ A step with no call, or a step before its call, can press a goal button as the p
 | Look | The person answers in the inbox, and reads the page | No call. The ask closes, and the page counts the rows shown as seen. |
 | 8 | The coordinator records a flaky test elsewhere as a finding | No subject for it, and nothing moves |
 | 9 | The fix's PR opens, and a reviewer subagent starts | Checkpoint. No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
-| 10 | The PR merges, and 2.5 prep starts | The fix and its milestone close. The head's title leaves the fix. |
+| 10 | The PR merges, and 2.5 prep starts | The fix and its milestone close, and the 2.5 milestone is being worked on. The head's title leaves the fix. |
 | 11 | The person asks why export sometimes picks the wrong default folder on one platform | The new piece gets a short name, and links to Other work |
 | Return | Three hours pass | No call |
 | 12 | 2.5 is published, and nothing follows | Checkpoint. The goal is met. The head names the finished push. |

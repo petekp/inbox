@@ -66,7 +66,10 @@ export const coordinatorDayLater: Step[] = [
         { id: 'vanish', state: 'done', stands: 'fixed' },
         { id: 'r25', state: 'working', stands: 'release candidate building', alsoRight: ['waits-on-other'] },
       ],
-      milestones: [{ id: 'ms-vanish', state: 'done' }],
+      milestones: [
+        { id: 'ms-vanish', state: 'done' },
+        { id: 'ms-live25', state: 'working' },
+      ],
       children: [],
     },
     targets: ['marks-true', 'milestones-true', 'piece-once', 'head-follows'],

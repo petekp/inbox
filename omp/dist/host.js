@@ -2897,11 +2897,35 @@ function withWorkDoneMilestones(o, now) {
   });
   return isChanged ? { ...o, milestones } : o;
 }
+function withWorkStartedMilestones(o, now) {
+  const startedAs = (m) => {
+    if (m.status !== "queued")
+      return null;
+    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
+    if (linked.some((s) => s.status === "working"))
+      return "working";
+    return linked.some((s) => s.status === "waits-on-other") ? "waits-on-other" : null;
+  };
+  if (!o.milestones.some((m) => startedAs(m) !== null))
+    return o;
+  return {
+    ...o,
+    milestones: o.milestones.map((m) => {
+      const status = startedAs(m);
+      if (status === null)
+        return m;
+      const started = { ...m };
+      forgetSeenWas(started, o.lastLookAt);
+      const isWrittenNow = m.changedAt === now;
+      return { ...started, status, text: isWrittenNow ? m.text : "", changedAt: now };
+    })
+  };
+}
 function settleGoal(saved, now, readSetAt, named) {
   const g = saved.goal;
   if (g === null)
     return saved;
-  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now);
+  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
   const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").slice(0, MILESTONES_MAX) : o.milestones;
