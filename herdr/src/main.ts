@@ -11,9 +11,11 @@ import {
   props,
   readTextFile,
   run,
+  spaces,
   terminals,
   theme,
   watchFolder,
+  window as appWindow,
   writeTextFile,
 } from 'herdr'
 import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
@@ -37,13 +39,16 @@ import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
 import { afterSend, isFieldDrawn, keyMove, withSelected, withTab } from './keys'
+import { LOOK_CHECK_MS, StatusLook, blockSubjects, isPanelShown } from './look'
+import type { LookReport } from './look'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
 import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { watchArea, watchBlock, watchList } from './paint-look'
 import { END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
-import { PRESS_LABEL } from './press-file'
+import { PRESS_LABEL, lookFileText, newPressId, pressPath } from './press-file'
 import { PressQueue, claimedPath } from './press-queue'
 import type { PressTarget, QueueIo } from './press-queue'
 import { runHere } from './run-here'
@@ -118,6 +123,7 @@ export default class Inbox extends View {
   discarded: Record<string, number> = {}
   listInput: ListInput | null = null
   queue = new PressQueue(queueIo)
+  look = new StatusLook()
   tracks: Tracks = new Map()
   tracksOf = ''
   focus: FocusHandle | null = null
@@ -140,6 +146,43 @@ export default class Inbox extends View {
     })
     cx.timer.every(REREAD_MS, cx => this.sessionId && this.load(this.sessionId, cx))
     cx.timer.every(AGE_TICK_MS, cx => cx.notify())
+    cx.timer.every(LOOK_CHECK_MS, () => this.checkLook())
+  }
+
+  async close(): Promise<void> {
+    await this.sendLooks(this.look.close())
+  }
+
+  /** Checks the person's look at the Status, and writes each look that ended to its session's press folder. */
+  checkLook(): void {
+    const read = this.read?.is === 'read' ? this.read : null
+    const page = this.view?.statusPage ?? null
+    const isStatusDrawn = page !== null && this.ui.tab === 'overview' && !this.isHelpShown
+    const ended = this.look.check({
+      now: Date.now(),
+      sessionId: this.sessionId,
+      terminal: read?.envelope.terminal ?? null,
+      isRunning:
+        isStatusDrawn &&
+        isPanelShown(this.tab, {
+          isWindowActive: appWindow().active,
+          spaces: spaces(),
+          panes: panes(),
+          ownPane: props()?.pane ?? null,
+        }),
+      typedAt: read?.session.presence.lastTypedMessageAt ?? null,
+      listInputAt: this.listInput?.last ?? null,
+      rows: page ? blockSubjects(page) : new Map(),
+    })
+    void this.sendLooks(ended)
+  }
+
+  async sendLooks(looks: LookReport[]): Promise<void> {
+    for (const { sessionId, terminal, look } of looks) {
+      const id = newPressId(Date.now(), Math.random())
+      const failed = await queueIo.write(pressPath(appHome(), sessionId, id), lookFileText(id, look))
+      if (failed === null) await queueIo.wake(terminal, id)
+    }
   }
 
   holds(now: number): Holds {
@@ -395,6 +438,10 @@ export default class Inbox extends View {
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
+    const isStatusDrawn = this.ui.tab === 'overview' && !this.isHelpShown
+    const place = this.look.place
+    if (isStatusDrawn) place.drawn(moved.blocks.map(b => b.id))
+    this.checkLook()
     const isStarting = [...moved.motion.values()].some(m => m.isStart)
     const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, screen.foldAt].filter(at => at !== null)
     if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
@@ -407,12 +454,12 @@ export default class Inbox extends View {
       .children(screen.banners.map(b => bannerEl(b, t)))
       .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t)))
       .child(
-        div()
+        watchArea(div(), place)
           .flex_1()
           .min_h(0)
           .relative()
           .child(
-            v_flex()
+            watchList(v_flex(), place)
               .id('inbox-list')
               .absolute()
               .inset_0()
@@ -424,7 +471,9 @@ export default class Inbox extends View {
                 if (field) field.state.focus()
                 else this.focus?.focus()
               })
-              .children(moved.blocks.map(b => blockEl(b, paint))),
+              .children(
+                moved.blocks.map(b => (isStatusDrawn ? watchBlock(blockEl(b, paint), b, place) : blockEl(b, paint))),
+              ),
           )
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
