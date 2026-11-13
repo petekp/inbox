@@ -925,15 +925,32 @@ function asksForSignIn(r) {
 }
 var LIMIT = /rate limit/i;
 var UNREACHABLE = /error connecting to|dial tcp|no such host|connection refused|network is unreachable|TLS handshake|i\/o timeout|lookup .* failed/i;
+function errorsOf(stdout) {
+  try {
+    const errors = JSON.parse(stdout).errors;
+    return Array.isArray(errors) ? errors : [];
+  } catch {
+    return [];
+  }
+}
+var LIMIT_KIND = /rate_?limit/i;
+function isLimitError(error) {
+  const { type, code } = error ?? {};
+  return [type, code].some((kind) => typeof kind === "string" && LIMIT_KIND.test(kind));
+}
 function runFailureOf(r, timedOutCode, at) {
   if (r.exitCode === timedOutCode)
     return { kind: "timed-out", at };
-  if (LIMIT.test(r.stderr) || LIMIT.test(r.stdout.slice(0, 2000)))
-    return { kind: "limit", at, resetsAt: null };
-  if (UNREACHABLE.test(r.stderr))
-    return { kind: "unreachable", at };
+  const errors = errorsOf(r.stdout);
+  const limit = { kind: "limit", at, resetsAt: null };
+  if (errors.some(isLimitError))
+    return limit;
   if (/"data"\s*:\s*\{/.test(r.stdout))
     return null;
+  if (LIMIT.test(r.stderr) || LIMIT.test(JSON.stringify(errors)))
+    return limit;
+  if (UNREACHABLE.test(r.stderr))
+    return { kind: "unreachable", at };
   const line = r.stderr.trim().split(`
 `)[0]?.replace(/^gh:\s*/, "").replace(/\s*\(https?:\/\/\S+\)\s*$/, "").trim();
   const text = line || (r.exitCode === 0 ? "GitHub's answer could not be read" : `gh exited with ${r.exitCode}`);
@@ -941,8 +958,10 @@ function runFailureOf(r, timedOutCode, at) {
 }
 function limitResetOf(json) {
   try {
-    const reset = JSON.parse(json).resources?.graphql?.reset;
-    return typeof reset === "number" && reset > 0 ? reset * 1000 : null;
+    const graphql = JSON.parse(json).resources?.graphql;
+    const reset = graphql?.reset;
+    const isUsedUp = graphql?.remaining === undefined || graphql.remaining === 0;
+    return typeof reset === "number" && reset > 0 && isUsedUp ? reset * 1000 : null;
   } catch {
     return null;
   }
@@ -5186,18 +5205,79 @@ function linkDialogs(s, now = Date.now()) {
   const ledger = questions.reduce((l, q) => q.answer !== undefined && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l, { ...s.ledger, items });
   return { ...s, ledger, dialogQuestions: kept };
 }
-var ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected):?\s*/i;
 var MAX_DIALOG_ANSWER = 80;
-function answerOf(q, text) {
-  const named = q?.options.filter((o) => text.toLowerCase().includes(optionKey(o))) ?? [];
-  const [only] = named;
-  if (only && named.length === 1)
-    return only.replace(RECOMMENDED_SUFFIX, "").trim();
-  return text.replace(ANSWER_PREFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
+var PAIR_FORMS = [
+  { head: /^Your questions have been answered: /, tail: /\. You can now continue with these answers in mind\.$/ },
+  { head: /^The user answered: /, tail: /\. Read the answers carefully[\s\S]*$/ },
+  {
+    head: /^The user asked for more questions before you proceed\. So far they answered: /,
+    tail: /\.(?: They also wrote: [\s\S]*)? Call \S+ again with follow-up questions[\s\S]*$/
+  },
+  { head: /^User has answered your questions: /, tail: /\. You can now continue with the user's answers in mind\.$/ },
+  { head: /^(?=")/, tail: /$/ }
+];
+var AFTER_ANSWER = /^ (?:selected preview:\n|notes: |user notes: )/;
+var SINGLE_FORMS = [
+  /^The user responded: ([\s\S]+)$/,
+  /^User (?:has )?(?:answered|selected)(?: your questions?)?: ([^"\n].*)/i,
+  /^User provided custom input: (.+)/
+];
+function quotedAnswer(pair) {
+  if (!pair.startsWith('"'))
+    return null;
+  for (let end = pair.indexOf('"', 1);end > 0; end = pair.indexOf('"', end + 1)) {
+    const after = pair.slice(end + 1);
+    if (after === "" || AFTER_ANSWER.test(after))
+      return pair.slice(1, end);
+  }
+  return null;
+}
+function pairedAnswers(questions, pairs) {
+  const leadsOf = (q) => {
+    const question = q.question.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return [...pairs.matchAll(new RegExp(`"\\s*${question}\\s*"=`, "g"))];
+  };
+  const leads = questions.map((q) => {
+    const [lead] = leadsOf(q);
+    return lead ? { at: lead.index, answerAt: lead.index + lead[0].length } : null;
+  });
+  const starts = questions.flatMap((q) => leadsOf(q).map((lead) => lead.index));
+  return leads.map((lead) => {
+    if (!lead)
+      return null;
+    const next = Math.min(pairs.length, ...starts.filter((at) => at > lead.at));
+    return quotedAnswer(pairs.slice(lead.answerAt, next).replace(/, $/, ""));
+  });
+}
+function answersOf(questions, text) {
+  const trimmed = text.trim();
+  for (const { head, tail } of PAIR_FORMS) {
+    const opened = head.exec(trimmed);
+    const rest = opened ? trimmed.slice(opened[0].length) : "";
+    const closed = opened ? tail.exec(rest) : null;
+    if (closed)
+      return pairedAnswers(questions, rest.slice(0, closed.index));
+  }
+  const single = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  return questions.map(() => single ?? null);
+}
+function chosenOf(q, answer) {
+  const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
+  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
 }
 function noteAnsweredDialog(s, questions, text, now) {
-  const answer = answerOf(questions.length === 1 ? questions[0] : null, text);
-  const added = questions.map((q, index) => ({ ...q, callId: null, index, turn: s.ledger.turn, itemId: null, answer }));
+  const answers = answersOf(questions, text);
+  const added = questions.map((q, index) => {
+    const answer = answers[index]?.trim() ? chosenOf(q, answers[index]) : undefined;
+    return {
+      ...q,
+      callId: null,
+      index,
+      turn: s.ledger.turn,
+      itemId: null,
+      ...answer === undefined ? {} : { answer }
+    };
+  });
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now);
 }
 function noteDialog(s, callId, questions) {

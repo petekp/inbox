@@ -306,6 +306,24 @@ const LIMIT = /rate limit/i
 const UNREACHABLE =
   /error connecting to|dial tcp|no such host|connection refused|network is unreachable|TLS handshake|i\/o timeout|lookup .* failed/i
 
+/** The `errors` array of a GraphQL answer, or an empty array when the answer has none or does not parse. */
+function errorsOf(stdout: string): unknown[] {
+  try {
+    const errors = (JSON.parse(stdout) as { errors?: unknown }).errors
+    return Array.isArray(errors) ? errors : []
+  } catch {
+    return []
+  }
+}
+
+/** GitHub's error `type` or `code` for its limit, as in `RATE_LIMITED`, `RATE_LIMIT` and `graphql_rate_limit`. */
+const LIMIT_KIND = /rate_?limit/i
+
+function isLimitError(error: unknown): boolean {
+  const { type, code } = (error ?? {}) as { type?: unknown; code?: unknown }
+  return [type, code].some(kind => typeof kind === 'string' && LIMIT_KIND.test(kind))
+}
+
 /**
  * Why a whole gh run gave no PRs, or null when its answer holds data. The limit and an unreachable GitHub come from
  * gh's words; any other failure keeps gh's first line, without its "gh:" prefix and the link it adds.
@@ -316,9 +334,12 @@ export function runFailureOf(
   at: number,
 ): PrFetchFailure | null {
   if (r.exitCode === timedOutCode) return { kind: 'timed-out', at }
-  if (LIMIT.test(r.stderr) || LIMIT.test(r.stdout.slice(0, 2000))) return { kind: 'limit', at, resetsAt: null }
-  if (UNREACHABLE.test(r.stderr)) return { kind: 'unreachable', at }
+  const errors = errorsOf(r.stdout)
+  const limit: PrFetchFailure = { kind: 'limit', at, resetsAt: null }
+  if (errors.some(isLimitError)) return limit
   if (/"data"\s*:\s*\{/.test(r.stdout)) return null
+  if (LIMIT.test(r.stderr) || LIMIT.test(JSON.stringify(errors))) return limit
+  if (UNREACHABLE.test(r.stderr)) return { kind: 'unreachable', at }
   const line = r.stderr
     .trim()
     .split('\n')[0]
@@ -330,11 +351,17 @@ export function runFailureOf(
   return { kind: 'error', at, text }
 }
 
-/** When GitHub's GraphQL limit resets, from `gh api rate_limit`, or null when the answer does not say. */
+/**
+ * When GitHub's GraphQL limit resets, from `gh api rate_limit`, or null when the answer does not say or the hourly
+ * budget is not used up, as after a request to slow down.
+ */
 export function limitResetOf(json: string): number | null {
   try {
-    const reset = (JSON.parse(json) as { resources?: { graphql?: { reset?: number } } }).resources?.graphql?.reset
-    return typeof reset === 'number' && reset > 0 ? reset * 1000 : null
+    const graphql = (JSON.parse(json) as { resources?: { graphql?: { reset?: number; remaining?: number } } }).resources
+      ?.graphql
+    const reset = graphql?.reset
+    const isUsedUp = graphql?.remaining === undefined || graphql.remaining === 0
+    return typeof reset === 'number' && reset > 0 && isUsedUp ? reset * 1000 : null
   } catch {
     return null
   }
