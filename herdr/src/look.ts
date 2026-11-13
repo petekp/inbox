@@ -151,8 +151,19 @@ export class ListPlace {
 
   /** A pointer event the area's handler saw, with the area's top in window coordinates. */
   areaPointer(p: Place): void {
+    if (this.area !== null) this.areaAlone(this.area)
     this.area = p
     this.pair()
+  }
+
+  /**
+   * An area event still unpaired when the next one comes, so the list never saw it. It came over the scrollbar, which
+   * may start a drag no handler sees, so the offset is no longer known.
+   */
+  private areaAlone(area: Place): void {
+    this.area = null
+    this.lastPointerAt = Math.max(this.lastPointerAt ?? -Infinity, area.at)
+    this.forget()
   }
 
   private pair(): void {

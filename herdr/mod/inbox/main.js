@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-13T05:31:46.910Z. 199871 characters follow.
+// Built at 2026-11-13T05:36:22.748Z. 200074 characters follow.
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";
@@ -4119,8 +4119,15 @@ class ListPlace {
     this.pair();
   }
   areaPointer(p) {
+    if (this.area !== null)
+      this.areaAlone(this.area);
     this.area = p;
     this.pair();
+  }
+  areaAlone(area) {
+    this.area = null;
+    this.lastPointerAt = Math.max(this.lastPointerAt ?? -Infinity, area.at);
+    this.forget();
   }
   pair() {
     const { list, area } = this;

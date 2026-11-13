@@ -54,6 +54,8 @@ function runEachSecond(look: StatusLook, from: number, to: number, each: (at: nu
 
 const shownBy = (look: StatusLook) => look.close()[0]?.look.shown
 
+const scrollbarEvent = { top: 100, x: 295, y: 50, at: NOW + 4 * S }
+
 test('a row the pointer keeps on screen counts from five seconds before its last check', () => {
   const look = scrolledList()
   runEachSecond(look, 0, 6 * S, at => point(look, at))
@@ -94,6 +96,15 @@ test.each([
   ['a change of the content above the rows', (look: StatusLook) => look.place.drawn(['x', 'a', 'b', 'c'])],
   ['a block above changing height', (look: StatusLook) => look.place.blockSized('a', 44)],
   ['a change of the row’s content', () => new Map([...ROWS, block('b', 'b changed')])],
+  ['a pointer event the area saw alone', (look: StatusLook) => look.place.areaPointer(scrollbarEvent)],
+  [
+    'a pointer event the area saw alone, with the area first in the next one',
+    (look: StatusLook) => {
+      look.place.areaPointer(scrollbarEvent)
+      look.place.areaPointer({ top: 100, x: 5, y: 5, at: NOW + 4.1 * S })
+      look.place.listPointer({ top: 100, x: 5, y: 5, at: NOW + 4.1 * S })
+    },
+  ],
 ])(
   '%s at 4 s starts the rows’ time on screen again',
   (name, change: (look: StatusLook) => LookCheck['rows'] | void) => {
