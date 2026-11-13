@@ -75,18 +75,24 @@ export type LookBlock = { subjects: string[]; content: string }
 
 /**
  * Each Status block by id: the subjects it stands for, a subject row's own and a fold's, and its content without the
- * running mark and the idle time, which change while the subject does not.
+ * running mark and the idle time, which change while the subject does not. A subject's content also holds the child and
+ * "more" rows under it, since a finished child changes the subject but not the subject's own row.
  */
-export const lookBlocks = (page: StatusPage): Map<string, LookBlock> =>
-  new Map(
-    statusListRows(page).map(row => [
-      row.id,
-      {
-        subjects: seenSubjectIds(row),
-        content: JSON.stringify(row, (key, value) => (CHANGING_ALONE.has(key) ? undefined : value)),
-      },
-    ]),
-  )
+export function lookBlocks(page: StatusPage): Map<string, LookBlock> {
+  const blocks = new Map<string, LookBlock>()
+  let subject: LookBlock | null = null
+  for (const row of statusListRows(page)) {
+    const content = JSON.stringify(row, (key, value) => (CHANGING_ALONE.has(key) ? undefined : value))
+    const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
+    if (isUnderSubject && subject !== null) subject.content += `\n${content}`
+    const block = { subjects: seenSubjectIds(row), content }
+    blocks.set(row.id, block)
+    if (row.kind === 'subject') subject = block
+    else if (!isUnderSubject) subject = null
+  }
+
+  return blocks
+}
 
 /**
  * Where the Status list's blocks sit on screen. The scroll offset is the area's top minus the list's top, which one
@@ -220,7 +226,8 @@ type Running = {
   lastRunningAt: number
   /** For each subject, the stretches on screen long enough to count, oldest first. */
   shown: Map<string, Stretch[]>
-  streaks: Map<string, Stretch & { checkedAt: number; epoch: number; content: string }>
+  /** Each row's time on screen so far, and what it was measured by: whether the list fit, and the offset's `epoch`. */
+  streaks: Map<string, Stretch & { checkedAt: number; epoch: number; isWhole: boolean; content: string }>
 }
 
 type Stretch = { since: number; until: number }
@@ -280,11 +287,12 @@ export class StatusLook {
       const was = look.streaks.get(id)
       const isUnbroken =
         was !== undefined &&
+        was.isWhole === isWhole &&
         (isWhole || was.epoch === epoch) &&
         was.content === block.content &&
         c.now - was.checkedAt <= MAX_CHECK_GAP_MS
       const since = isUnbroken ? was.since : c.now
-      look.streaks.set(id, { since, until, checkedAt: c.now, epoch, content: block.content })
+      look.streaks.set(id, { since, until, checkedAt: c.now, epoch, isWhole, content: block.content })
       if (until - since < ROW_SEEN_MS) continue
       for (const subject of block.subjects) {
         const stretches = look.shown.get(subject) ?? []

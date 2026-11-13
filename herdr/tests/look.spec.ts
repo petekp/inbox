@@ -109,6 +109,22 @@ test.each([
   },
 )
 
+test('a scrolled list that comes to fit its pane starts its rows’ time again', () => {
+  const look = lookAt(
+    [
+      ['a', 40],
+      ['b', 40],
+      ['c', 200],
+    ],
+    130,
+  )
+  runEachSecond(look, 0, 9 * S, at => {
+    if (at === S || at === 2 * S) point(look, at)
+    if (at === 5 * S) look.place.blockSized('c', 4)
+  })
+  expect(shownBy(look)).toEqual({})
+})
+
 test('a hide ends the look at the last check that saw it, and a short look reports nothing', () => {
   const look = scrolledList()
   runEachSecond(look, 0, 6 * S, at => point(look, at))

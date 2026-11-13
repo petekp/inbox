@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-13T05:26:10.146Z. 199434 characters follow.
+// Built at 2026-11-13T05:31:46.910Z. 199871 characters follow.
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";
@@ -4053,13 +4053,24 @@ function isPanelShown(tab, s) {
   return own?.zoomed === true;
 }
 var CHANGING_ALONE = new Set(["isRunning", "stall"]);
-var lookBlocks = (page) => new Map(statusListRows(page).map((row) => [
-  row.id,
-  {
-    subjects: seenSubjectIds(row),
-    content: JSON.stringify(row, (key, value) => CHANGING_ALONE.has(key) ? undefined : value)
+function lookBlocks(page) {
+  const blocks = new Map;
+  let subject = null;
+  for (const row of statusListRows(page)) {
+    const content = JSON.stringify(row, (key, value) => CHANGING_ALONE.has(key) ? undefined : value);
+    const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
+    if (isUnderSubject && subject !== null)
+      subject.content += `
+${content}`;
+    const block = { subjects: seenSubjectIds(row), content };
+    blocks.set(row.id, block);
+    if (row.kind === "subject")
+      subject = block;
+    else if (!isUnderSubject)
+      subject = null;
   }
-]));
+  return blocks;
+}
 
 class ListPlace {
   heights = new Map;
@@ -4202,9 +4213,9 @@ class StatusLook {
       if (block === undefined)
         continue;
       const was = look.streaks.get(id);
-      const isUnbroken = was !== undefined && (isWhole || was.epoch === epoch) && was.content === block.content && c.now - was.checkedAt <= MAX_CHECK_GAP_MS;
+      const isUnbroken = was !== undefined && was.isWhole === isWhole && (isWhole || was.epoch === epoch) && was.content === block.content && c.now - was.checkedAt <= MAX_CHECK_GAP_MS;
       const since = isUnbroken ? was.since : c.now;
-      look.streaks.set(id, { since, until, checkedAt: c.now, epoch, content: block.content });
+      look.streaks.set(id, { since, until, checkedAt: c.now, epoch, isWhole, content: block.content });
       if (until - since < ROW_SEEN_MS)
         continue;
       for (const subject of block.subjects) {
