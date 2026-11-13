@@ -54,6 +54,8 @@ type GoalFact = {
   text: string
   match: string
   milestones: MilestoneFact[]
+  /** The text of the goal this one replaced, which its was line may name. `factsAfter` sets it. */
+  replaced?: string
   /** The work has left it: the page shows it met, or shows no goal. */
   isLeft?: true
   /** The person dropped its outcome: the page shows no goal, met or not. Needs `isLeft`. */
@@ -117,6 +119,7 @@ const CHANGING_KEYS = ['state', 'stands', 'parts', 'was', 'merged', 'serves'] as
 function goalAfter(before: Facts['goal'], change: FactsChange | undefined, changed: string[]): GoalFact | null {
   const goal = change?.goal !== undefined ? change.goal : (before ?? null)
   if (goal === null) return null
+  const replaced = before && goal.text !== before.text ? before.text : (goal.replaced ?? before?.replaced)
   const known = new Map((before?.milestones ?? []).map(m => [m.id, m]))
   const milestones = goal.milestones.map(m => {
     const update = change?.milestones?.find(x => x.id === m.id)
@@ -125,7 +128,7 @@ function goalAfter(before: Facts['goal'], change: FactsChange | undefined, chang
     return next
   })
 
-  return { ...goal, milestones }
+  return { ...goal, milestones, ...(replaced ? { replaced } : {}) }
 }
 
 /** The facts after `change`, with `changed` naming each piece whose state, stand, parts, plan or merges changed. */
@@ -222,6 +225,7 @@ export function factsText(f: Facts): string {
   const goal = f.goal
     ? [
         `Goal: ${f.goal.text}${goalNote(f.goal)}`,
+        ...(f.goal.replaced ? [`It replaced the goal: ${f.goal.replaced}`] : []),
         'Milestones:',
         list(
           f.goal.milestones.map(

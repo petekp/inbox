@@ -69,6 +69,8 @@ The first words the person reads tell them what the session is focused on, in th
 - **Bad:** `Lint error` over `Fixing the lint error`, after one step on the way.
 - **Bad:** `Offline sync` over `PR ready for review`. That is where one piece stands, not the session's focus.
 - **Bad:** `Offline sync` over `Offline sync`. The description only repeats the title.
+- **Good:** `Now: Handling sync conflicts, then the settings toggle`, under the goal `Offline sync in 2.5`. While a goal is set, the head is one `Now:` line, and the goal already names the aim, so it names the part underway.
+- **Bad:** `Now: Adding offline sync, shipping in 2.5`, under the goal `Offline sync in 2.5`. It only repeats the goal, and tells the person nothing the goal line does not.
 - **Bad:** the title `Add offline sync so notes save without a connection`. That is a sentence.
 
 ### Where does each piece of it stand?
@@ -95,14 +97,14 @@ One row per piece, whatever words the conversation used for it. Finished work do
 
 #### 5. Each mark is true, and every open piece stays on the page
 
-The person can trust a mark at a glance. A piece that is delivered, dropped or filed for later closes, with its own mark. Every piece still open is on the page, as a row or in the "N more" fold, however many there are and however old. The page gets shorter by closing what is done, dropped, filed or listed twice, never by losing open work.
+The person can trust a mark at a glance. A piece that is delivered, dropped or filed for later closes. The page has no mark of its own for filed work, so it closes as delivered, and where it stands says it is filed. Every piece still open is on the page, as a row or in the "N more" fold, however many there are and however old. The page gets shorter by closing what is done, dropped, filed or listed twice, never by losing open work.
 
 - **Good:** `✓ 2.4 release: live in the store`, with a separate `● Sync bug: cause found`.
 - **Good:** a piece set aside for a day keeps its row: `○ Export button: works on web`.
-- **Good:** `→ Dark mode toggle: filed for later`, then folded apart from the done count.
+- **Good:** `✓ Dark mode toggle: filed for later`.
 - **Bad:** `● 2.4 release: published, sync bug next`. The release is over.
 - **Bad:** ten `○` rows that read "filed for later", all evening.
-- **Bad:** `✓ Dark mode toggle: filed for later`, counted with delivered work in "▸ 4 done".
+- **Bad:** `○ Dark mode toggle: filed for later`. Filed work is closed.
 - **Bad:** nine pieces are open, and the page shows six, with no fold and no ✓ or ✗ for the other three.
 
 #### 6. Where it stands says the state of the work

@@ -119,7 +119,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 - No text repeats an ask or a finding in any words, or says that its piece waits on the person's decision.
 - A was line names the plan that was replaced, or the piece that merged in.
 
-**Checkpoints:** Replay A after steps 3, 9, 12 and 14. Replay B after steps 4 and 8. Replay C after steps 1 and 4. The short case `mid-turn-activity` after its one step. The judge runs there only with `--judge`. The judge does not yet check the goal, the milestones or the split into Other work: those three checks, and an `n/a` verdict for a page with nothing a check judges, come with its next revision.
+**Checkpoints:** Replay A after steps 3, 9, 12 and 14. Replay B after steps 4 and 8. Replay C after steps 1 and 4. The short case `mid-turn-activity` after its one step. The judge runs there only with `--judge`. The judge also checks the goal, the milestones and the split into Other work, and answers `n/a` for a check with nothing to judge on the page. The case's facts give the goal and its milestones as the author sees them. The model plans its own milestones, so the judge accepts any milestones that are outcomes the goal needs, with marks that follow the pieces under them.
 
 **How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of Git, in `.scratch/status-judge-pages/` in the main checkout, and the judge's author is not given that folder. `build-pages.ts` in that folder holds each page as saved state and draws it with `statusPage`, so after a change to how the page is drawn, one run draws every page again. `./scripts/eval.sh --suite status --judge-pages <folder>` runs the check, once on each page. A revision round adds `--judge-set 1`, so the second set is judged only at the end. It runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
 
@@ -158,7 +158,7 @@ These make no model calls.
   - work filed for later closes with its own mark, #137;
   - a look marks as seen only the rows that were on screen, #139.
 
-  The rules for the same changes in the replays name their issue too. Until it is built, such a rule's failures are listed apart and block nothing. A replay step marks a judge check the same way: at Replay A's checkpoints, the judge's marks check waits on #137, since filed work there can only close as ✓ or ✗.
+  The rules for the same changes in the replays name their issue too. Until it is built, such a rule's failures are listed apart and block nothing. A replay step marks a judge check the same way, with `judgeUntil`: at `mid-turn-activity`'s step, the judge's where-it-stands check waits on the mid-turn wording follow-up.
 
 ### Calls for one release run
 

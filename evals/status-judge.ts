@@ -35,12 +35,12 @@ export const JUDGE_CHECKS = [
   {
     id: 'goal',
     property: 14,
-    text: 'A proposed goal is an outcome the person stated, with a finish line. A goal the person set passes in any words.',
+    text: 'The goal names the outcome the facts give, in any words, with a finish line, and its was line names the goal it replaced.',
   },
   {
     id: 'milestones',
     property: 15,
-    text: 'Each milestone is an outcome the goal needs, not a task, and its mark fits the facts. Together they say what is done, what is left and what is held up.',
+    text: 'Each milestone is an outcome the goal needs, not a task, and its mark fits the work it stands for. Together they cover every outcome the goal needs.',
   },
   {
     id: 'split',
