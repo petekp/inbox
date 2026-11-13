@@ -198,6 +198,7 @@ test('a dialog the person answers closes the question that copies it with their 
 test('a dialog’s answer text closes each copy with that question’s own answer, a typed one as typed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  w.ledgerReply = 'not a ledger'
   const stored = () => JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[]; closed: Closed[] } }
   const ask = (...questions: { question: string; options: string[] }[]) =>
     $.tool.call({
@@ -223,6 +224,10 @@ test('a dialog’s answer text closes each copy with that question’s own answe
     await record('Use Node or Python?', ['Node', 'Python'])
     await ask({ question: 'Use Node or Python?', options: ['Node', 'Python'] })
   })
+  await turn('t1b', answered('"Run the migration?"="Yes"'), async () => {
+    await record('Run the migration?', ['Yes', 'No'])
+    await ask({ question: 'Run the migration?', options: ['Yes', 'No'] })
+  })
   await turn('t2', answered('"Delete the cache?"="Only the old entries"'), async () => {
     await record('Delete the cache?', ['Yes', 'No'])
     await ask({ question: 'Delete the cache?', options: ['Yes', 'No'] })
@@ -243,6 +248,7 @@ test('a dialog’s answer text closes each copy with that question’s own answe
   expect(stored().ledger.items).toEqual([])
   expect(outcomes()).toEqual([
     ['Use Node or Python?', 'Node'],
+    ['Run the migration?', 'Yes'],
     ['Delete the cache?', 'Only the old entries'],
     ['Which name?', 'the "blue" one'],
     ['Which branch?', 'next'],
