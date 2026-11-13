@@ -260,13 +260,8 @@ test('a server whose environment names no CLI runs its parent when that is a cod
   assert.equal(await findCli({ CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 43), '/app/codex')
 })
 
-test('on a next build, Remove goal clears the goal the Status call set and a typed goal sets one, each saved at once and sent nowhere', async () => {
-  const { dir, calls, call } = await setup(
-    0,
-    () => 100,
-    async () => 'codex',
-    true,
-  )
+test('Remove goal clears the goal the Status call set and a typed goal sets one, each saved at once and sent nowhere', async () => {
+  const { dir, calls, call } = await setup(0, () => 100)
   await updateState(dir, 's1', s => ({
     ...s,
     ledger: {

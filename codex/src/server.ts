@@ -6,7 +6,6 @@ import { noteText } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { statusChanged } from '../../hooks/session-status'
 import { recorded, withHolds } from '../../hooks/session-presses'
-import { drawnTabOf } from '../../hooks/tabs'
 import type { RowNote } from '../../types'
 import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { lookOnView, noteToolCall, viewOf } from './core'
@@ -151,7 +150,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
         await catchUpOnOpen(id).catch(() => undefined)
         const sentTab = shownTabOf(args.tab)
         const s = await updateState(dir, id, s => {
-          const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
+          const shownTab = sentTab ?? s.shownTab
 
           const looked = lookOnView(s, shownTab, now(), shownRowsOf(args))
           return { ...withHolds(looked, holds), tabSeenAt: now(), shownTab }

@@ -1217,14 +1217,11 @@ var TAB_NAMES = [
   { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
-var NEXT_BUILD_TABS = numbered(TAB_NAMES);
-var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
-function shownTabs(isNextBuild) {
-  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
+var SHOWN_TABS = numbered(TAB_NAMES);
+function shownTabs() {
+  return SHOWN_TABS;
 }
-function inboxCommandText(isNextBuild) {
-  return isNextBuild ? "Show where this session stands and what waits on you" : "Show this session's questions, tasks, findings and PRs";
-}
+var INBOX_COMMAND_TEXT = "Show where this session stands and what waits on you";
 var TAB_NAMINGS = ["words", "symbols"];
 function tabName(tab, naming) {
   return naming === "words" ? tab.label : tab.symbol;
@@ -3062,21 +3059,17 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
-var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
-function markLegend(isNextBuild) {
-  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
-}
 var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
-function tabLegend(isNextBuild) {
-  return shownTabs(isNextBuild).map((t) => ({ keys: t.symbol, does: t.label }));
+function tabLegend() {
+  return shownTabs().map((t) => ({ keys: t.symbol, does: t.label }));
 }
 var UNDO_KEY = "u";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "Clear the merged and closed PRs" }
 ];
-function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
-  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
+function helpKeys(look, tab, hasStatusButtons) {
+  const tabKeys = shownTabs().map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
   const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
@@ -7706,17 +7699,17 @@ function pageEntries(page, typing, isUnfolded) {
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
 }
 function helpEntries(screen, tab) {
-  const keys = helpKeys("omp", screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0);
+  const keys = helpKeys("omp", tab, statusKeyRows(screen.view.statusPage).length > 0);
   const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
   return [
     { kind: "heading", text: HELP_COPY.keys },
     ...keys.map((key) => ({ kind: "key", key, column })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.marks },
-    ...markLegend(screen.isNextBuild === true).map((entry) => ({ kind: "legend", entry })),
+    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.tabs },
-    ...tabLegend(screen.isNextBuild === true).map((key) => ({ kind: "key", key, column: Math.max(column, 4) }))
+    ...tabLegend().map((key) => ({ kind: "key", key, column: Math.max(column, 4) }))
   ];
 }
 function entriesOf(screen, ui, tab, now) {
@@ -7818,7 +7811,7 @@ function handleKey(screen, ui, key, now, text) {
   const base = isPage ? ui : { ...ui, selectedId: selected?.id ?? null };
   if (base.typing !== null)
     return typingKey(base, base.typing, key, now, text);
-  const shown = shownTabs(screen.isNextBuild === true);
+  const shown = shownTabs();
   const isTabKey = key === "tab" || key === "shift+tab" || shown.some((t) => t.hotkey === key);
   if (key === "?" || base.isHelpShown && key === "escape")
     return { ui: { ...base, isHelpShown: key === "?" && !base.isHelpShown, pageTop: 0 } };
@@ -8012,7 +8005,7 @@ function drawLine(line, isSelected, d) {
   const contextLine = isSelected ? line.row?.contextLine : null;
   if (contextLine)
     out.push(...indented(contextLine, indent, width, Infinity, s.dim));
-  const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
+  const holdsUp = line.row?.holdsUpLine;
   if (holdsUp)
     out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
   const recLine = line.row?.recLine;
@@ -8097,7 +8090,7 @@ function tabBar(d) {
     findings: screen.view.findings.count,
     prs: screen.view.prs.count
   };
-  const tabs = shownTabs(screen.isNextBuild === true).map((t) => ({
+  const tabs = shownTabs().map((t) => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
     badge: tabBadge(t.id, counts),
@@ -8284,7 +8277,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   };
 }
 function tallestTabHeight(screen, ui, width, now, style, height) {
-  const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length);
+  const heights = shownTabs().map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length);
   return Math.max(...heights);
 }
 function bandLines(screen, width, now, style) {
@@ -12784,7 +12777,7 @@ function createInbox(pi, deps = defaultDeps) {
   const openHerdrPanel = herdrPanelOpener();
   const isFile = (path) => stat4(path).then((s) => s.isFile());
   pi.registerCommand("inbox", {
-    description: inboxCommandText(deps.isNextBuild),
+    description: INBOX_COMMAND_TEXT,
     handler: async (args, ctx) => {
       if (args.trim() === "herdr") {
         const again = await herdrAsk.again();

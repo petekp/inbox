@@ -93,8 +93,8 @@ test('the desktop pane draws each action as one button and the tabs as one click
 
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const { tabs, gap } = await tabBar()
-  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs'])
-  const findingsEnd = tabs[0]!.width + gap + tabs[1]!.width
+  expect(tabs.map(t => t.id)).toEqual(['overview', 'needsYou', 'findings', 'prs'])
+  const findingsEnd = tabs[0]!.width + gap + tabs[1]!.width + gap + tabs[2]!.width
   await pane.pointer({ type: 'down', x: findingsEnd - 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')
@@ -112,7 +112,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'f3', reason: 'fixed' } as never)
   await clock.advance(9000)
   expect(await pane.find({ key: 'settled-f3' })).toBeUndefined()
-  await pane.pointer({ type: 'down', x: 1, y: 1.1, button: 'left', in: 'tabs' })
+  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('needsYou')
   await pane.pointer({ type: 'down', x: findingsEnd - 1, y: 1.1, button: 'left', in: 'tabs' })
@@ -155,9 +155,16 @@ test('on desktop, the pointer moving over an open row keeps a closed row from fo
   w.paneState = { isShown: true, isFocused: true }
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 69 } })
   const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
-  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + 1, y: 1.1, button: 'left', in: 'tabs' })
+  const startOf = (id: string) =>
+    tabs
+      .slice(
+        0,
+        tabs.findIndex(t => t.id === id),
+      )
+      .reduce((x, t) => x + t.width + gap, 0)
+  await pane.pointer({ type: 'down', x: startOf('findings') + 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
-  await pane.pointer({ type: 'down', x: 1, y: 1.1, button: 'left', in: 'tabs' })
+  await pane.pointer({ type: 'down', x: startOf('needsYou') + 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', reason: 'settled in chat' } as never)
   await clock.settle()

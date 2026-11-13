@@ -60,12 +60,10 @@ test('a selected question draws why it came up first under its title, in the Why
   expect(collapsed.body.some(l => l.text === question.contextLine)).toBe(false)
 })
 
-test('the tabs follow the build’s shared tab plan, with their counts', () => {
-  for (const isNextBuild of [false, true]) {
-    const cells = tabCells(demoScreen(isNextBuild), 'needsYou')
-    expect(cells.map(c => c.label)).toEqual(shownTabs(isNextBuild).map(t => t.label))
-    expect(cells.filter(c => c.isSelected).map(c => c.id)).toEqual(['needsYou'])
-  }
+test('the tabs follow the shared tab plan, with their counts', () => {
+  const cells = tabCells(demoScreen(), 'needsYou')
+  expect(cells.map(c => c.label)).toEqual(shownTabs().map(t => t.label))
+  expect(cells.filter(c => c.isSelected).map(c => c.id)).toEqual(['needsYou'])
 })
 
 test('a group’s Closed fold shows its lines only while open', () => {
@@ -94,7 +92,6 @@ test('each case of the followed terminal draws its own message, and a read sessi
   const read = readSession(demoEnvelopeText())
   const o = {
     now: NOW,
-    isNextBuild: true,
     holds: { ...NO_HOLDS, shownSince: NOW },
     queue: { outs: [], notes: {}, lines: {} },
   }

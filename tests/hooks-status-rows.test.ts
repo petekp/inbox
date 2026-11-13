@@ -10,7 +10,6 @@ test(
   async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
-    w.files = ['/.next-build']
     w.paneState = { isShown: true, isFocused: true }
     const name = 'Help text for every greeting command'
     const text = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
@@ -58,7 +57,6 @@ test(
 test('on the Status in the terminal, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: 'demo' } as never)
@@ -82,7 +80,6 @@ test('on the Status in the terminal, the rows under a subject hang from its mark
 test('on the Status, while the goal shows milestones, work linked to none of them draws under Other work, and the desktop hairline between the goal and that list draws no line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply = [
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name',

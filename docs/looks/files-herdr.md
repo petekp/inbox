@@ -14,7 +14,7 @@ The Herdr look is a Herdr app mod. It draws the inbox of the session that a host
 | `herdr/src/draw.ts` | Herdr adapter. Asks and Finds as blocks, from the shared view and `rowKeyPlan`: groups, rows with their buttons in the plan's order, and Closed folds. Also the tab cells, banners and status line. |
 | `herdr/src/draw-status.ts` | Herdr adapter. The Status page as blocks, from the shared page and its key plans: the goal, milestones, rows, folds and rules, and the goal's text field. |
 | `herdr/src/draw-prs.ts` | Herdr adapter. The PRs tab as blocks, from `threadActions`, `checkActions`, `prBlockActions` and `prClearActions`: each PR with its threads and checks, the refresh, clear and order lines, and the empty and `gh` notes. |
-| `herdr/src/draw-help.ts` | Herdr adapter. Help as blocks: the keys from `helpKeys` and the marks from `markLegend`. |
+| `herdr/src/draw-help.ts` | Herdr adapter. Help as blocks: the keys from `helpKeys` and the marks from `MARK_LEGEND`. |
 | `herdr/src/keys.ts` | Herdr adapter. What a key does: change tab, move the selection, leave the pane, close the open text field, or press the selected row's button with that key. Which moves close the text field, what sending its text does to the field and its draft, and whether a click in the list gives the keys to the open field or to the look. |
 | `herdr/src/motion.ts` | Herdr adapter. Steps each drawn row through the shared row states in `hooks/row-motion.ts`, and keeps a row the publish dropped drawn while it leaves. |
 | `herdr/src/out.ts` | Herdr adapter. The presses the look sent that have no result yet: which buttons draw out, what their rows read, and when a read of the session ends each one. |

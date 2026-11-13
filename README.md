@@ -56,7 +56,7 @@ claude plugin marketplace update inbox
 claude plugin update inbox
 ```
 
-- It makes two Sonnet calls after each of Claude's replies, one for the list and one for the results. See [Cost](#cost).
+- It makes two Sonnet calls after each of Claude's replies, one for the rows and one for the Status tab. See [Cost](#cost).
 - It was built and tested with Claude Code 2.1.300.
 
 ### Codex
@@ -94,7 +94,7 @@ omp plugin marketplace update inbox-omp
 omp plugin upgrade inbox@inbox-omp
 ```
 
-After each reply, the inbox makes two model calls, one to update the list and one to write the results. It uses
+After each reply, the inbox makes two model calls, one to update the rows and one to write the Status tab. It uses
 the first of these that your omp can run:
 
 1. The model your `@inbox` role names.
@@ -127,11 +127,26 @@ The PRs tab needs the GitHub CLI, `gh`, signed in.
 ## Using it
 
 Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. The
-inbox has three tabs: Asks, Finds and PRs. A build that follows the `next`
-branch also shows a Status tab before them: what the session is focused on now, each part
-of the work with how long ago it changed, the subagents and other work running
-under each part, and a line where you last looked. You can set a goal there, and
-the page then groups the work under the goal's milestones.
+inbox has four tabs: Status, Asks, Finds and PRs.
+
+### Status
+
+Where the session's work stands, for someone coming back to it cold. The page
+names what the session is focused on now, then each part of the work with
+where it stands. A part idle for a day says how long. Subagents and other work
+running under a part show beneath it. A part that waits on a question or task
+of yours says so, and View opens it. A line marks where you last looked, so
+what changed since then sits above it. Finished work folds into a count you can
+open.
+
+You can set a goal with a finish line, such as "2.5 in the store". The page
+then groups the work under the goal's milestones, and the inbox keeps the goal
+and its milestones current. You can edit or remove the goal at any time. One
+you typed stays until it is met. One the inbox inferred moves on when the work
+does.
+
+The page is a guide to the work, not a log. The second model call after each
+reply writes it. When that call fails, the page says so.
 
 ### Asks
 
@@ -201,8 +216,10 @@ the agent replies, then "✓ Discussed".
 Help lists the keys and what each mark means.
 
 - **Terminal:** each action shows the letter that runs it. The number keys
-  switch tabs, and `j` and `k` move up and down. ctrl+x tab moves focus from
-  the prompt to the line above it, then to the panel, then back to the prompt.
+  switch tabs, and `j` and `k` move up and down. On the Status, they move
+  between the rows that have a button, and the letter beside a button presses
+  it. ctrl+x tab moves focus from the prompt to the line above it, then to the
+  panel, then back to the prompt.
 - **Claude desktop app:** you click. Type `/inbox` to open the pane. Clicks in
   the pane are checked on the Claude Code engine 2.1.309 and later. On 2.1.295,
   a click after a press could only give the pane its focus back.
@@ -211,7 +228,9 @@ Help lists the keys and what each mark means.
 - **omp:** `/inbox` opens the panel over the conversation, and esc closes it.
   Each action shows the letter that runs it, and Reply is `r`. Arrow keys move
   between rows and between a row's buttons, and enter presses the focused
-  button. Tab, or the number keys, switch tabs.
+  button. Tab, or the number keys, switch tabs. On the Status, `j` and `k`
+  move between the rows that have a button, and the up and down arrows scroll
+  the page.
 
 In Claude Code, a line above your prompt counts what needs you and the
 findings waiting, with a button that opens the panel. When Claude stops on an
@@ -257,7 +276,7 @@ In Claude Code, the inbox adds two things:
 | What the inbox adds | Tokens | Cost at API prices |
 |---|---|---|
 | A Sonnet call after each of Claude's replies, to update the inbox | 3–4k in, about 2k of it cached. 100–250 out. | About 0.5¢ per reply, or 1¢ after 5 idle minutes |
-| A second Sonnet call, to write the results | About 1.2k in and 14–44 out on a short exchange (three eval runs: 1,175–1,214 in). A catch-up over a conversation reads more: 1,358 in and 100 out in the one run. | Less than the first call, which reads about 3k in |
+| A second Sonnet call, to write the Status tab | About 1.2k in and 14–44 out on a short exchange (three eval runs: 1,175–1,214 in). A catch-up over a conversation reads more: 1,358 in and 100 out in the one run. | Less than the first call, which reads about 3k in |
 | Its instructions and tools, sent with every request Claude makes | About 1,350, cached | Under 0.1¢ per request |
 
 On a Claude plan, these count toward your usage limits.

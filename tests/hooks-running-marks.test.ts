@@ -55,7 +55,6 @@ test(
 test('a working subject’s mark on the Status moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply = [
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
@@ -112,7 +111,6 @@ test('a working subject’s mark on the Status moves each frame only while a tur
 test('a running mark on the terminal Status keeps moving while the desktop app draws the same pane, and no frame redraws the desktop pane', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply =
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Help text | being written'
@@ -161,7 +159,6 @@ test('a running mark moves again at the next redraw after the engine ends its ti
   on('clock.every', { ms: RUNNING_FRAME_MS }, (_$, e, next) => (isPeriodRefused ? { deny: 'refused' } : next(e)))
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply =
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Help text | being written'

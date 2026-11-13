@@ -98,7 +98,7 @@ test('a ranked PR that changed since the order draws the changed line with Rank 
   const at = narrow.findIndex(l => l.includes('1 PR changed since'))
   expect(narrow[at]).toContain('g Rank again')
   expect(narrow[at + 1]?.trim()).toBe('Ranking…')
-  expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('g')
+  expect(helpKeys('omp', 'prs', false).map(k => k.keys)).toContain('g')
 })
 
 function withFinished(states: Record<string, 'MERGED' | 'CLOSED'>): PanelScreen {
@@ -125,7 +125,7 @@ test('Clear merged and closed draws above the PR blocks, and m from any row or E
   expect(handleKey(screen, { ...ui, selectedId: CLEAR_FINISHED_ID }, 'enter', NOW).press).toEqual({
     action: 'pr-clear-finished',
   })
-  expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('m')
+  expect(helpKeys('omp', 'prs', false).map(k => k.keys)).toContain('m')
 })
 
 test('the PRs tab opens with Clear merged and closed unselected when no PR waits, so Enter does not clear', () => {

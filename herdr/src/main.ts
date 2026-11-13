@@ -18,7 +18,6 @@ import {
 } from 'herdr'
 import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
-import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import type { PathProbe } from '../../hooks/open-targets'
 import { ROW_COPY } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
@@ -110,7 +109,6 @@ export default class Inbox extends View {
   view: SessionView | null = null
   ui: LookUi = freshUi('needsYou')
   shownSince = Date.now()
-  isNextBuild = false
   isHelpShown = false
   isNarrow = false
   drafts: Record<string, Draft> = {}
@@ -127,10 +125,6 @@ export default class Inbox extends View {
 
   init(_props: unknown, cx: Context): void {
     this.focus = cx.focus_handle()
-    cx.spawn(async cx => {
-      this.isNextBuild = (await readTextFile(`${appHome()}/mods/inbox/${NEXT_BUILD_MARK}`).catch(() => null)) !== null
-      cx.notify()
-    })
     cx.spawn(async cx => {
       for (;;) {
         const changed = await watchFolder(publishedSessionsFolder(appHome())).catch(() => null)
@@ -348,7 +342,6 @@ export default class Inbox extends View {
     const now = Date.now()
     const screen = screenOf(this.followed, this.read, this.ui, {
       now,
-      isNextBuild: this.isNextBuild,
       holds: this.holds(now),
       queue: this.queue,
     })
@@ -389,7 +382,7 @@ export default class Inbox extends View {
       })
     if (screen.is === 'message') return root.child(messageEl(screen.message, t))
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
-    const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks
+    const shown = this.isHelpShown ? helpBlocks(this.ui.tab, hasStatusButtons) : screen.blocks
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
     const moved = moveRows(shown, this.tracks, now, tracksOf !== this.tracksOf)
     this.tracks = moved.tracks

@@ -91,9 +91,9 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 ### Surfaces
 
 **Status (the tab)**:
-The first tab on a next build: what the session's work is for, and where each
-part of it stands, from what needs the person to what is finished. A release
-build does not draw it. The inbox model updates it after each reply, in a
+The first tab: what the session's work is for, and where each part of it
+stands, from what needs the person to what is finished. The inbox model
+updates it after each reply, in a
 second call after the one that updates the rows. It is not a list of events.
 Its id is `overview`, the name it had before it was called Status. The saved
 state keeps that id and the fields `overview`, `overviewFailure` and
@@ -219,8 +219,8 @@ call, which Codex shows in place of the line. `personLine` in
 `hooks/tools.ts:ToolAnswer`.
 
 **Pane**:
-The `/inbox` panel beside the conversation in Claude Code, with its Asks,
-Finds and PRs tabs, and a Status tab before them on a next build. Codex shows the same tabs in its Inbox tab. omp
+The `/inbox` panel beside the conversation in Claude Code, with its Status,
+Asks, Finds and PRs tabs. Codex shows the same tabs in its Inbox tab. omp
 shows them in an overlay that `/inbox` opens.
 
 **Tab symbol**:
@@ -318,8 +318,8 @@ and the next update tries again.
 **Next build**:
 A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file
 Git ignores, in each folder a host loads or installs. Each look's version label
-adds "next" on one, and only a next build draws the Status tab.
-`hooks/banners.ts:versionLabel`, `hooks/tabs.ts:shownTabs`.
+adds "next" on one, and only a next build keeps Status call records.
+`hooks/banners.ts:versionLabel`, `hooks/status-records.ts`.
 
 **Parity record**:
 `hooks/clients.ts`. It lists, for each host, whether each feature is `full`,

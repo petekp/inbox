@@ -57,7 +57,7 @@ Capture each result and read the capture. A row's Undo lasts a few seconds, so c
 | Finding | Point the agent at a bug outside its task. Press Explain, then Dismiss, then Undo. | A Finds row. Each press shows its result, and Undo brings the row back. |
 | Dialog | Have the agent ask two questions through its question dialog, in two separate dialogs. Answer the first, and dismiss the second: Escape in the terminal, the dialog's close button in Codex. In the desktop app, press Skip instead. Codex drops every answer in a dialog that is closed, so never answer and close in the same dialog there. | The answered question does not stay open. The dismissed one becomes an Asks row. Skip sends the agent "[No preference]", so it adds no row. |
 | Reply while closing | Start typing a reply on a row, and have the agent close that row. | The row stays in place until you send or discard the reply. |
-| Tabs | Open the inbox, then press 1, 2 and 3. | The tabs are Asks, Finds and PRs, on 1, 2 and 3. There is no Status tab: only a next build draws it. |
+| Tabs | Open the inbox, then press 1, 2, 3 and 4. | The tabs are Status, Asks, Finds and PRs, on 1 to 4. The footer's version label reads `v<version>`, with no `· next`. |
 | PRs | Open the PRs tab with `gh` signed in. Then rename the `gh` binary, reopen the tab, and rename it back. Taking `gh` off `PATH` is not enough, since the inbox also looks for `/opt/homebrew/bin/gh` and `/usr/local/bin/gh`. | Your PRs, then "The inbox could not find gh. It needs gh to read your PRs." |
 | Resume | Resume the session in Claude Code, or reopen the thread in Codex. Then ask a new question. | The rows come back, and the agent can still record. |
 | Agent replies | Read the agent's replies throughout the pass. | No reply shows an inbox id, such as `i3` or `f4`. |
@@ -67,7 +67,7 @@ In omp, run the pass with a fresh `HOME` set on each command, so it cannot touch
 | Check | Do | Expect |
 | --- | --- | --- |
 | Band | Start omp in the sample project. | The band shows above the prompt and names `/inbox`. |
-| Panel | Run `/inbox`, switch tabs with Tab and `1` to `3`, and close with Escape. | The panel opens over the band and shows each tab. The band returns on close. |
+| Panel | Run `/inbox`, switch tabs with Tab and `1` to `4`, and close with Escape. | The panel opens over the band and shows each of the four tabs, Status first. The band returns on close. |
 | Press that sends | Press an answer on a question row. | The agent receives your message, and the row shows its ✓. |
 | Closed list | Close a question, select its group's Closed line, and press Enter twice. | The closed row shows under the line, then folds away. |
 

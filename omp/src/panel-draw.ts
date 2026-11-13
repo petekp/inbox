@@ -171,8 +171,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   const contextLine = isSelected ? line.row?.contextLine : null
   if (contextLine) out.push(...indented(contextLine, indent, width, Infinity, s.dim))
-  // A next build draws the Status, so only it names the subject an ask holds up.
-  const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
+  const holdsUp = line.row?.holdsUpLine
   if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
   const recLine = line.row?.recLine
   if (recLine)

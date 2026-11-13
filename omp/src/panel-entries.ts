@@ -31,7 +31,7 @@ import { cellWidth, clipLabel } from '../../hooks/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../hooks/rows'
 import { bannerOf, emptyText, isResumable, stopFix, stopText } from '../../hooks/banners'
 import { isMaybeStale } from '../../hooks/band'
-import { FINDING_GROUPS, HELP_COPY, helpKeys, markLegend, tabLegend } from '../../hooks/help'
+import { FINDING_GROUPS, HELP_COPY, helpKeys, MARK_LEGEND, tabLegend } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
 import { statusKeyRows } from '../../hooks/status-keys'
@@ -364,7 +364,7 @@ function pageEntries(page: StatusPage, typing: string | null, isUnfolded: (id: s
 
 /** Help in place of the tab's lines: the keys the panel takes, what each mark means, then each tab's symbol. */
 function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
-  const keys = helpKeys('omp', screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0)
+  const keys = helpKeys('omp', tab, statusKeyRows(screen.view.statusPage).length > 0)
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
 
   return [
@@ -372,10 +372,10 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
     ...keys.map((key): Entry => ({ kind: 'key', key, column })),
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.marks },
-    ...markLegend(screen.isNextBuild === true).map((entry): Entry => ({ kind: 'legend', entry })),
+    ...MARK_LEGEND.map((entry): Entry => ({ kind: 'legend', entry })),
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.tabs },
-    ...tabLegend(screen.isNextBuild === true).map((key): Entry => ({ kind: 'key', key, column: Math.max(column, 4) })),
+    ...tabLegend().map((key): Entry => ({ kind: 'key', key, column: Math.max(column, 4) })),
   ]
 }
 

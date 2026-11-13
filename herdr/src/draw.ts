@@ -74,7 +74,6 @@ export type LookScreen = {
   agent: string
   now: number
   shownSince: number
-  isNextBuild: boolean
   /** Whether the host could not find gh, which the session's PR state records and the shared view leaves out. */
   isGhMissing: boolean
 }
@@ -125,14 +124,14 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
   }
 }
 
-function rowBody(row: RowView, isAllShown: boolean, isNextBuild: boolean): RowBlock['body'] {
+function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
   const lines: { text: string | null; tone: Tone; mark?: Mark }[] = [
     { text: row.contextLine, tone: 'muted' },
     { text: row.detail, tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: 'muted' },
     ...shownOptionDescriptions(row, isAllShown).map(o => ({ text: `${o.label}: ${o.description}`, tone: null })),
     { text: row.recLine, tone: 'muted' },
-    { text: isNextBuild ? row.holdsUpLine : null, tone: 'muted', mark: HOLDS_UP_MARK },
+    { text: row.holdsUpLine, tone: 'muted', mark: HOLDS_UP_MARK },
   ]
 
   return lines.flatMap(l => (l.text ? [{ ...l, text: l.text }] : []))
@@ -160,7 +159,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
-    body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
+    body: isSelected ? rowBody(row, isAllShown) : [],
     buttons: isSettled || (isSelected && !isTyping) ? rowButtons(row, isAllShown, screen.agent) : [],
     field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
   }
@@ -292,11 +291,11 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
 
 export type TabCell = { id: ShownTab; label: string; badge: string | null; isSelected: boolean }
 
-export function tabCells(screen: Pick<LookScreen, 'view' | 'isNextBuild'>, tab: ShownTab): TabCell[] {
+export function tabCells(screen: Pick<LookScreen, 'view'>, tab: ShownTab): TabCell[] {
   const { view } = screen
   const counts = { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count }
 
-  return shownTabs(screen.isNextBuild).map(t => ({
+  return shownTabs().map(t => ({
     id: t.id,
     label: t.label,
     badge: tabBadge(t.id, counts),

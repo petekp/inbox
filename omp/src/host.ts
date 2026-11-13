@@ -24,7 +24,7 @@ import { agentTools } from '../../hooks/tools'
 import type { AgentTool, ToolAnswer } from '../../hooks/tools'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
-import { inboxCommandText } from '../../hooks/tabs'
+import { INBOX_COMMAND_TEXT } from '../../hooks/tabs'
 import { createPanel } from './controller'
 import { demoSource } from './demo'
 import { bandLines } from './panel'
@@ -63,7 +63,7 @@ export type HostDeps = {
   newId: () => string
   settleWindowMs: number
   home: string
-  /** Whether the installed extension's folder holds `NEXT_BUILD_MARK`. */
+  /** Whether the installed extension's folder holds `NEXT_BUILD_MARK`, which adds "next" to the version label and keeps Status call records. */
   isNextBuild: boolean
   /** The page template for a comparison, beside the extension's bundle. */
   comparePage: string
@@ -469,7 +469,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   const isFile = (path: string) => stat(path).then(s => s.isFile())
 
   pi.registerCommand('inbox', {
-    description: inboxCommandText(deps.isNextBuild),
+    description: INBOX_COMMAND_TEXT,
     handler: async (args, ctx) => {
       if (args.trim() === 'herdr') {
         const again = await herdrAsk.again()

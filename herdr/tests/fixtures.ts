@@ -18,11 +18,11 @@ export const demoEnvelopeText = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   })
 
-export function demoScreen(isNextBuild = true): LookScreen {
+export function demoScreen(): LookScreen {
   const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
   const view = sessionView(demoSession(NOW, AGENT), NOW, SETTLED_MS, holds)
 
-  return { view, agent: AGENT, now: NOW, shownSince: NOW, isNextBuild, isGhMissing: false }
+  return { view, agent: AGENT, now: NOW, shownSince: NOW, isGhMissing: false }
 }
 
 export const uiOn = (tab: ShownTab, changes: Partial<LookUi> = {}): LookUi => ({ ...freshUi(tab), ...changes })
