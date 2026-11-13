@@ -1,3 +1,5 @@
+import { latestUndo, steppedIndex } from '../../hooks/action-plan'
+import { UNDO_KEY } from '../../hooks/help'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft } from '../../types'
 import type { Block, Button, RowBlock } from './blocks'
@@ -17,14 +19,29 @@ type KeyMove =
 
 const isSelectable = (b: Block): b is RowBlock => b.kind === 'row' && b.isSelectable
 
-/** The row after or before the selected one, or the first or last row when none is selected. */
+/** The row after or before the selected one, wrapping at either end, or the first or last row when none is selected. */
 function stepRow(blocks: Block[], by: 1 | -1): string | null {
   const rows = blocks.filter(isSelectable)
-  if (rows.length === 0) return null
-  const at = rows.findIndex(r => r.isSelected)
-  const next = at < 0 ? (by === 1 ? 0 : rows.length - 1) : Math.min(rows.length - 1, Math.max(0, at + by))
+  const next = steppedIndex(
+    rows.findIndex(r => r.isSelected),
+    by,
+    rows.length,
+  )
 
-  return rows[next]!.id
+  return rows[next]?.id ?? null
+}
+
+const isUndo = (b: Button) =>
+  b.does.is === 'press' && (b.does.press.action === 'undo' || b.does.press.action === 'pr-undo')
+
+/** The Undo the undo key presses: the one of the tab's settled rows and PRs that closed last. */
+function lastUndo(blocks: Block[]): Button | null {
+  const shown = blocks.flatMap(b =>
+    b.kind === 'row' && b.settled ? b.buttons.filter(isUndo).map(button => ({ button, at: b.settled!.at })) : [],
+  )
+  const undo = latestUndo(shown)?.button
+
+  return undo && !undo.isOut ? undo : null
 }
 
 function stepTab(tabs: TabCell[], by: 1 | -1): ShownTab | null {
@@ -34,8 +51,8 @@ function stepTab(tabs: TabCell[], by: 1 | -1): ShownTab | null {
 }
 
 /**
- * The move a key makes, as the Herdr look's Help lists: ← → switch tabs, j k move between rows, a selected row's
- * hotkeys press its buttons, the tab's own keys such as g press its line's buttons, and escape leaves the look. While
+ * The move a key makes, as the Herdr look's Help lists: ← → switch tabs, j k move between rows, u presses the Undo of
+ * the row that closed last, a selected row's hotkeys press its buttons, the tab's own keys such as g press its line's buttons, and escape leaves the look. While
  * a text field is open, `typing` names its row: the keys type into it, and escape closes it.
  */
 export function keyMove(key: string, tabs: TabCell[], blocks: Block[], typing: string | null): KeyMove {
@@ -48,6 +65,10 @@ export function keyMove(key: string, tabs: TabCell[], blocks: Block[], typing: s
   if (key === 'j' || key === 'k') {
     const id = stepRow(blocks, key === 'j' ? 1 : -1)
     return id ? { is: 'select', id } : null
+  }
+  if (key === UNDO_KEY) {
+    const undo = lastUndo(blocks)
+    return undo ? { is: 'press', button: undo } : null
   }
   const selected = blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelected)
   const lines = blocks.flatMap(b => (b.kind === 'line' || b.kind === 'banner' ? b.buttons : []))

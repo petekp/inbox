@@ -155,7 +155,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
     settled: isSettled
-      ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) }
+      ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state), at: state.at }
       : null,
     isDim: isSettled,
     isSelectable: !isSettled,

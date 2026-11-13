@@ -6,6 +6,7 @@ import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { pendingResult } from '../../hooks/pressed'
 import { EXIT_MS } from '../../hooks/row-motion'
 import { NO_HOLDS } from '../../hooks/timing'
+import { button } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import { afterSend, keyMove, withSelected, withTab } from '../src/keys'
@@ -143,6 +144,38 @@ test('keys switch tabs, step rows, press a selected row’s hotkey, and leave th
   const hotkeyed = selected.buttons.find(b => b.hotkey !== null)!
   expect(keyMove(hotkeyed.hotkey!, tabs, blocks, null)).toEqual({ is: 'press', button: hotkeyed })
   expect(keyMove('escape', tabs, blocks, null)).toEqual({ is: 'leave' })
+  const [first, last] = [rows[0]!, rows.at(-1)!]
+  const onLast = tabBlocks(screen, withSelected(uiOn('needsYou'), last.id))
+  expect(keyMove('j', tabs, onLast, null)).toEqual({ is: 'select', id: first.id })
+  const onFirst = tabBlocks(screen, withSelected(uiOn('needsYou'), first.id))
+  expect(keyMove('k', tabs, onFirst, null)).toEqual({ is: 'select', id: last.id })
+})
+
+test('u presses the Undo of the row that closed last, whichever row is selected, and nothing once Undo is gone', () => {
+  const tabs = [{ id: 'needsYou' as const, label: 'Asks', badge: null, isSelected: true }]
+  const settledRow = (id: string, at: number, isUndoShown = true): RowBlock => ({
+    kind: 'row',
+    id,
+    depth: 0,
+    mark: null,
+    title: id,
+    age: null,
+    feedback: null,
+    settled: { label: 'Dismissed', tone: 'muted', at },
+    isDim: true,
+    isSelectable: false,
+    isSelected: false,
+    body: [],
+    buttons: isUndoShown
+      ? [button(`${id} undo`, 'Undo', 'quiet', { is: 'press', press: { action: 'undo', id }, effects: [] })]
+      : [],
+    field: null,
+  })
+  const open = tabBlocks(demoScreen(), uiOn('needsYou'))
+  const blocks = [settledRow('q1', NOW - 2000), settledRow('q2', NOW - 1000), ...open]
+  const pressed = keyMove('u', tabs, blocks, null)
+  expect(pressed?.is === 'press' && pressed.button.does).toMatchObject({ press: { action: 'undo', id: 'q2' } })
+  expect(keyMove('u', tabs, [settledRow('q1', NOW, false), ...open], null)).toBeNull()
 })
 
 test('while a field is open, keys type into it and escape closes it, and moving to another row or tab closes it', () => {

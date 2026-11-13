@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-12T17:50:13.462Z. 190146 characters follow.
+// Built at 2026-11-13T06:15:59.244Z. 190881 characters follow.
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";
@@ -1249,7 +1249,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
     case "herdr":
       return [
         { keys: "← →", does: "Switch tabs" },
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, undoKey] : [],
         ...prTabKeys,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];
@@ -2829,6 +2829,9 @@ var ACTION_KEYS = {
   dismiss: "x",
   discard: "x"
 };
+function latestUndo(undos) {
+  return undos.reduce((latest, u) => latest === null || u.at >= latest.at ? u : latest, null);
+}
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps } = row;
   const pressing = pressOutAction(last, feedback);
@@ -2889,6 +2892,12 @@ function actionsOf(row, last, state, feedback) {
 }
 function firstWaiting(rows) {
   return rows.find((r) => r.isWaiting)?.id ?? null;
+}
+function steppedIndex(at, step, count) {
+  if (count === 0)
+    return -1;
+  const from = at < 0 ? step > 0 ? -1 : 0 : at;
+  return ((from + step) % count + count) % count;
 }
 function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
@@ -3310,7 +3319,7 @@ function settledPr(d) {
     title: pr.title,
     age: `#${pr.number}`,
     feedback: null,
-    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted" },
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted", at: state.at },
     isDim: true,
     isSelectable: false,
     isSelected: false,
@@ -3691,7 +3700,7 @@ function rowBlock(row, ui, selected, screen) {
     title: rowTitle(row, LOOK2),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
-    settled: isSettled ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) } : null,
+    settled: isSettled ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state), at: state.at } : null,
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
@@ -3940,11 +3949,14 @@ function helpBlocks(isNextBuild, tab, hasStatusButtons) {
 var isSelectable = (b) => b.kind === "row" && b.isSelectable;
 function stepRow(blocks, by) {
   const rows = blocks.filter(isSelectable);
-  if (rows.length === 0)
-    return null;
-  const at = rows.findIndex((r) => r.isSelected);
-  const next = at < 0 ? by === 1 ? 0 : rows.length - 1 : Math.min(rows.length - 1, Math.max(0, at + by));
-  return rows[next].id;
+  const next = steppedIndex(rows.findIndex((r) => r.isSelected), by, rows.length);
+  return rows[next]?.id ?? null;
+}
+var isUndo = (b) => b.does.is === "press" && (b.does.press.action === "undo" || b.does.press.action === "pr-undo");
+function lastUndo(blocks) {
+  const shown = blocks.flatMap((b) => b.kind === "row" && b.settled ? b.buttons.filter(isUndo).map((button) => ({ button, at: b.settled.at })) : []);
+  const undo = latestUndo(shown)?.button;
+  return undo && !undo.isOut ? undo : null;
 }
 function stepTab(tabs, by) {
   const at = tabs.findIndex((t) => t.isSelected);
@@ -3962,6 +3974,10 @@ function keyMove(key, tabs, blocks, typing) {
   if (key === "j" || key === "k") {
     const id = stepRow(blocks, key === "j" ? 1 : -1);
     return id ? { is: "select", id } : null;
+  }
+  if (key === UNDO_KEY) {
+    const undo = lastUndo(blocks);
+    return undo ? { is: "press", button: undo } : null;
   }
   const selected = blocks.find((b) => b.kind === "row" && b.isSelected);
   const lines = blocks.flatMap((b) => b.kind === "line" || b.kind === "banner" ? b.buttons : []);

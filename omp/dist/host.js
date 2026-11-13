@@ -3125,7 +3125,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
     case "herdr":
       return [
         { keys: "\u2190 \u2192", does: "Switch tabs" },
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, undoKey] : [],
         ...prTabKeys,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];

@@ -148,7 +148,7 @@ function settledPr(d: DrawnPr & { state: { is: 'settled' } }): RowBlock {
     title: pr.title,
     age: `#${pr.number}`,
     feedback: null,
-    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: 'muted' },
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: 'muted', at: state.at },
     isDim: true,
     isSelectable: false,
     isSelected: false,
