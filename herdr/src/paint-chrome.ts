@@ -1,18 +1,27 @@
-import { div } from 'gpui-kit'
+import { Background, PathBuilder, div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import type { BannerView } from '../../hooks/banners'
 import type { BannerTone } from '../../hooks/tones'
 import { HELP_COPY } from '../../hooks/help'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from '../../hooks/layout'
+import { BANNER_PAD_Y_PT } from '../../hooks/layout'
 import type { Button, Tone } from './blocks'
 import type { TabCell } from './draw'
 import type { Message } from './screen'
-import { BUTTON_GAP, EDGE_X, SMALL_TEXT, SPINE, colorOf, tint } from './paint-theme'
+import {
+  BOX_RADIUS,
+  BUTTON_H,
+  CONTROL_GAP,
+  EDGE,
+  GROUP_GAP,
+  INSET,
+  LINE_GAP,
+  SMALL_TEXT,
+  TAB_RADIUS,
+  colorOf,
+  tint,
+} from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
-
-/** A tab's side padding, so its label sits on the spine. */
-const TAB_X = 12
 
 const helpButton = (isHelpShown: boolean): Button => ({
   id: 'help',
@@ -24,8 +33,9 @@ const helpButton = (isHelpShown: boolean): Button => ({
 })
 
 /**
- * The tab row: the tabs with their counts, then the status line and Help at its right end. A tab's label sits on the
- * spine, and only the selected tab's label is bold. Herdr's pane header names the pane, so the look draws no title.
+ * The tab row: the tabs with their counts, then the status line and Help at its right end, inside the panel's padding.
+ * A tab is a pill of a button's size, and only the selected tab's label is bold. Herdr's pane header names the pane,
+ * so the look draws no title.
  */
 export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: boolean, p: Paint): Element {
   const { t } = p
@@ -34,19 +44,19 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
   return h_flex()
     .flex_none()
     .flex_wrap()
-    .pl(SPINE - TAB_X)
-    .pr(EDGE_X)
-    .pt(12)
-    .gap(4)
+    .px(EDGE)
+    .pt(EDGE)
+    .gap_x(LINE_GAP)
+    .gap_y(CONTROL_GAP)
     .items_center()
     .children(
       tabs.map(tab =>
         h_flex()
           .id(`tab ${tab.id}`)
-          .px(TAB_X)
-          .py(6)
+          .h(BUTTON_H)
+          .px(INSET)
           .items_center()
-          .rounded(6)
+          .rounded(TAB_RADIUS)
           .accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label)
           .when(tab.isSelected, e => e.bg(t.raised).text_color(t.foreground).font_semibold())
           .when(!tab.isSelected, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
@@ -55,7 +65,7 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
           .when(tab.badge !== null, e =>
             e.child(
               div()
-                .ml(6)
+                .ml(LINE_GAP)
                 .font_normal()
                 .text_color(colorOf(t, tab.id === 'overview' ? null : tab.id))
                 .child(tab.badge ?? ''),
@@ -67,7 +77,7 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
     .when(status !== null, e =>
       e.child(
         div()
-          .px(4)
+          .px(LINE_GAP)
           .text_size(SMALL_TEXT)
           .text_color(t.muted)
           .child(status ?? ''),
@@ -88,9 +98,9 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
 const BANNER_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'warning', notice: 'notice', ask: 'notice' }
 
 /**
- * A message in a box tinted with the tone of what it says. The buttons that act on its problem draw at its right end,
- * as the Codex tab's banner draws its key. `under`, such as a press's result, goes below the text and the buttons, so
- * the buttons stay still when it appears.
+ * A message in a box tinted with the tone of what it says, from edge to edge. The buttons that act on its problem draw
+ * at its right end, as the Codex tab's banner draws its key. `under`, such as a press's result, goes below the text and
+ * the buttons, so the buttons stay still when it appears.
  */
 export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under: Element | null = null): Element {
   const tone = colorOf(t, BANNER_TONES[b.tone])
@@ -101,18 +111,16 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
     .child(div().font_semibold().text_color(tone).child(b.lead))
     .when(b.body !== null, e => e.child(div().child(b.body ?? '')))
   const row = h_flex()
-    .gap(12)
+    .gap(INSET)
     .items_center()
     .child(text)
-    .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)))
+    .when(buttons.length > 0, e => e.child(h_flex().flex_none().gap(CONTROL_GAP).children(buttons)))
 
   return v_flex()
-    .mx(BANNER_X)
-    .mt(BANNER_GAP_PT)
-    .pl(SPINE - BANNER_X - 1)
-    .pr(EDGE_X - BANNER_X - 1)
+    .mx(EDGE)
+    .px(INSET)
     .py(BANNER_PAD_Y_PT)
-    .rounded(10)
+    .rounded(BOX_RADIUS)
     .border_1()
     .border_color(tint(tone, 0.3))
     .bg(tint(tone, 0.09))
@@ -120,12 +128,9 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
     .children(under ? [under] : [])
 }
 
-/** A banner's box starts this far in. Inside its 1 px border, its text starts on the spine and its buttons end on the right edge. */
-const BANNER_X = 12
-
 /** A line under the tabs that says something about the whole session, such as that the host trimmed it. */
 export const sessionNoteEl = (text: string, t: Theme): Element =>
-  div().pl(SPINE).pr(EDGE_X).pt(8).whitespace_normal().text_color(t.muted).child(text)
+  div().px(EDGE).pt(CONTROL_GAP).whitespace_normal().text_color(t.muted).child(text)
 
 /** What the look shows in place of an inbox, centred in the pane as the Codex tab's empty page. */
 export function messageEl(m: Message, t: Theme): Element {
@@ -133,8 +138,8 @@ export function messageEl(m: Message, t: Theme): Element {
     .flex_1()
     .justify_center()
     .items_center()
-    .p(32)
-    .gap(4)
+    .p(GROUP_GAP)
+    .gap(LINE_GAP)
     .child(
       div()
         .font_semibold()
@@ -151,4 +156,34 @@ export function messageEl(m: Message, t: Theme): Element {
           .child(m.hint ?? ''),
       ),
     )
+}
+
+const FILL = PathBuilder.fill()
+  .add_polygon(
+    [
+      [0, 0],
+      ['100%', 0],
+      ['100%', '100%'],
+      [0, '100%'],
+    ],
+    true,
+  )
+  .build()
+
+/**
+ * A fade from the pane's background to clear, over the list's padding at one edge. The look cannot read where the list
+ * has scrolled, so the fade always draws. At rest it lies over empty padding and shows nothing. Rows that scroll under
+ * the edge fade out there, so it shows only where the list goes on past the edge.
+ */
+export function scrollFadeEl(t: Theme, edge: 'top' | 'bottom'): Element {
+  const isTop = edge === 'top'
+  const fade = Background.linear_gradient(isTop ? 180 : 0, tint(t.background, 1), tint(t.background, 0))
+
+  return window
+    .paint_path(FILL, fade)
+    .absolute()
+    .left(0)
+    .right(0)
+    .when(isTop, e => e.top(0).h(EDGE))
+    .when(!isTop, e => e.bottom(0).h(GROUP_GAP))
 }

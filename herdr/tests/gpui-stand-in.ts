@@ -120,10 +120,16 @@ const nodeOf = (e: unknown): Painted | null =>
 
 export const allOf = (root: Painted): Painted[] => [root, ...root.kids.flatMap(allOf)]
 
+const pathBuilder: Record<string, () => unknown> = new Proxy({}, { get: () => () => pathBuilder })
+
 mock.module('gpui-kit', () => ({
   View: class {},
   div: () => element(),
+  PathBuilder: { fill: () => pathBuilder },
+  Background: { linear_gradient: () => ({}) },
 }))
+
+Object.assign(globalThis, { window: { paint_path: () => element() } })
 
 mock.module('gpui-base', () => ({
   h_flex: () => element(),

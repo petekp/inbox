@@ -64,28 +64,42 @@ export const HEAD_TEXT = 15
 export const HEAD_LINE = '24px'
 
 /**
- * The one left edge every title, line and button row starts on, on every tab. The first tab's label and a banner's
- * text sit on it too. Marks hang in the column before it, and a nested row steps in by `NEST`.
+ * The spacing scale. Every gap, padding and inset the look draws is one of these steps, so distances repeat and each
+ * step is far enough from the next for the eye to tell them apart.
  */
-export const SPINE = 40
-/** Where the column of hanging marks starts. A mark sits centred in it, with room on both sides. */
-export const MARK_X = 16
-export const MARK_W = SPINE - MARK_X
-export const NEST = 20
-/** The one right edge: Help, a row's age, a PR's number, a line's last button and a rule's end all stop this far in. */
-export const EDGE_X = 24
+export const SPACE = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 } as const
+
+/** A title to each line under it, and the head's title to its notes. */
+export const LINE_GAP = SPACE.xs
+/** Text to the buttons under it, one button to the next, and a nested item under its parent. */
+export const CONTROL_GAP = SPACE.s
+/** A heading to what it heads, so it reads as that part's label. */
+export const HEAD_GAP = SPACE.m
+/** A pill's and a banner's side padding, and a row's title to its age. */
+export const INSET = SPACE.m
+/** The panel's padding on every side, and half a section's break on each side of a rule. */
+export const EDGE = SPACE.l
+/** Two top-level items of the Status page. */
+export const ITEM_GAP = SPACE.xl
+/** Two sections, such as two groups or two PRs, and the space under the list's last block. */
+export const GROUP_GAP = SPACE.xxl
+export const END_SPACE = GROUP_GAP
+
+/**
+ * Marks hang in a column at the edge, and text after a mark starts at `TEXT_X`. A nested item's mark column starts
+ * where its parent's text does.
+ */
+export const MARK_W = SPACE.xl
+export const TEXT_X = EDGE + MARK_W
+export const NEST = MARK_W
 
 /** Under this pane width, a PR's number moves from the end of its title line to the start of its status line. */
 export const NARROW_PANE = 280
 
-/** The space between two groups or two PRs, and under the list's last row, so the last line never meets the pane's edge. */
-export const GROUP_GAP = 32
-export const END_SPACE = GROUP_GAP
-
-/** A button's height, the space between two buttons, and a pill's side padding. */
+/** A button's and a tab's height, and the corner of a box such as a banner or the goal's input. */
 export const BUTTON_H = 28
-export const BUTTON_GAP = 8
-export const PILL_X = 12
+export const BOX_RADIUS = 10
+export const TAB_RADIUS = 6
 
 /** The separator between a status and its reasons, and between a heading and its count. */
 export const SEP = ' · '

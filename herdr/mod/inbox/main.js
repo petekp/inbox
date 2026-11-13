@@ -1,8 +1,8 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-13T06:58:25.835Z. 195351 characters follow.
+// Built at 2026-11-13T07:29:33.681Z. 197235 characters follow.
 
 // src/main.ts
-import { View, div as div4 } from "gpui-kit";
+import { View, div as div5 } from "gpui-kit";
 import { InputState, Scrollbar, v_flex as v_flex3 } from "gpui-base";
 import {
   appHome,
@@ -3302,7 +3302,7 @@ function threadRow(screen, pr, t, presses) {
   return {
     kind: "row",
     id,
-    depth: 1,
+    depth: 0,
     mark: markOf(text.mark),
     title: text.title,
     age: t.at === null ? null : shortAgo(screen.now - t.at),
@@ -3325,7 +3325,7 @@ function checkRow(screen, pr, c, presses) {
   return {
     kind: "row",
     id,
-    depth: 1,
+    depth: 0,
     mark: markOf(text.mark),
     title: text.lead ? `${text.lead} / ${text.title}` : text.title,
     age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
@@ -3386,7 +3386,6 @@ function prBlocks(screen, d, presses, selected) {
     {
       kind: "heading",
       id: `${pr.ref} ${key}`,
-      depth: 1,
       text: title,
       count: rows.length,
       mark: null,
@@ -3623,7 +3622,6 @@ function goalBlocks(page, { isUnfolded, goalField }) {
   const heading = {
     kind: "heading",
     id: "goal heading",
-    depth: 0,
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: null,
@@ -3794,7 +3792,6 @@ function groupBlocks(g, ui, selected, screen) {
     {
       kind: "heading",
       id: `group ${g.kind}`,
-      depth: 0,
       text: g.title,
       count: count > 0 ? count : null,
       mark: g.mark,
@@ -3965,7 +3962,6 @@ function helpBlocks(isNextBuild, tab, hasStatusButtons) {
   const heading = (id, text) => ({
     kind: "heading",
     id,
-    depth: 0,
     text,
     count: null,
     mark: null,
@@ -4171,7 +4167,6 @@ var ROW_PAD_PT = 8;
 var STATUS_ROW_PAD_PT = 19 / 4;
 var SECTION_GAP_PT = 19 / 2;
 var BANNER_PAD_Y_PT = 8;
-var BANNER_GAP_PT = 8;
 
 // src/paint-theme.ts
 var TONE_COLORS = {
@@ -4192,23 +4187,27 @@ var LINE = "20px";
 var SMALL_TEXT = 12;
 var HEAD_TEXT = 15;
 var HEAD_LINE = "24px";
-var SPINE = 40;
-var MARK_X = 16;
-var MARK_W = SPINE - MARK_X;
-var NEST = 20;
-var EDGE_X = 24;
-var NARROW_PANE = 280;
-var GROUP_GAP = 32;
+var SPACE = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 };
+var LINE_GAP = SPACE.xs;
+var CONTROL_GAP = SPACE.s;
+var HEAD_GAP = SPACE.m;
+var INSET = SPACE.m;
+var EDGE = SPACE.l;
+var ITEM_GAP = SPACE.xl;
+var GROUP_GAP = SPACE.xxl;
 var END_SPACE = GROUP_GAP;
+var MARK_W = SPACE.xl;
+var TEXT_X = EDGE + MARK_W;
+var NEST = MARK_W;
+var NARROW_PANE = 280;
 var BUTTON_H = 28;
-var BUTTON_GAP = 8;
-var PILL_X = 12;
+var BOX_RADIUS = 10;
+var TAB_RADIUS = 6;
 var SEP = " · ";
 
 // src/paint-chrome.ts
-import { div } from "gpui-kit";
+import { Background, PathBuilder, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-var TAB_X = 12;
 var helpButton = (isHelpShown) => ({
   id: "help",
   label: isHelpShown ? HELP_COPY.close : HELP_COPY.open,
@@ -4220,19 +4219,29 @@ var helpButton = (isHelpShown) => ({
 function tabsEl(tabs, status, isHelpShown, p) {
   const { t } = p;
   const help = helpButton(isHelpShown);
-  return h_flex().flex_none().flex_wrap().pl(SPINE - TAB_X).pr(EDGE_X).pt(12).gap(4).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).px(TAB_X).py(6).items_center().rounded(6).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div().ml(6).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div().flex_1()).when(status !== null, (e) => e.child(div().px(4).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
+  return h_flex().flex_none().flex_wrap().px(EDGE).pt(EDGE).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div().flex_1()).when(status !== null, (e) => e.child(div().px(LINE_GAP).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
   const tone = colorOf(t, BANNER_TONES2[b.tone]);
   const text = v_flex().flex_1().min_w(0).whitespace_normal().child(div().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div().child(b.body ?? "")));
-  const row = h_flex().gap(12).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(BUTTON_GAP).children(buttons)));
-  return v_flex().mx(BANNER_X).mt(BANNER_GAP_PT).pl(SPINE - BANNER_X - 1).pr(EDGE_X - BANNER_X - 1).py(BANNER_PAD_Y_PT).rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);
+  const row = h_flex().gap(INSET).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(CONTROL_GAP).children(buttons)));
+  return v_flex().mx(EDGE).px(INSET).py(BANNER_PAD_Y_PT).rounded(BOX_RADIUS).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);
 }
-var BANNER_X = 12;
-var sessionNoteEl = (text, t) => div().pl(SPINE).pr(EDGE_X).pt(8).whitespace_normal().text_color(t.muted).child(text);
+var sessionNoteEl = (text, t) => div().px(EDGE).pt(CONTROL_GAP).whitespace_normal().text_color(t.muted).child(text);
 function messageEl(m, t) {
-  return v_flex().flex_1().justify_center().items_center().p(32).gap(4).child(div().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+  return v_flex().flex_1().justify_center().items_center().p(GROUP_GAP).gap(LINE_GAP).child(div().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+}
+var FILL = PathBuilder.fill().add_polygon([
+  [0, 0],
+  ["100%", 0],
+  ["100%", "100%"],
+  [0, "100%"]
+], true).build();
+function scrollFadeEl(t, edge) {
+  const isTop = edge === "top";
+  const fade = Background.linear_gradient(isTop ? 180 : 0, tint(t.background, 1), tint(t.background, 0));
+  return window.paint_path(FILL, fade).absolute().left(0).right(0).when(isTop, (e) => e.top(0).h(EDGE)).when(!isTop, (e) => e.bottom(0).h(GROUP_GAP));
 }
 
 // src/paint-timer.ts
@@ -4264,14 +4273,13 @@ function timeLeftEl(left, runsOutAt, now, t) {
 }
 
 // src/paint-blocks.ts
-var LINE_PAD = 4;
 function buttonEl(b, p, isInert = false) {
   const { t } = p;
   const isPill = b.emphasis !== "quiet";
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
   const base = h_flex2().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(left, runsOutAt ?? 0, p.now, t)) : e).child(b.label);
-  const shaped = isPill && runsOutAt === undefined ? base.px(PILL_X).rounded(BUTTON_H / 2).border_1() : base;
+  const shaped = isPill && runsOutAt === undefined ? base.px(INSET).rounded(BUTTON_H / 2).border_1() : base;
   if (b.isHidden)
     return shaped.invisible().disabled(true);
   if (b.isOut)
@@ -4286,15 +4294,17 @@ function buttonEl(b, p, isInert = false) {
   });
 }
 var CLEAR = "#00000000";
-var buttonsEl = (buttons, p, indent, isInert = false) => h_flex2().flex_wrap().items_center().gap(BUTTON_GAP).pt(LINE_PAD).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t) => div3().w(MARK_W).pr(4).flex_none().text_center().text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
-var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(LINE_PAD).whitespace_normal().text_color(color).child(text);
-var bodyLineEl = (l, t) => l.mark ? h_flex2().pt(LINE_PAD).items_start().child(markEl(l.mark, t)).child(div3().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
+var buttonsEl = (buttons, p, indent, isInert = false) => h_flex2().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
+var markEl = (m, t) => div3().w(MARK_W).flex_none().text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
+var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
+var bodyLineEl = (l, t) => l.mark ? h_flex2().pt(LINE_GAP).items_start().child(markEl(l.mark, t)).child(div3().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
 function fieldEl(f, p, indent, isInert = false) {
   const { t } = p;
   const state = p.input(f.rowId);
-  const input = state ? [div3().min_h(28).px(10).py(4).rounded(10).border_1().border_color(t.input).child(Input.new(state).w_full())] : [];
-  return v_flex2().pt(LINE_PAD).pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
+  const input = state ? [
+    div3().min_h(BUTTON_H).px(INSET).py(SPACE.xs).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
+  ] : [];
+  return v_flex2().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
 }
 function opacityOf(r, p) {
   const m = p.motion.get(r.id);
@@ -4306,7 +4316,7 @@ function opacityOf(r, p) {
 }
 function rowEl(r, p) {
   const { t } = p;
-  const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div3().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div3().flex_none().ml(12).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div3().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback ? [r.feedback] : [],
@@ -4314,40 +4324,36 @@ function rowEl(r, p) {
   ];
   const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
-  const hasControls = r.buttons.length > 0 || r.field !== null;
-  const padTop = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2;
-  const padBottom = r.depth === 0 || hasControls ? ROW_PAD_PT : ROW_PAD_PT / 2;
-  return v_flex2().id(`row ${r.id}`).pl(MARK_X + r.depth * NEST).pr(EDGE_X).pt(padTop).pb(padBottom).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div3()));
+  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3()));
 }
 function statusEl(s, p) {
   const { t } = p;
   const stall = s.stall ? [div3().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
-  return v_flex2().pl(MARK_X + s.depth * NEST).pr(EDGE_X).py(ROW_PAD_PT).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(div3().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => div3().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
+  return v_flex2().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(div3().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
 }
 function prEl(b, p) {
   const { t } = p;
   const label = b.rank === null ? b.number : `${b.rank.trim()} ${b.number}`;
-  const title = h_flex2().items_start().child(div3().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div3().flex_none().ml(12).text_color(t.muted).child(label)));
-  const status = h_flex2().flex_wrap().items_start().when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(div3().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div3().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
-  return v_flex2().pl(SPINE).pr(EDGE_X).pt(8).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  const title = h_flex2().items_start().child(div3().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(label)));
+  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(div3().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div3().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
+  return v_flex2().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p) {
   const { t } = p;
-  return v_flex2().pl(SPINE).pr(EDGE_X).py(LINE_PAD).child(h_flex2().gap(BUTTON_GAP).items_center().child(div3().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(BUTTON_GAP).children(b.buttons.map((x) => buttonEl(x, p)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex2().pl(EDGE).pr(EDGE).child(h_flex2().gap(CONTROL_GAP).items_center().child(div3().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 var ruleLine = (t) => div3().flex_1().border_t(1).border_color(t.border);
 function headingEl(b, p) {
   const { t } = p;
-  const buttons = h_flex2().flex_none().gap(BUTTON_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p)));
+  const buttons = h_flex2().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p)));
   if (b.isLabel)
-    return h_flex2().flex_wrap().pl(SPINE).pr(EDGE_X).pt(8).pb(LINE_PAD).gap(8).items_center().child(div3().text_color(t.muted).child(b.text)).child(ruleLine(t).min_w(32)).child(buttons);
-  return h_flex2().pl(MARK_X + b.depth * NEST).pr(EDGE_X).pt(b.depth > 0 ? 16 : 8).pb(LINE_PAD).items_center().child(markEl(b.mark, t)).child(div3().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div3().text_color(t.muted).child(`${SEP}${b.count}`))).child(div3().flex_1()).child(buttons);
+    return h_flex2().flex_wrap().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div3().text_color(t.muted).child(b.text)).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
+  return h_flex2().pl(EDGE).pr(EDGE).items_center().child(markEl(b.mark, t)).child(div3().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div3().text_color(t.muted).child(`${SEP}${b.count}`))).child(div3().flex_1()).child(buttons);
 }
 function emptyEl(b, p) {
   const { t } = p;
-  return v_flex2().items_center().px(32).py(32).gap(4).child(div3().font_semibold().text_center().whitespace_normal().child(b.title)).when(b.hint !== null, (e) => e.child(div3().text_center().whitespace_normal().text_color(t.muted).child(b.hint ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(BUTTON_GAP).pt(8).children(b.buttons.map((x) => buttonEl(x, p)))));
+  return v_flex2().items_center().p(GROUP_GAP).gap(LINE_GAP).child(div3().font_semibold().text_center().whitespace_normal().child(b.title)).when(b.hint !== null, (e) => e.child(div3().text_center().whitespace_normal().text_color(t.muted).child(b.hint ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p)))));
 }
-var FOLD_ARROW_GAP = 8;
 function foldEl(b, p) {
   const { t } = p;
   const fold = {
@@ -4358,17 +4364,17 @@ function foldEl(b, p) {
     hotkey: null,
     does: { is: "view", change: b.change }
   };
-  return h_flex2().id(`fold ${b.id}`).pl(SPINE + b.depth * NEST).pr(EDGE_X).py(ROW_PAD_PT).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(div3().mr(FOLD_ARROW_GAP).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div3().child(b.text));
+  return h_flex2().id(`fold ${b.id}`).pl(TEXT_X + b.depth * NEST).pr(EDGE).py(ROW_PAD_PT).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(div3().mr(CONTROL_GAP).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div3().child(b.text));
 }
 function ruleEl(b, t) {
   if (b.text === null)
-    return h_flex2().pl(SPINE).pr(EDGE_X).pt(GROUP_GAP / 2).pb(8).child(ruleLine(t));
-  return h_flex2().pl(SPINE).pr(EDGE_X).py(12).gap(8).items_center().child(div3().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
+    return h_flex2().pl(EDGE).pr(EDGE).child(ruleLine(t));
+  return h_flex2().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div3().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t) {
   const text = div3().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
   const count = b.count === null ? [] : [div3().whitespace_nowrap().text_color(t.muted).child(b.count)];
-  return h_flex2().flex_wrap().items_baseline().pl(SPINE + b.depth * NEST).pr(EDGE_X).py(b.isHead ? 0 : LINE_PAD).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
+  return h_flex2().flex_wrap().items_baseline().pl(TEXT_X + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -4389,12 +4395,60 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div3().pl(SPINE).pr(EDGE_X).child(fieldEl(b.field, p, 0));
+    return div3().pl(TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0));
   if (b.kind === "note")
     return noteEl(b, t);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p)), b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
-  return div3().h(8);
+  return div3();
+}
+
+// src/paint-space.ts
+import { div as div4 } from "gpui-kit";
+var padOf = (b) => b.kind === "row" || b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
+var depthOf = (b) => ("depth" in b) ? b.depth : 0;
+var isOneLine = (b) => b.kind === "status" ? b.under.length === 0 && b.buttons.length === 0 : b.kind === "note" || b.kind === "fold";
+function itemGap(prev, b) {
+  if (isOneLine(prev) && isOneLine(b))
+    return CONTROL_GAP;
+  if (depthOf(b) === 0)
+    return ITEM_GAP;
+  return INSET;
+}
+function gapBetween(prev, b) {
+  const isLabelled = prev.kind === "heading" || prev.kind === "rule" && prev.text !== null;
+  if (isLabelled)
+    return HEAD_GAP;
+  if (prev.kind === "rule" || b.kind === "rule")
+    return GROUP_GAP / 2;
+  if (prev.kind === "note" && prev.isHead && b.kind === "note" && b.isHead)
+    return LINE_GAP;
+  if (prev.kind === "line" && b.kind === "line")
+    return CONTROL_GAP;
+  if (prev.kind === "line" || prev.kind === "banner")
+    return GROUP_GAP;
+  if (b.kind === "heading")
+    return prev.kind === "row" || prev.kind === "pr" ? ITEM_GAP : GROUP_GAP;
+  if ([prev, b].some((x) => x.kind === "row" || x.kind === "more"))
+    return EDGE;
+  return itemGap(prev, b);
+}
+function spacedEls(blocks, el) {
+  const out = [];
+  let prev = null;
+  let isSection = false;
+  for (const b of blocks) {
+    if (b.kind === "gap") {
+      isSection = prev !== null;
+      continue;
+    }
+    const gap = prev === null ? 0 : isSection ? GROUP_GAP : gapBetween(prev, b);
+    const above = Math.max(0, gap - (prev === null ? 0 : padOf(prev)) - padOf(b));
+    out.push(div4().flex_none().pt(above).child(el(b)));
+    prev = b;
+    isSection = false;
+  }
+  return out;
 }
 
 // src/press-file.ts
@@ -4974,13 +5028,13 @@ class Inbox extends View {
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div4().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(END_SPACE).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div5().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
       else
         this.focus?.focus();
-    }).children(moved.blocks.map((b) => blockEl(b, paint)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    }).children(spacedEls(moved.blocks, (b) => blockEl(b, paint)))).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
   }
 }
 export {
