@@ -151,13 +151,17 @@ function quotedAnswer(pair: string): string | null {
  * any order. An answer may hold quote marks: it ends at the quote mark before its notes, its preview or the next pair.
  */
 function pairedAnswers(questions: AskedQuestion[], pairs: string): (string | null)[] {
-  const leads = questions.map(q => {
+  const leadsOf = (q: AskedQuestion) => {
     const question = q.question.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const lead = new RegExp(`"\\s*${question}\\s*"=`).exec(pairs)
+
+    return [...pairs.matchAll(new RegExp(`"\\s*${question}\\s*"=`, 'g'))]
+  }
+  const leads = questions.map(q => {
+    const [lead] = leadsOf(q)
 
     return lead ? { at: lead.index, answerAt: lead.index + lead[0].length } : null
   })
-  const starts = leads.flatMap(l => (l ? [l.at] : []))
+  const starts = questions.flatMap(q => leadsOf(q).map(lead => lead.index))
 
   return leads.map(lead => {
     if (!lead) return null

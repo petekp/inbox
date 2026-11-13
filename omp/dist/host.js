@@ -5233,12 +5233,15 @@ function quotedAnswer(pair) {
   return null;
 }
 function pairedAnswers(questions, pairs) {
-  const leads = questions.map((q) => {
+  const leadsOf = (q) => {
     const question = q.question.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const lead = new RegExp(`"\\s*${question}\\s*"=`).exec(pairs);
+    return [...pairs.matchAll(new RegExp(`"\\s*${question}\\s*"=`, "g"))];
+  };
+  const leads = questions.map((q) => {
+    const [lead] = leadsOf(q);
     return lead ? { at: lead.index, answerAt: lead.index + lead[0].length } : null;
   });
-  const starts = leads.flatMap((l) => l ? [l.at] : []);
+  const starts = questions.flatMap((q) => leadsOf(q).map((lead) => lead.index));
   return leads.map((lead) => {
     if (!lead)
       return null;
