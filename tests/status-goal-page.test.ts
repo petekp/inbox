@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { SUBJECT_MARKS } from '../hooks/help'
 import { EMPTY } from '../hooks/ledger'
 import { allRows } from '../hooks/rows'
 import { emptySession } from '../hooks/session-files'
@@ -196,6 +197,28 @@ test('running work draws with the milestone its subject serves, also when the su
     { kind: 'child', name: 'Check loose', depth: 0, branch: null },
   ])
   expect(p.rows.filter(r => r.kind === 'child')).toHaveLength(1)
+})
+
+test('a queued milestone draws as worked on once work that serves it is working, and as waiting once that work waits outside, keeping where it stands only when the answer wrote it', () => {
+  const served = after(withGoal(), 'SERVES: s4 | m3\nWAS: m3 | a slide deck', 30)
+  const looked = { ...served, lastLookAt: 35 }
+  const demo = (o: SessionStatus) => page(o, 60).goal?.milestones.find(m => m.id === 'm3')
+
+  expect(demo(served)).toMatchObject({ mark: SUBJECT_MARKS.queued.mark })
+  expect(demo(after(looked, 'SET: s4 | working | logo drawn', 50))).toMatchObject({
+    mark: SUBJECT_MARKS.working.mark,
+    text: null,
+    was: null,
+  })
+  expect(demo(after(looked, 'SET: s4 | waits-on-other | with the designer', 50))).toMatchObject({
+    mark: SUBJECT_MARKS['waits-on-other'].mark,
+  })
+  expect(
+    demo(after(looked, 'SET: s4 | working | logo drawn\nSET: m3 | queued | script after the logo', 50)),
+  ).toMatchObject({
+    mark: SUBJECT_MARKS.working.mark,
+    text: 'script after the logo',
+  })
 })
 
 test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met', () => {

@@ -287,10 +287,38 @@ function withWorkDoneMilestones(o: SessionStatus, now: number): SessionStatus {
 }
 
 /**
+ * Starts each queued milestone whose linked work is under way: working while some of it is working, else waiting on
+ * something outside the session. Where it stood was written while nothing had started on it, so it goes, and the next
+ * call writes it again, unless this answer wrote it.
+ */
+function withWorkStartedMilestones(o: SessionStatus, now: number): SessionStatus {
+  const startedAs = (m: Milestone): 'working' | 'waits-on-other' | null => {
+    if (m.status !== 'queued') return null
+    const linked = o.subjects.filter(s => o.serves[s.id] === m.id)
+    if (linked.some(s => s.status === 'working')) return 'working'
+    return linked.some(s => s.status === 'waits-on-other') ? 'waits-on-other' : null
+  }
+  if (!o.milestones.some(m => startedAs(m) !== null)) return o
+
+  return {
+    ...o,
+    milestones: o.milestones.map(m => {
+      const status = startedAs(m)
+      if (status === null) return m
+      const started = { ...m }
+      forgetSeenWas(started, o.lastLookAt)
+      const isWrittenNow = m.changedAt === now
+
+      return { ...started, status, text: isWrittenNow ? m.text : '', changedAt: now }
+    }),
+  }
+}
+
+/**
  * The goal once an answer has applied. A typed goal carries the milestones of the goal before it until an answer from a
  * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
  * has not dropped, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
- * closed, as `withWorkDoneMilestones` says. The was line goes once the person has seen it,
+ * closed, as `withWorkDoneMilestones` says, and each queued one whose linked work is under way starts. The was line goes once the person has seen it,
  * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
  * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
  * that read an earlier goal wrote for that goal.
@@ -303,7 +331,7 @@ export function settleGoal(
 ): SessionStatus {
   const g = saved.goal
   if (g === null) return saved
-  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now)
+  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now)
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt
   const milestones = isAnswerForNewGoal
