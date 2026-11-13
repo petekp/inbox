@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
+import { isSubjectSeen } from '../../hooks/status-children'
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
 import {
@@ -189,6 +192,29 @@ test('a press while the agent is idle sends the message with no delivery option'
   expect(w.sent[0]!.options).toBeUndefined()
 })
 
+test("a press omp drops before a run starts is not counted as sent, and its row shows omp's reason", async () => {
+  const { inbox, id } = await withQuestion()
+  w.sendAnswer = () => Promise.reject(new Error('Session cost cap of $5.00 reached'))
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
+  expect(w.sent).toHaveLength(1)
+  expect(state().sent).toEqual([])
+  expect(JSON.stringify(state().lastActions)).toContain('Session cost cap of $5.00 reached')
+})
+
+test('a press sent while the agent is idle counts as sent once its run starts, before the run ends', async () => {
+  const { inbox, id } = await withQuestion()
+  w.isIdle = true
+  w.sendAnswer = () => new Promise(() => {})
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  w.clock += 5000
+  w.timers.at(-1)!.fn()
+  for (let waited = 0; w.sent.length === 0 && waited < 200; waited += 1) await new Promise(r => setTimeout(r, 5))
+  await call('agent_start', { type: 'agent_start' })
+  await settle()
+  expect(state().sent.map((x: { phase: string }) => x.phase)).toEqual(['accepted'])
+})
+
 test('a press for a row that is gone reports it stale and sends nothing', async () => {
   const { inbox } = await withQuestion()
   const outcome = await inbox.press(makeCtx(), { action: 'answer', id: 'nope', option: 'Node' }, NO_HOLDS)
@@ -196,8 +222,8 @@ test('a press for a row that is gone reports it stale and sends nothing', async 
   expect(w.sent).toEqual([])
 })
 
-async function withSteps() {
-  const inbox = createInbox(pi(), deps())
+async function withSteps(given = deps()) {
+  const inbox = createInbox(pi(), given)
   await record({ kind: 'task', ask: 'Run it and read the page', steps: ['npm start', 'https://example.com/x'] })
   const screen = await inbox.screen(makeCtx())
   const row = screen.view.needsYou.tasks[0]!
@@ -232,6 +258,71 @@ test('an open that fails leaves the reason on the row', async () => {
   const screen = await inbox.screen(makeCtx())
   const last = screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]
   expect(JSON.stringify(last?.result)).toContain('no browser')
+})
+
+test('in a Herdr app terminal, a press the look ran itself records its result and opens nothing', async () => {
+  const appHome = join(w.dir, 'herdr-app')
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
+  const { inbox, stepPress } = await withSteps({ ...deps(), herdrTarget: target })
+  await call('session_start', { type: 'session_start' })
+  const sessionFile = join(appHome, 'inbox/sessions/s1.json')
+  for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
+  expect(existsSync(sessionFile)).toBe(true)
+  const folder = join(appHome, 'inbox/presses/s1')
+  mkdirSync(folder, { recursive: true })
+  const press = {
+    format: 1,
+    id: 'p1',
+    pressedAt: 1,
+    press: stepPress(1),
+    holds: NO_HOLDS,
+    result: { error: 'no browser' },
+  }
+  writeFileSync(join(folder, 'p1.json'), JSON.stringify(press))
+
+  for (let waited = 0; existsSync(join(folder, 'p1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await settle()
+
+  expect(existsSync(join(folder, 'p1.json'))).toBe(false)
+  expect(w.execCalls.filter(c => c.command === 'open')).toEqual([])
+  const screen = await inbox.screen(makeCtx())
+  expect(JSON.stringify(screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]?.result)).toContain('no browser')
+  const published = () => JSON.parse(readFileSync(sessionFile, 'utf8'))
+  expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
+
+  await record({ kind: 'task', ask: 'Write the notes' })
+  await settle()
+  expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
+})
+
+test('in a Herdr app terminal, a look file the look wrote counts the Status subjects it showed as seen, and saves no press', async () => {
+  const appHome = join(w.dir, 'herdr-app')
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
+  createInbox(pi(), { ...deps(), herdrTarget: target })
+  await call('session_start', { type: 'session_start' })
+  const sessionFile = join(appHome, 'inbox/sessions/s1.json')
+  for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
+  w.statusReply =
+    'HEAD: Offline sync | Adding offline sync\nNEW: working | Queue | built\nNEW: queued | Docs | not started'
+  await prompt('add offline sync')
+  await endAgent('Queue built.')
+  await settle()
+  const changedAt = state().ledger.overview.subjects[0].changedAt as number
+  const folder = join(appHome, 'inbox/presses/s1')
+  mkdirSync(folder, { recursive: true })
+  const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
+  writeFileSync(join(folder, 'l1.json'), JSON.stringify({ format: 1, id: 'l1', look }))
+
+  for (let waited = 0; existsSync(join(folder, 'l1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await settle()
+
+  const overview = state().ledger.overview
+  expect(
+    overview.subjects
+      .filter((s: { id: string; changedAt: number }) => isSubjectSeen(overview, s))
+      .map((s: { id: string }) => s.id),
+  ).toEqual(['s1'])
+  expect(state().lastHerdrPress).toBeUndefined()
 })
 
 test('a goal the Status call writes is set at once, Remove goal clears it, a typed goal sets the saved goal, and none sends a message', async () => {

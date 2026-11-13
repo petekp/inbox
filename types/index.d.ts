@@ -91,6 +91,29 @@ export type Milestone = {
 /** What a subject serves: one milestone by its id, or `none` for work the goal does not need. */
 export type Serves = string | 'none'
 
+/**
+ * Why code did not apply the last answer's GOAL or RETIRE line. The next Status call reads it, with the reason
+ * written out as it stands then, so the call can fix the cause.
+ */
+export type GoalRefusal = {
+  line: 'goal' | 'retire'
+  why:
+    /** The person typed the goal, and it is not met. */
+    | 'typed'
+    /** RETIRE on a met goal, which stays until the next goal is set. */
+    | 'met'
+    /** A subject linked to an open milestone is still open. */
+    | 'work-open'
+    /** The goal moved forward under `GOAL_LEFT_MS` ago. */
+    | 'moved'
+    /** No open subject is outside the goal, so there is no work for a new one. */
+    | 'no-work'
+    /** The GOAL line restates the goal, the goal before it or a removed goal. */
+    | 'restates'
+    /** The GOAL line names under `MILESTONES_MIN` milestones. */
+    | 'few-milestones'
+}
+
 /** A goal the person removed, with its milestones and the links to them, so Undo can bring it back. */
 export type GoalRemoved = {
   goal: StatusGoal
@@ -118,6 +141,8 @@ export type SessionStatus = {
   nextMilestoneId: number
   /** What each subject serves, by subject id, as the Status call linked them. A subject with no entry is not linked yet. */
   serves: Record<string, Serves>
+  /** Why the last applied answer's GOAL or RETIRE line was not applied. Null when it was, or when the answer wrote none. */
+  goalRefused: GoalRefusal | null
 
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null
@@ -139,6 +164,8 @@ export type Item = {
   /** The agent's own number or id for it ("1", "D3"), so "1. yes" maps back. */
   label: string | null
   ask: string
+  /** Why the agent asked a question, from its record's `context`. A record of the open question replaces it. */
+  context?: string
   options: string[]
   /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
@@ -164,7 +191,8 @@ export type Item = {
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
   /**
-   * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
+   * What picking each option does, by its label as `options` has it: from the `option_notes` of the agent's records,
+   * else from a dialog question this item copies.
    */
   optionDescriptions?: Record<string, string>
 }
@@ -180,14 +208,16 @@ export type DialogQuestion = { question: string; options: string[]; descriptions
 
 /**
  * A dialog question from ledger turn `turn` that an item may copy: a question of a Codex dialog, which stays open, or
- * of a dialog the person dismissed in another host. `callId` and `index` name a Codex dialog question, and `callId` is
- * null in other hosts. `itemId` is the item that copies it, once linked.
+ * of a dialog the person answered or dismissed in another host. `callId` and `index` name a Codex dialog question, and
+ * `callId` is null in other hosts. `itemId` is the item that copies it, once linked. `answer` is what the person chose
+ * in a dialog they answered; the copy closes with it.
  */
 export type TurnDialogQuestion = DialogQuestion & {
   callId: string | null
   index: number
   turn: number
   itemId: string | null
+  answer?: string
 }
 
 /**
@@ -605,6 +635,9 @@ export type CallFailure = {
  */
 export type CallRecord = { lastFailure: CallFailure | null; recoveredAt: number | null }
 
+/** A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed. */
+export type HerdrPressOutcome = { id: string; outcome: 'applied' | 'stale' }
+
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
@@ -670,6 +703,11 @@ export type Session = {
     phase?: 'attempting' | 'accepted' | 'uncertain'
   }[]
   lastActions: Record<string, LastAction>
+  /**
+   * The last press from the Herdr look this host applied. The session published for the look carries it as
+   * `lastPress`, so the look can tell a press whose row had already changed from one no host applied.
+   */
+  lastHerdrPress?: HerdrPressOutcome
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**
@@ -702,13 +740,6 @@ export type Session = {
 }
 
 declare module 'claude-code' {
-  /**
-   * The inbox's `order_prs` call, as `hooks/tools.ts:ORDER_SCHEMA` gives it. A session writes the MCP tool types only
-   * for the tools it had connected, so an older build's session leaves this one out.
-   */
-  interface McpToolInputs {
-    mcp__inbox__order_prs: { repo?: string; numbers: number[]; label?: string; why?: string }
-  }
   interface PluginState {
     inbox: {
       /** The Claude Code theme in use, such as `dark` or `light-ansi`; '' until read. */
@@ -768,6 +799,41 @@ declare module 'claude-code' {
       lastActions: Record<string, LastAction>
       sent: SentPrompt[]
       untrackedSent: { sessionId: string; text: string }[]
+    }
+  }
+}
+
+// Built by scripts/build-tool-inputs.mjs from the schemas in hooks/tools.ts. Edit a schema, then run it and
+// scripts/build-types.mjs.
+
+declare module 'claude-code' {
+  /** The arguments of the agent's tools, as their schemas in `hooks/tools.ts` give them. */
+  interface McpToolInputs {
+    mcp__inbox__record: {
+      kind: 'question' | 'task' | 'finding'
+      ask?: string
+      context?: string
+      options?: string[]
+      option_notes?: string[]
+      rec?: string
+      why?: string
+      steps?: string[]
+      design_choice?: boolean
+      finding_kind?: 'issue' | 'opportunity'
+      title?: string
+      detail?: string
+      path?: string
+    }
+    mcp__inbox__close: {
+      id: string
+      answer?: string
+      reason?: string
+    }
+    mcp__inbox__order_prs: {
+      repo?: string
+      numbers: number[]
+      label?: string
+      why?: string
     }
   }
 }

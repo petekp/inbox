@@ -1,6 +1,8 @@
 import { version } from '../package.json'
 
 import type { PrPress } from '../../hooks/pr-press'
+import { applyHerdrFile } from '../../hooks/herdr-app'
+import type { HerdrFile } from '../../hooks/herdr-press-file'
 import type { RowPress } from '../../hooks/presses'
 import { lookEndedOn, withLook } from '../../hooks/session-status'
 import type { ShownRows } from '../../hooks/status-children'
@@ -18,6 +20,7 @@ import { readState } from './state'
 import { sessionIdOf } from './host-context'
 import type { HostContext, OmpContext } from './host-context'
 import type { SessionCalls } from './host-sessions'
+import type { OmpHerdrAsk } from './host-herdr-ask'
 
 /** What a panel needs from the host. */
 export type Inbox = {
@@ -42,11 +45,13 @@ export type Inbox = {
   onChange(ctx: OmpContext, listener: () => void): () => void
   /** Applies a press for the session. */
   press(ctx: OmpContext, p: RowPress | PrPress, holds: Holds): Promise<PressOutcome>
+  /** Applies a file the Herdr look wrote: a press, whose opens and copies it may have run, or a look at the Status. */
+  herdrFile(ctx: OmpContext, file: HerdrFile): Promise<void>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
-  resume(ctx: OmpContext): string | null
+  resume(ctx: OmpContext): Promise<string | null>
 }
 
-export function panelCalls(context: HostContext, sessions: SessionCalls) {
+export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAsk: OmpHerdrAsk) {
   const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions
   /** When each Status subject row was last on screen in each session's look under way, by session id. */
@@ -67,6 +72,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
         view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
+        herdrModFailure: memory.herdrModFailure,
+        herdrAsk: memory.herdrAsk,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
         version,
@@ -122,6 +129,9 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
 
       return outcome
     },
+    herdrFile: async (ctx, file) => {
+      if ((await applyHerdrFile(hostFor(ctx), file)).wakesAfterSettle) wakeLater(ctx)
+    },
     resume: ctx => sendToAgent(ctx, RESUME_TEXT),
   }
 
@@ -133,6 +143,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       return { error: outcome.error, note: outcome.note, isUnconfirmed: outcome.isUnconfirmed }
     },
     resume: async () => inbox.resume(ctx),
+    answerHerdr: herdrAsk.answer,
     fetchPrsWhenDue: isTabShown => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),

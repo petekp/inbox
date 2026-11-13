@@ -17,6 +17,9 @@ import type { PrShared } from '../../hooks/pr-fetch'
 import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/host-press'
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
+import { applyHerdrFile } from '../../hooks/herdr-app'
+import { isLookFile } from '../../hooks/herdr-press-file'
+import type { HerdrFile, PressFile } from '../../hooks/herdr-press-file'
 import type { Holds } from '../../hooks/timing'
 import { viewOf } from './core'
 import type { TabView } from './core'
@@ -68,7 +71,7 @@ export function makeSessionHost(
   const hostFor = (id: string): Omit<SessionHost<SessionState>, 'ask'> => {
     let preparedCli: string | undefined
     return {
-      ...codexStore(dir, id, now),
+      ...codexStore(dir, id, now, deps.onWrite),
       prepare: async s => {
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },
@@ -136,10 +139,12 @@ export function makeSessionHost(
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
     const view = viewOf(current, now(), holds)
     const trust = isDemo ? null : hooksTrustNow(current, id)
+    const herdrAsk = isDemo ? null : await deps.herdrAsk?.view().catch(() => null)
 
     return {
       ...view,
       ...(trust ? { hooksTrust: trust } : {}),
+      ...(herdrAsk ? { herdrAsk } : {}),
       thread: id,
       isFetchingPrs: !isDemo && prFetches.isFetching(id),
       isGhMissing: !isDemo && isGhMissing,
@@ -164,11 +169,18 @@ export function makeSessionHost(
     if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs))
   }
 
-  async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: Holds): Promise<PressReply> {
+  /** Applies a press from the tab, or with `look` one the Herdr look wrote, whose opens and copies it may have run. */
+  async function onPress(
+    id: string,
+    p: RowPress | PrPress,
+    thread: unknown,
+    holds: Holds,
+    look: PressFile | null = null,
+  ): Promise<PressReply> {
     await syncTurn(id).catch(() => undefined)
     if (!isPrPress(p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
-    const outcome = await press(hostFor(id), p, thread !== id, holds)
+    const outcome = await (look ? applyHerdrFile(hostFor(id), look) : press(hostFor(id), p, thread !== id, holds))
     if (outcome.wakesAfterSettle)
       setTimeout(() => void wakeAfterSettle(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
     const { isUnconfirmed, wakesAfterSettle: _wakes, ...rest } = outcome
@@ -178,6 +190,12 @@ export function makeSessionHost(
       ...rest,
       ...(isUnconfirmed ? { delivery: 'unconfirmed' as const } : {}),
     }
+  }
+
+  /** Applies a file the Herdr look wrote: a press, or a look at the Status. */
+  async function onHerdrFile(id: string, file: HerdrFile): Promise<void> {
+    if (isLookFile(file)) await applyHerdrFile(hostFor(id), file)
+    else await onPress(id, file.press, id, file.holds, file)
   }
 
   const files: PathProbe = {
@@ -190,5 +208,5 @@ export function makeSessionHost(
   }
   const open = (s: SessionState, target: string) => openTarget(deps.exec, files, target, s.root, s.home)
 
-  return { wakeAfterSettle, fetchPrsWhenDue, served, onPress }
+  return { wakeAfterSettle, fetchPrsWhenDue, served, onPress, onHerdrFile }
 }

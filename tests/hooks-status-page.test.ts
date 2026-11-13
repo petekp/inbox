@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { FoldProps } from '../hooks/fold-client'
-import { LOOK_MIN_MS } from '../hooks/status-children'
+import { isSubjectSeen, LOOK_MIN_MS } from '../hooks/status-children'
 import { statusPage } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
@@ -77,7 +77,7 @@ test('a look starts when the Status page shows, the page shows the head and the 
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
 })
 
-test('a look at the Status that ends while a Status call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {
+test('a look at the Status that ends while a Status call is out keeps its time, and the answer that lands after it stays unseen', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -114,8 +114,11 @@ test('a look at the Status that ends while a Status call is out keeps its Seen l
   await clock.settle()
 
   expect(session!.ledger.overview).toMatchObject({ lastLookAt: seenAt, look: null })
-  const rows = statusPage(session!, clock.now()).rows
-  expect(rows.map(r => (r.kind === 'subject' ? r.name : r.kind))).toEqual(['Command', 'look', 'Plan'])
+  const o = session!.ledger.overview!
+  expect(o.subjects.map(x => [x.name, isSubjectSeen(o, x)])).toEqual([
+    ['Plan', true],
+    ['Command', false],
+  ])
 })
 
 test('a release build, with no next-build mark, keys Status, Asks, Finds and PRs 1 to 4, draws a Status page a next build saved, tells Claude so, starts a look, and an ask names the subject it holds up', async ($, on) => {

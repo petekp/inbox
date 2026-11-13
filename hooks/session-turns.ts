@@ -9,6 +9,7 @@ import { guidanceText } from './model-text'
 import type { ScreenTab } from './inbox-text'
 import type { Host } from './model-text'
 import { linkedPrs } from './pr-fetch'
+import { isDismissed } from './pr-views'
 import { withArrival, withUnconfirmed } from './press-reducer'
 import { prRefs } from './prs'
 import type { Exchange, Ledger, Press, Session } from '../types'
@@ -229,7 +230,8 @@ export function noteCommandOutput<S extends Session>(s: S, command: string, outp
 }
 
 /**
- * Queues the turn's exchange for the inbox model. A turn with no reply queues nothing unless
+ * Links each PR the reply names, except one the person or a fetch dismissed, so a merged PR an agent mentions stays
+ * off the PRs tab. Queues the turn's exchange for the inbox model. A turn with no reply queues nothing unless
  * `queuesEmptyReply` is set, as for a turn whose question dialog the person dismissed. `tab` names the tab the
  * inbox shows, for the model's note on what the person sees.
  */
@@ -240,7 +242,7 @@ export function endTurn<S extends Session>(
   isOpen: boolean,
   { tab = null, queuesEmptyReply = false }: { tab?: ScreenTab | null; queuesEmptyReply?: boolean } = {},
 ): S {
-  const refs = prRefs(reply)
+  const refs = prRefs(reply).filter(ref => !isDismissed(s.lastActions, ref))
   const base = {
     ...s,
     ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,

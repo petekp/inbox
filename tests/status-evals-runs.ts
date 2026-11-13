@@ -124,6 +124,16 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: Dark theme | Dark theme ready',
     ].join('\n'),
   ],
+  'goal-typed-while-running': [
+    [
+      'HEAD: 2.6 beta | Getting widgets and a dark theme into 2.6',
+      'NEW: working | Notes widget | lists newest notes',
+      'NEW: queued | Dark theme | not started',
+      'GOAL: Notes 2.6 on TestFlight | working Widgets built; queued Dark theme ready; queued Beta uploaded',
+      'SERVES: Notes widget | Widgets built',
+      'SERVES: Dark theme | Dark theme ready',
+    ].join('\n'),
+  ],
   'goal-wait': [
     'NEW: working | Footer typo | fixed\nDONE: Footer typo | fixed\nNEW: working | Slow share sheet | loading attachments lazily',
   ],
@@ -225,6 +235,24 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'DONE: m3 | live in the store',
       'HEAD: Share sheet hang | Fixing the share sheet hang on iPad',
       'SET: s5 | working | waits on a thumbnail on iPad',
+    ].join('\n'),
+  ],
+  'next-release': [
+    [
+      'RETIRE: 2.5 work moved on',
+      'HEAD: Share extension | Starting 2.6 with a Safari share extension',
+      'NEW: working | Share extension | makes a note from Safari, images left',
+    ].join('\n'),
+    'SET: s5 | working | works from Safari and Photos',
+    [
+      'DONE: s5 | works from Safari and Photos',
+      'NEW: working | TestFlight build | signs, upload next',
+      'GOAL: Share extension in the 2.6 beta | done Extension works; working 2.6 beta up',
+      'HEAD: 2.6 beta | Getting the share extension into the TestFlight beta',
+      'SERVES: s5 | Extension works',
+      'SERVES: s6 | 2.6 beta up',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
     ].join('\n'),
   ],
   'goal-outcome-dropped': [

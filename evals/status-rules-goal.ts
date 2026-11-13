@@ -26,13 +26,20 @@ export const GOAL_RULES: Rule[] = [
     reads: 'facts',
     opportunity: ctx => hasCall(ctx) && ctx.result.facts.goal?.isLeft === true,
     property: 14,
-    text: 'A goal the facts say the work has left is retired or met, not still open.',
-    failures: ({ result }) => {
+    text: 'A goal the facts say the work has left is retired or met, not still open, and no work is newly linked to its milestones.',
+    failures: ({ result, before }) => {
       const left = result.facts.goal
-      const g = result.session.ledger.overview?.goal
-      if (!left?.isLeft || !g || !new RegExp(left.match, 'i').test(g.text)) return []
-      if (g.metAt !== null) return left.isDropped ? [`"${g.text}" reads met after the person dropped its outcome`] : []
-      return [`"${g.text}" is still open`]
+      const o = result.session.ledger.overview
+      const g = o?.goal
+      if (!left?.isLeft || !o || !g || !new RegExp(left.match, 'i').test(g.text)) return []
+      const milestones = new Set(o.milestones.map(m => m.id))
+      const newlyLinked = o.subjects
+        .filter(isOpen)
+        .filter(s => milestones.has(o.serves[s.id] ?? '') && before.overview?.serves[s.id] !== o.serves[s.id])
+        .map(s => `${label(s)} is newly linked to the left goal "${g.text}"`)
+      if (g.metAt !== null)
+        return left.isDropped ? [`"${g.text}" reads met after the person dropped its outcome`] : newlyLinked
+      return [`"${g.text}" is still open`, ...newlyLinked]
     },
   },
   {
@@ -81,11 +88,13 @@ export const GOAL_RULES: Rule[] = [
     reads: 'facts',
     property: 15,
     text: "Each of the goal's milestones in the facts has a milestone with a status its state allows, and a goal has them once a call has read it.",
-    failures: ({ step, result }) => {
+    failures: ({ result }) => {
       const o = result.session.ledger.overview
       if (!o?.goal) return []
       if (o.goal.isAwaitingMilestones)
-        return step.call && !result.isStatusFailed ? [`"${o.goal.text}" has no milestones after a call`] : []
+        return result.readSetAt === o.goal.setAt && !result.isStatusFailed
+          ? [`"${o.goal.text}" has no milestones after a call`]
+          : []
       return (result.facts.goal?.milestones ?? []).flatMap(m => {
         const saved = milestonesOf(o).filter(x => new RegExp(m.match, 'i').test(x.name))
         if (saved.length === 0) return [`no milestone for ${m.name}`]

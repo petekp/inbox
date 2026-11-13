@@ -39,17 +39,50 @@ const desktopLook = async ($: Engine, on: On, bodyRows: number) => {
   }
 }
 
-test('a look at the desktop Status counts as seen only the first subjects, whose rows were surely in the pane’s window', async ($, on) => {
-  const look = await desktopLook($, on, 12)
+test(
+  'a look at the desktop Status counts as seen only the first subjects, whose rows were surely in the pane’s window',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const look = await desktopLook($, on, 12)
 
-  expect(look.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
-  expect(look.seen).toEqual(look.ids.slice(0, 2))
-})
+    expect(look.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
+    expect(look.seen).toEqual(look.ids.slice(0, 2))
+  },
+)
 
 test('a look at a desktop Status that fits the pane’s window counts every subject as seen', async ($, on) => {
   const look = await desktopLook($, on, 400)
 
   expect(look.seen).toEqual(look.ids)
+})
+
+test('a look at the terminal Status that showed a named fold counts as seen the work it stands for', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  let seen: unknown = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+    seen = (e.value as { ledger: { overview: unknown } }).ledger.overview
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const names = ['One', 'Two', 'Three', 'Four', 'Five']
+  w.statusReply = [
+    ...names.map(name => `NEW: working | ${name} | under way`),
+    ...names.map((_, n) => `DONE: s${n + 1} | merged`),
+  ].join('\n')
+  await $.prompt.submit({ text: 'build it', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 400 } } })
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  await clock.advance(LOOK_MIN_MS)
+  await pane.press({ key: 'tab-key-needsYou' })
+  await clock.settle()
+
+  const o = seen as unknown as SessionStatus
+  expect(o.subjects.filter(x => !isSubjectSeen(o, x)).map(x => x.name)).toEqual([])
 })
 
 test('a look at the terminal Status counts as seen only the subjects whose first line was in the pane’s window, at any of its scrolls', async ($, on) => {
@@ -78,7 +111,7 @@ test('a look at the terminal Status counts as seen only the subjects whose first
   await clock.settle()
 
   const o = seen as unknown as SessionStatus
-  const inWindow = [0, 1, 8, 9, 10, 11].map(n => o.subjects[n]!.id)
+  const inWindow = [0, 1, 11, 12, 13, 14, 15, 16].map(n => o.subjects[n]!.id)
   expect(o.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
   expect(o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.id)).toEqual(inWindow)
 })

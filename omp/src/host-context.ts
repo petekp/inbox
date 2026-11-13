@@ -1,4 +1,5 @@
 import type { herdrReporter } from '../../hooks/herdr'
+import type { HerdrAsk } from '../../hooks/herdr-ask'
 import type { PrShared } from '../../hooks/pr-fetch'
 import type { Run } from '../../hooks/gh'
 import type { SessionHost } from '../../hooks/session-host'
@@ -6,6 +7,7 @@ import type { prFetchTracker } from '../../hooks/host-prs'
 import type { ShownTab } from '../../hooks/tabs'
 import type { OmpState } from './state'
 import type { HostDeps } from './host'
+import type { OmpPresses } from './host-presses'
 
 /** The slice of omp's extension context the handlers read. */
 export type OmpContext = {
@@ -15,7 +17,7 @@ export type OmpContext = {
   setTimeout(callback: () => void, ms: number): unknown
 }
 
-type Memory = {
+export type Memory = {
   isGhMissing: boolean
   /** What every session of this omp shares about GitHub: views read lately, and the last limit error. */
   prShared: PrShared
@@ -23,6 +25,12 @@ type Memory = {
   shownId: string | null
   /** The session the main agent runs. A `task:subagent:*` frame names no session, and only the main agent's own subagents send one here. */
   framesFor: string | null
+  /** The working folder of the session omp shows, read when asked, which its presses open paths against. */
+  shownCwd: (() => string) | null
+  /** Why this omp could not install or update the inbox's Herdr mod at its start, or null. */
+  herdrModFailure: string | null
+  /** The question before omp installs the inbox's Herdr mod, while it shows. */
+  herdrAsk: HerdrAsk | null
 }
 
 export type HostContext = {
@@ -34,9 +42,13 @@ export type HostContext = {
   prFetches: ReturnType<typeof prFetchTracker>
   listeners: Map<string, Set<() => void>>
   reportToHerdr: ReturnType<typeof herdrReporter>
+  /** Says why Herdr's labels or published file did not change. */
+  logHerdr: (text: string) => void
+  /** Follows the presses the Herdr look writes for the session omp shows. */
+  presses: OmpPresses
   run: Run
   memory: Memory
-  sendToAgent(ctx: OmpContext, text: string): string | null
+  sendToAgent(ctx: OmpContext, text: string): Promise<string | null>
   askFor(ctx: OmpContext, id: string): SessionHost<OmpState>['ask']
   dropTools(): Promise<void>
   showBand(ctx: OmpContext): void

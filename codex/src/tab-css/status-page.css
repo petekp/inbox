@@ -83,37 +83,8 @@
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
 }
-/* "Last seen" in the middle of a dashed rule that spans what the rule above a row spans: from the text column to the tab's edge. */
-.status-page .row.look-line {
-  padding-left: 0;
-  padding-right: 0;
-  margin-top: var(--look-gap);
-  margin-bottom: var(--look-gap);
-}
-.status-page .row.look-line.last {
-  margin-bottom: 0;
-}
-.status-page .look-rule {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-}
-.status-page .status-rule {
-  height: 1px;
-  background: var(--soft);
-}
-.status-page .status-rule,
-.status-page .look-rule {
-  margin-left: calc(var(--text-x) + var(--depth, 0) * var(--step));
-}
-.status-page .look-rule::before,
-.status-page .look-rule::after {
-  content: '';
-  flex: 1;
-  border-top: 1px dashed var(--soft);
+.status-page section.unruled::before {
+  content: none;
 }
 .status-head h1 {
   margin: 0;
@@ -156,21 +127,21 @@
 .status-head .actions {
   margin-top: 6px;
 }
-/* A blank line's space between the goal's buttons and its milestones, as the terminal and omp leave. */
-.status-head.goal + .list {
-  margin-top: var(--look-gap);
-}
-/* A changed milestone's name, bold without the gap and stall word after it. */
-.status-page .content.changed > .clamp:first-child,
-.status-page .content.changed > :first-child .head,
-.status-page .content.changed > :first-child .last {
-  font-weight: 600;
+/* A blank line's space between the goal's buttons and its milestones, before each milestone after the first, and
+   between a milestone and the rows under it, as the terminal and omp leave. */
+.status-head.goal + .list,
+.status-page .row.milestone ~ .row.milestone,
+.status-page .row.milestone + .row {
+  margin-top: var(--section-gap);
 }
 /* "Other work" at the text column, then a solid rule to the tab's edge. */
 .status-page .row.part-line {
   padding-left: 0;
   padding-right: 0;
-  margin-top: var(--look-gap);
+  margin-top: var(--section-gap);
+}
+.status-page .list > .row.part-line:first-child {
+  margin-top: 0;
 }
 .status-page .part-rule {
   grid-column: 1 / -1;

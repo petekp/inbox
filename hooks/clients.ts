@@ -15,6 +15,7 @@ export type FeatureId =
   | 'ledger-behind-state'
   | 'dialog-outcome'
   | 'dialog-answer'
+  | 'dialog-answer-closes-copy'
   | 'dialog-descriptions'
   | 'tool-output-urls'
   | 'pr-link-from-output'
@@ -40,13 +41,15 @@ export type FeatureId =
   | 'tab-symbols'
   | 'dim-pressed-button'
   | 'herdr-sidebar'
+  | 'herdr-look'
+  | 'herdr-open'
+  | 'herdr-install'
   | 'status-children'
   | 'child-names'
-  | 'status-look-line'
-  | 'status-row-rules'
   | 'status-failed-warning'
   | 'asks-holds-up-line'
   | 'asks-rec-reason-line'
+  | 'asks-context-line'
   | 'status-mid-turn-refresh'
   | 'ran-call-activity'
   | 'ran-call-delegates'
@@ -54,6 +57,7 @@ export type FeatureId =
   | 'status-call-records'
   | 'pr-order'
   | 'pr-rank-again'
+  | 'clear-merged-and-closed-prs'
   | 'pr-check-rerun'
   | 'pr-fetch-notice'
   | 'help-page'
@@ -63,6 +67,7 @@ export type FeatureId =
   | 'status-named-fold'
   | 'seen-on-screen'
   | 'status-idle-age'
+  | 'question-back-stays-open'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -80,6 +85,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
       },
+      'dialog-answer-closes-copy': { kind: 'full' },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
@@ -116,13 +122,15 @@ export const CLIENTS: Record<ClientId, Client> = {
           "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it.",
       },
       'herdr-sidebar': { kind: 'full' },
+      'herdr-look': { kind: 'full' },
+      'herdr-open': { kind: 'full' },
+      'herdr-install': { kind: 'full' },
       'status-children': { kind: 'full' },
       'child-names': { kind: 'full' },
-      'status-look-line': { kind: 'full' },
-      'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },
@@ -130,6 +138,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-call-records': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'clear-merged-and-closed-prs': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
       'pr-fetch-notice': { kind: 'full' },
       'help-page': {
@@ -143,6 +152,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': { kind: 'full' },
     },
   },
   codex: {
@@ -164,6 +174,11 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded.",
       },
       'dialog-answer': { kind: 'full' },
+      'dialog-answer-closes-copy': {
+        kind: 'different',
+        reason:
+          "Codex's dialog tool returns before the person answers, so the inbox sees no answer when the dialog ends. The copy stays open until the person's reply in the dialog's form arrives, and the agent closes it then.",
+      },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': {
@@ -224,7 +239,21 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-sidebar': {
         kind: 'different',
         reason:
-          "Only Codex's hooks and the update a hook starts know the Herdr pane, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends.",
+          "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay.",
+      },
+      'herdr-look': {
+        kind: 'different',
+        reason: 'Codex runs no hook when a session ends, so its published file stays.',
+      },
+      'herdr-open': {
+        kind: 'unsupported',
+        reason:
+          'The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app. A `$inbox` skill that has the model call an MCP tool could open the Herdr look, but only after a model turn, so the press could not show what it did at once. It is left as an option.',
+      },
+      'herdr-install': {
+        kind: 'different',
+        reason:
+          "The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. So the app's tab asks when the Herdr app's settings folder exists, and Codex has no `/inbox herdr`. At start, Codex updates an installed inbox build, installs after a saved yes, and logs a failure only.",
       },
       'status-children': {
         kind: 'different',
@@ -232,11 +261,10 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
       },
       'child-names': { kind: 'full' },
-      'status-look-line': { kind: 'full' },
-      'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': {
         kind: 'different',
@@ -256,6 +284,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-call-records': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'clear-merged-and-closed-prs': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
       'pr-fetch-notice': { kind: 'full' },
       'help-page': { kind: 'full' },
@@ -277,6 +306,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': {
+        kind: 'different',
+        reason:
+          "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere.",
+      },
     },
   },
   omp: {
@@ -290,6 +324,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
       },
+      'dialog-answer-closes-copy': { kind: 'full' },
       'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
@@ -336,17 +371,19 @@ export const CLIENTS: Record<ClientId, Client> = {
           'The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing.',
       },
       'herdr-sidebar': { kind: 'full' },
+      'herdr-look': { kind: 'full' },
+      'herdr-open': { kind: 'full' },
+      'herdr-install': { kind: 'full' },
       'status-children': {
         kind: 'different',
         reason:
           "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show.",
       },
       'child-names': { kind: 'full' },
-      'status-look-line': { kind: 'full' },
-      'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'asks-rec-reason-line': { kind: 'full' },
+      'asks-context-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },
@@ -354,6 +391,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-call-records': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'clear-merged-and-closed-prs': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
       'pr-fetch-notice': { kind: 'full' },
       'help-page': {
@@ -366,6 +404,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': { kind: 'full' },
     },
   },
 }

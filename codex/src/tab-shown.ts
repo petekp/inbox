@@ -1,9 +1,12 @@
-/** The attribute a Status subject row carries, naming its subject. */
-export const SUBJECT_ATTRIBUTE = 'data-subject'
+/** The attribute a Status row carries, naming the subjects it stands for, separated by spaces. */
+export const SUBJECTS_ATTRIBUTE = 'data-subjects'
 
-/** The rows whose first line is on screen: each row's box starts inside the window, which is `viewHeight` tall. */
-export function rowsInView(rows: { id: string; top: number }[], viewHeight: number): string[] {
-  return rows.filter(r => r.top >= 0 && r.top < viewHeight).map(r => r.id)
+/**
+ * The subjects of the rows whose first line is on screen: each row's box starts inside the window, which is
+ * `viewHeight` tall. `subjects` is the row's `SUBJECTS_ATTRIBUTE`.
+ */
+export function rowsInView(rows: { subjects: string; top: number }[], viewHeight: number): string[] {
+  return rows.filter(r => r.top >= 0 && r.top < viewHeight).flatMap(r => r.subjects.split(' ').filter(Boolean))
 }
 
 /** When the tab had each Status subject row on screen since its last view request, by the row's id. */

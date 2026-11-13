@@ -1,7 +1,7 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
 // src/hook-main.ts
-import { dirname as dirname3, join as join4 } from "node:path";
+import { dirname as dirname4, join as join5 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/detached-update.ts
@@ -17,6 +17,10 @@ function detachedUpdate(dir, env, script) {
     child.unref();
   };
 }
+
+// src/host.ts
+import { appendFile, mkdir as mkdir2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
+import { dirname as dirname2, join as join2 } from "node:path";
 
 // src/state.ts
 import { execFileSync } from "node:child_process";
@@ -83,7 +87,8 @@ var EMPTY_SESSION_STATUS = {
   goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
-  serves: {}
+  serves: {},
+  goalRefused: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -94,6 +99,13 @@ function clipWords(text2, limit) {
 function words(text2) {
   const matches = text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
   return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
+}
+var VERSION = /^v?\d+(\.\d+)+$/;
+function namesOtherVersion(name, other) {
+  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const mine = versions(name);
+  const theirs = new Set(versions(other));
+  return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -170,6 +182,35 @@ function sameAsk(a, b) {
 
 // ../hooks/ledger-close.ts
 var MAX_CLOSED = 12;
+function closedRecord(item, closing, now) {
+  const { id, kind, ask, label } = item;
+  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
+}
+function closeItem(ledger, id, closing, now) {
+  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
+  return reopenAskedFindings(
+    { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
+    records
+  );
+}
+var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
+function leavesWorkOpen(c) {
+  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
+}
+function reopenAskedFindings(ledger, closes) {
+  return closes.filter(leavesWorkOpen).reduce((l, c) => {
+    const record2 = l.closedFindings.findLast((f) => f.askedAs === c.id);
+    if (!record2) return l;
+    const reopened = reopenFinding(l, record2.id);
+    return {
+      ...reopened,
+      findings: reopened.findings.map((f) => {
+        const { askedAs: _askedAs, ...rest } = f;
+        return f.id === record2.id ? rest : f;
+      })
+    };
+  }, ledger);
+}
 function pruneClosed(ledger, keep) {
   const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
   return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
@@ -207,6 +248,9 @@ function closedState(d) {
 function closedAt(c) {
   return "closedAt" in c ? c.closedAt : c.at;
 }
+function isLapsed(d) {
+  return closedState(d) !== "handled";
+}
 
 // ../hooks/text.ts
 var NL = "\n";
@@ -221,7 +265,19 @@ function clip(text2, max) {
 function clipLabel(text2, max) {
   return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
 }
-var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
+var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
+var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
+var TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`;
+var SYLLABLE = String.raw`[\uAC00-\uD7A3]`;
+var OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(44032 + i * 28)).join("")}]`;
+var HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`;
+var FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`;
+var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`;
+var GRAPHEME = new RegExp(
+  String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
+  "gu"
+);
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -247,6 +303,22 @@ var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
 // ../hooks/status-upgrade-goal.ts
+var REFUSAL_LINES = ["goal", "retire"];
+var REFUSAL_WHYS = [
+  "typed",
+  "met",
+  "work-open",
+  "moved",
+  "no-work",
+  "restates",
+  "few-milestones"
+];
+function goalRefusedOf(saved) {
+  const r = saved;
+  const line = REFUSAL_LINES.find((x) => x === r?.line);
+  const why = REFUSAL_WHYS.find((x) => x === r?.why);
+  return line && why ? { line, why } : null;
+}
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -306,15 +378,19 @@ function goalRemovedOf(saved) {
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
-function goalFields(o, subjectIds) {
+function goalFields(o, subjects) {
   const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
-  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
+  const live = new Map(milestones.filter((m) => !dropped.has(m.id)).map((m) => [m.id, m]));
+  const names = new Map(subjects.map((s) => [s.id, s.name]));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
   const serves = Object.fromEntries(
     savedServes.filter(
-      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
-    )
+      (e) => names.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || live.has(e[1]))
+    ).map(([id, to]) => {
+      const milestone = live.get(to);
+      return [id, milestone && namesOtherVersion(names.get(id), milestone.name) ? "none" : to];
+    })
   );
   const saved = [
     ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
@@ -328,7 +404,8 @@ function goalFields(o, subjectIds) {
     goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
-    serves
+    serves,
+    goalRefused: goalRefusedOf(o.goalRefused)
   };
 }
 
@@ -442,7 +519,7 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const goal = goalFields(o, subjects);
   const dropped = droppedMilestoneIds(goal.milestones);
   const askLinks = savedLinks.map(([ask, to]) => [
     ask,
@@ -1195,7 +1272,6 @@ function milestoneRow(m, o, items) {
     text: m.text || null,
     stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
     was: isChanged ? m.was : null,
-    isChanged,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
   };
@@ -1232,11 +1308,10 @@ var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
   working: "working",
-  "waits-on-other": "waiting",
-  queued: "queued"
+  "waits-on-other": "waiting"
 };
 function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued"].flatMap((status) => {
+  return ["working", "waits-on-other"].flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -1272,13 +1347,11 @@ function childRow(c, branch, depth) {
     branch
   };
 }
-function partRows(shown, c, depth, afterNew = []) {
+function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
-  const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
-  const firstSeen = shown.findIndex((x) => !c.isNew(x));
+  const firstClosed = shown.findIndex((x) => !isOpen(x));
   for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0;
-    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...lookRow ? [lookRow] : []);
+    if (i === firstClosed) rows.push(...afterOpen);
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -1313,31 +1386,18 @@ function partRows(shown, c, depth, afterNew = []) {
         branch: "last"
       });
   }
-  const isEveryShownNew = firstSeen === -1;
-  if (isEveryShownNew) rows.push(...afterNew);
-  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow);
+  if (firstClosed === -1) rows.push(...afterOpen);
+  rows.push(...afterClosed);
   return rows;
-}
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  const isLine = (r) => r.kind === "look" || r.kind === "part";
-  return prev !== void 0 && !isLine(prev) && !isLine(row) && !isUnderSubject;
-}
-function ruledRows(rows, isRuled) {
-  return rows.map((r, n) => ({
-    ...r,
-    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
-    isLast: n === rows.length - 1
-  }));
 }
 
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
+var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
@@ -1349,21 +1409,24 @@ function statusPage(s, now) {
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const goalParts = goalPage(o, s.ledger.items);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : void 0;
-  const isOther = (x) => servedBy(x) === "none";
   const milestoneOf2 = (x) => {
     const to = servedBy(x);
     return to !== void 0 && milestoneIds.has(to) ? to : null;
   };
+  const hasMilestones = milestoneIds.size > 0;
+  const isUnneeded = (x) => servedBy(x) === "none";
+  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf2(x) === null;
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const main2 = subjects.filter((x) => !isOther(x));
+  const needed = subjects.filter((x) => !isUnneeded(x));
+  const main2 = needed.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open2 = main2.filter(isOpen).sort(pageOrder);
+  const open2 = needed.filter(isOpen).sort(pageOrder);
   const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part) => {
@@ -1381,7 +1444,7 @@ function statusPage(s, now) {
   const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main2.filter((x) => milestoneOf2(x) === m.id)));
   const otherUnseenClosed = unseenClosedOf(other);
   const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !isNew(x);
+  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
   const otherFolded = other.filter(isOtherFolded);
   const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
   const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
@@ -1391,15 +1454,12 @@ function statusPage(s, now) {
     oldestAskOf,
     running,
     isTurnRunning: s.presence.isTurnRunning,
-    now,
-    lookId: look === null ? null : "look",
-    lookText: LOOK_TEXT,
-    isLookAtEnd: true
+    now
   };
-  const lookId = (id) => look === null ? null : id;
-  const foldCtx = { ...ctx, lookId: null, running: [] };
+  const foldCtx = { ...ctx, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const closed = named.filter((x) => x.status === status);
+    const names = closed.map((x) => x.name);
     const hidden = names.length - NAMED_FOLD_NAMES;
     const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
     return names.length === 0 ? [] : [
@@ -1408,13 +1468,20 @@ function statusPage(s, now) {
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
       }
     ];
   });
-  const rows = [
-    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0, namedFolds("", top.named, 0))
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}open`,
+      depth,
+      ...SUBJECT_MARKS.queued,
+      text: `${foldedOpen.length} more`,
+      subjectIds: []
+    }
   ];
   const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
     {
@@ -1422,57 +1489,43 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
+      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
     }
   ];
-  const foldRows = (prefix, p, depth) => [
-    ...p.foldedOpen.length > 0 ? [
-      {
-        kind: "fold",
-        id: `${prefix}open`,
-        depth,
-        ...SUBJECT_MARKS.queued,
-        text: `${p.foldedOpen.length} more`
-      }
-    ] : [],
+  const foldedPart = (prefix, p, depth) => [
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
-  rows.push(...foldRows("", top, 0));
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look") rows.pop();
-    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(
-      ...partRows(
-        otherShown,
-        { ...ctx, lookId: lookId("other-look") },
-        0,
-        namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)
-      )
-    );
-    const otherFoldedOpen = otherFolded.filter(isOpen);
-    if (otherFoldedOpen.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
-    rows.push(
-      ...doneFold(
-        "other-",
-        otherFolded.filter((x) => x.status === "done"),
-        otherNewClosed,
-        0
-      )
-    );
-  }
-  const milestoneRows = (id, p) => ruledRows(
-    [
-      ...partRows(
-        p.shown,
-        { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false },
-        1,
-        namedFolds(`${id}-`, p.named, 1)
-      ),
-      ...foldRows(`${id}-`, p, 1)
-    ],
-    false
-  );
+  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
+    const x = subjects.find((y) => y.id === c.subjectId);
+    return { child: c, milestoneId: x === void 0 ? null : milestoneOf2(x) };
+  });
+  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
+  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
+  const afterOtherOpen = [
+    ...openFold(
+      "other-",
+      otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)),
+      0
+    ),
+    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
+  ];
+  const otherRows = [
+    ...hasMilestones ? looseRows(null, 0) : [],
+    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold(
+      "other-",
+      otherFolded.filter((x) => x.status === "done"),
+      otherNewClosed,
+      0
+    )
+  ];
+  const rows = [
+    ...hasMilestones ? [] : looseRows(null, 0),
+    ...foldedPart("", top, 0),
+    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
+  ];
+  const milestoneRows = (id, p) => [...looseRows(id, 1), ...foldedPart(`${id}-`, p, 1)];
   const g = goalParts.goal;
   const goal = g && {
     ...g,
@@ -1484,7 +1537,7 @@ function statusPage(s, now) {
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows,
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -1971,6 +2024,7 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {
@@ -2115,10 +2169,10 @@ function asCopyOf(item, q) {
   return {
     ...item,
     ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
+    ...descriptions ? { optionDescriptions: { ...descriptions, ...item.optionDescriptions } } : {}
   };
 }
-function linkDialogs(s) {
+function linkDialogs(s, now = Date.now()) {
   if (s.dialogQuestions.length === 0) return s;
   let items = s.ledger.items;
   const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
@@ -2131,12 +2185,17 @@ function linkDialogs(s) {
       s.dialogQuestions.filter((o) => o.turn === q.turn)
     );
     if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    if (q.answer !== void 0 && !restates(copy.ask, q.question)) return q;
     linked.add(copy.id);
     items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
     return { ...q, itemId: copy.id };
   });
   const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+  const ledger = questions.reduce(
+    (l, q) => q.answer !== void 0 && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l,
+    { ...s.ledger, items }
+  );
+  return { ...s, ledger, dialogQuestions: kept };
 }
 function noteDialog(s, callId, questions) {
   const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
@@ -2163,6 +2222,9 @@ function dismissal(lastActions, ref) {
 }
 function dismissedAt(lastActions, ref) {
   return dismissal(lastActions, ref)?.at ?? null;
+}
+function isDismissed(lastActions, ref) {
+  return dismissedAt(lastActions, ref) !== null;
 }
 function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
@@ -2246,7 +2308,28 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/tools.ts
+// ../hooks/pr-tab.ts
+function finishedTabPrs(prState, links) {
+  return splitLinked(prState, links).tracked.filter((ref) => {
+    const view = prState.views[ref];
+    return view !== void 0 && view.state !== "OPEN" && ref !== prState.branchRef;
+  });
+}
+function prClearActions(prState, links) {
+  if (finishedTabPrs(prState, links).length === 0) return [];
+  return [
+    {
+      press: { action: "pr-clear-finished" },
+      label: "Clear merged and closed",
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ];
+}
+
+// ../hooks/tool-schemas.ts
 var ORDER_SCHEMA = {
   type: "object",
   properties: {
@@ -2302,18 +2385,18 @@ function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
-  const action = (press, label, kind, flags = {}) => {
-    const pressAction = actionId(press);
+  const action = (press2, label, kind, flags = {}) => {
+    const pressAction = actionId(press2);
     return {
-      press,
-      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      press: press2,
+      label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
-      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
+      emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
-      isFollowUp: FOLLOW_UPS.has(press.action),
-      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
+      isFollowUp: FOLLOW_UPS.has(press2.action),
+      ...ACTION_KEYS[press2.action] ? { hotkey: ACTION_KEYS[press2.action] } : {},
       isOut: out === pressAction
     };
   };
@@ -2497,7 +2580,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {
@@ -2664,16 +2748,20 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
+    clear: prClearActions(s.prViews, s.ledger),
     pressOutSince
   };
 }
 
 // ../hooks/session-presses.ts
-function pruned(s) {
-  const inPlace = [
+function rowsInPlace(s) {
+  const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  return /* @__PURE__ */ new Set([...s.heldRows, ...since]);
+}
+function pruned(s) {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
       ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
@@ -2682,7 +2770,7 @@ function pruned(s) {
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
@@ -3101,7 +3189,7 @@ function noteCommandOutput(s, command, output) {
   return ledger === noted.ledger ? noted : { ...noted, ledger };
 }
 function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false } = {}) {
-  const refs = prRefs(reply);
+  const refs = prRefs(reply).filter((ref) => !isDismissed(s.lastActions, ref));
   const base = {
     ...s,
     ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
@@ -3407,7 +3495,7 @@ function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
     ...Object.fromEntries(counts)
   };
 }
-function herdrReport(pane, tokens, seq) {
+function paneReport(pane, tokens, seq) {
   return [
     "herdr",
     "pane",
@@ -3421,16 +3509,40 @@ function herdrReport(pane, tokens, seq) {
     ...seq === void 0 ? [] : ["--seq", String(seq)]
   ];
 }
-function herdrReportKey(pane, tokens) {
-  return herdrReport(pane, tokens).join("\n");
+var SESSION_LABEL = "inbox.session";
+function reportCommand(r, hc = "hc") {
+  if (r.target.kind === "pane") return paneReport(r.target.pane, r.tokens, r.seq);
+  const labels = { [SESSION_LABEL]: r.session ?? "", ...herdrLabels(r.tokens) };
+  return [
+    hc,
+    "label",
+    r.target.terminal,
+    ...Object.entries(labels).map(([name, value]) => `${name}=${value.replace(new RegExp("\\p{Cc}", "gu"), " ")}`)
+  ];
+}
+function herdrReportKey(r) {
+  return reportCommand({ ...r, seq: void 0 }).join("\n");
 }
 var HERDR_RETRY_MS = [5e3, 3e4, 12e4];
-function herdrReporter() {
+function herdrReporter(log) {
   let sent = null;
   let retries = 0;
   let isRetryWaiting = false;
   let sending = Promise.resolve();
   let newest = null;
+  let hcFound = null;
+  let logged = null;
+  const runReport = async (run2, r) => {
+    const options = { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS };
+    if (r.target.kind === "pane") return run2(reportCommand(r), options);
+    for (const hc of hcFound ? [hcFound] : r.target.hc) {
+      const result = await run2(reportCommand(r, hc), options);
+      if (result.code === UNSTARTABLE_CODE) continue;
+      hcFound = hc;
+      return result;
+    }
+    return null;
+  };
   const retryLater = (after) => {
     const wait = HERDR_RETRY_MS[retries];
     if (!after || isRetryWaiting || wait === void 0) return;
@@ -3444,13 +3556,14 @@ function herdrReporter() {
   const send = async (run2, report, after) => {
     const r = await report();
     if (!r) return false;
-    const key = herdrReportKey(r.pane, r.tokens);
+    const key = herdrReportKey(r);
     if (key === sent) return true;
     sent = null;
-    const result = await run2(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS }).catch(
-      () => null
-    );
+    const result = await runReport(run2, r).catch(() => null);
     const isTaken = result?.code === 0;
+    const problem = isTaken ? null : reportProblem(r, result);
+    if (problem && problem !== logged) log?.(problem);
+    logged = problem;
     if (isTaken) {
       sent = key;
       retries = 0;
@@ -3464,6 +3577,114 @@ function herdrReporter() {
     return result;
   };
   return reportToHerdr;
+}
+function reportProblem(r, result) {
+  if (!result && r.target.kind === "terminal")
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(", then ")}.`;
+  if (!result) return "Herdr report did not run.";
+  const why = result.stderr.trim();
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : "."}`;
+}
+function herdrAppHome(env) {
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const named = env.HERDR_APP_HOME;
+  return named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
+}
+function herdrTarget(env) {
+  const pane = env.HERDR_PANE_ID;
+  if (pane) return { kind: "pane", pane };
+  const terminal = env.HC_TERMINAL_ID;
+  if (!terminal) return null;
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const appHome = herdrAppHome(env);
+  const installed = (name) => home ? [name, `${home}/.local/bin/${name}`] : [name];
+  return { kind: "terminal", terminal, appHome, hc: installed("hc"), herdrApp: installed("herdr-app") };
+}
+function herdrLabels(tokens) {
+  return Object.fromEntries(
+    Object.entries(tokens).map(([name, value]) => [
+      name === STATUS_TOKEN ? "inbox.status" : name.replace(/^inbox-/, "inbox."),
+      value ?? ""
+    ])
+  );
+}
+var HERDR_FORMAT = 1;
+var SESSION_FIELDS = Object.keys(emptySession());
+function herdrEnvelope(source, session, isTrimmed = false) {
+  const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+  const { lastHerdrPress } = session;
+  const { projectFolder, ...rest } = source;
+  return {
+    format: HERDR_FORMAT,
+    ...rest,
+    ...projectFolder?.startsWith("/") && { projectFolder },
+    ...isTrimmed && { trimmed: true },
+    ...lastHerdrPress && { lastPress: lastHerdrPress },
+    session: shared
+  };
+}
+function publishedSessionsFolder(appHome) {
+  return `${appHome}/inbox/sessions`;
+}
+function publishedSessionPath(appHome, sessionId) {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
+}
+
+// ../hooks/host-prs.ts
+var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
+
+// ../hooks/herdr-app.ts
+var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
+var PUBLISH_LIMIT_BYTES = 1024 * 1024;
+function utf8Bytes(text2) {
+  let bytes = 0;
+  for (const char of text2) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
+  }
+  return bytes;
+}
+var isOverLimit = (text2) => text2.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text2) > PUBLISH_LIMIT_BYTES;
+function withoutFoldedClosed(s) {
+  const inPlace = rowsInPlace(s);
+  const { closed, closedFindings } = s.ledger;
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      closed: closed.filter((c) => inPlace.has(c.id)),
+      closedFindings: closedFindings.filter((f) => inPlace.has(f.id))
+    }
+  };
+}
+function publishedText(source, session, log) {
+  const text2 = JSON.stringify(herdrEnvelope(source, session));
+  if (!isOverLimit(text2)) return text2;
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true));
+  if (isOverLimit(trimmed))
+    log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
+  return trimmed;
+}
+async function publishSession(files, appHome, source, session, log) {
+  const path = publishedSessionPath(appHome, source.sessionId);
+  const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files.write(temporary, publishedText(source, session, log));
+    await files.move(temporary, path);
+  } catch (err) {
+    await files.remove(temporary).catch(() => void 0);
+    throw err;
+  }
+}
+function publishedSession(files, appHome, source, session, log) {
+  if (!appHome) return Promise.resolve(false);
+  return publishSession(files, appHome, source, session, log).then(
+    () => true,
+    (err) => {
+      log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  );
 }
 
 // src/host.ts
@@ -3483,22 +3704,60 @@ function codexStore(dir, sessionId, now, onWrite) {
     exclusive: (fn) => tryWithLock(`${statePath(dir, sessionId)}.updating`, fn)
   };
 }
-function herdrOnWrite(env, run2, dir, now) {
-  const pane = env.HERDR_PANE_ID;
-  if (!pane) return void 0;
-  const report = herdrReporter();
-  return async (s) => {
-    const at = now();
-    const seq = s.writtenAt ?? at;
-    const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
-    const key = herdrReportKey(pane, tokens);
-    if (key === s.herdrReport?.key) return;
-    if (!await report(run2, async () => ({ pane, tokens, seq }))) return;
-    await updateState(
-      dir,
-      s.sessionId,
-      (saved) => saved.herdrReport && saved.herdrReport.seq >= seq ? saved : { ...saved, herdrReport: { key, seq } }
+var publishFiles = {
+  write: async (path, text2) => {
+    await mkdir2(dirname2(path), { recursive: true });
+    await writeFile2(path, text2);
+  },
+  move: (from, to) => rename2(from, to),
+  remove: (path) => rm(path, { force: true }),
+  removeFolder: (path) => rm(path, { recursive: true, force: true })
+};
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join2(dir, "herdr.log");
+  return (text2) => void (async () => {
+    const size = await stat2(path).then(
+      (s) => s.size,
+      () => 0
     );
+    const line = `${(/* @__PURE__ */ new Date()).toISOString()} ${text2}
+`;
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+  })().catch(() => void 0);
+}
+function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
+  const target = herdrTarget(env);
+  if (!target) return void 0;
+  const report = herdrReporter(log);
+  return async (written) => {
+    const id = written.sessionId;
+    await withLock(`${statePath(dir, id)}.herdr`, async () => {
+      const s = await readState(dir, id);
+      const at = now();
+      const seq = s.writtenAt ?? at;
+      const isPublished = target.kind === "terminal" && await publishedSession(
+        publishFiles,
+        target.appHome,
+        {
+          host: "codex",
+          agent: CODEX.agent,
+          sessionId: id,
+          terminal: target.terminal,
+          writtenAt: seq,
+          projectFolder: s.root
+        },
+        s,
+        log
+      );
+      const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
+      const r = { target, tokens, session: isPublished ? id : null, seq };
+      const key = herdrReportKey(r);
+      if (key === s.herdrReport?.key) return;
+      if (!await report(run2, async () => r)) return;
+      await updateState(dir, id, (saved) => ({ ...saved, herdrReport: { key, seq } }));
+    }).catch(() => void 0);
   };
 }
 
@@ -3584,7 +3843,7 @@ function unranDelegatesTakenBack(s, refs) {
 
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
-import { open, stat as stat2 } from "node:fs/promises";
+import { open, stat as stat3 } from "node:fs/promises";
 import * as zlib from "node:zlib";
 var canReadZstd = typeof zlib.createZstdDecompress === "function";
 var isCompressed = (path) => path.endsWith(".zst");
@@ -3631,7 +3890,7 @@ var TAIL_KEPT_BYTES = 8 * 1024 * 1024;
 async function bytesBefore(path, bytes, end = Infinity) {
   if (!isCompressed(path)) return plainBytesBefore(path, bytes, end);
   if (end !== Infinity || bytes > TAIL_KEPT_BYTES) return compressedBytesBefore(path, bytes, end);
-  const info = await stat2(path);
+  const info = await stat3(path);
   const version = `${info.size}:${info.mtimeMs}`;
   let known = tails.get(path);
   if (known?.version !== version) {
@@ -4096,8 +4355,8 @@ function rolloutOfLines(lines, cwd, currentTurnId) {
 }
 
 // src/transcript.ts
-import { readdir as readdir2, stat as stat3 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname2, join as join2 } from "node:path";
+import { readdir as readdir2, stat as stat4 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname3, join as join3 } from "node:path";
 async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
@@ -4110,23 +4369,23 @@ async function rolloutsIn(folder, isWanted) {
   return names.sort(byNewest);
 }
 async function newestRollout(codexHome, isWanted) {
-  const sessions = join2(codexHome, "sessions");
+  const sessions = join3(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
-    for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
-      for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
-        const folder = join2(sessions, year, month, day);
+    for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
+        const folder = join3(sessions, year, month, day);
         const [name] = await rolloutsIn(folder, isWanted);
-        if (name !== void 0) return join2(folder, name);
+        if (name !== void 0) return join3(folder, name);
       }
-  const archive = join2(codexHome, "archived_sessions");
+  const archive = join3(codexHome, "archived_sessions");
   const [archived] = await rolloutsIn(archive, isWanted);
-  return archived === void 0 ? null : join2(archive, archived);
+  return archived === void 0 ? null : join3(archive, archived);
 }
 function codexHomeOf(path) {
-  const folder = dirname2(path);
-  if (basename2(folder) === "archived_sessions") return dirname2(folder);
-  const sessions = dirname2(dirname2(dirname2(folder)));
-  return basename2(sessions) === "sessions" ? dirname2(sessions) : null;
+  const folder = dirname3(path);
+  if (basename2(folder) === "archived_sessions") return dirname3(folder);
+  const sessions = dirname3(dirname3(dirname3(folder)));
+  return basename2(sessions) === "sessions" ? dirname3(sessions) : null;
 }
 async function historyBase(path) {
   const base = (await readSessionMeta(path))?.payload?.history_base;
@@ -4271,9 +4530,12 @@ async function handleHook(input, deps) {
         readHistoryAhead(read)
       ]);
       const withPlace = (s2) => folder === null ? s2 : placed(s2, folder, branch);
+      const unreported = ({ herdrReport: _, ...s2 }) => s2;
       const s = await write(
         async (s2) => noteHook(
-          withHost(await withHistory(endsTurn(withPlace({ ...input.source === "clear" ? cleared(s2) : s2, root })))),
+          withHost(
+            await withHistory(endsTurn(withPlace({ ...unreported(input.source === "clear" ? cleared(s2) : s2), root })))
+          ),
           "start",
           now()
         )
@@ -4381,13 +4643,13 @@ async function handleHook(input, deps) {
 
 // src/data-dir.ts
 import { homedir as homedir2 } from "node:os";
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 function dataDir(env, pluginRoot) {
   const fromEnv = env.INBOX_DATA || env.PLUGIN_DATA;
   if (fromEnv) return fromEnv;
   const m = pluginRoot.match(/^(.*)\/plugins\/cache\/([^/]+)\/([^/]+)\/[^/]+$/);
   if (m) return `${m[1]}/plugins/data/${m[3]}-${m[2]}`;
-  return join3(homedir2(), ".codex", "inbox-dev");
+  return join4(homedir2(), ".codex", "inbox-dev");
 }
 
 // src/run.ts
@@ -4435,9 +4697,9 @@ function exitCodeOf(err) {
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const dist = dirname3(fileURLToPath(import.meta.url));
-  const dir = dataDir(process.env, dirname3(dist));
-  const startUpdate = detachedUpdate(dir, process.env, join4(dist, "update.mjs"));
+  const dist = dirname4(fileURLToPath(import.meta.url));
+  const dir = dataDir(process.env, dirname4(dist));
+  const startUpdate = detachedUpdate(dir, process.env, join5(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {
     dir,
     env: process.env,

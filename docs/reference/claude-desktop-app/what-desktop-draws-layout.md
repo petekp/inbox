@@ -52,6 +52,20 @@ Risks for the inbox:
 | Button and Text `dimColor` | On a Button, `dimColor` fades the label about two thirds of the way toward the fill and leaves the fill alone: a default Button's label went from 242 to 176 on its 71 gray fill, and a primary Button's from 25 to 89 on its 239 white. The Button still fires on a click, with its native press highlight. On Text in a Client, it fades the text toward the background: a muted link went from 162 to 113 on a 39 background. | verified live (2026-10-26, dark app) | live |
 | Color | A theme key or any raw string. Desktop paints hex, 8-digit hex and `rgba()`, in the pane's Boxes and inside Clients. A tree with an `hsl()` alpha color or `color-mix()` anywhere is refused whole: the pane shows "has not drawn in this pane". How desktop paints dimColor is not documented. | verified live (2.1.295); stated | live; types:1667-1673 (`Color`) |
 
+## How the pane turns the tree into HTML
+
+This section was read from the app bundle of Claude app 4.23118.0 (`Contents/Resources/ion-dist.asar`) on 2026-11-07. It is the code the pane runs, but its paint was not checked on that version. Names in the bundle are minified, so find these rules again by the CSS they write.
+
+- Each Box is a `div` and each Text a `span`. A Box gets `display:flex` and `box-sizing:border-box`, and its `flexDirection` defaults to `row`.
+- A Box's flex props become the CSS properties of the same names: `flex-grow`, `flex-shrink`, `flex-wrap`, `align-items`, `align-self` and `justify-content`. A prop the Box does not set writes no CSS, so a Box with no `alignItems` keeps the browser's default.
+- Sizes across are in `ch`: `width`, `minWidth`, `columnGap`, and margins and padding at the sides. A `width` may also be a percentage. `height` and `minHeight` are in lines, and gaps, margins and padding above and below are in half lines.
+- A Box with a `borderStyle` gets a 1 px border and the theme's padding, medium above and below and large at the sides. The Box's own padding props come after and replace it side by side. This padding is the row frame's inset, `FRAME_INSET_PT`, and `paddingY={0}` removes it above and below.
+- A `row` Box that sets no `alignItems` centers its Text, Link, Button, Input, Select and Svg children on their line.
+- Each Button is a `button` with `display:inline-flex`, `flex-shrink:0`, `width:fit-content`, `max-width:100%` and `white-space:nowrap`. So a wrapping row draws Buttons side by side while they fit, and moves a Button to the next line rather than shrink it. A default or primary Button is the theme's control height, with medium padding at the sides. A plain Button is at least one line tall, with extra-small padding.
+- Before drawing, the pane only drops the top and bottom margins of its outermost Box, and of each Box below it that is its parent's only child. The band has rules of its own that change its tree, and this section does not cover them.
+
+The 0.3.0 release pass's capture of the PRs tab, taken in the inbox-ui VM on 2026-11-01 at 2x, measures the Buttons. Its app version was not recorded. A primary "Merge" was 66.0 pt wide with a 40.0 pt label, so 26 pt of padding. A default "Open PR" was 94.5 pt wide with a 55.0 pt label, an 8 pt icon and a 6 pt gap, so 25.5 pt. Buttons were 25 pt tall. `desktopButtonPt` in `hooks/desktop-metrics.ts` counts 26 pt of padding. It counts a primary Button's label 8.5% wider, from an earlier app on which a primary "Plain (recommended)" was 163 to 167 pt wide with a 130 pt label. No capture of the newer app shows a long primary label. `DESKTOP_BUTTON_PT` is 23 pt, measured on an earlier app.
+
 ## Measuring the cell and the row inset
 
 The engine gives the pane's size in columns only, so `DESKTOP_CELL_PT` and `FRAME_INSET_PT` in `hooks/pane-sizes.ts` are fixed numbers. Measure them again after an app update when the pane cuts text early or draws past a row's edge, and record the result in the Cell size and Box borderStyle rows above.

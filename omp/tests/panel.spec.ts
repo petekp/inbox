@@ -7,12 +7,14 @@ import { waitingThreads } from '../../hooks/prs'
 import { SETTLED_MS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { rowKeyPlan } from '../../hooks/action-plan'
+import { answeringOf, herdrAskOf } from '../../hooks/herdr-ask'
 import type { RowView } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelUi } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
+import { HERDR_ASK_ID } from '../src/panel-lines'
 import {
   buttonLine,
   buttonLines,
@@ -149,6 +151,22 @@ test('Tab and Shift+Tab cycle through the tabs in order, and each digit picks it
   expect(keys(screen, INITIAL_UI, String(tabs.length + 1)).tab).toBe(INITIAL_UI.tab)
 })
 
+test('a question’s context draws whole and dim, first under its title, on its selected row only', () => {
+  const screen = screenOf()
+  const row = firstQuestion(screen)
+  const other = screen.view.needsYou.questions.find(r => r.state.is === 'open' && r.id !== row.id)!
+  const context = row.contextLine!
+  const flat = (ui: PanelUi) => text(screen, ui, 50).replace(/\s+/g, ' ')
+  const shown = flat(onRow(row))
+  const at = shown.indexOf(context)
+
+  expect(at).toBeGreaterThan(shown.indexOf('Dismiss a glance'))
+  expect(at).toBeLessThan(shown.indexOf(`Why ${row.item!.rec}`))
+  const firstWords = context.split(' ').slice(0, 3).join(' ')
+  expect(drawn(screen, onRow(row), 50).find(l => strip(l).trim().startsWith(firstWords))).toContain(`${ESC}2m`)
+  expect(flat(onRow(other))).not.toContain(firstWords)
+})
+
 test('an Asks row names the open subject it holds up', () => {
   const shown = text(screenOf(), { ...INITIAL_UI, tab: 'needsYou' })
 
@@ -228,4 +246,26 @@ test('a row keeps its age at a narrow width and beside a long outcome, and its t
   expect(ages(48)).toEqual(wide)
   for (const line of text(screenOf(), { ...ui, tab: 'needsYou' }, 48).split('\n'))
     expect(strip(line).length).toBeLessThanOrEqual(48)
+})
+
+test('the Herdr install question sits above the Asks rows, and its buttons answer it once', () => {
+  const asking = herdrAskOf('/app', undefined, null)
+  const screen = screenOf({ herdrAsk: asking })
+  const onAsk: PanelUi = { ...INITIAL_UI, selectedId: HERDR_ASK_ID }
+  const lines = text(screen, INITIAL_UI).split('\n')
+  const askAt = lines.findIndex(l => l.includes("Install the inbox's Herdr mod?"))
+
+  expect(askAt).toBeGreaterThan(-1)
+  expect(askAt).toBeLessThan(lines.findIndex(l => l.includes(firstQuestion(screen).title)))
+  const install = handleKey(screen, onAsk, 'enter', NOW)
+  expect(install.press).toEqual({ action: 'herdr-ask', isYes: true })
+  expect(install.ui.focus).toBe(null)
+  expect(handleKey(screen, keys(screen, onAsk, 'right'), 'enter', NOW).press).toEqual({
+    action: 'herdr-ask',
+    isYes: false,
+  })
+
+  const saving = screenOf({ herdrAsk: answeringOf(asking, false) })
+  expect(text(saving, onAsk)).toContain('Saving the answer…')
+  expect(handleKey(saving, onAsk, 'enter', NOW).press?.action).not.toBe('herdr-ask')
 })

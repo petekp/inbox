@@ -1,14 +1,7 @@
 import { cellWidth, cutForEllipsis } from '../../hooks/text'
 import { statusKeyPlan } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
-import {
-  mergedLine,
-  nameBeforeStall,
-  STATUS_TEXT_LINES,
-  STALL_GAP,
-  WAS_PREFIX,
-  LOOK_DASH,
-} from '../../hooks/status-page'
+import { mergedLine, nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusBranch, StatusRow, StatusStall } from '../../hooks/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
@@ -120,25 +113,6 @@ export function partHeading(text: string, width: number, s: Style, at = PAGE_TEX
   return `${' '.repeat(at)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`
 }
 
-/** The rule above a Status row that starts an item. */
-export function pageRule(width: number, s: Style): string {
-  return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(pageRuleCells(width)))}`
-}
-
-/**
- * The look line: "Last seen" in the middle of a dashed rule that spans what `pageRule` spans, with a blank line above
- * it, and below it unless it ends the list.
- */
-function lookLines(row: StatusRow & { kind: 'look' }, width: number, s: Style): string[] {
-  const text = ` ${row.text} `
-  const at = markAt(row.depth) + PAGE_TEXT_AT - PAGE_MARK_AT
-  const fill = Math.max(4, pageRuleCells(width, at) - cellWidth(text))
-  const before = Math.floor(fill / 2)
-  const rule = `${' '.repeat(at)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`
-
-  return ['', rule, ...(row.isLast ? [] : [''])]
-}
-
 /**
  * A Status target's buttons from its plan, with their text at `textAt`. The selected target's focused button takes
  * Enter, and its other buttons their keys, so only that target draws them focused or with keys.
@@ -206,7 +180,6 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
       ? pageLine(d, at, s.tone('accent', chevron), row.text, s.bold)
       : pageLine(d, at, s.dim(chevron), row.text, s.dim)
   }
-  if (row.kind === 'look') return lookLines(row, width, s)
   if (row.kind === 'part') return ['', partHeading(row.text, width, s)]
   if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)

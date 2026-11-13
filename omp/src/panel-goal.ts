@@ -14,7 +14,8 @@ import { cellWidth } from '../../hooks/text'
 
 /**
  * A part of the goal's section on the Status page: its heading row with the goal's buttons, the goal's text with its
- * was, Now and awaiting lines, the blank line before the milestones, a milestone, or on the empty page New or its field.
+ * was, Now and awaiting lines, a blank line before a milestone or its rows, a milestone, or on the empty page New or
+ * its field.
  */
 export type GoalPart =
   | { is: 'heading'; text: string; page: StatusPage | null }
@@ -35,21 +36,24 @@ const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
 
 /**
  * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at the right
- * edge, then the goal's text, or the line that says no goal is set, then a blank line and the milestones, each with the
- * rows of its work. While the person types a goal, the field takes the text's place, and the buttons leave.
+ * edge, then the goal's text, or the line that says no goal is set, then the milestones, each after a blank line, with
+ * a blank line between it and the rows of its work. While the person types a goal, the field takes the text's place,
+ * and the buttons leave.
  */
 export function goalSection(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
   const g = page.goal
-  const milestones = g?.milestones ?? []
+  const gap = goalEntry({ is: 'gap' })
 
   return [
     goalEntry({ is: 'heading', text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
     goalEntry({ is: 'title', goal: g, isTyping }),
-    ...(milestones.length > 0 ? [goalEntry({ is: 'gap' })] : []),
-    ...milestones.flatMap(row => [
+    ...(g?.milestones ?? []).flatMap(row => [
+      gap,
       goalEntry({ is: 'milestone', row }),
-      ...unfoldedRows(row.rows, isUnfolded).map((r): Entry => ({ kind: 'page', row: r })),
+      ...(row.rows.length > 0
+        ? [gap, ...unfoldedRows(row.rows, isUnfolded).map((r): Entry => ({ kind: 'page', row: r }))]
+        : []),
     ]),
   ]
 }
@@ -127,7 +131,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   if (part.is === 'milestone') {
     const m = part.row
     const mark = paintMark({ ...m, isRunning: false }, now, s)
-    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, m.isChanged ? s.bold : t => t, { stall: m.stall, text: m.text })
+    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, t => t, { stall: m.stall, text: m.text })
     if (m.was) out.push(...indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim))
 
     return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]

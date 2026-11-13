@@ -119,7 +119,7 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
 
 test('on a Status page taller than the panel, j and k scroll the newly selected row into view', () => {
   const screen = goallessScreen()
-  const height = 14
+  const height = 13
   const drawnFor = (ui: PanelUi) => drawPanel(screen, ui, 80, NOW, style, height)
   const isFocusShown = (ui: PanelUi) =>
     drawnFor(ui)

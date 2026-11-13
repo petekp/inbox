@@ -4,6 +4,7 @@ import type { RowRecord } from './arrivals'
 import type { PendingUndoScroll } from './pane-selection'
 import type { ModLook } from './rows'
 import type { ListInput } from './timing'
+import type { HerdrAsk } from './herdr-ask'
 
 class PaneState {
   recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
@@ -81,6 +82,12 @@ class ModState {
   /** The ask of the fetch that runs next, or null when none waits. A second ask joins it. */
   nextFetch: { findsBranchPr: boolean; isPress: boolean } | null = null
   prFetchEndedAt: number | undefined
+  /** Stops following the presses the Herdr look writes, in a Herdr app terminal. */
+  stopHerdrPresses: (() => void) | null = null
+  /** Why the last turn-on could not install or update the inbox's Herdr mod, or null. */
+  herdrModFailure: string | null = null
+  /** The question before the mod installs the inbox's Herdr mod, while it shows. */
+  herdrAsk: HerdrAsk | null = null
 }
 
 export const mod = new ModState()

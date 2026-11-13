@@ -12,22 +12,26 @@ import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
 import { statusSelected } from '../../hooks/status-keys'
+import { seenSubjectIds } from '../../hooks/status-page'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
-import { STOP_ID, linesOf } from './panel-lines'
+import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
+import type { HerdrAsk } from '../../hooks/herdr-ask'
 import { drawGoalPart, goalPartId } from './panel-goal'
-import { drawPageRow, pageRule } from './panel-page'
+import { drawPageRow } from './panel-page'
 import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { fit, indented, spread } from './panel-text'
 
 type ResumePress = { action: 'resume' }
+/** An answer to the question before omp installs the inbox's Herdr mod. */
+type HerdrAskPress = { action: 'herdr-ask'; isYes: boolean }
 /** Shows every option of a question whose options fold. The panel handles it, so no host sees it. */
 type OptionsPress = { action: 'all-options'; id: string }
-export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress
+export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {
@@ -44,9 +48,13 @@ export type PanelScreen = {
   isDemo?: boolean
   /** The last read of the session failed, so the screen is the one before it. */
   isReadFailed?: boolean
+  /** Why this omp could not install or update the inbox's Herdr mod, or null. */
+  herdrModFailure?: string | null
+  /** The question before omp installs the inbox's Herdr mod, while it shows. */
+  herdrAsk?: HerdrAsk | null
 }
 
-export type Tone = ToneName | 'accent' | 'sep'
+export type Tone = ToneName | 'key' | 'accent' | 'sep'
 
 /** The terminal styles the panel draws with. The host maps them onto the active omp theme. */
 export type Style = {
@@ -195,7 +203,8 @@ export function drawPanel(
     screen.view.statusPage.error,
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
-  const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null)
+  const host = screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []
+  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null)
   const head = [
     ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
     rule,
@@ -208,7 +217,7 @@ export function drawPanel(
   const pageSelected =
     isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
-  /** The line each Status subject row starts on. */
+  /** The line each subject a Status row stands for starts on. */
   const subjectAt: [string, number][] = []
   for (const e of entries) {
     if (e.kind === 'heading')
@@ -216,9 +225,8 @@ export function drawPanel(
         ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
     else if (e.kind === 'page' || e.kind === 'goal') {
-      if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))
       const start = body.length
-      if (e.kind === 'page' && e.row.kind === 'subject') subjectAt.push([e.row.id, start])
+      if (e.kind === 'page') subjectAt.push(...seenSubjectIds(e.row).map(id => [id, start] as [string, number]))
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
       const isSelected = id !== null && id === pageSelected?.id
       body.push(...(e.kind === 'page' ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected)))
@@ -250,16 +258,11 @@ export function drawPanel(
     else {
       const isSelected = e.line.id === selected?.id
       const start = body.length
-      // The stop stays a row Resume can focus, drawn as a banner.
-      if (e.line.id === STOP_ID && screen.stop)
-        body.push(
-          ...boxed(
-            drawLine(e.line, isSelected, { ...d, width: width - 4 }),
-            stopBanner(screen.stop).tone,
-            width,
-            style,
-          ),
-        )
+      // The stop and the install question stay rows their buttons can focus, drawn as banners.
+      const bannerTone =
+        e.line.id === HERDR_ASK_ID ? 'ask' : e.line.id === STOP_ID && screen.stop ? stopBanner(screen.stop).tone : null
+      if (bannerTone)
+        body.push(...boxed(drawLine(e.line, isSelected, { ...d, width: width - 4 }), bannerTone, width, style))
       else body.push(...drawLine(e.line, isSelected, d))
       if (isSelected) selectedAt = [start, body.length - 1]
     }

@@ -6,6 +6,14 @@ Run the automated checks on the `next` commit you will release, before `main` mo
 
 ## 1. Run the automated checks
 
+Write the engine types first, with the Claude Code the release is checked against. `check.sh` type-checks against whatever `.claude-plugin/types` holds, and a session writes that folder only when it loads the mod from this checkout, so types an older session wrote hide what the current engine requires. One session writes them:
+
+```sh
+claude -p --plugin-dir "$PWD" --no-session-persistence --model haiku 'Reply with the single word ok.'
+```
+
+It writes them even when an installed inbox loads ahead of this copy, in which case the output says the hooks module did not load. `.claude-plugin/types/claude-code/index.d.ts` names the version that wrote them.
+
 Send each command's output to a log file and check its exit status. Each must exit 0.
 
 | Command | What it checks |

@@ -7,9 +7,12 @@ import type { RowPress } from '../../hooks/presses'
 import { statusChanged } from '../../hooks/session-status'
 import { recorded, withHolds } from '../../hooks/session-presses'
 import type { RowNote } from '../../types'
+import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import type { HooksTrust } from './hook-trust'
+import { codexStore } from './host'
+import type { OnWrite } from './host'
 import { makeCatchUpOnOpen } from './server-catch-up'
 import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
@@ -28,6 +31,7 @@ import { makeHooksTrustNow } from './server-trust'
 import { pruneSessions, readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
+import type { CodexHerdrAsk } from './server-herdr'
 
 export type ServerDeps = {
   dir: string
@@ -58,6 +62,12 @@ export type ServerDeps = {
     codexHome: string
     startUpdate: (sessionId: string) => void
   }
+  /** Reports each state the server writes to the Herdr app terminal Codex runs in. */
+  onWrite?: OnWrite
+  /** Starts applying the presses the Herdr look writes, with `apply`. */
+  followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<void>) => void
+  /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
+  herdrAsk?: CodexHerdrAsk
 }
 
 type Message = { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
@@ -72,7 +82,10 @@ export type PressReply = {
   delivery?: 'unconfirmed'
 }
 
-export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
+export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
+  const { onWrite } = given
+  // Each report reads the newest state itself, so a tool call or press answers without waiting on `hc label`.
+  const deps = { ...given, onWrite: onWrite && (async (s: SessionState) => void onWrite(s).catch(() => undefined)) }
   const { dir, now } = deps
   const prunedFor = new Set<string>()
   /** Each chat's newest turn in its rollout, as its last view read it. */
@@ -81,13 +94,14 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const catchUpOnOpen = makeCatchUpOnOpen(deps)
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
-  const { wakeAfterSettle, fetchPrsWhenDue, served, onPress } = makeSessionHost(
+  const { wakeAfterSettle, fetchPrsWhenDue, served, onPress, onHerdrFile } = makeSessionHost(
     deps,
     newestTurns,
     hooksTrustNow,
     currentPage,
   )
   const { demoOf, onDemoPress } = makeDemo(deps, served)
+  deps.followHerdrPresses?.(onHerdrFile)
 
   const isHerdrCheckDue = herdrCheckGate()
 
@@ -117,7 +131,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       case 'close':
       case 'order_prs': {
         let result = ''
-        await updateState(dir, id, s => {
+        await codexStore(dir, id, now, deps.onWrite).update(s => {
           const r = recorded(CODEX, s, name, args, now())
           result = r.result
           return heard(r.state)
@@ -148,6 +162,11 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       case 'inbox_tab_page':
         return { ...text('Tab page'), structuredContent: { html: stamped(await currentPage()) } }
       case 'inbox_press': {
+        const asked = args.press as { action?: unknown; isYes?: unknown }
+        if (asked.action === 'herdr-ask' && deps.herdrAsk) {
+          const r = await deps.herdrAsk.answer(asked.isYes === true)
+          return { ...text(r.failure ?? 'Done'), structuredContent: r }
+        }
         const p = args.press as RowPress | PrPress
         const holds = holdsOf(args)
         const r = await (args.demo === true

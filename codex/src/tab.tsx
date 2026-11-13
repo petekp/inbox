@@ -5,7 +5,7 @@ import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/b
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { steppedIndex } from '../../hooks/action-plan'
 import { tabState, handoff, root, instanceAbort } from './tab-state'
-import { noteShownRows, rowsInView, SUBJECT_ATTRIBUTE } from './tab-shown'
+import { noteShownRows, rowsInView, SUBJECTS_ATTRIBUTE } from './tab-shown'
 import type { Kept, Lists } from './tab-state'
 import type { DrawnPrs } from './tab-pr-steps'
 import { later, dispose, request, applyHost, READ_TIMEOUT_MS } from './tab-host'
@@ -18,7 +18,7 @@ import { tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
 import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
-import { prOrderKeys, Prs } from './tab-prs'
+import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
 import { pressUndoKey } from './undo-key'
 import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
@@ -116,8 +116,8 @@ tabState.draw = draw
 /** Notes the Status subject rows on screen now, while the tab shows the real Status, for the look under way. The demo's ids name sample rows. */
 function noteStatusInView() {
   if (!tabState.isActive || tabState.isDemo || tabState.tab !== 'overview' || tabState.isHelpShown) return
-  const rows = Array.from(root.querySelectorAll(`[${SUBJECT_ATTRIBUTE}]`), el => ({
-    id: el.getAttribute(SUBJECT_ATTRIBUTE) ?? '',
+  const rows = Array.from(root.querySelectorAll(`[${SUBJECTS_ATTRIBUTE}]`), el => ({
+    subjects: el.getAttribute(SUBJECTS_ATTRIBUTE) ?? '',
     top: el.getBoundingClientRect().top,
   }))
   noteShownRows(rowsInView(rows, window.innerHeight), Date.now())
@@ -174,7 +174,10 @@ document.addEventListener(
     }
     const t = drawnTab()
     if (tabState.isHelpShown || !isRowTab(t)) return
-    const tabKey = t === 'prs' ? prOrderKeys(tabState.view).find(x => x.hotkey === e.key) : undefined
+    const tabKey =
+      t === 'prs'
+        ? [...prOrderKeys(tabState.view), ...prClearKeys(tabState.view)].find(x => x.hotkey === e.key)
+        : undefined
     if (tabKey) {
       e.preventDefault()
       if (!tabKey.isOut) tabKey.run()

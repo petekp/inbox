@@ -107,8 +107,11 @@ export function tabLegend(): HelpKey[] {
 /** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
 export const UNDO_KEY = 'u'
 
-/** The PRs tab's own key, which `hooks/pr-order.ts:prOrderActions` binds from any row of the tab. */
-const PR_TAB_HELP_KEYS: HelpKey[] = [{ keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' }]
+/** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prClearActions` bind from any row of the tab. */
+const PR_TAB_HELP_KEYS: HelpKey[] = [
+  { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
+  { keys: 'm', does: 'Clear the merged and closed PRs' },
+]
 
 /**
  * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a
@@ -167,6 +170,13 @@ export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): 
             ]),
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, then the panel' },
+      ]
+    case 'herdr':
+      return [
+        { keys: '← →', does: 'Switch tabs' },
+        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...prTabKeys,
+        { keys: 'esc', does: "Move focus back to the agent's terminal" },
       ]
   }
 }

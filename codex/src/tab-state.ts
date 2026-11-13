@@ -8,9 +8,10 @@ import type { ShownTab } from '../../hooks/tabs'
 import type { Draft, Finding, Tab } from '../../types'
 import type { FoldGroup, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
-import type { RowTrack } from './rows'
+import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
 import type { DrawnPrs, OpenPrBlock } from './tab-pr-steps'
+import type { HerdrAsk } from '../../hooks/herdr-ask'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
 
@@ -43,6 +44,8 @@ export type Row = {
   holdsUp?: string
   /** Why the agent recommends an answer, as "Why Redis: it survives restarts". */
   recLine?: string
+  /** Why the agent asked, which the row draws first under its title while it is open. */
+  context?: string
   age?: string
   body?: JSX.Element | null
   keys: Key[]
@@ -173,6 +176,10 @@ class TabState {
   isActive = handoff === null
   requestedPage: string | null = null
   updateError: { page: string; text: string } | null = null
+  /** The Herdr question as this tab's last press left it, drawn in place of the server's until `SETTLED_MS` after the answer. */
+  herdrAsk: HerdrAsk | null = null
+  /** Why the tab's last Install press failed. */
+  herdrFailure: string | null = null
   /** tab.tsx's draw, set when tab.tsx loads. draw renders App, which depends on every other tab file, so they call it here instead of importing tab.tsx. */
   draw!: () => void
 }

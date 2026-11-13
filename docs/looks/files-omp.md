@@ -7,11 +7,14 @@ Part of [the look map](../looks.md#files).
 | `omp/src/host.ts` | omp host. The only file that imports omp's packages. It binds the calls that need omp's types into a `HostContext`, and wires omp's events to the handlers in the `host-*.ts` files. It also registers the `record` and `close` tools and the `/inbox` command, and shows the band and the panel. |
 | `omp/src/host-context.ts` | omp host. `HostContext`, what `createInbox` holds for the handler files, and `OmpContext`, the part of omp's context they read. |
 | `omp/src/host-sessions.ts` | omp host. The session calls the handler files share: saving a change, omp's `SessionHost` and update host, catching up over the branch, and the PR and Herdr checks when due. |
+| `omp/src/host-presses.ts` | omp host. `ompPresses`: in a Herdr app terminal, watches the shown session's press folder and applies each press the Herdr look writes. Also `herdrLog`, the log of why a Herdr report or press failed. |
+| `omp/src/host-herdr-ask.ts` | omp host. `ompHerdrAsk` keeps the question before omp installs the inbox's Herdr mod: it asks after a start that found no answer, checks every `PRESS_POLL_MS` whether another session answered, runs an Install or Don't install press, and shows the question again for `/inbox herdr`. |
 | `omp/src/host-turns.ts` | omp host. The handlers for omp's session and turn events: a session's start and shutdown, a prompt's arrival, the reply, and the turn's end. |
 | `omp/src/host-activity.ts` | omp host. The handlers for the main agent's activity: subagent frames, tool calls, and bash calls that wait on Herdr delegates. |
 | `omp/src/host-panel.ts` | omp host. The `Inbox` calls the panel makes on the host, and the live source the panel draws from. |
 | `omp/src/omp-messages.ts` | omp host. Reads omp's messages and session branch: a message's text, why a turn stopped, the conversation as turns, and the line under a `record` or `close` call. |
-| `omp/src/tool-calls.ts` | omp host. What an omp tool call and its result say: the call's activity line, and how an `ask` dialog ended. It imports no omp package. |
+| `omp/src/tool-calls.ts` | omp host. What an omp tool call and its result say: the call's activity line, an `ask` call's questions from either input shape, and how an `ask` dialog ended. It imports no omp package. |
+| `omp/src/ask-form.ts` | omp host. Reads the questions and options of the HTML form omp's `ask` tool takes from 18.18.3 on, following omp's own form parser. It imports no omp package. |
 | `omp/src/state.ts` | omp host. One JSON file per session under omp's agent folder, with a lock held in the process. `OmpState` extends the shared `Session`. |
 | `omp/src/commands.ts` | omp host. Opens links and paths for omp's `SessionHost`. |
 | `omp/src/theme.ts` | omp host. Maps the panel's styles onto omp's theme. |

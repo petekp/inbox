@@ -191,7 +191,8 @@ on you, failing checks and merge conflicts. Buttons hand the work to the
 agent: address one review comment or all of them, draft a reply, fix a
 failing check, resolve conflicts, or merge. Fix and Resolve conflicts show only
 while GitHub still shows the problem. A PR that merges or closes leaves the tab
-on its own, with Undo to keep it there.
+on its own, with Undo to keep it there. Clear merged and closed, at the top of
+the tab, clears any that stay, except your current branch's own.
 
 Your agent can also put the PRs in an order, such as which to merge first. The
 tab then lists them first, numbered, under what the order is for and why. When

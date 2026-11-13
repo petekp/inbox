@@ -14,6 +14,7 @@ import { childPos, type PaneRowLines } from './pane-row-lines'
 import { type ClosedLine, settledScrollKey } from './pane-selection'
 import {
   DESKTOP_CELL_PT,
+  DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
   DESKTOP_ROW_PT,
   DESKTOP_MARK_CELLS,
@@ -144,21 +145,30 @@ export function paneRowParts(
     ) : (
       <Box flexDirection="column">{children}</Box>
     )
-  const sections = (list: JSX.Element[], space = 1) => (
+  /**
+   * Sections one under another. On desktop a hairline sits between each two, except above a section whose place in
+   * `list` is in `unruled`, which keeps only the hairline's space.
+   */
+  const sections = (list: JSX.Element[], space = 1, unruled: number[] = []) => (
     <Box flexDirection="column" flexGrow={1} gap={look === 'desktop' ? 0 : terminalSectionGap}>
       {look === 'desktop'
-        ? list.flatMap((el, n) =>
-            n === 0
-              ? [el]
-              : [
-                  desktopHairline(`rule-${n}`, 'across', {
-                    marginTop: space,
-                    marginBottom: space - blankLine,
-                    marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
-                  }),
-                  el,
-                ],
-          )
+        ? list.flatMap((el, n) => {
+            if (n === 0) return [el]
+            const box = {
+              marginTop: space,
+              marginBottom: space - blankLine,
+              marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
+            }
+
+            return [
+              unruled.includes(n) ? (
+                <Box key={`rule-${n}`} height={DESKTOP_HAIR_LINES} {...box} />
+              ) : (
+                desktopHairline(`rule-${n}`, 'across', box)
+              ),
+              el,
+            ]
+          })
         : list}
     </Box>
   )

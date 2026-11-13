@@ -25,6 +25,7 @@ import {
   prThreadId,
   PR_REFRESH_ID,
   RANK_AGAIN_ID,
+  CLEAR_FINISHED_ID,
   splitFollowUps,
   threadRowText,
   isBlockPressShown,
@@ -173,6 +174,7 @@ export function panePrBlocks({
   view,
   prOrderKeys,
   prRefreshKeys,
+  prClearKeys,
   prGroups,
   section,
   undoPlace,
@@ -206,6 +208,7 @@ export function panePrBlocks({
   | 'view'
   | 'prOrderKeys'
   | 'prRefreshKeys'
+  | 'prClearKeys'
   | 'prGroups'
 > &
   Pick<PaneRowParts, 'section' | 'undoPlace' | 'settledContent' | 'groupTitle' | 'titleGap' | 'sections'> &
@@ -320,8 +323,8 @@ export function panePrBlocks({
     return section([
       ...(look === 'desktop'
         ? [
-            desktopFrame({ key: `pr-title-${pr.ref}`, padY: 0, children: titleLine }),
-            desktopFrame({ key: `pr-status-${pr.ref}`, padY: 0, children: statusBlock }),
+            desktopFrame({ key: `pr-title-${pr.ref}`, padY: 0, hasSide: false, children: titleLine }),
+            desktopFrame({ key: `pr-status-${pr.ref}`, padY: 0, hasSide: false, children: statusBlock }),
           ]
         : [<Box paddingLeft={1}>{titleLine}</Box>, <Box paddingLeft={1}>{statusBlock}</Box>]),
       ...prRowGroup(PR_GROUP_TITLES.threads, threads, `${pr.ref}-threads`),
@@ -395,6 +398,8 @@ export function panePrBlocks({
 
     return prTabLine('pr-refresh', lines)
   }
+  const prClearLines = () =>
+    prClearKeys.length === 0 ? [] : prTabLine('pr-clear', keyRow(CLEAR_FINISHED_ID, prClearKeys))
   const prsView = () =>
     prGroups.length === 0 ? (
       <Box flexDirection="column" flexGrow={1}>
@@ -408,6 +413,7 @@ export function panePrBlocks({
         [
           ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
           ...prRefreshLines(),
+          ...prClearLines(),
           ...prOrderLines(),
           ...prGroups.map(prBlock),
           ...olderPrs(),

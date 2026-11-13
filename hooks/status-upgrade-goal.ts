@@ -1,10 +1,30 @@
-import type { GoalRemoved, Milestone, SessionStatus, StatusGoal } from '../types'
-import { nameKey, REMOVED_KEPT, STATUSES } from './status-limits'
+import type { GoalRefusal, GoalRemoved, Milestone, SessionStatus, StatusGoal, Subject } from '../types'
+import { nameKey, namesOtherVersion, REMOVED_KEPT, STATUSES } from './status-limits'
 
 type GoalFields = Pick<
   SessionStatus,
-  'goal' | 'removedGoals' | 'goalRemoved' | 'milestones' | 'nextMilestoneId' | 'serves'
+  'goal' | 'removedGoals' | 'goalRemoved' | 'milestones' | 'nextMilestoneId' | 'serves' | 'goalRefused'
 >
+
+const REFUSAL_LINES: readonly GoalRefusal['line'][] = ['goal', 'retire']
+const REFUSAL_WHYS: readonly GoalRefusal['why'][] = [
+  'typed',
+  'met',
+  'work-open',
+  'moved',
+  'no-work',
+  'restates',
+  'few-milestones',
+]
+
+/** A saved refusal, or null for none or one wrongly shaped. */
+function goalRefusedOf(saved: unknown): GoalRefusal | null {
+  const r = saved as Partial<Record<keyof GoalRefusal, unknown>> | null
+  const line = REFUSAL_LINES.find(x => x === r?.line)
+  const why = REFUSAL_WHYS.find(x => x === r?.why)
+
+  return line && why ? { line, why } : null
+}
 
 function time(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -88,20 +108,28 @@ export function droppedMilestoneIds(milestones: readonly Milestone[]): Set<strin
 /**
  * The goal's fields of a saved Status, with anything wrongly shaped left out. A Status saved before the goal loads
  * with none, so its page shows as before, with New. A link to a subject or milestone the Status no longer
- * holds, or to a dropped milestone, is dropped. A removed goal's key is made again with the current `nameKey`, since
- * an earlier build kept a trailing period in it. A saved proposal is dropped, and the goals the person declined load as
- * removed goals: the closest thing to a declined proposal now that the call sets goals itself.
+ * holds, or to a dropped milestone, is dropped. A link an earlier build took from a subject to a milestone that names
+ * another version, as "0.4.0 release" under "0.3.0 cut", loads as none, as the build now links it. A removed goal's
+ * key is made again with the current `nameKey`, since an earlier build kept a trailing period in it. A saved proposal
+ * is dropped, and the goals the person declined load as removed goals: the closest thing to a declined proposal now
+ * that the call sets goals itself.
  */
-export function goalFields(o: Record<string, unknown>, subjectIds: ReadonlySet<string>): GoalFields {
+export function goalFields(o: Record<string, unknown>, subjects: readonly Subject[]): GoalFields {
   const milestones = milestonesOf(o.milestones)
   const dropped = droppedMilestoneIds(milestones)
-  const liveIds = new Set(milestones.filter(m => !dropped.has(m.id)).map(m => m.id))
+  const live = new Map(milestones.filter(m => !dropped.has(m.id)).map(m => [m.id, m]))
+  const names = new Map(subjects.map(s => [s.id, s.name]))
   const savedServes = typeof o.serves === 'object' && o.serves !== null ? Object.entries(o.serves) : []
   const serves = Object.fromEntries(
-    savedServes.filter(
-      (e): e is [string, string] =>
-        subjectIds.has(e[0]) && typeof e[1] === 'string' && (e[1] === 'none' || liveIds.has(e[1])),
-    ),
+    savedServes
+      .filter(
+        (e): e is [string, string] =>
+          names.has(e[0]) && typeof e[1] === 'string' && (e[1] === 'none' || live.has(e[1])),
+      )
+      .map(([id, to]) => {
+        const milestone = live.get(to)
+        return [id, milestone && namesOtherVersion(names.get(id)!, milestone.name) ? 'none' : to]
+      }),
   )
   const saved = [
     ...(Array.isArray(o.declinedGoals) ? o.declinedGoals : []),
@@ -117,5 +145,6 @@ export function goalFields(o: Record<string, unknown>, subjectIds: ReadonlySet<s
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
+    goalRefused: goalRefusedOf(o.goalRefused),
   }
 }

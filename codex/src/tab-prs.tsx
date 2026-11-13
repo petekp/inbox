@@ -4,6 +4,7 @@ import type { SettledState } from '../../hooks/rows'
 import { prBlockActions } from '../../hooks/pr-tab'
 import {
   RANK_AGAIN_ID,
+  CLEAR_FINISHED_ID,
   PR_REFRESH_ID,
   ghNoticeOf,
   PR_GROUP_TITLES,
@@ -29,9 +30,14 @@ import type { PrRefreshView } from '../../hooks/pr-refresh'
 import { ListRow } from './tab-list'
 import { pressLine } from './tab-pr-lines'
 import type { PressLine } from './tab-pr-lines'
-import { PR_GROUPS, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
+import { PR_CLEAR_MOTION, PR_GROUPS, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
 import type { DrawnPrBlock, DrawnPrs, PrGroup } from './tab-pr-steps'
-import type { RowTrack } from './rows'
+import type { RowTrack } from '../../hooks/row-motion'
+
+/** Clear merged and closed, on its line under Refresh PRs. */
+export function prClearKeys(v: View): Key[] {
+  return v.prs.clear.map(a => tabKey(CLEAR_FINISHED_ID, a))
+}
 
 /** The order's changed line's buttons: Rank again. */
 export function prOrderKeys(v: View): Key[] {
@@ -116,18 +122,31 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
   )
 }
 
-/** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
-function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
-  const keys = refresh.actions.map(a => ({
+/** Refresh PRs, as `prRefreshView` lists it, with its press running the refresh. */
+function refreshKeys(refresh: PrRefreshView): Key[] {
+  return refresh.actions.map(a => ({
     ...tabKey(PR_REFRESH_ID, a),
     run: () => void act(PR_REFRESH_ID, a.press, undefined, pendingLocal(PR_REFRESH)),
   }))
+}
+
+function PrRefreshStatus({ v, refresh }: { v: View; refresh: PrRefreshView }) {
   const last = pressLine(v, PR_REFRESH_ID, refresh.showsPress)
+
+  return last ? <PrLine line={last} /> : null
+}
+
+/**
+ * The line under the notices while a PR could not be read: which ones, with Refresh PRs at its right end, and its
+ * press status. While a notice names the cause, the notice holds Refresh PRs instead (see `Prs`).
+ */
+function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
+  const keys = refreshKeys(refresh)
 
   return (
     <section class="pr-order">
-      <div class="pr-order-changed">
-        {refresh.text ? <span>{refresh.text}</span> : null}
+      <div class="pr-order-changed pr-refresh-line">
+        {refresh.text ? <span class="pr-refresh-text">{refresh.text}</span> : null}
         {keys.length > 0 ? (
           <span class="pr-actions keys">
             {keys.map(k => (
@@ -136,7 +155,7 @@ function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
           </span>
         ) : null}
       </div>
-      {last ? <PrLine line={last} /> : null}
+      <PrRefreshStatus v={v} refresh={refresh} />
     </section>
   )
 }
@@ -285,14 +304,33 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
       </main>
     )
 
+  const isRefreshInBanner = ghNotice !== null && v.prs.refresh !== null && v.prs.refresh.text === null
+  const refresh = v.prs.refresh
+
   return (
     <main>
       {ghNotice ? (
         <div class="banner-place">
-          <Banner banner={bannerOf(ghNotice.kind, ghNotice.text)} />
+          <Banner
+            banner={bannerOf(ghNotice.kind, ghNotice.text)}
+            {...(isRefreshInBanner && refresh
+              ? { keys: refreshKeys(refresh), under: <PrRefreshStatus v={v} refresh={refresh} /> }
+              : {})}
+          />
         </div>
       ) : null}
-      {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
+      {refresh && !isRefreshInBanner ? <PrRefreshLine v={v} refresh={refresh} /> : null}
+      {prs.clear ? (
+        <section class="pr-entry" data-motion={PR_CLEAR_MOTION}>
+          <div class="pr-entry-content" inert={v.prs.clear.length === 0}>
+            <div class="pr-actions keys">
+              {prs.clear.map(a => (
+                <KeyButton k={tabKey(CLEAR_FINISHED_ID, a)} />
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
       {prs.blocks.map(b => (
         <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />

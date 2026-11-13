@@ -128,6 +128,7 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
       phase: x.phase ?? 'accepted',
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...(saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress }),
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {

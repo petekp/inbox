@@ -36,5 +36,6 @@ Evidence tags in the four files: doc, local (types or repo code), live (checked 
 - [claude-code-mods.md](claude-code-mods.md): Claude Code mods in every client: loading, lifecycle, the `$` API, drawing, keyboard, admin policy, costs, plugins, MCP, Remote Control, cloud, headless runs, 119 source conflicts and 135 open questions.
 - [claude-desktop-app.md](claude-desktop-app.md): the Claude desktop app: modes, how it runs the engine, engine copies, Code-mode environments, what draws, settings, `/resume`, and 20 live checks.
 - [codex-plugins.md](codex-plugins.md): Codex plugins in the ChatGPT desktop app: packaging, marketplaces, hooks and trust, MCP hosting, the tab UI, ids, `codex queue`, `codex exec`, app-server, config and transcripts.
+- [herdr-app.md](herdr-app.md): the Herdr app's facts the inbox relies on: the shape of `terminal.list` through `hc connect`.
 - [task-lists.md](task-lists.md): whether Claude Code, Codex and omp show the agent's own task list to the inbox, and how each can be read.
 - [mcp-apps.md](mcp-apps.md): the MCP Apps extension: declaring a view, host support, the view's protocol, security, the SDK, how Claude and Codex host views, and what a Claude-mode inbox would need.

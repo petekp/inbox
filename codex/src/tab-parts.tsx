@@ -174,17 +174,48 @@ export function UndoPlace({
   )
 }
 
-export function Banner({ banner, label, press }: { banner: BannerView; label?: string; press?: () => void }) {
+/**
+ * A message in the tone of what it says. `label` and `press` draw one button at its right end. `keys` draws the
+ * buttons a shared plan lists there, and `under` follows the text, as a press's result does. A question, in the `ask`
+ * tone, draws its body on its own line and its buttons on a line under its text.
+ */
+export function Banner({
+  banner,
+  label,
+  press,
+  keys,
+  under,
+}: {
+  banner: BannerView
+  label?: string
+  press?: () => void
+  keys?: Key[]
+  under?: ComponentChildren
+}) {
+  const isQuestion = banner.tone === 'ask'
+  const isAlert = banner.tone === 'error' || banner.tone === 'warning'
+
   return (
-    <div class={`banner banner-${banner.tone}`} role={banner.tone === 'notice' ? 'status' : 'alert'}>
-      <span>
-        <strong class="lead">{banner.lead}</strong>
-        {banner.body ? ` ${banner.body}` : null}
-      </span>
+    <div class={`banner banner-${banner.tone}`} role={isAlert ? 'alert' : 'status'}>
+      <div class="banner-text">
+        <span>
+          <strong class="lead">{banner.lead}</strong>
+          {banner.body && isQuestion ? <span class="body">{banner.body}</span> : null}
+          {banner.body && !isQuestion ? ` ${banner.body}` : null}
+        </span>
+        {under}
+      </div>
       {label && press ? (
         <button type="button" class="key" onClick={press}>
           {label}
         </button>
+      ) : null}
+      {keys && keys.length > 0 ? (
+        <span class="banner-keys">
+          {keys.map(k => (
+            <KeyButton k={k} />
+          ))}
+        </span>
       ) : null}
     </div>
   )

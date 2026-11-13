@@ -1,7 +1,10 @@
-import type { Dialog, Ledger, SessionStatus, StatusHead, Stop, Tab } from '../types'
+import type { Dialog, HerdrPressOutcome, Ledger, Session, SessionStatus, StatusHead, Stop, Tab } from '../types'
 import { bandCounts, isMaybeStale } from './band'
 import { MAYBE_STALE_TEXT } from './banners'
 import { hasRunningDelegate, onceEvery } from './children'
+import type { ClientId } from './clients'
+import { emptySession, sessionFile } from './session-files'
+import { UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import type { SessionView } from './session-view'
 import { isWaitingRow } from './rows'
@@ -184,7 +187,7 @@ export function herdrTokens(
  * not. Herdr drops a report whose `seq` is not above the last one it took from this source, which orders reports that
  * separate processes send.
  */
-function herdrReport(pane: string, tokens: HerdrTokens, seq?: number): string[] {
+function paneReport(pane: string, tokens: HerdrTokens, seq?: number): string[] {
   return [
     'herdr',
     'pane',
@@ -199,13 +202,32 @@ function herdrReport(pane: string, tokens: HerdrTokens, seq?: number): string[] 
   ]
 }
 
-/** What a report sets, whatever its `seq`. Two reports with the same key show the same sidebar. */
-export function herdrReportKey(pane: string, tokens: HerdrTokens): string {
-  return herdrReport(pane, tokens).join('\n')
+/** The label that names the session a terminal runs, so the Herdr look can find its published file. */
+export const SESSION_LABEL = 'inbox.session'
+
+/**
+ * What a host reports: where, its tokens, and the session whose published file the labels name, which is null when no
+ * file holds it, as once it ends. A pane report carries `seq`. An app terminal gets every label in one `hc label` call,
+ * which takes no `seq`, with control characters in a value turned to spaces.
+ */
+type HerdrReport = { target: HerdrTarget; tokens: HerdrTokens; session: string | null; seq?: number }
+
+function reportCommand(r: HerdrReport, hc = 'hc'): string[] {
+  if (r.target.kind === 'pane') return paneReport(r.target.pane, r.tokens, r.seq)
+  const labels = { [SESSION_LABEL]: r.session ?? '', ...herdrLabels(r.tokens) }
+
+  return [
+    hc,
+    'label',
+    r.target.terminal,
+    ...Object.entries(labels).map(([name, value]) => `${name}=${value.replace(/\p{Cc}/gu, ' ')}`),
+  ]
 }
 
-/** A report for a pane, or null when the session runs in no Herdr pane. */
-type HerdrReport = { pane: string; tokens: HerdrTokens; seq?: number } | null
+/** What a report sets, whatever its `seq`. Two reports with the same key show the same sidebar. */
+export function herdrReportKey(r: HerdrReport): string {
+  return reportCommand({ ...r, seq: undefined }).join('\n')
+}
 
 /**
  * The waits before each retry of a failed send, in order. A retry sends the newest report, and a send Herdr takes starts
@@ -224,13 +246,33 @@ type After = (ms: number, fn: () => Promise<unknown>) => void
  * A report counts as sent only when `run` exits 0. After a failed send, the next report is sent even when it matches
  * the last one. With `after`, a failed send also schedules a retry after the next wait in `HERDR_RETRY_MS`, with one
  * retry waiting at a time. Each call resolves true when Herdr took its report, or the last report Herdr took matches it.
+ * With `log`, a failed send logs why, once until a send succeeds or fails another way.
  */
-export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>, after?: After) => Promise<boolean> {
+export function herdrReporter(
+  log?: (text: string) => void,
+): (run: Run, report: () => Promise<HerdrReport | null>, after?: After) => Promise<boolean> {
   let sent: string | null = null
   let retries = 0
   let isRetryWaiting = false
   let sending: Promise<unknown> = Promise.resolve()
-  let newest: { run: Run; report: () => Promise<HerdrReport>; after?: After } | null = null
+  let newest: { run: Run; report: () => Promise<HerdrReport | null>; after?: After } | null = null
+  let hcFound: string | null = null
+  let logged: string | null = null
+
+  /** Runs the report's command. For an app terminal, it tries each `hc` until one starts, and keeps that one. */
+  const runReport = async (run: Run, r: HerdrReport) => {
+    const options = { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS }
+    if (r.target.kind === 'pane') return run(reportCommand(r), options)
+    for (const hc of hcFound ? [hcFound] : r.target.hc) {
+      const result = await run(reportCommand(r, hc), options)
+      if (result.code === UNSTARTABLE_CODE) continue
+      hcFound = hc
+
+      return result
+    }
+
+    return null
+  }
 
   const retryLater = (after: After | undefined) => {
     const wait = HERDR_RETRY_MS[retries]
@@ -244,16 +286,17 @@ export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>, 
     })
   }
 
-  const send = async (run: Run, report: () => Promise<HerdrReport>, after: After | undefined) => {
+  const send = async (run: Run, report: () => Promise<HerdrReport | null>, after: After | undefined) => {
     const r = await report()
     if (!r) return false
-    const key = herdrReportKey(r.pane, r.tokens)
+    const key = herdrReportKey(r)
     if (key === sent) return true
     sent = null
-    const result = await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS }).catch(
-      () => null,
-    )
+    const result = await runReport(run, r).catch(() => null)
     const isTaken = result?.code === 0
+    const problem = isTaken ? null : reportProblem(r, result)
+    if (problem && problem !== logged) log?.(problem)
+    logged = problem
     if (isTaken) {
       sent = key
       retries = 0
@@ -262,7 +305,7 @@ export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>, 
     return isTaken
   }
 
-  const reportToHerdr = (run: Run, report: () => Promise<HerdrReport>, after?: After) => {
+  const reportToHerdr = (run: Run, report: () => Promise<HerdrReport | null>, after?: After) => {
     newest = { run, report, after }
     const result = sending.then(() => send(run, report, after)).catch(() => false)
     sending = result
@@ -271,4 +314,122 @@ export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>, 
   }
 
   return reportToHerdr
+}
+
+/** Why a report Herdr did not take failed, for a host's log. */
+function reportProblem(r: HerdrReport, result: Awaited<ReturnType<Run>> | null): string {
+  if (!result && r.target.kind === 'terminal')
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(', then ')}.`
+  if (!result) return 'Herdr report did not run.'
+  const why = result.stderr.trim()
+
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : '.'}`
+}
+
+/**
+ * Where a host reports: a pane of Herdr's terminal multiplexer, which sets `HERDR_PANE_ID`, or a terminal of the Herdr
+ * app, which sets `HC_TERMINAL_ID`. Null outside Herdr. An app terminal also names the app's settings folder, where
+ * the host publishes its session, and the `hc` and `herdr-app` commands to try in order: the one on `PATH`, then the
+ * one in `~/.local/bin`, where Herdr's installer puts it. The settings folder is null when `HERDR_APP_HOME` or `HOME` is not an
+ * absolute path, since a host's file calls and its `mv` can resolve a relative one against different folders.
+ */
+export type HerdrTarget =
+  | { kind: 'pane'; pane: string }
+  | { kind: 'terminal'; terminal: string; appHome: string | null; hc: readonly string[]; herdrApp: readonly string[] }
+
+/** The Herdr app's settings folder: `HERDR_APP_HOME`, else `~/.config/herdr-app`. Null unless it is an absolute path. */
+export function herdrAppHome(env: Readonly<Record<string, string | undefined>>): string | null {
+  const home = env.HOME?.startsWith('/') ? env.HOME : null
+  const named = env.HERDR_APP_HOME
+
+  return named ? (named.startsWith('/') ? named : null) : home && `${home}/.config/herdr-app`
+}
+
+export function herdrTarget(env: Readonly<Record<string, string | undefined>>): HerdrTarget | null {
+  const pane = env.HERDR_PANE_ID
+  if (pane) return { kind: 'pane', pane }
+  const terminal = env.HC_TERMINAL_ID
+  if (!terminal) return null
+  const home = env.HOME?.startsWith('/') ? env.HOME : null
+  const appHome = herdrAppHome(env)
+
+  const installed = (name: string) => (home ? [name, `${home}/.local/bin/${name}`] : [name])
+
+  return { kind: 'terminal', terminal, appHome, hc: installed('hc'), herdrApp: installed('herdr-app') }
+}
+
+/**
+ * The tokens as labels on a Herdr app terminal, for `hc label`. `inbox` becomes `inbox.status`, and each other token's
+ * `inbox-` becomes `inbox.`, as in `inbox.needs-you`. An empty value removes its label.
+ */
+export function herdrLabels(tokens: HerdrTokens): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(tokens).map(([name, value]) => [
+      name === STATUS_TOKEN ? 'inbox.status' : name.replace(/^inbox-/, 'inbox.'),
+      value ?? '',
+    ]),
+  )
+}
+
+/** The format of the session file a host publishes and of the press file the Herdr look writes. */
+export const HERDR_FORMAT = 1
+
+/**
+ * Who publishes a session for the Herdr look, and when. `agent` is the name the shared texts use, as in "Tell Claude".
+ * `projectFolder` is the folder the host opens a relative path against, so the look can open one itself.
+ */
+export type EnvelopeSource = {
+  host: ClientId
+  agent: string
+  sessionId: string
+  terminal: string
+  writtenAt: number
+  projectFolder?: string
+}
+
+/**
+ * The file a host publishes for the Herdr look. It has `projectFolder` only when that is an absolute path. `trimmed` is set when the host left out closed items the view does not
+ * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`. `lastPress` is the session's `lastHerdrPress`.
+ */
+export type HerdrEnvelope = EnvelopeSource & {
+  format: typeof HERDR_FORMAT
+  trimmed?: true
+  lastPress?: HerdrPressOutcome
+  session: Session
+}
+
+const SESSION_FIELDS = Object.keys(emptySession())
+
+/** The envelope for `session`, which keeps only the shared `Session` fields, without a host's own. */
+export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimmed = false): HerdrEnvelope {
+  const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
+
+  const { lastHerdrPress } = session
+  const { projectFolder, ...rest } = source
+
+  return {
+    format: HERDR_FORMAT,
+    ...rest,
+    ...(projectFolder?.startsWith('/') && { projectFolder }),
+    ...(isTrimmed && { trimmed: true }),
+    ...(lastHerdrPress && { lastPress: lastHerdrPress }),
+    session: shared as Session,
+  }
+}
+
+/** The folder hosts publish their sessions to for the Herdr look, under the app's settings folder. */
+export function publishedSessionsFolder(appHome: string): string {
+  return `${appHome}/inbox/sessions`
+}
+
+/** Where a host publishes a session for the Herdr look. Throws for an unsafe id. */
+export function publishedSessionPath(appHome: string, sessionId: string): string {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`
+}
+
+/** The folder the Herdr look writes a session's presses to. Throws for an unsafe id. */
+export function pressFolder(appHome: string, sessionId: string): string {
+  sessionFile(sessionId)
+
+  return `${appHome}/inbox/presses/${sessionId}`
 }

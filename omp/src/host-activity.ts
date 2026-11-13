@@ -1,5 +1,5 @@
-import { dialogActivity, dialogQuestions } from '../../hooks/catch-up-text'
-import { noteDialog } from '../../hooks/dialogs'
+import { dialogActivity } from '../../hooks/catch-up-text'
+import { noteAnsweredDialog, noteDialog } from '../../hooks/dialogs'
 import { noteActivity, noteCommandOutput } from '../../hooks/session-turns'
 import { claimedStatusRefresh, statusChanged } from '../../hooks/session-status'
 import {
@@ -13,7 +13,7 @@ import {
 } from '../../hooks/children'
 import { childEnded } from '../../hooks/status-children'
 import { refreshStatus } from '../../hooks/status-records'
-import { activityOf, askOutcome } from './tool-calls'
+import { activityOf, askOutcome, askQuestions } from './tool-calls'
 import type { SessionStatus } from '../../types'
 import { isUnattended, sessionIdOf } from './host-context'
 import type { HostContext, OmpContext } from './host-context'
@@ -130,12 +130,16 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
       return
     }
     if (event.toolName !== 'ask') return
-    const questions = dialogQuestions((event.input as { questions?: unknown }).questions)
     const outcome = askOutcome(event)
+    if (!outcome) return
+    const questions = askQuestions(event.input)
     const line = dialogActivity(questions, outcome)
+    const endedAt = deps.now()
     await change(sessionIdOf(ctx), s => {
       const noted = noteActivity(s, line)
-      return outcome.kind === 'dismissed' ? noteDialog(noted, null, questions) : noted
+      if (outcome.kind === 'dismissed') return noteDialog(noted, null, questions)
+
+      return outcome.kind === 'answered' ? noteAnsweredDialog(noted, questions, outcome.answer, endedAt) : noted
     }).catch(() => undefined)
   }
 

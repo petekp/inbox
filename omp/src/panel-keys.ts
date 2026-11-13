@@ -1,4 +1,5 @@
 import { isPrPress } from '../../hooks/pr-press'
+import { CLEAR_FINISHED_ID } from '../../hooks/pr-rows'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
@@ -18,7 +19,7 @@ export function resolveSelected(lines: Line[], selectedId: string | null): Line 
   const waits = waitsOf(lines)
   const nextId = (current ? rowAfterClose(waits, current.id) : null) ?? firstWaiting(waits)
 
-  return lines.find(l => l.id === nextId) ?? selectable[0] ?? null
+  return lines.find(l => l.id === nextId) ?? selectable.find(l => l.id !== CLEAR_FINISHED_ID) ?? null
 }
 
 function defaultFocus(line: Line): number {
@@ -81,6 +82,7 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
 
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: 'sending' } }, press }
   }
+  if (press.action === 'herdr-ask') return { ui: { ...ui, focus: null }, press }
   if (!isPrPress(press) && press.action === 'type') {
     const draft = ui.drafts[line.id] ?? { text: '', since: now }
 

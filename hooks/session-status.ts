@@ -2,8 +2,8 @@ import { linkDialogs } from './dialogs'
 import { isBlankLedger } from './ledger'
 import { applyUpdate } from './ledger-update'
 import type { Update } from './reply-parse'
-import { lookEnded, lookStarted } from './status-children'
-import type { ShownRows } from './status-children'
+import { lookEnded, lookReported, lookStarted } from './status-children'
+import type { ReportedLook, ShownRows } from './status-children'
 import { applyStatus } from './status-ops'
 import type { StatusAnswer } from './status'
 import type { Ledger, SessionStatus, StatusFailure, Session } from '../types'
@@ -122,6 +122,11 @@ function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
 /** The Status tab stopped being shown at `at`: the look ends, and counts the subjects `shown` names as seen. */
 export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number, shown: ShownRows): S {
   return statusChanged(s, o => lookEnded(o, at, shown))
+}
+
+/** Counts a look another program reported, as the Herdr look does, and keeps the look this host has in progress. */
+export function lookReportedOn<S extends { ledger: Ledger }>(s: S, look: ReportedLook): S {
+  return statusChanged(s, o => lookReported(o, look))
 }
 
 /** The session with its Status after `change`, or the same session when the Status did not change. */

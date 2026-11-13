@@ -1,7 +1,6 @@
 import type { UiPressArgument } from 'claude-code'
-import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { foldKey } from './fold-keys'
-import { LOOK_GAP_PT } from './layout'
+import { SECTION_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
 import type { PaneBase, PaneHandlers } from './pane-context'
 import type { KeyAction } from './pane-keys'
@@ -11,8 +10,6 @@ import type { PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import {
   DESKTOP_CELL_PT,
-  DESKTOP_DASH_GAP_PT,
-  DESKTOP_DASH_PT,
   DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
   DESKTOP_MARK_CELLS,
@@ -35,7 +32,7 @@ import {
 import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import { LOOK_DASH, mergedLine, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
+import { mergedLine, seenSubjectIds, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
 import { unfoldedRows } from './status-page-parts'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
@@ -67,7 +64,6 @@ export function paneStatus(
     markWidth,
     keyLines,
     terminalKeyCells,
-    desktopHairline,
     markGlyph,
     desktopFrame,
     keyRow,
@@ -108,7 +104,7 @@ export function paneStatus(
       | 'statusTree'
       | 'statusHead'
     > &
-    Pick<PaneRowLines, 'markWidth' | 'desktopHairline' | 'markGlyph'> &
+    Pick<PaneRowLines, 'markWidth' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
     Pick<PaneRowKeys, 'keyRow' | 'keyLines' | 'terminalKeyCells'> &
     Pick<PaneAskTabs, 'emptyState'> &
@@ -134,22 +130,6 @@ export function paneStatus(
   const statusRuleAt = statusMarkAt + markWidth
   const statusRuleCells = Math.max(0, listColumns - statusRuleAt)
   const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
-  /** The rule above a Status row that starts an item. */
-  const statusRule = (id: string): Drawn =>
-    look === 'desktop'
-      ? {
-          el: desktopHairline(`status-rule-${id}`, 'across', { marginLeft: desktopStatusRuleLeft }),
-          lines: exactly(DESKTOP_HAIR_LINES),
-        }
-      : {
-          el: (
-            <Box key={`status-rule-${id}`} flexDirection="row">
-              <Box width={statusRuleAt} flexShrink={0} />
-              <Text color={pal.divider}>{'─'.repeat(statusRuleCells)}</Text>
-            </Box>
-          ),
-          lines: exactly(1),
-        }
   /** A part drawn on one terminal line, and in `desktopLines` on desktop. */
   const oneLine = (el: JSX.Element, desktopLines: number): Drawn => ({
     el,
@@ -157,69 +137,15 @@ export function paneStatus(
   })
   /** A line of text that never wraps, in a Box padded by a frame's edge above and below, as a frame's text sits. */
   const desktopEdgedLine = 1 + 2 * desktopSpaceLines(statusFrameEdge)
-  /**
-   * A dashed 1 pt line on desktop, about `cells` wide: dashes that grow to share the room, so the line fills it at any
-   * width. Desktop has no dashed border, and a run of a dash glyph wraps.
-   */
-  const desktopDashes = (key: string, cells: number) => {
-    const count = Math.max(1, Math.round((cells * DESKTOP_CELL_PT) / (DESKTOP_DASH_PT + DESKTOP_DASH_GAP_PT)))
-    const dashes = Array.from({ length: count }, (_, n) => [
-      ...(n > 0 ? [<Box key={`dash-gap-${n}`} width={DESKTOP_DASH_GAP_PT / DESKTOP_CELL_PT} flexShrink={0} />] : []),
-      <Box key={`dash-${n}`} flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />,
-    ]).flat()
-
-    return (
-      <Box key={key} flexGrow={1} flexDirection="row" height={DESKTOP_HAIR_LINES}>
-        {dashes}
-      </Box>
-    )
-  }
   /** The space above a labeled rule. The terminal draws whole lines, so its space is a blank line. */
   const gap = (key: string) =>
     oneLine(
-      <Box key={key} height={look === 'desktop' ? LOOK_GAP_PT / DESKTOP_LINE_PT : 1} />,
-      LOOK_GAP_PT / DESKTOP_LINE_PT,
+      <Box key={key} height={look === 'desktop' ? SECTION_GAP_PT / DESKTOP_LINE_PT : 1} />,
+      SECTION_GAP_PT / DESKTOP_LINE_PT,
     )
-  /**
-   * The look line: "Last seen" in the middle of a dashed rule that spans what the rule above a row spans, with space
-   * above it, and below it unless it ends the list. At `depth` it starts that many steps in, as the rows beside it do.
-   */
-  const statusLookLine = (id: string, text: string, isLast: boolean, depth: number) => {
-    const label = ` ${text} `
-    const fill = Math.max(4, statusRuleCells - markWidth * depth - cellWidth(label))
-    const before = Math.floor(fill / 2)
-    const desktopLeft = desktopStatusRuleLeft + DESKTOP_MARK_CELLS * 2 * depth
-    const ruleCells = (listColumns - desktopLeft - 2 - text.length / DESKTOP_CHARS_PER_CELL) / 2
-    // On desktop it sits outside a frame, whose border would inset the rule's right end, so the padding stands in for
-    // the frame's.
-    const rule =
-      look === 'desktop' ? (
-        <Box flexDirection="row" alignItems="center" marginLeft={desktopLeft} paddingY={statusFrameEdge}>
-          {desktopDashes('look-before', ruleCells)}
-          <Box flexShrink={0} paddingX={1}>
-            <Text color={pal.muted}>{text}</Text>
-          </Box>
-          {desktopDashes('look-after', ruleCells)}
-        </Box>
-      ) : (
-        <Box flexDirection="row">
-          <Box width={statusRuleAt + markWidth * depth} flexShrink={0} />
-          <Text color={pal.divider}>{`${LOOK_DASH.repeat(before)}${label}${LOOK_DASH.repeat(fill - before)}`}</Text>
-        </Box>
-      )
-
-    const parts = [gap('look-above'), oneLine(rule, desktopEdgedLine), ...(isLast ? [] : [gap('look-below')])]
-
-    return stackedIn(
-      <Box key={`status-${id}`} flexDirection="column">
-        {parts.map(p => p.el)}
-      </Box>,
-      parts,
-    )
-  }
   /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
-  const statusPartLine = (id: string, text: string) => {
-    const above = [gap('part-above')]
+  const statusPartLine = (id: string, text: string, isFirst: boolean) => {
+    const above = isFirst ? [] : [gap('part-above')]
     const line = oneLine(
       look === 'desktop' ? (
         <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
@@ -394,7 +320,10 @@ export function paneStatus(
   )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
-  const statusRow = (r: StatusRow) => {
+  // On desktop a row's first line starts under its frame's border and padding.
+  const firstLine = look === 'desktop' ? desktopSpaceLines(STATUS_PAD_Y) + DESKTOP_HAIR_LINES : 0
+  const seenTops = (r: StatusRow) => seenSubjectIds(r).map(id => [id, exactly(firstLine)] as [string, RowTop])
+  const statusRow = (r: StatusRow, n: number) => {
     if (r.kind === 'subject') {
       const mark = statusMark(r)
       const content = [
@@ -423,10 +352,7 @@ export function paneStatus(
         isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
       })
 
-      // On desktop the row's first line starts under its frame's border and padding.
-      const firstLine = look === 'desktop' ? desktopSpaceLines(STATUS_PAD_Y) + DESKTOP_HAIR_LINES : 0
-
-      return { ...line, tops: [[r.id, exactly(firstLine)] as [string, RowTop]] }
+      return { ...line, tops: seenTops(r) }
     }
     if (r.kind === 'child') {
       const mark = statusMark(r)
@@ -473,8 +399,7 @@ export function paneStatus(
             isFold: true,
           })
     }
-    if (r.kind === 'look') return statusLookLine(r.id, r.text, r.isLast, r.depth)
-    if (r.kind === 'part') return statusPartLine(r.id, r.text)
+    if (r.kind === 'part') return statusPartLine(r.id, r.text, n === 0)
     if (r.kind === 'counts')
       return statusRowLine({
         key: `status-${r.id}`,
@@ -491,18 +416,16 @@ export function paneStatus(
         },
       })
 
-    return statusRowLine({
+    const fold = statusRowLine({
       key: `status-${r.id}`,
       depth: r.depth,
       mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
       content: plainText(<Text color={pal.muted}>{r.text}</Text>, r.text, r.depth),
     })
+
+    return { ...fold, tops: seenTops(r) }
   }
-  /** Rows of the Status's list, each after its rule when it has one. The inline pane draws no rules. */
-  const statusRows = (rows: StatusRow[]): Drawn[] =>
-    unfoldedRows(rows, isUnfolded).flatMap(r =>
-      r.isRuledAbove && !isInline ? [statusRule(r.id), statusRow(r)] : [statusRow(r)],
-    )
+  const statusRows = (rows: StatusRow[]): Drawn[] => unfoldedRows(rows, isUnfolded).map(statusRow)
   /** The padding a desktop section starts with, above its first part. */
   const desktopSectionPad: Drawn[] =
     look === 'desktop' ? [{ el: <Box key="section-pad" />, lines: exactly(desktopSpaceLines(isInline ? 0 : 1)) }] : []
@@ -522,15 +445,22 @@ export function paneStatus(
         tops: new Map(),
       }
     const head = page.goal === null && page.head ? [statusHead(page.head)] : []
-    const parts = [goalSection(page), head, ...(page.rows.length > 0 ? [statusRows(page.rows)] : [])]
-    const shown = parts
+    const rows = page.rows.length > 0 ? statusRows(page.rows) : []
+    const shown = [goalSection(page), head, rows]
       .filter(lines => lines.length > 0)
       .map(lines => stackedIn(section(lines.map(p => p.el)), [...desktopSectionPad, ...lines]))
     // A hairline between two desktop sections sits a margin under the one above.
     const sectionGap = look === 'desktop' ? DESKTOP_HAIR_LINES + desktopSpaceLines(1) : terminalSectionGap
+    // The goal's section and the list after it draw no hairline between them: Other work's own rule sets that list
+    // apart while the goal shows milestones, and nothing does while it shows none.
+    const isUnruledAfterGoal = page.goal !== null && rows.length > 0
 
     return {
-      el: sections(shown.map(p => p.el)),
+      el: sections(
+        shown.map(p => p.el),
+        1,
+        isUnruledAfterGoal ? [1] : [],
+      ),
       tops: new Map(stacked(shown, sectionGap).tops),
     }
   }

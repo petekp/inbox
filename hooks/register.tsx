@@ -15,8 +15,6 @@ import type {
   Draft,
   FoldKind,
   Ledger,
-  OldPresence,
-  PrViews,
   LastAction,
   SessionStatus,
   PageTab,
@@ -74,11 +72,11 @@ import type { Ask, CatchUpReply, SessionHost } from './session-host'
 import { callReport, MODEL } from './inbox-model'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
-import { noteDialog } from './dialogs'
+import { noteAnsweredDialog, noteDialog } from './dialogs'
 import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
-import { openPrViews } from './pr-views'
+import { openPrViews, prUndoBlockAfter } from './pr-views'
 import { prBlockRows, threadSentIn } from './pr-rows'
-import { prRefs, prNeedsYou } from './prs'
+import { prNeedsYou } from './prs'
 import { EMPTY, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
 import { tasksRunBy } from './reply-parse'
@@ -99,7 +97,18 @@ import {
 } from './claude'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
+import { delegatesInHerdr } from './herdr'
+import type { HerdrFile } from './herdr-press-file'
+import { applyHerdrFile } from './herdr-app'
+import {
+  followDelegates as followHerdrDelegates,
+  listenForHerdrPresses,
+  startInHerdr,
+  askHerdrModAgain,
+  openInHerdr,
+  publishToHerdr,
+  type HerdrCalls,
+} from './mod-herdr'
 import { ago, cellWidth, turnReply } from './text'
 import { COMPARE_PAGE_FILE } from './press-messages'
 import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
@@ -138,7 +147,7 @@ import {
   type Holds,
 } from './timing'
 import { helpKeys, UNDO_KEY } from './help'
-import { agentTools } from './tools'
+import { agentTools, NOT_SAVED } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
 import {
@@ -202,9 +211,9 @@ import {
   noteStored,
   settleRewrite,
   stored,
-  uncertainRecord,
   withLostSendsUncertain,
 } from './mod-delivery'
+import { NO_OLD_PRESENCE, NO_OLD_PR_VIEWS, sessionFromOldFields } from './mod-old-fields'
 import {
   askedCalls,
   callKey,
@@ -214,11 +223,9 @@ import {
   endedCallRan,
   HOST_TASK_TOOLS,
   isActivityWorthSaving,
-  isHerdrCheckDue,
   MAX_PERSON_LINES,
   noteRanCall,
   permissionText,
-  reportToHerdr,
   spawnedBy,
   startedWorkflowOf,
   toolRecord,
@@ -247,7 +254,8 @@ import {
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import { desktopSpaceLines } from './pane-status-tops'
-import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import { runningSessions } from './running-sessions'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
 import { paneRowLines } from './pane-row-lines'
@@ -345,26 +353,44 @@ async function syncTheme($: EngineInterface) {
   await update($, THEME, () => (typeof theme === 'string' ? theme : ''))
 }
 
-function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
-  return reportToHerdr(
-    processRun($),
-    async () => {
-      const pane = await $.env.get('HERDR_PANE_ID')
-      if (!pane) return null
-      if (isEnding) return { pane, tokens: CLEARED_TOKENS }
-      const [session, dialogs, unreadable, now] = await Promise.all([
-        read($, SESSION),
-        read($, DIALOGS),
-        read($, UNREADABLE),
-        $.clock.now(),
-      ])
-      const view = sessionView(session, now, SETTLED_MS)
-      const isUnread = unreadable === conversation.id
+function herdrCalls($: EngineInterface): HerdrCalls {
+  return {
+    run: processRun($),
+    env: () =>
+      Promise.all([
+        $.env.get('HERDR_PANE_ID'),
+        $.env.get('HC_TERMINAL_ID'),
+        $.env.get('HERDR_APP_HOME'),
+        $.env.get('HOME'),
+      ]),
+    write: (path, text) => $.fs.write(path, text),
+    read: path => $.fs.read(path),
+    list: folder => $.fs.list(folder),
+    stat: path => $.fs.stat(path),
+    spawn: argv => $.process.spawn({ argv }),
+    now: () => $.clock.now(),
+    after: (ms, fn) => void $.clock.after(ms, fn),
+    every: (ms, fn) => $.clock.every(ms, fn),
+    log: text => void $.ui.log(text, { to: 'debug' }),
+    pluginRoot: $.plugin.root,
+  }
+}
 
-      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs, isUnread) }
-    },
-    (ms, fn) => void $.clock.after(ms, fn),
-  )
+function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
+  return publishToHerdr(herdrCalls($), isEnding ? conversation.id : null, async () => {
+    const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
+
+    return { id: conversation.id, root: conversation.root, session, dialogs, isUnread: unreadable === conversation.id }
+  })
+}
+
+/** Applies a Herdr look's press. False when it is for another conversation. */
+async function herdrPress($: EngineInterface, id: string, f: HerdrFile): Promise<boolean> {
+  if (id !== conversation.id) return false
+  if ((await applyHerdrFile(hostOf($, currentOwner(), 'terminal'), f)).wakesAfterSettle)
+    later($, SETTLED_MS, () => wakeAfterSettle($))
+
+  return true
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {
@@ -461,22 +487,8 @@ async function clearingDialog<T>($: EngineInterface, key: string, run: () => Pro
 // function that takes `$`, the session's storage and the SessionHost included, lives in this file.
 
 const OLD_LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
-const OLD_PRESENCE = atom(
-  { plugin: 'inbox', key: 'presence' } as const,
-  {
-    lastActiveAt: 0,
-    isAway: false,
-    isUpdating: false,
-    ledgerState: 'current',
-    turnsStarted: 0,
-    turnsApplied: 0,
-    minute: 0,
-  } as OldPresence,
-)
-const OLD_PR_VIEWS = atom(
-  { plugin: 'inbox', key: 'prViews' } as const,
-  { views: {}, branchRef: null, isFetching: false } as PrViews,
-)
+const OLD_PRESENCE = atom({ plugin: 'inbox', key: 'presence' } as const, NO_OLD_PRESENCE)
+const OLD_PR_VIEWS = atom({ plugin: 'inbox', key: 'prViews' } as const, NO_OLD_PR_VIEWS)
 const OLD_STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const OLD_LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
 const OLD_SENT = atom({ plugin: 'inbox', key: 'sent' } as const, [] as SentPrompt[])
@@ -485,10 +497,7 @@ const OLD_UNTRACKED_SENT = atom(
   [] as { sessionId: string; text: string }[],
 )
 
-/**
- * The session as an older build left it in its separate fields, for a hot reload into this build. A sent message
- * whose record those fields lost is kept as an uncertain record, so its arrival cannot be credited to a newer press.
- */
+/** The session as an older build left it in its separate fields, for a hot reload into this build. */
 async function fromOldFields($: EngineInterface): Promise<Session> {
   const [id, ledger, presence, prViews, stop, lastActions, sent, untracked] = await Promise.all([
     $.session.id(),
@@ -506,26 +515,7 @@ async function fromOldFields($: EngineInterface): Promise<Session> {
     minute: presence.minute,
   }))
 
-  return upgradeSession({
-    ledger,
-    presence: {
-      isUpdating: presence.isUpdating,
-      ledgerState: presence.ledgerState,
-      // Presence from before the turn counts existed cannot say whether the last turn's update landed, so that
-      // load catches up once.
-      turnsStarted: presence.turnsStarted ?? 1,
-      turnsApplied: presence.turnsApplied ?? 0,
-    },
-    prViews,
-    stop,
-    lastActions,
-    sent: [
-      ...(sent ?? [])
-        .filter(p => p.sessionId === id)
-        .map(p => ({ text: p.text, press: null, at: p.pressedAt ?? 0, pressedAt: p.pressedAt, deliveryId: p.id })),
-      ...(untracked ?? []).filter(u => u.sessionId === id).map(u => uncertainRecord(u.text)),
-    ],
-  })
+  return sessionFromOldFields(id, { ledger, presence, prViews, stop, lastActions, sent, untracked })
 }
 
 /** Brings the drawn session to the current shape. */
@@ -594,7 +584,7 @@ async function changeSession(
   throw new Error('The session kept changing under this write.')
 }
 
-/** The store, clock and debug log calls that `hooks/mod-saves.ts` makes. */
+/** The store, clock, debug log and running-conversation calls that `hooks/mod-saves.ts` makes. */
 function saveEngine($: EngineInterface): SaveEngine {
   return {
     store: {
@@ -607,6 +597,14 @@ function saveEngine($: EngineInterface): SaveEngine {
     now: () => $.clock.now(),
     after: (ms, fn) => $.clock.after(ms, fn),
     log: text => $.ui.log(text, { to: 'debug' }),
+    runningSessions: () =>
+      runningSessions({
+        configFolder: () => configFolder($),
+        sessionId: () => $.session.id(),
+        list: folder => $.fs.list(folder),
+        read: path => $.fs.read(path),
+        run: (argv, init) => $.process.run(argv, init),
+      }).catch(() => null),
   }
 }
 
@@ -640,10 +638,16 @@ function recordFiles($: EngineInterface): RecordFiles {
   }
 }
 
+/** Claude Code's configuration folder: `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+async function configFolder($: EngineInterface): Promise<string | null> {
+  const home = await $.env.get('HOME')
+
+  return (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
+}
+
 /** The folder a next build keeps its Status call records in, under Claude Code's configuration folder. */
 async function recordsFolder($: EngineInterface): Promise<string | null> {
-  const home = await $.env.get('HOME')
-  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
+  const config = await configFolder($)
 
   return config ? `${config}/plugins/data/inbox/overview-calls` : null
 }
@@ -1080,8 +1084,9 @@ async function runTool(
   toolUseId: string | undefined,
 ): Promise<string> {
   const now = await $.clock.now()
+  const owner = currentOwner()
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
-  await commit($, currentOwner(), s => {
+  await commit($, owner, s => {
     const r = recorded(CLAUDE_CODE, s, tool, input, now)
     answer = r
     return r.state
@@ -1091,8 +1096,9 @@ async function runTool(
     await update($, PERSON_LINES, lines =>
       Object.fromEntries([...Object.entries(lines), [toolUseId, personLine]].slice(-MAX_PERSON_LINES)),
     )
+  const isChangeUnsaved = personLine !== null && isLastSaveRefused(owner.id)
 
-  return answer.result
+  return isChangeUnsaved ? `${answer.result} ${NOT_SAVED}` : answer.result
 }
 
 /**
@@ -1136,35 +1142,18 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   followDelegates($, isShown)
 }
 
-/**
- * Asks Herdr about the running delegates each `HERDR_CHECK_MS` while the Status shows, and once as it starts to
- * show, so a delegate's row follows Herdr while this session waits. The first tick after the Status stops showing
- * stops the timer.
- */
 function followDelegates($: EngineInterface, isShown: boolean) {
-  if (!isShown) {
-    paneState.herdrCheckTimer?.cancel()
-    paneState.herdrCheckTimer = null
-    return
-  }
-  void checkDelegates($).catch(() => undefined)
-  paneState.herdrCheckTimer ??= $.clock.every(HERDR_CHECK_MS, () => {
-    void (async () => {
-      const isStillShown = (await readPage($)) === 'overview' && (await isPaneShown($))
-      if (isStillShown && !(await read($, DEMO))) return checkDelegates($)
-      paneState.herdrCheckTimer?.cancel()
-      paneState.herdrCheckTimer = null
-    })().catch(() => undefined)
+  followHerdrDelegates(isShown, paneState, herdrCalls($).every, () => {
+    const owner = currentOwner()
+    return {
+      run: processRun($),
+      now: () => $.clock.now(),
+      ownerId: owner.id,
+      overview: async () => upgradeSession(await read($, SESSION)).ledger.overview,
+      isStatusShown: async () => (await readPage($)) === 'overview' && (await isPaneShown($)) && !(await read($, DEMO)),
+      settle: (agents, at) => commit($, owner, s => statusChanged(s, o => delegatesSettled(o, agents, at))),
+    }
   })
-}
-
-async function checkDelegates($: EngineInterface) {
-  const owner = currentOwner()
-  if (!isHerdrCheckDue(owner.id, await $.clock.now())) return
-  const states = await read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, processRun($)))
-  if (!states) return
-  const at = await $.clock.now()
-  await commit($, owner, s => statusChanged(s, o => delegatesSettled(o, states, at)))
 }
 
 /**
@@ -1249,14 +1238,20 @@ async function openTopRow($: EngineInterface) {
   else await select($, tab, top, ids.indexOf(top))
 }
 
-async function showInbox($: EngineInterface) {
+async function showInbox($: EngineInterface, opening: ReturnType<typeof openInHerdr>) {
+  const herdr = await opening
+  if (herdr?.isShown) return herdr.text
   await openPane($)
   await followNewRows($, true)
   await openTopRow($)
+
+  return herdr?.text
 }
 
-async function openInbox($: EngineInterface) {
-  // Opened before any other await. After one, the engine no longer counts the press as
+async function openInbox($: EngineInterface, isDemo: boolean) {
+  const opening = isDemo ? null : openInHerdr(herdrCalls($))
+  if (opening instanceof Promise && (await opening).isShown) return
+  // Opened before any other await unless the Herdr look is opening. After one, the engine no longer counts the press as
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
   const { view } = await drawnState($)
@@ -1803,8 +1798,8 @@ async function undoKeyAfterPress(
   if (surface !== 'terminal' || !paneState.isInlineTerminalPane) return null
   const { view } = await drawnState($)
   if (isPrPress(p)) {
-    if (p.action !== 'pr-dismiss') return null
-    return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
+    const block = prUndoBlockAfter(view.prs.drawn, p)
+    return block ? `undo-${block}` : null
   }
   const row = allRows(view).find(r => r.id === p.id)
   return row?.state.is === 'settled' && row.actions.some(a => a.press.action === 'undo')
@@ -2126,6 +2121,13 @@ async function initializeInbox($: EngineInterface) {
     }),
   ]
   await loadConversation($, await $.session.id())
+  void startInHerdr(herdrCalls($), () => redrawPane($))
+  mod.stopHerdrPresses?.()
+  mod.stopHerdrPresses = await listenForHerdrPresses(
+    herdrCalls($),
+    () => conversation.id,
+    (id, f) => herdrPress($, id, f),
+  )
   // After loadConversation, which brings saved state up to date. A band or pane drawn while the mod was off read no
   // state, so no state write draws it again.
   $.ui.invalidate('ui.render')
@@ -2573,9 +2575,12 @@ export const register: Register = on => {
       const wasDismissed = outcome.kind === 'dismissed'
       if (wasDismissed) sessionState.isDialogDismissed = true
       const line = dialogActivity(asked, outcome)
+      const endedAt = await $.clock.now()
       await commit($, currentOwner(), s => {
         const noted = noteTurnActivity(s, line)
-        return wasDismissed ? noteDialog(noted, null, asked) : noted
+        if (wasDismissed) return noteDialog(noted, null, asked)
+
+        return outcome.kind === 'answered' ? noteAnsweredDialog(noted, asked, outcome.answer, endedAt) : noted
       }).catch(() => undefined)
 
       return ran
@@ -2695,7 +2700,7 @@ export const register: Register = on => {
     await commit($, currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
     updateLedger($)
     const after = await read($, SESSION)
-    const linksNewPr = prRefs(reply).some(ref => !before.ledger.prs.includes(ref))
+    const linksNewPr = after.ledger.prs.some(ref => !before.ledger.prs.includes(ref))
     const tracksPrs = tabPrs(after.ledger).length > 0 || after.prViews.branchRef !== null
     const isTabShown = await isPrsTabShown($)
     if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now, isTabShown)))
@@ -2744,14 +2749,15 @@ export const register: Register = on => {
     await ensureOn($)
     const isShown = (await read($, DEMO)) !== null
     const args = e.args.trim().split(/\s+/).join(' ')
+    if (args === 'herdr') return { text: await askHerdrModAgain(herdrCalls($), () => showInbox($, null)) }
     if (args === 'demo' || args === 'demo recording') await setDemo($, !isShown, args === 'demo recording')
     else if ((await read($, TAB)) === 'prs') await findPrs($)
     const [isDemo, isDemoRecording] = await Promise.all([read($, DEMO).then(d => d !== null), read($, DEMO_RECORDING)])
-    await showInbox($)
+    const note = await showInbox($, args || isDemo ? null : openInHerdr(herdrCalls($)))
 
     return {
       text: !isDemo
-        ? 'Opened the inbox.'
+        ? (note ?? 'Opened the inbox.')
         : isDemoRecording
           ? 'Showing sample entries without their notices, for a recording. Run /inbox demo to go back.'
           : 'Showing sample entries in the inbox. Run /inbox demo again to go back.',
@@ -2865,7 +2871,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!mod.isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, stop, view, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
+    const [{ ledger, stop, view, isDemo, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
       drawnState($),
       read($, THEME),
     ])
@@ -2896,7 +2902,7 @@ export const register: Register = on => {
           </Text>
         </Box>
         {showsDemoNotices ? <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} /> : null}
-        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
+        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($, isDemo)} />
       </Box>
     )
     if (!stop)
@@ -3143,6 +3149,7 @@ export const register: Register = on => {
     }))
     const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
     const prRefreshKeys = (view.prs.refresh?.actions ?? []).map(a => prKeyAction(a, 'prs'))
+    const prClearKeys = view.prs.clear.map(a => prKeyAction(a, 'prs'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -3403,6 +3410,7 @@ export const register: Register = on => {
       view,
       prOrderKeys,
       prRefreshKeys,
+      prClearKeys,
       prGroups,
       section,
       undoPlace,
@@ -3452,7 +3460,6 @@ export const register: Register = on => {
         drafts,
         now,
         markWidth,
-        desktopHairline,
         markGlyph,
         desktopFrame,
         keyRow,
@@ -3518,7 +3525,7 @@ export const register: Register = on => {
     const rowKeys = [
       ...statusRowKeys,
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
-      ...(tab === 'prs' && !isHelpShown ? prOrderKeys : []),
+      ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prClearKeys] : []),
       // The goal's Undo takes the undo key on the Status, where no list row closes.
       ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)
         ? []

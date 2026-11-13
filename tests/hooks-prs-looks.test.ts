@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { DESKTOP_MARK_CELLS, DESKTOP_SIDE_CELLS } from '../hooks/pane-sizes'
 import type { TabsProps } from '../hooks/tabs-client'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
@@ -88,30 +89,26 @@ for (const look of ['terminal', 'desktop'] as const) {
 }
 
 for (const look of ['terminal', 'desktop'] as const) {
-  test(`in the ${look} look, an order_prs call draws its order's lines and a rank before each ranked PR, ahead of the rest, a changed PR draws Rank again until the agent ranks again, and a merge, a later link, Dismiss, Undo and a clear each redraw it`, async ($, on) => {
+  test(`in the ${look} look, a reply that names a settled PR leaves it settled and starts no fetch${look === 'terminal' ? ', and Clear merged and closed draws above the PR blocks once Undo keeps a merged and a closed PR, and settles each with its own Undo' : ''}`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
-    const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN', 16: 'OPEN' }
-    const failing = new Set<number>()
-    const view = (number: number) =>
-      JSON.stringify({
-        number,
-        title: `Work ${number}`,
-        url: `https://github.com/acme/greet/pull/${number}`,
-        isDraft: false,
-        state: states[number],
-        baseRefName: 'main',
-        mergeable: 'MERGEABLE',
-        reviewDecision: '',
-        statusCheckRollup: failing.has(number)
-          ? [{ __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: '' }]
-          : [],
-      })
+    const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN' }
+    const url = (n: number) => `https://github.com/acme/greet/pull/${n}`
     w.ghAnswers.push(
-      ...[12, 14, 15, 16].map(n => ({
+      ...[12, 14, 15].map(n => ({
         match: (argv: readonly string[]) => argv.includes('view') && argv.includes(String(n)),
         get stdout() {
-          return view(n)
+          return JSON.stringify({
+            number: n,
+            title: `Work ${n}`,
+            url: url(n),
+            isDraft: false,
+            state: states[n],
+            baseRefName: 'main',
+            mergeable: 'MERGEABLE',
+            reviewDecision: '',
+            statusCheckRollup: [],
+          })
         },
       })),
       {
@@ -119,16 +116,13 @@ for (const look of ['terminal', 'desktop'] as const) {
         stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
       },
     )
-    const reply = async (answer: string, turnId: string) => {
+    const answer = async (text: string, turnId: string) => {
       await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
-      await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+      await $.turn.complete({ answer: text, durationMs: 5, isAborted: false, turnId, reason: 'answer' })
       await clock.settle()
     }
     await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-    await reply('Opened https://github.com/acme/greet/pull/12 and https://github.com/acme/greet/pull/14.', 't1')
-    const order = { repo: 'acme/greet', numbers: [14, 15, 12], label: 'Merge in this order', why: '#15 waits on #14.' }
-    await $.tool.call({ tool: 'mcp__inbox__order_prs', ...order })
-    await clock.advance(3 * 60_000)
+    await answer(`Opened ${url(12)}, ${url(14)} and ${url(15)}.`, 't1')
     await $.command.run({ command: 'inbox', args: '' } as never)
     await clock.settle()
     w.paneState = { isShown: true, isFocused: true }
@@ -136,76 +130,273 @@ for (const look of ['terminal', 'desktop'] as const) {
       look === 'terminal'
         ? await $.ui.mount(PANE)
         : await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
-    if (look === 'terminal') await pane.press({ key: 'tab-prs' })
-    else {
+    const show = async (id: string) => {
+      if (look === 'terminal') return pane.press({ key: `tab-${id}` })
       const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
       const x = bar
         .slice(
           0,
-          bar.findIndex(t => t.id === 'prs'),
+          bar.findIndex(t => t.id === id),
         )
         .reduce((sum, t) => sum + t.width + gap, 0)
-      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+
+      return pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
     }
+    await show('prs')
     await clock.settle()
-    const heads = async () =>
-      (await pane.findAll({ type: 'Text', text: /^(\d+\. )?#\d+ Work/ })).map(t =>
-        (t.text ?? '').replace(/ Work[\s\S]*/, '').replace(' ', ' '),
-      )
-    const orderLine = () => pane.find({ type: 'Text', text: /^Merge in this order · set by Claude/ })
-    const changedLine = () => pane.find({ type: 'Text', text: /^1 PR changed since$/ })
+    const linked = () => (JSON.parse(w.stored.get('s:session-1') ?? '{}') as { ledger?: { prs: string[] } }).ledger?.prs
+    const buttonKeys = async () =>
+      (await pane.findAll({ type: 'Button' })).map(b => b.key ?? '').filter(k => !k.endsWith('-key'))
+    expect(await buttonKeys()).not.toContain('clear-finished-prs')
 
-    expect(await orderLine()).toBeDefined()
-    expect(await pane.find({ type: 'Text', text: '#15 waits on #14.' })).toBeDefined()
-    expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12'])
-    expect(await changedLine()).toBeUndefined()
-
-    failing.add(12)
-    await clock.advance(3 * 60_000)
-    expect(await changedLine()).toBeDefined()
-    expect((await pane.find({ key: 'rank-again-order' }))?.props.label).toMatch(/Rank again$/)
-    await pane.press({ key: 'rank-again-order' })
-    expect(w.sent.at(-1)).toBe(
-      'The PR order you set for the PRs tab, "Merge in this order", is out of date: #12 changed since you set it.\nRank its open PRs in acme/greet again (#14, #15, #12), and set the new order with order_prs.',
-    )
+    states[12] = 'MERGED'
+    states[14] = 'CLOSED'
+    await show('needsYou')
+    await show('prs')
     await clock.settle()
-    expect(await pane.find({ type: 'Text', text: /^Ranking…/ })).toBeDefined()
-    await $.turn.start({ text: w.sent.at(-1) ?? '', turnId: 't-rank' })
-    await $.tool.call({ tool: 'mcp__inbox__order_prs', ...order })
-    await $.turn.complete({
-      answer: 'Ranked them again.',
-      durationMs: 5,
-      isAborted: false,
-      turnId: 't-rank',
-      reason: 'answer',
-    })
-    await clock.settle()
-    expect(await changedLine()).toBeUndefined()
-    expect(await pane.find({ key: 'rank-again-order' })).toBeUndefined()
-    expect(await pane.find({ type: 'Text', text: /^✓ Ranked/ })).toBeDefined()
-
-    await reply('Opened https://github.com/acme/greet/pull/16.', 't2')
-    await clock.advance(3 * 60_000)
-    expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12', '#16'])
-
-    states[14] = 'MERGED'
-    await clock.advance(3 * 60_000)
-    expect(await heads()).toEqual(['1. #15', '2. #12', '#16'])
-
-    await pane.press({ key: 'dismiss-pr-acme/greet#15' })
-    await clock.settle()
-    expect(await pane.find({ key: 'settled-pr:acme/greet#15' })).toBeDefined()
-    expect(await heads()).toEqual(['2. #12', '#16'])
-    if (look === 'terminal') {
-      await pane.press({ key: 'undo-pr:acme/greet#15' })
+    expect(linked()).toEqual(['acme/greet#15'])
+    const ghCalls: string[] = []
+    w.ghAnswers.unshift({ match: argv => (argv[0] === 'gh' && ghCalls.push(argv.join(' ')), false), stdout: '' })
+    await answer(`${url(12)} merged and ${url(14)} closed.`, 't2')
+    expect(linked()).toEqual(['acme/greet#15'])
+    expect(ghCalls).toEqual([])
+    w.ghAnswers.shift()
+    expect(await buttonKeys()).not.toContain('clear-finished-prs')
+    if (look === 'desktop') return
+    for (const ref of ['acme/greet#12', 'acme/greet#14']) {
+      await clock.advance(PRESS_GUARD_MS)
+      await pane.press({ key: `undo-pr:${ref}` })
       await clock.settle()
-      expect(await heads()).toEqual(['1. #15', '2. #12', '#16'])
     }
+    expect(linked()).toEqual(['acme/greet#15', 'acme/greet#12', 'acme/greet#14'])
+    const keys = await buttonKeys()
+    expect(keys.filter(k => k === 'clear-finished-prs')).toHaveLength(1)
+    expect(keys.indexOf('clear-finished-prs')).toBeLessThan(keys.findIndex(k => /-acme\/greet#\d+$/.test(k)))
 
-    await $.tool.call({ tool: 'mcp__inbox__order_prs', numbers: [] })
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'clear-finished-prs' })
     await clock.settle()
-    expect(await orderLine()).toBeUndefined()
-    expect((await heads()).every(h => h.startsWith('#'))).toBe(true)
-    expect(await heads()).not.toContain('#15')
+    expect(linked()).toEqual(['acme/greet#15'])
+    expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
+    expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
+    expect(await buttonKeys()).not.toContain('clear-finished-prs')
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'undo-pr:acme/greet#12' })
+    await clock.settle()
+    expect(linked()).toEqual(['acme/greet#15', 'acme/greet#12'])
+    expect(await buttonKeys()).toContain('clear-finished-prs')
   })
 }
+
+for (const look of ['terminal', 'desktop'] as const) {
+  test(
+    `in the ${look} look, an order_prs call draws its order's lines and a rank before each ranked PR, ahead of the rest, a changed PR draws Rank again until the agent ranks again, and a merge, a later link, Dismiss, Undo and a clear each redraw it`,
+    { timeoutMs: 20_000 },
+    async ($, on) => {
+      const clock = mock.clock(on, { now: 1_000_000 })
+      world($, on, [])
+      const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN', 16: 'OPEN' }
+      const failing = new Set<number>()
+      const view = (number: number) =>
+        JSON.stringify({
+          number,
+          title: `Work ${number}`,
+          url: `https://github.com/acme/greet/pull/${number}`,
+          isDraft: false,
+          state: states[number],
+          baseRefName: 'main',
+          mergeable: 'MERGEABLE',
+          reviewDecision: '',
+          statusCheckRollup: failing.has(number)
+            ? [{ __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: '' }]
+            : [],
+        })
+      w.ghAnswers.push(
+        ...[12, 14, 15, 16].map(n => ({
+          match: (argv: readonly string[]) => argv.includes('view') && argv.includes(String(n)),
+          get stdout() {
+            return view(n)
+          },
+        })),
+        {
+          match: argv => argv.includes('graphql'),
+          stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+        },
+      )
+      const reply = async (answer: string, turnId: string) => {
+        await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+        await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+        await clock.settle()
+      }
+      await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+      await reply('Opened https://github.com/acme/greet/pull/12 and https://github.com/acme/greet/pull/14.', 't1')
+      const order = {
+        repo: 'acme/greet',
+        numbers: [14, 15, 12],
+        label: 'Merge in this order',
+        why: '#15 waits on #14.',
+      }
+      await $.tool.call({ tool: 'mcp__inbox__order_prs', ...order })
+      await clock.advance(3 * 60_000)
+      await $.command.run({ command: 'inbox', args: '' } as never)
+      await clock.settle()
+      w.paneState = { isShown: true, isFocused: true }
+      const pane =
+        look === 'terminal'
+          ? await $.ui.mount(PANE)
+          : await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+      if (look === 'terminal') await pane.press({ key: 'tab-prs' })
+      else {
+        const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+        const x = bar
+          .slice(
+            0,
+            bar.findIndex(t => t.id === 'prs'),
+          )
+          .reduce((sum, t) => sum + t.width + gap, 0)
+        await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+      }
+      await clock.settle()
+      const heads = async () =>
+        (await pane.findAll({ type: 'Text', text: /^(\d+\. )?#\d+ Work/ })).map(t =>
+          (t.text ?? '').replace(/ Work[\s\S]*/, '').replace(' ', ' '),
+        )
+      const orderLine = () => pane.find({ type: 'Text', text: /^Merge in this order · set by Claude/ })
+      const changedLine = () => pane.find({ type: 'Text', text: /^1 PR changed since$/ })
+
+      expect(await orderLine()).toBeDefined()
+      expect(await pane.find({ type: 'Text', text: '#15 waits on #14.' })).toBeDefined()
+      expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12'])
+      expect(await changedLine()).toBeUndefined()
+
+      failing.add(12)
+      await clock.advance(3 * 60_000)
+      expect(await changedLine()).toBeDefined()
+      expect((await pane.find({ key: 'rank-again-order' }))?.props.label).toMatch(/Rank again$/)
+      await pane.press({ key: 'rank-again-order' })
+      expect(w.sent.at(-1)).toBe(
+        'The PR order you set for the PRs tab, "Merge in this order", is out of date: #12 changed since you set it.\nRank its open PRs in acme/greet again (#14, #15, #12), and set the new order with order_prs.',
+      )
+      await clock.settle()
+      expect(await pane.find({ type: 'Text', text: /^Ranking…/ })).toBeDefined()
+      await $.turn.start({ text: w.sent.at(-1) ?? '', turnId: 't-rank' })
+      await $.tool.call({ tool: 'mcp__inbox__order_prs', ...order })
+      await $.turn.complete({
+        answer: 'Ranked them again.',
+        durationMs: 5,
+        isAborted: false,
+        turnId: 't-rank',
+        reason: 'answer',
+      })
+      await clock.settle()
+      expect(await changedLine()).toBeUndefined()
+      expect(await pane.find({ key: 'rank-again-order' })).toBeUndefined()
+      expect(await pane.find({ type: 'Text', text: /^✓ Ranked/ })).toBeDefined()
+
+      await reply('Opened https://github.com/acme/greet/pull/16.', 't2')
+      await clock.advance(3 * 60_000)
+      expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12', '#16'])
+
+      states[14] = 'MERGED'
+      await clock.advance(3 * 60_000)
+      expect(await heads()).toEqual(['1. #15', '2. #12', '#16'])
+
+      await pane.press({ key: 'dismiss-pr-acme/greet#15' })
+      await clock.settle()
+      expect(await pane.find({ key: 'settled-pr:acme/greet#15' })).toBeDefined()
+      expect(await heads()).toEqual(['2. #12', '#16'])
+      if (look === 'terminal') {
+        await pane.press({ key: 'undo-pr:acme/greet#15' })
+        await clock.settle()
+        expect(await heads()).toEqual(['1. #15', '2. #12', '#16'])
+      }
+
+      await $.tool.call({ tool: 'mcp__inbox__order_prs', numbers: [] })
+      await clock.settle()
+      expect(await orderLine()).toBeUndefined()
+      expect((await heads()).every(h => h.startsWith('#'))).toBe(true)
+      expect(await heads()).not.toContain('#15')
+    },
+  )
+}
+
+test('in the desktop look, an open PR block’s title and status lines keep only the mark column beside their text at every docked width, so its buttons get the rest of the row, and a dismissed block keeps the side column for Undo', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      stdout: JSON.stringify({
+        number: 12,
+        title: 'Add a greeting CLI',
+        url: 'https://github.com/acme/greet/pull/12',
+        isDraft: false,
+        state: 'OPEN',
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: 'APPROVED',
+        statusCheckRollup: [],
+      }),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  await clock.settle()
+  w.paneState = { isShown: true, isFocused: true }
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 42 } })
+  const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  const x = bar
+    .slice(
+      0,
+      bar.findIndex(t => t.id === 'prs'),
+    )
+    .reduce((sum, t) => sum + t.width + gap, 0)
+  await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+
+  type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
+  const within = (node: unknown): Drawn[] =>
+    typeof node === 'object' && node !== null
+      ? [node as Drawn, ...((node as Drawn).children ?? []).flatMap(within)]
+      : []
+  const cellsBesideText = (frame: Drawn | undefined) =>
+    (frame?.children ?? [])
+      .map(c => (c as Drawn).props)
+      .filter(p => p.key !== 'text')
+      .reduce((sum, p) => sum + Number(p.width ?? p.minWidth ?? 0), 0)
+  for (const bodyColumns of [26, 30, 36, 42, 50]) {
+    await pane.redraw({ ...PANE.props, bodyColumns })
+    const title = (await pane.find({ key: 'pr-title-acme/greet#12' })) as Drawn | undefined
+    const status = (await pane.find({ key: 'pr-status-acme/greet#12' })) as Drawn | undefined
+    expect([cellsBesideText(title), cellsBesideText(status)], `${bodyColumns} columns`).toEqual([
+      DESKTOP_MARK_CELLS,
+      DESKTOP_MARK_CELLS,
+    ])
+    expect(
+      within(status)
+        .filter(n => n.type === 'Button')
+        .map(n => n.props.key),
+      `${bodyColumns} columns`,
+    ).toEqual(['merge-acme/greet#12', 'open-acme/greet#12', 'dismiss-pr-acme/greet#12'])
+  }
+
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'dismiss-pr-acme/greet#12' })
+  await clock.settle()
+  const settled = await pane.find({ key: 'settled-pr:acme/greet#12' })
+  const side = within(settled).find(n => n.type === 'Box' && n.props.minWidth === DESKTOP_SIDE_CELLS)
+  expect(within(side).some(n => n.props.key === 'undo-pr:acme/greet#12')).toBe(true)
+})

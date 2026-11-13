@@ -3,7 +3,7 @@
 // src/update-main.ts
 import { existsSync } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname4, join as join5 } from "node:path";
+import { dirname as dirname5, join as join6 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/cli.ts
@@ -28,6 +28,10 @@ function dataDir(env, pluginRoot) {
   if (m) return `${m[1]}/plugins/data/${m[3]}-${m[2]}`;
   return join(homedir(), ".codex", "inbox-dev");
 }
+
+// src/host.ts
+import { appendFile, mkdir as mkdir2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
+import { dirname as dirname2, join as join3 } from "node:path";
 
 // src/state.ts
 import { execFileSync } from "node:child_process";
@@ -101,7 +105,8 @@ var EMPTY_SESSION_STATUS = {
   goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
-  serves: {}
+  serves: {},
+  goalRefused: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -121,6 +126,13 @@ function isNumberOnly(name) {
   const hasKind = all.some((w) => NUMBER_KINDS.has(w));
   const isNumber = (w) => isTagged(w) || hasKind && isBare(w);
   return all.some(isNumber) && all.every((w) => isNumber(w) || NUMBER_KINDS.has(w));
+}
+var VERSION = /^v?\d+(\.\d+)+$/;
+function namesOtherVersion(name, other) {
+  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const mine = versions(name);
+  const theirs = new Set(versions(other));
+  return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -155,6 +167,11 @@ function recommendedOption(options, rec) {
   const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
+}
+var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
+function isQuestionBack(answer, options) {
+  const text2 = answer.trim();
+  return text2.endsWith("?") && (QUESTION_WORD.test(text2) || recommendedOption(options, text2) === null);
 }
 var FILLER = /* @__PURE__ */ new Set([
   "the",
@@ -315,6 +332,13 @@ function closedRecord(item, closing, now) {
 function closedFindingRecord(finding, closing, now, askedAs) {
   return { ...finding, ...askedAs ? { askedAs } : {}, ...closing, closedAt: now };
 }
+function closeItem(ledger, id, closing, now) {
+  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
+  return reopenAskedFindings(
+    { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
+    records
+  );
+}
 function closeFinding(ledger, id, closing, now, askedAs) {
   const finding = ledger.findings.find((f) => f.id === id);
   if (!finding) return ledger;
@@ -421,7 +445,19 @@ function clipMiddle(text2, max, head) {
   if (text2.length <= max) return text2;
   return `${text2.slice(0, head)}${NL2}\u2026[cut]${NL2}${text2.slice(text2.length - (max - head))}`;
 }
-var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
+var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
+var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
+var TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`;
+var SYLLABLE = String.raw`[\uAC00-\uD7A3]`;
+var OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(44032 + i * 28)).join("")}]`;
+var HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`;
+var FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`;
+var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`;
+var GRAPHEME = new RegExp(
+  String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
+  "gu"
+);
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -634,8 +670,8 @@ var SENT_PRESS_KINDS = {
   done: "mark"
 };
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
-  const press = exchange.press;
-  const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === "talk" ? press.id : null;
+  const press2 = exchange.press;
+  const talkedAboutId = press2 && SENT_PRESS_KINDS[press2.action] === "talk" ? press2.id : null;
   return applyUpdate(
     ledger,
     { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) },
@@ -659,7 +695,8 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   for (const item of ledger.items) {
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
-    const isClosing = outcome !== void 0 && (item.from !== "record" || isPersonsAnswer(outcome));
+    const isQuestionBackOutcome = outcome !== void 0 && item.kind === "question" && isQuestionBack(outcome, item.options);
+    const isClosing = outcome !== void 0 && !isQuestionBackOutcome && (item.from !== "record" || isPersonsAnswer(outcome));
     if (isClosing) closed.push(closedRecord(item, { outcome, how: "update" }, now));
     else items.push(withUpdate({ ...item, helps }, u.updated));
   }
@@ -749,6 +786,22 @@ function withUpdate(item, updated) {
 }
 
 // ../hooks/status-upgrade-goal.ts
+var REFUSAL_LINES = ["goal", "retire"];
+var REFUSAL_WHYS = [
+  "typed",
+  "met",
+  "work-open",
+  "moved",
+  "no-work",
+  "restates",
+  "few-milestones"
+];
+function goalRefusedOf(saved) {
+  const r = saved;
+  const line = REFUSAL_LINES.find((x) => x === r?.line);
+  const why = REFUSAL_WHYS.find((x) => x === r?.why);
+  return line && why ? { line, why } : null;
+}
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -808,15 +861,19 @@ function goalRemovedOf(saved) {
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
-function goalFields(o, subjectIds) {
+function goalFields(o, subjects) {
   const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
-  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
+  const live = new Map(milestones.filter((m) => !dropped.has(m.id)).map((m) => [m.id, m]));
+  const names = new Map(subjects.map((s) => [s.id, s.name]));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
   const serves = Object.fromEntries(
     savedServes.filter(
-      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
-    )
+      (e) => names.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || live.has(e[1]))
+    ).map(([id, to]) => {
+      const milestone = live.get(to);
+      return [id, milestone && namesOtherVersion(names.get(id), milestone.name) ? "none" : to];
+    })
   );
   const saved = [
     ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
@@ -830,7 +887,8 @@ function goalFields(o, subjectIds) {
     goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
-    serves
+    serves,
+    goalRefused: goalRefusedOf(o.goalRefused)
   };
 }
 
@@ -944,7 +1002,7 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const goal = goalFields(o, subjects);
   const dropped = droppedMilestoneIds(goal.milestones);
   const askLinks = savedLinks.map(([ask, to]) => [
     ask,
@@ -1442,6 +1500,49 @@ function capitalized(text2) {
 }
 var ISSUE_LABEL = "File issue";
 
+// ../hooks/status-goal-gate.ts
+function heldSubjects(o) {
+  const open2 = new Set(o.milestones.filter(isOpen).map((m) => m.id));
+  return o.subjects.filter((s) => open2.has(o.serves[s.id] ?? ""));
+}
+function lastProgressAt(o, g) {
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const ids = new Set(kept.map((m) => m.id));
+  const done = o.subjects.flatMap(
+    (s) => s.status === "done" && s.closedAt !== null && ids.has(o.serves[s.id] ?? "") ? [s.closedAt] : []
+  );
+  return Math.max(g.setAt, ...kept.map((m) => m.changedAt), ...done);
+}
+function isGoalMet(o) {
+  const g = o.goal;
+  if (g === null || g.isAwaitingMilestones) return false;
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  return g.metAt != null || kept.length > 0 && kept.every((m) => m.status === "done");
+}
+function goalLeftFor(o, now) {
+  const g = o.goal;
+  if (g === null || isGoalMet(o) || g.source !== "inferred" || heldSubjects(o).some(isOpen)) return null;
+  const left = now - lastProgressAt(o, g);
+  return left >= GOAL_LEFT_MS ? left : null;
+}
+function hasWorkForGoal(o) {
+  const held = new Set(heldSubjects(o).map((s) => s.id));
+  return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
+}
+function refusalOf(o, kind, now) {
+  const g = o.goal;
+  if (g === null || isGoalMet(o)) return kind === "goal" ? null : "met";
+  if (g.source === "typed") return "typed";
+  if (heldSubjects(o).some(isOpen)) return "work-open";
+  return goalLeftFor(o, now) === null ? "moved" : null;
+}
+function goalRefusal(o, start, kind, now) {
+  const why = refusalOf(o, kind, now);
+  const isSameGoal = o.goal?.setAt === start.goal?.setAt;
+  if (why === null || start === o || !isSameGoal) return why;
+  return refusalOf(start, kind, now) === null ? null : why;
+}
+
 // ../hooks/status-goal-ops.ts
 var RESTATED_SHARE = 0.8;
 function restatesGoal(text2, goal) {
@@ -1546,30 +1647,6 @@ function withRestatedGoalAsMilestones(o, ops, readSetAt) {
     (op) => op.kind === "goal" && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text) ? op.milestones.map((m) => ({ kind: "milestone", status: m.status, name: m.name, text: "" })) : [op]
   );
 }
-function linkedSubjects(o) {
-  const live = new Set(o.milestones.filter((m) => m.status !== "dropped").map((m) => m.id));
-  return o.subjects.filter((s) => live.has(o.serves[s.id] ?? ""));
-}
-function lastProgressAt(o, g) {
-  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.changedAt);
-  const done = linkedSubjects(o).flatMap((s) => s.status === "done" && s.closedAt !== null ? [s.closedAt] : []);
-  return Math.max(g.setAt, ...milestones, ...done);
-}
-function goalLeftFor(o, now) {
-  const g = o.goal;
-  if (g === null || isGoalMet(o) || g.source !== "inferred" || linkedSubjects(o).some(isOpen)) return null;
-  const left = now - lastProgressAt(o, g);
-  return left >= GOAL_LEFT_MS ? left : null;
-}
-function isGoalMet(o) {
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  return o.goal?.metAt != null || kept.length > 0 && kept.every((m) => m.status === "done");
-}
-function mayReplaceGoal(o, start, kind, now) {
-  const may = (s) => s.goal === null || isGoalMet(s) ? kind === "goal" : goalLeftFor(s, now) !== null;
-  const isSameGoal = o.goal?.setAt === start.goal?.setAt;
-  return may(o) || start !== o && isSameGoal && may(start);
-}
 function inferredGoal(o, text2, named, now) {
   const milestones = named.map((m, n) => ({
     id: `m${o.nextMilestoneId + n}`,
@@ -1589,33 +1666,45 @@ function inferredGoal(o, text2, named, now) {
     source: "inferred"
   };
   return withoutLinksTo(
-    { ...o, goal, goalRemoved: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} },
+    {
+      ...o,
+      goal,
+      goalRemoved: null,
+      goalRefused: null,
+      milestones,
+      nextMilestoneId: o.nextMilestoneId + milestones.length,
+      serves: {}
+    },
     milestones
   );
 }
-function hasWorkForGoal(o) {
-  const held = new Set(linkedSubjects(o).map((s) => s.id));
-  return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
+function goalLineRefusal(o, op) {
+  const text2 = clipWords(op.text, DESCRIPTION_KEPT);
+  const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT) }));
+  const g = o.goal;
+  const isCurrent = g !== null && (restatesGoal(text2, g.text) || hasGoalMilestones(o, milestones));
+  const isPrevious = g?.was != null && restatesGoal(text2, g.was);
+  const isRemoved = o.removedGoals.some((key) => restatesGoal(text2, key));
+  if (op.milestones.length < MILESTONES_MIN) return "few-milestones";
+  if (isCurrent || isPrevious || isRemoved) return "restates";
+  return hasWorkForGoal(o) ? null : "no-work";
 }
 function applyGoalOp(o, op, now, findSubject, start = o) {
-  if (op.kind === "goal") {
-    const text2 = clipWords(op.text, DESCRIPTION_KEPT);
+  if (op.kind === "goal" || op.kind === "retire") {
+    const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now);
+    const why = op.kind === "goal" && goalLineRefusal(settled, op) || goalRefusal(settled, start, op.kind, now);
+    if (why !== null) return { ...o, goalRefused: { line: op.kind, why } };
+    if (op.kind === "retire") return withoutGoal(o);
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
-    const g = o.goal;
-    const isCurrent = g !== null && (restatesGoal(text2, g.text) || hasGoalMilestones(o, milestones));
-    const isPrevious = g?.was != null && restatesGoal(text2, g.was);
-    const isRemoved = o.removedGoals.some((key) => restatesGoal(text2, key));
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, start, "goal", now);
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o;
-    return inferredGoal(o, text2, milestones, now);
+    return inferredGoal(o, clipWords(op.text, DESCRIPTION_KEPT), milestones, now);
   }
-  if (op.kind === "retire") return mayReplaceGoal(o, start, "retire", now) ? withoutGoal(o) : o;
   if (o.goal === null) return o;
   if (op.kind === "milestone") return addMilestone(o, op, now);
   const subject = findSubject(op.subject);
   const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone);
   if (!subject || op.milestone !== null && !milestone) return o;
-  return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
+  const isOtherVersion = milestone !== null && namesOtherVersion(subject.name, milestone.name);
+  return { ...o, serves: { ...o.serves, [subject.id]: milestone === null || isOtherVersion ? "none" : milestone.id } };
 }
 function withWorkDoneMilestones(o, now) {
   let isChanged = false;
@@ -1658,7 +1747,7 @@ function withoutLinksTo(o, milestones) {
   };
 }
 function withoutGoal(o) {
-  return withoutLinksTo({ ...o, goal: null, milestones: [], serves: {} }, []);
+  return withoutLinksTo({ ...o, goal: null, goalRefused: null, milestones: [], serves: {} }, []);
 }
 
 // ../hooks/tabs.ts
@@ -1837,7 +1926,6 @@ function milestoneRow(m, o, items) {
     text: m.text || null,
     stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
     was: isChanged ? m.was : null,
-    isChanged,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
   };
@@ -1874,11 +1962,10 @@ var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
   working: "working",
-  "waits-on-other": "waiting",
-  queued: "queued"
+  "waits-on-other": "waiting"
 };
 function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued"].flatMap((status) => {
+  return ["working", "waits-on-other"].flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -1914,13 +2001,11 @@ function childRow(c, branch, depth) {
     branch
   };
 }
-function partRows(shown, c, depth, afterNew = []) {
+function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
-  const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
-  const firstSeen = shown.findIndex((x) => !c.isNew(x));
+  const firstClosed = shown.findIndex((x) => !isOpen(x));
   for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0;
-    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...lookRow ? [lookRow] : []);
+    if (i === firstClosed) rows.push(...afterOpen);
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -1955,31 +2040,18 @@ function partRows(shown, c, depth, afterNew = []) {
         branch: "last"
       });
   }
-  const isEveryShownNew = firstSeen === -1;
-  if (isEveryShownNew) rows.push(...afterNew);
-  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow);
+  if (firstClosed === -1) rows.push(...afterOpen);
+  rows.push(...afterClosed);
   return rows;
-}
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  const isLine = (r) => r.kind === "look" || r.kind === "part";
-  return prev !== void 0 && !isLine(prev) && !isLine(row) && !isUnderSubject;
-}
-function ruledRows(rows, isRuled) {
-  return rows.map((r, n) => ({
-    ...r,
-    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
-    isLast: n === rows.length - 1
-  }));
 }
 
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
+var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
@@ -1991,21 +2063,24 @@ function statusPage(s, now) {
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const goalParts = goalPage(o, s.ledger.items);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : void 0;
-  const isOther = (x) => servedBy(x) === "none";
   const milestoneOf2 = (x) => {
     const to = servedBy(x);
     return to !== void 0 && milestoneIds.has(to) ? to : null;
   };
+  const hasMilestones = milestoneIds.size > 0;
+  const isUnneeded = (x) => servedBy(x) === "none";
+  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf2(x) === null;
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const main2 = subjects.filter((x) => !isOther(x));
+  const needed = subjects.filter((x) => !isUnneeded(x));
+  const main2 = needed.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open2 = main2.filter(isOpen).sort(pageOrder);
+  const open2 = needed.filter(isOpen).sort(pageOrder);
   const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part) => {
@@ -2023,7 +2098,7 @@ function statusPage(s, now) {
   const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main2.filter((x) => milestoneOf2(x) === m.id)));
   const otherUnseenClosed = unseenClosedOf(other);
   const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !isNew(x);
+  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
   const otherFolded = other.filter(isOtherFolded);
   const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
   const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
@@ -2033,15 +2108,12 @@ function statusPage(s, now) {
     oldestAskOf,
     running,
     isTurnRunning: s.presence.isTurnRunning,
-    now,
-    lookId: look === null ? null : "look",
-    lookText: LOOK_TEXT,
-    isLookAtEnd: true
+    now
   };
-  const lookId = (id) => look === null ? null : id;
-  const foldCtx = { ...ctx, lookId: null, running: [] };
+  const foldCtx = { ...ctx, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const closed = named.filter((x) => x.status === status);
+    const names = closed.map((x) => x.name);
     const hidden = names.length - NAMED_FOLD_NAMES;
     const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
     return names.length === 0 ? [] : [
@@ -2050,13 +2122,20 @@ function statusPage(s, now) {
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
       }
     ];
   });
-  const rows = [
-    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0, namedFolds("", top.named, 0))
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}open`,
+      depth,
+      ...SUBJECT_MARKS.queued,
+      text: `${foldedOpen.length} more`,
+      subjectIds: []
+    }
   ];
   const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
     {
@@ -2064,57 +2143,43 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
+      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
     }
   ];
-  const foldRows = (prefix, p, depth) => [
-    ...p.foldedOpen.length > 0 ? [
-      {
-        kind: "fold",
-        id: `${prefix}open`,
-        depth,
-        ...SUBJECT_MARKS.queued,
-        text: `${p.foldedOpen.length} more`
-      }
-    ] : [],
+  const foldedPart = (prefix, p, depth) => [
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
-  rows.push(...foldRows("", top, 0));
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look") rows.pop();
-    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(
-      ...partRows(
-        otherShown,
-        { ...ctx, lookId: lookId("other-look") },
-        0,
-        namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)
-      )
-    );
-    const otherFoldedOpen = otherFolded.filter(isOpen);
-    if (otherFoldedOpen.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
-    rows.push(
-      ...doneFold(
-        "other-",
-        otherFolded.filter((x) => x.status === "done"),
-        otherNewClosed,
-        0
-      )
-    );
-  }
-  const milestoneRows = (id, p) => ruledRows(
-    [
-      ...partRows(
-        p.shown,
-        { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false },
-        1,
-        namedFolds(`${id}-`, p.named, 1)
-      ),
-      ...foldRows(`${id}-`, p, 1)
-    ],
-    false
-  );
+  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
+    const x = subjects.find((y) => y.id === c.subjectId);
+    return { child: c, milestoneId: x === void 0 ? null : milestoneOf2(x) };
+  });
+  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
+  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
+  const afterOtherOpen = [
+    ...openFold(
+      "other-",
+      otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)),
+      0
+    ),
+    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
+  ];
+  const otherRows = [
+    ...hasMilestones ? looseRows(null, 0) : [],
+    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold(
+      "other-",
+      otherFolded.filter((x) => x.status === "done"),
+      otherNewClosed,
+      0
+    )
+  ];
+  const rows = [
+    ...hasMilestones ? [] : looseRows(null, 0),
+    ...foldedPart("", top, 0),
+    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
+  ];
+  const milestoneRows = (id, p) => [...looseRows(id, 1), ...foldedPart(`${id}-`, p, 1)];
   const g = goalParts.goal;
   const goal = g && {
     ...g,
@@ -2126,7 +2191,7 @@ function statusPage(s, now) {
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows,
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -2605,6 +2670,7 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {
@@ -2758,10 +2824,10 @@ function asCopyOf(item, q) {
   return {
     ...item,
     ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
+    ...descriptions ? { optionDescriptions: { ...descriptions, ...item.optionDescriptions } } : {}
   };
 }
-function linkDialogs(s) {
+function linkDialogs(s, now = Date.now()) {
   if (s.dialogQuestions.length === 0) return s;
   let items = s.ledger.items;
   const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
@@ -2774,12 +2840,17 @@ function linkDialogs(s) {
       s.dialogQuestions.filter((o) => o.turn === q.turn)
     );
     if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    if (q.answer !== void 0 && !restates(copy.ask, q.question)) return q;
     linked.add(copy.id);
     items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
     return { ...q, itemId: copy.id };
   });
   const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+  const ledger = questions.reduce(
+    (l, q) => q.answer !== void 0 && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l,
+    { ...s.ledger, items }
+  );
+  return { ...s, ledger, dialogQuestions: kept };
 }
 
 // ../hooks/pr-views.ts
@@ -2881,7 +2952,28 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/tools.ts
+// ../hooks/pr-tab.ts
+function finishedTabPrs(prState, links) {
+  return splitLinked(prState, links).tracked.filter((ref) => {
+    const view = prState.views[ref];
+    return view !== void 0 && view.state !== "OPEN" && ref !== prState.branchRef;
+  });
+}
+function prClearActions(prState, links) {
+  if (finishedTabPrs(prState, links).length === 0) return [];
+  return [
+    {
+      press: { action: "pr-clear-finished" },
+      label: "Clear merged and closed",
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ];
+}
+
+// ../hooks/tool-schemas.ts
 var ORDER_SCHEMA = {
   type: "object",
   properties: {
@@ -2937,18 +3029,18 @@ function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
-  const action = (press, label, kind, flags = {}) => {
-    const pressAction = actionId(press);
+  const action = (press2, label, kind, flags = {}) => {
+    const pressAction = actionId(press2);
     return {
-      press,
-      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      press: press2,
+      label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
-      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
+      emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
-      isFollowUp: FOLLOW_UPS.has(press.action),
-      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
+      isFollowUp: FOLLOW_UPS.has(press2.action),
+      ...ACTION_KEYS[press2.action] ? { hotkey: ACTION_KEYS[press2.action] } : {},
       isOut: out === pressAction
     };
   };
@@ -3132,7 +3224,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {
@@ -3299,16 +3392,20 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
+    clear: prClearActions(s.prViews, s.ledger),
     pressOutSince
   };
 }
 
 // ../hooks/session-presses.ts
-function pruned(s) {
-  const inPlace = [
+function rowsInPlace(s) {
+  const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  return /* @__PURE__ */ new Set([...s.heldRows, ...since]);
+}
+function pruned(s) {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
       ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
@@ -3317,7 +3414,7 @@ function pruned(s) {
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
@@ -3684,7 +3781,8 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     children: (last?.children ?? []).map((c) => ({ ...c })),
     milestones: (last?.milestones ?? []).map((m) => ({ ...m })),
     serves: { ...last?.serves },
-    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
+    goalRefused: null
   };
   const find = (ref) => {
     const key = nameKey(clipWords(ref, NAME_KEPT));
@@ -3805,7 +3903,8 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   return settleGoal(o, now, readSetAt, named);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
-  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : last;
+  const read = last?.goalRefused ? { ...last, goalRefused: null } : last;
+  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : read;
   if (o === null) return null;
   const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Set());
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
@@ -3986,7 +4085,7 @@ function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
     ...Object.fromEntries(counts)
   };
 }
-function herdrReport(pane, tokens, seq) {
+function paneReport(pane, tokens, seq) {
   return [
     "herdr",
     "pane",
@@ -4000,16 +4099,40 @@ function herdrReport(pane, tokens, seq) {
     ...seq === void 0 ? [] : ["--seq", String(seq)]
   ];
 }
-function herdrReportKey(pane, tokens) {
-  return herdrReport(pane, tokens).join("\n");
+var SESSION_LABEL = "inbox.session";
+function reportCommand(r, hc = "hc") {
+  if (r.target.kind === "pane") return paneReport(r.target.pane, r.tokens, r.seq);
+  const labels = { [SESSION_LABEL]: r.session ?? "", ...herdrLabels(r.tokens) };
+  return [
+    hc,
+    "label",
+    r.target.terminal,
+    ...Object.entries(labels).map(([name, value]) => `${name}=${value.replace(new RegExp("\\p{Cc}", "gu"), " ")}`)
+  ];
+}
+function herdrReportKey(r) {
+  return reportCommand({ ...r, seq: void 0 }).join("\n");
 }
 var HERDR_RETRY_MS = [5e3, 3e4, 12e4];
-function herdrReporter() {
+function herdrReporter(log) {
   let sent = null;
   let retries = 0;
   let isRetryWaiting = false;
   let sending = Promise.resolve();
   let newest = null;
+  let hcFound = null;
+  let logged = null;
+  const runReport = async (run2, r) => {
+    const options = { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS };
+    if (r.target.kind === "pane") return run2(reportCommand(r), options);
+    for (const hc of hcFound ? [hcFound] : r.target.hc) {
+      const result = await run2(reportCommand(r, hc), options);
+      if (result.code === UNSTARTABLE_CODE) continue;
+      hcFound = hc;
+      return result;
+    }
+    return null;
+  };
   const retryLater = (after) => {
     const wait = HERDR_RETRY_MS[retries];
     if (!after || isRetryWaiting || wait === void 0) return;
@@ -4023,13 +4146,14 @@ function herdrReporter() {
   const send = async (run2, report, after) => {
     const r = await report();
     if (!r) return false;
-    const key = herdrReportKey(r.pane, r.tokens);
+    const key = herdrReportKey(r);
     if (key === sent) return true;
     sent = null;
-    const result = await run2(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS }).catch(
-      () => null
-    );
+    const result = await runReport(run2, r).catch(() => null);
     const isTaken = result?.code === 0;
+    const problem = isTaken ? null : reportProblem(r, result);
+    if (problem && problem !== logged) log?.(problem);
+    logged = problem;
     if (isTaken) {
       sent = key;
       retries = 0;
@@ -4043,6 +4167,114 @@ function herdrReporter() {
     return result;
   };
   return reportToHerdr;
+}
+function reportProblem(r, result) {
+  if (!result && r.target.kind === "terminal")
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(", then ")}.`;
+  if (!result) return "Herdr report did not run.";
+  const why = result.stderr.trim();
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : "."}`;
+}
+function herdrAppHome(env) {
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const named = env.HERDR_APP_HOME;
+  return named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
+}
+function herdrTarget(env) {
+  const pane = env.HERDR_PANE_ID;
+  if (pane) return { kind: "pane", pane };
+  const terminal = env.HC_TERMINAL_ID;
+  if (!terminal) return null;
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const appHome = herdrAppHome(env);
+  const installed = (name) => home ? [name, `${home}/.local/bin/${name}`] : [name];
+  return { kind: "terminal", terminal, appHome, hc: installed("hc"), herdrApp: installed("herdr-app") };
+}
+function herdrLabels(tokens) {
+  return Object.fromEntries(
+    Object.entries(tokens).map(([name, value]) => [
+      name === STATUS_TOKEN ? "inbox.status" : name.replace(/^inbox-/, "inbox."),
+      value ?? ""
+    ])
+  );
+}
+var HERDR_FORMAT = 1;
+var SESSION_FIELDS = Object.keys(emptySession());
+function herdrEnvelope(source, session, isTrimmed = false) {
+  const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+  const { lastHerdrPress } = session;
+  const { projectFolder, ...rest } = source;
+  return {
+    format: HERDR_FORMAT,
+    ...rest,
+    ...projectFolder?.startsWith("/") && { projectFolder },
+    ...isTrimmed && { trimmed: true },
+    ...lastHerdrPress && { lastPress: lastHerdrPress },
+    session: shared
+  };
+}
+function publishedSessionsFolder(appHome) {
+  return `${appHome}/inbox/sessions`;
+}
+function publishedSessionPath(appHome, sessionId) {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
+}
+
+// ../hooks/host-prs.ts
+var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
+
+// ../hooks/herdr-app.ts
+var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
+var PUBLISH_LIMIT_BYTES = 1024 * 1024;
+function utf8Bytes(text2) {
+  let bytes = 0;
+  for (const char of text2) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
+  }
+  return bytes;
+}
+var isOverLimit = (text2) => text2.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text2) > PUBLISH_LIMIT_BYTES;
+function withoutFoldedClosed(s) {
+  const inPlace = rowsInPlace(s);
+  const { closed, closedFindings } = s.ledger;
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      closed: closed.filter((c) => inPlace.has(c.id)),
+      closedFindings: closedFindings.filter((f) => inPlace.has(f.id))
+    }
+  };
+}
+function publishedText(source, session, log) {
+  const text2 = JSON.stringify(herdrEnvelope(source, session));
+  if (!isOverLimit(text2)) return text2;
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true));
+  if (isOverLimit(trimmed))
+    log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
+  return trimmed;
+}
+async function publishSession(files, appHome, source, session, log) {
+  const path = publishedSessionPath(appHome, source.sessionId);
+  const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files.write(temporary, publishedText(source, session, log));
+    await files.move(temporary, path);
+  } catch (err) {
+    await files.remove(temporary).catch(() => void 0);
+    throw err;
+  }
+}
+function publishedSession(files, appHome, source, session, log) {
+  if (!appHome) return Promise.resolve(false);
+  return publishSession(files, appHome, source, session, log).then(
+    () => true,
+    (err) => {
+      log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  );
 }
 
 // src/host.ts
@@ -4062,22 +4294,60 @@ function codexStore(dir, sessionId, now, onWrite) {
     exclusive: (fn) => tryWithLock(`${statePath(dir, sessionId)}.updating`, fn)
   };
 }
-function herdrOnWrite(env, run2, dir, now) {
-  const pane = env.HERDR_PANE_ID;
-  if (!pane) return void 0;
-  const report = herdrReporter();
-  return async (s) => {
-    const at = now();
-    const seq = s.writtenAt ?? at;
-    const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
-    const key = herdrReportKey(pane, tokens);
-    if (key === s.herdrReport?.key) return;
-    if (!await report(run2, async () => ({ pane, tokens, seq }))) return;
-    await updateState(
-      dir,
-      s.sessionId,
-      (saved) => saved.herdrReport && saved.herdrReport.seq >= seq ? saved : { ...saved, herdrReport: { key, seq } }
+var publishFiles = {
+  write: async (path, text2) => {
+    await mkdir2(dirname2(path), { recursive: true });
+    await writeFile2(path, text2);
+  },
+  move: (from, to) => rename2(from, to),
+  remove: (path) => rm(path, { force: true }),
+  removeFolder: (path) => rm(path, { recursive: true, force: true })
+};
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join3(dir, "herdr.log");
+  return (text2) => void (async () => {
+    const size = await stat2(path).then(
+      (s) => s.size,
+      () => 0
     );
+    const line = `${(/* @__PURE__ */ new Date()).toISOString()} ${text2}
+`;
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+  })().catch(() => void 0);
+}
+function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
+  const target = herdrTarget(env);
+  if (!target) return void 0;
+  const report = herdrReporter(log);
+  return async (written) => {
+    const id = written.sessionId;
+    await withLock(`${statePath(dir, id)}.herdr`, async () => {
+      const s = await readState(dir, id);
+      const at = now();
+      const seq = s.writtenAt ?? at;
+      const isPublished = target.kind === "terminal" && await publishedSession(
+        publishFiles,
+        target.appHome,
+        {
+          host: "codex",
+          agent: CODEX.agent,
+          sessionId: id,
+          terminal: target.terminal,
+          writtenAt: seq,
+          projectFolder: s.root
+        },
+        s,
+        log
+      );
+      const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
+      const r = { target, tokens, session: isPublished ? id : null, seq };
+      const key = herdrReportKey(r);
+      if (key === s.herdrReport?.key) return;
+      if (!await report(run2, async () => r)) return;
+      await updateState(dir, id, (saved) => ({ ...saved, herdrReport: { key, seq } }));
+    }).catch(() => void 0);
   };
 }
 
@@ -4128,18 +4398,18 @@ import {
   access,
   copyFile,
   lstat as lstat2,
-  mkdir as mkdir2,
+  mkdir as mkdir3,
   readdir as readdir3,
   readFile as readFile2,
   readlink as readlink2,
-  rename as rename2,
-  rm,
+  rename as rename3,
+  rm as rm2,
   rmdir as rmdir2,
-  stat as stat4,
+  stat as stat5,
   symlink as symlink2,
-  writeFile as writeFile2
+  writeFile as writeFile3
 } from "node:fs/promises";
-import { dirname as dirname3, join as join4 } from "node:path";
+import { dirname as dirname4, join as join5 } from "node:path";
 
 // ../hooks/status.ts
 var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i;
@@ -4213,7 +4483,7 @@ RETIRE: why the goal no longer fits the work
 MILESTONE: status | name | where it stands
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
 GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
-var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it.
+var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
 - <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
 - <removed>: goals the person removed, as their key words, one per line
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
@@ -4223,21 +4493,42 @@ var GOAL_PARTS = {
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
-  "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met. Never leave a milestone open for an outcome that already happened.`,
+  "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
   "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open.`,
   "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
   "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
   "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
   "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,
-  "serves-in-outcome": `A subject serves a milestone only when finishing it is part of that milestone's named outcome, as a crash fix is part of "Launch crash fixed" and a store listing is part of "2.5 published". Work that merely goes on while a milestone is open is not part of it, and a broad name such as "Cleanup done" or "Fixes landed" is not a home for whatever comes later: write - for that work, even when nothing else serves the goal.`
+  "serves-in-outcome": `A subject serves a milestone only when finishing it is part of that milestone's named outcome, as a crash fix is part of "Launch crash fixed" and a store listing is part of "2.5 published". Work that merely goes on while a milestone is open is not part of it, and a broad name such as "Cleanup done" or "Fixes landed" is not a home for whatever comes later: write - for that work, even when nothing else serves the goal. Work for a later version or release than the one a milestone names, as a 2.6 beta under "2.5 published", is never part of it: write - for it.`
 };
 function goalRules(without = []) {
   return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL4);
+}
+function refusedLine(o, now) {
+  const r = o.goalRefused;
+  const g = o.goal;
+  if (r === null || g === null) return null;
+  const line = r.line.toUpperCase();
+  const texts = {
+    typed: () => "the person typed this goal, so it is theirs until it is met.",
+    met: () => "the goal is met. It stays until GOAL sets the next one.",
+    "work-open": () => {
+      const open2 = heldSubjects(o).filter(isOpen);
+      return open2.length === 0 ? null : `the goal's work is still open: ${open2.map((s) => s.name).join(", ")}. In the same answer, close that work with DONE or DROP, or write SERVES to - for work the goal does not need, then write ${line} again.`;
+    },
+    moved: () => goalLeftFor(o, now) !== null ? null : `the work has not left the goal: it moved ${duration(now - lastProgressAt(o, g))} ago. When its outcome happened, write DONE for each open milestone instead, so it is met. Else write ${line} once this line says no work for a time.`,
+    "no-work": () => "no open subject is outside the goal, so there is no work for a new one. Write NEW for the new goal's work in the same answer.",
+    restates: () => "it restates the goal, the goal before it, or a removed goal.",
+    "few-milestones": () => `a goal needs ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones.`
+  };
+  const text2 = texts[r.why]();
+  return text2 === null ? null : `${line} refused: ${text2}`;
 }
 function goalBlocks(o, now) {
   if (o === null) return [];
   const g = o.goal;
   const left = goalLeftFor(o, now);
+  const refused = refusedLine(o, now);
   const marks = g ? [
     ...g.source === "typed" ? ["typed"] : [],
     ...g.isAwaitingMilestones ? ["just set"] : g.metAt != null ? ["met"] : [],
@@ -4251,7 +4542,7 @@ function goalBlocks(o, now) {
   });
   const block = (tag, body) => `<${tag}>${NL4}${body}${NL4}</${tag}>`;
   return [
-    ...g ? [block("goal", `${g.text}${state}`)] : [],
+    ...g ? [block("goal", `${g.text}${state}${refused === null ? "" : `${NL4}${refused}`}`)] : [],
     ...g && milestones.length > 0 ? [block("milestones", milestones.join(NL4))] : [],
     ...o.removedGoals.length > 0 ? [block("removed", o.removedGoals.join(NL4))] : []
   ];
@@ -4615,12 +4906,12 @@ async function runUpdates(host) {
 }
 
 // src/transcript.ts
-import { readdir as readdir2, stat as stat3 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname2, join as join3 } from "node:path";
+import { readdir as readdir2, stat as stat4 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname3, join as join4 } from "node:path";
 
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
-import { open, stat as stat2 } from "node:fs/promises";
+import { open, stat as stat3 } from "node:fs/promises";
 import * as zlib from "node:zlib";
 var canReadZstd = typeof zlib.createZstdDecompress === "function";
 var isCompressed = (path) => path.endsWith(".zst");
@@ -4667,7 +4958,7 @@ var TAIL_KEPT_BYTES = 8 * 1024 * 1024;
 async function bytesBefore(path, bytes, end = Infinity) {
   if (!isCompressed(path)) return plainBytesBefore(path, bytes, end);
   if (end !== Infinity || bytes > TAIL_KEPT_BYTES) return compressedBytesBefore(path, bytes, end);
-  const info = await stat2(path);
+  const info = await stat3(path);
   const version = `${info.size}:${info.mtimeMs}`;
   let known = tails.get(path);
   if (known?.version !== version) {
@@ -5026,23 +5317,23 @@ async function rolloutsIn(folder, isWanted) {
   return names.sort(byNewest);
 }
 async function newestRollout(codexHome, isWanted) {
-  const sessions = join3(codexHome, "sessions");
+  const sessions = join4(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
-    for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
-      for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
-        const folder = join3(sessions, year, month, day);
+    for (const month of await namesIn(join4(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join4(sessions, year, month), /^\d{2}$/)) {
+        const folder = join4(sessions, year, month, day);
         const [name] = await rolloutsIn(folder, isWanted);
-        if (name !== void 0) return join3(folder, name);
+        if (name !== void 0) return join4(folder, name);
       }
-  const archive = join3(codexHome, "archived_sessions");
+  const archive = join4(codexHome, "archived_sessions");
   const [archived] = await rolloutsIn(archive, isWanted);
-  return archived === void 0 ? null : join3(archive, archived);
+  return archived === void 0 ? null : join4(archive, archived);
 }
 function codexHomeOf(path) {
-  const folder = dirname2(path);
-  if (basename2(folder) === "archived_sessions") return dirname2(folder);
-  const sessions = dirname2(dirname2(dirname2(folder)));
-  return basename2(sessions) === "sessions" ? dirname2(sessions) : null;
+  const folder = dirname3(path);
+  if (basename2(folder) === "archived_sessions") return dirname3(folder);
+  const sessions = dirname3(dirname3(dirname3(folder)));
+  return basename2(sessions) === "sessions" ? dirname3(sessions) : null;
 }
 async function rolloutFor(codexHome, threadId) {
   if (threadId === "") return null;
@@ -5057,7 +5348,7 @@ async function rolloutFor(codexHome, threadId) {
 }
 async function withCurrentRollout(s) {
   const saved = s.transcriptPath;
-  if (saved === null || await stat3(saved).catch(() => null) !== null) return s;
+  if (saved === null || await stat4(saved).catch(() => null) !== null) return s;
   const codexHome = codexHomeOf(saved);
   const found = codexHome === null ? null : await rolloutFor(codexHome, s.sessionId);
   return found === null || found.path === saved ? s : { ...s, transcriptPath: found.path };
@@ -5137,22 +5428,22 @@ var OFF = [
   "personality"
 ];
 async function modelHome(dir, personHome) {
-  const auth = join4(personHome, "auth.json");
+  const auth = join5(personHome, "auth.json");
   const hasSignInFile = await access(auth).then(
     () => true,
     () => false
   );
   if (!hasSignInFile) return null;
-  const home = join4(dir, "model-home");
-  const link = join4(home, "auth.json");
+  const home = join5(dir, "model-home");
+  const link = join5(home, "auth.json");
   try {
-    await mkdir2(home, { recursive: true });
+    await mkdir3(home, { recursive: true });
     const isLinked = await readlink2(link).catch(() => null) === auth;
     if (isLinked) return home;
     await keepNewerSignIn(link, auth);
     const made = `${link}.${randomUUID2()}`;
     await symlink2(auth, made);
-    await rename2(made, link);
+    await rename3(made, link);
     return home;
   } catch {
     return null;
@@ -5161,20 +5452,20 @@ async function modelHome(dir, personHome) {
 async function keepNewerSignIn(link, auth) {
   const saved = await lstat2(link).catch(() => null);
   if (!saved?.isFile()) return;
-  const theirs = await stat4(auth);
+  const theirs = await stat5(auth);
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
 function codexAsk(exec, cli, dir, personHome) {
   return async (prompt, instructions, _kind, report) => {
-    const work = join4(dir, "exec");
-    const system = join4(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
-    const out = join4(work, `reply-${randomUUID2()}.txt`);
-    await mkdir2(work, { recursive: true });
+    const work = join5(dir, "exec");
+    const system = join5(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
+    const out = join5(work, `reply-${randomUUID2()}.txt`);
+    await mkdir3(work, { recursive: true });
     const home = await modelHome(dir, personHome);
-    if (await readFile2(system, "utf8").catch(() => "") !== instructions) await writeFile2(system, instructions);
+    if (await readFile2(system, "utf8").catch(() => "") !== instructions) await writeFile3(system, instructions);
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
-      await rm(out, { force: true });
+      await rm2(out, { force: true });
       const r = await exec(
         [
           cli,
@@ -5209,7 +5500,7 @@ function codexAsk(exec, cli, dir, personHome) {
         continue;
       }
       const text2 = r.code === 0 ? await readFile2(out, "utf8").catch(() => null) : null;
-      await rm(out, { force: true });
+      await rm2(out, { force: true });
       if (text2 !== null) {
         report?.({ model: MODEL });
         return text2;
@@ -5244,16 +5535,16 @@ var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
 );
 var recordFiles = {
   write: async (path, text2) => {
-    await mkdir2(dirname3(path), { recursive: true });
-    await writeFile2(path, text2);
+    await mkdir3(dirname4(path), { recursive: true });
+    await writeFile3(path, text2);
   },
   list: (folder) => readdir3(folder).catch(() => []),
-  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm(p, { force: true }))),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),
   removeFolder: (path) => rmdir2(path)
 };
 var statusRecords = (dir, sessionId) => ({
   host: "codex",
-  folder: join4(dir, "overview-calls"),
+  folder: join5(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
@@ -5293,14 +5584,14 @@ var STATUS_REFRESH = "status-refresh";
 async function main() {
   const sessionId = process.argv[2] ?? "";
   const isStatusRefresh = process.argv[3] === STATUS_REFRESH;
-  const pluginRoot = dirname4(dirname4(fileURLToPath(import.meta.url)));
+  const pluginRoot = dirname5(dirname5(fileURLToPath(import.meta.url)));
   const dir = dataDir(process.env, pluginRoot);
   const { cliPath } = await readState(dir, sessionId);
   const cli = cliPath ?? await findCli(process.env, run, process.ppid);
-  const personHome = process.env.CODEX_HOME || join5(homedir3(), ".codex");
+  const personHome = process.env.CODEX_HOME || join6(homedir3(), ".codex");
   const ask = codexAsk(run, cli, dir, personHome);
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
-  const records = existsSync(join5(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
+  const records = existsSync(join6(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
   else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records);
 }

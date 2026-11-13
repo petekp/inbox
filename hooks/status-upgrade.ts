@@ -159,7 +159,7 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
   const subjects = o.subjects.map(subjectOf).filter((s): s is Subject => s !== null)
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c): c is Child => c !== null) : []
   const savedLinks = typeof o.askSubjects === 'object' && o.askSubjects !== null ? Object.entries(o.askSubjects) : []
-  const goal = goalFields(o, new Set(subjects.map(s => s.id)))
+  const goal = goalFields(o, subjects)
   const dropped = droppedMilestoneIds(goal.milestones)
   // An earlier build kept one link per ask, as a bare id.
   const askLinks = savedLinks.map(([ask, to]): [string, string[]] => [

@@ -41,6 +41,7 @@ const withGoal = () =>
       },
     ],
     nextMilestoneId: 3,
+    serves: { s5: 'm2' },
   })
 const lineAt = (lines: string[], s: string) => lines.findIndex(l => l.includes(s))
 
@@ -50,7 +51,7 @@ test('Remove presses the goal by its key and selects the goal’s place, where U
   expect(removed.ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
 })
 
-test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text with its count, the head as its Now line, and its milestones', () => {
+test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text with its count, the head as its Now line, and its milestones, each after a blank line, with a blank line before the work under it', () => {
   const screen = withGoal()
   const page = screen.view.statusPage
   expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit', 'Remove'])
@@ -65,9 +66,15 @@ test('a set goal draws Edit and Remove at the right end of its Goal heading row,
     '✓ Fixes built',
     '○ Announced',
     'after deploy',
+    '◌ Glasses trial',
   ]
   const at = order.map(s => lineAt(lines, s))
   expect(at).toEqual([...at].sort((a, b) => a - b))
+  expect(['✓ Fixes built', '○ Announced', '◌ Glasses trial'].map(s => lines[lineAt(lines, s) - 1])).toEqual([
+    '',
+    '',
+    '',
+  ])
   expect(lines.slice(at[0]! + 1).some(l => l.includes('Edit'))).toBe(false)
   expect(lineAt(lines, page.head!.title)).toBe(-1)
 })
@@ -108,7 +115,7 @@ test('New is the only button on a page with no goal and no held subject, at the 
   expect(lineAt(lines, 'An outcome to work toward:')).toBeLessThan(lineAt(lines, screen.view.statusPage.head!.title))
 })
 
-test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen open ones fold into a count by mark, with the done ones in a done fold after it', () => {
+test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen open ones fold into a count by mark after the open rows, with the done ones in a done fold at the end', () => {
   const s = demoState(NOW)
   const serves = Object.fromEntries(s.ledger.overview!.subjects.map(x => [x.id, 'none']))
   const screen = screenWith({
@@ -128,10 +135,11 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   expect(rule.length).toBeLessThanOrEqual(60)
   expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting')
   expect(lines.slice(lineAt(lines, '1 waiting') + 1, lineAt(lines, '1 waiting') + 3)).toEqual([
-    `   ${'─'.repeat(56)}`,
-    ' ▸ 2 more done',
+    ' ✓ Fade-out',
+    '   dismissed glances fade',
   ])
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
+  expect(lineAt(lines, '▸ 2 more done')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
 })
 
 test('in a short panel, after Remove its New shows, even from a page scrolled past it', () => {

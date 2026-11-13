@@ -29,6 +29,7 @@ export const INDENT = 7
 /** Where a line with no lead indents its detail and buttons: one cell in from its title. */
 export const UNLED_INDENT = INDENT - 3
 export const STOP_ID = 'stop'
+export const HERDR_ASK_ID = 'herdr-ask'
 
 export type Button = {
   label: string
@@ -59,6 +60,8 @@ export type Line = {
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
   mark: ResultMark | null
   title: string
+  /** Draws the title bold in this tone, as the install question's. */
+  titleTone: Tone | null
   isDim: boolean
   /** The status words after a PR's title. */
   status: { text: string; tone: Tone | null; rest: string } | null
@@ -111,6 +114,7 @@ export const blankLine = (id: string): Line => ({
   rank: null,
   mark: null,
   title: '',
+  titleTone: null,
   isDim: false,
   status: null,
   age: null,

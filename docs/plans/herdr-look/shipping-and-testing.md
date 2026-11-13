@@ -6,7 +6,11 @@ Status: proposed.
 
 ## How it ships
 
-A Herdr mod is a folder in `<app home>/mods/<name>/`. Herdr loads a new folder at once and reloads a mod when a file in it is saved. A mod the person copies in never updates by itself. Herdr lists shared mods at herdr.dev/mods, from public GitHub repos with the topic `herdr-mod`, and the person's agent copies the files.
+A Herdr mod is a folder in `<app home>/mods/<name>/`. Herdr loads a new folder at once and reloads a mod when a file in it is saved. A mod the person copies in never updates by itself.
+
+Herdr does not reload a mod whose folder is a symbolic link. In Herdr 0.1.15, `<app home>/mods/inbox` was made a link to a worktree's `herdr/mod/inbox`. The open panels kept drawing the earlier build after each of three tries: the link change itself, a touch of `main.js`, and an identical file moved onto `main.js`. Which build a newly opened panel loads through the link was not checked. When the link was replaced with a real folder holding the build, the open panels drew it only after the app restarted. After that, copying a changed `main.js` and `mod.json` into the folder reloaded the open panels in place, with no restart.
+
+Herdr lists shared mods at herdr.dev/mods, from public GitHub repos with the topic `herdr-mod`, and the person's agent copies the files.
 
 The inbox's three hosts each install the inbox from this repo, so each install already holds the built mod, `herdr/mod/inbox/`. Two ways to get it into Herdr were weighed:
 
@@ -14,6 +18,12 @@ The inbox's three hosts each install the inbox from this repo, so each install a
 2. **herdr.dev/mods.** The repo takes the `herdr-mod` topic, and the person's agent copies `herdr/mod/inbox/`. The mod never updates unless the person copies it again, and the listing covers the whole repo, not the mod alone.
 
 Pete chose 1. A mod that falls behind the hosts breaks when the envelope's `format` moves, and the person has no reason to copy it again by hand. When two hosts carry different versions, the newer one wins, and the mod reads older envelopes through `upgradeSession`.
+
+How it is built: a host compares build times, not versions. `herdr/build.ts` writes the time of each build whose code changed on the bundle's second line, and copies the mod into `codex/plugin/dist/herdr-mod/` and `omp/dist/herdr-mod/`, since Codex and omp install only those folders. The answer to the install question is saved in `<app home>/inbox/herdr-mod.json`, for every host to read. "Installing and updating the Herdr mod" in [the Herdr rows of the hosts' differences](../../looks/differences-hosts-herdr.md) gives the behavior, including the install question each host asks.
+
+### Known limits
+
+- An install or update writes the mod to a temporary folder in `<app home>/inbox/` and renames it into `<app home>/mods/inbox/`. When those two folders sit on different volumes, as when one is a link to another disk, Codex and omp fail the rename with `EXDEV`. The person sees the warning banner "Could not install the inbox mod in Herdr." or "Could not update the inbox mod in Herdr.", followed by "EXDEV: cross-device link not permitted". In Codex, an update at a handler load writes that only to `herdr.log`. The mod's `mv` copies across volumes instead, so Claude Code installs there. Nothing handles this case yet.
 
 ### Minimum Herdr version
 
@@ -32,7 +42,7 @@ Herdr makes no stability promise for the mod API, rewrites its `.d.ts` files at 
 
 ### Unit tests
 
-In `herdr/tests/`, with `bun test`, as omp does:
+In `herdr/tests/`, with `bun test`, as omp does. The files are named `*.spec.ts`, as omp's and Codex's are, because the repo's `claude plugin test` loads every `*.test.ts` and cannot import `bun:test`:
 
 - `follow`: each focus case in [the look](look.md#following-the-focused-pane), from fixed `focused()`, `panes()` and `terminals()` values.
 - `files`: an envelope from each host's state type reads back, an older `format` upgrades, a newer one is refused, and a press file round-trips with its holds.
@@ -73,9 +83,9 @@ In the `inbox-ui` VM, with Herdr installed only there, as the spike did:
 
 ## Open questions
 
-- Does `codex queue --thread <id>` reach a Codex CLI session running in a terminal, with a sent record?
+- Does `codex queue --thread <id>` reach a Codex CLI session running in a terminal, with a sent record? Answer and Reply in Codex need it. The release pass checks it live, in a Codex session in a Herdr app terminal.
 - Can a `keys.json` binding carry a command's arguments, so a key could open the look?
-- How does the host find its pane's id from its terminal, to open the look beside itself?
+- Does `pane.focus` on a pane that shows the look, a mod that is not `focusable`, succeed? A host's next open works either way: any failure other than `no such pane` leaves the panel and says it is open. Only whether the panel takes focus depends on it.
 - Does a `height` transition on a row measured with `on_size_change` collapse it smoothly?
 - Does Herdr expose, or plan to expose, the system's reduced-motion setting to mods?
 - May the inbox write under Herdr's app home, or should Herdr name a folder for a mod's data?
