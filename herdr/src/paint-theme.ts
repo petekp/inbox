@@ -3,6 +3,7 @@ import type { InputState } from 'gpui-base'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Button, Tone } from './blocks'
 import type { RowMotion } from './motion'
+import type { TimeLeft } from './paint-timer'
 
 type Color = `#${string}`
 
@@ -97,8 +98,8 @@ export type Paint = {
   pick: (tab: ShownTab, cx: Context) => void
   motion: ReadonlyMap<string, RowMotion>
   now: number
-  /** The timed buttons an earlier draw showed, whose fill now empties. */
-  timersStarted: ReadonlySet<string>
+  /** The time left each timed button draws, by its id. */
+  timeLeft: ReadonlyMap<string, TimeLeft>
   input: (rowId: string) => InputState | null
   /** Whether the pane is under `NARROW_PANE` wide. */
   isNarrow: boolean

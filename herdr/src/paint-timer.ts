@@ -13,27 +13,50 @@ export function timeLeftShare(runsOutAt: number, now: number): number {
   return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS))
 }
 
-/** Whether a button draws its time left: it has time left, and its press is not out. */
-export const isTimeShown = (b: Button, now: number): boolean =>
-  b.runsOutAt !== undefined && !b.isOut && b.runsOutAt > now
+/**
+ * How a timed button draws its time left. It empties while its time runs, and `isStarted` says an earlier draw
+ * already showed it. While its own press is out it pauses at the share it had when the press went out, as the Codex
+ * tab pauses its Undo's fill.
+ */
+export type TimeLeft = { is: 'emptying'; isStarted: boolean } | { is: 'paused'; share: number }
 
-/** The ids of the drawn buttons that show their time left. */
-export const timedIds = (blocks: Block[], now: number): string[] =>
-  blocks.flatMap(b => (b.kind === 'row' ? b.buttons : [])).flatMap(b => (isTimeShown(b, now) ? [b.id] : []))
+function timeLeftOf(b: Button, drawn: ReadonlyMap<string, TimeLeft>, now: number): TimeLeft | null {
+  if (b.runsOutAt === undefined || b.isHidden) return null
+  const was = drawn.get(b.id)
+  if (b.isOut) return { is: 'paused', share: was?.is === 'paused' ? was.share : timeLeftShare(b.runsOutAt, now) }
+  return b.runsOutAt > now ? { is: 'emptying', isStarted: was?.is === 'emptying' } : null
+}
+
+/** The time left of each drawn timed button that shows one, from what the last draw showed. */
+export function timeLeftDraws(
+  blocks: Block[],
+  drawn: ReadonlyMap<string, TimeLeft>,
+  now: number,
+): ReadonlyMap<string, TimeLeft> {
+  const buttons = blocks.flatMap(b => (b.kind === 'row' ? b.buttons : []))
+  return new Map(
+    buttons.flatMap(b => {
+      const left = timeLeftOf(b, drawn, now)
+      return left ? [[b.id, left] as const] : []
+    }),
+  )
+}
 
 /**
- * The fill behind a timed button's label, which empties as its time runs, as the Codex tab's Undo does. GPUI animates
+ * The fill behind a timed button's label. While its time runs it empties, as the Codex tab's Undo does: GPUI animates
  * a later change to `width`, so the draw that starts a fill sets the share left, and each later draw sets 0 over the
- * time left.
+ * time left. A paused fill holds its share with no animation.
  */
-export function timeLeftEl(runsOutAt: number, isStarted: boolean, now: number, t: Theme): Element {
-  return div()
+export function timeLeftEl(left: TimeLeft, runsOutAt: number, now: number, t: Theme): Element {
+  const fill = div()
     .absolute()
     .top(0)
     .left(0)
     .h(BUTTON_H)
     .rounded(BUTTON_H / 2)
     .bg(t.hover)
-    .w(isStarted ? 0 : timeLeftShare(runsOutAt, now) * TIMED_W)
+  if (left.is === 'paused') return fill.w(left.share * TIMED_W)
+  return fill
+    .w(left.isStarted ? 0 : timeLeftShare(runsOutAt, now) * TIMED_W)
     .transition('width', { duration: Math.max(0, runsOutAt - now), easing: 'linear' })
 }

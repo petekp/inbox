@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-13T06:32:13.223Z. 194764 characters follow.
+// Built at 2026-11-13T06:58:25.835Z. 195351 characters follow.
 
 // src/main.ts
 import { View, div as div4 } from "gpui-kit";
@@ -3719,7 +3719,7 @@ function undoButtons(row, agent) {
         runsOutAt
       }
     ];
-  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, "quiet"), isOut: true, runsOutAt }] : [];
+  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, "quiet"), isHidden: true, runsOutAt }] : [];
 }
 function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
@@ -4241,10 +4241,26 @@ var TIMED_W = 64;
 function timeLeftShare(runsOutAt, now) {
   return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
 }
-var isTimeShown = (b, now) => b.runsOutAt !== undefined && !b.isOut && b.runsOutAt > now;
-var timedIds = (blocks, now) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).flatMap((b) => isTimeShown(b, now) ? [b.id] : []);
-function timeLeftEl(runsOutAt, isStarted, now, t) {
-  return div2().absolute().top(0).left(0).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover).w(isStarted ? 0 : timeLeftShare(runsOutAt, now) * TIMED_W).transition("width", { duration: Math.max(0, runsOutAt - now), easing: "linear" });
+function timeLeftOf(b, drawn, now) {
+  if (b.runsOutAt === undefined || b.isHidden)
+    return null;
+  const was = drawn.get(b.id);
+  if (b.isOut)
+    return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
+  return b.runsOutAt > now ? { is: "emptying", isStarted: was?.is === "emptying" } : null;
+}
+function timeLeftDraws(blocks, drawn, now) {
+  const buttons = blocks.flatMap((b) => b.kind === "row" ? b.buttons : []);
+  return new Map(buttons.flatMap((b) => {
+    const left = timeLeftOf(b, drawn, now);
+    return left ? [[b.id, left]] : [];
+  }));
+}
+function timeLeftEl(left, runsOutAt, now, t) {
+  const fill = div2().absolute().top(0).left(0).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover);
+  if (left.is === "paused")
+    return fill.w(left.share * TIMED_W);
+  return fill.w(left.isStarted ? 0 : timeLeftShare(runsOutAt, now) * TIMED_W).transition("width", { duration: Math.max(0, runsOutAt - now), easing: "linear" });
 }
 
 // src/paint-blocks.ts
@@ -4253,8 +4269,11 @@ function buttonEl(b, p, isInert = false) {
   const { t } = p;
   const isPill = b.emphasis !== "quiet";
   const runsOutAt = b.runsOutAt;
-  const base = h_flex2().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(runsOutAt !== undefined && isTimeShown(b, p.now), (e) => e.child(timeLeftEl(runsOutAt ?? 0, p.timersStarted.has(b.id), p.now, t))).child(b.label);
+  const left = p.timeLeft.get(b.id);
+  const base = h_flex2().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(left, runsOutAt ?? 0, p.now, t)) : e).child(b.label);
   const shaped = isPill && runsOutAt === undefined ? base.px(PILL_X).rounded(BUTTON_H / 2).border_1() : base;
+  if (b.isHidden)
+    return shaped.invisible().disabled(true);
   if (b.isOut)
     return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true);
   const styled = b.emphasis === "primary" ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? shaped.border_color(t.input).text_color(t.foreground) : shaped.text_color(t.muted);
@@ -4687,7 +4706,7 @@ class Inbox extends View {
   queue = new PressQueue(queueIo);
   tracks = new Map;
   tracksOf = "";
-  timersStarted = new Set;
+  timeLeft = new Map;
   focus = null;
   outTimer = null;
   drawTimer = null;
@@ -4924,7 +4943,7 @@ class Inbox extends View {
       },
       motion: new Map,
       now,
-      timersStarted: this.timersStarted,
+      timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
       isNarrow: this.isNarrow
     };
@@ -4935,8 +4954,10 @@ class Inbox extends View {
       this.isNarrow = isNarrow;
       cx.notify();
     });
-    if (screen.is === "message")
+    if (screen.is === "message") {
+      this.timeLeft = new Map;
       return root.child(messageEl(screen.message, t));
+    }
     const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks;
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`;
@@ -4945,9 +4966,9 @@ class Inbox extends View {
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
     const isStarting = [...moved.motion.values()].some((m) => m.isStart);
-    const timed = timedIds(moved.blocks, now);
-    const isTimerStarting = timed.some((id) => !this.timersStarted.has(id));
-    this.timersStarted = new Set(timed);
+    this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
+    paint.timeLeft = this.timeLeft;
+    const isTimerStarting = [...this.timeLeft.values()].some((l) => l.is === "emptying" && !l.isStarted);
     const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null;
     const wakeAt = [nextFrame, moved.nextAt, screen.foldAt].filter((at) => at !== null);
     if (wakeAt.length > 0)

@@ -40,7 +40,8 @@ import { afterSend, isFieldDrawn, keyMove, tabUndo, withSelected, withTab } from
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
-import { timedIds } from './paint-timer'
+import { timeLeftDraws } from './paint-timer'
+import type { TimeLeft } from './paint-timer'
 import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
 import { END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
@@ -121,7 +122,7 @@ export default class Inbox extends View {
   queue = new PressQueue(queueIo)
   tracks: Tracks = new Map()
   tracksOf = ''
-  timersStarted: ReadonlySet<string> = new Set()
+  timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   focus: FocusHandle | null = null
   /** The next read for the presses still out, and the next draw for a fold or a move. */
   outTimer: Timer | null = null
@@ -374,7 +375,7 @@ export default class Inbox extends View {
       },
       motion: new Map(),
       now,
-      timersStarted: this.timersStarted,
+      timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
       isNarrow: this.isNarrow,
     }
@@ -392,7 +393,10 @@ export default class Inbox extends View {
         this.isNarrow = isNarrow
         cx.notify()
       })
-    if (screen.is === 'message') return root.child(messageEl(screen.message, t))
+    if (screen.is === 'message') {
+      this.timeLeft = new Map()
+      return root.child(messageEl(screen.message, t))
+    }
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
@@ -401,9 +405,9 @@ export default class Inbox extends View {
     this.tracksOf = tracksOf
     paint.motion = moved.motion
     const isStarting = [...moved.motion.values()].some(m => m.isStart)
-    const timed = timedIds(moved.blocks, now)
-    const isTimerStarting = timed.some(id => !this.timersStarted.has(id))
-    this.timersStarted = new Set(timed)
+    this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
+    paint.timeLeft = this.timeLeft
+    const isTimerStarting = [...this.timeLeft.values()].some(l => l.is === 'emptying' && !l.isStarted)
     const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null
     const wakeAt = [nextFrame, moved.nextAt, screen.foldAt].filter(at => at !== null)
     if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())

@@ -113,8 +113,8 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
 }
 
 /**
- * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button stays drawn
- * as out, as the Codex tab keeps a spent Undo, so the row does not change shape before it folds.
+ * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
+ * hidden, as the Codex tab hides a spent Undo, so the row does not change shape before it folds.
  */
 function undoButtons(row: RowView, agent: string): Button[] {
   if (row.state.is !== 'settled') return []
@@ -130,7 +130,7 @@ function undoButtons(row: RowView, agent: string): Button[] {
       },
     ]
 
-  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isOut: true, runsOutAt }] : []
+  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isHidden: true, runsOutAt }] : []
 }
 
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */
