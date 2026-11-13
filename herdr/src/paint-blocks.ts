@@ -23,6 +23,7 @@ import {
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
+import { TIMED_W, timeLeftEl } from './paint-timer'
 
 /** The space a line under a title, or a row of buttons, leaves above it. */
 const LINE_PAD = 4
@@ -30,12 +31,16 @@ const LINE_PAD = 4
 /**
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
  * so a quiet button that starts a line puts its label on the spine. A button whose press is out keeps its size, loses
- * its fill and border, and is the quietest thing in its row. A button of a row that is leaving draws but takes no
- * clicks, so the row keeps its height as it fades. A button that takes no clicks shows no hover or pressed change.
+ * its fill and border, and is the quietest thing in its row. A timed button's time left stays drawn and pauses while
+ * its press is out. A hidden button keeps its place and draws nothing. A button of a row that is leaving draws but
+ * takes no clicks, so the row keeps its height as it fades. A button that takes no clicks shows no hover or pressed
+ * change.
  */
 function buttonEl(b: Button, p: Paint, isInert = false): Element {
   const { t } = p
   const isPill = b.emphasis !== 'quiet'
+  const runsOutAt = b.runsOutAt
+  const left = p.timeLeft.get(b.id)
   const base = h_flex()
     .id(`button ${b.id}`)
     .flex_none()
@@ -43,13 +48,22 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
     .items_center()
     .justify_center()
     .accessibility_label(b.label)
+    .when(runsOutAt !== undefined, e =>
+      e
+        .relative()
+        .w(TIMED_W)
+        .rounded(BUTTON_H / 2),
+    )
+    .when(left !== undefined, e => (left ? e.child(timeLeftEl(left, runsOutAt ?? 0, p.now, t)) : e))
     .child(b.label)
-  const shaped = isPill
-    ? base
-        .px(PILL_X)
-        .rounded(BUTTON_H / 2)
-        .border_1()
-    : base
+  const shaped =
+    isPill && runsOutAt === undefined
+      ? base
+          .px(PILL_X)
+          .rounded(BUTTON_H / 2)
+          .border_1()
+      : base
+  if (b.isHidden) return shaped.invisible().disabled(true)
   if (b.isOut) return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true)
   const styled =
     b.emphasis === 'primary'

@@ -45,6 +45,10 @@ export type Button = {
   isOut: boolean
   hotkey: string | null
   does: Does
+  /** When the time this button offers runs out, as Undo's does. It draws the time left as a fill that empties. */
+  runsOutAt?: number
+  /** A spent Undo, which keeps its place so the row does not change shape, but draws nothing and takes no press. */
+  isHidden?: true
 }
 
 export const button = (
