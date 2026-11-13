@@ -102,7 +102,7 @@ A host counts a subject as seen once a look at the Status showed its row after t
 { "format": 1, "id": "<new press id>", "look": { "startedAt": 0, "endedAt": 0, "shown": { "<subject id>": 0 } } }
 ```
 
-`shown` gives, for each subject, when its row was last on screen during the look. A look file has no `press` and no `pressedAt`, so a host that predates it refuses it as `no pressedAt`, logs one line and deletes it.
+`shown` gives, for each subject, the latest time from which its row then stayed on screen for `ROW_SEEN_MS` during the look. A host counts a subject as seen when that time is at or after its last change. A look file has no `press` and no `pressedAt`, so a host that predates it refuses it as `no pressedAt`, logs one line and deletes it.
 
 Each host applies it with the shared `hooks/herdr-app.ts:applyHerdrFile`, which calls `hooks/status-children.ts:lookReported`:
 
@@ -112,7 +112,7 @@ Each host applies it with the shared `hooks/herdr-app.ts:applyHerdrFile`, which 
 - The host's own look in progress, as in the Codex tab, stays open.
 - The drain applies a folder's files in time order: a press by `pressedAt`, a look by `endedAt`. A look file sets no `lastHerdrPress`, so the next publish names no press.
 
-The Herdr look writes no look file yet. A subject counted as seen loses its was and merged lines for good, and a finished child row under it leaves the page. So the look must report only rows it can tell were on screen. Telling that needs a probe of the Herdr app's layout first. [Issue #388](https://github.com/petekp/inbox/issues/388) tracks it.
+The Herdr look writes a look file when a look at the Status of 5 seconds or more ends, and labels the terminal as it does after a press. `herdr/src/look.ts:StatusLook` decides which rows count. A subject counted as seen loses its was and merged lines for good, and a finished child row under it leaves the page. So the look counts a row only while it can place it: from a scroll offset a pointer event measured in the last 4 seconds, or in a list that fits its pane. [The Herdr look's table](../../looks/differences-herdr.md) gives the rule.
 
 ## Presses that send a message
 

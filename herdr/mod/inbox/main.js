@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-12T17:50:13.462Z. 190146 characters follow.
+// Built at 2026-11-13T05:36:22.748Z. 200074 characters follow.
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";
@@ -14,9 +14,11 @@ import {
   props,
   readTextFile,
   run,
+  spaces,
   terminals,
   theme,
   watchFolder,
+  window as appWindow,
   writeTextFile
 } from "herdr";
 
@@ -243,6 +245,7 @@ function clockTime(ms) {
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
+var LOOK_MIN_MS = 5000;
 function subjectSeenAt(o, id) {
   return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
 }
@@ -1665,6 +1668,12 @@ function statusPage(s, now) {
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
+}
+function statusListRows(page) {
+  return [...(page.goal?.milestones ?? []).flatMap((m) => m.rows), ...page.rows];
 }
 
 // ../hooks/timing.ts
@@ -3982,6 +3991,267 @@ function afterSend(ui, drafts, rowId, isSent) {
   return { ui: { ...ui, typing: ui.typing === rowId ? null : ui.typing }, drafts: kept };
 }
 
+// ../hooks/layout.ts
+var ROW_PAD_PT = 8;
+var STATUS_ROW_PAD_PT = 19 / 4;
+var SECTION_GAP_PT = 19 / 2;
+var BANNER_PAD_Y_PT = 8;
+var BANNER_GAP_PT = 8;
+
+// src/paint-theme.ts
+var TONE_COLORS = {
+  needsYou: "ansi3",
+  issue: "ansi3",
+  notice: "ansi4",
+  warning: "ansi3",
+  findings: "ansi5",
+  prs: "ansi6",
+  done: "done",
+  error: "ansi1",
+  muted: "muted"
+};
+var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
+var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
+var TEXT = 13;
+var LINE = "20px";
+var SMALL_TEXT = 12;
+var HEAD_TEXT = 15;
+var HEAD_LINE = "24px";
+var SPINE = 40;
+var MARK_X = 16;
+var MARK_W = SPINE - MARK_X;
+var NEST = 20;
+var EDGE_X = 24;
+var NARROW_PANE = 280;
+var GROUP_GAP = 32;
+var END_SPACE = GROUP_GAP;
+var BUTTON_H = 28;
+var BUTTON_GAP = 8;
+var PILL_X = 12;
+var SEP = " · ";
+
+// src/look.ts
+var ROW_SEEN_MS = LOOK_MIN_MS;
+var OFFSET_TRUST_MS = 4000;
+var LOOK_CHECK_MS = 1000;
+var LIST_TOP_PAD = 8;
+var FIRST_LINE_END = ROW_PAD_PT + Number.parseFloat(LINE);
+var TOP_SLACK = 2;
+var MAX_CHECK_GAP_MS = 2 * LOOK_CHECK_MS;
+var PAIR_MS = 50;
+var PANEL_MOD = "inbox";
+function isPanelShown(tab, s) {
+  if (tab === null || !s.isWindowActive)
+    return false;
+  const shown = s.spaces.find((space) => space.active)?.tabs.find((t) => t.active);
+  if (shown?.id !== tab)
+    return false;
+  if (!shown.zoomed)
+    return true;
+  const inboxPanes = s.panes.filter((p) => p.tab === tab && p.mod === PANEL_MOD);
+  const own = inboxPanes.find((p) => p.pane === s.ownPane) ?? (inboxPanes.length === 1 ? inboxPanes[0] : undefined);
+  return own?.zoomed === true;
+}
+var CHANGING_ALONE = new Set(["isRunning", "stall"]);
+function lookBlocks(page) {
+  const blocks = new Map;
+  let subject = null;
+  for (const row of statusListRows(page)) {
+    const content = JSON.stringify(row, (key, value) => CHANGING_ALONE.has(key) ? undefined : value);
+    const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
+    if (isUnderSubject && subject !== null)
+      subject.content += `
+${content}`;
+    const block = { subjects: seenSubjectIds(row), content };
+    blocks.set(row.id, block);
+    if (row.kind === "subject")
+      subject = block;
+    else if (!isUnderSubject)
+      subject = null;
+  }
+  return blocks;
+}
+
+class ListPlace {
+  heights = new Map;
+  order = [];
+  viewport = null;
+  width = null;
+  offset = null;
+  epoch = 0;
+  lastPointerAt = null;
+  list = null;
+  area = null;
+  forget() {
+    if (this.offset !== null)
+      this.epoch++;
+    this.offset = null;
+  }
+  drawn(ids) {
+    if (ids.join(`
+`) === this.order.join(`
+`))
+      return;
+    this.order = ids;
+    this.forget();
+  }
+  blockSized(id, height) {
+    if (this.heights.get(id) === height)
+      return;
+    this.heights.set(id, height);
+    this.forget();
+  }
+  listSized(width, height) {
+    if (this.viewport === height && this.width === width)
+      return;
+    if (this.width !== width)
+      this.heights.clear();
+    this.viewport = height;
+    this.width = width;
+    this.forget();
+  }
+  wheel(now) {
+    this.lastPointerAt = now;
+    this.forget();
+  }
+  listPointer(p) {
+    this.list = p;
+    this.pair();
+  }
+  areaPointer(p) {
+    if (this.area !== null)
+      this.areaAlone(this.area);
+    this.area = p;
+    this.pair();
+  }
+  areaAlone(area) {
+    this.area = null;
+    this.lastPointerAt = Math.max(this.lastPointerAt ?? -Infinity, area.at);
+    this.forget();
+  }
+  pair() {
+    const { list, area } = this;
+    if (list === null || area === null)
+      return;
+    const isOneEvent = list.x === area.x && list.y === area.y && Math.abs(list.at - area.at) <= PAIR_MS;
+    if (!isOneEvent)
+      return;
+    const at = Math.max(list.at, area.at);
+    const px = area.top - list.top;
+    this.lastPointerAt = at;
+    if (this.offset?.px !== px)
+      this.epoch++;
+    this.offset = { px, at };
+    this.list = this.area = null;
+  }
+  isWhole() {
+    if (this.viewport === null || !this.order.every((id) => this.heights.has(id)))
+      return false;
+    const total = this.order.reduce((sum, id) => sum + (this.heights.get(id) ?? 0), LIST_TOP_PAD + END_SPACE);
+    return total <= this.viewport;
+  }
+  visible(now) {
+    const viewport = this.viewport;
+    if (viewport === null)
+      return null;
+    const isTrusted = this.offset !== null && now - this.offset.at < OFFSET_TRUST_MS;
+    const isWhole = this.isWhole();
+    const place = isWhole ? { px: 0, at: now } : isTrusted ? this.offset : null;
+    if (place === null)
+      return null;
+    const shown = [];
+    let top = LIST_TOP_PAD - place.px;
+    for (const id of this.order) {
+      const height = this.heights.get(id);
+      if (height === undefined)
+        break;
+      const lineEnd = top + Math.min(height, FIRST_LINE_END);
+      if (top >= TOP_SLACK && lineEnd + TOP_SLACK <= viewport)
+        shown.push(id);
+      top += height;
+    }
+    return { ids: shown, until: place.at, isWhole };
+  }
+}
+
+class StatusLook {
+  place = new ListPlace;
+  look = null;
+  shownKey = "";
+  check(c) {
+    const key = `${c.sessionId} ${c.isRunning}`;
+    if (key !== this.shownKey)
+      this.place.forget();
+    this.shownKey = key;
+    const reports = [];
+    const look = this.look;
+    const listUseAt = Math.max(c.listInputAt ?? -Infinity, this.place.lastPointerAt ?? -Infinity);
+    const isTyped = look !== null && c.typedAt !== null && c.typedAt > look.startedAt;
+    const isListInUse = c.typedAt !== null && listUseAt >= c.typedAt - FOLD_QUIET_MS;
+    if (look && (!c.isRunning || c.sessionId !== look.sessionId))
+      reports.push(...this.end(look.lastRunningAt));
+    else if (look && c.typedAt !== null && isTyped && !isListInUse)
+      reports.push(...this.end(Math.min(c.typedAt, look.lastRunningAt)));
+    if (!c.isRunning || c.sessionId === null || c.terminal === null)
+      return reports;
+    const running = this.look ??= {
+      sessionId: c.sessionId,
+      terminal: c.terminal,
+      startedAt: c.now,
+      lastRunningAt: c.now,
+      shown: new Map,
+      streaks: new Map
+    };
+    this.note(running, c);
+    running.lastRunningAt = c.now;
+    return reports;
+  }
+  close() {
+    return this.look ? this.end(this.look.lastRunningAt) : [];
+  }
+  note(look, c) {
+    const { ids, until, isWhole } = this.place.visible(c.now) ?? { ids: [], until: c.now, isWhole: false };
+    const epoch = this.place.epoch;
+    for (const id of [...look.streaks.keys()])
+      if (!ids.includes(id))
+        look.streaks.delete(id);
+    for (const id of ids) {
+      const block = c.rows.get(id);
+      if (block === undefined)
+        continue;
+      const was = look.streaks.get(id);
+      const isUnbroken = was !== undefined && was.isWhole === isWhole && (isWhole || was.epoch === epoch) && was.content === block.content && c.now - was.checkedAt <= MAX_CHECK_GAP_MS;
+      const since = isUnbroken ? was.since : c.now;
+      look.streaks.set(id, { since, until, checkedAt: c.now, epoch, isWhole, content: block.content });
+      if (until - since < ROW_SEEN_MS)
+        continue;
+      for (const subject of block.subjects) {
+        const stretches = look.shown.get(subject) ?? [];
+        if (stretches.at(-1)?.since === since)
+          stretches.pop();
+        look.shown.set(subject, [...stretches, { since, until }]);
+      }
+    }
+  }
+  end(endedAt) {
+    const look = this.look;
+    this.look = null;
+    if (look === null || endedAt - look.startedAt < LOOK_MIN_MS)
+      return [];
+    const { sessionId, terminal, startedAt } = look;
+    const shown = {};
+    for (const [subject, stretches] of look.shown) {
+      const froms = stretches.flatMap((s) => {
+        const from = Math.min(s.until, endedAt) - ROW_SEEN_MS;
+        return from >= s.since ? [from] : [];
+      });
+      if (froms.length > 0)
+        shown[subject] = Math.max(...froms);
+    }
+    return [{ sessionId, terminal, look: { startedAt, endedAt, shown } }];
+  }
+}
+
 // ../hooks/row-motion.ts
 var ENTER_MS = 300;
 var MOVE_MS = 200;
@@ -4085,45 +4355,6 @@ function moveRows(blocks, tracks, now, isFirst) {
 // src/paint-blocks.ts
 import { div as div2 } from "gpui-kit";
 import { Input, h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
-
-// ../hooks/layout.ts
-var ROW_PAD_PT = 8;
-var STATUS_ROW_PAD_PT = 19 / 4;
-var SECTION_GAP_PT = 19 / 2;
-var BANNER_PAD_Y_PT = 8;
-var BANNER_GAP_PT = 8;
-
-// src/paint-theme.ts
-var TONE_COLORS = {
-  needsYou: "ansi3",
-  issue: "ansi3",
-  notice: "ansi4",
-  warning: "ansi3",
-  findings: "ansi5",
-  prs: "ansi6",
-  done: "done",
-  error: "ansi1",
-  muted: "muted"
-};
-var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
-var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
-var TEXT = 13;
-var LINE = "20px";
-var SMALL_TEXT = 12;
-var HEAD_TEXT = 15;
-var HEAD_LINE = "24px";
-var SPINE = 40;
-var MARK_X = 16;
-var MARK_W = SPINE - MARK_X;
-var NEST = 20;
-var EDGE_X = 24;
-var NARROW_PANE = 280;
-var GROUP_GAP = 32;
-var END_SPACE = GROUP_GAP;
-var BUTTON_H = 28;
-var BUTTON_GAP = 8;
-var PILL_X = 12;
-var SEP = " · ";
 
 // src/paint-chrome.ts
 import { div } from "gpui-kit";
@@ -4285,6 +4516,33 @@ function blockEl(b, p) {
   return div2().h(8);
 }
 
+// src/paint-look.ts
+function placeOf(ev, now) {
+  const bounds = ev.bounds;
+  const top = bounds?.y;
+  return typeof top === "number" ? { top, x: ev.position.x, y: ev.position.y, at: now } : null;
+}
+function watchList(el, place) {
+  const pointer = (ev) => {
+    const p = placeOf(ev, Date.now());
+    if (p)
+      place.listPointer(p);
+  };
+  return el.on_mouse_move(pointer).on_mouse_down("left", pointer).on_scroll_wheel(() => place.wheel(Date.now())).on_size_change((size) => place.listSized(size.width, size.height));
+}
+function watchArea(el, place) {
+  const pointer = (ev) => {
+    const p = placeOf(ev, Date.now());
+    if (p)
+      place.areaPointer(p);
+  };
+  return el.on_mouse_move(pointer).on_mouse_down("left", pointer);
+}
+function watchBlock(el, b, place) {
+  const hasOwnId = b.kind === "row" || b.kind === "fold" || b.kind === "more";
+  return (hasOwnId ? el : el.id(`block ${b.id}`)).on_size_change((size) => place.blockSized(b.id, size.height));
+}
+
 // src/press-file.ts
 var PRESS_LABEL = "inbox.press";
 var pressPath = (appHome, sessionId, pressId) => `${pressFolder(appHome, sessionId)}/${pressId}.json`;
@@ -4300,6 +4558,7 @@ function pressFileText(id, pressedAt, press, holds, result = null) {
     ...result ? { result } : {}
   });
 }
+var lookFileText = (id, look) => JSON.stringify({ format: HERDR_FORMAT, id, look });
 
 // src/out.ts
 var SENDING = "Sending…";
@@ -4592,6 +4851,7 @@ class Inbox extends View {
   discarded = {};
   listInput = null;
   queue = new PressQueue(queueIo);
+  look = new StatusLook;
   tracks = new Map;
   tracksOf = "";
   focus = null;
@@ -4614,6 +4874,38 @@ class Inbox extends View {
     });
     cx.timer.every(REREAD_MS, (cx) => this.sessionId && this.load(this.sessionId, cx));
     cx.timer.every(AGE_TICK_MS, (cx) => cx.notify());
+    cx.timer.every(LOOK_CHECK_MS, () => this.checkLook());
+  }
+  async close() {
+    await this.sendLooks(this.look.close());
+  }
+  checkLook() {
+    const read = this.read?.is === "read" ? this.read : null;
+    const page = this.view?.statusPage ?? null;
+    const isStatusDrawn = page !== null && this.ui.tab === "overview" && !this.isHelpShown;
+    const ended = this.look.check({
+      now: Date.now(),
+      sessionId: this.sessionId,
+      terminal: read?.envelope.terminal ?? null,
+      isRunning: isStatusDrawn && isPanelShown(this.tab, {
+        isWindowActive: appWindow().active,
+        spaces: spaces(),
+        panes: panes(),
+        ownPane: props()?.pane ?? null
+      }),
+      typedAt: read?.session.presence.lastTypedMessageAt ?? null,
+      listInputAt: this.listInput?.last ?? null,
+      rows: page ? lookBlocks(page) : new Map
+    });
+    this.sendLooks(ended);
+  }
+  async sendLooks(looks) {
+    for (const { sessionId, terminal, look } of looks) {
+      const id = newPressId(Date.now(), Math.random());
+      const failed = await queueIo.write(pressPath(appHome(), sessionId, id), lookFileText(id, look));
+      if (failed === null)
+        await queueIo.wake(terminal, id);
+    }
   }
   holds(now) {
     this.discarded = keptDiscards(this.discarded, this.shownSince);
@@ -4847,18 +5139,23 @@ class Inbox extends View {
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
+    const isStatusDrawn = this.ui.tab === "overview" && !this.isHelpShown;
+    const place = this.look.place;
+    if (isStatusDrawn)
+      place.drawn(moved.blocks.map((b) => b.id));
+    this.checkLook();
     const isStarting = [...moved.motion.values()].some((m) => m.isStart);
     const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, screen.foldAt].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div3().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(END_SPACE).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(watchArea(div3(), place).flex_1().min_h(0).relative().child(watchList(v_flex3(), place).id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(8).pb(END_SPACE).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
       else
         this.focus?.focus();
-    }).children(moved.blocks.map((b) => blockEl(b, paint)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    }).children(moved.blocks.map((b) => isStatusDrawn ? watchBlock(blockEl(b, paint), b, place) : blockEl(b, paint)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
   }
 }
 export {

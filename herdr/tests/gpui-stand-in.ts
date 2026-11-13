@@ -11,6 +11,7 @@ export type Painted = {
   isDisabled: boolean
   hasHover: boolean
   click: Handler | null
+  listeners: Map<string, Handler>
   field: StandInField | null
   parent: Painted | null
   kids: Painted[]
@@ -77,6 +78,7 @@ function element(field: StandInField | null = null): unknown {
     isDisabled: false,
     hasHover: false,
     click: null,
+    listeners: new Map(),
     field,
     parent: null,
     kids: [],
@@ -105,6 +107,7 @@ function element(field: StandInField | null = null): unknown {
           if (key === 'disabled') node.isDisabled = Boolean(first)
           if (key === 'hover') node.hasHover = true
           if (key === 'on_click') node.click = first as Handler
+          if (key.startsWith('on_')) node.listeners.set(key, (key === 'on_mouse_down' ? second : first) as Handler)
 
           return proxy
         }
@@ -133,7 +136,16 @@ mock.module('gpui-base', () => ({
   Scrollbar: { vertical: () => element() },
 }))
 
+export const app = {
+  isActive: true,
+  shownTab: 'tab1',
+  written: [] as { path: string; text: string }[],
+  labels: [] as string[][],
+}
+
 mock.module('herdr', () => ({
+  window: () => ({ active: app.isActive }),
+  spaces: () => [{ active: true, tabs: [{ id: app.shownTab, active: true, zoomed: false }] }],
   appHome: () => '/app',
   home: () => '/home',
   props: () => ({ pane: 'p-inbox' }),
@@ -147,10 +159,16 @@ mock.module('herdr', () => ({
   ],
   theme: () => new Proxy({}, { get: () => '#808080' }),
   readTextFile: async (path: string) => (path.endsWith('s1.json') ? demoEnvelopeText() : ''),
-  writeTextFile: async () => null,
+  writeTextFile: async (path: string, text: string) => {
+    app.written.push({ path, text })
+    return null
+  },
   watchFolder: () => new Promise(() => {}),
   exec: async () => ({ code: 0, stdout: '', stderr: '' }),
-  hc: async () => null,
+  hc: async (args: string[]) => {
+    app.labels.push(args)
+    return null
+  },
   run() {},
 }))
 
@@ -173,5 +191,5 @@ export async function openPanel() {
     }
   }
 
-  return { panel, paint, click, settle }
+  return { panel, cx, paint, click, settle }
 }

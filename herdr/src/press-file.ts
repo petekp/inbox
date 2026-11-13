@@ -1,6 +1,7 @@
 import { HERDR_FORMAT, pressFolder } from '../../hooks/herdr'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
+import type { ReportedLook } from '../../hooks/status-children'
 import type { Holds } from '../../hooks/timing'
 
 /** The label the look sets on the session's terminal after it writes a press, so a host following `hc events` reads it. */
@@ -39,3 +40,7 @@ export function pressFileText(
     ...(result ? { result } : {}),
   })
 }
+
+/** The text of a look file: a look at the Status that ended, in the format `pressFile` reads. */
+export const lookFileText = (id: string, look: ReportedLook): string =>
+  JSON.stringify({ format: HERDR_FORMAT, id, look })
