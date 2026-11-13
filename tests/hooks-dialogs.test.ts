@@ -255,3 +255,81 @@ test('a dialog’s answer text closes each copy with that question’s own answe
     ['Push it now?', 'No'],
   ])
 })
+
+test('a dialog’s answer closes each copy with its own answer in every form Claude Code gives, and leaves a question it did not answer open', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const prompts: string[] = []
+  world($, on, prompts)
+  w.ledgerReply = 'NONE'
+  const stored = () => JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[]; closed: Closed[] } }
+  const ask = (...questions: { question: string; options: string[] }[]) =>
+    $.tool.call({
+      tool: 'AskUserQuestion',
+      questions: questions.map(q => ({ question: q.question, options: q.options.map(label => ({ label })) })),
+    } as never)
+  const record = (ask: string, options: string[]) =>
+    $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask, options } as never)
+  const turn = async (turnId: string, text: string, ...questions: { question: string; options: string[] }[]) => {
+    w.dialogAnswer = { result: {}, text }
+    await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text: 'go on', turnId })
+    for (const q of questions) await record(q.question, q.options)
+    await ask(...questions)
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  const careful =
+    'Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.'
+  const chosen = (pairs: string) =>
+    `Your questions have been answered: ${pairs}. You can now continue with these answers in mind.`
+  const typed = (pairs: string) => `The user answered: ${pairs}. ${careful}`
+  const yesNo = (question: string) => ({ question, options: ['Yes', 'No'] })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await turn('t1', chosen('"Use Node or Python?"="Node"'), {
+    question: 'Use Node or Python?',
+    options: ['Node', 'Python'],
+  })
+  await turn('t2', typed('"Delete the cache?"="Only the old entries"'), yesNo('Delete the cache?'))
+  await turn(
+    't3',
+    typed('"Which branch?"="next" notes: only after CI, "Which layout?"="Grid" selected preview:\n<div>grid</div>'),
+    { question: 'Which branch?', options: ['main', 'next'] },
+    { question: 'Which layout?', options: ['Grid', 'List'] },
+  )
+  await turn('t4', chosen('"Run the migration?"="Yes"'), yesNo('Rebuild the index?'), yesNo('Run the migration?'))
+  await turn('t5', typed('"Rename the table?"=(no option selected) notes: not sure yet'), yesNo('Rename the table?'))
+  await turn('t6', 'The user did not answer the questions.', yesNo('Drop the old column?'))
+  await turn(
+    't7',
+    'The user asked for more questions before you proceed. So far they answered: "Ship it today?"="Yes". They also wrote: "ask about tests". Call AskUserQuestion again with follow-up questions that build on these answers (do not repeat these); do not start the task yet.',
+    yesNo('Ship it today?'),
+  )
+  await turn('t8', 'The user responded: only the staging one', yesNo('Restart the server?'))
+  await turn(
+    't9',
+    `User has answered your questions: "Pick a region?"="eu" user notes: closest to us, "Pick a size?"="small". You can now continue with the user's answers in mind.`,
+    { question: 'Pick a size?', options: ['small', 'large'] },
+    { question: 'Pick a region?', options: ['eu', 'us'] },
+  )
+  await turn('t10', 'Something else happened, not now', yesNo('Clear the logs?'))
+
+  expect(stored().ledger.closed.map(c => [c.ask, c.outcome])).toEqual([
+    ['Use Node or Python?', 'Node'],
+    ['Delete the cache?', 'Only the old entries'],
+    ['Which branch?', 'next'],
+    ['Which layout?', 'Grid'],
+    ['Run the migration?', 'Yes'],
+    ['Ship it today?', 'Yes'],
+    ['Restart the server?', 'only the staging one'],
+    ['Pick a size?', 'small'],
+    ['Pick a region?', 'eu'],
+  ])
+  expect(stored().ledger.items.map(i => i.ask)).toEqual([
+    'Rebuild the index?',
+    'Rename the table?',
+    'Drop the old column?',
+    'Clear the logs?',
+  ])
+  expect(prompts.find(p => p.includes('"Drop the old column?"'))).toContain('the user dismissed it without answering')
+})

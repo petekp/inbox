@@ -5205,54 +5205,76 @@ function linkDialogs(s, now = Date.now()) {
   const ledger = questions.reduce((l, q) => q.answer !== undefined && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l, { ...s.ledger, items });
   return { ...s, ledger, dialogQuestions: kept };
 }
-var ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected)(?: your questions?)?:?\s*/i;
-var ANSWER_SUFFIX = /\.?\s*you can now continue with the user's answers in mind\.?\s*$/i;
 var MAX_DIALOG_ANSWER = 80;
-function unwrapped(text) {
-  return text.replace(ANSWER_PREFIX, "").replace(ANSWER_SUFFIX, "").trim();
-}
-function pairedAnswers(questions, text) {
-  const body = unwrapped(text);
-  const starts = [];
-  let from = 0;
-  for (const q of questions) {
-    const lead = `"${q.question}"="`;
-    const at = body.indexOf(lead, from);
-    if (at < 0)
-      return null;
-    starts.push(at + lead.length);
-    from = at + lead.length;
+var PAIR_FORMS = [
+  { head: /^Your questions have been answered: /, tail: /\. You can now continue with these answers in mind\.$/ },
+  { head: /^The user answered: /, tail: /\. Read the answers carefully[\s\S]*$/ },
+  {
+    head: /^The user asked for more questions before you proceed\. So far they answered: /,
+    tail: /\.(?: They also wrote: [\s\S]*)? Call \S+ again with follow-up questions[\s\S]*$/
+  },
+  { head: /^User has answered your questions: /, tail: /\. You can now continue with the user's answers in mind\.$/ },
+  { head: /^(?=")/, tail: /$/ }
+];
+var AFTER_ANSWER = /^ (?:selected preview:\n|notes: |user notes: )/;
+var SINGLE_FORMS = [
+  /^The user responded: ([\s\S]+)$/,
+  /^User (?:has )?(?:answered|selected)(?: your questions?)?: ([^"\n].*)/i,
+  /^User provided custom input: (.+)/
+];
+function quotedAnswer(pair) {
+  if (!pair.startsWith('"'))
+    return null;
+  for (let end = pair.indexOf('"', 1);end > 0; end = pair.indexOf('"', end + 1)) {
+    const after = pair.slice(end + 1);
+    if (after === "" || AFTER_ANSWER.test(after))
+      return pair.slice(1, end);
   }
-  const answers = questions.map((_, i) => {
-    const next = starts[i + 1];
-    const end = next === undefined ? body.length : next - `"${questions[i + 1].question}"="`.length;
-    const closed = body.slice(starts[i], end).match(/^([\s\S]*)",?\s*$/);
-    return closed ? closed[1] : null;
+  return null;
+}
+function pairedAnswers(questions, pairs) {
+  const leads = questions.map((q) => {
+    const question = q.question.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const lead = new RegExp(`"\\s*${question}\\s*"=`).exec(pairs);
+    return lead ? { at: lead.index, answerAt: lead.index + lead[0].length } : null;
   });
-  return answers.every((a) => a !== null) ? answers : null;
+  const starts = leads.flatMap((l) => l ? [l.at] : []);
+  return leads.map((lead) => {
+    if (!lead)
+      return null;
+    const next = Math.min(pairs.length, ...starts.filter((at) => at > lead.at));
+    return quotedAnswer(pairs.slice(lead.answerAt, next).replace(/, $/, ""));
+  });
+}
+function answersOf(questions, text) {
+  const trimmed = text.trim();
+  for (const { head, tail } of PAIR_FORMS) {
+    const opened = head.exec(trimmed);
+    const rest = opened ? trimmed.slice(opened[0].length) : "";
+    const closed = opened ? tail.exec(rest) : null;
+    if (closed)
+      return pairedAnswers(questions, rest.slice(0, closed.index));
+  }
+  const single = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  return questions.map(() => single ?? null);
 }
 function chosenOf(q, answer) {
   const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
   return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
 }
-function fallbackAnswerOf(q, text) {
-  const named = q?.options.filter((o) => text.toLowerCase().includes(optionKey(o))) ?? [];
-  const [only] = named;
-  if (only && named.length === 1)
-    return only.replace(RECOMMENDED_SUFFIX, "").trim();
-  return text.slice(0, MAX_DIALOG_ANSWER);
-}
 function noteAnsweredDialog(s, questions, text, now) {
-  const paired = pairedAnswers(questions, text);
-  const fallback = fallbackAnswerOf(questions.length === 1 ? questions[0] : null, unwrapped(text));
-  const added = questions.map((q, index) => ({
-    ...q,
-    callId: null,
-    index,
-    turn: s.ledger.turn,
-    itemId: null,
-    answer: paired ? chosenOf(q, paired[index]) : fallback
-  }));
+  const answers = answersOf(questions, text);
+  const added = questions.map((q, index) => {
+    const answer = answers[index]?.trim() ? chosenOf(q, answers[index]) : undefined;
+    return {
+      ...q,
+      callId: null,
+      index,
+      turn: s.ledger.turn,
+      itemId: null,
+      ...answer === undefined ? {} : { answer }
+    };
+  });
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now);
 }
 function noteDialog(s, callId, questions) {

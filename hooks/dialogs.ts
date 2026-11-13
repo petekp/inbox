@@ -104,40 +104,84 @@ export function linkDialogs<S extends Session>(s: S, now = Date.now()): S {
   return { ...s, ledger, dialogQuestions: kept }
 }
 
-const ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected)(?: your questions?)?:?\s*/i
-const ANSWER_SUFFIX = /\.?\s*you can now continue with the user's answers in mind\.?\s*$/i
 const MAX_DIALOG_ANSWER = 80
 
-/** The text of Claude Code's dialog answer without its wrapper sentences. */
-function unwrapped(text: string): string {
-  return text.replace(ANSWER_PREFIX, '').replace(ANSWER_SUFFIX, '').trim()
+/**
+ * The words around the `"<question>"="<answer>"` pairs of Claude Code's AskUserQuestion result. From 2.1.318 to
+ * 2.1.323 they say whether every answer is an option, or one was typed or has notes, or the person asked for more
+ * questions after answering some. 2.0.77 and 2.1.100 used the fourth. omp gives a form's pairs with no words around.
+ */
+const PAIR_FORMS: { head: RegExp; tail: RegExp }[] = [
+  { head: /^Your questions have been answered: /, tail: /\. You can now continue with these answers in mind\.$/ },
+  { head: /^The user answered: /, tail: /\. Read the answers carefully[\s\S]*$/ },
+  {
+    head: /^The user asked for more questions before you proceed\. So far they answered: /,
+    tail: /\.(?: They also wrote: [\s\S]*)? Call \S+ again with follow-up questions[\s\S]*$/,
+  },
+  { head: /^User has answered your questions: /, tail: /\. You can now continue with the user's answers in mind\.$/ },
+  { head: /^(?=")/, tail: /$/ },
+]
+
+/** What follows an answer's closing quote inside its pair: the preview the person chose, or their notes. */
+const AFTER_ANSWER = /^ (?:selected preview:\n|notes: |user notes: )/
+
+/**
+ * Texts that answer a dialog of one question with no pairs: Claude Code's reply the person wrote instead of answering,
+ * and omp's choice or typed answer.
+ */
+const SINGLE_FORMS = [
+  /^The user responded: ([\s\S]+)$/,
+  /^User (?:has )?(?:answered|selected)(?: your questions?)?: ([^"\n].*)/i,
+  /^User provided custom input: (.+)/,
+]
+
+/** The answer that opens `pair`, the text after its question's `=`, or null when it holds no answer in quotes. */
+function quotedAnswer(pair: string): string | null {
+  if (!pair.startsWith('"')) return null
+  for (let end = pair.indexOf('"', 1); end > 0; end = pair.indexOf('"', end + 1)) {
+    const after = pair.slice(end + 1)
+    if (after === '' || AFTER_ANSWER.test(after)) return pair.slice(1, end)
+  }
+
+  return null
 }
 
 /**
- * Each question's answer in Claude Code's `"<question>"="<answer>"` pairs, or null when the text does not hold a pair
- * for every question, in order. An answer may hold quote marks: it ends at the quote mark before the next pair, or at
- * the last one.
+ * Each question's answer in `"<question>"="<answer>"` pairs, or null for a question with no pair. The pairs may come in
+ * any order. An answer may hold quote marks: it ends at the quote mark before its notes, its preview or the next pair.
  */
-function pairedAnswers(questions: AskedQuestion[], text: string): string[] | null {
-  const body = unwrapped(text)
-  const starts: number[] = []
-  let from = 0
-  for (const q of questions) {
-    const lead = `"${q.question}"="`
-    const at = body.indexOf(lead, from)
-    if (at < 0) return null
-    starts.push(at + lead.length)
-    from = at + lead.length
-  }
-  const answers = questions.map((_, i) => {
-    const next = starts[i + 1]
-    const end = next === undefined ? body.length : next - `"${questions[i + 1]!.question}"="`.length
-    const closed = body.slice(starts[i], end).match(/^([\s\S]*)",?\s*$/)
+function pairedAnswers(questions: AskedQuestion[], pairs: string): (string | null)[] {
+  const leads = questions.map(q => {
+    const question = q.question.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const lead = new RegExp(`"\\s*${question}\\s*"=`).exec(pairs)
 
-    return closed ? closed[1]! : null
+    return lead ? { at: lead.index, answerAt: lead.index + lead[0].length } : null
   })
+  const starts = leads.flatMap(l => (l ? [l.at] : []))
 
-  return answers.every(a => a !== null) ? (answers as string[]) : null
+  return leads.map(lead => {
+    if (!lead) return null
+    const next = Math.min(pairs.length, ...starts.filter(at => at > lead.at))
+
+    return quotedAnswer(pairs.slice(lead.answerAt, next).replace(/, $/, ''))
+  })
+}
+
+/**
+ * Each question's answer in a dialog's answer text, or null for a question it leaves unanswered. Text in a form not
+ * listed here answers no question, since its words cannot be told from the person's.
+ */
+function answersOf(questions: AskedQuestion[], text: string): (string | null)[] {
+  const trimmed = text.trim()
+  for (const { head, tail } of PAIR_FORMS) {
+    const opened = head.exec(trimmed)
+    const rest = opened ? trimmed.slice(opened[0].length) : ''
+    const closed = opened ? tail.exec(rest) : null
+    if (closed) return pairedAnswers(questions, rest.slice(0, closed.index))
+  }
+  const single = questions.length === 1 ? SINGLE_FORMS.map(form => form.exec(trimmed)?.[1]).find(Boolean) : undefined
+
+  return questions.map(() => single ?? null)
 }
 
 /** The option `answer` names whole, else `answer` itself, which the person typed in the dialog's own field. */
@@ -148,32 +192,24 @@ function chosenOf(q: AskedQuestion, answer: string): string {
 }
 
 /**
- * What the person chose in a dialog of one question when the answer text has no pair: the one option the text names,
- * else the text itself.
- */
-function fallbackAnswerOf(q: AskedQuestion | null, text: string): string {
-  const named = q?.options.filter(o => text.toLowerCase().includes(optionKey(o))) ?? []
-  const [only] = named
-  if (only && named.length === 1) return only.replace(RECOMMENDED_SUFFIX, '').trim()
-
-  return text.slice(0, MAX_DIALOG_ANSWER)
-}
-
-/**
- * Notes the questions of a dialog the person answered, with their answers, then links them. The copy of each closes
- * with the person's answer, whether the agent recorded it before the dialog or records it later in the turn.
+ * Notes the questions of a dialog the person answered, then links them. The copy of each question the text answers
+ * closes with that answer, whether the agent recorded it before the dialog or records it later in the turn. The copy
+ * of a question it leaves unanswered stays open.
  */
 export function noteAnsweredDialog<S extends Session>(s: S, questions: DialogQuestion[], text: string, now: number): S {
-  const paired = pairedAnswers(questions, text)
-  const fallback = fallbackAnswerOf(questions.length === 1 ? questions[0]! : null, unwrapped(text))
-  const added = questions.map((q, index) => ({
-    ...q,
-    callId: null,
-    index,
-    turn: s.ledger.turn,
-    itemId: null,
-    answer: paired ? chosenOf(q, paired[index]!) : fallback,
-  }))
+  const answers = answersOf(questions, text)
+  const added = questions.map((q, index) => {
+    const answer = answers[index]?.trim() ? chosenOf(q, answers[index]!) : undefined
+
+    return {
+      ...q,
+      callId: null,
+      index,
+      turn: s.ledger.turn,
+      itemId: null,
+      ...(answer === undefined ? {} : { answer }),
+    }
+  })
 
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now)
 }
