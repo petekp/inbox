@@ -28,7 +28,7 @@ The evals call models, so they take a while and use your plans.
 
 ## 2. List what changed
 
-Run `git log --oneline v<last version>..next`. For each change, find its row in "After you change X, check Y" in [looks.md](looks.md), and add that row's checks to the live pass.
+Run `git log --oneline v<last version>..next`. With hundreds of commits, read the merged pull requests instead: `gh pr list --state merged --base next --search "merged:>=<tag date>"`. For each change, find its row in "After you change X, check Y" in [looks.md](looks.md), and add that row's checks to the live pass.
 
 ## 3. Prepare a test machine
 
@@ -104,6 +104,6 @@ Installs update as soon as the bump is pushed, so the release notes are written 
 
 1. Write the release notes to a file outside the repo, with the `release-notes` skill from [petekp/claude-code-setup](https://github.com/petekp/claude-code-setup/tree/main/skills/release-notes). Without it, use its order: one line on the effect people will notice most, what they'll notice in each look, how to update in each agent, then the technical changes.
 2. Set the new version in `.claude-plugin/plugin.json`, `codex/plugin/.codex-plugin/plugin.json` and `omp/package.json`. The Codex and omp bundles take it from these files when you build them in step 3. `./scripts/check.sh` fails when the three differ.
-3. Run `npm --prefix codex run build` and `npm --prefix omp run build`, then `./scripts/check.sh`.
+3. Run `npm --prefix codex run build`, `npm --prefix omp run build` and `npm --prefix herdr run build`, then `./scripts/check.sh`.
 4. Commit as "Bump to x.y.z" on `next`, and tag it `vx.y.z`. Push `next`, the tag, and the same commit to `main`.
 5. Publish the release at once with `gh release create vx.y.z --notes-file <notes file>`.
