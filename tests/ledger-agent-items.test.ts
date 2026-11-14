@@ -6,6 +6,7 @@ import { closeByAgent, closeItem } from '../hooks/ledger-close'
 import { addAgentItem, applyUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
 import { recordClose, recordItem } from '../hooks/tools'
+import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../hooks/tool-schemas'
 
 describe('items the agent recorded', () => {
   const ask = {
@@ -53,13 +54,14 @@ describe('items the agent recorded', () => {
 
   test('a recommendation keeps its reason until it moves to another option, and the answer names what a row lacks', () => {
     const input = { kind: 'question', ask: ask.ask, options: ask.options }
-    const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000)
+    const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000, TOOL_FIELDS)
     expect(bare.result).toContain('It has no rec')
     const why = recordItem(
       CLAUDE_CODE,
       bare.ledger,
       { ...input, rec: 'Redis', why: 'because it survives restarts' },
       1100,
+      TOOL_FIELDS,
     )
     expect(why.result).not.toContain('It has no')
     expect(why.ledger.items[0]).toMatchObject({ rec: 'Redis', recReason: 'it survives restarts' })
@@ -68,22 +70,22 @@ describe('items the agent recorded', () => {
     const moved = applyUpdate(why.ledger, parseReply('UPDATE: i1 | - | Memcached')!, 1200, 1)
     expect(moved.items[0]).toMatchObject({ rec: 'Memcached' })
     expect(moved.items[0]!.recReason).toBeUndefined()
-    const task = recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Plug in the test phone' }, 1000)
+    const task = recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Plug in the test phone' }, 1000, TOOL_FIELDS)
     expect(task.result).toContain('It has no steps')
   })
 
   test("a question keeps why it came up and what each option does, a record of it again replaces them, and the answer names what's missing", () => {
     const input = { kind: 'question', ask: ask.ask, options: ask.options, rec: 'Redis', why: 'it survives restarts' }
-    const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000)
+    const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000, TOOL_FIELDS)
     expect(bare.result).toBe(
       'Recorded. The user sees it in the /inbox pane. It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does).',
     )
     const body = { context: 'The price lookups are slow', option_notes: ['Adds a server', ''] }
-    const halfNoted = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, { ...input, ...body }, 1000)
+    const halfNoted = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, { ...input, ...body }, 1000, TOOL_FIELDS)
     expect(halfNoted.result).toContain(
       'It has no note on "Memcached": record it again with option_notes (what picking each option does).',
     )
-    const enriched = recordItem(CLAUDE_CODE, bare.ledger, { ...input, ...body }, 1100)
+    const enriched = recordItem(CLAUDE_CODE, bare.ledger, { ...input, ...body }, 1100, TOOL_FIELDS)
     expect(enriched.result).toBe(
       'Already open, so this record updated it and gave it your context and gave its options your notes.',
     )
@@ -96,6 +98,7 @@ describe('items the agent recorded', () => {
       enriched.ledger,
       { ...input, options: ['memcached', 'redis'], option_notes: ['Keeps prices in memory'] },
       1200,
+      TOOL_FIELDS,
     )
     expect(renoted.ledger.items[0]).toMatchObject({
       context: 'The price lookups are slow',
@@ -103,14 +106,27 @@ describe('items the agent recorded', () => {
     })
 
     const approval = { kind: 'question', ask: 'Approve the new settings layout?', options: ['Yes', 'No'] }
-    const unseen = recordItem(CLAUDE_CODE, EMPTY, approval, 1000)
+    const unseen = recordItem(CLAUDE_CODE, EMPTY, approval, 1000, TOOL_FIELDS)
     expect(unseen.result).toContain(
       "The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps.",
     )
-    const seen = recordItem(CLAUDE_CODE, EMPTY, { ...approval, steps: ['/tmp/settings.png'] }, 1000)
+    const seen = recordItem(CLAUDE_CODE, EMPTY, { ...approval, steps: ['/tmp/settings.png'] }, 1000, TOOL_FIELDS)
     expect(seen.result).not.toContain("can't approve")
-    const choice = recordItem(CLAUDE_CODE, EMPTY, input, 1000)
+    const choice = recordItem(CLAUDE_CODE, EMPTY, input, 1000, TOOL_FIELDS)
     expect(choice.result).not.toContain("can't approve")
+  })
+
+  test("an agent whose record tool is 0.3.0's is asked only for the fields that tool takes", () => {
+    const old = (input: Record<string, unknown>) => recordItem(CLAUDE_CODE, EMPTY, input, 1000, V0_3_TOOL_FIELDS).result
+    const question = { kind: 'question', ask: ask.ask, options: ask.options }
+    expect(old({ ...question, rec: 'Redis' })).toBe('Recorded. The user sees it in the /inbox pane.')
+    expect(old(question)).toBe(
+      'Recorded. The user sees it in the /inbox pane. It has no rec: when you can recommend an option, record it again with rec.',
+    )
+    expect(old({ kind: 'question', ask: 'Approve the new settings layout?', options: ['Yes', 'No'] })).toContain(
+      "The user can't approve what they can't see",
+    )
+    expect(old({ kind: 'task', ask: 'Plug in the test phone' })).toContain('It has no steps')
   })
 
   test("one stays open after 12 prompts, when the update's items expire", () => {
@@ -135,10 +151,16 @@ describe('items the agent recorded', () => {
 
   test('a repeat record changes the recommendation to one of the open options and says so', () => {
     const record = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Memcached'] }
-    const first = recordItem(CLAUDE_CODE, recorded(), { ...record, rec: 'Redis' }, 2000)
-    const second = recordItem(CLAUDE_CODE, first.ledger, { ...record, rec: 'Memcached' }, 2100)
-    const unstated = recordItem(CLAUDE_CODE, second.ledger, record, 2200)
-    const elsewhere = recordItem(CLAUDE_CODE, second.ledger, { ...record, options: ['Valkey'], rec: 'Valkey' }, 2300)
+    const first = recordItem(CLAUDE_CODE, recorded(), { ...record, rec: 'Redis' }, 2000, TOOL_FIELDS)
+    const second = recordItem(CLAUDE_CODE, first.ledger, { ...record, rec: 'Memcached' }, 2100, TOOL_FIELDS)
+    const unstated = recordItem(CLAUDE_CODE, second.ledger, record, 2200, TOOL_FIELDS)
+    const elsewhere = recordItem(
+      CLAUDE_CODE,
+      second.ledger,
+      { ...record, options: ['Valkey'], rec: 'Valkey' },
+      2300,
+      TOOL_FIELDS,
+    )
     expect(
       [first, second, unstated, elsewhere].map(r => [r.ledger.items.map(i => i.rec), r.result, r.personLine]),
     ).toEqual([
@@ -151,21 +173,28 @@ describe('items the agent recorded', () => {
 
   test('a record or close gives the person a line naming what it changed, and none when it changed nothing', () => {
     const question = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Memcached'] }
-    const first = recordItem(CLAUDE_CODE, EMPTY, question, 1000)
+    const first = recordItem(CLAUDE_CODE, EMPTY, question, 1000, TOOL_FIELDS)
     expect(first.personLine).toBe('Question: Which cache should the API use?')
-    expect(recordItem(CLAUDE_CODE, first.ledger, question, 1100).personLine).toBeNull()
-    expect(recordItem(CLAUDE_CODE, EMPTY, { kind: 'question', ask: 'Ship it?' }, 1000).personLine).toBeNull()
-    expect(recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Sign in to npm' }, 1000).personLine).toBe(
+    expect(recordItem(CLAUDE_CODE, first.ledger, question, 1100, TOOL_FIELDS).personLine).toBeNull()
+    expect(
+      recordItem(CLAUDE_CODE, EMPTY, { kind: 'question', ask: 'Ship it?' }, 1000, TOOL_FIELDS).personLine,
+    ).toBeNull()
+    expect(recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Sign in to npm' }, 1000, TOOL_FIELDS).personLine).toBe(
       'Task: Sign in to npm',
     )
 
     const finding = { kind: 'finding', title: 'Retry loop never backs off', detail: 'It hammers the API.' }
-    const found = recordItem(CLAUDE_CODE, first.ledger, finding, 1200)
+    const found = recordItem(CLAUDE_CODE, first.ledger, finding, 1200, TOOL_FIELDS)
     expect(found.personLine).toBe('Issue: Retry loop never backs off')
-    expect(recordItem(CLAUDE_CODE, found.ledger, finding, 1300).personLine).toBeNull()
+    expect(recordItem(CLAUDE_CODE, found.ledger, finding, 1300, TOOL_FIELDS).personLine).toBeNull()
     expect(
-      recordItem(CLAUDE_CODE, EMPTY, { ...finding, finding_kind: 'opportunity', title: 'Cache the token' }, 1200)
-        .personLine,
+      recordItem(
+        CLAUDE_CODE,
+        EMPTY,
+        { ...finding, finding_kind: 'opportunity', title: 'Cache the token' },
+        1200,
+        TOOL_FIELDS,
+      ).personLine,
     ).toBe('Opportunity: Cache the token')
 
     const closed = recordClose(CLAUDE_CODE, found.ledger, { id: 'i1', answer: 'Redis' }, 1400, {
@@ -203,6 +232,8 @@ describe('items the agent recorded', () => {
       [{ how: 'update', outcome: 'Redis' }, 'Not recorded: the inbox closed it (Redis).'],
     ] as const
     for (const [closing, result] of refusals)
-      expect(recordItem(CLAUDE_CODE, closeItem(recorded(), 'i1', closing, 1500), ask, 2000).result).toStartWith(result)
+      expect(
+        recordItem(CLAUDE_CODE, closeItem(recorded(), 'i1', closing, 1500), ask, 2000, TOOL_FIELDS).result,
+      ).toStartWith(result)
   })
 })

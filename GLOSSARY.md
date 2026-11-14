@@ -327,6 +327,17 @@ adds "next" on one, and only a next build draws the Status tab.
 needs a row in "Differences on purpose" in `docs/looks.md`, and
 `scripts/check-structure.mjs` fails when one is missing.
 
+**Tool fields**:
+The input fields each inbox tool has for the agent of one conversation
+(`ToolFields`). A tool's answer asks the agent only for fields in this list.
+The list can be older than the build: Claude Code keeps a conversation's first
+tool schemas when the conversation resumes on a later build, so the mod saves
+the list as `Session.toolFields`. Only a conversation the mod saw start gets
+this build's list. A fork gets its parent's, and any other conversation with no
+saved list gets 0.3.0's. Codex takes the list from the server's last
+`tools/list` answer, and omp registers this build's tools.
+`hooks/tool-schemas.ts:TOOL_FIELDS`, `V0_3_TOOL_FIELDS`.
+
 The engine has two terms of its own. Its `surface` is where Claude Code runs,
 and includes `mobile` and `vscode`; `lookOf` in `hooks/palettes.ts` maps it to
 a look. Its `Client` is a drawn region that takes clicks over its whole shape,

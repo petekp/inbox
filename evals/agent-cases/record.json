@@ -30,6 +30,32 @@
     ]
   },
   {
+    "name": "record-question-with-0.3.0-tools",
+    "about": "In a session that 0.3.0 started, whose record tool has no context, option_notes or why, a recorded question is recorded once, and the reply passes on no request for fields the tool lacks.",
+    "tools": "0.3.0",
+    "prompt": "Task: add caching to the product API. Before you can go on, I have to choose between Redis and an in-process memory cache. You recommend the memory cache because the service runs as a single process. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "has": ["ask", "options", "rec"]
+      },
+      {
+        "reply": "redis"
+      },
+      {
+        "reply": "memory"
+      },
+      {
+        "notReply": "option[ _]?notes|re-?record|record (it|the question) again|extra fields|parameters"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
     "name": "record-design-choice",
     "about": "A choice between two designs the agent could try is recorded as a question marked as a design choice.",
     "prompt": "Task: add a settings page to the web app. Before you build it, I have to choose how its five sections are laid out: one long scrolling page, or a tab for each section. You recommend tabs, because two of the sections are long. Ask me.",

@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 
 import { agentTools } from '../../hooks/tools'
+import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../../hooks/tool-schemas'
 import { isShownTab } from '../../hooks/tabs'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
+import type { ToolFields } from '../../types'
 import { CODEX, INBOX_DESCRIPTION, VIEW_DESCRIPTION } from './texts'
 
 /**
@@ -73,6 +75,25 @@ export const TOOLS = [
     _meta: APP_ONLY,
   },
 ]
+
+const LISTED_FIELDS = Symbol.for('inbox.listedToolFields')
+type Listed = { [LISTED_FIELDS]?: ToolFields }
+
+/**
+ * Notes that this process listed this build's tools. Codex keeps the tools a server process listed, while the process
+ * imports the handler again after an update, so the note lives on `globalThis`, which outlasts the handler.
+ */
+export function noteToolsListed(): void {
+  ;(globalThis as Listed)[LISTED_FIELDS] = TOOL_FIELDS
+}
+
+/**
+ * The fields of the inbox tools Codex has from this process: those of the build that last answered its `tools/list`,
+ * or 0.3.0's when no build that notes them has answered it.
+ */
+export function listedToolFields(): ToolFields {
+  return (globalThis as Listed)[LISTED_FIELDS] ?? V0_3_TOOL_FIELDS
+}
 
 /**
  * The tab's replies in progress and discarded holds, each a time by row id, and when the tab began showing its tab.

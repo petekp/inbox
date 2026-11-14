@@ -289,4 +289,13 @@ export type Session = {
    * per-reply update.
    */
   dialogQuestions: TurnDialogQuestion[]
+  /**
+   * The input fields of each inbox tool the agent has in this conversation, which a tool's answer may ask it to send.
+   * Only the mod saves them, since Claude Code keeps a conversation's first tools when the conversation resumes on a
+   * later build. Null when the session does not know them, as in a session saved before they were kept.
+   */
+  toolFields: ToolFields | null
 }
+
+/** The input fields of each inbox tool, by the tool's name. */
+export type ToolFields = { record: string[]; close: string[]; order_prs: string[] }

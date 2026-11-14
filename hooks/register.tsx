@@ -42,7 +42,7 @@ import {
   type SentBy,
 } from './session-turns'
 import { emptySession, upgradeSession, type SavedSession } from './session-files'
-import { pressOn, recorded, pruned, type SendOutcome } from './session-presses'
+import { pressOn, pruned, type SendOutcome } from './session-presses'
 import { isCompareInBackground } from './clients'
 import { sessionView, showsRunningMark, type SessionView } from './session-view'
 import {
@@ -242,6 +242,8 @@ import {
 } from './mod-records'
 import {
   AWAY_MS,
+  answerToolCall,
+  broughtBack,
   type Changed,
   conversation,
   currentOwner,
@@ -258,6 +260,8 @@ import {
   resultsOrder,
   type SavedRecord,
   updating,
+  withLoadedToolFields,
+  type LoadedBy,
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
@@ -1096,7 +1100,7 @@ async function runTool(
   const owner = currentOwner()
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
   await commit($, owner, s => {
-    const r = recorded(CLAUDE_CODE, s, tool, input, now)
+    const r = answerToolCall(s, tool, input, now)
     answer = r
     return r.state
   })
@@ -2134,7 +2138,7 @@ async function initializeInbox($: EngineInterface) {
       void pollPrs($)
     }),
   ]
-  await loadConversation($, await $.session.id())
+  await loadConversation($, await $.session.id(), 'mod-start')
   void startInHerdr(herdrCalls($), () => redrawPane($))
   mod.stopHerdrPresses?.()
   mod.stopHerdrPresses = await listenForHerdrPresses(
@@ -2153,12 +2157,18 @@ async function initializeInbox($: EngineInterface) {
  * /clear, /resume or /branch, which switch conversations under a new session
  * id without a session.start.
  */
-function loadConversation($: EngineInterface, id: string, forkedFrom?: string): Promise<void> {
+function loadConversation($: EngineInterface, id: string, by: LoadedBy, forkedFrom?: string): Promise<void> {
   const revision = ++sessionState.loadRevision
-  return prepareConversation($, id, revision, forkedFrom)
+  return prepareConversation($, id, revision, by, forkedFrom)
 }
 
-async function prepareConversation($: EngineInterface, id: string, revision: number, forkedFrom?: string) {
+async function prepareConversation(
+  $: EngineInterface,
+  id: string,
+  revision: number,
+  by: LoadedBy,
+  forkedFrom?: string,
+) {
   const writesAtRead = sessionState.savedWrites
   const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled(saveEngine($), id)])
   if (revision !== sessionState.loadRevision) return
@@ -2168,7 +2178,7 @@ async function prepareConversation($: EngineInterface, id: string, revision: num
     const latest = writesAtRead === sessionState.savedWrites ? saved : await readSettled(saveEngine($), id)
     // A fork continues its parent's inbox, so a new id with no saved state starts from the parent's.
     const parent = latest?.session || !forkedFrom ? null : await readSettled(saveEngine($), forkedFrom)
-    await applyConversation($, id, revision, sessionRoot, latest, parent?.session)
+    await applyConversation($, id, revision, by, sessionRoot, latest, parent?.session)
   })
   sessionState.applyingConversation = applying.catch(() => undefined)
   return applying
@@ -2208,6 +2218,7 @@ async function applyConversation(
   $: EngineInterface,
   id: string,
   revision: number,
+  by: LoadedBy,
   sessionRoot: string,
   saved: { session: SavedRecord | undefined } | null,
   parent?: SavedRecord,
@@ -2238,13 +2249,15 @@ async function applyConversation(
     )) === id
   if (!isLoading()) return
   if (saved !== null) await bringBack($, parent ?? saved.session, isLoading, parent !== undefined)
+  const turns = await $.session.turns().catch(() => null)
   if (!isLoading()) return
+  await replaceDrawn($, s => (isLoading() ? withLoadedToolFields(s, by, saved?.session, parent, turns) : s))
   const { ledger, presence } = await read($, SESSION)
   const isEmpty = isBlankLedger(ledger)
   const needsCatchUp =
     presence.ledgerState !== 'current' ||
     presence.turnsStarted > presence.turnsApplied ||
-    (!isUnread && isEmpty && (await $.session.turns().catch(() => 0)) > 0)
+    (!isUnread && isEmpty && (turns ?? 0) > 0)
   if (!isLoading()) return
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
@@ -2270,24 +2283,8 @@ async function bringBack(
     isBrought = false
     if (!isLoading() || !isBlankLedger(s.ledger)) return s
     isBrought = true
-    if (isFork) return forkedFrom(s, loaded)
-    const lastActions = Object.fromEntries(
-      Object.entries(loaded.lastActions).map(([id, a]) => [
-        id,
-        a.delivery?.state === 'queued' ? { ...a, delivery: { ...a.delivery, state: 'unconfirmed' as const } } : a,
-      ]),
-    )
-    // The stop and the turn belong to the process that saved them. Whether a turn runs now is this process's.
-    const { isTurnRunning } = s.presence
 
-    return cutOffUpdate({
-      ...loaded,
-      lastActions,
-      sent: [],
-      stop: null,
-      turn: emptySession().turn,
-      presence: { ...loaded.presence, isTurnRunning },
-    })
+    return isFork ? forkedFrom(s, loaded) : broughtBack(s, loaded)
   })
   if (isBrought && !isFork)
     await update($, AWAY, a => (isLoading() ? { ...a, lastActiveAt: saved.savedAt, isAway: true } : a))
@@ -2379,7 +2376,7 @@ export const register: Register = on => {
     // from the event. A start with --resume also raises this, for the conversation
     // session.start already loaded.
     if (mod.isOn && e.session_id !== conversation.id)
-      await loadConversation($, e.session_id, e.source === 'fork' ? conversation.id : undefined)
+      await loadConversation($, e.session_id, e.source, e.source === 'fork' ? conversation.id : undefined)
 
     return r
   })
@@ -2430,9 +2427,10 @@ export const register: Register = on => {
     // session has changed conversations. A reload that classic.SessionStart already did leaves the ids equal.
     const sessionId = await $.session.id()
     if (sessionId !== conversation.id) {
-      const parent = sessionState.endReason === 'resume' ? conversation.id : undefined
+      const reason = sessionState.endReason
       sessionState.endReason = null
-      await loadConversation($, sessionId, parent || undefined)
+      const parent = reason === 'resume' ? conversation.id : undefined
+      await loadConversation($, sessionId, reason === 'clear' ? 'clear' : 'resume', parent || undefined)
     }
     const origin = e.origin
     // send() already recorded this mod's own prompts.

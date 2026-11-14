@@ -12,6 +12,7 @@ import { EXIT_MS } from '../../hooks/row-motion'
 import { drawnSettled, SETTLE_WINDOW_MS } from '../src/settle'
 import { CODEX } from '../src/texts'
 import { after, withItems } from './press-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 test('the tab draws a settled row while it shows the tab the row closed in, and lists it in the Closed fold once the person switches tab', () => {
   const s = withItems()
@@ -139,6 +140,7 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
     s.ledger,
     { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
     10,
+    TOOL_FIELDS,
   ).ledger
   const closed = recordClose(CODEX, recorded, { id: 'f3', reason: 'added one' }, 50, {
     lastActions: {},

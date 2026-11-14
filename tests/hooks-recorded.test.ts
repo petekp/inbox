@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { w, world } from './hooks-world'
-import { BAND, PANE } from './hooks-helpers'
+import { BAND, PANE, SAVED_SESSION } from './hooks-helpers'
 
 test('the guidance reaches Claude in the close tool’s description and nowhere else, and every inbox tool loads with the session', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
@@ -15,6 +15,72 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   expect(record.description).toBe('Record an item.')
   const order = await $.tool.describe({ tool: 'mcp__inbox__order_prs', description: 'Order PRs.', provider })
   expect([close, record, order].map(d => d.isDeferred)).toEqual([false, false, false])
+})
+
+test("Claude is asked for a question's context, notes and reason in a new conversation and after it resumes, and not in a conversation an earlier build saved", async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let turns = 0
+  on('session.turns', () => ({ value: turns }))
+  w.stored.set('s:session-2', JSON.stringify(SAVED_SESSION))
+  const recordAsk = async (ask: string) =>
+    (
+      await $.tool.call({
+        tool: 'mcp__inbox__record',
+        kind: 'question',
+        ask,
+        options: ['Redis', 'Memcached'],
+        rec: 'Redis',
+      })
+    ).result
+  const recorded = 'Recorded. The user sees it in the /inbox pane.'
+  const fullAsk = `${recorded} It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does). It has no why: record it again with why, so the user sees your reason.`
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  expect(await recordAsk('Which cache should the API use?')).toBe(fullAsk)
+  await clock.settle()
+  turns = 3
+  await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-2' })
+  expect(await recordAsk('Which queue should jobs use?')).toBe(recorded)
+  await clock.settle()
+  await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
+  expect(await recordAsk('Which log store should we use?')).toBe(fullAsk)
+})
+
+test("a conversation /resume opens with no saved inbox state is asked only for what 0.3.0's record takes, one /clear begins is asked for everything while the turn count still names the last conversation, and a fork asks as its parent does", async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('session.turns', () => ({ value: 3 }))
+  const recordAsk = async (ask: string) =>
+    (
+      await $.tool.call({
+        tool: 'mcp__inbox__record',
+        kind: 'question',
+        ask,
+        options: ['Redis', 'Memcached'],
+        rec: 'Redis',
+      })
+    ).result
+  const recorded = 'Recorded. The user sees it in the /inbox pane.'
+  const fullAsk = `${recorded} It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does). It has no why: record it again with why, so the user sees your reason.`
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
+  expect(await recordAsk('Which cache should the API use?')).toBe(fullAsk)
+  await clock.settle()
+  await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-3' })
+  expect(await recordAsk('Which queue should jobs use?')).toBe(recorded)
+  await clock.settle()
+  await $.session.end({ reason: 'clear', sessionId: 'session-3', resume: { id: 'session-3' } })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-4' })
+  await clock.settle()
+  await $.session.end({ reason: 'resume', sessionId: 'session-4', resume: { id: 'session-4' } })
+  await $.classic.SessionStart({ source: 'fork', session_id: 'session-5' })
+  expect(await recordAsk('Which log store should we use?')).toBe(fullAsk)
 })
 
 test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made until its Undo ends, then moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {

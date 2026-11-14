@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T04:15:49.948Z. 197683 characters follow.
+// Built at 2026-11-14T05:11:34.472Z. 198013 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2469,7 +2469,8 @@ function emptySession() {
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
-    dialogQuestions: []
+    dialogQuestions: [],
+    toolFields: null
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -2480,6 +2481,11 @@ function sessionFile(sessionId) {
   return `${sessionId}.json`;
 }
 var isSessionFile = (name) => SESSION_FILE.test(name);
+function savedToolFields(saved) {
+  const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
+  const fields = saved;
+  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs) ? fields : null;
+}
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
   return rest;
@@ -2534,7 +2540,8 @@ function sessionFields(saved, views) {
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} })),
+    toolFields: savedToolFields(saved.toolFields)
   };
 }
 

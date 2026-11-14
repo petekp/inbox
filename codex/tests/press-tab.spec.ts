@@ -11,6 +11,7 @@ import { emptyState, NOTHING_HEARD } from '../src/state'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { withItems } from './press-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 test('the tab reports active work separately from pending exchanges and failed updates', () => {
   const s = { ...withItems(), presence: { ...withItems().presence, isUpdating: false, ledgerState: 'failed' as const } }
@@ -71,6 +72,7 @@ test('the tab moves from an empty Asks to Finds when it opens on a finding or a 
       s.ledger,
       { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
       20,
+      TOOL_FIELDS,
     ).ledger,
   }
   const next = newRows(first.seen, viewOf(withFinding, 20), false)

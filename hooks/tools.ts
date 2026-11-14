@@ -7,7 +7,7 @@ import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
 import { isDismissed } from './pr-views'
 import { bodyChanges, missingText, questionBody, withBody } from './question-checks'
 import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA } from './tool-schemas'
-import type { Closed, Help, Item, LastAction, Ledger } from '../types'
+import type { Closed, Help, Item, LastAction, Ledger, ToolFields } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 
@@ -47,7 +47,10 @@ export function isAgentTool(name: string): name is AgentTool {
 /** The person's latest press on each row, and when the running turn started, or null when the host did not say. */
 type Presses = { lastActions: Record<string, LastAction>; turnStartedAt: number | null }
 
-/** The answer to a call of one of `agentTools`. */
+/**
+ * The answer to a call of one of `agentTools`. `fields` are the input fields of the tools the agent has, which can be
+ * an older build's, so the answer never asks for a field the agent cannot send.
+ */
 export function toolAnswer(
   host: Host,
   ledger: Ledger,
@@ -55,10 +58,13 @@ export function toolAnswer(
   input: Record<string, unknown>,
   now: number,
   presses: Presses,
+  fields: ToolFields,
 ): ToolAnswer {
   switch (tool) {
     case 'record':
-      return recordAfterCompare(host, ledger, input, now, presses) ?? recordItem(host, ledger, input, now)
+      return (
+        recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields)
+      )
     case 'close':
       return recordClose(host, ledger, input, now, presses)
     case 'order_prs':
@@ -98,7 +104,13 @@ function unchanged(ledger: Ledger, result: string): ToolAnswer {
   return { ledger, result, personLine: null }
 }
 
-export function recordItem(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
+export function recordItem(
+  host: Host,
+  ledger: Ledger,
+  input: Record<string, unknown>,
+  now: number,
+  fields: ToolFields,
+): ToolAnswer {
   if (input.kind === 'finding') return recordFinding(host, ledger, input, now)
   if (input.kind !== 'question' && input.kind !== 'task')
     return unchanged(ledger, 'Not recorded: kind must be question, task or finding.')
@@ -157,7 +169,7 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
     result:
       `Recorded. The user sees it in ${host.surface}.` +
       leftOut +
-      missingText(after) +
+      missingText(after, fields.record) +
       (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ''),
     personLine: `${input.kind === 'question' ? 'Question' : 'Task'}: ${ask}`,
   }
@@ -232,12 +244,13 @@ function recordAfterCompare(
   input: Record<string, unknown>,
   now: number,
   presses: Presses,
+  fields: ToolFields,
 ): ToolAnswer | null {
   const isClosedAfterCompare = (c: Closed) =>
     c.how === 'claude' && c.kind === 'question' && isAfterCompareThisTurn(c.id, c.at, presses)
   const closed = ledger.closed.findLast(isClosedAfterCompare)
   if (!closed) return null
-  const r = recordItem(host, reopenItem(ledger, closed.id), input, now)
+  const r = recordItem(host, reopenItem(ledger, closed.id), input, now, fields)
   const isUpdated = r.ledger.items.some(i => i.id === closed.id && i.reportedAt === now)
 
   return isUpdated ? r : null

@@ -45,6 +45,19 @@ test('a record call shows in the next prompt as a hidden message', async () => {
   expect(next.message.content).toContain('Try the CLI by hand')
 })
 
+test("a question omp's agent records is asked for its context, notes and reason, since omp registers this build's tools", async () => {
+  createInbox(pi(), deps())
+  await prompt('Add caching to the API')
+  const answer = await record({
+    kind: 'question',
+    ask: 'Which cache should the API use?',
+    options: ['Redis', 'Memcached'],
+    rec: 'Redis',
+  })
+  expect(answer.content[0].text).toContain('It has no context or option_notes:')
+  expect(answer.content[0].text).toContain('It has no why:')
+})
+
 test('a prompt with nothing to tell the agent returns no message', async () => {
   createInbox(pi(), deps())
   const first = await prompt('hello')

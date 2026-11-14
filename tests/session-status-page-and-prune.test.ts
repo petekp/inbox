@@ -16,6 +16,7 @@ import { allRows } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import { prMarkId } from '../hooks/pr-rows'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 import { answer } from './session-helpers'
 
 const ITEM: Item = {
@@ -109,6 +110,16 @@ test('a session saved by the Progress trial build loads without its results, sub
   expect(loaded.presence).not.toHaveProperty('statedStep')
   expect(loaded.presence).toMatchObject({ turnsStarted: 2, isTurnRunning: true })
   expect(loaded.overviewFailure).toBeNull()
+})
+
+test('a session saved before sessions kept their tool fields, or with fields that are not lists of names, loads knowing none of them, and one saved with them keeps them', () => {
+  const saved = (toolFields: unknown) => upgradeSession({ ...emptySession(), toolFields } as never).toolFields
+
+  expect(upgradeSession({}).toolFields).toBeNull()
+  expect(saved({ record: 'kind,ask', close: [], order_prs: [] })).toBeNull()
+  expect(saved({ record: [1], close: [], order_prs: [] })).toBeNull()
+  expect(saved({ record: ['kind'], close: [] })).toBeNull()
+  expect(saved(TOOL_FIELDS)).toEqual(TOOL_FIELDS)
 })
 
 test('a sample saved without a Status is replaced, and the sample session carries its own', () => {
