@@ -1,6 +1,6 @@
 import type { Closed, FoldKind } from '../../types'
 import type { RowPress } from '../../hooks/presses'
-import type { ClosedDelivery, ResultMark, RowView } from '../../hooks/rows'
+import type { ClosedDelivery, ResultMark, RowView, SettledState } from '../../hooks/rows'
 import {
   NEEDS_YOU_GROUPS,
   ROW_COPY,
@@ -33,7 +33,7 @@ import { FINDING_GROUPS, HELD_MARK } from '../../hooks/help'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
-import { SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
+import { QUEUED_AFTER_MS, SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerStatus } from '../../hooks/view'
 import type { PressKind } from '../../types'
 import { button } from './blocks'
@@ -114,10 +114,18 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
 }
 
 /**
- * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
- * hidden, as the Codex tab hides a spent Undo, so the row does not change shape before it folds.
+ * When a settled row's spent Undo stops keeping its place, if its message is still queued then. The host sends an
+ * answer or Fix held for Undo when Undo ends, and a message still queued `QUEUED_AFTER_MS` later waits for the agent.
  */
-function undoButtons(row: RowView, agent: string): Button[] {
+export const undoPlaceEndsAt = (state: SettledState): number => state.at + SETTLED_MS + QUEUED_AFTER_MS
+
+/**
+ * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
+ * hidden, as the Codex tab hides a spent Undo, so the row does not change shape before it folds. The panel draws Undo on
+ * a line of its own, so a hidden one is an empty line. A row whose message waits for the agent stays until the agent
+ * takes it, so it drops the place from `undoPlaceEndsAt` rather than hold that empty line.
+ */
+function undoButtons(row: RowView, agent: string, now: number): Button[] {
   if (row.state.is !== 'settled') return []
   const id = `${row.id} undo`
   const runsOutAt = row.state.at + SETTLED_MS
@@ -131,7 +139,11 @@ function undoButtons(row: RowView, agent: string): Button[] {
       },
     ]
 
-  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isHidden: true, runsOutAt }] : []
+  const isWaitingForAgent = row.state.delivery === 'queued' && now >= undoPlaceEndsAt(row.state)
+
+  return row.state.offersUndo && !isWaitingForAgent
+    ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isHidden: true, runsOutAt }]
+    : []
 }
 
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */
@@ -184,7 +196,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     isSelected,
     body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
     buttons: isSettled
-      ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent)]
+      ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)]
       : isSelected && !isTyping
         ? rowButtons(row, isAllShown, screen.agent)
         : [],
