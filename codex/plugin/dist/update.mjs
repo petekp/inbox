@@ -2634,7 +2634,8 @@ function emptySession() {
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
-    dialogQuestions: []
+    dialogQuestions: [],
+    toolFields: null
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -2645,6 +2646,11 @@ function sessionFile(sessionId) {
 function missingAsNull(err) {
   if (err.code === "ENOENT") return null;
   throw err;
+}
+function savedToolFields(saved) {
+  const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
+  const fields2 = saved;
+  return fields2 && isNames(fields2.record) && isNames(fields2.close) && isNames(fields2.order_prs) ? fields2 : null;
 }
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
@@ -2703,7 +2709,8 @@ function sessionFields(saved, views) {
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} })),
+    toolFields: savedToolFields(saved.toolFields)
   };
 }
 
@@ -2975,6 +2982,78 @@ function prClearActions(prState, links) {
 }
 
 // ../hooks/tool-schemas.ts
+var RECORD_SCHEMA = {
+  type: "object",
+  properties: {
+    kind: {
+      type: "string",
+      enum: ["question", "task", "finding"],
+      description: "question: a decision only the user can make. task: a step only the user can do. finding: something outside the current task that deserves their attention."
+    },
+    ask: {
+      type: "string",
+      description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
+    },
+    context: {
+      type: "string",
+      description: "For a question: why it came up, in at most 20 plain words, so the user can answer without reading back through the conversation."
+    },
+    options: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
+    },
+    option_notes: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a question: one note for each option, in the order of options, saying what picking it does, in at most 12 words each."
+    },
+    rec: {
+      type: "string",
+      description: "For a question: the option you recommend, copied from options. Leave it out when you recommend none."
+    },
+    why: {
+      type: "string",
+      description: 'For a question with rec: why you recommend it, as a short clause of at most 12 words, such as "it keeps the old API".'
+    },
+    steps: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
+    },
+    design_choice: {
+      type: "boolean",
+      description: "For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference."
+    },
+    finding_kind: {
+      type: "string",
+      enum: ["issue", "opportunity"],
+      description: "For a finding. issue: something wrong or risky. opportunity: something that could be better."
+    },
+    title: { type: "string", description: "For a finding: what it is, in at most 12 plain words." },
+    detail: {
+      type: "string",
+      description: "For a finding: why it matters and what you would do, in one or two sentences."
+    },
+    path: { type: "string", description: "For a finding: the file it is about, if one." }
+  },
+  required: ["kind"]
+};
+var CLOSE_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string", description: "The id of the open item or finding, such as i35 or f32." },
+    answer: {
+      type: "string",
+      description: `The user's answer, at most 8 words, when their own message answered it. Use their words, but when they picked by position or pointing, as "the second one", give the option they picked.`
+    },
+    reason: {
+      type: "string",
+      description: 'Otherwise, why it is closed, in at most 8 words, such as "no longer applies: Inbox kept".'
+    }
+  },
+  required: ["id"]
+};
 var ORDER_SCHEMA = {
   type: "object",
   properties: {
@@ -2994,6 +3073,11 @@ var ORDER_SCHEMA = {
     }
   },
   required: ["numbers"]
+};
+var TOOL_FIELDS = {
+  record: Object.keys(RECORD_SCHEMA.properties),
+  close: Object.keys(CLOSE_SCHEMA.properties),
+  order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
 // ../hooks/arrivals.ts

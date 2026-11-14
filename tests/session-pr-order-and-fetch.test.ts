@@ -12,6 +12,7 @@ import { applyPrPress } from '../hooks/pr-tab'
 import { MAX_PRS } from '../hooks/pr-fetch'
 import { otherPrsStart } from '../hooks/pr-order'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 
 const openPr = (number: number): PrView => ({
   ...BLOCKED_PR,
@@ -38,6 +39,7 @@ test('an order_prs call ranks its PRs above the rest, tracks one the session lac
     'order_prs',
     { repo: 'acme/app', numbers: [3, 20, 1], label: 'Merge in this order', why: '#20 waits on #3.' },
     at,
+    TOOL_FIELDS,
   )
   expect(order.personLine).toBe('PR order: Merge in this order, 3 PRs')
   expect(order.result).toContain('1 of them was not in the tab yet')
@@ -86,6 +88,7 @@ test('an order_prs call ranks its PRs above the rest, tracks one the session lac
     'order_prs',
     { repo: 'acme/app', numbers: [20], label: 'Review this first', why: 'It is the smallest.' },
     at,
+    TOOL_FIELDS,
   ).state
   const showing = { ...NO_HOLDS, shownSince: at - 1 }
   const settling = press(onlyRanked, { action: 'pr-dismiss', ref: 'acme/app#20' })
@@ -94,17 +97,33 @@ test('an order_prs call ranks its PRs above the rest, tracks one the session lac
   expect(settlingTab.drawn[0]?.state.is).toBe('settled')
   expect(otherPrsStart(settlingTab.drawn)).toBe(settlingTab.drawn[1])
 
-  const cleared = recorded(CLAUDE_CODE, fetched, 'order_prs', { numbers: [] }, at)
+  const cleared = recorded(CLAUDE_CODE, fetched, 'order_prs', { numbers: [] }, at, TOOL_FIELDS)
   expect(cleared.state.ledger.prOrder).toBeNull()
   expect(cleared.personLine).toBe('PR order cleared')
   expect(tab(cleared.state).order).toBeNull()
   expect(ranks(cleared.state).every(([, isRanked]) => !isRanked)).toBe(true)
   expect(otherPrsStart(tab(cleared.state).drawn)).toBeNull()
-  expect(recorded(CLAUDE_CODE, s, 'order_prs', { numbers: [3] }, at).result).toBe('Not set: give repo as owner/name.')
-  const unlabeled = recorded(CLAUDE_CODE, s, 'order_prs', { repo: 'acme/app', numbers: [3], why: 'Smallest.' }, at)
+  expect(recorded(CLAUDE_CODE, s, 'order_prs', { numbers: [3] }, at, TOOL_FIELDS).result).toBe(
+    'Not set: give repo as owner/name.',
+  )
+  const unlabeled = recorded(
+    CLAUDE_CODE,
+    s,
+    'order_prs',
+    { repo: 'acme/app', numbers: [3], why: 'Smallest.' },
+    at,
+    TOOL_FIELDS,
+  )
   expect(unlabeled.result).toBe('Not set: give label, what the user does with the order.')
   expect(unlabeled.state.ledger.prOrder).toBeNull()
-  const unexplained = recorded(CLAUDE_CODE, s, 'order_prs', { repo: 'acme/app', numbers: [3], label: 'Merge' }, at)
+  const unexplained = recorded(
+    CLAUDE_CODE,
+    s,
+    'order_prs',
+    { repo: 'acme/app', numbers: [3], label: 'Merge' },
+    at,
+    TOOL_FIELDS,
+  )
   expect(unexplained.result).toBe('Not set: give why, the reason for this order.')
   expect(unexplained.state.ledger.prOrder).toBeNull()
 })
@@ -125,6 +144,7 @@ const orderedAndFetched = (s: Session, numbers: number[], at: number): Session =
     'order_prs',
     { repo: 'acme/app', numbers, label: 'Review in this order', why: 'Smallest first.' },
     at,
+    TOOL_FIELDS,
   ).state
   const views = Object.fromEntries(numbers.map(n => [`acme/app#${n}`, openPr(n)]))
 
@@ -140,7 +160,7 @@ test('clearing an order takes the PRs only it ranked off the tab, keeps a ranked
   const ordered = orderedAndFetched(s, [40, 41, 2], at)
   expect(drawnNumbers(ordered, at).slice(0, 3)).toEqual([40, 41, 2])
 
-  const cleared = recorded(CLAUDE_CODE, ordered, 'order_prs', { numbers: [] }, at).state
+  const cleared = recorded(CLAUDE_CODE, ordered, 'order_prs', { numbers: [] }, at, TOOL_FIELDS).state
   expect(cleared.ledger.prs).toEqual(s.ledger.prs)
   expect(drawnNumbers(cleared, at).sort((a, b) => a - b)).toEqual(linked)
   expect(sessionView(cleared, at, 1000, NO_HOLDS).prs.olderText).toBeNull()
@@ -173,7 +193,7 @@ test('after the order is cleared a dismissed PR stays off the tab, and Undo link
   const s = linkedSession([1, 2])
   const at = 1_000_000
   const ordered = orderedAndFetched(s, [40, 2], at)
-  const clear = (x: Session) => recorded(CLAUDE_CODE, x, 'order_prs', { numbers: [] }, at).state
+  const clear = (x: Session) => recorded(CLAUDE_CODE, x, 'order_prs', { numbers: [] }, at, TOOL_FIELDS).state
 
   const linkedGone = pressed(ordered, { action: 'pr-dismiss', ref: 'acme/app#2' }, at)!
   expect(drawnNumbers(clear(linkedGone), at)).toEqual([1])
@@ -218,7 +238,7 @@ test('a new order that ranks a PR a fetch settled or the person dismissed keeps 
   const merged = withFetchedPrs(ordered, mergedView, null, false, at)
   const dismissed = pressed(merged, { action: 'pr-dismiss', ref: 'acme/app#2' }, at)!
   const order = { repo: 'acme/app', numbers: [40, 2, 1], label: 'Review in this order', why: 'Smallest first.' }
-  const reorder = (x: Session) => recorded(CLAUDE_CODE, x, 'order_prs', order, at)
+  const reorder = (x: Session) => recorded(CLAUDE_CODE, x, 'order_prs', order, at, TOOL_FIELDS)
 
   const reordered = reorder(dismissed)
   expect(reordered.state.ledger.prOrder?.dismissed).toEqual(['acme/app#40', 'acme/app#2'])
@@ -238,7 +258,7 @@ test('an order reads as changed once a ranked open PR is newly blocked, gains a 
   }
   const at = 1_000_000
   const order = { repo: 'acme/app', label: 'Merge in this order', why: '#2 waits on #1.' }
-  const set = recorded(CLAUDE_CODE, s, 'order_prs', { ...order, numbers: [1, 2, 3, 4] }, at).state
+  const set = recorded(CLAUDE_CODE, s, 'order_prs', { ...order, numbers: [1, 2, 3, 4] }, at, TOOL_FIELDS).state
   expect(Object.keys(set.ledger.prOrder?.statuses ?? {})).toEqual(refs.slice(0, 3))
   const view = (x: Session, shownSince: number | null = null) =>
     sessionView(x, at + 60_000, 1000, { ...NO_HOLDS, shownSince }).prs.order
@@ -291,7 +311,14 @@ test('an order reads as changed once a ranked open PR is newly blocked, gains a 
   expect(Object.keys(r.lasts)).toEqual(['pr:order'])
   expect(view(pressed)?.changed?.actions[0]?.isOut).toBe(true)
 
-  const reranked = recorded(CLAUDE_CODE, pressed, 'order_prs', { ...order, numbers: [3, 1, 2] }, at + 90_000).state
+  const reranked = recorded(
+    CLAUDE_CODE,
+    pressed,
+    'order_prs',
+    { ...order, numbers: [3, 1, 2] },
+    at + 90_000,
+    TOOL_FIELDS,
+  ).state
   const { delivery: _delivery, ...sent } = reranked.lastActions['pr:order']!
   const ranked = {
     ...reranked,

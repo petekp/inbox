@@ -19,6 +19,8 @@ import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
 import {
   holdsOf,
+  listedToolFields,
+  noteToolsListed,
   sessionOf,
   shownRowsOf,
   shownTabOf,
@@ -133,7 +135,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
       case 'order_prs': {
         let result = ''
         await codexStore(dir, id, now, deps.onWrite).update(s => {
-          const r = recorded(CODEX, s, name, args, now())
+          const r = recorded(CODEX, s, name, args, now(), listedToolFields())
           result = r.result
           return heard(r.state)
         })
@@ -191,6 +193,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
           serverInfo: { name: 'inbox', version: VERSION },
         })
       case 'tools/list':
+        noteToolsListed()
         return ok({ tools: TOOLS })
       case 'tools/call': {
         const name = String(params?.name ?? '')

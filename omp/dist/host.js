@@ -4627,7 +4627,8 @@ function emptySession() {
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
-    dialogQuestions: []
+    dialogQuestions: [],
+    toolFields: null
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -4646,6 +4647,11 @@ function missingAsNull(err) {
 function staleSessionFiles(files, keep) {
   const ranked = [...files].sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name));
   return ranked.filter((f) => f.name !== `${keep}.json`).slice(0, Math.max(0, ranked.length - KEPT_SESSIONS));
+}
+function savedToolFields(saved) {
+  const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
+  const fields = saved;
+  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs) ? fields : null;
 }
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
@@ -4701,7 +4707,8 @@ function sessionFields(saved, views) {
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} })),
+    toolFields: savedToolFields(saved.toolFields)
   };
 }
 
@@ -5789,20 +5796,22 @@ function isApproval(item) {
   const isYesNo = item.options.length === 2 && firstWords[0] === "no" && firstWords[1] === "yes";
   return APPROVAL_ASK.test(item.ask) || isYesNo;
 }
-function missingText(item) {
+function missingText(item, fields) {
+  const canSend = (field) => fields.includes(field);
   if (item?.kind === "task")
-    return item.helps.length === 0 ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
+    return item.helps.length === 0 && canSend("steps") ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
   if (!item)
     return "";
-  return bodyText(item) + recText(item) + approvalText(item);
+  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend);
 }
-function bodyText(item) {
-  const unnoted = item.options.filter((o) => !item.optionDescriptions?.[o]);
+function bodyText(item, canSend) {
+  const unnoted = canSend("option_notes") ? item.options.filter((o) => !item.optionDescriptions?.[o]) : [];
   const isUnnoted = unnoted.length > 0;
+  const isContextMissing = !item.context && canSend("context");
   const noNotes = unnoted.length === item.options.length ? "option_notes" : `note on ${quoted(unnoted)}`;
-  const lacks = [...item.context ? [] : ["context"], ...isUnnoted ? [noNotes] : []];
+  const lacks = [...isContextMissing ? ["context"] : [], ...isUnnoted ? [noNotes] : []];
   const asks = [
-    ...item.context ? [] : ["context (why it came up)"],
+    ...isContextMissing ? ["context (why it came up)"] : [],
     ...isUnnoted ? ["option_notes (what picking each option does)"] : []
   ];
   return lacks.length === 0 ? "" : ` It has no ${lacks.join(" or ")}: record it again with ${asks.join(" and ")}.`;
@@ -5810,13 +5819,13 @@ function bodyText(item) {
 function quoted(options) {
   return options.map((o) => `"${o}"`).join(" or ");
 }
-function recText(item) {
+function recText(item, canSend) {
   if (!item.rec)
-    return " It has no rec: when you can recommend an option, record it again with rec and why.";
-  return item.recReason ? "" : " It has no why: record it again with why, so the user sees your reason.";
+    return canSend("rec") ? ` It has no rec: when you can recommend an option, record it again with ${canSend("why") ? "rec and why" : "rec"}.` : "";
+  return item.recReason || !canSend("why") ? "" : " It has no why: record it again with why, so the user sees your reason.";
 }
-function approvalText(item) {
-  return isApproval(item) && item.helps.length === 0 ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
+function approvalText(item, canSend) {
+  return isApproval(item) && item.helps.length === 0 && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
 }
 
 // ../hooks/tool-schemas.ts
@@ -5912,6 +5921,11 @@ var ORDER_SCHEMA = {
   },
   required: ["numbers"]
 };
+var TOOL_FIELDS = {
+  record: Object.keys(RECORD_SCHEMA.properties),
+  close: Object.keys(CLOSE_SCHEMA.properties),
+  order_prs: Object.keys(ORDER_SCHEMA.properties)
+};
 
 // ../hooks/tools.ts
 var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
@@ -5933,10 +5947,10 @@ function agentTools(host) {
     { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA }
   ];
 }
-function toolAnswer(host, ledger, tool, input, now, presses) {
+function toolAnswer(host, ledger, tool, input, now, presses, fields) {
   switch (tool) {
     case "record":
-      return recordAfterCompare(host, ledger, input, now, presses) ?? recordItem(host, ledger, input, now);
+      return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields);
     case "close":
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
@@ -5957,7 +5971,7 @@ function list(value, max, each) {
 function unchanged(ledger, result) {
   return { ledger, result, personLine: null };
 }
-function recordItem(host, ledger, input, now) {
+function recordItem(host, ledger, input, now, fields) {
   if (input.kind === "finding")
     return recordFinding(host, ledger, input, now);
   if (input.kind !== "question" && input.kind !== "task")
@@ -6000,7 +6014,7 @@ function recordItem(host, ledger, input, now) {
   }
   return {
     ledger: recorded,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
     personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
   };
 }
@@ -6048,12 +6062,12 @@ function isRecordedAfterCompare(ledger, id, presses) {
     return false;
   return isAfterCompareThisTurn(id, item.reportedAt, presses);
 }
-function recordAfterCompare(host, ledger, input, now, presses) {
+function recordAfterCompare(host, ledger, input, now, presses, fields) {
   const isClosedAfterCompare = (c) => c.how === "claude" && c.kind === "question" && isAfterCompareThisTurn(c.id, c.at, presses);
   const closed = ledger.closed.findLast(isClosedAfterCompare);
   if (!closed)
     return null;
-  const r = recordItem(host, reopenItem(ledger, closed.id), input, now);
+  const r = recordItem(host, reopenItem(ledger, closed.id), input, now, fields);
   const isUpdated = r.ledger.items.some((i) => i.id === closed.id && i.reportedAt === now);
   return isUpdated ? r : null;
 }
@@ -6723,9 +6737,9 @@ function completedAttempt(state, deliveryId, outcome) {
     } : s)
   };
 }
-function recorded(host, s, tool, args, now) {
+function recorded(host, s, tool, args, now, fields) {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt };
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses);
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields);
   const ledger = withOrderStatuses(r.ledger, s.prViews.views);
   const state = linkDialogs({ ...s, ledger }, now);
   const answered = ledger.items.find((i) => !state.ledger.items.some((o) => o.id === i.id));
@@ -12771,7 +12785,7 @@ function createInbox(pi, deps = defaultDeps) {
           return { content: [{ type: "text", text: "The inbox is not shown in this session." }] };
         let answer = { result: "", personLine: null };
         await change(sessionIdOf(ctx), (s) => {
-          const r = recorded(OMP, s, name, args, deps.now());
+          const r = recorded(OMP, s, name, args, deps.now(), TOOL_FIELDS);
           answer = r;
           return r.state;
         });
