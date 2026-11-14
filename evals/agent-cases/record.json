@@ -381,7 +381,10 @@
   {
     "name": "inferable-choice-not-asked",
     "about": "A choice the agent can infer from the work, and that is easy to undo, is made and named in the reply, not asked.",
-    "prompt": "Task: add a flag to cli.js that turns on verbose logging, which prints each argument it read before the greeting. cli.js already takes --quiet with the short form -q. Choosing the flag's name is the only thing left before you write it. Write your reply to me.",
+    "files": {
+      "cli.js": "const args = process.argv.slice(2)\nconst quiet = args.includes('--quiet') || args.includes('-q')\n\nif (!quiet) console.log('Hello!')\n"
+    },
+    "prompt": "Task: add a flag to cli.js that turns on verbose logging, which prints each argument it read before the greeting. cli.js already takes --quiet with the short form -q. Choosing the flag's name is the only thing left before you write it. This is cli.js, in the folder you work in:\n\n```js\nconst args = process.argv.slice(2)\nconst quiet = args.includes('--quiet') || args.includes('-q')\n\nif (!quiet) console.log('Hello!')\n```\n\nWrite your reply to me.",
     "checks": [{ "calls": "record", "kind": "question", "count": 0 }, { "reply": "verbose" }, { "noIds": true }]
   },
   {

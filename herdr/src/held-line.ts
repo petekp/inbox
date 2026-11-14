@@ -6,7 +6,7 @@ import type { Block, RowBlock, Tone } from './blocks'
  * A row's status line that the panel draws on its own line between the row's title and its buttons. `isHidden` keeps
  * a failure's space without its words, since the press under way retries what it says failed.
  */
-export type LineAbove = { text: string; tone: Tone; isHidden: boolean }
+type LineAbove = { text: string; tone: Tone; isHidden: boolean }
 
 /** Each row's line above its buttons, by row id, from the last draw that showed it there. */
 export type LinesAbove = ReadonlyMap<string, LineAbove>

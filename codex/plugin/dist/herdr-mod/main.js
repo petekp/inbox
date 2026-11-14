@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T17:40:45.838Z. 205417 characters follow.
+// Built at 2026-11-14T23:25:54.503Z. 205461 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4338,7 +4338,8 @@ function scrollFadeEl(t, edge) {
 
 // src/paint-timer.ts
 import { div as div2 } from "gpui-kit";
-var TIMED_W = 64;
+
+// src/time-left.ts
 function timeLeftShare(runsOutAt, now) {
   return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
 }
@@ -4357,6 +4358,9 @@ function timeLeftDraws(blocks, drawn, now) {
     return left ? [[b.id, left]] : [];
   }));
 }
+
+// src/paint-timer.ts
+var TIMED_W = 64;
 function timeLeftEl(left, runsOutAt, now, t) {
   const cut = div2().absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div2().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover));
   if (left.is === "paused")
