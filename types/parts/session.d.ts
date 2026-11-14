@@ -231,7 +231,7 @@ export type Session = {
      */
     lastTypedMessageAt: number | null
   }
-  /** Where the session started. Null until the host names it. */
+  /** Where the session runs. Null until the host names it. */
   place: Place | null
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks

@@ -376,7 +376,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     w.copied.push(e.text)
     return { value: { isCopied: true as const } }
   })
-  on('fs.exists', (_$, e) => ({ value: w.files.some(f => e.path.endsWith(f)) }))
+  on('fs.exists', (_$, e) => ({ value: w.folders.includes(e.path) || w.files.some(f => e.path.endsWith(f)) }))
   on('fs.list', (_$, e) => {
     const written = Object.keys(w.written).filter(path => path.startsWith(`${e.path}/`))
     if (written.length > 0)

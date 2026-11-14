@@ -16,7 +16,7 @@ export type CommandCalls = {
 }
 
 /**
- * The folder the session runs in now, or null when no folder of that name exists. `$.session.root()` follows a move
+ * The folder the session runs in now, or null when nothing of that name exists. `$.session.root()` follows a move
  * after the start, as when the Claude app moves a new session out of the warm-spare folder it started in and then
  * deletes that folder. A command started in a folder that is gone fails as if the program were missing.
  */
@@ -24,12 +24,13 @@ export async function sessionFolder(calls: CommandCalls): Promise<string | null>
   const root = await calls.root().catch(() => '')
   if (!root) return null
 
-  return (await isFolder(calls, root)) ? root : null
+  return (await isGone(calls, root)) ? null : root
 }
 
-function isFolder(calls: CommandCalls, path: string): Promise<boolean> {
-  return calls.stat(path).then(
-    info => info.kind === 'dir',
+/** Whether nothing of that name exists. `$.fs.exists` rejects a network location, which is not gone. */
+function isGone(calls: CommandCalls, path: string): Promise<boolean> {
+  return calls.exists(path).then(
+    exists => !exists,
     () => false,
   )
 }
@@ -45,7 +46,7 @@ export async function placeChange<S extends Session>(
   folder: string,
 ): Promise<(s: S) => S> {
   const isOtherFolder = saved !== null && saved !== folder
-  const isMoved = isOtherFolder && (saved === left || !(await isFolder(calls, saved)))
+  const isMoved = isOtherFolder && (saved === left || (await isGone(calls, saved)))
   const branch = await branchIn(runOf(calls), folder)
 
   return s => placed(isMoved && s.place?.folder === saved ? { ...s, place: null } : s, folder, branch)
@@ -89,6 +90,6 @@ export function pathProbe(calls: CommandCalls): PathProbe {
       const stat = await calls.stat(path)
       return { isFile: () => stat.kind === 'file' }
     },
-    isExecutable: async path => (await calls.run(['test', '-x', path])).exitCode === 0,
+    isExecutable: async path => (await calls.run(['test', '-x', path], { cwd: '/' })).exitCode === 0,
   }
 }

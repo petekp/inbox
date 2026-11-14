@@ -647,8 +647,8 @@ function recordFiles($: EngineInterface): RecordFiles {
   return {
     write: (path, text) => $.fs.write(path, text),
     list: async folder => (await $.fs.list(folder).catch(() => [])).map(entry => entry.name),
-    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths])),
-    removeFolder: async path => void (await $.process.run(['rmdir', '--', path])),
+    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths], { cwd: '/' })),
+    removeFolder: async path => void (await $.process.run(['rmdir', '--', path], { cwd: '/' })),
   }
 }
 
@@ -2365,13 +2365,13 @@ export const register: Register = on => {
     return r
   })
 
-  // The Claude app starts a session in a spare folder and moves it to the project, which runs SessionStart again.
+  // The Claude app starts a new session in a spare folder and runs SessionStart only once it moves it to the project.
   on('classic.SessionStart', { source: 'startup' }, async ($, e, next) => {
     const r = await next(e)
     const seen = conversation.root
     if (mod.isOn && seen !== '' && (await sessionFolder(commandCalls($))) !== seen) {
-      await notePlace($)
-      void fetchPrs($, await isPrsTabShown($))
+      void notePlace($)
+      void isPrsTabShown($).then(isShown => fetchPrs($, isShown))
     }
 
     return r

@@ -11,6 +11,7 @@ const PROJECT = '/tmp/greet'
 
 async function openPrsTab($: Engine, surface: 'terminal' | 'desktop') {
   const pane = await mountPane($, surface)
+  w.paneState = { isShown: true, isFocused: true }
   await showPrs(pane, surface)
 
   return pane
@@ -47,15 +48,15 @@ async function moveToProject($: Engine, clock: ReturnType<typeof mock.clock>) {
   await clock.settle()
 }
 
-test('a desktop session the Claude app moves out of its spare folder runs gh in the project and lists its PRs', async ($, on) => {
+test('a desktop session the Claude app moves out of its spare folder fetches its PRs again in the project, with no press', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   await startInSpare($, clock)
-  await moveToProject($, clock)
-  w.ranIn = []
-
   const pane = await openPrsTab($, 'desktop')
   await clock.settle()
+  w.ranIn = []
+
+  await moveToProject($, clock)
 
   expect(ghRunsIn(PROJECT).length).toBeGreaterThan(0)
   expect(w.ranIn.filter(r => r.cwd === SPARE)).toEqual([])
