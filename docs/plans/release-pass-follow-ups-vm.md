@@ -1,6 +1,8 @@
 # Live pass in the VM: follow-ups
 
-Part of [Scripted release pass: follow-ups](release-pass-follow-ups.md). These are gaps in step 4 of `docs/release.md`, the live pass in the `inbox-ui` VM. Each item stays until the change that does it lands.
+Part of [Scripted release pass: follow-ups](release-pass-follow-ups.md). These are gaps in step 4 of `docs/release.md`, the live pass in the `inbox-ui` VM.
+
+Status: building. Each item stays until the change that does it lands.
 
 ## Setting up the guest
 
