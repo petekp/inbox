@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T05:38:41.582Z. 203420 characters follow.
+// Built at 2026-11-14T17:40:45.838Z. 205417 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2615,17 +2615,18 @@ function drawnPrs(prState, links, lastActions, placing) {
     const state = settledPrState(mark, now, settleWindowMs);
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
-  let rank = 0;
-  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+  return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
 }
 
 // ../hooks/pr-order.ts
 var RANK_AGAIN_LABEL = "Rank again";
-function prRankText(rank) {
-  return `${rank}. `;
+var OTHER_PRS_TEXT = "Other PRs";
+function otherPrsStart(drawn) {
+  const at = drawn.findIndex((d) => !d.isRanked);
+  return at > 0 && drawn[at - 1]?.isRanked ? drawn[at] ?? null : null;
 }
 function prOrderText(order, drawn, now) {
-  const isRanking = drawn.some((d) => d.rank !== null);
+  const isRanking = drawn.some((d) => d.isRanked);
   if (!order || !isRanking)
     return null;
   return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
@@ -3421,7 +3422,6 @@ function prBlocks(screen, d, presses, selected) {
     {
       kind: "pr",
       id: prMarkId(pr.ref),
-      rank: d.rank === null ? null : prRankText(d.rank),
       number: `#${pr.number}`,
       title: pr.title,
       status: { text: head, tone: tone ? PR_TONE[tone] : "muted" },
@@ -3501,11 +3501,17 @@ function prTabBlocks(screen, selected) {
   }
   const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
   const notice = ghNoticeOf(gh);
+  const othersStart = otherPrsStart(prs.drawn);
+  const caption = { kind: "caption", id: "other prs", text: OTHER_PRS_TEXT };
+  const above = (d, n) => [
+    ...n > 0 ? [ruleBetween(d.pr.ref)] : [],
+    ...d === othersStart ? [caption] : []
+  ];
   const draw = (open) => [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
     ...orderLines(screen),
-    ...prs.drawn.flatMap((d, n) => [...n > 0 ? [ruleBetween(d.pr.ref)] : [], ...prBlocks(screen, d, presses, open)]),
+    ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, open)]),
     ...prs.olderText ? [ruleBetween("older prs"), note("older prs", prs.olderText, "muted")] : []
   ];
   const blocks = draw(selected);
@@ -3723,7 +3729,8 @@ function rowButtons(row, isAllShown, agent) {
     return { ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null), isOut: action.isOut };
   });
 }
-function undoButtons(row, agent) {
+var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
+function undoButtons(row, agent, now) {
   if (row.state.is !== "settled")
     return [];
   const id = `${row.id} undo`;
@@ -3737,7 +3744,8 @@ function undoButtons(row, agent) {
         runsOutAt
       }
     ];
-  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, "quiet"), isHidden: true, runsOutAt }] : [];
+  const isWaitingForAgent = row.state.delivery === "queued" && now >= undoPlaceEndsAt(row.state);
+  return row.state.offersUndo && !isWaitingForAgent ? [{ ...button(id, ROW_COPY.undo, "quiet"), isHidden: true, runsOutAt }] : [];
 }
 function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
@@ -3780,7 +3788,7 @@ function rowBlock(row, ui, selected, screen) {
     isSelectable: !isSettled,
     isSelected,
     body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent)] : isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
+    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
     field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
   };
 }
@@ -4096,6 +4104,37 @@ function withoutConfirmed(drafts, confirmed, typing, pending) {
   };
 }
 
+// src/held-line.ts
+var NO_LINES_ABOVE = new Map;
+var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
+var isStatusUnder = (r) => r.feedback !== null && isStatusUnderActions(r.feedback.source, hasActions(r));
+var isUnderWay = (f) => f?.is === "queued" || pressUnderWaySince(f) !== null;
+function holdLinesAbove(blocks, held) {
+  const next = new Map;
+  const shown = blocks.map((b) => {
+    if (b.kind !== "row")
+      return b;
+    const line = held.get(b.id);
+    const isPressUnderWay = isUnderWay(b.feedback?.source ?? null);
+    if (!hasActions(b)) {
+      if (line && isPressUnderWay)
+        next.set(b.id, line);
+      return b;
+    }
+    if (!isStatusUnder(b)) {
+      const f = b.feedback;
+      if (f)
+        next.set(b.id, { text: f.text, tone: f.tone, isHidden: isFailure(f.source) });
+      return b;
+    }
+    if (!line || !isPressUnderWay)
+      return b;
+    next.set(b.id, line);
+    return { ...b, heldLine: line };
+  });
+  return { blocks: shown, held: next };
+}
+
 // ../hooks/row-motion.ts
 var ENTER_MS = 300;
 var MOVE_MS = 200;
@@ -4370,16 +4409,16 @@ function opacityOf(r, p) {
 function rowEl(r, p) {
   const { t } = p;
   const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div3().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
-  const hasActions = r.buttons.length > 0 || r.field !== null;
-  const feedbackUnder = r.feedback && isStatusUnderActions(r.feedback.source, hasActions) ? r.feedback : null;
+  const feedbackUnder = isStatusUnder(r) ? r.feedback : null;
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !feedbackUnder ? [r.feedback] : [],
+    ...r.heldLine ? [r.heldLine] : [],
     ...r.body
   ];
   const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
-  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3())).when(feedbackUnder !== null, (e) => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div3()));
+  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3())).when(feedbackUnder !== null, (e) => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div3()));
 }
 var statusPartEl = (text) => div3().min_w(0).max_w_full().whitespace_normal().child(text);
 function statusEl(s, p) {
@@ -4390,12 +4429,11 @@ function statusEl(s, p) {
 }
 function prEl(b, p) {
   const { t } = p;
-  const label = b.rank === null ? b.number : `${b.rank.trim()} ${b.number}`;
-  const title = h_flex2().items_start().child(div3().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(label)));
+  const title = h_flex2().items_start().child(div3().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
   const hasReasons = b.unlisted.length > 0;
   const word = h_flex2().items_start().min_w(0).max_w_full().child(div3().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div3().flex_none().text_color(t.muted).child(SEP)));
   const reasons = b.unlisted.map((u, i) => statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted));
-  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(word).children(reasons);
+  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
   return v_flex2().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p) {
@@ -4458,6 +4496,8 @@ function blockEl(b, p) {
     return div3().pl(TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0));
   if (b.kind === "note")
     return noteEl(b, t);
+  if (b.kind === "caption")
+    return div3().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p)), b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
   return div3();
@@ -4476,7 +4516,7 @@ function itemGap(prev, b) {
   return INSET;
 }
 function gapBetween(prev, b) {
-  const isLabelled = prev.kind === "heading" || prev.kind === "rule" && prev.text !== null;
+  const isLabelled = prev.kind === "heading" || prev.kind === "caption" || prev.kind === "rule" && prev.text !== null;
   if (isLabelled)
     return HEAD_GAP;
   if (prev.kind === "rule" || b.kind === "rule")
@@ -4814,8 +4854,13 @@ function screenOf(followed, read, ui, o) {
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
     waits: rowWaits(screen, ui.tab),
-    foldAt: nextFoldAt(settled, placing)
+    foldAt: nextFoldAt(settled, placing),
+    undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now)
   };
+}
+function nextUndoPlaceEnd(settled, now) {
+  const ends = settled.filter((s) => s.offersUndo && s.delivery === "queued").map(undoPlaceEndsAt).filter((at) => at > now);
+  return ends.length > 0 ? Math.min(...ends) : null;
 }
 
 // src/main.ts
@@ -4879,6 +4924,7 @@ class Inbox extends View {
   tracksOf = "";
   lastWaits = { tab: "needsYou", rows: [] };
   timeLeft = new Map;
+  linesAbove = NO_LINES_ABOVE;
   focus = null;
   outTimer = null;
   drawTimer = null;
@@ -5152,7 +5198,9 @@ class Inbox extends View {
     const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks;
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`;
-    const moved = moveRows(shown, this.tracks, now, tracksOf !== this.tracksOf);
+    const held = holdLinesAbove(shown, tracksOf !== this.tracksOf ? NO_LINES_ABOVE : this.linesAbove);
+    this.linesAbove = held.held;
+    const moved = moveRows(held.blocks, this.tracks, now, tracksOf !== this.tracksOf);
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
@@ -5161,7 +5209,7 @@ class Inbox extends View {
     paint.timeLeft = this.timeLeft;
     const isTimerStarting = [...this.timeLeft.values()].some((l) => l.is === "emptying" && !l.isStarted);
     const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null;
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt].filter((at) => at !== null);
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;

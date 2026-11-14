@@ -301,7 +301,7 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
       prOrder: { refs, label: null, why: null, statuses: null, dismissed: [], by: 'Claude', at: Date.now() },
     }
     await after(POLL_MS + 100)
-    assert.ok(block(15).querySelector('.rank'))
+    assert.ok(root.querySelector('.pr-order'))
     setViews([prView(15, 'Speed up the build', 'OPEN', [check('lint', 'fail')])])
     await after(POLL_MS + 100)
     const leaving = blockEntry(15, 'e2e')!

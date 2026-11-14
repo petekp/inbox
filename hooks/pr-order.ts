@@ -14,9 +14,18 @@ import type { LastPress, PrAction } from './pr-press'
 
 export const RANK_AGAIN_LABEL = 'Rank again'
 
-/** A ranked PR's number in the agent's order, as a look draws it before the PR's title: "1. ". */
-export function prRankText(rank: number): string {
-  return `${rank}.\u2002`
+/** The muted line that starts the PRs the agent's order does not rank. */
+export const OTHER_PRS_TEXT = 'Other PRs'
+
+/**
+ * The block a look draws the "Other PRs" line above: the first block the order does not rank, when a ranked block,
+ * open or settling, draws before it. Null when the blocks are all ranked or none is. `drawn` is the blocks the look
+ * draws, in order.
+ */
+export function otherPrsStart<T extends Pick<DrawnPr, 'isRanked'>>(drawn: T[]): T | null {
+  const at = drawn.findIndex(d => !d.isRanked)
+
+  return at > 0 && drawn[at - 1]?.isRanked ? (drawn[at] ?? null) : null
 }
 
 /**
@@ -24,7 +33,7 @@ export function prRankText(rank: number): string {
  * set by Claude 2m ago". Null otherwise.
  */
 function prOrderText(order: PrLinks['prOrder'], drawn: DrawnPr[], now: number): string | null {
-  const isRanking = drawn.some(d => d.rank !== null)
+  const isRanking = drawn.some(d => d.isRanked)
   if (!order || !isRanking) return null
 
   return `${order.label ?? 'Order'}${DOT}set by ${order.by} ${ago(now - order.at)}`

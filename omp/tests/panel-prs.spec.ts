@@ -45,21 +45,21 @@ function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAc
   return screenOf({ view: sessionView(ordered, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
-test('an order draws its title and reason above the PR blocks and a dim rank before each ranked PR, ahead of the rest', () => {
+test('an order draws its title and reason above the ranked PR blocks, with no rank numbers, and a dim Other PRs line above the rest', () => {
   const screen = withOrder({})
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   const lines = text(screen, ui).split('\n')
   const title = lines.findIndex(l => l.includes('Merge in this order · set by omp 2m ago'))
   const heads = lines
     .slice(title + 2)
-    .flatMap(l => l.match(/(?:\d+\. )?#\d+ /) ?? [])
+    .flatMap(l => l.match(/(?:\d+\. )?#\d+ |Other PRs/) ?? [])
     .map(h => h.trim())
 
   expect(title).toBeLessThan(lines.findIndex(l => /#\d+ /.test(l)))
   expect(lines[title + 1]).toContain('#33 builds on #29.')
   expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2m#33 builds on #29.`)
-  expect(heads).toEqual(['1. #29', '2. #33', '#31'])
-  expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2m1. ${ESC}22m`)
+  expect(heads).toEqual(['#29', '#33', 'Other PRs', '#31'])
+  expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2mOther PRs`)
   expect(text(screen, ui)).not.toContain('changed since')
   expect(text(screenOf(), ui)).not.toContain('Merge in this order')
 })

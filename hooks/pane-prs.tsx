@@ -10,7 +10,7 @@ import type { PaneRowKeys } from './pane-row-keys'
 import { childPos, type PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
-import { prRankText } from './pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart } from './pr-order'
 import type { PrAction, PrPress } from './pr-press'
 import {
   checkRowText,
@@ -271,7 +271,6 @@ export function panePrBlocks({
 
     const titleLine = (
       <Text wrap="wrap">
-        {b.rank === null ? null : <Text color={pal.muted}>{prRankText(b.rank)}</Text>}
         <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
         <Text bold>{pr.title}</Text>
         <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>{`\u2002${statusHead}`}</Text>
@@ -349,6 +348,25 @@ export function panePrBlocks({
     </Text>
   )
   const olderPrs = () => (view.prs.olderText ? prTabLine('older-prs', mutedLine(view.prs.olderText)) : [])
+  /** The muted line above the first PR the agent's order does not rank, in that PR's section. */
+  const otherPrsLine = () =>
+    look === 'desktop' ? (
+      desktopFrame({ key: 'other-prs', padY: 0, children: mutedLine(OTHER_PRS_TEXT) })
+    ) : (
+      <Box key="other-prs" paddingLeft={1} marginBottom={blankLine}>
+        {mutedLine(OTHER_PRS_TEXT)}
+      </Box>
+    )
+  const othersStart = otherPrsStart(prGroups)
+  const prBlockIn = (g: (typeof prGroups)[number]) =>
+    g === othersStart ? (
+      <Box flexDirection="column" paddingTop={look === 'desktop' ? blankLine : 0}>
+        {otherPrsLine()}
+        {prBlock(g)}
+      </Box>
+    ) : (
+      prBlock(g)
+    )
   /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
   const prOrderLines = () => {
     const order = view.prs.order
@@ -415,7 +433,7 @@ export function panePrBlocks({
           ...prRefreshLines(),
           ...prClearLines(),
           ...prOrderLines(),
-          ...prGroups.map(prBlock),
+          ...prGroups.map(prBlockIn),
           ...olderPrs(),
         ],
         2,
