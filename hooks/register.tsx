@@ -2239,7 +2239,10 @@ async function applyConversation(
   const loadedAt = await $.clock.now()
   // The pane now shows another conversation, so it starts a new showing.
   await syncShown($, { since: loadedAt })
-  await replaceDrawn($, s => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
+  const turns = await $.session.turns().catch(() => null)
+  const cutOff = (s: Session) => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt))
+  // Before notePlace's save, so this conversation is never saved with the previous one's tool fields.
+  await replaceDrawn($, s => withLoadedToolFields(cutOff(s), by, saved?.session, parent, turns))
   if (revision !== sessionState.loadRevision) return
   void notePlace($)
   const isFresh = isBlankLedger(current)
@@ -2249,9 +2252,6 @@ async function applyConversation(
     )) === id
   if (!isLoading()) return
   if (saved !== null) await bringBack($, parent ?? saved.session, isLoading, parent !== undefined)
-  const turns = await $.session.turns().catch(() => null)
-  if (!isLoading()) return
-  await replaceDrawn($, s => (isLoading() ? withLoadedToolFields(s, by, saved?.session, parent, turns) : s))
   const { ledger, presence } = await read($, SESSION)
   const isEmpty = isBlankLedger(ledger)
   const needsCatchUp =

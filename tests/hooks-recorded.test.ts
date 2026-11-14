@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { w, world } from './hooks-world'
 import { BAND, PANE, SAVED_SESSION } from './hooks-helpers'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 
 test('the guidance reaches Claude in the close tool’s description and nowhere else, and every inbox tool loads with the session', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
@@ -49,7 +50,7 @@ test("Claude is asked for a question's context, notes and reason in a new conver
   expect(await recordAsk('Which log store should we use?')).toBe(fullAsk)
 })
 
-test("a conversation /resume opens with no saved inbox state is asked only for what 0.3.0's record takes, one /clear begins is asked for everything while the turn count still names the last conversation, and a fork asks as its parent does", async ($, on) => {
+test("a conversation /resume opens with no saved inbox state is asked only for what 0.3.0's record takes, one /clear begins is asked for everything while the turn count still names the last conversation, and a fork asks as its parent's saved record says", async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('session.turns', () => ({ value: 3 }))
@@ -75,11 +76,9 @@ test("a conversation /resume opens with no saved inbox state is asked only for w
   await $.classic.SessionStart({ source: 'resume', session_id: 'session-3' })
   expect(await recordAsk('Which queue should jobs use?')).toBe(recorded)
   await clock.settle()
-  await $.session.end({ reason: 'clear', sessionId: 'session-3', resume: { id: 'session-3' } })
-  await $.classic.SessionStart({ source: 'clear', session_id: 'session-4' })
-  await clock.settle()
-  await $.session.end({ reason: 'resume', sessionId: 'session-4', resume: { id: 'session-4' } })
-  await $.classic.SessionStart({ source: 'fork', session_id: 'session-5' })
+  w.stored.set('s:session-3', JSON.stringify({ ...SAVED_SESSION, toolFields: TOOL_FIELDS }))
+  await $.session.end({ reason: 'resume', sessionId: 'session-3', resume: { id: 'session-3' } })
+  await $.classic.SessionStart({ source: 'fork', session_id: 'session-4' })
   expect(await recordAsk('Which log store should we use?')).toBe(fullAsk)
 })
 
