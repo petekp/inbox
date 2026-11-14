@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T06:29:46.348Z. 203743 characters follow.
+// Built at 2026-11-14T06:30:16.246Z. 204548 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4102,6 +4102,29 @@ function withoutConfirmed(drafts, confirmed, typing, pending) {
   };
 }
 
+// src/held-line.ts
+var NO_LINES_ABOVE = new Map;
+var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
+var isStatusUnder = (r) => r.feedback !== null && isStatusUnderActions(r.feedback.source, hasActions(r));
+function holdLinesAbove(blocks, held) {
+  const next = new Map;
+  const shown = blocks.map((b) => {
+    if (b.kind !== "row" || !hasActions(b))
+      return b;
+    if (!isStatusUnder(b)) {
+      if (b.feedback)
+        next.set(b.id, { text: b.feedback.text, tone: b.feedback.tone });
+      return b;
+    }
+    const line = held.get(b.id);
+    if (!line)
+      return b;
+    next.set(b.id, line);
+    return { ...b, heldLine: line };
+  });
+  return { blocks: shown, held: next };
+}
+
 // ../hooks/row-motion.ts
 var ENTER_MS = 300;
 var MOVE_MS = 200;
@@ -4376,11 +4399,11 @@ function opacityOf(r, p) {
 function rowEl(r, p) {
   const { t } = p;
   const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div3().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
-  const hasActions = r.buttons.length > 0 || r.field !== null;
-  const feedbackUnder = r.feedback && isStatusUnderActions(r.feedback.source, hasActions) ? r.feedback : null;
+  const feedbackUnder = isStatusUnder(r) ? r.feedback : null;
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !feedbackUnder ? [r.feedback] : [],
+    ...r.heldLine ? [r.heldLine] : [],
     ...r.body
   ];
   const opacity = opacityOf(r, p);
@@ -4886,6 +4909,7 @@ class Inbox extends View {
   tracksOf = "";
   lastWaits = { tab: "needsYou", rows: [] };
   timeLeft = new Map;
+  linesAbove = NO_LINES_ABOVE;
   focus = null;
   outTimer = null;
   drawTimer = null;
@@ -5159,7 +5183,9 @@ class Inbox extends View {
     const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks;
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`;
-    const moved = moveRows(shown, this.tracks, now, tracksOf !== this.tracksOf);
+    const held = holdLinesAbove(shown, tracksOf !== this.tracksOf ? NO_LINES_ABOVE : this.linesAbove);
+    this.linesAbove = held.held;
+    const moved = moveRows(held.blocks, this.tracks, now, tracksOf !== this.tracksOf);
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
