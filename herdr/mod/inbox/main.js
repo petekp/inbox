@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T02:55:16.952Z. 197567 characters follow.
+// Built at 2026-11-14T03:24:32.210Z. 197619 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4272,10 +4272,10 @@ function timeLeftDraws(blocks, drawn, now) {
   }));
 }
 function timeLeftEl(left, runsOutAt, now, t) {
-  const fill = div2().absolute().top(0).left(0).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover);
+  const cut = div2().absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div2().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover));
   if (left.is === "paused")
-    return fill.w(left.share * TIMED_W);
-  return fill.w(left.isStarted ? 0 : timeLeftShare(runsOutAt, now) * TIMED_W).transition("width", { duration: Math.max(0, runsOutAt - now), easing: "linear" });
+    return cut.w(left.share * TIMED_W);
+  return cut.w(left.isStarted ? 0 : timeLeftShare(runsOutAt, now) * TIMED_W).transition("width", { duration: Math.max(0, runsOutAt - now), easing: "linear" });
 }
 
 // src/paint-blocks.ts
