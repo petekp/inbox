@@ -4,6 +4,7 @@ import { press } from '../hooks/host-press'
 import { fetchPrs } from '../hooks/host-prs'
 import { CLOSED_PR_REFRESH_MS, fetchTracked, LIMIT_RETRY_MS, NO_PR_SHARED, PR_SHARED_MS } from '../hooks/pr-fetch'
 import type { PrShared } from '../hooks/pr-fetch'
+import { runFailureOf } from '../hooks/pr-query'
 import { fetchFailureNotice, PR_REFRESH_LABEL, refreshProblem } from '../hooks/pr-refresh'
 import { ghNoticeOf, PR_REFRESH_ID } from '../hooks/pr-rows'
 import { applyPrPress, prBlockActions } from '../hooks/pr-tab'
@@ -362,4 +363,38 @@ test('Refresh PRs at the top reads Refreshing, then why it could not refresh, in
   expect(after).toEqual({ text: null, actions: [], showsPress: true })
   const faded = sessionView(state(), NOW + SETTLED_MS, 1000, { ...NO_HOLDS, shownSince: NOW - 1 }).prs.refresh
   expect(faded).toBeNull()
+})
+
+test('an answer that holds data is never a limit, whatever its titles say, and a real limit answer still is', async () => {
+  const titled = prNodeOf({ ...viewJson('acme/app#1'), title: 'Handle GitHub rate limits' })
+  const good = { exitCode: 0, stdout: JSON.stringify({ data: { viewer: { login: 'me' }, pr0: titled } }), stderr: '' }
+  expect(runFailureOf(good, 124, NOW)).toBeNull()
+
+  const gh = ghStandIn(() => ({ node: titled }))
+  const refs = ['acme/app#1']
+  const fetched = await fetchTracked(gh.run, prState({}), links(refs), ask, () => NOW)
+  expect(fetched.failure).toBeNull()
+  expect(fetched.read).toEqual(refs)
+
+  const limit = { kind: 'limit', at: NOW, resetsAt: null }
+  expect(runFailureOf(LIMIT_ANSWER, 124, NOW)).toEqual(limit)
+  expect(runFailureOf({ ...LIMIT_ANSWER, stderr: '' }, 124, NOW)).toEqual(limit)
+  expect(runFailureOf({ ...LIMIT_ANSWER, stdout: '' }, 124, NOW)).toEqual(limit)
+
+  const limitedError = { type: 'RATE_LIMITED', message: 'API rate limit exceeded for user ID 1.' }
+  const partial = { data: { viewer: { login: 'me' }, pr0: null }, errors: [limitedError] }
+  expect(runFailureOf({ exitCode: 0, stdout: JSON.stringify(partial), stderr: '' }, 124, NOW)).toEqual(limit)
+
+  const titledError = { type: 'NOT_FOUND', message: 'Could not resolve "Handle GitHub rate limits".' }
+  const notFound = { data: { viewer: { login: 'me' }, pr0: titled }, errors: [titledError] }
+  expect(runFailureOf({ exitCode: 0, stdout: JSON.stringify(notFound), stderr: '' }, 124, NOW)).toBeNull()
+})
+
+test('a limit that leaves the hourly budget unspent does not wait for the hourly reset', async () => {
+  const resetAt = NOW + 50 * 60_000
+  const unspent = JSON.stringify({ resources: { graphql: { limit: 5000, remaining: 4000, reset: resetAt / 1000 } } })
+  const run = async (args: string[]) =>
+    args[1] === 'rate_limit' ? { exitCode: 0, stdout: unspent, stderr: '' } : LIMIT_ANSWER
+  const fetched = await fetchTracked(run, prState({}), links(['acme/app#1']), ask, () => NOW)
+  expect(fetched.failure).toEqual({ kind: 'limit', at: NOW, resetsAt: null })
 })
