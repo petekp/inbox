@@ -18,6 +18,7 @@ import type { SessionState } from '../src/state'
 import { noteShownRows, rowsInView, takeShownRows } from '../src/tab-shown'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
@@ -33,6 +34,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     EMPTY,
     { kind: 'question', ask: 'Which label?', context: 'The new tab needs a one-word name.', options: ['Tab', 'Page'] },
     now,
+    TOOL_FIELDS,
   ).ledger
   const shownStatus = {
     ...applyStatus(
@@ -191,6 +193,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       state.ledger,
       { kind: 'finding', title: 'The bar wraps at 320 px', detail: 'Four tabs need two lines.' },
       Date.now(),
+      TOOL_FIELDS,
     ).ledger
     await afterPoll()
     assert.equal(shownTab(), 'Status')

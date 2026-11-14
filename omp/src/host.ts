@@ -21,6 +21,7 @@ import { recorded } from '../../hooks/session-presses'
 import { prFetchTracker } from '../../hooks/host-prs'
 import type { SessionHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 import type { AgentTool, ToolAnswer } from '../../hooks/tools'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
@@ -357,7 +358,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         if (isUnattended(ctx)) return { content: [{ type: 'text', text: 'The inbox is not shown in this session.' }] }
         let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
         await change(sessionIdOf(ctx), s => {
-          const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now())
+          const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now(), TOOL_FIELDS)
           answer = r
 
           return r.state

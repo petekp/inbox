@@ -18,13 +18,14 @@ import { EMPTY } from '../hooks/ledger'
 import { checkKey } from '../hooks/prs'
 import { fakeHost } from './session-fake-host'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 
 async function pressedCompare() {
   const { host } = fakeHost(async () => 'NONE')
   const call = async (tool: 'record' | 'close', args: Record<string, unknown>) => {
     let result = ''
     await host.update(async s => {
-      const r = recorded(CLAUDE_CODE, s, tool, args, await host.now())
+      const r = recorded(CLAUDE_CODE, s, tool, args, await host.now(), TOOL_FIELDS)
       result = r.result
       return r.state
     })
@@ -77,7 +78,7 @@ test('Compare reads Comparing… after its reply until the agent records the que
   const record = async (args: Record<string, unknown>) => {
     let result = ''
     await host.update(async s => {
-      const r = recorded(CLAUDE_CODE, s, 'record', args, await host.now())
+      const r = recorded(CLAUDE_CODE, s, 'record', args, await host.now(), TOOL_FIELDS)
       result = r.result
       return r.state
     })
@@ -137,7 +138,7 @@ test('Compare reads Comparing… after its reply until the agent records the que
 test('while a press is out, its button stays out and a second press sends nothing, even when a newer note shows on the row', async () => {
   const { host } = fakeHost(async () => null)
   const question = { kind: 'question', ask: 'Ship it?', options: ['Yes', 'No'] }
-  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, 1).state)
+  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, 1, TOOL_FIELDS).state)
   const id = (await host.read()).ledger.items[0]!.id
   await press(host, { action: 'explain', id }, false, NO_HOLDS)
   const s = await host.read()

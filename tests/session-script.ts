@@ -10,6 +10,7 @@ import type { Host } from '../hooks/model-text'
 import { allRows } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import type { Effect } from '../hooks/press-reducer'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 
 type ScriptedHost<S extends Session = Session> = {
   host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host }
@@ -92,7 +93,14 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
 
   let toolAnswer = ''
   await host.update(async s => {
-    const r = recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask: 'Try the CLI by hand' }, await host.now())
+    const r = recorded(
+      CLAUDE_CODE,
+      s,
+      'record',
+      { kind: 'task', ask: 'Try the CLI by hand' },
+      await host.now(),
+      TOOL_FIELDS,
+    )
     toolAnswer = r.result
     return r.state
   })

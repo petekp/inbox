@@ -9,6 +9,7 @@ import { CODEX } from '../codex/src/texts'
 import { OMP } from '../omp/src/texts'
 import { MODEL } from '../codex/src/update'
 import { agentTools } from '../hooks/tools'
+import { probeTools } from './probe-tools'
 import { failures } from './agent-checks'
 import type { Agent, Call, Case, Outcome } from './agent-checks'
 import {
@@ -111,6 +112,7 @@ function sandbox(c: Case, agent: Agent) {
       shown: c.ledger ?? {},
       ledger: c.toolLedger ?? c.ledger ?? {},
       lastActions: c.lastActions ?? {},
+      tools: c.tools ?? null,
     }),
   )
   writeFileSync(log, '')
@@ -446,6 +448,7 @@ const about = provenance(
       [CLAUDE_CODE, CODEX, OMP].flatMap(host => [
         [`guidanceText ${host.agent}`, guidanceText(host)],
         [`tools ${host.agent}`, JSON.stringify(agentTools(host))],
+        [`tools 0.3.0 ${host.agent}`, JSON.stringify(probeTools(host, '0.3.0'))],
       ]),
     ),
     'close description Claude': guidedCloseDescription(CLAUDE_CODE, ''),

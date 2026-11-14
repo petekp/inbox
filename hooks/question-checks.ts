@@ -63,26 +63,29 @@ function isApproval(item: Pick<Item, 'ask' | 'options'>): boolean {
 
 /**
  * What a recorded question or task lacks for the user to act on it from its row, said so the agent can record it
- * again with it. A task may have no command, file or link, and an approval nothing to look at, so their sentences say
- * when to add one.
+ * again with it. It asks only for the `fields` the agent's record tool has, since an agent cannot send one its tool
+ * lacks. A task may have no command, file or link, and an approval nothing to look at, so their sentences say when to
+ * add one.
  */
-export function missingText(item: Item | undefined): string {
+export function missingText(item: Item | undefined, fields: readonly string[]): string {
+  const canSend = (field: string) => fields.includes(field)
   if (item?.kind === 'task')
-    return item.helps.length === 0
+    return item.helps.length === 0 && canSend('steps')
       ? ' It has no steps: when a command, file or link would help the user do it, record it again with steps.'
       : ''
   if (!item) return ''
 
-  return bodyText(item) + recText(item) + approvalText(item)
+  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend)
 }
 
-function bodyText(item: Item): string {
-  const unnoted = item.options.filter(o => !item.optionDescriptions?.[o])
+function bodyText(item: Item, canSend: (field: string) => boolean): string {
+  const unnoted = canSend('option_notes') ? item.options.filter(o => !item.optionDescriptions?.[o]) : []
   const isUnnoted = unnoted.length > 0
+  const isContextMissing = !item.context && canSend('context')
   const noNotes = unnoted.length === item.options.length ? 'option_notes' : `note on ${quoted(unnoted)}`
-  const lacks = [...(item.context ? [] : ['context']), ...(isUnnoted ? [noNotes] : [])]
+  const lacks = [...(isContextMissing ? ['context'] : []), ...(isUnnoted ? [noNotes] : [])]
   const asks = [
-    ...(item.context ? [] : ['context (why it came up)']),
+    ...(isContextMissing ? ['context (why it came up)'] : []),
     ...(isUnnoted ? ['option_notes (what picking each option does)'] : []),
   ]
 
@@ -93,14 +96,19 @@ function quoted(options: string[]): string {
   return options.map(o => `"${o}"`).join(' or ')
 }
 
-function recText(item: Item): string {
-  if (!item.rec) return ' It has no rec: when you can recommend an option, record it again with rec and why.'
+function recText(item: Item, canSend: (field: string) => boolean): string {
+  if (!item.rec)
+    return canSend('rec')
+      ? ` It has no rec: when you can recommend an option, record it again with ${canSend('why') ? 'rec and why' : 'rec'}.`
+      : ''
 
-  return item.recReason ? '' : ' It has no why: record it again with why, so the user sees your reason.'
+  return item.recReason || !canSend('why')
+    ? ''
+    : ' It has no why: record it again with why, so the user sees your reason.'
 }
 
-function approvalText(item: Item): string {
-  return isApproval(item) && item.helps.length === 0
+function approvalText(item: Item, canSend: (field: string) => boolean): string {
+  return isApproval(item) && item.helps.length === 0 && canSend('steps')
     ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps."
     : ''
 }
