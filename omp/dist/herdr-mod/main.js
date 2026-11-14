@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T06:30:16.246Z. 204548 characters follow.
+// Built at 2026-11-14T06:37:59.610Z. 204905 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4106,18 +4106,26 @@ function withoutConfirmed(drafts, confirmed, typing, pending) {
 var NO_LINES_ABOVE = new Map;
 var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
 var isStatusUnder = (r) => r.feedback !== null && isStatusUnderActions(r.feedback.source, hasActions(r));
+var isUnderWay = (f) => f?.is === "queued" || pressUnderWaySince(f) !== null;
 function holdLinesAbove(blocks, held) {
   const next = new Map;
   const shown = blocks.map((b) => {
-    if (b.kind !== "row" || !hasActions(b))
+    if (b.kind !== "row")
       return b;
-    if (!isStatusUnder(b)) {
-      if (b.feedback)
-        next.set(b.id, { text: b.feedback.text, tone: b.feedback.tone });
+    const line = held.get(b.id);
+    const isPressUnderWay = isUnderWay(b.feedback?.source ?? null);
+    if (!hasActions(b)) {
+      if (line && isPressUnderWay)
+        next.set(b.id, line);
       return b;
     }
-    const line = held.get(b.id);
-    if (!line)
+    if (!isStatusUnder(b)) {
+      const f = b.feedback;
+      if (f)
+        next.set(b.id, { text: f.text, tone: f.tone, isHidden: isFailure(f.source) });
+      return b;
+    }
+    if (!line || !isPressUnderWay)
       return b;
     next.set(b.id, line);
     return { ...b, heldLine: line };
@@ -4408,7 +4416,7 @@ function rowEl(r, p) {
   ];
   const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
-  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3())).when(feedbackUnder !== null, (e) => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div3()));
+  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3())).when(feedbackUnder !== null, (e) => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div3()));
 }
 var statusPartEl = (text) => div3().min_w(0).max_w_full().whitespace_normal().child(text);
 function statusEl(s, p) {

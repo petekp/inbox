@@ -148,38 +148,80 @@ test('the PRs tab draws Clear merged and closed above the first PR, m presses it
   expect(branchOnly.some(b => b.id === CLEAR_FINISHED_ID)).toBe(false)
 })
 
-test('a row keeps its status line above its buttons while the host shows its press under way, until the press ends', () => {
+const earlierReply: LastAction = {
+  kind: 'handoff',
+  action: 'type',
+  text: 'Send',
+  reply: 'Not yet',
+  at: NOW - 600_000,
+  turnsStarted: 13,
+}
+const discuss: LastAction = { kind: 'talk', action: 'discuss', text: 'Discuss', at: NOW - 1000, turnsStarted: 14 }
+
+function heldAcross(draws: [LastAction, number, string][]) {
   const session = demoSession(NOW, AGENT)
-  const earlier: LastAction = {
-    kind: 'handoff',
-    action: 'type',
-    text: 'Send',
-    reply: 'Not yet',
-    at: NOW - 600_000,
-    turnsStarted: 13,
-  }
-  const discuss: LastAction = { kind: 'talk', action: 'discuss', text: 'Discuss', at: NOW - 1000, turnsStarted: 14 }
-  const draws: [LastAction, number][] = [
-    [earlier, 14],
-    [discuss, 14],
-    [discuss, 15],
-  ]
   let held = NO_LINES_ABOVE
-  const shown = draws.map(([last, applied]) => {
+  return draws.map(([last, applied, selected]) => {
     const s = {
       ...session,
       lastActions: { ...session.lastActions, d23: last },
       presence: { ...session.presence, turnsStarted: 14, turnsApplied: applied },
     }
     const screen = { ...demoScreen(), view: sessionView(s, NOW, SETTLED_MS, NO_HOLDS) }
-    const drawn = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected: 'd23' })), held)
+    const drawn = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected })), held)
     held = drawn.held
     const row = rowsOf(drawn.blocks).find(b => b.id === 'd23')!
-    return [row.feedback?.text, row.heldLine?.text ?? null]
+    const line = row.heldLine
+    return [row.feedback?.text, line ? `${line.isHidden ? 'hidden ' : ''}${line.text}` : null]
   })
-  expect(shown).toEqual([
+}
+
+test('a row keeps its status line above its buttons while the host shows its press under way, until the press ends', () => {
+  expect(
+    heldAcross([
+      [earlierReply, 14, 'd23'],
+      [discuss, 14, 'd23'],
+      [discuss, 15, 'd23'],
+    ]),
+  ).toEqual([
     ['Still open', null],
     ['Discussing…', 'Still open'],
     ['✓ Discussed', null],
+  ])
+})
+
+test('a row deselected while its press is under way keeps its held line for when it is selected again', () => {
+  expect(
+    heldAcross([
+      [earlierReply, 14, 'd23'],
+      [discuss, 14, 'd22'],
+      [discuss, 14, 'd23'],
+    ]),
+  ).toEqual([
+    ['Still open', null],
+    ['Discussing…', null],
+    ['Discussing…', 'Still open'],
+  ])
+})
+
+test('a held failure keeps its space without its words, and a status that stays under the buttons after the press lets it go', () => {
+  const failed: LastAction = {
+    ...discuss,
+    at: NOW - 600_000,
+    turnsStarted: 13,
+    delivery: { state: 'failed', reason: 'the terminal was closed' },
+  }
+  const queued: LastAction = { ...discuss, delivery: { state: 'queued', message: 'Discuss' } }
+  const unconfirmed: LastAction = { ...discuss, delivery: { state: 'unconfirmed', message: 'Discuss' } }
+  expect(
+    heldAcross([
+      [failed, 14, 'd23'],
+      [queued, 14, 'd23'],
+      [unconfirmed, 14, 'd23'],
+    ]),
+  ).toEqual([
+    ['Not sent: the terminal was closed', null],
+    ['Queued: Discuss', 'hidden Not sent: the terminal was closed'],
+    ['Not confirmed: Discuss', null],
   ])
 })
