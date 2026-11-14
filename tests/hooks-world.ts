@@ -18,6 +18,11 @@ class World {
   sent: string[] = []
 
   ran: string[][] = []
+  ranIn: { argv: string[]; cwd: string | undefined }[] = []
+
+  root = '/tmp/project'
+  folders: string[] = []
+  branches: Record<string, string> = {}
 
   submitAnswer:
     'enter' | 'hold' | { drop: string; beforeDrop?: () => Promise<void> } | { rewrite: string; hold?: boolean } =
@@ -250,6 +255,10 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.held = []
   w.inFlight = []
   w.ran = []
+  w.ranIn = []
+  w.root = '/tmp/project'
+  w.folders = ['/tmp/project']
+  w.branches = {}
   w.toolVerdict = 'allow'
   w.raisesPostHooks = false
   w.toolHold = null
@@ -344,7 +353,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('session.attach', (_$, e) => ({ clientId: e.clientId }))
   on('session.id', () => ({ value: w.sessionId }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
-  on('session.root', () => ({ value: '/tmp/project' }))
+  on('session.root', () => ({ value: w.root }))
   on('env.get', (_$, e) => ({ value: e.name in vars || e.name !== 'CLAUDE_CONFIG_DIR' ? vars[e.name] : CONFIG_DIR }))
   on('command.register', (_$, e) => (w.commandRefusal ? { deny: w.commandRefusal } : { value: { command: e.name } }))
   on('tool.register', (_$, e) =>
@@ -367,7 +376,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     w.copied.push(e.text)
     return { value: { isCopied: true as const } }
   })
-  on('fs.exists', (_$, e) => ({ value: w.files.some(f => e.path.endsWith(f)) }))
+  on('fs.exists', (_$, e) => ({ value: w.folders.includes(e.path) || w.files.some(f => e.path.endsWith(f)) }))
   on('fs.list', (_$, e) => {
     const written = Object.keys(w.written).filter(path => path.startsWith(`${e.path}/`))
     if (written.length > 0)
@@ -394,7 +403,14 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('fs.stat', (_$, e) =>
     w.missingFiles.includes(e.path)
       ? { deny: 'ENOENT' }
-      : { value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } },
+      : {
+          value: {
+            kind: w.folders.includes(e.path) ? ('dir' as const) : ('file' as const),
+            size: 1,
+            mtimeMs: 1,
+            isLink: false,
+          },
+        },
   )
   on('fs.write', (_$, e) => {
     w.written[e.path] = e.text
@@ -403,6 +419,15 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('process.run', async (_$, e) => {
     if (e.argv[0] === 'ps') return w.isPsMissing ? { deny: 'spawn ps ENOENT' } : { value: psAnswer(e.argv) }
     w.ran.push([...e.argv])
+    const cwd = e.init?.cwd
+    w.ranIn.push({ argv: [...e.argv], cwd })
+    if (cwd !== undefined && cwd !== '/' && !w.folders.includes(cwd))
+      return { deny: `posix_spawn '${e.argv[0]}' ENOENT` }
+    const branch = cwd === undefined ? undefined : w.branches[cwd]
+    if (e.argv.join(' ') === 'git branch --show-current' && branch !== undefined)
+      return {
+        value: { exitCode: 0, stdout: `${branch}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+      }
     if (e.argv[0] === 'mv' || e.argv[0] === 'rm') return { value: fileCommand(e.argv) }
     if (w.isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
     if (w.slowGhClock && e.argv[0] === 'gh') {

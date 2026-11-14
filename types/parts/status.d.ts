@@ -153,5 +153,5 @@ export type SessionStatus = {
   look: { startedAt: number } | null
 }
 
-/** The folder a session started in, and its branch when the host last read it. */
+/** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */
 export type Place = { folder: string; branch: string | null }

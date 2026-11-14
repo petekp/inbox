@@ -56,11 +56,31 @@ There is no `-p` flag and no `--plugin-dir` on the command line. It is still a h
 - An interactive start, a start in a process the app started, or a desktop attach activates Inbox. Only a start is sure to register the tools before the first prompt: see "A reopened session's first prompt". A shared initialization promise prevents concurrent handlers from loading it twice.
 - `command.run` waits for initialization. While Inbox is inactive, only an engine-stamped `composer` origin can activate it; SDK and plugin command calls leave it inactive.
 - `classic.SessionStart` with source `clear`, `resume` or `fork` loads the conversation the event names.
+- Every command reads the session's folder from `$.session.root()` when it runs, and runs in `/` when that folder is gone (`hooks/mod-commands.ts:sessionFolder`). `classic.SessionStart` with source `startup` in a session whose folder changed saves the new folder and branch, and fetches the PRs again. See "A new session's folder".
 - Prompt bookkeeping skips Inbox's own plugin prompts and counts origins `composer`, `bridge`, or `plugin` with `asUser` as the person's words.
 
 **App tools passed into each session (live):** `mcp__ccd_session__*` (`list_sessions`, `send_message`, `spawn_task`, `dismiss_task`), `mcp__ccd_session_mgmt__*`, `mcp__ccd_view__*` (`show_pane`, `close_pane`), `mcp__ccd_window__*`, `mcp__ccd_sidebar__*`, `mcp__ccd_pr__get_status`, `mcp__ccd_connectors__*` and `mcp__ccd_settings__get_settings`. They are not documented publicly.
 
 **How other tools see these sessions (live):** `claude agents --json` lists Code-mode sessions as `interactive` entries whose parent process is inside Claude.app. Their transcripts are at `~/.claude/projects/*/<sessionId>.jsonl`, the same place as terminal sessions.
+
+## A new session's folder
+
+A new Code session starts in a folder the app makes ahead of time, `~/.claude/spares/spare-<id>`. The app then moves the session to the project folder and deletes the spare folder.
+
+**Seen in the app (5.11492.5, Claude Code 2.1.325, issue #419):** at the mod's load, `$.session.root()` gave the spare folder. Later, a `$.process.run` with that folder as `cwd` rejected with `ENOENT ... posix_spawn 'gh'`, because the folder was gone. The same run with `cwd` `/` worked. `git branch --show-current` run in the spare folder at the start exited 128.
+
+**Seen in a terminal copy of the same start (Claude Code 2.1.325, 2026-11-14, no model call):** a probe mod logged each moment. The process was `claude -p --await-claim --input-format stream-json --output-format stream-json --verbose` in folder S. It was sent a `claim_session` control request with `cwd` P, and S was deleted 4 seconds later.
+
+- `session.start` fired once, before the claim, with `cwd` S. It did not fire again.
+- Before the claim, `$.session.root()` and `$.session.cwd()` gave S.
+- Right after the claim, both gave P, and a `$.process.run` with no `cwd` ran in P.
+- `classic.SessionStart` fired once, after the claim, with source `startup` and `cwd` P. It did not fire before the claim.
+- `classic.CwdChanged` did not fire. The engine runs it only when a settings hook is set for it, as the binary's code reads.
+- A run with `cwd` S, once S was gone, rejected with the same `ENOENT ... posix_spawn` as in the app.
+
+**What the 2.1.325 binary says:** `--await-claim` starts "a pre-warmed spare", "a local SDK-host process". `claim_session` takes a `cwd` "treated exactly like the cwd a process is spawned in", and SessionStart hooks then run "in the bound directory". `set_cwd` is "the headless twin of /cd, for SDK hosts like Claude Desktop", and never runs SessionStart hooks again. Both requests move the session through the same code as `/cd`. That code sets the session's original working directory, which is what `$.session.root()` returns.
+
+**Not verified:** which of `claim_session` and `set_cwd` the app sends, and when it deletes the spare folder. The mod reads the folder before each command, so it runs in the right folder either way. Only `claim_session` runs `classic.SessionStart`, which is when the mod saves the new folder and fetches the PRs again. After a `set_cwd`, the saved folder is corrected at the end of the next turn.
 
 ## Engine versions and updates
 
