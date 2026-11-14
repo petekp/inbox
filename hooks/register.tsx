@@ -2945,7 +2945,10 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => drawPane($, e, ownSite(e)))
 
   // pane-grid's grid pane: its empty cells offer the inbox, and the inbox's cell draws it (hooks/pane-grid-cell.tsx).
-  on('ui.render', { component: 'Pane', requestId: /^grid-/ }, async ($, e, next) => {
+  // From Claude Code 2.1.325 a matcher without `plugin` matches only panes this plugin opened. pane-grid opens every
+  // grid pane, so without `plugin: 'pane-grid'` this hook is never called for it. The empty cell's choice Button is
+  // drawn by this plugin, so the ui.press hook above keeps the default plugin.
+  on('ui.render', { component: 'Pane', requestId: /^grid-/, plugin: 'pane-grid' as never }, async ($, e, next) => {
     const cell = await readCell($)
     const drawn = cell?.requestId === e.requestId ? await drawPane($, e, cellSite(e, cell)) : undefined
 
