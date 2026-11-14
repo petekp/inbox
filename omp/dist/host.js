@@ -1113,7 +1113,7 @@ import { homedir } from "os";
 import { dirname as dirname3, join as join4 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
-var version = "0.3.0";
+var version = "0.4.0";
 
 // ../hooks/press-labels.ts
 function actionId(p) {

@@ -81,3 +81,17 @@ test('a button whose press is out takes no hover and no click', () => {
   expect(swept.outButtons.length).toBeGreaterThan(0)
   expect(swept.outButtons.filter(n => n.hasHover || n.click !== null).map(n => n.id)).toEqual([])
 })
+
+test('a press on a row with a status line above its buttons keeps the buttons on the same line of the row', async () => {
+  const panel = (await reach(['row d18']))!
+  const buttonsLine = () => {
+    const row = byId(panel.paint(), 'row d18')!
+    return row.kids.findIndex(k => allOf(k).some(n => n.label === 'Explain'))
+  }
+  const before = buttonsLine()
+  const explain = allOf(byId(panel.paint(), 'row d18')!).find(n => n.label === 'Explain')!
+  panel.click(explain)
+  await panel.settle()
+  expect(panel.panel.queue.outs.map(o => o.rowId)).toEqual(['d18'])
+  expect([before, buttonsLine()]).toEqual([2, 2])
+})
