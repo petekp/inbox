@@ -132,7 +132,7 @@ test('the PRs tab draws Clear merged and closed above the first PR, m presses it
   expect(line.buttons.map(b => [b.label, b.hotkey, b.does])).toEqual([
     ['Clear merged and closed', 'm', { is: 'press', press: { action: 'pr-clear-finished' }, effects: [] }],
   ])
-  const thread = blocks.find(b => b.kind === 'row' && b.depth === 1 && b.isSelectable)
+  const thread = blocks.find(b => b.kind === 'row' && b.isSelectable)
   if (thread?.kind !== 'row') throw new Error('no thread row')
   const onThread = tabBlocks(
     finishedScreen({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' }),

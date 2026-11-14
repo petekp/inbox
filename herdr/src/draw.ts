@@ -32,7 +32,7 @@ import { FINDING_GROUPS, HELD_MARK } from '../../hooks/help'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
-import { isDrawnInPlace } from '../../hooks/timing'
+import { SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerStatus } from '../../hooks/view'
 import type { PressKind } from '../../types'
 import { button } from './blocks'
@@ -112,6 +112,27 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
   })
 }
 
+/**
+ * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
+ * hidden, as the Codex tab hides a spent Undo, so the row does not change shape before it folds.
+ */
+function undoButtons(row: RowView, agent: string): Button[] {
+  if (row.state.is !== 'settled') return []
+  const id = `${row.id} undo`
+  const runsOutAt = row.state.at + SETTLED_MS
+  const undo = row.actions.find(a => a.press.action === 'undo')
+  if (undo)
+    return [
+      {
+        ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
+        isOut: undo.isOut,
+        runsOutAt,
+      },
+    ]
+
+  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isHidden: true, runsOutAt }] : []
+}
+
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */
 function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send): Field {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel
@@ -161,7 +182,11 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     isSelectable: !isSettled,
     isSelected,
     body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSettled || (isSelected && !isTyping) ? rowButtons(row, isAllShown, screen.agent) : [],
+    buttons: isSettled
+      ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent)]
+      : isSelected && !isTyping
+        ? rowButtons(row, isAllShown, screen.agent)
+        : [],
     field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
   }
 }
@@ -209,7 +234,6 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
     {
       kind: 'heading',
       id: `group ${g.kind}`,
-      depth: 0,
       text: g.title,
       count: count > 0 ? count : null,
       mark: g.mark,

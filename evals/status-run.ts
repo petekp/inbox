@@ -13,7 +13,7 @@ import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
 import { claude, CLAUDE_MODEL } from './claude-model'
 import { codexCli } from './codex-cli'
-import { BudgetError, provenance, resultsPath, runCount, runJobs, writeResults } from './harness'
+import { provenance, resultsPath, runCount, runJobs, writeResults } from './harness'
 import type { Job, Run } from './harness'
 import { factsText } from './status-facts'
 import { judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './status-judge'
@@ -41,7 +41,10 @@ type RunRecord = Run & ReplayRun
 const ROOT = process.env.INBOX_EVAL_ROOT ?? process.cwd()
 const JUDGE_MODEL = 'opus'
 const JUDGE_EFFORT = 'high'
-/** The most Status calls one run makes, both models together. A run that would pass it stops with no grade. */
+/**
+ * The most Status calls one run makes for each model. Once a model would pass it, that model's runs have no grade, and
+ * the other model's runs go on.
+ */
 const STATUS_CALLS_MAX = 220
 /** A call that fails before the model answers is tried this many more times, from the same prompt. */
 const CALL_RETRIES = 2
@@ -165,13 +168,13 @@ if (agents.includes('codex') && !existsSync(join(codexHome, 'auth.json')))
 const codexData = mkdtempSync(join(tmpdir(), 'inbox-eval-'))
 const askCodex = codexAsk(run, codexCli, codexData, codexHome)
 
-let statusCalls = 0
+const statusCalls: Record<Agent, number> = { claude: 0, codex: 0 }
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 /**
  * The agent's model call. A call that gives nothing before the host's time limit failed outside the model, so it is
  * tried again from the same prompt, and then throws, so the run cannot be graded. One past the limit is the host's to
- * drop. Each Status call, a re-ask or a retry included, counts toward `STATUS_CALLS_MAX`.
+ * drop. Each Status call, a re-ask or a retry included, counts toward its model's `STATUS_CALLS_MAX`.
  */
 function modelCall(agent: Agent): ModelCall {
   const once = async (prompt: string, system: string, kind: CallKind): Promise<CallAnswer> => {
@@ -188,8 +191,7 @@ function modelCall(agent: Agent): ModelCall {
 
   return async (prompt, system, kind) => {
     for (let tries = 0; ; tries++) {
-      if (kind.call === 'status' && ++statusCalls > STATUS_CALLS_MAX)
-        throw new BudgetError(`the run reached ${STATUS_CALLS_MAX} Status calls`)
+      if (kind.call === 'status' && ++statusCalls[agent] > STATUS_CALLS_MAX) throw overCap(agent)
       try {
         return await once(prompt, system, kind)
       } catch (e) {
@@ -200,7 +202,10 @@ function modelCall(agent: Agent): ModelCall {
   }
 }
 
+const overCap = (agent: Agent) => new Error(`${agent} reached ${STATUS_CALLS_MAX} Status calls`)
+
 async function once(agent: Agent, replay: Replay, n: number): Promise<RunRecord> {
+  if (statusCalls[agent] >= STATUS_CALLS_MAX) throw overCap(agent)
   const steps = await runReplay(replay, { agent, ask: modelCall(agent), system: statusSystemTexts[agent] })
   const graded = gradeReplay(replay, steps)
   const records: StepRecord[] = []
@@ -283,9 +288,9 @@ for (const agent of agents) {
 }
 console.log('A target counts a failure on any piece; counting only the pieces its step changes is not built.')
 for (const u of ungraded) console.log(`not graded: ${u}`)
-console.log(`Status calls: ${Math.min(statusCalls, STATUS_CALLS_MAX)} of ${STATUS_CALLS_MAX}`)
+const callCounts = agents.map(a => `${a} ${Math.min(statusCalls[a], STATUS_CALLS_MAX)} of ${STATUS_CALLS_MAX}`)
+console.log(`Status calls: ${callCounts.join(', ')}`)
 if (stopped !== null) console.log(`Stopped: ${stopped}`)
 console.log(`Results: ${path}${about.isDirty ? ' (the tree had uncommitted changes)' : ''}`)
-const isOverBudget = statusCalls > STATUS_CALLS_MAX
 const isFailed = isBlocked || holds.length > 0
-process.exit(isOverBudget ? 2 : stopped !== null ? 3 : isFailed ? 1 : ungraded.length > 0 ? 2 : 0)
+process.exit(stopped !== null ? 3 : isFailed ? 1 : ungraded.length > 0 ? 2 : 0)

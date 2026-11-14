@@ -7,35 +7,39 @@ import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
 import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
 import {
-  BUTTON_GAP,
+  BOX_RADIUS,
   BUTTON_H,
-  EDGE_X,
+  CONTROL_GAP,
+  EDGE,
+  GROUP_GAP,
   HEAD_LINE,
   HEAD_TEXT,
+  INSET,
+  LINE_GAP,
   MARK_W,
-  MARK_X,
   NEST,
-  PILL_X,
-  GROUP_GAP,
   SEP,
-  SPINE,
+  SPACE,
+  TEXT_X,
   colorOf,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
-
-/** The space a line under a title, or a row of buttons, leaves above it. */
-const LINE_PAD = 4
+import { TIMED_W, timeLeftEl } from './paint-timer'
 
 /**
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
- * so a quiet button that starts a line puts its label on the spine. A button whose press is out keeps its size, loses
- * its fill and border, and is the quietest thing in its row. A button of a row that is leaving draws but takes no
- * clicks, so the row keeps its height as it fades. A button that takes no clicks shows no hover or pressed change.
+ * so a quiet button that starts a line puts its label where the text above it starts. A button whose press is out keeps its size, loses
+ * its fill and border, and is the quietest thing in its row. A timed button's time left stays drawn and pauses while
+ * its press is out. A hidden button keeps its place and draws nothing. A button of a row that is leaving draws but
+ * takes no clicks, so the row keeps its height as it fades. A button that takes no clicks shows no hover or pressed
+ * change.
  */
 function buttonEl(b: Button, p: Paint, isInert = false): Element {
   const { t } = p
   const isPill = b.emphasis !== 'quiet'
+  const runsOutAt = b.runsOutAt
+  const left = p.timeLeft.get(b.id)
   const base = h_flex()
     .id(`button ${b.id}`)
     .flex_none()
@@ -43,13 +47,22 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
     .items_center()
     .justify_center()
     .accessibility_label(b.label)
+    .when(runsOutAt !== undefined, e =>
+      e
+        .relative()
+        .w(TIMED_W)
+        .rounded(BUTTON_H / 2),
+    )
+    .when(left !== undefined, e => (left ? e.child(timeLeftEl(left, runsOutAt ?? 0, p.now, t)) : e))
     .child(b.label)
-  const shaped = isPill
-    ? base
-        .px(PILL_X)
-        .rounded(BUTTON_H / 2)
-        .border_1()
-    : base
+  const shaped =
+    isPill && runsOutAt === undefined
+      ? base
+          .px(INSET)
+          .rounded(BUTTON_H / 2)
+          .border_1()
+      : base
+  if (b.isHidden) return shaped.invisible().disabled(true)
   if (b.isOut) return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true)
   const styled =
     b.emphasis === 'primary'
@@ -77,30 +90,28 @@ const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false)
   h_flex()
     .flex_wrap()
     .items_center()
-    .gap(BUTTON_GAP)
-    .pt(LINE_PAD)
+    .gap(CONTROL_GAP)
+    .pt(CONTROL_GAP)
     .pl(indent)
     .children(buttons.map(b => buttonEl(b, p, isInert)))
 
-/** A mark, centred in the column that hangs before the spine. */
+/** A mark, at the start of the column that hangs before the text, so a tab's first marks sit on the panel's edge. */
 const markEl = (m: Mark | null, t: Theme): Element =>
   div()
     .w(MARK_W)
-    .pr(4)
     .flex_none()
-    .text_center()
     .text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone))
     .when(m?.isRunning === true, e => e.loop('opacity', { from: 1, to: 0.3, period: RUNNING_PULSE_MS }))
     .child(m?.text ?? '')
 
-const lineEl = (text: string, color: Theme[keyof Theme], indent = MARK_W) =>
-  div().pl(indent).pt(LINE_PAD).whitespace_normal().text_color(color).child(text)
+const lineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W) =>
+  div().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text)
 
-/** A line under a row's title. Its mark, when it has one, as the holds-up line's, hangs before the spine. */
+/** A line under a row's title. Its mark, when it has one, as the holds-up line's, hangs in the mark column. */
 const bodyLineEl = (l: RowBlock['body'][number], t: Theme): Element =>
   l.mark
     ? h_flex()
-        .pt(LINE_PAD)
+        .pt(LINE_GAP)
         .items_start()
         .child(markEl(l.mark, t))
         .child(div().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text))
@@ -110,11 +121,19 @@ function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
   const { t } = p
   const state = p.input(f.rowId)
   const input = state
-    ? [div().min_h(28).px(10).py(4).rounded(10).border_1().border_color(t.input).child(Input.new(state).w_full())]
+    ? [
+        div()
+          .min_h(BUTTON_H)
+          .px(INSET)
+          .py(SPACE.xs)
+          .rounded(BOX_RADIUS)
+          .border_1()
+          .border_color(t.input)
+          .child(Input.new(state).w_full()),
+      ]
     : []
 
   return v_flex()
-    .pt(LINE_PAD)
     .pl(indent)
     .children(input)
     .child(buttonsEl(f.buttons, p, 0, isInert))
@@ -147,7 +166,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
       e.child(
         div()
           .flex_none()
-          .ml(12)
+          .ml(INSET)
           .text_color(t.muted)
           .child(r.age ?? ''),
       ),
@@ -159,16 +178,12 @@ function rowEl(r: RowBlock, p: Paint): Element {
   ]
   const opacity = opacityOf(r, p)
   const isLeaving = p.motion.get(r.id)?.state === 'leaving'
-  const hasControls = r.buttons.length > 0 || r.field !== null
-  const padTop = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2
-  const padBottom = r.depth === 0 || hasControls ? ROW_PAD_PT : ROW_PAD_PT / 2
 
   return v_flex()
     .id(`row ${r.id}`)
-    .pl(MARK_X + r.depth * NEST)
-    .pr(EDGE_X)
-    .pt(padTop)
-    .pb(padBottom)
+    .pl(EDGE + r.depth * NEST)
+    .pr(EDGE)
+    .py(ROW_PAD_PT)
     .when(opacity !== null, e =>
       e.opacity(opacity ?? 1).transition('opacity', { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: 'ease-out' }),
     )
@@ -179,7 +194,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .child(line)
     .children(lines.map(l => bodyLineEl(l, t)))
     .when(r.buttons.length > 0, e => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving)))
-    .when(r.field !== null, e => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div()))
+    .when(r.field !== null, e => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div()))
 }
 
 function statusEl(s: StatusLine, p: Paint): Element {
@@ -189,9 +204,8 @@ function statusEl(s: StatusLine, p: Paint): Element {
     : []
 
   return v_flex()
-    .pl(MARK_X + s.depth * NEST)
-    .pr(EDGE_X)
-    .py(ROW_PAD_PT)
+    .pl(EDGE + s.depth * NEST)
+    .pr(EDGE)
     .child(
       h_flex()
         .items_start()
@@ -210,7 +224,7 @@ function statusEl(s: StatusLine, p: Paint): Element {
             .children(stall),
         ),
     )
-    .children(s.under.map(l => div().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l)))
+    .children(s.under.map(l => lineEl(l, t.muted)))
     .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W)))
 }
 
@@ -224,10 +238,11 @@ function prEl(b: PrBlock, p: Paint): Element {
   const title = h_flex()
     .items_start()
     .child(div().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title))
-    .when(!p.isNarrow, e => e.child(div().flex_none().ml(12).text_color(t.muted).child(label)))
+    .when(!p.isNarrow, e => e.child(div().flex_none().ml(INSET).text_color(t.muted).child(label)))
   const status = h_flex()
     .flex_wrap()
     .items_start()
+    .pt(LINE_GAP)
     .when(p.isNarrow, e => e.child(div().flex_none().text_color(t.muted).child(`${label}${SEP}`)))
     .child(div().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text))
     .when(b.unlisted.length > 0, e =>
@@ -242,9 +257,8 @@ function prEl(b: PrBlock, p: Paint): Element {
     )
 
   return v_flex()
-    .pl(SPINE)
-    .pr(EDGE_X)
-    .pt(8)
+    .pl(EDGE)
+    .pr(EDGE)
     .child(title)
     .child(status)
     .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
@@ -256,12 +270,11 @@ function textLineEl(b: LineBlock, p: Paint): Element {
   const { t } = p
 
   return v_flex()
-    .pl(SPINE)
-    .pr(EDGE_X)
-    .py(LINE_PAD)
+    .pl(EDGE)
+    .pr(EDGE)
     .child(
       h_flex()
-        .gap(BUTTON_GAP)
+        .gap(CONTROL_GAP)
         .items_center()
         .child(
           div()
@@ -274,7 +287,7 @@ function textLineEl(b: LineBlock, p: Paint): Element {
           e.child(
             h_flex()
               .flex_none()
-              .gap(BUTTON_GAP)
+              .gap(CONTROL_GAP)
               .children(b.buttons.map(x => buttonEl(x, p))),
           ),
         ),
@@ -285,32 +298,28 @@ function textLineEl(b: LineBlock, p: Paint): Element {
 
 const ruleLine = (t: Theme): Element => div().flex_1().border_t(1).border_color(t.border)
 
-/** A group's heading, on the spine or one step in under a PR. A label heading rules the goal's text to its buttons. */
+/** A group's heading, its text where its rows' text starts. A label heading rules the goal's text to its buttons. */
 function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
   const { t } = p
   const buttons = h_flex()
     .flex_none()
-    .gap(BUTTON_GAP)
+    .gap(CONTROL_GAP)
     .items_center()
     .children(b.buttons.map(x => buttonEl(x, p)))
   if (b.isLabel)
     return h_flex()
       .flex_wrap()
-      .pl(SPINE)
-      .pr(EDGE_X)
-      .pt(8)
-      .pb(LINE_PAD)
-      .gap(8)
+      .pl(TEXT_X)
+      .pr(EDGE)
+      .gap(CONTROL_GAP)
       .items_center()
       .child(div().text_color(t.muted).child(b.text))
-      .child(ruleLine(t).min_w(32))
+      .child(ruleLine(t).min_w(GROUP_GAP))
       .child(buttons)
 
   return h_flex()
-    .pl(MARK_X + b.depth * NEST)
-    .pr(EDGE_X)
-    .pt(b.depth > 0 ? 16 : 8)
-    .pb(LINE_PAD)
+    .pl(EDGE)
+    .pr(EDGE)
     .items_center()
     .child(markEl(b.mark, t))
     .child(div().font_semibold().child(b.text))
@@ -324,9 +333,8 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint): Element {
 
   return v_flex()
     .items_center()
-    .px(32)
-    .py(32)
-    .gap(4)
+    .p(GROUP_GAP)
+    .gap(LINE_GAP)
     .child(div().font_semibold().text_center().whitespace_normal().child(b.title))
     .when(b.hint !== null, e =>
       e.child(
@@ -342,14 +350,12 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint): Element {
         h_flex()
           .flex_wrap()
           .justify_center()
-          .gap(BUTTON_GAP)
-          .pt(8)
+          .gap(CONTROL_GAP)
+          .pt(CONTROL_GAP)
           .children(b.buttons.map(x => buttonEl(x, p))),
       ),
     )
 }
-
-const FOLD_ARROW_GAP = 8
 
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element {
   const { t } = p
@@ -363,8 +369,8 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
   }
   return h_flex()
     .id(`fold ${b.id}`)
-    .pl(SPINE + b.depth * NEST)
-    .pr(EDGE_X)
+    .pl(TEXT_X + b.depth * NEST)
+    .pr(EDGE)
     .py(ROW_PAD_PT)
     .items_center()
     .text_color(t.muted)
@@ -374,7 +380,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     .when(b.kind === 'fold', e =>
       e.child(
         div()
-          .mr(FOLD_ARROW_GAP)
+          .mr(CONTROL_GAP)
           .child(b.kind === 'fold' && b.isOpen ? '▾' : '▸'),
       ),
     )
@@ -382,23 +388,16 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
 }
 
 /**
- * A rule from the spine to the right edge. Between groups and between PRs it sits in the middle of a section's space.
- * A labelled one gives its label room above and below.
+ * A rule from edge to edge, between two groups or two PRs, so the marks of the group below sit inside the break. A
+ * labelled one starts its label where text after a mark starts.
  */
 function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
-  if (b.text === null)
-    return h_flex()
-      .pl(SPINE)
-      .pr(EDGE_X)
-      .pt(GROUP_GAP / 2)
-      .pb(8)
-      .child(ruleLine(t))
+  if (b.text === null) return h_flex().pl(EDGE).pr(EDGE).child(ruleLine(t))
 
   return h_flex()
-    .pl(SPINE)
-    .pr(EDGE_X)
-    .py(12)
-    .gap(8)
+    .pl(TEXT_X)
+    .pr(EDGE)
+    .gap(CONTROL_GAP)
     .items_center()
     .child(div().flex_none().text_color(t.muted).child(b.text))
     .child(ruleLine(t))
@@ -415,9 +414,8 @@ function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
   return h_flex()
     .flex_wrap()
     .items_baseline()
-    .pl(SPINE + b.depth * NEST)
-    .pr(EDGE_X)
-    .py(b.isHead ? 0 : LINE_PAD)
+    .pl(TEXT_X + b.depth * NEST)
+    .pr(EDGE)
     .whitespace_normal()
     .when(b.isStrong, e => e.text_size(HEAD_TEXT).line_height(HEAD_LINE))
     .child(text)
@@ -436,8 +434,8 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'rule') return ruleEl(b, t)
   if (b.kind === 'field')
     return div()
-      .pl(SPINE)
-      .pr(EDGE_X)
+      .pl(TEXT_X)
+      .pr(EDGE)
       .child(fieldEl(b.field, p, 0))
   if (b.kind === 'note') return noteEl(b, t)
   if (b.kind === 'banner')
@@ -448,5 +446,5 @@ export function blockEl(b: Block, p: Paint): Element {
       b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null,
     )
 
-  return div().h(8)
+  return div()
 }

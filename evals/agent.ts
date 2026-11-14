@@ -32,6 +32,7 @@ import {
   CODEX_ISOLATION_CONFIG,
   CODEX_WEB_SEARCH_CONFIG,
   codexEnv,
+  codexResourceCall,
 } from './codex-isolation'
 import {
   earlierRuns,
@@ -276,7 +277,7 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
   return {
     reply,
     calls: s.calls(),
-    error: r.code === 0 ? null : `codex exited ${r.code}: ${r.stderr.slice(0, 300)}`,
+    error: r.code === 0 ? codexResourceCall(events) : `codex exited ${r.code}: ${r.stderr.slice(0, 300)}`,
     model: null,
     raw: r.stdout,
   }
@@ -403,8 +404,13 @@ function job(agent: Agent, c: Case, n: number) {
   return { agent, name: c.name, run: n, requested: REQUESTED[agent] }
 }
 
+const casesFor = (a: Agent) => cases.filter(c => c.agents?.includes(a) ?? true)
+
 async function assertOnlyCodexProbe() {
   if (!agents.includes('codex')) return
+  const configCase = casesFor('codex').find(c => Object.keys(c.files ?? {}).some(f => f.split('/')[0] === '.codex'))
+  if (configCase)
+    throw new IsolationError(`${configCase.name} writes a .codex folder, which the preflight does not see`)
   const probe = sandbox({ name: 'preflight', about: '', prompt: '', checks: [] }, 'codex')
   try {
     await assertCodexOffersOnlyProbe(codexCli, probe.work, codexEnv(probe.dir, codexHome(probe)))
@@ -456,7 +462,6 @@ const preflight = await Promise.all([assertOnlyCodexProbe(), assertOnlyOmpProbeS
   () => null,
   (e: unknown) => `preflight: ${String(e)}`,
 )
-const casesFor = (a: Agent) => cases.filter(c => c.agents?.includes(a) ?? true)
 const jobs: Job<Result>[] = agents.flatMap(a =>
   casesFor(a).flatMap(c =>
     Array.from({ length: runs }, (_, n) => ({

@@ -36,12 +36,15 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { afterSend, isFieldDrawn, keyMove, withSelected, withTab } from './keys'
+import { afterSend, isFieldDrawn, keyMove, tabUndo, withSelected, withTab } from './keys'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
-import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
-import { END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
+import { timeLeftDraws } from './paint-timer'
+import type { TimeLeft } from './paint-timer'
+import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { spacedEls } from './paint-space'
+import { EDGE, END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PRESS_LABEL } from './press-file'
 import { PressQueue, claimedPath } from './press-queue'
@@ -120,6 +123,7 @@ export default class Inbox extends View {
   queue = new PressQueue(queueIo)
   tracks: Tracks = new Map()
   tracksOf = ''
+  timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   focus: FocusHandle | null = null
   /** The next read for the presses still out, and the next draw for a fold or a move. */
   outTimer: Timer | null = null
@@ -330,7 +334,8 @@ export default class Inbox extends View {
   }
 
   onKey(key: string, tabs: TabCell[], blocks: Block[], cx: Context): void {
-    const move = keyMove(key, tabs, blocks, this.ui.typing)
+    const undo = this.view ? tabUndo(this.view, this.ui.tab, this.shownSince) : null
+    const move = keyMove(key, tabs, blocks, this.ui.typing, undo)
     if (move === null) return
     if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
     else if (move.is === 'tab') this.ui = withTab(this.ui, move.tab)
@@ -370,6 +375,8 @@ export default class Inbox extends View {
         cx.notify()
       },
       motion: new Map(),
+      now,
+      timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
       isNarrow: this.isNarrow,
     }
@@ -387,7 +394,10 @@ export default class Inbox extends View {
         this.isNarrow = isNarrow
         cx.notify()
       })
-    if (screen.is === 'message') return root.child(messageEl(screen.message, t))
+    if (screen.is === 'message') {
+      this.timeLeft = new Map()
+      return root.child(messageEl(screen.message, t))
+    }
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
@@ -396,7 +406,11 @@ export default class Inbox extends View {
     this.tracksOf = tracksOf
     paint.motion = moved.motion
     const isStarting = [...moved.motion.values()].some(m => m.isStart)
-    const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, screen.foldAt].filter(at => at !== null)
+    this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
+    paint.timeLeft = this.timeLeft
+    const isTimerStarting = [...this.timeLeft.values()].some(l => l.is === 'emptying' && !l.isStarted)
+    const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt].filter(at => at !== null)
     if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
     const focus = this.focus
 
@@ -404,7 +418,7 @@ export default class Inbox extends View {
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
       .child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))
-      .children(screen.banners.map(b => bannerEl(b, t)))
+      .children(screen.banners.map(b => bannerEl(b, t).mt(EDGE)))
       .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t)))
       .child(
         div()
@@ -417,15 +431,17 @@ export default class Inbox extends View {
               .absolute()
               .inset_0()
               .overflow_y_scroll()
-              .pt(8)
+              .pt(EDGE)
               .pb(END_SPACE)
               .on_click((_e, _cx) => {
                 const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null
                 if (field) field.state.focus()
                 else this.focus?.focus()
               })
-              .children(moved.blocks.map(b => blockEl(b, paint))),
+              .children(spacedEls(moved.blocks, b => blockEl(b, paint))),
           )
+          .child(scrollFadeEl(t, 'top'))
+          .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
   }

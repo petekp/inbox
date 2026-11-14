@@ -155,7 +155,6 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
   const heading: Block = {
     kind: 'heading',
     id: 'goal heading',
-    depth: 0,
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: null,
