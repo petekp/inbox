@@ -7,8 +7,16 @@ import type { SessionView } from '../../hooks/session-view'
 import type { Holds } from '../../hooks/timing'
 import type { LocalResult, RowNote } from '../../types'
 import type { LastPress } from './files'
-import { nextOutCheckAt, notAppliedLine, outAction, rowSignature, settleOuts } from './out'
-import type { Out, RowLine } from './out'
+import {
+  isSentConfirmed,
+  lastActionKey,
+  nextOutCheckAt,
+  notAppliedLine,
+  outAction,
+  rowSignature,
+  settleOuts,
+} from './out'
+import type { Out, RowLine, SentText } from './out'
 import { newPressId, pressFileText, pressPath } from './press-file'
 import { firstError, isRunHere, pendingOf } from './run-here'
 import type { HereEffect } from './run-here'
@@ -47,11 +55,15 @@ type Sent =
 /** Where a press file goes when the look takes it back: a name no host lists, since hosts read only `.json` names. */
 export const claimedPath = (path: string) => `${path}.withdrawn`
 
-/** The presses the look has out for one session, and the notes and lines the ended ones leave on their rows. */
+/**
+ * The presses the look has out for one session, and the notes and lines the ended ones leave on their rows.
+ * `sentTexts` are the replies and goals it sent whose host has not yet answered, which can be after their press ends.
+ */
 export class PressQueue {
   outs: Out[] = []
   notes: Record<string, RowNote> = {}
   lines: Record<string, RowLine> = {}
+  sentTexts: SentText[] = []
 
   constructor(private readonly io: QueueIo) {}
 
@@ -92,6 +104,11 @@ export class PressQueue {
       isTaken: false,
     }
     this.outs = [...this.outs, out]
+    if ('id' in press && press.action === 'type')
+      this.sentTexts = [
+        ...this.sentTexts,
+        { pressId, rowId, text: press.text, lastBefore: lastActionKey(target.view, rowId) },
+      ]
     delete this.lines[rowId]
     delete this.notes[rowId]
 
@@ -117,6 +134,7 @@ export class PressQueue {
     const failed = await this.io.write(out.path, text)
     if (failed !== null) {
       this.outs = this.outs.filter(o => o !== out)
+      this.forget(out)
       this.lines[out.rowId] = { text: `Not applied: ${failed}`, tone: 'error' }
       return
     }
@@ -125,13 +143,35 @@ export class PressQueue {
     await this.io.wake(target.terminal, out.pressId)
   }
 
+  private forget(out: Out): void {
+    this.sentTexts = this.sentTexts.filter(s => s.pressId !== out.pressId)
+  }
+
+  /** Whether a read can still end a press or answer a sent text. */
+  isAwaiting(): boolean {
+    return this.outs.length > 0 || this.sentTexts.length > 0
+  }
+
+  /** Takes the sent texts a read answers out of `sentTexts`, and gives the confirmed ones. A press no host took waits. */
+  private answerSentTexts(view: SessionView, lastPress: LastPress | null): SentText[] {
+    const isUntaken = (s: SentText) => this.outs.some(o => o.pressId === s.pressId && !o.isTaken)
+    const answers = this.sentTexts.map(sent => ({
+      sent,
+      isConfirmed: isUntaken(sent) ? null : isSentConfirmed(sent, view, lastPress),
+    }))
+    this.sentTexts = answers.flatMap(a => (a.isConfirmed === null ? [a.sent] : []))
+
+    return answers.flatMap(a => (a.isConfirmed ? [a.sent] : []))
+  }
+
   /**
    * Ends the presses a read of the session answers, as `settleOuts` says, after checking which written files a host
    * took. A press past its give-up time that no host took is taken back first, so it cannot apply later. When a host
-   * took it in the meantime, it waits again as taken.
+   * took it in the meantime, it waits again as taken. Returns the sent texts the read shows confirmed.
    */
-  async settle(view: SessionView, lastPress: LastPress | null, agent: string): Promise<void> {
+  async settle(view: SessionView, lastPress: LastPress | null, agent: string): Promise<SentText[]> {
     for (const out of this.outs) if (out.isWritten) out.isTaken = await this.io.isGone(out.path)
+    const confirmed = this.answerSentTexts(view, lastPress)
     const now = this.io.now()
     const settled = settleOuts(this.outs, view, lastPress, now)
     this.outs = settled.outs
@@ -139,6 +179,7 @@ export class PressQueue {
     this.lines = { ...this.lines, ...settled.lines }
     for (const out of settled.toClaim) {
       if (await this.io.claim(out.path)) {
+        this.forget(out)
         this.lines[out.rowId] = notAppliedLine(out, agent)
         continue
       }
@@ -146,6 +187,8 @@ export class PressQueue {
       out.waitingSince = this.io.now()
       this.outs = [...this.outs, out]
     }
+
+    return confirmed
   }
 
   nextCheckAt(): number | null {

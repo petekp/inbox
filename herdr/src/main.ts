@@ -36,11 +36,12 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { afterSend, isFieldDrawn, keyMove, tabUndo, withSelected, withTab } from './keys'
+import { afterSend, isFieldDrawn, keyMove, tabUndo, withSelected, withTab, withoutConfirmed } from './keys'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './paint-timer'
+import type { SentText } from './out'
 import type { TimeLeft } from './paint-timer'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
 import { spacedEls } from './paint-space'
@@ -117,6 +118,8 @@ export default class Inbox extends View {
   isHelpShown = false
   isNarrow = false
   drafts: Record<string, Draft> = {}
+  /** Sent texts the host confirmed whose drafts wait for their open field to close. */
+  confirmed: SentText[] = []
   input: { rowId: string; state: InputState } | null = null
   discarded: Record<string, number> = {}
   listInput: ListInput | null = null
@@ -178,12 +181,17 @@ export default class Inbox extends View {
     })
   }
 
-  /** Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. */
+  /**
+   * Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. A
+   * sent reply's draft goes once the host confirms its press.
+   */
   async settle(cx: Context): Promise<void> {
-    if (this.read?.is !== 'read' || this.queue.outs.length === 0) return
+    if (this.read?.is !== 'read' || !this.queue.isAwaiting()) return
     const now = Date.now()
     const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.queue.notes)
-    await this.queue.settle(view, this.read.lastPress, this.read.envelope.agent)
+    const queue = this.queue
+    const confirmed = await queue.settle(view, this.read.lastPress, this.read.envelope.agent)
+    if (queue === this.queue) this.dropConfirmed([...this.confirmed, ...confirmed])
     this.checkOutsAt(this.queue.nextCheckAt(), cx)
   }
 
@@ -211,6 +219,7 @@ export default class Inbox extends View {
     this.ui = freshUi(this.ui.tab)
     this.shownSince = Date.now()
     this.drafts = {}
+    this.confirmed = []
     this.input?.state.release()
     this.input = null
     this.discarded = {}
@@ -235,6 +244,13 @@ export default class Inbox extends View {
     this.input.state.release()
     this.input = null
     this.focus?.focus()
+    this.dropConfirmed(this.confirmed)
+  }
+
+  dropConfirmed(confirmed: SentText[]): void {
+    const next = withoutConfirmed(this.drafts, confirmed, this.ui.typing, this.queue.sentTexts)
+    this.drafts = next.drafts
+    this.confirmed = next.waiting
   }
 
   /** Opens a row's field, or the goal's, keeping its draft. */
@@ -258,19 +274,18 @@ export default class Inbox extends View {
     this.input = null
     this.ui.typing = null
     this.focus?.focus()
+    this.dropConfirmed(this.confirmed)
     if (isDiscard && this.sessionId) this.load(this.sessionId, cx)
   }
 
-  /** Sends a field's text. A refused send keeps the field and its draft, and its row says why. */
+  /** Sends a field's text. A refused send keeps the field open, and its row says why. Either keeps the draft. */
   submit(rowId: string, cx: Context): void {
     const text = this.input?.state.value().trim() ?? ''
     if (text === '') return
     const isGoal = rowId === GOAL_KEYS_ID
     const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send
     const isSent = this.send({ action: 'type', id: rowId, text }, [], label, cx, isGoal ? undefined : text)
-    const next = afterSend(this.ui, this.drafts, rowId, isSent)
-    this.ui = next.ui
-    this.drafts = next.drafts
+    this.ui = afterSend(this.ui, rowId, isSent)
     this.closeStaleField()
   }
 

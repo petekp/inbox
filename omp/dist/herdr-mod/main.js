@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T05:11:34.472Z. 198013 characters follow.
+// Built at 2026-11-14T05:32:26.571Z. 200488 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1363,6 +1363,9 @@ function isHeldSend(last) {
 var STALE_TEXT = "This changed before your press. Nothing was sent.";
 function noteText() {
   return STALE_TEXT;
+}
+function isPressConfirmed(outcome) {
+  return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
 }
 
 // ../hooks/status-goal-page.ts
@@ -4058,11 +4061,15 @@ var withSelected = (ui, id) => ({
 });
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
-function afterSend(ui, drafts, rowId, isSent) {
-  if (!isSent)
-    return { ui, drafts };
-  const kept = Object.fromEntries(Object.entries(drafts).filter(([id]) => id !== rowId));
-  return { ui: { ...ui, typing: ui.typing === rowId ? null : ui.typing }, drafts: kept };
+var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null } : ui;
+function withoutConfirmed(drafts, confirmed, typing, pending) {
+  const current = confirmed.filter((c) => !pending.some((p) => p.rowId === c.rowId && p.pressId > c.pressId));
+  const done = current.filter((c) => c.rowId !== typing);
+  const isSentDraft = (id, d) => done.some((c) => c.rowId === id && c.text === d.text.trim());
+  return {
+    drafts: Object.fromEntries(Object.entries(drafts).filter(([id, d]) => !isSentDraft(id, d))),
+    waiting: current.filter((c) => c.rowId === typing)
+  };
 }
 
 // ../hooks/row-motion.ts
@@ -4518,6 +4525,20 @@ function settleOuts(outs, view, lastPress, now) {
   }
   return settled;
 }
+var lastActionKey = (view, rowId) => JSON.stringify(view.lastActions[rowId] ?? null);
+function isSentConfirmed(sent, view, lastPress) {
+  const isNamed = lastPress?.id === sent.pressId;
+  const isPassed = lastPress !== null && lastPress.id > sent.pressId;
+  if (!isNamed && !isPassed)
+    return null;
+  const delivery = view.lastActions[sent.rowId]?.delivery;
+  const isChanged = lastActionKey(view, sent.rowId) !== sent.lastBefore;
+  return isChanged && isPressConfirmed({
+    error: delivery?.state === "failed" ? delivery.reason : null,
+    note: isNamed && lastPress?.outcome === "stale" ? "stale" : null,
+    isUnconfirmed: delivery?.state === "unconfirmed"
+  });
+}
 function nextOutCheckAt(outs, now) {
   const times = outs.flatMap((out) => out.waitingSince === null ? [] : [out.waitingSince + REREAD_AFTER_MS, out.waitingSince + GIVE_UP_MS]);
   const later = times.filter((at) => at > now);
@@ -4579,6 +4600,7 @@ class PressQueue {
   outs = [];
   notes = {};
   lines = {};
+  sentTexts = [];
   constructor(io) {
     this.io = io;
   }
@@ -4610,6 +4632,11 @@ class PressQueue {
       isTaken: false
     };
     this.outs = [...this.outs, out];
+    if ("id" in press && press.action === "type")
+      this.sentTexts = [
+        ...this.sentTexts,
+        { pressId, rowId, text: press.text, lastBefore: lastActionKey(target.view, rowId) }
+      ];
     delete this.lines[rowId];
     delete this.notes[rowId];
     return { is: "sent", finish: (runHere, ran) => this.finish(out, now, target, press, effects, runHere, ran) };
@@ -4625,6 +4652,7 @@ class PressQueue {
     const failed = await this.io.write(out.path, text);
     if (failed !== null) {
       this.outs = this.outs.filter((o) => o !== out);
+      this.forget(out);
       this.lines[out.rowId] = { text: `Not applied: ${failed}`, tone: "error" };
       return;
     }
@@ -4632,10 +4660,26 @@ class PressQueue {
     out.waitingSince = this.io.now();
     await this.io.wake(target.terminal, out.pressId);
   }
+  forget(out) {
+    this.sentTexts = this.sentTexts.filter((s) => s.pressId !== out.pressId);
+  }
+  isAwaiting() {
+    return this.outs.length > 0 || this.sentTexts.length > 0;
+  }
+  answerSentTexts(view, lastPress) {
+    const isUntaken = (s) => this.outs.some((o) => o.pressId === s.pressId && !o.isTaken);
+    const answers = this.sentTexts.map((sent) => ({
+      sent,
+      isConfirmed: isUntaken(sent) ? null : isSentConfirmed(sent, view, lastPress)
+    }));
+    this.sentTexts = answers.flatMap((a) => a.isConfirmed === null ? [a.sent] : []);
+    return answers.flatMap((a) => a.isConfirmed ? [a.sent] : []);
+  }
   async settle(view, lastPress, agent) {
     for (const out of this.outs)
       if (out.isWritten)
         out.isTaken = await this.io.isGone(out.path);
+    const confirmed = this.answerSentTexts(view, lastPress);
     const now = this.io.now();
     const settled = settleOuts(this.outs, view, lastPress, now);
     this.outs = settled.outs;
@@ -4643,6 +4687,7 @@ class PressQueue {
     this.lines = { ...this.lines, ...settled.lines };
     for (const out of settled.toClaim) {
       if (await this.io.claim(out.path)) {
+        this.forget(out);
         this.lines[out.rowId] = notAppliedLine(out, agent);
         continue;
       }
@@ -4650,6 +4695,7 @@ class PressQueue {
       out.waitingSince = this.io.now();
       this.outs = [...this.outs, out];
     }
+    return confirmed;
   }
   nextCheckAt() {
     return nextOutCheckAt(this.outs, this.io.now());
@@ -4766,6 +4812,7 @@ class Inbox extends View {
   isHelpShown = false;
   isNarrow = false;
   drafts = {};
+  confirmed = [];
   input = null;
   discarded = {};
   listInput = null;
@@ -4822,11 +4869,14 @@ class Inbox extends View {
     });
   }
   async settle(cx) {
-    if (this.read?.is !== "read" || this.queue.outs.length === 0)
+    if (this.read?.is !== "read" || !this.queue.isAwaiting())
       return;
     const now = Date.now();
     const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.queue.notes);
-    await this.queue.settle(view, this.read.lastPress, this.read.envelope.agent);
+    const queue = this.queue;
+    const confirmed = await queue.settle(view, this.read.lastPress, this.read.envelope.agent);
+    if (queue === this.queue)
+      this.dropConfirmed([...this.confirmed, ...confirmed]);
     this.checkOutsAt(this.queue.nextCheckAt(), cx);
   }
   checkOutsAt(at, cx) {
@@ -4851,6 +4901,7 @@ class Inbox extends View {
     this.ui = freshUi(this.ui.tab);
     this.shownSince = Date.now();
     this.drafts = {};
+    this.confirmed = [];
     this.input?.state.release();
     this.input = null;
     this.discarded = {};
@@ -4880,6 +4931,12 @@ class Inbox extends View {
     this.input.state.release();
     this.input = null;
     this.focus?.focus();
+    this.dropConfirmed(this.confirmed);
+  }
+  dropConfirmed(confirmed) {
+    const next = withoutConfirmed(this.drafts, confirmed, this.ui.typing, this.queue.sentTexts);
+    this.drafts = next.drafts;
+    this.confirmed = next.waiting;
   }
   type(does) {
     const draft = this.drafts[does.rowId] ??= { text: does.text, since: Date.now() };
@@ -4900,6 +4957,7 @@ class Inbox extends View {
     this.input = null;
     this.ui.typing = null;
     this.focus?.focus();
+    this.dropConfirmed(this.confirmed);
     if (isDiscard && this.sessionId)
       this.load(this.sessionId, cx);
   }
@@ -4910,9 +4968,7 @@ class Inbox extends View {
     const isGoal = rowId === GOAL_KEYS_ID;
     const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send;
     const isSent = this.send({ action: "type", id: rowId, text }, [], label, cx, isGoal ? undefined : text);
-    const next = afterSend(this.ui, this.drafts, rowId, isSent);
-    this.ui = next.ui;
-    this.drafts = next.drafts;
+    this.ui = afterSend(this.ui, rowId, isSent);
     this.closeStaleField();
   }
   send(press, effects, label, cx, reply) {

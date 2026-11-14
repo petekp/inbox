@@ -8,6 +8,7 @@ import type { ShownTab } from '../../hooks/tabs'
 import type { Draft } from '../../types'
 import type { Block, Button, RowBlock } from './blocks'
 import type { LookUi, TabCell } from './draw'
+import type { SentText } from './out'
 
 /**
  * What a key does in the look: switch tabs, select a row, press a button, give focus back to the terminal, or close
@@ -117,10 +118,27 @@ export const isFieldDrawn = (ui: LookUi, isHelpShown: boolean): boolean => ui.ty
 /** Switching tabs closes the open text field. Its draft is kept. */
 export const withTab = (ui: LookUi, tab: ShownTab): LookUi => ({ ...ui, tab, selected: null, typing: null })
 
-/** A field's text that went as a press closes the field and drops its draft. A refused one keeps both. */
-export function afterSend(ui: LookUi, drafts: Record<string, Draft>, rowId: string, isSent: boolean) {
-  if (!isSent) return { ui, drafts }
-  const kept = Object.fromEntries(Object.entries(drafts).filter(([id]) => id !== rowId))
+/** A field's text that went as a press closes the field. A refused one keeps it open. Either keeps the draft. */
+export const afterSend = (ui: LookUi, rowId: string, isSent: boolean): LookUi =>
+  isSent && ui.typing === rowId ? { ...ui, typing: null } : ui
 
-  return { ui: { ...ui, typing: ui.typing === rowId ? null : ui.typing }, drafts: kept }
+/**
+ * The drafts without those whose sent text the host confirmed, as the other looks delete a sent reply's draft, and
+ * the confirmations still `waiting` for their row's open field to close. A draft whose words changed after the send
+ * stays. A later send on the row, still `pending`, replaces an earlier one's confirmation.
+ */
+export function withoutConfirmed(
+  drafts: Record<string, Draft>,
+  confirmed: readonly SentText[],
+  typing: string | null,
+  pending: readonly SentText[],
+): { drafts: Record<string, Draft>; waiting: SentText[] } {
+  const current = confirmed.filter(c => !pending.some(p => p.rowId === c.rowId && p.pressId > c.pressId))
+  const done = current.filter(c => c.rowId !== typing)
+  const isSentDraft = (id: string, d: Draft) => done.some(c => c.rowId === id && c.text === d.text.trim())
+
+  return {
+    drafts: Object.fromEntries(Object.entries(drafts).filter(([id, d]) => !isSentDraft(id, d))),
+    waiting: current.filter(c => c.rowId === typing),
+  }
 }
