@@ -234,7 +234,6 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
     {
       kind: 'heading',
       id: `group ${g.kind}`,
-      depth: 0,
       text: g.title,
       count: count > 0 ? count : null,
       mark: g.mark,

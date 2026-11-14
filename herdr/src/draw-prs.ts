@@ -88,7 +88,7 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
   return {
     kind: 'row',
     id,
-    depth: 1,
+    depth: 0,
     mark: markOf(text.mark),
     title: text.title,
     age: t.at === null ? null : shortAgo(screen.now - t.at),
@@ -113,7 +113,7 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
   return {
     kind: 'row',
     id,
-    depth: 1,
+    depth: 0,
     mark: markOf(text.mark),
     title: text.lead ? `${text.lead} / ${text.title}` : text.title,
     age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
@@ -182,7 +182,6 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
           {
             kind: 'heading',
             id: `${pr.ref} ${key}`,
-            depth: 1,
             text: title,
             count: rows.length,
             mark: null,
@@ -280,7 +279,7 @@ function clearLine(screen: LookScreen): Block[] {
     : [{ kind: 'line', id: CLEAR_FINISHED_ID, text: null, under: null, buttons, feedback: null }]
 }
 
-/** The rule that separates two PRs, from the spine, in the middle of a section's space. */
+/** The rule that separates two PRs, in the middle of a section's space. */
 const ruleBetween = (ref: string): Block => ({ kind: 'rule', id: `rule ${ref}`, text: null })
 
 /** The first row the PRs tab can open, which it opens while the person has opened none of its rows. */

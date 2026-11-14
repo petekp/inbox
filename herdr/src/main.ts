@@ -42,8 +42,9 @@ import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './paint-timer'
 import type { TimeLeft } from './paint-timer'
-import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
-import { END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
+import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { spacedEls } from './paint-space'
+import { EDGE, END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PRESS_LABEL } from './press-file'
 import { PressQueue, claimedPath } from './press-queue'
@@ -417,7 +418,7 @@ export default class Inbox extends View {
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
       .child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))
-      .children(screen.banners.map(b => bannerEl(b, t)))
+      .children(screen.banners.map(b => bannerEl(b, t).mt(EDGE)))
       .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t)))
       .child(
         div()
@@ -430,15 +431,17 @@ export default class Inbox extends View {
               .absolute()
               .inset_0()
               .overflow_y_scroll()
-              .pt(8)
+              .pt(EDGE)
               .pb(END_SPACE)
               .on_click((_e, _cx) => {
                 const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null
                 if (field) field.state.focus()
                 else this.focus?.focus()
               })
-              .children(moved.blocks.map(b => blockEl(b, paint))),
+              .children(spacedEls(moved.blocks, b => blockEl(b, paint))),
           )
+          .child(scrollFadeEl(t, 'top'))
+          .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
   }

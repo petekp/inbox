@@ -65,7 +65,7 @@ export type Field = { rowId: string; buttons: Button[] }
 export type RowBlock = {
   kind: 'row'
   id: string
-  /** One step in, for a Closed list's lines and the rows under a PR. */
+  /** One step in, for a Closed list's lines. A PR's rows stay at 0: their marks hang at the edge under its title. */
   depth: 0 | 1
   mark: Mark | null
   title: string
@@ -128,12 +128,11 @@ export type LineBlock = {
 export type Block =
   /**
    * A group's title with its count, or with `isLabel` a quiet label over a part, such as the goal's, ruled to its
-   * buttons. `depth` 1 nests it under a PR.
+   * buttons.
    */
   | {
       kind: 'heading'
       id: string
-      depth: 0 | 1
       text: string
       count: number | null
       mark: Mark | null
@@ -151,7 +150,7 @@ export type Block =
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
   /**
-   * A line of text. `isHead` drops its padding above and below, as the Status page's head does, and `isStrong` draws it
+   * A line of text. `isHead` keeps it close to the head's other lines, as the Status page's head does, and `isStrong` draws it
    * as the head's title: the goal, or what the session is for. `count` follows the text, quiet, as the goal's does.
    */
   | {
