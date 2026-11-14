@@ -198,7 +198,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
       e.hover(s => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx)),
     )
     .child(line)
-    .children(lines.map(l => bodyLineEl(l, t)))
+    .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))
     .when(r.buttons.length > 0, e => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving)))
     .when(r.field !== null, e => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div()))
     .when(feedbackUnder !== null, e => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div()))
