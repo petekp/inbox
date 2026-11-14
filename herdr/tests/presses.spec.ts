@@ -1,13 +1,15 @@
 import { expect, test } from 'bun:test'
 
+import type { Delivery } from '../../types'
 import { isLookFile, pressFile } from '../../hooks/herdr-press-file'
 import { prCheckId, prMarkId, prThreadId, splitFollowUps, threadSentIn } from '../../hooks/pr-rows'
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { pendingResult } from '../../hooks/pressed'
 import { demoSession } from '../../hooks/demo'
+import { herdrEnvelope } from '../../hooks/herdr'
 import { sessionView } from '../../hooks/session-view'
-import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
+import { NO_HOLDS, QUEUED_AFTER_MS, SETTLED_MS } from '../../hooks/timing'
 import type { ListInput } from '../../hooks/timing'
 import { button } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
@@ -16,6 +18,8 @@ import { afterSend, keyMove, tabUndo, withSelected, withTab } from '../src/keys'
 import { GIVE_UP_MS, SENDING, drawOuts, notAppliedText, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
+import { readSession } from '../src/files'
+import { screenOf } from '../src/screen'
 import { timeLeftDraws, timeLeftShare } from '../src/paint-timer'
 import { isRunHere, runHere } from '../src/run-here'
 import type { HereIo } from '../src/run-here'
@@ -228,6 +232,52 @@ test('once Undo ends, a row the list holds keeps a hidden Undo that u skips, and
   expect(timeLeftDraws(held.blocks, new Map(), NOW).size).toBe(0)
   const folded = dismissedRows({ d8: at }, at - 1000)
   expect(rowsOf(folded.blocks).find(r => r.id === 'd8')).toBeUndefined()
+})
+
+test('a settled answer keeps its spent Undo’s place until its message has waited for the agent past Undo’s end, and the look draws again then', () => {
+  const at = NOW - SETTLED_MS - 500
+  const s = demoSession(NOW, AGENT)
+  const item = s.ledger.items.find(i => i.id === 'd11')!
+  const ledger = {
+    ...s.ledger,
+    items: s.ledger.items.filter(i => i.id !== 'd11'),
+    closed: [
+      ...s.ledger.closed,
+      { id: 'd11', kind: 'question' as const, ask: item.ask, how: 'answered' as const, outcome: 'Pinch', at, item },
+    ],
+  }
+  const screenAt = (delivery: Delivery, now: number) => {
+    const last = { kind: 'mark' as const, action: 'answer', text: 'Pinch', at, turnsStarted: 14, delivery }
+    const session = { ...s, ledger, lastActions: { ...s.lastActions, d11: last } }
+    const source = { host: 'claude-code' as const, agent: AGENT, sessionId: 's1', terminal: 't1', writtenAt: now }
+    const read = readSession(JSON.stringify(herdrEnvelope(source, session)))
+    const holds = { ...NO_HOLDS, shownSince: at - 1000 }
+    const queue = { outs: [], notes: {}, lines: {} }
+    return screenOf({ is: 'session', terminal: 't1', sessionId: 's1' }, read, uiOn('needsYou'), {
+      now,
+      isNextBuild: true,
+      holds,
+      queue,
+    })
+  }
+  const drawn = (screen: ReturnType<typeof screenAt>) => {
+    const row = screen.is === 'inbox' ? rowsOf(screen.blocks).find(r => r.id === 'd11') : undefined
+    return [row?.settled?.label, row?.buttons.map(b => (b.isHidden ? `hidden ${b.label}` : b.label))]
+  }
+  const queued = { state: 'queued' as const, message: 'Pinch' }
+  const placeEndsAt = at + SETTLED_MS + QUEUED_AFTER_MS
+  const held = screenAt({ state: 'held', message: 'Pinch', until: at + SETTLED_MS, by: null }, NOW)
+  const released = screenAt(queued, NOW)
+  const waiting = screenAt(queued, placeEndsAt)
+  expect([drawn(held), drawn(released), drawn(waiting)]).toEqual([
+    ['Pinch', ['hidden Undo']],
+    ['Queued: Pinch', ['hidden Undo']],
+    ['Queued: Pinch', []],
+  ])
+  expect([
+    released.is === 'inbox' && released.undoPlaceEndsAt,
+    waiting.is === 'inbox' && waiting.undoPlaceEndsAt,
+  ]).toEqual([placeEndsAt, null])
 })
 
 test('u presses a dismissed PR’s Undo, which runs out with the settle window', () => {

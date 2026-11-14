@@ -447,7 +447,7 @@ export default class Inbox extends View {
     paint.timeLeft = this.timeLeft
     const isTimerStarting = [...this.timeLeft.values()].some(l => l.is === 'emptying' && !l.isStarted)
     const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt].filter(at => at !== null)
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt].filter(at => at !== null)
     if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
     const focus = this.focus
 
