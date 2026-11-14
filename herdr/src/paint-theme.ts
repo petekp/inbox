@@ -3,7 +3,7 @@ import type { InputState } from 'gpui-base'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Button, Tone } from './blocks'
 import type { RowMotion } from './motion'
-import type { TimeLeft } from './paint-timer'
+import type { TimeLeft } from './time-left'
 
 type Color = `#${string}`
 
