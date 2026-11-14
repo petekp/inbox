@@ -197,11 +197,19 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .when(r.field !== null, e => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div()))
 }
 
+/**
+ * One part of a line built from parts, such as a PR's status line or a Status line's name and stall. gpui-kit has no
+ * inline span, so each part is an item of a wrapping row. A part that does not fit moves whole to the next line, which
+ * starts at the left edge. A part wider than the line wraps inside it.
+ */
+const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
+
 function statusEl(s: StatusLine, p: Paint): Element {
   const { t } = p
-  const stall = s.stall
-    ? [div().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)]
-    : []
+  const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)
+    .when(s.isBold, e => e.font_semibold())
+    .when(s.isMuted, e => e.text_color(t.muted))
+  const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : []
 
   return v_flex()
     .pl(EDGE + s.depth * NEST)
@@ -210,29 +218,11 @@ function statusEl(s: StatusLine, p: Paint): Element {
       h_flex()
         .items_start()
         .child(markEl(s.mark, t))
-        .child(
-          h_flex()
-            .flex_1()
-            .min_w(0)
-            .flex_wrap()
-            .child(
-              div()
-                .when(s.isBold, e => e.font_semibold())
-                .when(s.isMuted, e => e.text_color(t.muted))
-                .child(s.name),
-            )
-            .children(stall),
-        ),
+        .child(h_flex().flex_1().min_w(0).flex_wrap().child(name).children(stall)),
     )
     .children(s.under.map(l => lineEl(l, t.muted)))
     .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W)))
 }
-
-/**
- * One part of a PR's status line. gpui-kit has no inline span, so each part is an item of a wrapping row. A part that
- * does not fit moves whole to the next line, which starts at the left edge. A part wider than the line wraps inside it.
- */
-const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
 
 /**
  * A PR's title, with its number muted at the line's right end as a row's age is, then where it stands and
@@ -319,7 +309,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
       .pr(EDGE)
       .gap(CONTROL_GAP)
       .items_center()
-      .child(div().text_color(t.muted).child(b.text))
+      .child(statusPartEl(b.text).text_color(t.muted))
       .child(ruleLine(t).min_w(GROUP_GAP))
       .child(buttons)
 
@@ -328,7 +318,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
     .pr(EDGE)
     .items_center()
     .child(markEl(b.mark, t))
-    .child(div().font_semibold().child(b.text))
+    .child(div().min_w(0).whitespace_normal().font_semibold().child(b.text))
     .when(b.count !== null, e => e.child(div().text_color(t.muted).child(`${SEP}${b.count}`)))
     .child(div().flex_1())
     .child(buttons)
@@ -378,7 +368,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     .pl(TEXT_X + b.depth * NEST)
     .pr(EDGE)
     .py(ROW_PAD_PT)
-    .items_center()
+    .items_start()
     .text_color(t.muted)
     .hover(s => s.text_color(t.foreground))
     .accessibility_label(b.text)
@@ -390,7 +380,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
           .child(b.kind === 'fold' && b.isOpen ? '▾' : '▸'),
       ),
     )
-    .child(div().child(b.text))
+    .child(div().min_w(0).whitespace_normal().child(b.text))
 }
 
 /**

@@ -78,6 +78,8 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
     .when(status !== null, e =>
       e.child(
         div()
+          .min_w(0)
+          .whitespace_normal()
           .px(LINE_GAP)
           .text_size(SMALL_TEXT)
           .text_color(t.muted)
