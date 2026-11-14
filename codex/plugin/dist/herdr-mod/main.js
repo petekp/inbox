@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T03:29:16.574Z. 197892 characters follow.
+// Built at 2026-11-14T04:16:37.179Z. 197892 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
