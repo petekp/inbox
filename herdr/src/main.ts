@@ -47,6 +47,8 @@ import {
   withTab,
   withoutConfirmed,
 } from './keys'
+import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
+import type { LinesAbove } from './held-line'
 import { NO_TRACKS, moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
@@ -139,6 +141,7 @@ export default class Inbox extends View {
   /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
   lastWaits: { tab: ShownTab; rows: RowWait[] } = { tab: 'needsYou', rows: [] }
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
+  linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
   /** The next read for the presses still out, and the next draw for a fold or a move. */
   outTimer: Timer | null = null
@@ -438,7 +441,9 @@ export default class Inbox extends View {
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
-    const moved = moveRows(shown, this.tracks, now, tracksOf !== this.tracksOf)
+    const held = holdLinesAbove(shown, tracksOf !== this.tracksOf ? NO_LINES_ABOVE : this.linesAbove)
+    this.linesAbove = held.held
+    const moved = moveRows(held.blocks, this.tracks, now, tracksOf !== this.tracksOf)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion

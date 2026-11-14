@@ -84,6 +84,8 @@ export type RowBlock = {
   buttons: Button[]
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
+  /** The line the row had above its buttons, kept while a press puts its status under them. See `holdLinesAbove`. */
+  heldLine?: { text: string; tone: Tone; isHidden: boolean }
 }
 
 /** A line of the Status page: a subject, a milestone or a child, with its mark, name, stall word and lines under it. */
