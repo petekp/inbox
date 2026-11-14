@@ -8,7 +8,7 @@ import { homedir } from "os";
 import { dirname as dirname2, join as join3 } from "path";
 import { fileURLToPath } from "url";
 // package.json
-var version = "0.3.0";
+var version = "0.3.1";
 
 // ../hooks/gh.ts
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
