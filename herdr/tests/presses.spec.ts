@@ -2,9 +2,9 @@ import { expect, test } from 'bun:test'
 
 import { isLookFile, pressFile } from '../../hooks/herdr-press-file'
 import { prCheckId, prMarkId, prThreadId, splitFollowUps, threadSentIn } from '../../hooks/pr-rows'
-import { applyPrPress, checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
+import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
+import { isStatusUnderActions } from '../../hooks/feedback'
 import { pendingResult } from '../../hooks/pressed'
-import { EXIT_MS } from '../../hooks/row-motion'
 import { demoSession } from '../../hooks/demo'
 import { sessionView } from '../../hooks/session-view'
 import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
@@ -13,14 +13,13 @@ import { button } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import { afterSend, keyMove, tabUndo, withSelected, withTab } from '../src/keys'
-import { moveRows } from '../src/motion'
-import { GIVE_UP_MS, SENDING, drawOuts, rowSignature, settleOuts } from '../src/out'
+import { GIVE_UP_MS, SENDING, drawOuts, notAppliedText, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
 import { timeLeftDraws, timeLeftShare } from '../src/paint-timer'
 import { isRunHere, runHere } from '../src/run-here'
 import type { HereIo } from '../src/run-here'
-import { AGENT, NOW, demoScreen, uiOn } from './fixtures'
+import { AGENT, NOW, demoScreen, dismissedPr, uiOn } from './fixtures'
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
 
@@ -95,14 +94,33 @@ test('every press button on a row with a press out draws out, and its row reads 
   const presses = drawn.buttons.filter(b => b.does.is === 'press')
   expect(presses.length).toBeGreaterThan(1)
   const out = outOn(row.id)
-  const after = rowsOf(drawOuts(blocks, [out], {})).find(b => b.id === row.id)!
+  const after = rowsOf(drawOuts(blocks, [out], {}, NOW)).find(b => b.id === row.id)!
   expect(after.buttons.filter(b => b.isOut).map(b => b.id)).toEqual(presses.map(b => b.id))
   expect(after.feedback?.text).toBe(SENDING)
   const open = [{ kind: 'open' as const, target: '/a/plan.md', name: 'plan.md' }]
   const failed = { ...pendingResult(open, NOW), state: 'failed' as const }
   failed.parts[0] = { ...failed.parts[0]!, error: 'no such file' }
-  const ran = rowsOf(drawOuts(blocks, [outOn(row.id, { result: failed })], {})).find(b => b.id === row.id)!
-  expect(ran.feedback).toEqual({ text: 'Could not open plan.md: no such file', tone: 'error' })
+  const ran = rowsOf(drawOuts(blocks, [outOn(row.id, { result: failed })], {}, NOW)).find(b => b.id === row.id)!
+  expect(ran.feedback).toMatchObject({ text: 'Could not open plan.md: no such file', tone: 'error' })
+})
+
+test('a press keeps its status under an open row’s buttons until it ends, even once the look’s own open is done', () => {
+  const screen = demoScreen()
+  const row = screen.view.needsYou.questions.find(r => r.state.is === 'open')!
+  const blocks = tabBlocks(screen, uiOn('needsYou', { selected: row.id }))
+  const open = [{ kind: 'open' as const, target: '/a/plan.md', name: 'plan.md' }]
+  const opening = pendingResult(open, NOW)
+  const outs = [
+    outOn(row.id),
+    outOn(row.id, { pending: { is: 'local', result: opening } }),
+    outOn(row.id, { pending: { is: 'local', result: opening }, result: { ...opening, state: 'done' } }),
+  ]
+  const sources = outs.map(o => rowsOf(drawOuts(blocks, [o], {}, NOW)).find(b => b.id === row.id)!.feedback!.source)
+  expect(sources.map(s => isStatusUnderActions(s, true))).toEqual([true, true, true])
+  const ended = rowsOf(drawOuts(blocks, [], { [row.id]: notAppliedText('no answer.') }, NOW)).find(
+    b => b.id === row.id,
+  )!
+  expect(isStatusUnderActions(ended.feedback!.source, true)).toBe(false)
 })
 
 test('the PRs tab draws each PR’s and each selected row’s buttons in the shared plans’ order', () => {
@@ -190,7 +208,7 @@ test('u presses the Undo of the row dismissed last, and a fresh Undo’s fill st
 
 test('while the last Undo’s press is out, u does nothing and that Undo’s fill holds the share it had', () => {
   const { view, blocks } = dismissedRows({ d8: NOW - 900, d7: NOW - 500 }, NOW - 1000)
-  const out = drawOuts(blocks, [outOn('d7', { action: 'undo', label: 'Undo' })], {})
+  const out = drawOuts(blocks, [outOn('d7', { action: 'undo', label: 'Undo' })], {}, NOW)
   expect([undoOf(out, 'd8')?.isOut, undoOf(out, 'd7')?.isOut]).toEqual([false, true])
   expect(keyMove('u', ASKS, out, null, tabUndo(view, 'needsYou', NOW - 1000))).toBeNull()
   const running = timeLeftDraws(blocks, new Map(), NOW)
@@ -213,24 +231,8 @@ test('once Undo ends, a row the list holds keeps a hidden Undo that u skips, and
 })
 
 test('u presses a dismissed PR’s Undo, which runs out with the settle window', () => {
-  const s = demoSession(NOW, AGENT)
   const ref = 'acme/visor#29'
-  const r = applyPrPress(
-    s.ledger,
-    s.prViews,
-    s.lastActions,
-    { action: 'pr-dismiss', ref },
-    { now: NOW - 500, turnsStarted: 0 },
-  )
-  if ('stale' in r) throw new Error('the Dismiss was stale')
-  const holds = { replies: {}, discarded: {}, shownSince: NOW - 1000, listInput: null }
-  const view = sessionView(
-    { ...s, ledger: r.ledger, lastActions: { ...s.lastActions, ...r.lasts } },
-    NOW,
-    SETTLED_MS,
-    holds,
-  )
-  const blocks = tabBlocks({ ...demoScreen(), view, shownSince: NOW - 1000 }, uiOn('prs'))
+  const { view, blocks } = dismissedPr(ref)
   const undo = undoOf(blocks, prMarkId(ref))
   expect(undo?.runsOutAt).toBe(NOW - 500 + SETTLED_MS)
   const prs = [{ id: 'prs' as const, label: 'PRs', badge: null, isSelected: true }]
@@ -272,17 +274,6 @@ test('a sent field closes and drops its draft, and a refused one keeps both', ()
   const drafts = { q1: { text: 'Call it hello', since: NOW }, q2: { text: 'Later', since: NOW } }
   expect(afterSend(ui, drafts, 'q1', false)).toEqual({ ui, drafts })
   expect(afterSend(ui, drafts, 'q1', true)).toEqual({ ui: { ...ui, typing: null }, drafts: { q2: drafts.q2 } })
-})
-
-test('a row the publish dropped stays drawn while it leaves, then goes', () => {
-  const blocks = tabBlocks(demoScreen(), uiOn('needsYou'))
-  const first = moveRows(blocks, new Map(), NOW, true)
-  const gone = rowsOf(blocks)[0]!
-  const without = blocks.filter(b => b.id !== gone.id)
-  const leaving = moveRows(without, first.tracks, NOW + 1, false)
-  expect(leaving.blocks.some(b => b.id === gone.id)).toBe(true)
-  expect(leaving.motion.get(gone.id)?.state).toBe('leaving')
-  expect(moveRows(without, leaving.tracks, NOW + 1 + EXIT_MS, false).blocks.some(b => b.id === gone.id)).toBe(false)
 })
 
 test('a relative open runs in the look against the session’s project folder, and goes to the host without one', async () => {

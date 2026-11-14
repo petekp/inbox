@@ -1,5 +1,6 @@
 import type { FoldKind } from '../../types'
 import type { BannerView } from '../../hooks/banners'
+import type { Feedback } from '../../hooks/feedback'
 import type { Effect } from '../../hooks/press-reducer'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
@@ -70,8 +71,8 @@ export type RowBlock = {
   mark: Mark | null
   title: string
   age: string | null
-  /** The row's press status, or a Closed line's outcome. */
-  feedback: { text: string; tone: Tone } | null
+  /** The row's press status, or a Closed line's outcome, with the press result it reads when it has one. */
+  feedback: { text: string; tone: Tone; source: Feedback | null } | null
   /** Shown once the row has closed, until it folds. */
   settled: { label: string; tone: Tone } | null
   isDim: boolean

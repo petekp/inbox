@@ -64,7 +64,7 @@ function prFeedback(screen: LookScreen, id: string): RowBlock['feedback'] {
   if (!f) return null
   const text = hasAge(f) ? `${markedFeedbackText(f, false, LOOK)}${DOT}${shortAgo(now - f.at)}` : feedbackText(f, LOOK)
 
-  return { text, tone: isFailure(f) ? 'error' : 'muted' }
+  return { text, tone: isFailure(f) ? 'error' : 'muted', source: f }
 }
 
 const markOf = (m: PrRowMark): Mark => ({
@@ -92,7 +92,8 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
     mark: markOf(text.mark),
     title: text.title,
     age: t.at === null ? null : shortAgo(screen.now - t.at),
-    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: 'muted' } : null),
+    feedback:
+      prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: 'muted', source: null } : null),
     settled: null,
     isDim: text.mark.isDone,
     isSelectable: text.fold === null,
@@ -117,7 +118,7 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
     mark: markOf(text.mark),
     title: text.lead ? `${text.lead} / ${text.title}` : text.title,
     age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
-    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: 'muted' } : null),
+    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: 'muted', source: null } : null),
     settled: null,
     isDim: false,
     isSelectable: text.fold === null,

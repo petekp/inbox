@@ -41,7 +41,11 @@ test('a press is refused, with the reason on its row, when its row has a press o
   expect(queue.send(target, { action: 'done', id: rowId }, [], 'Done').is).toBe('sent')
   const again = queue.send(target, { action: 'type', id: rowId, text: 'hi' }, [], 'Send', 'hi')
   expect(again.is).toBe('refused')
-  expect(queue.lines[rowId]).toEqual({ text: 'Not sent: the last press on this row has not finished.', tone: 'error' })
+  expect(queue.lines[rowId]).toEqual({
+    text: 'Not sent: the last press on this row has not finished.',
+    tone: 'error',
+    source: { is: 'notSent', reason: 'the last press on this row has not finished.', retry: null },
+  })
   expect(queue.outs.length).toBe(1)
   expect(new PressQueue(fakeIo().io).send(null, { action: 'done', id: rowId }, [], 'Done').is).toBe('refused')
 })

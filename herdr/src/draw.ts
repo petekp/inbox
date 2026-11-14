@@ -21,7 +21,8 @@ import {
   shownOptionDescriptions,
   waitingCount,
 } from '../../hooks/rows'
-import { firstWaiting, rowKeyPlan } from '../../hooks/action-plan'
+import { firstWaiting, rowAfterClose, rowKeyPlan } from '../../hooks/action-plan'
+import type { RowWait } from '../../hooks/action-plan'
 import { stepEffects } from '../../hooks/help-steps'
 import { emptyText, groupEmptyText, tabBarBanners } from '../../hooks/banners'
 import type { BannerView } from '../../hooks/banners'
@@ -174,7 +175,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     mark: markOf(rowResultMark(row)),
     title: rowTitle(row, LOOK),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
-    feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
+    feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
     settled: isSettled
       ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) }
       : null,
@@ -214,7 +215,7 @@ function closedBlock(d: ClosedLine, now: number): RowBlock {
     mark: markOf(d.mark),
     title: d.title,
     age: shortAgo(now - d.at),
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted' },
+    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted', source: null },
     settled: null,
     isDim: true,
     isSelectable: false,
@@ -291,12 +292,24 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
   }))
 }
 
-/** The row the look opens: the one the person selected while it still waits, else the first that waits. */
-function selectedOf(groups: Group[], selected: string | null): string | null {
-  const rows = groups.flatMap(g => g.rows).filter(isWaitingRow)
-  if (selected !== null && rows.some(r => r.id === selected)) return selected
+const waitsOf = (groups: Group[]): RowWait[] =>
+  groups.flatMap(g => g.rows).map(r => ({ id: r.id, isWaiting: isWaitingRow(r) }))
 
-  return firstWaiting(rows.map(r => ({ id: r.id, isWaiting: true })))
+/** The rows a row tab lists, in order, and whether each waits on the person. None on the PRs and Status tabs. */
+export const rowWaits = (screen: LookScreen, tab: ShownTab): RowWait[] =>
+  tab === 'needsYou' || tab === 'findings' ? waitsOf(groupsOf(screen.view, tab, screen.shownSince)) : []
+
+/**
+ * The row the look opens: the one the person selected while it can open. While it is settled, as when its Undo is
+ * out, the row `rowAfterClose` gives. Else the first that waits.
+ */
+function selectedOf(groups: Group[], selected: string | null): string | null {
+  const isSettled = (id: string) => groups.some(g => g.rows.some(r => r.id === id && r.state.is === 'settled'))
+  const waits = waitsOf(groups)
+  if (selected === null || !waits.some(r => r.id === selected)) return firstWaiting(waits)
+  if (!isSettled(selected)) return selected
+
+  return rowAfterClose(waits, selected) ?? firstWaiting(waits)
 }
 
 function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'findings'): Block[] {

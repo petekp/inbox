@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T04:16:59.565Z. 198006 characters follow.
+// Built at 2026-11-14T04:45:14.485Z. 200938 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2033,6 +2033,10 @@ function outAction(last, f) {
 function isAgain(last, action, isOut) {
   return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true);
 }
+function isStatusUnderActions(f, isOpen) {
+  const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
+  return isOpen && (isPressOut(f) || isDoneStillWaiting);
+}
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
@@ -2935,6 +2939,12 @@ function steppedIndex(at, step, count) {
   const from = at < 0 ? step > 0 ? -1 : 0 : at;
   return ((from + step) % count + count) % count;
 }
+function rowAfterClose(rows, closedId) {
+  const at = rows.findIndex((r) => r.id === closedId);
+  if (at < 0)
+    return null;
+  return (rows.slice(at + 1).find((r) => r.isWaiting) ?? rows.slice(0, at).reverse().find((r) => r.isWaiting))?.id ?? null;
+}
 function rowsIn(entries) {
   return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
@@ -3287,7 +3297,7 @@ function prFeedback(screen, id) {
   if (!f)
     return null;
   const text = hasAge(f) ? `${markedFeedbackText(f, false, LOOK)}${DOT}${shortAgo(now - f.at)}` : feedbackText(f, LOOK);
-  return { text, tone: isFailure(f) ? "error" : "muted" };
+  return { text, tone: isFailure(f) ? "error" : "muted", source: f };
 }
 var markOf = (m) => ({
   text: m.text,
@@ -3307,7 +3317,7 @@ function threadRow(screen, pr, t, presses) {
     mark: markOf(text.mark),
     title: text.title,
     age: t.at === null ? null : shortAgo(screen.now - t.at),
-    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: "muted" } : null),
+    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: "muted", source: null } : null),
     settled: null,
     isDim: text.mark.isDone,
     isSelectable: text.fold === null,
@@ -3330,7 +3340,7 @@ function checkRow(screen, pr, c, presses) {
     mark: markOf(text.mark),
     title: text.lead ? `${text.lead} / ${text.title}` : text.title,
     age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
-    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: "muted" } : null),
+    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: "muted", source: null } : null),
     settled: null,
     isDim: false,
     isSelectable: text.fold === null,
@@ -3760,7 +3770,7 @@ function rowBlock(row, ui, selected, screen) {
     mark: markOf3(rowResultMark(row)),
     title: rowTitle(row, LOOK2),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
-    feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
+    feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
     settled: isSettled ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) } : null,
     isDim: isSettled,
     isSelectable: !isSettled,
@@ -3780,7 +3790,7 @@ function closedBlock(d, now) {
     mark: markOf3(d.mark),
     title: d.title,
     age: shortAgo(now - d.at),
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: "muted" },
+    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: "muted", source: null },
     settled: null,
     isDim: true,
     isSelectable: false,
@@ -3854,11 +3864,16 @@ function groupsOf(view, tab, shownSince) {
     closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
   }));
 }
+var waitsOf = (groups) => groups.flatMap((g) => g.rows).map((r) => ({ id: r.id, isWaiting: isWaitingRow(r) }));
+var rowWaits = (screen, tab) => tab === "needsYou" || tab === "findings" ? waitsOf(groupsOf(screen.view, tab, screen.shownSince)) : [];
 function selectedOf(groups, selected) {
-  const rows = groups.flatMap((g) => g.rows).filter(isWaitingRow);
-  if (selected !== null && rows.some((r) => r.id === selected))
+  const isSettled = (id) => groups.some((g) => g.rows.some((r) => r.id === id && r.state.is === "settled"));
+  const waits = waitsOf(groups);
+  if (selected === null || !waits.some((r) => r.id === selected))
+    return firstWaiting(waits);
+  if (!isSettled(selected))
     return selected;
-  return firstWaiting(rows.map((r) => ({ id: r.id, isWaiting: true })));
+  return rowAfterClose(waits, selected) ?? firstWaiting(waits);
 }
 function rowTabBlocks(screen, ui, tab) {
   const groups = groupsOf(screen.view, tab, screen.shownSince);
@@ -4055,6 +4070,15 @@ var withSelected = (ui, id) => ({
   selected: id,
   typing: ui.typing === id ? id : null
 });
+function withClosedSelection(ui, last, now) {
+  const id = ui.selected;
+  const wasWaiting = last.some((r) => r.id === id && r.isWaiting);
+  const isWaiting = now.some((r) => r.id === id && r.isWaiting);
+  if (id === null || !wasWaiting || isWaiting)
+    return ui;
+  const next = rowAfterClose(now, id);
+  return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next);
+}
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
 function afterSend(ui, drafts, rowId, isSent) {
@@ -4132,36 +4156,51 @@ function rest(track, form, target, now) {
 }
 
 // src/motion.ts
+var NO_TRACKS = { rows: new Map, order: [] };
 var targetOf = (r) => r.settled ? "settled" : r.isSelected ? "open" : "closed";
-function moveRows(blocks, tracks, now, isFirst) {
-  const next = new Map;
+function moveRows(blocks, last, now, isFirst) {
+  const was = isFirst ? NO_TRACKS : last;
+  const wasDrawn = new Set(was.order);
+  const rows = new Map;
   const motion = new Map;
-  const add = (row, track, after) => {
-    next.set(row.id, { track, row, after });
+  const add = (row, track) => {
+    rows.set(row.id, { track, row });
     motion.set(row.id, { state: track.state, isStart: track.since === now && isMoving(track.state) });
   };
-  let after = null;
   for (const b of blocks) {
-    if (b.kind === "row") {
-      const track = stepRow2(tracks.get(b.id)?.track, targetOf(b), now, !isFirst && !tracks.has(b.id));
-      if (track)
-        add(b, track, after);
-    }
-    after = b.id;
+    if (b.kind !== "row")
+      continue;
+    const track = stepRow2(was.rows.get(b.id)?.track, targetOf(b), now, !isFirst && !wasDrawn.has(b.id));
+    if (track)
+      add(b, track);
   }
   const shown = [...blocks];
-  for (const [id, was] of tracks) {
-    if (next.has(id))
-      continue;
-    const track = stepRow2(was.track, "gone", now);
+  const isDrawn = new Set(blocks.map((b) => b.id));
+  was.order.forEach((id, i) => {
+    const old = was.rows.get(id);
+    if (!old || isDrawn.has(id) || rows.has(id))
+      return;
+    const track = stepRow2(old.track, "gone", now);
     if (!track)
-      continue;
-    add(was.row, track, was.after);
-    const at = was.after === null ? 0 : shown.findIndex((b) => b.id === was.after) + 1;
-    shown.splice(at > 0 || was.after === null ? at : shown.length, 0, was.row);
+      return;
+    add(old.row, track);
+    shown.splice(placeAfter(shown, was.order.slice(0, i)), 0, old.row);
+  });
+  const ends = [...rows.values()].flatMap((t) => isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : []);
+  return {
+    blocks: shown,
+    tracks: { rows, order: shown.map((b) => b.id) },
+    motion,
+    nextAt: ends.length ? Math.min(...ends) : null
+  };
+}
+function placeAfter(shown, above) {
+  for (let i = above.length - 1;i >= 0; i--) {
+    const at = shown.findIndex((b) => b.id === above[i]);
+    if (at >= 0)
+      return at + 1;
   }
-  const ends = [...next.values()].flatMap((t) => isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : []);
-  return { blocks: shown, tracks: next, motion, nextAt: ends.length ? Math.min(...ends) : null };
+  return 0;
 }
 
 // src/paint-blocks.ts
@@ -4315,7 +4354,7 @@ function fieldEl(f, p, indent, isInert = false) {
 function opacityOf(r, p) {
   const m = p.motion.get(r.id);
   if (m?.state === "leaving")
-    return 0;
+    return m.isStart ? 1 : 0;
   if (m?.state === "entering")
     return m.isStart ? 0 : 1;
   return null;
@@ -4323,14 +4362,16 @@ function opacityOf(r, p) {
 function rowEl(r, p) {
   const { t } = p;
   const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div3().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const hasActions = r.buttons.length > 0 || r.field !== null;
+  const feedbackUnder = r.feedback && isStatusUnderActions(r.feedback.source, hasActions) ? r.feedback : null;
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
-    ...r.feedback ? [r.feedback] : [],
+    ...r.feedback && !feedbackUnder ? [r.feedback] : [],
     ...r.body
   ];
   const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
-  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3()));
+  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3())).when(feedbackUnder !== null, (e) => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div3()));
 }
 var statusPartEl = (text) => div3().min_w(0).max_w_full().whitespace_normal().child(text);
 function statusEl(s, p) {
@@ -4492,10 +4533,25 @@ function rowSignature(view, rowId) {
 }
 var resultLine = (result) => ({
   text: feedbackText({ is: "local", result }, "herdr"),
-  tone: result.state === "failed" ? "error" : "muted"
+  tone: result.state === "failed" ? "error" : "muted",
+  source: { is: "local", result }
 });
-var unconfirmedLine = (out) => out.result ? resultLine(out.result) : { text: deliveryLabel("unconfirmed", out.label, out.reply), tone: "muted" };
-var notAppliedLine = (out, agent) => out.result ? resultLine(out.result) : { text: `Not applied: ${agent}'s inbox did not answer.`, tone: "error" };
+function unconfirmedLine(out, now) {
+  if (out.result)
+    return resultLine(out.result);
+  const label = deliveryLabel("unconfirmed", out.label, out.reply);
+  return { text: label, tone: "muted", source: { is: "unconfirmed", label, at: now } };
+}
+function notSentLine(reason) {
+  const source = { is: "notSent", reason, retry: null };
+  return { text: feedbackText(source, "herdr"), tone: "error", source };
+}
+var notAppliedLine = (out, agent) => out.result ? resultLine(out.result) : notAppliedText(`${agent}'s inbox did not answer.`);
+var notAppliedText = (why) => ({
+  text: `Not applied: ${why}`,
+  tone: "error",
+  source: { is: "notSent", reason: why, retry: null }
+});
 function settleOuts(outs, view, lastPress, now) {
   const settled = { outs: [], notes: {}, lines: {}, toClaim: [] };
   for (const out of outs) {
@@ -4508,11 +4564,11 @@ function settleOuts(outs, view, lastPress, now) {
       continue;
     const isPassed = lastPress !== null && lastPress.id > out.pressId;
     if (out.isWritten && out.isTaken && isPassed)
-      settled.lines[out.rowId] = unconfirmedLine(out);
+      settled.lines[out.rowId] = unconfirmedLine(out, now);
     else if (!out.isWritten || out.waitingSince === null || now - out.waitingSince < GIVE_UP_MS)
       settled.outs.push(out);
     else if (out.isTaken)
-      settled.lines[out.rowId] = unconfirmedLine(out);
+      settled.lines[out.rowId] = unconfirmedLine(out, now);
     else
       settled.toClaim.push(out);
   }
@@ -4524,16 +4580,17 @@ function nextOutCheckAt(outs, now) {
   return later.length ? Math.min(...later) : null;
 }
 var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
-function drawOuts(blocks, outs, lines) {
+function drawOuts(blocks, outs, lines, now) {
   const byRow = new Map(outs.map((o) => [o.rowId, o]));
   const outRows = new Set(byRow.keys());
   const lineOf = (id) => {
     const out = byRow.get(id);
     if (!out)
       return lines[id] ?? null;
+    const source = out.pending ?? { is: "sending", label: SENDING, at: now };
     if (out.result)
-      return resultLine(out.result);
-    return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted" };
+      return { ...resultLine(out.result), source };
+    return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted", source };
   };
   return blocks.map((b) => {
     if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
@@ -4585,7 +4642,7 @@ class PressQueue {
   send(target, press, effects, label, reply) {
     const rowId = pressRowId(press);
     const refuse = (reason) => {
-      this.lines[rowId] = { text: feedbackText({ is: "notSent", reason, retry: null }, "herdr"), tone: "error" };
+      this.lines[rowId] = notSentLine(reason);
       return { is: "refused", reason };
     };
     if (target === null)
@@ -4625,7 +4682,7 @@ class PressQueue {
     const failed = await this.io.write(out.path, text);
     if (failed !== null) {
       this.outs = this.outs.filter((o) => o !== out);
-      this.lines[out.rowId] = { text: `Not applied: ${failed}`, tone: "error" };
+      this.lines[out.rowId] = notAppliedText(failed);
       return;
     }
     out.isWritten = true;
@@ -4709,7 +4766,8 @@ function screenOf(followed, read, ui, o) {
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
-    blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines),
+    blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
+    waits: rowWaits(screen, ui.tab),
     foldAt: nextFoldAt(settled, placing)
   };
 }
@@ -4770,8 +4828,9 @@ class Inbox extends View {
   discarded = {};
   listInput = null;
   queue = new PressQueue(queueIo);
-  tracks = new Map;
+  tracks = NO_TRACKS;
   tracksOf = "";
+  lastWaits = { tab: "needsYou", rows: [] };
   timeLeft = new Map;
   focus = null;
   outTimer = null;
@@ -4951,9 +5010,11 @@ class Inbox extends View {
     const d = b.does;
     if (d.is === "view")
       this.change(d.change);
-    else if (d.is === "press")
+    else if (d.is === "press") {
+      if ("id" in d.press && d.press.action === "undo")
+        this.ui = withSelected(this.ui, d.press.id);
       this.send(d.press, d.effects, b.label, cx);
-    else if (d.is === "type")
+    } else if (d.is === "type")
       this.type(d);
     else if (d.is === "send")
       this.submit(d.rowId, cx);
@@ -4984,12 +5045,19 @@ class Inbox extends View {
     this.track(cx);
     const t = theme();
     const now = Date.now();
-    const screen = screenOf(this.followed, this.read, this.ui, {
+    const screenFor = (ui) => screenOf(this.followed, this.read, ui, {
       now,
       isNextBuild: this.isNextBuild,
       holds: this.holds(now),
       queue: this.queue
     });
+    let screen = screenFor(this.ui);
+    if (screen.is === "inbox" && this.lastWaits.tab === this.ui.tab) {
+      const ui = withClosedSelection(this.ui, this.lastWaits.rows, screen.waits);
+      if (ui !== this.ui)
+        screen = screenFor(this.ui = ui);
+    }
+    this.lastWaits = { tab: this.ui.tab, rows: screen.is === "inbox" ? screen.waits : [] };
     this.view = screen.is === "inbox" ? screen.view : null;
     this.drawTimer?.cancel();
     this.drawTimer = null;
@@ -5022,6 +5090,7 @@ class Inbox extends View {
     });
     if (screen.is === "message") {
       this.timeLeft = new Map;
+      this.tracksOf = "";
       return root.child(messageEl(screen.message, t));
     }
     const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
