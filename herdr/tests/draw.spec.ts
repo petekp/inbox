@@ -4,16 +4,20 @@ import { rowKeyPlan } from '../../hooks/action-plan'
 import { CLEAR_FINISHED_ID } from '../../hooks/pr-rows'
 import { actionLabel } from '../../hooks/rows'
 import type { RowView } from '../../hooks/rows'
+import { demoSession } from '../../hooks/demo'
+import { sessionView } from '../../hooks/session-view'
 import { goalKeyPlan, statusKeyPlan } from '../../hooks/status-keys'
 import { shownTabs } from '../../hooks/tabs'
-import { NO_HOLDS } from '../../hooks/timing'
+import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
+import type { LastAction } from '../../types'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { readSession } from '../src/files'
+import { NO_LINES_ABOVE, holdLinesAbove } from '../src/held-line'
 import { keyMove } from '../src/keys'
 import { screenOf } from '../src/screen'
 import type { Followed } from '../src/follow'
-import { NOW, demoEnvelopeText, demoScreen, finishedScreen, uiOn } from './fixtures'
+import { AGENT, NOW, demoEnvelopeText, demoScreen, finishedScreen, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
   const { keys, more } = rowKeyPlan(row, isAllShown)
@@ -142,4 +146,40 @@ test('the PRs tab draws Clear merged and closed above the first PR, m presses it
   expect(keyMove('m', tabs, onThread, null)).toEqual({ is: 'press', button: line.buttons[0]! })
   const branchOnly = tabBlocks(finishedScreen({ 'acme/visor#31': 'MERGED' }), uiOn('prs'))
   expect(branchOnly.some(b => b.id === CLEAR_FINISHED_ID)).toBe(false)
+})
+
+test('a row keeps its status line above its buttons while the host shows its press under way, until the press ends', () => {
+  const session = demoSession(NOW, AGENT)
+  const earlier: LastAction = {
+    kind: 'handoff',
+    action: 'type',
+    text: 'Send',
+    reply: 'Not yet',
+    at: NOW - 600_000,
+    turnsStarted: 13,
+  }
+  const discuss: LastAction = { kind: 'talk', action: 'discuss', text: 'Discuss', at: NOW - 1000, turnsStarted: 14 }
+  const draws: [LastAction, number][] = [
+    [earlier, 14],
+    [discuss, 14],
+    [discuss, 15],
+  ]
+  let held = NO_LINES_ABOVE
+  const shown = draws.map(([last, applied]) => {
+    const s = {
+      ...session,
+      lastActions: { ...session.lastActions, d23: last },
+      presence: { ...session.presence, turnsStarted: 14, turnsApplied: applied },
+    }
+    const screen = { ...demoScreen(), view: sessionView(s, NOW, SETTLED_MS, NO_HOLDS) }
+    const drawn = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected: 'd23' })), held)
+    held = drawn.held
+    const row = rowsOf(drawn.blocks).find(b => b.id === 'd23')!
+    return [row.feedback?.text, row.heldLine?.text ?? null]
+  })
+  expect(shown).toEqual([
+    ['Still open', null],
+    ['Discussing…', 'Still open'],
+    ['✓ Discussed', null],
+  ])
 })
