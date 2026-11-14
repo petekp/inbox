@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T03:22:18.854Z. 197296 characters follow.
+// Built at 2026-11-14T03:40:13.571Z. 197569 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4331,11 +4331,15 @@ function statusEl(s, p) {
   const stall = s.stall ? [div3().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
   return v_flex2().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(div3().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
 }
+var statusPartEl = (text) => div3().min_w(0).max_w_full().whitespace_normal().child(text);
 function prEl(b, p) {
   const { t } = p;
   const label = b.rank === null ? b.number : `${b.rank.trim()} ${b.number}`;
   const title = h_flex2().items_start().child(div3().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(label)));
-  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(div3().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div3().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
+  const hasReasons = b.unlisted.length > 0;
+  const word = h_flex2().items_start().min_w(0).max_w_full().child(div3().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div3().flex_none().text_color(t.muted).child(SEP)));
+  const reasons = b.unlisted.map((u, i) => statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted));
+  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(word).children(reasons);
   return v_flex2().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p) {
