@@ -10,6 +10,7 @@ import { DOT } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import { applyPrPress } from '../hooks/pr-tab'
 import { MAX_PRS } from '../hooks/pr-fetch'
+import { otherPrsStart } from '../hooks/pr-order'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
 
 const openPr = (number: number): PrView => ({
@@ -43,23 +44,26 @@ test('an order_prs call ranks its PRs above the rest, tracks one the session lac
   expect(order.state.ledger.prs).toEqual(s.ledger.prs)
   const fetched = withFetchedPrs(order.state, { 'acme/app#20': openPr(20) }, null, false, 1)
   const tab = (x: Session) => sessionView(x, at + 2 * 60_000, 1000, NO_HOLDS).prs
-  const ranks = (x: Session) => tab(x).drawn.map(d => [d.pr.number, d.rank])
+  const ranks = (x: Session) => tab(x).drawn.map(d => [d.pr.number, d.isRanked])
 
   expect(ranks(fetched).slice(0, 4)).toEqual([
-    [3, 1],
-    [20, 2],
-    [1, 3],
-    [15, null],
+    [3, true],
+    [20, true],
+    [1, true],
+    [15, false],
   ])
+  expect(otherPrsStart(tab(fetched).drawn)?.pr.number).toBe(15)
+  expect(otherPrsStart(tab(fetched).drawn.slice(0, 3))).toBeNull()
   expect(tab(fetched).drawn).toHaveLength(MAX_PRS + 3)
   expect(tab(fetched).olderText).toBe('1 older PR not shown: #2')
   expect(tab(fetched).order?.title).toBe(`Merge in this order${DOT}set by Claude 2m ago`)
   expect(tab(fetched).order?.why).toBe('#20 waits on #3.')
 
   const merged = withFetchedPrs(fetched, { 'acme/app#3': { ...openPr(3), state: 'MERGED' } }, null, false, 1)
-  expect(ranks(merged).slice(0, 2)).toEqual([
-    [20, 1],
-    [1, 2],
+  expect(ranks(merged).slice(0, 3)).toEqual([
+    [20, true],
+    [1, true],
+    [15, false],
   ])
   expect(ranks(merged).map(([n]) => n)).not.toContain(3)
 
@@ -71,8 +75,8 @@ test('an order_prs call ranks its PRs above the rest, tracks one the session lac
   const dismissed = press(fetched, { action: 'pr-dismiss', ref: 'acme/app#20' })
   expect(dismissed.ledger.prOrder?.refs).toEqual(['acme/app#3', 'acme/app#20', 'acme/app#1'])
   expect(ranks(dismissed).slice(0, 2)).toEqual([
-    [3, 1],
-    [1, 2],
+    [3, true],
+    [1, true],
   ])
   const undone = press(dismissed, { action: 'pr-undo', ref: 'acme/app#20' })
   expect(ranks(undone).slice(0, 3)).toEqual(ranks(fetched).slice(0, 3))
@@ -85,15 +89,17 @@ test('an order_prs call ranks its PRs above the rest, tracks one the session lac
   ).state
   const showing = { ...NO_HOLDS, shownSince: at - 1 }
   const settling = press(onlyRanked, { action: 'pr-dismiss', ref: 'acme/app#20' })
-  expect(sessionView(settling, at + 1000, 60_000, showing).prs.order?.title).toBe(
-    `Review this first${DOT}set by Claude just now`,
-  )
+  const settlingTab = sessionView(settling, at + 1000, 60_000, showing).prs
+  expect(settlingTab.order?.title).toBe(`Review this first${DOT}set by Claude just now`)
+  expect(settlingTab.drawn[0]?.state.is).toBe('settled')
+  expect(otherPrsStart(settlingTab.drawn)).toBe(settlingTab.drawn[1])
 
   const cleared = recorded(CLAUDE_CODE, fetched, 'order_prs', { numbers: [] }, at)
   expect(cleared.state.ledger.prOrder).toBeNull()
   expect(cleared.personLine).toBe('PR order cleared')
   expect(tab(cleared.state).order).toBeNull()
-  expect(ranks(cleared.state).every(([, rank]) => rank === null)).toBe(true)
+  expect(ranks(cleared.state).every(([, isRanked]) => !isRanked)).toBe(true)
+  expect(otherPrsStart(tab(cleared.state).drawn)).toBeNull()
   expect(recorded(CLAUDE_CODE, s, 'order_prs', { numbers: [3] }, at).result).toBe('Not set: give repo as owner/name.')
   const unlabeled = recorded(CLAUDE_CODE, s, 'order_prs', { repo: 'acme/app', numbers: [3], why: 'Smallest.' }, at)
   expect(unlabeled.result).toBe('Not set: give label, what the user does with the order.')

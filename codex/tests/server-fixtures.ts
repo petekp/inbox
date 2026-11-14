@@ -106,7 +106,7 @@ export type PrView = {
     drawn: {
       pr: { ref: string; number: number; threads: unknown[]; error?: string | null }
       state: { is: string; canUndo?: boolean }
-      rank: number | null
+      isRanked: boolean
     }[]
     count: number
     isGhSignedOut: boolean

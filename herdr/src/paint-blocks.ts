@@ -229,21 +229,20 @@ function statusEl(s: StatusLine, p: Paint): Element {
 }
 
 /**
- * A PR's title, with its rank and number muted at the line's right end as a row's age is, then where it stands and
+ * A PR's title, with its number muted at the line's right end as a row's age is, then where it stands and
  * its buttons. In a narrow pane the number leads the status line instead, so the title keeps its width.
  */
 function prEl(b: PrBlock, p: Paint): Element {
   const { t } = p
-  const label = b.rank === null ? b.number : `${b.rank.trim()}\u2002${b.number}`
   const title = h_flex()
     .items_start()
     .child(div().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title))
-    .when(!p.isNarrow, e => e.child(div().flex_none().ml(INSET).text_color(t.muted).child(label)))
+    .when(!p.isNarrow, e => e.child(div().flex_none().ml(INSET).text_color(t.muted).child(b.number)))
   const status = h_flex()
     .flex_wrap()
     .items_start()
     .pt(LINE_GAP)
-    .when(p.isNarrow, e => e.child(div().flex_none().text_color(t.muted).child(`${label}${SEP}`)))
+    .when(p.isNarrow, e => e.child(div().flex_none().text_color(t.muted).child(`${b.number}${SEP}`)))
     .child(div().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text))
     .when(b.unlisted.length > 0, e =>
       e.child(
@@ -438,6 +437,7 @@ export function blockEl(b: Block, p: Paint): Element {
       .pr(EDGE)
       .child(fieldEl(b.field, p, 0))
   if (b.kind === 'note') return noteEl(b, t)
+  if (b.kind === 'caption') return div().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text)
   if (b.kind === 'banner')
     return bannerEl(
       b.banner,

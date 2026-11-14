@@ -101,11 +101,10 @@ export type StatusLine = {
   buttons: Button[]
 }
 
-/** A PR's title line and the line under it: its rank, number and title, where it stands, and its buttons. */
+/** A PR's title line and the line under it: its number and title, where it stands, and its buttons. */
 export type PrBlock = {
   kind: 'pr'
   id: string
-  rank: string | null
   number: string
   title: string
   status: { text: string; tone: Tone }
@@ -168,5 +167,7 @@ export type Block =
   /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
   | { kind: 'rule'; id: string; text: string | null }
   | { kind: 'gap'; id: string }
+  /** A muted line at the edge that names the blocks under it, as Other PRs. */
+  | { kind: 'caption'; id: string; text: string }
   /** A message in the list, as the PRs tab's GitHub notice, with the buttons that act on its problem at its end. */
   | { kind: 'banner'; id: string; banner: BannerView; buttons: Button[]; feedback: { text: string; tone: Tone } | null }

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-13T22:20:01.844Z. 197244 characters follow.
+// Built at 2026-11-14T02:44:19.220Z. 197566 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2601,17 +2601,18 @@ function drawnPrs(prState, links, lastActions, placing) {
     const state = settledPrState(mark, now, settleWindowMs);
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
-  let rank = 0;
-  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+  return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
 }
 
 // ../hooks/pr-order.ts
 var RANK_AGAIN_LABEL = "Rank again";
-function prRankText(rank) {
-  return `${rank}. `;
+var OTHER_PRS_TEXT = "Other PRs";
+function otherPrsStart(drawn) {
+  const at = drawn.findIndex((d) => !d.isRanked);
+  return at > 0 && drawn[at - 1]?.isRanked ? drawn[at] ?? null : null;
 }
 function prOrderText(order, drawn, now) {
-  const isRanking = drawn.some((d) => d.rank !== null);
+  const isRanking = drawn.some((d) => d.isRanked);
   if (!order || !isRanking)
     return null;
   return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
@@ -3401,7 +3402,6 @@ function prBlocks(screen, d, presses, selected) {
     {
       kind: "pr",
       id: prMarkId(pr.ref),
-      rank: d.rank === null ? null : prRankText(d.rank),
       number: `#${pr.number}`,
       title: pr.title,
       status: { text: head, tone: tone ? PR_TONE[tone] : "muted" },
@@ -3481,11 +3481,16 @@ function prTabBlocks(screen, selected) {
   }
   const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
   const notice = ghNoticeOf(gh);
+  const othersStart = otherPrsStart(prs.drawn);
+  const above = (d, n) => d === othersStart ? [
+    { kind: "gap", id: "gap other prs" },
+    { kind: "caption", id: "other prs", text: OTHER_PRS_TEXT }
+  ] : n > 0 ? [ruleBetween(d.pr.ref)] : [];
   const draw = (open) => [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
     ...orderLines(screen),
-    ...prs.drawn.flatMap((d, n) => [...n > 0 ? [ruleBetween(d.pr.ref)] : [], ...prBlocks(screen, d, presses, open)]),
+    ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, open)]),
     ...prs.olderText ? [ruleBetween("older prs"), note("older prs", prs.olderText, "muted")] : []
   ];
   const blocks = draw(selected);
@@ -4333,9 +4338,8 @@ function statusEl(s, p) {
 }
 function prEl(b, p) {
   const { t } = p;
-  const label = b.rank === null ? b.number : `${b.rank.trim()} ${b.number}`;
-  const title = h_flex2().items_start().child(div3().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(label)));
-  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${label}${SEP}`))).child(div3().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div3().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
+  const title = h_flex2().items_start().child(div3().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
+  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div3().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(div3().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(b.unlisted.length > 0, (e) => e.child(div3().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(b.unlisted.map((u) => `${SEP}${u}`).join(""))));
   return v_flex2().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p) {
@@ -4398,6 +4402,8 @@ function blockEl(b, p) {
     return div3().pl(TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0));
   if (b.kind === "note")
     return noteEl(b, t);
+  if (b.kind === "caption")
+    return div3().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p)), b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
   return div3();
@@ -4416,7 +4422,7 @@ function itemGap(prev, b) {
   return INSET;
 }
 function gapBetween(prev, b) {
-  const isLabelled = prev.kind === "heading" || prev.kind === "rule" && prev.text !== null;
+  const isLabelled = prev.kind === "heading" || prev.kind === "caption" || prev.kind === "rule" && prev.text !== null;
   if (isLabelled)
     return HEAD_GAP;
   if (prev.kind === "rule" || b.kind === "rule")

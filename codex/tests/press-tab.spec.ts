@@ -128,7 +128,7 @@ test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothin
 
     return {
       ...v,
-      prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), state: { is: 'open' as const }, rank: null })) },
+      prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), state: { is: 'open' as const }, isRanked: false })) },
     }
   }
   const first = newRows({}, withPrs([]), false)

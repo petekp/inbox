@@ -190,7 +190,7 @@ for (const look of ['terminal', 'desktop'] as const) {
 
 for (const look of ['terminal', 'desktop'] as const) {
   test(
-    `in the ${look} look, an order_prs call draws its order's lines and a rank before each ranked PR, ahead of the rest, a changed PR draws Rank again until the agent ranks again, and a merge, a later link, Dismiss, Undo and a clear each redraw it`,
+    `in the ${look} look, an order_prs call draws its order's lines above the ranked PRs and Other PRs above the rest, with no rank numbers, a changed PR draws Rank again until the agent ranks again, and a merge, a later link, Dismiss, Undo and a clear each redraw it`,
     { timeoutMs: 20_000 },
     async ($, on) => {
       const clock = mock.clock(on, { now: 1_000_000 })
@@ -258,15 +258,15 @@ for (const look of ['terminal', 'desktop'] as const) {
       }
       await clock.settle()
       const heads = async () =>
-        (await pane.findAll({ type: 'Text', text: /^(\d+\. )?#\d+ Work/ })).map(t =>
-          (t.text ?? '').replace(/ Work[\s\S]*/, '').replace(' ', ' '),
+        (await pane.findAll({ type: 'Text', text: /^(#\d+ Work|Other PRs$)/ })).map(t =>
+          (t.text ?? '').replace(/ Work[\s\S]*/, ''),
         )
       const orderLine = () => pane.find({ type: 'Text', text: /^Merge in this order · set by Claude/ })
       const changedLine = () => pane.find({ type: 'Text', text: /^1 PR changed since$/ })
 
       expect(await orderLine()).toBeDefined()
       expect(await pane.find({ type: 'Text', text: '#15 waits on #14.' })).toBeDefined()
-      expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12'])
+      expect(await heads()).toEqual(['#14', '#15', '#12'])
       expect(await changedLine()).toBeUndefined()
 
       failing.add(12)
@@ -295,26 +295,26 @@ for (const look of ['terminal', 'desktop'] as const) {
 
       await reply('Opened https://github.com/acme/greet/pull/16.', 't2')
       await clock.advance(3 * 60_000)
-      expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12', '#16'])
+      expect(await heads()).toEqual(['#14', '#15', '#12', 'Other PRs', '#16'])
 
       states[14] = 'MERGED'
       await clock.advance(3 * 60_000)
-      expect(await heads()).toEqual(['1. #15', '2. #12', '#16'])
+      expect(await heads()).toEqual(['#15', '#12', 'Other PRs', '#16'])
 
       await pane.press({ key: 'dismiss-pr-acme/greet#15' })
       await clock.settle()
       expect(await pane.find({ key: 'settled-pr:acme/greet#15' })).toBeDefined()
-      expect(await heads()).toEqual(['2. #12', '#16'])
+      expect(await heads()).toEqual(['#12', 'Other PRs', '#16'])
       if (look === 'terminal') {
         await pane.press({ key: 'undo-pr:acme/greet#15' })
         await clock.settle()
-        expect(await heads()).toEqual(['1. #15', '2. #12', '#16'])
+        expect(await heads()).toEqual(['#15', '#12', 'Other PRs', '#16'])
       }
 
       await $.tool.call({ tool: 'mcp__inbox__order_prs', numbers: [] })
       await clock.settle()
       expect(await orderLine()).toBeUndefined()
-      expect((await heads()).every(h => h.startsWith('#'))).toBe(true)
+      expect(await heads()).not.toContain('Other PRs')
       expect(await heads()).not.toContain('#15')
     },
   )
