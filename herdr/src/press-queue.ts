@@ -1,4 +1,3 @@
-import { feedbackText } from '../../hooks/feedback'
 import type { Effect } from '../../hooks/press-reducer'
 import { pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
@@ -12,6 +11,8 @@ import {
   lastActionKey,
   nextOutCheckAt,
   notAppliedLine,
+  notAppliedText,
+  notSentLine,
   outAction,
   rowSignature,
   settleOuts,
@@ -81,7 +82,7 @@ export class PressQueue {
   ): Sent {
     const rowId = pressRowId(press)
     const refuse = (reason: string): Sent => {
-      this.lines[rowId] = { text: feedbackText({ is: 'notSent', reason, retry: null }, 'herdr'), tone: 'error' }
+      this.lines[rowId] = notSentLine(reason)
       return { is: 'refused', reason }
     }
     if (target === null) return refuse('this terminal has no inbox to send to.')
@@ -135,7 +136,7 @@ export class PressQueue {
     if (failed !== null) {
       this.outs = this.outs.filter(o => o !== out)
       this.forget(out)
-      this.lines[out.rowId] = { text: `Not applied: ${failed}`, tone: 'error' }
+      this.lines[out.rowId] = notAppliedText(failed)
       return
     }
     out.isWritten = true

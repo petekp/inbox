@@ -43,8 +43,8 @@ export type Out = {
   isTaken: boolean
 }
 
-/** A line the look draws on a row in place of the one the publish gave. */
-export type RowLine = { text: string; tone: 'error' | 'muted' }
+/** A line the look draws on a row in place of the one the publish gave, and the press result it reads. */
+export type RowLine = { text: string; tone: 'error' | 'muted'; source: Feedback }
 
 /** The id the look tells a button's press by: a row press's `actionId`, a PR press's action. */
 export const outAction = (p: RowPress | PrPress): string => ('id' in p ? actionId(p) : p.action)
@@ -62,15 +62,34 @@ export function rowSignature(view: SessionView, rowId: string): string {
 const resultLine = (result: LocalResult): RowLine => ({
   text: feedbackText({ is: 'local', result }, 'herdr'),
   tone: result.state === 'failed' ? 'error' : 'muted',
+  source: { is: 'local', result },
 })
 
 /** A press a host took and never reported, in the words the hosts use for a message they could not confirm. */
-const unconfirmedLine = (out: Out): RowLine =>
-  out.result ? resultLine(out.result) : { text: deliveryLabel('unconfirmed', out.label, out.reply), tone: 'muted' }
+function unconfirmedLine(out: Out, now: number): RowLine {
+  if (out.result) return resultLine(out.result)
+  const label = deliveryLabel('unconfirmed', out.label, out.reply)
+
+  return { text: label, tone: 'muted', source: { is: 'unconfirmed', label, at: now } }
+}
+
+/** A press the look could not send, in the words the hosts use for one. */
+export function notSentLine(reason: string): RowLine {
+  const source: Feedback = { is: 'notSent', reason, retry: null }
+
+  return { text: feedbackText(source, 'herdr'), tone: 'error', source }
+}
 
 /** A press no host took by the give-up time, once the look has taken its file back. */
 export const notAppliedLine = (out: Out, agent: string): RowLine =>
-  out.result ? resultLine(out.result) : { text: `Not applied: ${agent}'s inbox did not answer.`, tone: 'error' }
+  out.result ? resultLine(out.result) : notAppliedText(`${agent}'s inbox did not answer.`)
+
+/** A press that ended without a host applying it. */
+export const notAppliedText = (why: string): RowLine => ({
+  text: `Not applied: ${why}`,
+  tone: 'error',
+  source: { is: 'notSent', reason: why, retry: null },
+})
 
 type Settled = {
   outs: Out[]
@@ -95,9 +114,9 @@ export function settleOuts(outs: readonly Out[], view: SessionView, lastPress: L
     }
     if (rowSignature(view, out.rowId) !== out.before) continue
     const isPassed = lastPress !== null && lastPress.id > out.pressId
-    if (out.isWritten && out.isTaken && isPassed) settled.lines[out.rowId] = unconfirmedLine(out)
+    if (out.isWritten && out.isTaken && isPassed) settled.lines[out.rowId] = unconfirmedLine(out, now)
     else if (!out.isWritten || out.waitingSince === null || now - out.waitingSince < GIVE_UP_MS) settled.outs.push(out)
-    else if (out.isTaken) settled.lines[out.rowId] = unconfirmedLine(out)
+    else if (out.isTaken) settled.lines[out.rowId] = unconfirmedLine(out, now)
     else settled.toClaim.push(out)
   }
 
@@ -149,16 +168,17 @@ const withOutButtons = (buttons: Button[], outRows: ReadonlySet<string>): Button
 /**
  * The blocks with the look's presses drawn: every press button on a row with a press out draws out, and the row's
  * line reads the press under way, how the look's own opens went, or why a press ended unreported, in place of the line
- * the publish gave.
+ * the publish gave. While the press is out, its line reads as the press under way, wherever a look places that.
  */
-export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<string, RowLine>): Block[] {
+export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<string, RowLine>, now: number): Block[] {
   const byRow = new Map(outs.map(o => [o.rowId, o]))
   const outRows = new Set(byRow.keys())
   const lineOf = (id: string): RowLine | null => {
     const out = byRow.get(id)
     if (!out) return lines[id] ?? null
-    if (out.result) return resultLine(out.result)
-    return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted' }
+    const source: Feedback = out.pending ?? { is: 'sending', label: SENDING, at: now }
+    if (out.result) return { ...resultLine(out.result), source }
+    return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted', source }
   }
 
   return blocks.map((b): Block => {

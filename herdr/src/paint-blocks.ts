@@ -1,6 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
+import { isStatusUnderActions } from '../../hooks/feedback'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import { ENTER_MS, EXIT_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
@@ -139,10 +140,13 @@ function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
     .child(buttonsEl(f.buttons, p, 0, isInert))
 }
 
-/** A row fades in as it enters and out as it leaves. The first draw of an entering row is its faded frame. */
+/**
+ * A row fades in as it enters and out as it leaves. gpui-kit's transition animates only a later change of its target,
+ * so a fade's first draw sets the opacity it starts from, and the next draw sets the one it ends at.
+ */
 function opacityOf(r: RowBlock, p: Paint): number | null {
   const m = p.motion.get(r.id)
-  if (m?.state === 'leaving') return 0
+  if (m?.state === 'leaving') return m.isStart ? 1 : 0
   if (m?.state === 'entering') return m.isStart ? 0 : 1
 
   return null
@@ -171,9 +175,11 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .child(r.age ?? ''),
       ),
     )
+  const hasActions = r.buttons.length > 0 || r.field !== null
+  const feedbackUnder = r.feedback && isStatusUnderActions(r.feedback.source, hasActions) ? r.feedback : null
   const lines = [
     ...(r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : []),
-    ...(r.feedback ? [r.feedback] : []),
+    ...(r.feedback && !feedbackUnder ? [r.feedback] : []),
     ...r.body,
   ]
   const opacity = opacityOf(r, p)
@@ -195,6 +201,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .children(lines.map(l => bodyLineEl(l, t)))
     .when(r.buttons.length > 0, e => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving)))
     .when(r.field !== null, e => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div()))
+    .when(feedbackUnder !== null, e => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div()))
 }
 
 /**

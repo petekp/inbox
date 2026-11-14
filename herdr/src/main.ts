@@ -27,6 +27,7 @@ import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 import { SETTLED_MS, heldReplies, keptDiscards, withListInput } from '../../hooks/timing'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
+import type { RowWait } from '../../hooks/action-plan'
 import type { Draft } from '../../types'
 import type { Block, Button, Does, ViewChange } from './blocks'
 import { freshUi } from './draw'
@@ -36,8 +37,17 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { afterSend, isFieldDrawn, keyMove, tabUndo, withSelected, withTab, withoutConfirmed } from './keys'
-import { moveRows } from './motion'
+import {
+  afterSend,
+  isFieldDrawn,
+  keyMove,
+  tabUndo,
+  withClosedSelection,
+  withSelected,
+  withTab,
+  withoutConfirmed,
+} from './keys'
+import { NO_TRACKS, moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './paint-timer'
@@ -124,8 +134,10 @@ export default class Inbox extends View {
   discarded: Record<string, number> = {}
   listInput: ListInput | null = null
   queue = new PressQueue(queueIo)
-  tracks: Tracks = new Map()
+  tracks: Tracks = NO_TRACKS
   tracksOf = ''
+  /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
+  lastWaits: { tab: ShownTab; rows: RowWait[] } = { tab: 'needsYou', rows: [] }
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   focus: FocusHandle | null = null
   /** The next read for the presses still out, and the next draw for a fold or a move. */
@@ -341,8 +353,10 @@ export default class Inbox extends View {
     this.listInput = withListInput(this.listInput, now)
     const d = b.does
     if (d.is === 'view') this.change(d.change)
-    else if (d.is === 'press') this.send(d.press, d.effects, b.label, cx)
-    else if (d.is === 'type') this.type(d)
+    else if (d.is === 'press') {
+      if ('id' in d.press && d.press.action === 'undo') this.ui = withSelected(this.ui, d.press.id)
+      this.send(d.press, d.effects, b.label, cx)
+    } else if (d.is === 'type') this.type(d)
     else if (d.is === 'send') this.submit(d.rowId, cx)
     else if (d.is === 'leave') this.leave(d.rowId, d.isDiscard, cx)
     cx.notify()
@@ -366,12 +380,19 @@ export default class Inbox extends View {
     this.track(cx)
     const t = theme() as Theme
     const now = Date.now()
-    const screen = screenOf(this.followed, this.read, this.ui, {
-      now,
-      isNextBuild: this.isNextBuild,
-      holds: this.holds(now),
-      queue: this.queue,
-    })
+    const screenFor = (ui: LookUi) =>
+      screenOf(this.followed, this.read, ui, {
+        now,
+        isNextBuild: this.isNextBuild,
+        holds: this.holds(now),
+        queue: this.queue,
+      })
+    let screen = screenFor(this.ui)
+    if (screen.is === 'inbox' && this.lastWaits.tab === this.ui.tab) {
+      const ui = withClosedSelection(this.ui, this.lastWaits.rows, screen.waits)
+      if (ui !== this.ui) screen = screenFor((this.ui = ui))
+    }
+    this.lastWaits = { tab: this.ui.tab, rows: screen.is === 'inbox' ? screen.waits : [] }
     this.view = screen.is === 'inbox' ? screen.view : null
     this.drawTimer?.cancel()
     this.drawTimer = null
@@ -411,6 +432,7 @@ export default class Inbox extends View {
       })
     if (screen.is === 'message') {
       this.timeLeft = new Map()
+      this.tracksOf = ''
       return root.child(messageEl(screen.message, t))
     }
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
