@@ -229,6 +229,12 @@ function statusEl(s: StatusLine, p: Paint): Element {
 }
 
 /**
+ * One part of a PR's status line. gpui-kit has no inline span, so each part is an item of a wrapping row. A part that
+ * does not fit moves whole to the next line, which starts at the left edge. A part wider than the line wraps inside it.
+ */
+const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
+
+/**
  * A PR's title, with its rank and number muted at the line's right end as a row's age is, then where it stands and
  * its buttons. In a narrow pane the number leads the status line instead, so the title keeps its width.
  */
@@ -239,22 +245,23 @@ function prEl(b: PrBlock, p: Paint): Element {
     .items_start()
     .child(div().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title))
     .when(!p.isNarrow, e => e.child(div().flex_none().ml(INSET).text_color(t.muted).child(label)))
+  const hasReasons = b.unlisted.length > 0
+  const word = h_flex()
+    .items_start()
+    .min_w(0)
+    .max_w_full()
+    .child(div().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text))
+    .when(hasReasons, e => e.child(div().flex_none().text_color(t.muted).child(SEP)))
+  const reasons = b.unlisted.map((u, i) =>
+    statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted),
+  )
   const status = h_flex()
     .flex_wrap()
     .items_start()
     .pt(LINE_GAP)
     .when(p.isNarrow, e => e.child(div().flex_none().text_color(t.muted).child(`${label}${SEP}`)))
-    .child(div().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text))
-    .when(b.unlisted.length > 0, e =>
-      e.child(
-        div()
-          .flex_1()
-          .min_w(0)
-          .whitespace_normal()
-          .text_color(t.muted)
-          .child(b.unlisted.map(u => `${SEP}${u}`).join('')),
-      ),
-    )
+    .child(word)
+    .children(reasons)
 
   return v_flex()
     .pl(EDGE)
