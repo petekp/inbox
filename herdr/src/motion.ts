@@ -42,7 +42,7 @@ export function moveRows(
   const isDrawn = new Set(blocks.map(b => b.id))
   was.order.forEach((id, i) => {
     const old = was.rows.get(id)
-    if (!old || isDrawn.has(id)) return
+    if (!old || isDrawn.has(id) || rows.has(id)) return
     const track = stepRow(old.track, 'gone', now)
     if (!track) return
     add(old.row, track)

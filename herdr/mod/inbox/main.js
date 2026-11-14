@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T04:33:07.237Z. 199698 characters follow.
+// Built at 2026-11-14T04:42:05.284Z. 200615 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -3858,11 +3858,16 @@ function groupsOf(view, tab, shownSince) {
     closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
   }));
 }
+var waitsOf = (groups) => groups.flatMap((g) => g.rows).map((r) => ({ id: r.id, isWaiting: isWaitingRow(r) }));
+var rowWaits = (screen, tab) => tab === "needsYou" || tab === "findings" ? waitsOf(groupsOf(screen.view, tab, screen.shownSince)) : [];
 function selectedOf(groups, selected) {
-  const waits = groups.flatMap((g) => g.rows).map((r) => ({ id: r.id, isWaiting: isWaitingRow(r) }));
-  if (waits.some((r) => r.id === selected && r.isWaiting))
+  const isSettled = (id) => groups.some((g) => g.rows.some((r) => r.id === id && r.state.is === "settled"));
+  const waits = waitsOf(groups);
+  if (selected === null || !waits.some((r) => r.id === selected))
+    return firstWaiting(waits);
+  if (!isSettled(selected))
     return selected;
-  return (selected === null ? null : rowAfterClose(waits, selected)) ?? firstWaiting(waits);
+  return rowAfterClose(waits, selected) ?? firstWaiting(waits);
 }
 function rowTabBlocks(screen, ui, tab) {
   const groups = groupsOf(screen.view, tab, screen.shownSince);
@@ -4059,11 +4064,14 @@ var withSelected = (ui, id) => ({
   selected: id,
   typing: ui.typing === id ? id : null
 });
-function withDrawnSelection(ui, blocks) {
-  if (ui.selected === null || ui.tab === "prs")
+function withClosedSelection(ui, last, now) {
+  const id = ui.selected;
+  const wasWaiting = last.some((r) => r.id === id && r.isWaiting);
+  const isWaiting = now.some((r) => r.id === id && r.isWaiting);
+  if (id === null || !wasWaiting || isWaiting)
     return ui;
-  const drawn = blocks.find((b) => b.kind === "row" && b.isSelected)?.id ?? null;
-  return drawn === null || drawn === ui.selected ? ui : { ...ui, selected: drawn };
+  const next = rowAfterClose(now, id);
+  return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next);
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
@@ -4164,7 +4172,7 @@ function moveRows(blocks, last, now, isFirst) {
   const isDrawn = new Set(blocks.map((b) => b.id));
   was.order.forEach((id, i) => {
     const old = was.rows.get(id);
-    if (!old || isDrawn.has(id))
+    if (!old || isDrawn.has(id) || rows.has(id))
       return;
     const track = stepRow2(old.track, "gone", now);
     if (!track)
@@ -4572,11 +4580,10 @@ function drawOuts(blocks, outs, lines, now) {
     const out = byRow.get(id);
     if (!out)
       return lines[id] ?? null;
+    const source = out.pending ?? { is: "sending", label: SENDING, at: now };
     if (out.result)
-      return resultLine(out.result);
-    if (out.pending)
-      return { text: feedbackText(out.pending, "herdr"), tone: "muted", source: out.pending };
-    return { text: SENDING, tone: "muted", source: { is: "sending", label: SENDING, at: now } };
+      return { ...resultLine(out.result), source };
+    return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted", source };
   };
   return blocks.map((b) => {
     if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
@@ -4753,6 +4760,7 @@ function screenOf(followed, read, ui, o) {
     ...chrome(screen, ui.tab),
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
+    waits: rowWaits(screen, ui.tab),
     foldAt: nextFoldAt(settled, placing)
   };
 }
@@ -4815,6 +4823,7 @@ class Inbox extends View {
   queue = new PressQueue(queueIo);
   tracks = NO_TRACKS;
   tracksOf = "";
+  lastWaits = { tab: "needsYou", rows: [] };
   timeLeft = new Map;
   focus = null;
   outTimer = null;
@@ -4994,9 +5003,11 @@ class Inbox extends View {
     const d = b.does;
     if (d.is === "view")
       this.change(d.change);
-    else if (d.is === "press")
+    else if (d.is === "press") {
+      if ("id" in d.press && d.press.action === "undo")
+        this.ui = withSelected(this.ui, d.press.id);
       this.send(d.press, d.effects, b.label, cx);
-    else if (d.is === "type")
+    } else if (d.is === "type")
       this.type(d);
     else if (d.is === "send")
       this.submit(d.rowId, cx);
@@ -5027,15 +5038,20 @@ class Inbox extends View {
     this.track(cx);
     const t = theme();
     const now = Date.now();
-    const screen = screenOf(this.followed, this.read, this.ui, {
+    const screenFor = (ui) => screenOf(this.followed, this.read, ui, {
       now,
       isNextBuild: this.isNextBuild,
       holds: this.holds(now),
       queue: this.queue
     });
+    let screen = screenFor(this.ui);
+    if (screen.is === "inbox" && this.lastWaits.tab === this.ui.tab) {
+      const ui = withClosedSelection(this.ui, this.lastWaits.rows, screen.waits);
+      if (ui !== this.ui)
+        screen = screenFor(this.ui = ui);
+    }
+    this.lastWaits = { tab: this.ui.tab, rows: screen.is === "inbox" ? screen.waits : [] };
     this.view = screen.is === "inbox" ? screen.view : null;
-    if (screen.is === "inbox")
-      this.ui = withDrawnSelection(this.ui, screen.blocks);
     this.drawTimer?.cancel();
     this.drawTimer = null;
     const paint = {

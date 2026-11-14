@@ -22,6 +22,7 @@ import {
   waitingCount,
 } from '../../hooks/rows'
 import { firstWaiting, rowAfterClose, rowKeyPlan } from '../../hooks/action-plan'
+import type { RowWait } from '../../hooks/action-plan'
 import { stepEffects } from '../../hooks/help-steps'
 import { emptyText, groupEmptyText, tabBarBanners } from '../../hooks/banners'
 import type { BannerView } from '../../hooks/banners'
@@ -291,15 +292,24 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
   }))
 }
 
+const waitsOf = (groups: Group[]): RowWait[] =>
+  groups.flatMap(g => g.rows).map(r => ({ id: r.id, isWaiting: isWaitingRow(r) }))
+
+/** The rows a row tab lists, in order, and whether each waits on the person. None on the PRs and Status tabs. */
+export const rowWaits = (screen: LookScreen, tab: ShownTab): RowWait[] =>
+  tab === 'needsYou' || tab === 'findings' ? waitsOf(groupsOf(screen.view, tab, screen.shownSince)) : []
+
 /**
- * The row the look opens: the one the person selected while it still waits. Once it stops waiting, the row
- * `rowAfterClose` gives while it is still listed, else the first that waits.
+ * The row the look opens: the one the person selected while it can open. While it is settled, as when its Undo is
+ * out, the row `rowAfterClose` gives. Else the first that waits.
  */
 function selectedOf(groups: Group[], selected: string | null): string | null {
-  const waits = groups.flatMap(g => g.rows).map(r => ({ id: r.id, isWaiting: isWaitingRow(r) }))
-  if (waits.some(r => r.id === selected && r.isWaiting)) return selected
+  const isSettled = (id: string) => groups.some(g => g.rows.some(r => r.id === id && r.state.is === 'settled'))
+  const waits = waitsOf(groups)
+  if (selected === null || !waits.some(r => r.id === selected)) return firstWaiting(waits)
+  if (!isSettled(selected)) return selected
 
-  return (selected === null ? null : rowAfterClose(waits, selected)) ?? firstWaiting(waits)
+  return rowAfterClose(waits, selected) ?? firstWaiting(waits)
 }
 
 function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'findings'): Block[] {

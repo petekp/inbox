@@ -1,4 +1,5 @@
-import { drawnLists, latestUndo, steppedIndex, tabUndos } from '../../hooks/action-plan'
+import { drawnLists, latestUndo, rowAfterClose, steppedIndex, tabUndos } from '../../hooks/action-plan'
+import type { RowWait } from '../../hooks/action-plan'
 import { UNDO_KEY } from '../../hooks/help'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
@@ -108,14 +109,18 @@ export const withSelected = (ui: LookUi, id: string): LookUi => ({
 })
 
 /**
- * Keeps the row the look opened in place of a selected row that stopped waiting, so the selection stays there once
- * the closed row leaves the list. The PRs tab keeps its own selection.
+ * After a publish, moves the selection off a selected row that waited at the last draw and no longer does, to the row
+ * `rowAfterClose` gives, as the terminal's `openAfterClose` does. `last` and `now` are the tab's rows at the last draw
+ * and at this one.
  */
-export function withDrawnSelection(ui: LookUi, blocks: Block[]): LookUi {
-  if (ui.selected === null || ui.tab === 'prs') return ui
-  const drawn = blocks.find(b => b.kind === 'row' && b.isSelected)?.id ?? null
+export function withClosedSelection(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
+  const id = ui.selected
+  const wasWaiting = last.some(r => r.id === id && r.isWaiting)
+  const isWaiting = now.some(r => r.id === id && r.isWaiting)
+  if (id === null || !wasWaiting || isWaiting) return ui
+  const next = rowAfterClose(now, id)
 
-  return drawn === null || drawn === ui.selected ? ui : { ...ui, selected: drawn }
+  return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next)
 }
 
 /**

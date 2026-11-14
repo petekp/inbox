@@ -138,7 +138,7 @@ const withOutButtons = (buttons: Button[], outRows: ReadonlySet<string>): Button
 /**
  * The blocks with the look's presses drawn: every press button on a row with a press out draws out, and the row's
  * line reads the press under way, how the look's own opens went, or why a press ended unreported, in place of the line
- * the publish gave.
+ * the publish gave. While the press is out, its line reads as the press under way, wherever a look places that.
  */
 export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<string, RowLine>, now: number): Block[] {
   const byRow = new Map(outs.map(o => [o.rowId, o]))
@@ -146,9 +146,9 @@ export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<st
   const lineOf = (id: string): RowLine | null => {
     const out = byRow.get(id)
     if (!out) return lines[id] ?? null
-    if (out.result) return resultLine(out.result)
-    if (out.pending) return { text: feedbackText(out.pending, 'herdr'), tone: 'muted', source: out.pending }
-    return { text: SENDING, tone: 'muted', source: { is: 'sending', label: SENDING, at: now } }
+    const source: Feedback = out.pending ?? { is: 'sending', label: SENDING, at: now }
+    if (out.result) return { ...resultLine(out.result), source }
+    return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted', source }
   }
 
   return blocks.map((b): Block => {
