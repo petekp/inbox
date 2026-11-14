@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T02:44:19.220Z. 197566 characters follow.
+// Built at 2026-11-14T02:55:16.952Z. 197567 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -3482,10 +3482,11 @@ function prTabBlocks(screen, selected) {
   const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
   const notice = ghNoticeOf(gh);
   const othersStart = otherPrsStart(prs.drawn);
-  const above = (d, n) => d === othersStart ? [
-    { kind: "gap", id: "gap other prs" },
-    { kind: "caption", id: "other prs", text: OTHER_PRS_TEXT }
-  ] : n > 0 ? [ruleBetween(d.pr.ref)] : [];
+  const caption = { kind: "caption", id: "other prs", text: OTHER_PRS_TEXT };
+  const above = (d, n) => [
+    ...n > 0 ? [ruleBetween(d.pr.ref)] : [],
+    ...d === othersStart ? [caption] : []
+  ];
   const draw = (open) => [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),

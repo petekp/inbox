@@ -305,7 +305,7 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
 
   const isRefreshInBanner = ghNotice !== null && v.prs.refresh !== null && v.prs.refresh.text === null
   const refresh = v.prs.refresh
-  const othersRef = otherPrsStart(v.prs.drawn)?.pr.ref ?? null
+  const othersRef = otherPrsStart(prs.blocks)?.pr.ref ?? null
 
   return (
     <main>
@@ -332,12 +332,14 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
         </section>
       ) : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
-      {prs.blocks.map(b => [
-        b.pr.ref === othersRef ? (
-          <section key="other-prs" class="other-prs">
-            <div class="group-title muted">{OTHER_PRS_TEXT}</div>
-          </section>
-        ) : null,
+      {prs.blocks.flatMap(b => [
+        ...(b.pr.ref === othersRef
+          ? [
+              <section key="other-prs" class="other-prs">
+                <div class="group-title muted">{OTHER_PRS_TEXT}</div>
+              </section>,
+            ]
+          : []),
         <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />,
       ])}
       {v.prs.olderText ? (

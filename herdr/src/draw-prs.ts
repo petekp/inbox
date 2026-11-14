@@ -301,15 +301,11 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   const presses: PressState = { lastActions: view.lastActions, turns: view.turns, now: screen.now }
   const notice = ghNoticeOf(gh)
   const othersStart = otherPrsStart(prs.drawn)
-  const above = (d: DrawnPr, n: number): Block[] =>
-    d === othersStart
-      ? [
-          { kind: 'gap', id: 'gap other prs' },
-          { kind: 'caption', id: 'other prs', text: OTHER_PRS_TEXT },
-        ]
-      : n > 0
-        ? [ruleBetween(d.pr.ref)]
-        : []
+  const caption: Block = { kind: 'caption', id: 'other prs', text: OTHER_PRS_TEXT }
+  const above = (d: DrawnPr, n: number): Block[] => [
+    ...(n > 0 ? [ruleBetween(d.pr.ref)] : []),
+    ...(d === othersStart ? [caption] : []),
+  ]
   const draw = (open: string | null) => [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
