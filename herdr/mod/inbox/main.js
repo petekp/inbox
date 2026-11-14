@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T06:37:59.610Z. 204905 characters follow.
+// Built at 2026-11-14T17:40:45.838Z. 205417 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -3729,7 +3729,8 @@ function rowButtons(row, isAllShown, agent) {
     return { ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null), isOut: action.isOut };
   });
 }
-function undoButtons(row, agent) {
+var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
+function undoButtons(row, agent, now) {
   if (row.state.is !== "settled")
     return [];
   const id = `${row.id} undo`;
@@ -3743,7 +3744,8 @@ function undoButtons(row, agent) {
         runsOutAt
       }
     ];
-  return row.state.offersUndo ? [{ ...button(id, ROW_COPY.undo, "quiet"), isHidden: true, runsOutAt }] : [];
+  const isWaitingForAgent = row.state.delivery === "queued" && now >= undoPlaceEndsAt(row.state);
+  return row.state.offersUndo && !isWaitingForAgent ? [{ ...button(id, ROW_COPY.undo, "quiet"), isHidden: true, runsOutAt }] : [];
 }
 function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
@@ -3786,7 +3788,7 @@ function rowBlock(row, ui, selected, screen) {
     isSelectable: !isSettled,
     isSelected,
     body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent)] : isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
+    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
     field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
   };
 }
@@ -4852,8 +4854,13 @@ function screenOf(followed, read, ui, o) {
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
     waits: rowWaits(screen, ui.tab),
-    foldAt: nextFoldAt(settled, placing)
+    foldAt: nextFoldAt(settled, placing),
+    undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now)
   };
+}
+function nextUndoPlaceEnd(settled, now) {
+  const ends = settled.filter((s) => s.offersUndo && s.delivery === "queued").map(undoPlaceEndsAt).filter((at) => at > now);
+  return ends.length > 0 ? Math.min(...ends) : null;
 }
 
 // src/main.ts
@@ -5202,7 +5209,7 @@ class Inbox extends View {
     paint.timeLeft = this.timeLeft;
     const isTimerStarting = [...this.timeLeft.values()].some((l) => l.is === "emptying" && !l.isStarted);
     const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null;
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt].filter((at) => at !== null);
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
