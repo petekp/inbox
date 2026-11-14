@@ -1,7 +1,6 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
-import { isStatusUnderActions } from '../../hooks/feedback'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import { ENTER_MS, EXIT_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
@@ -24,6 +23,7 @@ import {
   TEXT_X,
   colorOf,
 } from './paint-theme'
+import { isStatusUnder } from './held-line'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -175,11 +175,11 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .child(r.age ?? ''),
       ),
     )
-  const hasActions = r.buttons.length > 0 || r.field !== null
-  const feedbackUnder = r.feedback && isStatusUnderActions(r.feedback.source, hasActions) ? r.feedback : null
+  const feedbackUnder = isStatusUnder(r) ? r.feedback : null
   const lines = [
     ...(r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : []),
     ...(r.feedback && !feedbackUnder ? [r.feedback] : []),
+    ...(r.heldLine ? [r.heldLine] : []),
     ...r.body,
   ]
   const opacity = opacityOf(r, p)
@@ -198,7 +198,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
       e.hover(s => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx)),
     )
     .child(line)
-    .children(lines.map(l => bodyLineEl(l, t)))
+    .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))
     .when(r.buttons.length > 0, e => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving)))
     .when(r.field !== null, e => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div()))
     .when(feedbackUnder !== null, e => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div()))
