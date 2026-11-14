@@ -104,7 +104,7 @@ export function screenOf(
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
-    blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines),
+    blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
     foldAt: nextFoldAt(settled, placing),
   }
 }

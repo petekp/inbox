@@ -12,8 +12,8 @@ import type { ListInput } from '../../hooks/timing'
 import { button } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
-import { afterSend, keyMove, tabUndo, withSelected, withTab } from '../src/keys'
-import { moveRows } from '../src/motion'
+import { afterSend, keyMove, tabUndo, withDrawnSelection, withSelected, withTab } from '../src/keys'
+import { NO_TRACKS, moveRows } from '../src/motion'
 import { GIVE_UP_MS, SENDING, drawOuts, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
@@ -95,14 +95,14 @@ test('every press button on a row with a press out draws out, and its row reads 
   const presses = drawn.buttons.filter(b => b.does.is === 'press')
   expect(presses.length).toBeGreaterThan(1)
   const out = outOn(row.id)
-  const after = rowsOf(drawOuts(blocks, [out], {})).find(b => b.id === row.id)!
+  const after = rowsOf(drawOuts(blocks, [out], {}, NOW)).find(b => b.id === row.id)!
   expect(after.buttons.filter(b => b.isOut).map(b => b.id)).toEqual(presses.map(b => b.id))
   expect(after.feedback?.text).toBe(SENDING)
   const open = [{ kind: 'open' as const, target: '/a/plan.md', name: 'plan.md' }]
   const failed = { ...pendingResult(open, NOW), state: 'failed' as const }
   failed.parts[0] = { ...failed.parts[0]!, error: 'no such file' }
-  const ran = rowsOf(drawOuts(blocks, [outOn(row.id, { result: failed })], {})).find(b => b.id === row.id)!
-  expect(ran.feedback).toEqual({ text: 'Could not open plan.md: no such file', tone: 'error' })
+  const ran = rowsOf(drawOuts(blocks, [outOn(row.id, { result: failed })], {}, NOW)).find(b => b.id === row.id)!
+  expect(ran.feedback).toMatchObject({ text: 'Could not open plan.md: no such file', tone: 'error' })
 })
 
 test('the PRs tab draws each PR’s and each selected row’s buttons in the shared plans’ order', () => {
@@ -190,7 +190,7 @@ test('u presses the Undo of the row dismissed last, and a fresh Undo’s fill st
 
 test('while the last Undo’s press is out, u does nothing and that Undo’s fill holds the share it had', () => {
   const { view, blocks } = dismissedRows({ d8: NOW - 900, d7: NOW - 500 }, NOW - 1000)
-  const out = drawOuts(blocks, [outOn('d7', { action: 'undo', label: 'Undo' })], {})
+  const out = drawOuts(blocks, [outOn('d7', { action: 'undo', label: 'Undo' })], {}, NOW)
   expect([undoOf(out, 'd8')?.isOut, undoOf(out, 'd7')?.isOut]).toEqual([false, true])
   expect(keyMove('u', ASKS, out, null, tabUndo(view, 'needsYou', NOW - 1000))).toBeNull()
   const running = timeLeftDraws(blocks, new Map(), NOW)
@@ -212,9 +212,8 @@ test('once Undo ends, a row the list holds keeps a hidden Undo that u skips, and
   expect(rowsOf(folded.blocks).find(r => r.id === 'd8')).toBeUndefined()
 })
 
-test('u presses a dismissed PR’s Undo, which runs out with the settle window', () => {
+function dismissedPr(ref: string) {
   const s = demoSession(NOW, AGENT)
-  const ref = 'acme/visor#29'
   const r = applyPrPress(
     s.ledger,
     s.prViews,
@@ -230,7 +229,29 @@ test('u presses a dismissed PR’s Undo, which runs out with the settle window',
     SETTLED_MS,
     holds,
   )
-  const blocks = tabBlocks({ ...demoScreen(), view, shownSince: NOW - 1000 }, uiOn('prs'))
+  return { view, blocks: tabBlocks({ ...demoScreen(), view, shownSince: NOW - 1000 }, uiOn('prs')) }
+}
+
+function withDismissedAsk(id: string, at: number) {
+  const s = demoSession(NOW, AGENT)
+  const item = s.ledger.items.find(i => i.id === id)!
+  const dismissed = {
+    ...s.ledger.closed[0]!,
+    id,
+    ask: item.ask,
+    at,
+    how: 'dismissed' as const,
+    outcome: 'dismissed',
+    item,
+  }
+  const ledger = { ...s.ledger, items: s.ledger.items.filter(i => i !== item), closed: [...s.ledger.closed, dismissed] }
+  const holds = { replies: {}, discarded: {}, shownSince: NOW - 1000, listInput: null }
+  return { ...demoScreen(), view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, holds), shownSince: NOW - 1000 }
+}
+
+test('u presses a dismissed PR’s Undo, which runs out with the settle window', () => {
+  const ref = 'acme/visor#29'
+  const { view, blocks } = dismissedPr(ref)
   const undo = undoOf(blocks, prMarkId(ref))
   expect(undo?.runsOutAt).toBe(NOW - 500 + SETTLED_MS)
   const prs = [{ id: 'prs' as const, label: 'PRs', badge: null, isSelected: true }]
@@ -276,13 +297,59 @@ test('a sent field closes and drops its draft, and a refused one keeps both', ()
 
 test('a row the publish dropped stays drawn while it leaves, then goes', () => {
   const blocks = tabBlocks(demoScreen(), uiOn('needsYou'))
-  const first = moveRows(blocks, new Map(), NOW, true)
+  const first = moveRows(blocks, NO_TRACKS, NOW, true)
   const gone = rowsOf(blocks)[0]!
   const without = blocks.filter(b => b.id !== gone.id)
   const leaving = moveRows(without, first.tracks, NOW + 1, false)
   expect(leaving.blocks.some(b => b.id === gone.id)).toBe(true)
   expect(leaving.motion.get(gone.id)?.state).toBe('leaving')
   expect(moveRows(without, leaving.tracks, NOW + 1 + EXIT_MS, false).blocks.some(b => b.id === gone.id)).toBe(false)
+})
+
+test('a new tab, Help page or session forgets the last one’s rows, and draws its own at rest', () => {
+  const asks = moveRows(tabBlocks(demoScreen(), uiOn('needsYou')), NO_TRACKS, NOW, true)
+  const findings = tabBlocks(demoScreen(), uiOn('findings'))
+  const shown = moveRows(findings, asks.tracks, NOW + 1, true)
+  expect(shown.blocks.map(b => b.id)).toEqual(findings.map(b => b.id))
+  expect([...shown.motion.values()].filter(m => m.state === 'entering' || m.state === 'leaving')).toEqual([])
+  expect(shown.nextAt).toBeNull()
+})
+
+test('a leaving row whose block above went too keeps its place among the blocks that remain', () => {
+  const blocks = tabBlocks(demoScreen(), uiOn('findings'))
+  const goneGroup = new Set(['group issue', 'd23', 'd22', 'fold issue'])
+  const first = moveRows(blocks, NO_TRACKS, NOW, true)
+  const leaving = moveRows(
+    blocks.filter(b => !goneGroup.has(b.id)),
+    first.tracks,
+    NOW + 1,
+    false,
+  )
+  expect(leaving.blocks.map(b => b.id)).toEqual(['d23', 'd22', 'rule opportunity', 'group opportunity', 'd21', 'd20'])
+  expect([leaving.motion.get('d23')?.state, leaving.motion.get('d22')?.state]).toEqual(['leaving', 'leaving'])
+})
+
+test('a PR dismissed and then undone changes form in place, never drawn twice and never fading in', () => {
+  const ref = 'acme/visor#29'
+  const id = prMarkId(ref)
+  const open = tabBlocks(demoScreen(), uiOn('prs'))
+  const first = moveRows(open, NO_TRACKS, NOW, true)
+  const dismissed = moveRows(dismissedPr(ref).blocks, first.tracks, NOW + 1, false)
+  expect(dismissed.blocks.filter(b => b.id === id).map(b => b.kind)).toEqual(['row'])
+  expect(dismissed.motion.get(id)?.state).toBe('settled')
+  const undone = moveRows(open, dismissed.tracks, NOW + 2, false)
+  expect(undone.blocks.filter(b => b.id === id).map(b => b.kind)).toEqual(['pr'])
+  expect(undone.motion.has(id)).toBe(false)
+})
+
+test('closing the open row opens the next row that waits after it, and the selection stays there once it folds', () => {
+  const ui = uiOn('needsYou', { selected: 'd13' })
+  const closing = tabBlocks(withDismissedAsk('d13', NOW - 500), ui)
+  expect(rowsOf(closing).find(r => r.isSelected)?.id).toBe('d15')
+  const kept = withDrawnSelection(ui, closing)
+  expect(kept.selected).toBe('d15')
+  const folded = tabBlocks(withDismissedAsk('d13', NOW - SETTLED_MS - 5000), kept)
+  expect(rowsOf(folded).find(r => r.isSelected)?.id).toBe('d15')
 })
 
 test('a relative open runs in the look against the session’s project folder, and goes to the host without one', async () => {

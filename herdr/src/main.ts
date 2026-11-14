@@ -36,8 +36,8 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { afterSend, isFieldDrawn, keyMove, tabUndo, withSelected, withTab } from './keys'
-import { moveRows } from './motion'
+import { afterSend, isFieldDrawn, keyMove, tabUndo, withDrawnSelection, withSelected, withTab } from './keys'
+import { NO_TRACKS, moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './paint-timer'
@@ -121,7 +121,7 @@ export default class Inbox extends View {
   discarded: Record<string, number> = {}
   listInput: ListInput | null = null
   queue = new PressQueue(queueIo)
-  tracks: Tracks = new Map()
+  tracks: Tracks = NO_TRACKS
   tracksOf = ''
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   focus: FocusHandle | null = null
@@ -358,6 +358,7 @@ export default class Inbox extends View {
       queue: this.queue,
     })
     this.view = screen.is === 'inbox' ? screen.view : null
+    if (screen.is === 'inbox') this.ui = withDrawnSelection(this.ui, screen.blocks)
     this.drawTimer?.cancel()
     this.drawTimer = null
     const paint: Paint = {
@@ -396,6 +397,7 @@ export default class Inbox extends View {
       })
     if (screen.is === 'message') {
       this.timeLeft = new Map()
+      this.tracksOf = ''
       return root.child(messageEl(screen.message, t))
     }
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)

@@ -21,7 +21,7 @@ import {
   shownOptionDescriptions,
   waitingCount,
 } from '../../hooks/rows'
-import { firstWaiting, rowKeyPlan } from '../../hooks/action-plan'
+import { firstWaiting, rowAfterClose, rowKeyPlan } from '../../hooks/action-plan'
 import { stepEffects } from '../../hooks/help-steps'
 import { emptyText, groupEmptyText, tabBarBanners } from '../../hooks/banners'
 import type { BannerView } from '../../hooks/banners'
@@ -174,7 +174,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     mark: markOf(rowResultMark(row)),
     title: rowTitle(row, LOOK),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
-    feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
+    feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
     settled: isSettled
       ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) }
       : null,
@@ -214,7 +214,7 @@ function closedBlock(d: ClosedLine, now: number): RowBlock {
     mark: markOf(d.mark),
     title: d.title,
     age: shortAgo(now - d.at),
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted' },
+    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted', source: null },
     settled: null,
     isDim: true,
     isSelectable: false,
@@ -291,12 +291,15 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
   }))
 }
 
-/** The row the look opens: the one the person selected while it still waits, else the first that waits. */
+/**
+ * The row the look opens: the one the person selected while it still waits. Once it stops waiting, the row
+ * `rowAfterClose` gives while it is still listed, else the first that waits.
+ */
 function selectedOf(groups: Group[], selected: string | null): string | null {
-  const rows = groups.flatMap(g => g.rows).filter(isWaitingRow)
-  if (selected !== null && rows.some(r => r.id === selected)) return selected
+  const waits = groups.flatMap(g => g.rows).map(r => ({ id: r.id, isWaiting: isWaitingRow(r) }))
+  if (waits.some(r => r.id === selected && r.isWaiting)) return selected
 
-  return firstWaiting(rows.map(r => ({ id: r.id, isWaiting: true })))
+  return (selected === null ? null : rowAfterClose(waits, selected)) ?? firstWaiting(waits)
 }
 
 function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'findings'): Block[] {

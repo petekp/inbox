@@ -108,6 +108,17 @@ export const withSelected = (ui: LookUi, id: string): LookUi => ({
 })
 
 /**
+ * Keeps the row the look opened in place of a selected row that stopped waiting, so the selection stays there once
+ * the closed row leaves the list. The PRs tab keeps its own selection.
+ */
+export function withDrawnSelection(ui: LookUi, blocks: Block[]): LookUi {
+  if (ui.selected === null || ui.tab === 'prs') return ui
+  const drawn = blocks.find(b => b.kind === 'row' && b.isSelected)?.id ?? null
+
+  return drawn === null || drawn === ui.selected ? ui : { ...ui, selected: drawn }
+}
+
+/**
  * Whether a click in the list gives the keys to the open text field rather than to the look: while the field is open
  * and drawn, which it is not under Help. GPUI delivers a click to every handler on its path, so a click on the field,
  * on its box or anywhere else in the list reaches the list's handler.

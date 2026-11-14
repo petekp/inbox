@@ -1,4 +1,3 @@
-import { feedbackText } from '../../hooks/feedback'
 import type { Effect } from '../../hooks/press-reducer'
 import { pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
@@ -7,7 +6,7 @@ import type { SessionView } from '../../hooks/session-view'
 import type { Holds } from '../../hooks/timing'
 import type { LocalResult, RowNote } from '../../types'
 import type { LastPress } from './files'
-import { nextOutCheckAt, notAppliedLine, outAction, rowSignature, settleOuts } from './out'
+import { nextOutCheckAt, notAppliedLine, notAppliedText, notSentLine, outAction, rowSignature, settleOuts } from './out'
 import type { Out, RowLine } from './out'
 import { newPressId, pressFileText, pressPath } from './press-file'
 import { firstError, isRunHere, pendingOf } from './run-here'
@@ -69,7 +68,7 @@ export class PressQueue {
   ): Sent {
     const rowId = pressRowId(press)
     const refuse = (reason: string): Sent => {
-      this.lines[rowId] = { text: feedbackText({ is: 'notSent', reason, retry: null }, 'herdr'), tone: 'error' }
+      this.lines[rowId] = notSentLine(reason)
       return { is: 'refused', reason }
     }
     if (target === null) return refuse('this terminal has no inbox to send to.')
@@ -117,7 +116,7 @@ export class PressQueue {
     const failed = await this.io.write(out.path, text)
     if (failed !== null) {
       this.outs = this.outs.filter(o => o !== out)
-      this.lines[out.rowId] = { text: `Not applied: ${failed}`, tone: 'error' }
+      this.lines[out.rowId] = notAppliedText(failed)
       return
     }
     out.isWritten = true
