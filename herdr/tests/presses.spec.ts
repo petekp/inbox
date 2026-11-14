@@ -267,11 +267,10 @@ test('while a field is open, keys type into it and escape closes it, and moving 
   expect(withTab(typing, 'findings').typing).toBeNull()
 })
 
-test('a sent field closes and drops its draft, and a refused one keeps both', () => {
+test('a sent field closes and a refused one stays open', () => {
   const ui = uiOn('needsYou', { typing: 'q1' })
-  const drafts = { q1: { text: 'Call it hello', since: NOW }, q2: { text: 'Later', since: NOW } }
-  expect(afterSend(ui, drafts, 'q1', false)).toEqual({ ui, drafts })
-  expect(afterSend(ui, drafts, 'q1', true)).toEqual({ ui: { ...ui, typing: null }, drafts: { q2: drafts.q2 } })
+  expect(afterSend(ui, 'q1', false)).toBe(ui)
+  expect(afterSend(ui, 'q1', true)).toEqual({ ...ui, typing: null })
 })
 
 test('a row the publish dropped stays drawn while it leaves, then goes', () => {
