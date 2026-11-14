@@ -1,6 +1,7 @@
 import { feedbackText } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
 import { actionId } from '../../hooks/press-labels'
+import { isPressConfirmed } from '../../hooks/press-reducer'
 import { pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
@@ -120,6 +121,35 @@ export function settleOuts(outs: readonly Out[], view: SessionView, lastPress: L
   }
 
   return settled
+}
+
+/** A row's last press as the view gives it, to tell whether a press saved a new one. */
+export const lastActionKey = (view: SessionView, rowId: string): string =>
+  JSON.stringify(view.lastActions[rowId] ?? null)
+
+/** A reply or goal the look sent, from its `type` press, with its row's `lastActionKey` when pressed. */
+export type SentText = { pressId: string; rowId: string; text: string; lastBefore: string }
+
+/**
+ * Whether the host confirmed a sent text's press, as `isPressConfirmed` decides, or null until a read shows the host
+ * finished it: `lastPress` names it, or names a later press, since a host applies presses oldest first. `lastPress`
+ * carries no send error, so the row's delivery gives it, and a press that saved no last press on its row was not sent.
+ */
+export function isSentConfirmed(sent: SentText, view: SessionView, lastPress: LastPress | null): boolean | null {
+  const isNamed = lastPress?.id === sent.pressId
+  const isPassed = lastPress !== null && lastPress.id > sent.pressId
+  if (!isNamed && !isPassed) return null
+  const delivery = view.lastActions[sent.rowId]?.delivery
+  const isChanged = lastActionKey(view, sent.rowId) !== sent.lastBefore
+
+  return (
+    isChanged &&
+    isPressConfirmed({
+      error: delivery?.state === 'failed' ? delivery.reason : null,
+      note: isNamed && lastPress?.outcome === 'stale' ? 'stale' : null,
+      isUnconfirmed: delivery?.state === 'unconfirmed',
+    })
+  )
 }
 
 /** When the look next needs to read for its presses: a reread, or giving up. */
