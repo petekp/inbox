@@ -1,4 +1,5 @@
-import { drawnLists, latestUndo, steppedIndex, tabUndos } from '../../hooks/action-plan'
+import { drawnLists, latestUndo, rowAfterClose, steppedIndex, tabUndos } from '../../hooks/action-plan'
+import type { RowWait } from '../../hooks/action-plan'
 import { UNDO_KEY } from '../../hooks/help'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
@@ -107,6 +108,21 @@ export const withSelected = (ui: LookUi, id: string): LookUi => ({
   selected: id,
   typing: ui.typing === id ? id : null,
 })
+
+/**
+ * After a publish, moves the selection off a selected row that waited at the last draw and no longer does, to the row
+ * `rowAfterClose` gives, as the terminal's `openAfterClose` does. `last` and `now` are the tab's rows at the last draw
+ * and at this one.
+ */
+export function withClosedSelection(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
+  const id = ui.selected
+  const wasWaiting = last.some(r => r.id === id && r.isWaiting)
+  const isWaiting = now.some(r => r.id === id && r.isWaiting)
+  if (id === null || !wasWaiting || isWaiting) return ui
+  const next = rowAfterClose(now, id)
+
+  return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next)
+}
 
 /**
  * Whether a click in the list gives the keys to the open text field rather than to the look: while the field is open
