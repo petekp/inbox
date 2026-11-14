@@ -71,11 +71,11 @@ export const SPACE = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 } as const
 
 /** A title to each line under it, and the head's title to its notes. */
 export const LINE_GAP = SPACE.xs
-/** Text to the buttons under it, one button to the next, and a nested item under its parent. */
+/** Text to the buttons under it, one button to the next, and two one-line items in a row, as a subject's later children. */
 export const CONTROL_GAP = SPACE.s
 /** A heading to what it heads, so it reads as that part's label. */
 export const HEAD_GAP = SPACE.m
-/** A pill's and a banner's side padding, and a row's title to its age. */
+/** A pill's and a banner's side padding, a row's title to its age, and a nested Status item to the line above, as a subject's first child. */
 export const INSET = SPACE.m
 /** The panel's padding on every side, and half a section's break on each side of a rule. */
 export const EDGE = SPACE.l
