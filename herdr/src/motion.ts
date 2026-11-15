@@ -1,6 +1,7 @@
 import { ROW_STATE_MS, isMoving, stepRow } from '../../hooks/row-motion'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 import type { Block, RowBlock } from './blocks'
+import { HEIGHT_SETTLE_MS } from './springs'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
@@ -12,13 +13,16 @@ type Tracked = { track: RowTrack; block: Block; opened: RowBlock | null; glide: 
 export type Tracks = { rows: ReadonlyMap<string, Tracked>; order: readonly string[] }
 export const NO_TRACKS: Tracks = { rows: new Map(), order: [] }
 
-/** Where a block's box glides to as it enters or leaves, over `ms`, and when that glide ends. */
-type Glide = { box: 'open' | 'shut'; ms: number; endsAt: number }
+/**
+ * Where a block's box glides to as it enters or leaves, the length of its fade, and when both its fade and its height
+ * spring have come to rest.
+ */
+type Glide = { box: 'open' | 'shut'; fadeMs: number; endsAt: number }
 
 /**
  * How a block moves in this draw. `isStart` marks the draw a move began. A block that enters or leaves draws in a box
- * whose height and opacity glide over `boxMs`: `box` is `open` at the block's measured height and full opacity, `shut`
- * at none, and null at rest. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
+ * whose height springs and whose opacity fades over `fadeMs`: `box` is `open` at the block's measured height and full
+ * opacity, `shut` at none, and null at rest. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
  * `closing` the open form whose panel a closing row keeps drawn. `isPanelLeftOut` says the row's content box moves to
  * its measured height less its panel's: through a close after its first draw, through all of a close that turns an
  * open back, and in the draw after a close, before the row measures without the panel. A close's first draw keeps the
@@ -28,13 +32,13 @@ export type RowMotion = {
   state: RowState
   isStart: boolean
   box: Glide['box'] | null
-  boxMs: number
+  fadeMs: number
   panel: 0 | 1 | null
   closing: RowBlock | null
   isPanelLeftOut: boolean
 }
 
-/** The draw after a move's first frame, which starts its transition. */
+/** The draw after a move's first frame, which starts its transition or spring. */
 export const NEXT_FRAME_MS = 16
 
 const targetOf = (b: Block): RowTarget =>
@@ -42,28 +46,31 @@ const targetOf = (b: Block): RowTarget =>
 
 const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
 
+/** When a glide that starts or changes its target `now` has come to rest, its height a frame behind its fade. */
+const restAt = (now: number, fadeMs: number): number => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS
+
 /**
- * The glide of a block's box as it enters or leaves. gpui-kit's transition animates only a later change of its target,
- * so a move's first draw sets the height and opacity it moves from, and the next draw sets the ones it moves to. A
- * block that turns back mid-glide was already in its box, so it moves to its new end at once, from where it is, over
- * the length its box already declares, and a block that leaves stays drawn until that glide ends. A row selected as
- * it enters keeps its box: the box glides on to the row's new height over the open's length, and lets go once that
- * ends. The new height arrives in the draw after the open starts.
+ * The glide of a block's box as it enters or leaves. gpui-kit animates only a later change of a target, so a move's
+ * first draw sets the height and opacity it moves from, and the next draw sets the ones it moves to. A block that
+ * turns back mid-glide was already in its box, so it moves to its new end at once, from where it is, and keeps the fade
+ * length its box already declares. A block that leaves stays drawn until its glide comes to rest. A row selected as it
+ * enters keeps its box: the box springs on to the row's new height, which arrives in the draw after the open starts,
+ * and lets go once that comes to rest.
  */
 function glideOf(track: RowTrack, isStart: boolean, last: Glide | null, now: number): Glide | null {
   const { state } = track
-  const ms = ROW_STATE_MS[state]
   const isLive = last !== null && now < last.endsAt
   if (state === 'entering' || state === 'leaving') {
     const to = state === 'entering' ? 'open' : 'shut'
     if (!isStart && last !== null) return { ...last, box: to }
-    if (isLive) return { box: to, ms: last.ms, endsAt: now + last.ms }
+    if (isLive) return { box: to, fadeMs: last.fadeMs, endsAt: restAt(now, last.fadeMs) }
+    const fadeMs = ROW_STATE_MS[state]
 
-    return { box: to === 'open' ? 'shut' : 'open', ms, endsAt: now + ms }
+    return { box: to === 'open' ? 'shut' : 'open', fadeMs, endsAt: restAt(now, fadeMs) }
   }
   if (!isLive || last.box !== 'open') return null
 
-  return isStart ? { box: 'open', ms, endsAt: now + ms + NEXT_FRAME_MS } : last
+  return isStart ? { ...last, endsAt: restAt(now, last.fadeMs) } : last
 }
 
 /** A row's panel fades in as it opens and out as it closes, from where it is when the move turns back. */
@@ -79,7 +86,7 @@ function panelOf(state: RowState, isStart: boolean, was: RowState | undefined, c
  * Steps every block through the shared row states. A block the publish dropped stays drawn while it leaves, after the
  * nearest block that was above it and is still drawn. A block that takes a leaving block's id is that block in another
  * form, so it does not leave and the new one does not enter. `isFirst` forgets the tracks and draws every block at
- * rest, as a newly shown tab does. `nextAt` is when a move or a box's glide ends, so the look draws again then.
+ * rest, as a newly shown tab does. `nextAt` is when a move ends or a box's glide comes to rest, so the look draws again then.
  */
 export function moveRows(
   blocks: Block[],
@@ -104,7 +111,7 @@ export function moveRows(
       state: track.state,
       isStart,
       box: glide?.box ?? null,
-      boxMs: glide?.ms ?? 0,
+      fadeMs: glide?.fadeMs ?? 0,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
       closing,
       isPanelLeftOut:

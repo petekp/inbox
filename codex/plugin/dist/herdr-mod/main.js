@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T03:11:22.700Z. 212565 characters follow.
+// Built at 2026-11-15T03:38:56.734Z. 213870 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4225,26 +4225,64 @@ function rest(track, form, target, now) {
   return track?.state === state ? track : { state, since: now, hasPanel: state === "open" };
 }
 
+// src/springs.ts
+var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
+var LONGEST_MOVE_PX = 2000;
+var FRAME_MS = 16;
+var STEP_MS = 1;
+function springStep(s, target, ms, spring) {
+  const w = 2 * Math.PI / spring.response;
+  let { x, v } = s;
+  for (let t = 0;t < ms; t += STEP_MS) {
+    const dt = Math.min(STEP_MS, ms - t);
+    v += (-w * w * (x - target) - 2 * spring.damping * w * v) * dt;
+    x += v * dt;
+  }
+  return { x, v };
+}
+var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
+function msToRest(from, target, spring) {
+  let s = from;
+  let ms = 0;
+  while (!isAtRest(s, target, spring) && ms < 1e4) {
+    s = springStep(s, target, FRAME_MS, spring);
+    ms += FRAME_MS;
+  }
+  return ms;
+}
+function settleMs(spring) {
+  const fromRest = msToRest({ x: 0, v: 0 }, LONGEST_MOVE_PX, spring);
+  let longest = fromRest;
+  let s = { x: 0, v: 0 };
+  for (let ms = FRAME_MS;ms < fromRest; ms += FRAME_MS) {
+    s = springStep(s, LONGEST_MOVE_PX, FRAME_MS, spring);
+    longest = Math.max(longest, msToRest(s, 0, spring));
+  }
+  return longest;
+}
+var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
+
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [] };
 var NEXT_FRAME_MS = 16;
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : b.isSelected ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
+var restAt = (now, fadeMs) => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS;
 function glideOf(track, isStart, last, now) {
   const { state } = track;
-  const ms = ROW_STATE_MS[state];
   const isLive = last !== null && now < last.endsAt;
   if (state === "entering" || state === "leaving") {
     const to = state === "entering" ? "open" : "shut";
     if (!isStart && last !== null)
       return { ...last, box: to };
     if (isLive)
-      return { box: to, ms: last.ms, endsAt: now + last.ms };
-    return { box: to === "open" ? "shut" : "open", ms, endsAt: now + ms };
+      return { box: to, fadeMs: last.fadeMs, endsAt: restAt(now, last.fadeMs) };
+    const fadeMs = ROW_STATE_MS[state];
+    return { box: to === "open" ? "shut" : "open", fadeMs, endsAt: restAt(now, fadeMs) };
   }
   if (!isLive || last.box !== "open")
     return null;
-  return isStart ? { box: "open", ms, endsAt: now + ms + NEXT_FRAME_MS } : last;
+  return isStart ? { ...last, endsAt: restAt(now, last.fadeMs) } : last;
 }
 function panelOf(state, isStart, was, closing) {
   const isFrom = isStart && !isFolding(was);
@@ -4272,7 +4310,7 @@ function moveRows(blocks, last, now, isFirst) {
       state: track.state,
       isStart,
       box: glide?.box ?? null,
-      boxMs: glide?.ms ?? 0,
+      fadeMs: glide?.fadeMs ?? 0,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
       closing,
       isPanelLeftOut: closing !== null && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row"
@@ -4456,7 +4494,7 @@ function spacesOf(blocks, isMoving) {
   }
   return out;
 }
-var easing = "ease-out";
+var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
 function fitHeight(id, m, p) {
   const measured = p.heights.get(id);
   if (measured === undefined)
@@ -4466,7 +4504,7 @@ function fitHeight(id, m, p) {
 function fitEl(id, m, p, el) {
   const height = p.isAtOnce(id) ? undefined : fitHeight(id, m, p);
   const sized = div().id(`size ${id}`).flex_none().on_size_change((size, cx) => p.measure(id, size, cx)).child(el);
-  return v_flex().id(`fit ${id}`).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)).transition("height", { duration: MOVE_MS, easing }).child(sized);
+  return springHeight(v_flex().id(`fit ${id}`).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0))).child(sized);
 }
 function boxEl(s, m, p, inner) {
   const id = s.block.id;
@@ -4475,8 +4513,8 @@ function boxEl(s, m, p, inner) {
     return box;
   const height = fitHeight(id, m, p);
   const isOpen = m.box === "open" && height !== undefined;
-  const glide = { duration: m.boxMs, easing };
-  return box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor).opacity(isOpen ? 1 : 0).transition("height", glide).transition("opacity", glide);
+  const sized = box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor);
+  return springHeight(sized).opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
 }
 function spacedEls(blocks, p, el) {
   return spacesOf(blocks, (b) => (p.motion.get(b.id)?.box ?? null) !== null).map((s) => {

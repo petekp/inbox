@@ -2,11 +2,11 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import { MOVE_MS } from '../../hooks/row-motion'
 import type { Block } from './blocks'
 import type { RowMotion } from './motion'
 import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE_GAP } from './paint-theme'
 import type { Paint } from './paint-theme'
+import { HEIGHT_SPRING } from './springs'
 
 /** The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space. */
 const padOf = (b: Block): number => (b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0)
@@ -91,7 +91,8 @@ export function spacesOf(blocks: Block[], isMoving: (b: Block) => boolean): Spac
   return out
 }
 
-const easing = 'ease-out' as const
+/** Springs later changes of an element's height. */
+const springHeight = <E extends Element>(el: E): E => el.spring('height', HEIGHT_SPRING)
 
 /**
  * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
@@ -105,10 +106,10 @@ function fitHeight(id: string, m: RowMotion | undefined, p: Paint): number | und
 }
 
 /**
- * Content in a box at its measured height, whose height transition is always declared, as a list block, the tab bar or
+ * Content in a box at its measured height, whose height spring is always declared, as a list block, the tab bar or
  * the banners above the list. When the content changes height, as a row opens, a status line comes, or a banner goes,
- * the box keeps its old height for the draw that measures the new one, then glides to it. In a draw that takes heights
- * at once, the box takes its content's height.
+ * the box keeps its old height for the draw that measures the new one, then springs to it. In a draw that takes
+ * heights at once, the box takes its content's height.
  */
 export function fitEl(id: string, m: RowMotion | undefined, p: Paint, el: Element): Element {
   const height = p.isAtOnce(id) ? undefined : fitHeight(id, m, p)
@@ -118,18 +119,18 @@ export function fitEl(id: string, m: RowMotion | undefined, p: Paint, el: Elemen
     .on_size_change((size, cx) => p.measure(id, size, cx))
     .child(el)
 
-  return v_flex()
-    .id(`fit ${id}`)
-    .flex_none()
-    .overflow_hidden()
-    .when(height !== undefined, e => e.h(height ?? 0))
-    .transition('height', { duration: MOVE_MS, easing })
-    .child(sized)
+  return springHeight(
+    v_flex()
+      .id(`fit ${id}`)
+      .flex_none()
+      .overflow_hidden()
+      .when(height !== undefined, e => e.h(height ?? 0)),
+  ).child(sized)
 }
 
 /**
- * A block's outer box. A block that enters or leaves glides its height and opacity together, between none and its
- * content's height with its space, over its glide's length. Until the block's first measure, its box stays shut. At
+ * A block's outer box. A block that enters or leaves springs its height between none and its content's height with its
+ * space, and fades its opacity over the same move's length. Until the block's first measure, its box stays shut. At
  * rest the box takes its content's height.
  */
 function boxEl(s: Space, m: RowMotion | undefined, p: Paint, inner: Element): Element {
@@ -138,14 +139,11 @@ function boxEl(s: Space, m: RowMotion | undefined, p: Paint, inner: Element): El
   if (!m?.box) return box
   const height = fitHeight(id, m, p)
   const isOpen = m.box === 'open' && height !== undefined
-  const glide = { duration: m.boxMs, easing }
+  const sized = box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor)
 
-  return box
-    .overflow_hidden()
-    .h(isOpen ? s.above + (height ?? 0) + s.below : s.floor)
+  return springHeight(sized)
     .opacity(isOpen ? 1 : 0)
-    .transition('height', glide)
-    .transition('opacity', glide)
+    .transition('opacity', { duration: m.fadeMs, easing: 'ease-out' })
 }
 
 /**

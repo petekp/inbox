@@ -6,7 +6,8 @@ import { SETTLED_MS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { rowWaits, tabBlocks } from '../src/draw'
 import { withClosedSelection, withSelected } from '../src/keys'
-import { NO_TRACKS, moveRows } from '../src/motion'
+import { NEXT_FRAME_MS, NO_TRACKS, moveRows } from '../src/motion'
+import { HEIGHT_SETTLE_MS } from '../src/springs'
 import { NOW, demoScreen, dismissedPr, uiOn, withDismissedAsk } from './fixtures'
 import './gpui-stand-in'
 
@@ -14,7 +15,7 @@ const { spacesOf } = await import('../src/paint-space')
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
 
-test('a row the publish dropped stays drawn while it leaves, then goes', () => {
+test('a row the publish dropped stays drawn until its fade and its height spring come to rest, then goes', () => {
   const blocks = tabBlocks(demoScreen(), uiOn('needsYou'))
   const first = moveRows(blocks, NO_TRACKS, NOW, true)
   const gone = rowsOf(blocks)[0]!
@@ -22,7 +23,10 @@ test('a row the publish dropped stays drawn while it leaves, then goes', () => {
   const leaving = moveRows(without, first.tracks, NOW + 1, false)
   expect(leaving.blocks.some(b => b.id === gone.id)).toBe(true)
   expect(leaving.motion.get(gone.id)?.state).toBe('leaving')
-  expect(moveRows(without, leaving.tracks, NOW + 1 + EXIT_MS, false).blocks.some(b => b.id === gone.id)).toBe(false)
+  const restsAt = NOW + 1 + Math.max(EXIT_MS, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS
+  const settling = moveRows(without, leaving.tracks, restsAt - 1, false)
+  expect(settling.blocks.some(b => b.id === gone.id)).toBe(true)
+  expect(moveRows(without, settling.tracks, restsAt, false).blocks.some(b => b.id === gone.id)).toBe(false)
 })
 
 test('a first draw forgets the last draw’s rows and draws its own at rest', () => {
