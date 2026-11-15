@@ -3684,8 +3684,6 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 function childStall(c) {
-  if (c.delegateState === "finished")
-    return { text: "finished", tone: "done" };
   if (c.delegateState === "blocked")
     return { text: "waiting", tone: "needsYou" };
   return null;
@@ -7279,7 +7277,7 @@ function stalledName(name, stall, room, namePaint, s) {
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
   const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
   const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= STATUS_TEXT_LINES));
-  const words = stall.tone === "muted" ? s.dim(stall.text) : s.tone(stall.tone, stall.text);
+  const words = stall.tone === "muted" ? s.dim(stall.text) : s.tone("needsYou", stall.text);
   return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
 }
 var markAt = (depth) => PAGE_MARK_AT + (PAGE_TEXT_AT - PAGE_MARK_AT) * depth;

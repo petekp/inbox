@@ -48,11 +48,10 @@ function isChildWorking(c: Child): boolean {
 }
 
 /**
- * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone, and
- * "finished", in the done tone. Other work shows none, since its moving mark shows it runs.
+ * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone. Other
+ * work shows none: its moving mark shows it runs, and a finished delegate's ✓ shows it finished.
  */
 function childStall(c: Child): StatusStall | null {
-  if (c.delegateState === 'finished') return { text: 'finished', tone: 'done' }
   if (c.delegateState === 'blocked') return { text: 'waiting', tone: 'needsYou' }
 
   return null
