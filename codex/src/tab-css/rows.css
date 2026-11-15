@@ -150,8 +150,9 @@
 .row.closing .line .meta {
   display: none;
 }
-/* An open row's Holds up line is the last branch of its tree. */
-.row.selected .line .holds-up {
+/* An open row's Holds up line is the last branch of its tree, which a closing row's fading body still draws. */
+.row.selected .line .holds-up,
+.row.closing .line .holds-up {
   display: none;
 }
 .row.closing .closed-only,
@@ -213,7 +214,7 @@
 .body .tree:not(.plain) > p::before {
   content: '';
   position: absolute;
-  left: calc(-1 * var(--tree-x));
+  left: calc(-1 * var(--tree-x) - 0.75px);
   top: 0;
   bottom: 0;
   border-left: 1.5px solid var(--tree-line);
@@ -224,14 +225,20 @@
 .body .tree > p.branch::after {
   content: '';
   position: absolute;
-  left: calc(-1 * var(--tree-x));
+  left: calc(-1 * var(--tree-x) - 0.75px);
   top: 0.8em;
-  width: calc(var(--tree-x) - 6px);
+  width: calc(var(--tree-x) - 6px + 0.75px);
   border-top: 1.5px solid var(--tree-line);
 }
 .body .tree > p:last-child::before {
   bottom: auto;
   height: calc(0.8em + 1px);
+}
+.mark.has-tree.running {
+  animation: none;
+}
+.mark.has-tree.running .glyph {
+  animation: running-pulse var(--pulse) ease-in-out infinite;
 }
 .mark.has-tree {
   position: relative;

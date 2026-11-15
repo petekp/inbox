@@ -197,7 +197,11 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
   return {
     ...blankLine(row.id),
     lead:
-      row.state.is === 'open' && row.type !== 'finding' ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null } : null,
+      row.type === 'finding'
+        ? null
+        : row.state.is === 'open'
+          ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null }
+          : { text: '', tone: null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === 'settled',

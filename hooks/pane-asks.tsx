@@ -51,7 +51,7 @@ export function paneAskRows(
     return {
       id: r.id,
       view: r,
-      handle: look === 'terminal' && isAsk ? ASK_MARK.text : '',
+      handle: look === 'terminal' && r.type !== 'finding' ? (isAsk ? ASK_MARK.text : ' ') : '',
       ...(look === 'terminal' && isAsk && ASK_MARK.tone ? { handleTone: ASK_MARK.tone } : {}),
       ...(isHandedOff ? { fold: {} } : {}),
       title: rowTitle(r, look),

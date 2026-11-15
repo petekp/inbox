@@ -14,7 +14,8 @@ main {
   }
   .time-left,
   .key.undo.undoing .icon,
-  .mark.running {
+  .mark.running,
+  .mark.running .glyph {
     animation: none;
   }
 }

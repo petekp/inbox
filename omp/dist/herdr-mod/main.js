@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T22:17:37.256Z. 236913 characters follow.
+// Built at 2026-11-15T22:39:23.573Z. 236970 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -5108,7 +5108,10 @@ function rowEl(r, p) {
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving))));
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
+    const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t);
+    return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
+  })).children(panelEl(r, m, p, isLeaving))));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;

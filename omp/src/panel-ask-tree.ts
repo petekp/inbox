@@ -1,4 +1,4 @@
-import { optionBody, optionReasonLine } from '../../hooks/rows'
+import { optionBody, optionReasonLine, shownOptionDescriptions } from '../../hooks/rows'
 import type { Line } from './panel-lines'
 import { wrapText } from './panel-text'
 import type { Style } from './panel'
@@ -14,12 +14,12 @@ const NONE = '   '
  * The arms start under the ◆ and the text starts in the title's column. With no answer line or Holds up, the context
  * draws alone with no tree. `pad` is the row's extra indent.
  */
-export function askTreeLines(line: Line, pad: number, width: number, s: Style): string[] {
+export function askTreeLines(line: Line, pad: number, width: number, s: Style, isAllShown = false): string[] {
   const row = line.row
-  if (!row) return []
+  if (!row || row.state.is !== 'open') return []
   const margin = ' '.repeat(3 + pad)
   const room = Math.max(10, width - margin.length - TRUNK.length - 1)
-  const branches = row.optionDescriptions.map(o => {
+  const branches = shownOptionDescriptions(row, isAllShown).map(o => {
     const body = optionBody(o)
 
     return { label: o.label, text: body === null ? o.label : `${o.label}: ${body}`, reason: optionReasonLine(o) }

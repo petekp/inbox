@@ -4249,6 +4249,9 @@ function optionReasonLine(o) {
   return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null;
 }
 var recommendedLine = (reason) => `Recommended: ${reason}`;
+function shownOptionDescriptions(row, isShowingAll) {
+  return row.optionDescriptions.filter((o) => isShowingAll || !o.isFolded);
+}
 function rowHandle(row) {
   return row.number === null ? "\u2022" : `${row.number})`;
 }
@@ -7252,13 +7255,13 @@ var TRUNK = "\u2502  ";
 var TEE = "\u251C\u2500 ";
 var LAST = "\u2514\u2500 ";
 var NONE = "   ";
-function askTreeLines(line, pad, width, s) {
+function askTreeLines(line, pad, width, s, isAllShown = false) {
   const row = line.row;
-  if (!row)
+  if (!row || row.state.is !== "open")
     return [];
   const margin = " ".repeat(3 + pad);
   const room = Math.max(10, width - margin.length - TRUNK.length - 1);
-  const branches = row.optionDescriptions.map((o) => {
+  const branches = shownOptionDescriptions(row, isAllShown).map((o) => {
     const body = optionBody(o);
     return { label: o.label, text: body === null ? o.label : `${o.label}: ${body}`, reason: optionReasonLine(o) };
   });
@@ -7830,7 +7833,7 @@ function lineOfRow(row, isAllShown) {
   const undo = row.actions.find((a) => a.press.action === "undo");
   return {
     ...blankLine(row.id),
-    lead: row.state.is === "open" && row.type !== "finding" ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null } : null,
+    lead: row.type === "finding" ? null : row.state.is === "open" ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null } : { text: "", tone: null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
@@ -8534,8 +8537,9 @@ function drawLine(line, isSelected, d) {
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const holdsUp = line.row?.holdsUpLine;
-  if (isOpen)
-    out.push(...askTreeLines(line, pad, width, s));
+  const tree = isOpen ? askTreeLines(line, pad, width, s, ui.optionsShown.includes(line.id)) : [];
+  if (tree.length > 0)
+    out.push(...tree);
   else if (holdsUp)
     out.push(fit(`${" ".repeat(indent)}${s.dim(holdsUp)}`, width));
   if (line.body && isOpen)
@@ -9151,6 +9155,10 @@ function demoView(now, agent) {
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
           context: "A glance stays up until it times out, and testers asked for a way to clear it sooner.",
           options: ["Pinch", "Flick"],
+          optionDescriptions: {
+            Pinch: "Touch thumb and finger together to clear the glance.",
+            Flick: "Flick the wrist outward to clear it."
+          },
           rec: "Pinch",
           recReason: "a flick fires by accident while walking",
           isDesignChoice: true,

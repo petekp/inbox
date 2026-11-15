@@ -270,3 +270,32 @@ test('in the terminal and desktop looks, a question’s context draws whole, mut
     expect(await texts(), look).not.toContain(context)
   }
 })
+
+test('in the terminal and desktop looks, a recommended answer with a description draws its reason after the description on its own line, and the answers hang on the row’s tree', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: 'demo' } as never)
+  await clock.settle()
+
+  for (const look of ['terminal', 'desktop'] as const) {
+    const pane = await $.ui.mount(
+      look === 'terminal' ? PANE : { ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } },
+    )
+    await clock.advance(PRESS_GUARD_MS)
+    if (look === 'terminal') await selectRow(pane, 'd11')
+    else if (await pane.find({ key: 'select-d11' }))
+      await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'select-d11' })
+    await clock.settle()
+    const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
+    expect(
+      texts.some(t => t.includes('Touch thumb and finger together to clear the glance. Recommended: a flick fires')),
+      look,
+    ).toBe(true)
+    expect(
+      texts.some(t => t.startsWith('Flick')),
+      look,
+    ).toBe(true)
+  }
+})

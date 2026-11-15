@@ -152,12 +152,19 @@ export function ListRow({
 }) {
   const isClosing = track.hasPanel && (track.state === 'closing' || track.state === 'leaving')
   const isSelected = track.hasPanel && !isClosing
+  const isTreeHung = row.hasTree && (isSelected || isClosing)
   const handle = (
     <span
-      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}${row.hasTree && (isSelected || isClosing) ? ' has-tree' : ''}`}
-      ref={row.isHandleRunning ? pulseInStep : undefined}
+      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}${isTreeHung ? ' has-tree' : ''}`}
+      ref={row.isHandleRunning && !isTreeHung ? pulseInStep : undefined}
     >
-      <MarkGlyph text={row.handle} />
+      {isTreeHung ? (
+        <span class="glyph" ref={row.isHandleRunning ? pulseInStep : undefined}>
+          <MarkGlyph text={row.handle} />
+        </span>
+      ) : (
+        <MarkGlyph text={row.handle} />
+      )}
     </span>
   )
 

@@ -226,7 +226,13 @@ function rowEl(r: RowBlock, p: Paint): Element {
         restId(r.id),
         p,
         v_flex()
-          .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))
+          .children(
+            lines.map(l => {
+              const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, t)
+
+              return 'isHidden' in l && l.isHidden ? el.opacity(0) : el
+            }),
+          )
           .children(panelEl(r, m, p, isLeaving)),
       ),
     )

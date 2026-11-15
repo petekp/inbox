@@ -169,7 +169,8 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   const holdsUp = line.row?.holdsUpLine
-  if (isOpen) out.push(...askTreeLines(line, pad, width, s))
+  const tree = isOpen ? askTreeLines(line, pad, width, s, ui.optionsShown.includes(line.id)) : []
+  if (tree.length > 0) out.push(...tree)
   else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))
   if (line.body && isOpen) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
   if (line.detail && (isOpen || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
