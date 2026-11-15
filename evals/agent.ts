@@ -120,7 +120,7 @@ function sandbox(c: Case, agent: Agent) {
     writeFileSync(join(bin, name), script)
     chmodSync(join(bin, name), 0o755)
   }
-  const path = c.bin ? [bin, process.env.PATH].join(delimiter) : process.env.PATH
+  const path = c.bin ? [bin, process.env.PATH].filter(Boolean).join(delimiter) : process.env.PATH
   const state = join(dir, 'state.json')
   const log = join(dir, 'calls.jsonl')
   writeFileSync(

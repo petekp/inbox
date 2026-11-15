@@ -20,6 +20,8 @@ type Check =
       count?: number
       min?: number
       max?: number
+      /** Count items instead of calls: recording the same kind and ask again updates that item, so it counts once. */
+      items?: true
     }
   | { reply: string }
   | { notReply: string }
@@ -62,10 +64,7 @@ export type Outcome = {
   raw: string
 }
 
-/**
- * The item a call is about. Recording the same kind and ask again updates that item, so those calls count once. Any
- * other call stands alone.
- */
+/** The item a call is about: a record's kind and ask. Any other call stands alone. */
 function itemKey(call: Call, n: number): string {
   const ask =
     call.tool === 'record'
@@ -99,14 +98,14 @@ export function failures(o: Outcome, checks: Check[]): string[] {
           const v = call.args[k]
           return Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim() !== ''
         })
-      const mine = new Set(o.calls.flatMap((call, n) => (fits(call) ? [itemKey(call, n)] : [])))
+      const mine = new Set(o.calls.flatMap((call, n) => (fits(call) ? [c.items ? itemKey(call, n) : `#${n}`] : [])))
       const label = `${c.calls}${c.kind ? ` ${c.kind}` : ''}${c.match ? ` ${JSON.stringify(c.match)}` : ''}${c.has ? ` with ${c.has.join(', ')}` : ''}${c.result ? ` answered /${c.result}/` : ''}`
       const exact = c.count
       const min = exact ?? c.min ?? (c.max === undefined ? 1 : 0)
       const max = exact ?? c.max ?? Infinity
       if (mine.size < min || mine.size > max)
         out.push(
-          `${mine.size} ${label} ${c.calls === 'record' ? 'items' : 'calls'}, want ${exact ?? `${min}${max === Infinity ? '+' : `-${max}`}`}; calls: ${
+          `${mine.size} ${label} ${c.items ? 'items' : 'calls'}, want ${exact ?? `${min}${max === Infinity ? '+' : `-${max}`}`}; calls: ${
             o.calls.map(x => `${x.tool}(${JSON.stringify(x.args)}) → ${x.result}`).join(' ') || 'none'
           }`,
         )
