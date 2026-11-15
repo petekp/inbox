@@ -49,10 +49,10 @@ A press is the person acting on a row: Done, Dismiss, an answer, a reply and the
 **The press file.** `<app home>/inbox/presses/<session id>/<press id>.json`, written with `writeTextFile(path, text, null)`. The spike confirmed that this call creates the folders, writes atomically and refuses an existing name. It holds:
 
 ```json
-{ "format": 1, "id": "…", "pressedAt": 0, "press": { "action": "done", "id": "q3" }, "holds": { "replies": {}, "discarded": {}, "shownSince": 0 } }
+{ "format": 1, "id": "…", "pressedAt": 0, "press": { "action": "done", "id": "q3" }, "holds": { "replies": {}, "discarded": {}, "shownSince": 0, "listInput": { "since": 0, "last": 0 } } }
 ```
 
-**Holds travel with the press.** `press()` decides whether a press is stale from the rows the look drew, which the look's holds describe. `shownSince` is when the look showed the tab. The look does not report the person's use of its list, so the host reads its holds with `listInput: null`. Without it, a closed row leaves the list at once instead of settling in place with Undo. The spike's first working click ran without holds, and the row vanished mid-fade.
+**Holds travel with the press.** `press()` decides whether a press is stale from the rows the look drew, which the look's holds describe. `shownSince` is when the look showed the tab. `listInput` is the person's latest run of input on the look's list, which keeps a due row from folding under it. The look writes it with each press, and the host reads it as the look drew it, or as null when it is absent or malformed. Without holds, a closed row leaves the list at once instead of settling in place with Undo. The spike's first working click ran without holds, and the row vanished mid-fade.
 
 **The host applies it** with `hooks/session-host.ts:press()`, the function every other look's press goes through. Then it deletes the file, and its next publish carries the result. Each host does the follow-ups its own look's press does, outside the look: the mod's `runPress` schedules `wakeForDone` after a Done, for example. That part of `runPress` moves into a function both the terminal pane and the Herdr path call. A press file the host cannot read, or whose `format` it does not know, is deleted and logged, with the file's text clipped to 100 characters. Codex and omp read only a regular file of at most 64 KiB, so a pipe named `x.json` cannot block the drain.
 

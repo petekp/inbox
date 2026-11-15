@@ -12095,7 +12095,12 @@ function pressFile(text) {
   if (reason)
     return { ok: false, reason };
   const read = file;
-  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } };
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: listInputOf(read.holds.listInput) } } };
+}
+function listInputOf(raw) {
+  if (!isRecord(raw))
+    return null;
+  return isTime(raw.since) && isTime(raw.last) ? { since: raw.since, last: raw.last } : null;
 }
 
 // ../hooks/held-sends.ts

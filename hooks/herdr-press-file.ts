@@ -2,7 +2,7 @@ import { HERDR_FORMAT } from './herdr'
 import type { PrPress } from './pr-press'
 import type { RowPress } from './presses'
 import type { ReportedLook } from './status-children'
-import type { Holds } from './timing'
+import type { Holds, ListInput } from './timing'
 
 /** A press the Herdr look made, with the look's holds, which `press()` needs to tell a stale press. */
 export type PressFile = {
@@ -143,5 +143,12 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
   if (reason) return { ok: false, reason }
   const read = file as PressFile
 
-  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } }
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: listInputOf(read.holds.listInput) } } }
+}
+
+/** The person's list use the look reported, or null when `raw` is absent or is not one. */
+function listInputOf(raw: unknown): ListInput | null {
+  if (!isRecord(raw)) return null
+
+  return isTime(raw.since) && isTime(raw.last) ? { since: raw.since, last: raw.last } : null
 }
