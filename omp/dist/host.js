@@ -10782,7 +10782,7 @@ var VOID = new Set([
   "track",
   "wbr"
 ]);
-var CLOSE_ON_OPEN = {
+var CLOSE_ON_OPEN = new Map(Object.entries({
   li: ["li"],
   dt: ["dt", "dd"],
   dd: ["dt", "dd"],
@@ -10793,11 +10793,15 @@ var CLOSE_ON_OPEN = {
   thead: ["thead", "tbody", "tfoot"],
   tbody: ["thead", "tbody", "tfoot"],
   tfoot: ["thead", "tbody", "tfoot"]
-};
+}));
 var PARAGRAPH_CLOSERS = new Set("address article aside blockquote div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hr menu nav ol p pre section table ul".split(" "));
-var RAW_TEXT_CLOSE = { script: /<\/script\s*>/gi, style: /<\/style\s*>/gi };
+var RAW_TEXT_CLOSE = new Map([
+  ["script", /<\/script\s*>/gi],
+  ["style", /<\/style\s*>/gi]
+]);
+var CONTROL_TAGS = new Set(["input", "select", "textarea"]);
 function newElement(tag, parent, attrs = new Map) {
-  return { tag, attrs, kids: [], parent, svg: false };
+  return { tag, attrs, kids: [], parent, svg: false, holdsControl: false };
 }
 function textOf2(el) {
   return el.kids.map((kid) => typeof kid === "string" ? kid : textOf2(kid)).join("");
@@ -10869,6 +10873,21 @@ function startTag(source) {
   }
   return { tag: named[0].toLowerCase(), attrs, selfClosing };
 }
+function isInTemplate(el) {
+  for (;el; el = el.parent)
+    if (el.tag === "template")
+      return true;
+  return false;
+}
+function markHoldsControl(from) {
+  for (let el = from;el && !el.holdsControl; el = el.parent)
+    el.holdsControl = true;
+}
+function addComment(parent, text) {
+  const comment = newElement("#comment", parent);
+  comment.kids.push(text);
+  parent.kids.push(comment);
+}
 function parseForm(html) {
   const root = newElement("#document", null);
   const open = [];
@@ -10877,6 +10896,7 @@ function parseForm(html) {
   while (i < html.length) {
     if (html.startsWith("<!--", i)) {
       const end = html.indexOf("-->", i + 4);
+      addComment(top(), html.slice(i + 4, end < 0 ? html.length : end));
       i = end < 0 ? html.length : end + 3;
     } else if (html[i] !== "<") {
       const next = html.indexOf("<", i);
@@ -10911,14 +10931,16 @@ function parseForm(html) {
       const current = open[open.length - 1];
       if (current?.tag === "p" && PARAGRAPH_CLOSERS.has(parsed.tag))
         open.pop();
-      else if (current && CLOSE_ON_OPEN[parsed.tag]?.includes(current.tag))
+      else if (current && CLOSE_ON_OPEN.get(parsed.tag)?.includes(current.tag))
         open.pop();
       const parent = top();
       const element = newElement(parsed.tag, parent, parsed.attrs);
       element.svg = parent !== root && parent.svg || parsed.tag === "svg";
       parent.kids.push(element);
+      if (CONTROL_TAGS.has(parsed.tag) && !isInTemplate(parent))
+        markHoldsControl(parent);
       i = end + 1;
-      const rawClose = Object.hasOwn(RAW_TEXT_CLOSE, parsed.tag) ? RAW_TEXT_CLOSE[parsed.tag] : undefined;
+      const rawClose = RAW_TEXT_CLOSE.get(parsed.tag);
       if (rawClose && !parsed.selfClosing) {
         rawClose.lastIndex = i;
         const match = rawClose.exec(html);
@@ -10933,7 +10955,19 @@ function parseForm(html) {
   return root;
 }
 function descendants(from) {
-  return from.kids.flatMap((kid) => typeof kid === "string" ? [] : [kid, ...descendants(kid)]);
+  const found = [];
+  const visit = (el) => {
+    if (el.tag === "template")
+      return;
+    for (const kid of el.kids) {
+      if (typeof kid === "string")
+        continue;
+      found.push(kid);
+      visit(kid);
+    }
+  };
+  visit(from);
+  return found;
 }
 function childElements(of) {
   return of.kids.filter((kid) => typeof kid !== "string");
@@ -11128,7 +11162,7 @@ class FormReader {
   }
   list(list) {
     this.flush();
-    if (descendants(list).some(isControl)) {
+    if (list.holdsControl) {
       this.walkKids(list);
       this.flush();
       return;
@@ -11141,7 +11175,7 @@ class FormReader {
     this.flush();
     const rows = descendants(table).filter((el) => el.tag === "tr" && closest(el, "table") === table);
     const cellsOf = (row) => childElements(row).filter((el) => el.tag === "td" || el.tag === "th");
-    if (!descendants(table).some(isControl)) {
+    if (!table.holdsControl) {
       if (rows.some((row) => cellsOf(row).length > 0))
         this.section.blocks.push({ kind: "other" });
       return;
@@ -11149,12 +11183,12 @@ class FormReader {
     let header = [];
     for (const row of rows) {
       const cells = cellsOf(row);
-      const rowHasControl = descendants(row).some(isControl);
+      const rowHasControl = row.holdsControl;
       if (cells.every((cell) => cell.tag === "th") && !rowHasControl) {
         header = cells.map(textWithoutControls);
         continue;
       }
-      const rowText = cells.filter((cell) => !descendants(cell).some(isControl)).map(textWithoutControls).filter((text) => text !== "").join(" \xB7 ");
+      const rowText = cells.filter((cell) => !cell.holdsControl).map(textWithoutControls).filter((text) => text !== "").join(" \xB7 ");
       if (rowText !== "")
         this.section.blocks.push({ kind: "text", text: normalized(rowText) });
       cells.forEach((cell, column) => {
@@ -11178,14 +11212,7 @@ class FormReader {
     const label = wrapping ? wrapping : this.detachedLabel(control);
     const name = control.attrs.get("name") ?? "";
     if (control.tag === "select") {
-      const options = descendants(control).filter((el) => el.tag === "option").map((el) => ({
-        label: oneLine(textOf2(el)),
-        checked: el.attrs.has("selected"),
-        disabled: el.attrs.has("disabled")
-      }));
-      const first = options.find((o) => !o.disabled);
-      if (!control.attrs.has("multiple") && !options.some((o) => o.checked) && first)
-        first.checked = true;
+      const options = descendants(control).filter((el) => el.tag === "option").map((el) => ({ label: oneLine(textOf2(el)), checked: el.attrs.has("selected") }));
       this.addField({ name, kind: "choice", select: true, label, options });
       return;
     }
@@ -11194,7 +11221,7 @@ class FormReader {
       return;
     }
     const type = (control.attrs.get("type") ?? "text").toLowerCase();
-    if (IGNORED_INPUTS.has(type) || type === "hidden")
+    if (IGNORED_INPUTS.has(type) || type === "hidden" || type in Object.prototype)
       return;
     if (type === "radio" || type === "checkbox") {
       const value = control.attrs.get("value");
@@ -11238,6 +11265,13 @@ function nameLabel(name) {
   return name.replace(/[_-]+/g, " ");
 }
 function formQuestions(html) {
+  try {
+    return readQuestions(html);
+  } catch {
+    return [];
+  }
+}
+function readQuestions(html) {
   const document = parseForm(html);
   const form = descendants(document).find((el) => el.tag === "form");
   const reader = new FormReader(form ?? document);
