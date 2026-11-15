@@ -3252,7 +3252,7 @@ var MARK_LEGEND = [
     mark: ROW_BAR,
     tone: null,
     isRunning: false,
-    words: "A blue bar at a row's edge marks a row that just arrived. A green, gray or red one marks a row that just closed: done, dismissed or cancelled, or not sent."
+    words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
 var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
@@ -4365,7 +4365,7 @@ function settledTone(state) {
 function settledBarTone(state) {
   if (isSendRefused(state.delivery))
     return "error";
-  return state.closedAs === "handled" && state.delivery !== "unconfirmed" ? "done" : "muted";
+  return state.closedAs === "handled" ? "done" : "muted";
 }
 function isSendRefused(delivery) {
   return delivery !== null && typeof delivery === "object";

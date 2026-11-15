@@ -1928,7 +1928,7 @@ var MARK_LEGEND = [
     mark: ROW_BAR,
     tone: null,
     isRunning: false,
-    words: "A blue bar at a row's edge marks a row that just arrived. A green, gray or red one marks a row that just closed: done, dismissed or cancelled, or not sent."
+    words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
 

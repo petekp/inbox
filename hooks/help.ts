@@ -104,7 +104,7 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     tone: null,
     isRunning: false,
     words:
-      "A blue bar at a row's edge marks a row that just arrived. A green, gray or red one marks a row that just closed: done, dismissed or cancelled, or not sent.",
+      "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed.",
   },
 ]
 

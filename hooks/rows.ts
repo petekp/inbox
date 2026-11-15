@@ -362,14 +362,14 @@ export function settledTone(state: Pick<SettledState, 'delivery' | 'closedAs'>):
 }
 
 /**
- * The tone of the bar at a settled row's left edge, from how the row closed: done once it was answered or done, from
- * the press on, while its message waits or goes; error once a send failed; muted for a dismissed or lapsed row, and for
- * a message whose arrival was not confirmed.
+ * The tone of the bar at a settled row's left edge, from how the row closed: done once it was handled, from the press
+ * on, whatever step its message is at; error once a send failed; muted for a dismissed or lapsed row. A host that does
+ * not hold a send until its run marks each send unconfirmed until it is accepted, so unconfirmed stays done.
  */
 export function settledBarTone(state: Pick<SettledState, 'delivery' | 'closedAs'>): 'done' | 'muted' | 'error' {
   if (isSendRefused(state.delivery)) return 'error'
 
-  return state.closedAs === 'handled' && state.delivery !== 'unconfirmed' ? 'done' : 'muted'
+  return state.closedAs === 'handled' ? 'done' : 'muted'
 }
 
 function isSendRefused(delivery: ClosedDelivery): delivery is { error: string; canUndo: boolean } {
