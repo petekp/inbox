@@ -148,7 +148,7 @@ export function UndoPlace({
   offersUndo: boolean
   onUndo: () => void
 }) {
-  const isShown = canUndo && (isUndoing || isUndoLeft(start, Date.now()))
+  const isShown = isUndoing || (canUndo && isUndoLeft(start, Date.now()))
   if (!isShown)
     return offersUndo ? (
       <button type="button" class="key undo spent" disabled tabIndex={-1} aria-hidden="true">

@@ -12,6 +12,7 @@ import {
   runFailureOf,
 } from './pr-query'
 import { isKeptPr, parseRef, prRefs } from './prs'
+import { clockTime } from './text'
 
 export const MAX_PRS = 12
 
@@ -149,7 +150,8 @@ type Fetched = {
  * asks gh which PR the branch has, with one more gh run; otherwise the last one found is read by its ref. A merged
  * PR is not read again, a closed one only now and then, and a view in `shared` that another session read lately,
  * and since this session last read the PR, stands in for a read, unless a press asked. A PR gh could not read keeps its last view: with the reason on it when
- * the cause is its own, and with none when the whole fetch failed, since `failure` then says why once.
+ * the cause is its own, and with none when the whole fetch failed, since `failure` then says why once. A PR with no
+ * view goes in `unread` with the reason, its own or the whole fetch's.
  */
 export async function fetchTracked(
   run: GhRun,
@@ -186,6 +188,7 @@ export async function fetchTracked(
   }
   const read: string[] = []
   const unread: Record<string, string> = {}
+  const skipped: string[] = []
   let isAnswered = false
   for (let n = 0; n < toRead.length; n += PRS_PER_QUERY) {
     const chunk = toRead.slice(n, n + PRS_PER_QUERY)
@@ -195,6 +198,7 @@ export async function fetchTracked(
     const answer = chunkFailure ? null : readPrsAnswer(r.stdout, chunk)
     if (!answer) {
       failure ??= chunkFailure ?? { kind: 'error', at: fetchedAt, text: "GitHub's answer could not be read" }
+      skipped.push(...chunk)
       continue
     }
     isAnswered = true
@@ -214,8 +218,23 @@ export async function fetchTracked(
     const limits = await gh(['api', 'rate_limit'])
     failure = { ...failure, resetsAt: limits.exitCode === 0 ? limitResetOf(limits.stdout) : null }
   }
+  if (failure) for (const ref of skipped) if (!state.views[ref]) unread[ref] = fetchFailureWords(failure)
 
   return { views, branchRef, isGhSignedOut, failure, read, unread }
+}
+
+/** A fetch failure in a few words, as the Refresh press's result gives it: "GitHub's limit resets at 4:46 PM". */
+export function fetchFailureWords(f: PrFetchFailure): string {
+  switch (f.kind) {
+    case 'limit':
+      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`
+    case 'unreachable':
+      return 'could not reach GitHub'
+    case 'timed-out':
+      return GH_TIMED_OUT_TEXT
+    case 'error':
+      return f.text
+  }
 }
 
 /** `view` as this session keeps it: seen open once this fetch, or one before it in this session, found it open. */

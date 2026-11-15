@@ -183,7 +183,8 @@ export function pruned<S extends Session>(s: S): S {
 /**
  * Merges fetched PRs into the session, and records the status of each ranked PR the order has none for. The write that
  * saves it drops, through `pruned`, each view no look draws. `isGhSignedOut` is null when no gh run answered, and the
- * saved one stands.
+ * saved one stands. `isFetching` stays as the mod set it, since the mod clears it only once it has noted when the fetch
+ * ended, and its poll counts from then.
  */
 export function withFetchedPrs<S extends Session>(
   s: S,
@@ -209,7 +210,7 @@ export function withFetchedPrs<S extends Session>(
     prViews: {
       views,
       branchRef,
-      isFetching: false,
+      isFetching: s.prViews.isFetching,
       ...(isSignedOut ? { isGhSignedOut: true } : {}),
       ...(failure ? { failure } : {}),
       ...(Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}),

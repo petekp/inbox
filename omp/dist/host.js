@@ -1051,6 +1051,7 @@ async function fetchTracked(run, state, links, ask, now, shared = {}) {
   }
   const read = [];
   const unread = {};
+  const skipped = [];
   let isAnswered = false;
   for (let n = 0;n < toRead.length; n += PRS_PER_QUERY) {
     const chunk = toRead.slice(n, n + PRS_PER_QUERY);
@@ -1060,6 +1061,7 @@ async function fetchTracked(run, state, links, ask, now, shared = {}) {
     const answer = chunkFailure ? null : readPrsAnswer(r.stdout, chunk);
     if (!answer) {
       failure ??= chunkFailure ?? { kind: "error", at: fetchedAt, text: "GitHub's answer could not be read" };
+      skipped.push(...chunk);
       continue;
     }
     isAnswered = true;
@@ -1081,7 +1083,24 @@ async function fetchTracked(run, state, links, ask, now, shared = {}) {
     const limits = await gh(["api", "rate_limit"]);
     failure = { ...failure, resetsAt: limits.exitCode === 0 ? limitResetOf(limits.stdout) : null };
   }
+  if (failure) {
+    for (const ref of skipped)
+      if (!state.views[ref])
+        unread[ref] = fetchFailureWords(failure);
+  }
   return { views, branchRef, isGhSignedOut, failure, read, unread };
+}
+function fetchFailureWords(f) {
+  switch (f.kind) {
+    case "limit":
+      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
+    case "unreachable":
+      return "could not reach GitHub";
+    case "timed-out":
+      return GH_TIMED_OUT_TEXT;
+    case "error":
+      return f.text;
+  }
 }
 function withSeen(view, previous) {
   return { ...view, wasSeenOpen: view.state === "OPEN" || previous?.wasSeenOpen === true };
@@ -4373,18 +4392,6 @@ function fetchFailureNotice(f) {
       return `Could not read the PRs: ${f.text}. They show as last read.`;
   }
 }
-function fetchFailureWords(f) {
-  switch (f.kind) {
-    case "limit":
-      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
-    case "unreachable":
-      return "could not reach GitHub";
-    case "timed-out":
-      return GH_TIMED_OUT_TEXT;
-    case "error":
-      return f.text;
-  }
-}
 function tabWideProblem(prs) {
   if (prs.isGhMissing)
     return "gh was not found";
@@ -4427,7 +4434,7 @@ function prRefreshView(prs, links, presses, shownSince) {
     return null;
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown
   };
 }
@@ -6785,7 +6792,7 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
     prViews: {
       views,
       branchRef,
-      isFetching: false,
+      isFetching: s.prViews.isFetching,
       ...isSignedOut ? { isGhSignedOut: true } : {},
       ...failure ? { failure } : {},
       ...Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}
@@ -6797,10 +6804,15 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
 var PRS_REFRESH_MS = 120000;
 var PRS_HIDDEN_REFRESH_MS = 10 * 60000;
 var NEW_PR_FETCH_MS = 15000;
+var PR_POLL_MS = 15000;
+function untriedPrs(s) {
+  const { views, unread = {} } = s.prViews;
+  return splitLinked(s.prViews, s.ledger).tracked.filter((ref) => !(ref in views) && !(ref in unread));
+}
 function isPrFetchDue(s, lastFetchedAt, now, isTabShown) {
   if (lastFetchedAt === undefined)
     return true;
-  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some((ref) => !(ref in s.prViews.views));
+  const hasNewPr = !s.prViews.isGhMissing && untriedPrs(s).length > 0;
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
   const refreshMs = isTabShown ? PRS_REFRESH_MS : PRS_HIDDEN_REFRESH_MS;
   return now - lastFetchedAt >= refreshMs || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
@@ -6839,15 +6851,23 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
   const s = await host.read();
   const shared = await host.gh.shared?.read() ?? NO_PR_SHARED;
   const now = await host.now();
-  if (!isPress && isLimitInForce(shared.limit, now)) {
+  if (!isPress && shared.limit && isLimitInForce(shared.limit, now)) {
     const limit = shared.limit;
-    await host.update((cur) => cur.prViews.failure?.at === limit?.at ? cur : { ...cur, prViews: { ...cur.prViews, failure: limit } });
+    await host.update((cur) => {
+      const skipped = untriedPrs(cur);
+      if (cur.prViews.failure?.at === limit.at && skipped.length === 0)
+        return cur;
+      const unread = {
+        ...cur.prViews.unread,
+        ...Object.fromEntries(skipped.map((ref) => [ref, fetchFailureWords(limit)]))
+      };
+      return { ...cur, prViews: { ...cur.prViews, failure: limit, ...skipped.length > 0 ? { unread } : {} } };
+    });
     return;
   }
   const bin = await host.gh.find();
-  host.gh.noteMissing(bin === null);
   if (bin === null)
-    return;
+    return host.gh.noteMissing(true);
   let sawUnstartable = false;
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
     sawUnstartable = true;
@@ -6856,9 +6876,8 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
   if (sawUnstartable) {
     host.gh.forget();
     const refound = await host.gh.find();
-    host.gh.noteMissing(refound === null);
     if (refound === null)
-      return;
+      return host.gh.noteMissing(true);
     if (refound !== bin)
       fetch = await fetchWith(refound);
   }
@@ -6868,6 +6887,7 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
     views: Object.fromEntries([...Object.entries(cur.views), ...read.map((ref) => [ref, fetched[ref]])].filter(([, view]) => at - (view.fetchedAt ?? 0) < PR_SHARED_MS)),
     limit: failure?.kind === "limit" ? failure : failure === null ? null : cur.limit
   }));
+  host.gh.noteMissing(false);
   await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread));
 }
 var ALREADY_RUNNING = /already running/i;
@@ -8394,7 +8414,6 @@ function bandLines(screen, width, now, style) {
 
 // src/controller.ts
 var ANIMATION_MS = 200;
-var PRS_CHECK_MS = 120000;
 function createPanel(deps) {
   const { source, style, timers } = deps;
   let ui = { ...INITIAL_UI, shownSince: deps.openedAt };
@@ -8515,7 +8534,7 @@ function createPanel(deps) {
     },
     async start() {
       stops.push(source.onChange(() => void refresh()));
-      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === "prs"), PRS_CHECK_MS);
+      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === "prs"), PR_POLL_MS);
       stops.push(() => timers.stop(prs));
       const delegates = timers.every(() => {
         if (ui.tab === "overview")
@@ -12334,7 +12353,9 @@ function sessionCalls(context) {
       return;
     deps.background((async () => {
       const host = hostFor(ctx);
-      const fetching = prFetches.fetchWhenDue(id, await host.read(), isTabShown, () => fetchPrs(host, true));
+      const s = await host.read();
+      const seen = { ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } };
+      const fetching = prFetches.fetchWhenDue(id, seen, isTabShown, () => fetchPrs(host, true));
       if (!fetching)
         return;
       notifyChanged(id);
