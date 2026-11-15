@@ -9,6 +9,7 @@ import { deliveryLabel } from '../../hooks/rows'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { LocalResult, RowNote } from '../../types'
+import { button } from './blocks'
 import type { Block, Button } from './blocks'
 import type { LastPress } from './files'
 
@@ -166,6 +167,21 @@ const withOutButtons = (buttons: Button[], outRows: ReadonlySet<string>): Button
   buttons.map(b => (b.does.is === 'press' && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b))
 
 /**
+ * A settled row's buttons while its Undo press is out. The plan drops Undo once its time ends, even while the press is
+ * out, so the look draws the Undo it sent drawn out, in the place the spent Undo keeps or after the row's buttons.
+ */
+function withUndoOut(rowId: string, buttons: Button[], out: Out | undefined): Button[] {
+  if (out?.action !== 'undo') return buttons
+  const id = `${rowId} undo`
+  const kept = buttons.find(b => b.id === id)
+  if (kept && !kept.isHidden) return buttons
+  const { isHidden: _, ...spent } = kept ?? button(id, out.label, 'quiet')
+  const drawn: Button = { ...spent, label: out.label, isOut: true }
+
+  return kept ? buttons.map(b => (b === kept ? drawn : b)) : [...buttons, drawn]
+}
+
+/**
  * The blocks with the look's presses drawn: every press button on a row with a press out draws out, and the row's
  * line reads the press under way, how the look's own opens went, or why a press ended unreported, in place of the line
  * the publish gave. While the press is out, its line reads as the press under way, wherever a look places that.
@@ -184,7 +200,9 @@ export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<st
   return blocks.map((b): Block => {
     if (b.kind === 'row' || b.kind === 'pr' || b.kind === 'line' || b.kind === 'banner') {
       const line = lineOf(b.id)
-      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...(line ? { feedback: line } : {}) }
+      const isSettledRow = b.kind === 'row' && b.settled !== null
+      const buttons = isSettledRow ? withUndoOut(b.id, b.buttons, byRow.get(b.id)) : b.buttons
+      return { ...b, buttons: withOutButtons(buttons, outRows), ...(line ? { feedback: line } : {}) }
     }
     if (b.kind === 'status' || b.kind === 'heading' || b.kind === 'empty')
       return { ...b, buttons: withOutButtons(b.buttons, outRows) }

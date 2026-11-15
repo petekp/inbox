@@ -4,6 +4,7 @@ import type { Feedback } from '../../hooks/feedback'
 import type { Effect } from '../../hooks/press-reducer'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
+import { DOT, shortAgo } from '../../hooks/rows'
 import type { ActionEmphasis } from '../../hooks/rows'
 import type { StatusStall } from '../../hooks/status-page'
 
@@ -71,8 +72,11 @@ export type RowBlock = {
   mark: Mark | null
   title: string
   age: string | null
-  /** The row's press status, or a Closed line's outcome, with the press result it reads when it has one. */
-  feedback: { text: string; tone: Tone; source: Feedback | null } | null
+  /**
+   * The row's press status, or a Closed line's outcome, with the press result it reads when it has one. `aged` is its
+   * words and the time its age counts from, for a status that ends with its age, as a PR row's does.
+   */
+  feedback: { text: string; tone: Tone; source: Feedback | null; aged?: Aged } | null
   /** Shown once the row has closed, until it folds. */
   settled: { label: string; tone: Tone } | null
   isDim: boolean
@@ -86,7 +90,15 @@ export type RowBlock = {
   field: Field | null
   /** The line the row had above its buttons, kept while a press puts its status under them. See `holdLinesAbove`. */
   heldLine?: { text: string; tone: Tone; isHidden: boolean }
+  /** Draws the status under the buttons, where the shared rule puts it above them. See `holdLinesAbove`. */
+  isStatusHeldUnder?: true
 }
+
+/** A status's words and the time its age counts from. */
+export type Aged = { lead: string; at: number }
+
+/** A status that ends with its age: its words, then how long ago its time was. */
+export const agedText = (a: Aged, now: number): string => `${a.lead}${DOT}${shortAgo(now - a.at)}`
 
 /** A line of the Status page: a subject, a milestone or a child, with its mark, name, stall word and lines under it. */
 export type StatusLine = {
