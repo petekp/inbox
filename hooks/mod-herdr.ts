@@ -246,6 +246,7 @@ export function publishToHerdr(
             terminal: target.terminal,
             writtenAt: now,
             projectFolder: root,
+            isFetchingPrs: session.prViews.isFetching,
           },
           session,
           calls.log,

@@ -19,7 +19,6 @@ import {
   prMarkId,
   prRefreshFailedText,
   prThreadId,
-  prsEmptyText,
   splitFollowUps,
   threadRowText,
   threadSentIn,
@@ -30,10 +29,12 @@ import { isDismissed } from '../../hooks/pr-views'
 import type { DrawnPr } from '../../hooks/pr-views'
 import { checkKey, commentParts, readableComment, readiness, threadWhere } from '../../hooks/prs'
 import { bannerOf } from '../../hooks/banners'
+import { emptyTab } from '../../hooks/empty-tab'
+import type { PrRefreshView } from '../../hooks/pr-refresh'
 import { DOT, ROW_COPY, settledLabel, settledMark, shortAgo } from '../../hooks/rows'
 import { SETTLED_MS } from '../../hooks/timing'
 import { clipLabel } from '../../hooks/text'
-import { agedText, button } from './blocks'
+import { agedText, button, emptyBlock } from './blocks'
 import type { Block, Button, LineBlock, Mark, RowBlock, Tone } from './blocks'
 import type { LookScreen } from './draw'
 
@@ -230,8 +231,10 @@ const note = (id: string, text: string, tone: Tone): Block => ({
 })
 
 /** Refresh PRs and its press's result, while a PR could not be read. */
-function refreshParts(screen: LookScreen): Pick<LineBlock, 'text' | 'buttons' | 'feedback'> | null {
-  const refresh = screen.view.prs.refresh
+function refreshParts(
+  screen: LookScreen,
+  refresh: PrRefreshView | null = screen.view.prs.refresh,
+): Pick<LineBlock, 'text' | 'buttons' | 'feedback'> | null {
   if (!refresh) return null
   const buttons = refresh.actions.map((a, n) => prButton(null, a, `refresh ${n}`))
   const feedback = refresh.showsPress ? prFeedback(screen, PR_REFRESH_ID) : null
@@ -295,12 +298,17 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   const { view } = screen
   const prs = view.prs
   const gh = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure }
-  if (prs.drawn.length === 0) {
-    const empty = prsEmptyText({ isFetching: false, ...gh }, PLACE)
-    return [
-      { kind: 'empty', id: 'empty prs', title: empty.title, hint: empty.hint, buttons: [] },
-      ...refreshLine(screen),
-    ]
+  const empty = emptyTab(view, {
+    tab: 'prs',
+    place: PLACE,
+    drawn: prs.drawn.length,
+    isFetchingPrs: screen.isFetchingPrs,
+    isGhMissing: screen.isGhMissing,
+  })
+  if (empty) {
+    const refresh = empty.under?.is === 'pr-refresh' ? refreshParts(screen, empty.under.refresh) : null
+
+    return [emptyBlock('prs', empty, refresh && { id: PR_REFRESH_ID, ...refresh, field: null })]
   }
   const presses: PressState = { lastActions: view.lastActions, turns: view.turns, now: screen.now }
   const notice = ghNoticeOf(gh)

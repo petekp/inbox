@@ -126,4 +126,16 @@ export type Paint = {
   input: (rowId: string) => InputState | null
   /** Whether the pane is under `NARROW_PANE` wide. */
   isNarrow: boolean
+  /** The list's height inside its padding, from its last measure, which an empty tab's block fills. Null until measured. */
+  listRoom: number | null
 }
+
+/** A size callback that keeps what `read` takes from a box's size as `view[key]`, and draws again when that changed. */
+export const onSize =
+  <V, K extends keyof V>(view: V, key: K, read: (size: { width: number; height: number }) => V[K]) =>
+  (size: { width: number; height: number }, cx: Context) => {
+    const value = read(size)
+    if (value === view[key]) return
+    view[key] = value
+    cx.notify()
+  }

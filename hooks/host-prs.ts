@@ -61,8 +61,11 @@ export function isPrPollDue(
   return isPrFetchDue(s, poll.lastFetchedAt, poll.now, poll.isTabShown)
 }
 
-/** Which sessions have a PR fetch running, and when each last ended. */
-export function prFetchTracker(now: () => number): {
+/** Which sessions have a PR fetch running, and when each last ended. `onChange` hears each start and end, by session. */
+export function prFetchTracker(
+  now: () => number,
+  onChange: (id: string) => void = () => undefined,
+): {
   isFetching(id: string): boolean
   /**
    * Runs `fetch` when no fetch is running for `id` and `isPrFetchDue` says the PRs are due, with `isTabShown` saying
@@ -84,8 +87,10 @@ export function prFetchTracker(now: () => number): {
       .finally(() => {
         endedAt.set(id, now())
         running.delete(id)
+        onChange(id)
       })
     running.set(id, run)
+    onChange(id)
 
     return run
   }

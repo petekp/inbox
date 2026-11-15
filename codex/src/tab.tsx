@@ -64,7 +64,7 @@ function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): Com
           <Prs v={v} prs={prs} now={now} />
         ) : null
       ) : (
-        <StatusTab page={v.statusPage} />
+        <StatusTab v={v} />
       )}
       <footer>
         <button

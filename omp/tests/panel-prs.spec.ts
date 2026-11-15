@@ -7,12 +7,12 @@ import {
   prCheckId,
   prMarkId,
   PR_REFRESH_ID,
-  prsEmptyHint,
   prThreadId,
   threadRowText,
   threadSentIn,
 } from '../../hooks/pr-rows'
 import { cancelledChecks, failingChecks } from '../../hooks/pr-checks'
+import { prsEmptyHint } from '../../hooks/empty-tab'
 import { waitingThreads } from '../../hooks/prs'
 import { ago } from '../../hooks/text'
 import type { LastAction, PrOrder } from '../../types'

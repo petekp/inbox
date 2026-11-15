@@ -1241,11 +1241,8 @@ var NEXT_BUILD_MARK = ".next-build";
 function versionLabel(version, isNextBuild) {
   return isNextBuild ? `v${version} \xB7 next` : `v${version}`;
 }
+var NOTHING_NEEDED_TEXT = "Nothing needed";
 var MAYBE_STALE_TEXT = "May be out of date";
-function emptyText(tab, agent, isStale = false) {
-  const text = tab === "needsYou" ? { title: "Nothing needed", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
-  return isStale ? { ...text, title: MAYBE_STALE_TEXT } : text;
-}
 
 // ../hooks/tabs.ts
 var TAB_NAMES = [
@@ -1297,7 +1294,7 @@ function bandCounts(view) {
   return ROW_TABS.map((t) => ({ id: t.id, label: t.label, count: view[t.id].count })).filter((c) => c.count > 0);
 }
 function noCountsText(view, isReadFailed = false) {
-  return isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : "Nothing needed";
+  return isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : NOTHING_NEEDED_TEXT;
 }
 
 // ../hooks/status-children.ts
@@ -3851,11 +3848,7 @@ function statusPage(s, now) {
     ...goalParts,
     goal,
     rows,
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    empty: {
-      title: "Status",
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-    }
+    error: s.overviewFailure ? STATUS_FAILED : null
   };
 }
 function seenSubjectIds(row) {
@@ -4478,15 +4471,6 @@ function ghNoticeOf(gh) {
     return { kind: gh.failure.kind === "limit" ? "gh-limited" : "gh-failed", text: fetchFailureNotice(gh.failure) };
   return null;
 }
-function prsEmptyHint(place) {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
-}
-function prsEmptyText(prs, place) {
-  return {
-    title: prs.isFetching ? "Checking for PRs\u2026" : "No PRs",
-    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place)
-  };
-}
 function prRefreshFailedText(error) {
   return `Last refresh failed: ${error}`;
 }
@@ -4935,12 +4919,13 @@ var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
-  const { projectFolder, ...rest } = source;
+  const { projectFolder, isFetchingPrs, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
     ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
+    ...isFetchingPrs && { isFetchingPrs: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
@@ -6817,7 +6802,9 @@ function isPrFetchDue(s, lastFetchedAt, now, isTabShown) {
   const refreshMs = isTabShown ? PRS_REFRESH_MS : PRS_HIDDEN_REFRESH_MS;
   return now - lastFetchedAt >= refreshMs || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
-function prFetchTracker(now) {
+function prFetchTracker(now, onChange = () => {
+  return;
+}) {
   const running = new Map;
   const following = new Map;
   const endedAt = new Map;
@@ -6827,8 +6814,10 @@ function prFetchTracker(now) {
     }).finally(() => {
       endedAt.set(id, now());
       running.delete(id);
+      onChange(id);
     });
     running.set(id, run);
+    onChange(id);
     return run;
   };
   return {
@@ -6900,6 +6889,50 @@ async function rerunRun(host, e) {
     return null;
   return r.exitCode === TIMED_OUT_CODE ? GH_TIMED_OUT_TEXT : r.stderr.trim().split(`
 `)[0] || `gh exited with ${r.exitCode}`;
+}
+
+// ../hooks/empty-tab.ts
+var EMPTY_TITLES = {
+  needsYou: NOTHING_NEEDED_TEXT,
+  findings: "No findings yet",
+  prs: "No PRs",
+  prsFetching: "Checking for PRs\u2026"
+};
+var EMPTY_STATUS_TEXT = {
+  title: screenTabOf("overview").label,
+  hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+};
+function prsEmptyHint(place) {
+  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+}
+function emptyTab(view, look) {
+  if (look.tab === "overview") {
+    const page = view.statusPage;
+    if (!page.isEmpty)
+      return null;
+    return {
+      ...EMPTY_STATUS_TEXT,
+      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
+    };
+  }
+  if (look.tab === "prs") {
+    if (look.drawn > 0)
+      return null;
+    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure };
+    const { refresh } = view.prs;
+    return {
+      title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
+      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
+      under: refresh ? { is: "pr-refresh", refresh } : null
+    };
+  }
+  if (look.drawn > 0 || look.hasBlocker)
+    return null;
+  if (look.tab === "needsYou" && look.hostText)
+    return { ...look.hostText, under: null };
+  const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
+  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab];
+  return { title, hint, under: null };
 }
 
 // src/panel-text.ts
@@ -7096,8 +7129,8 @@ function goalSection(page, typing, isUnfolded) {
     ])
   ];
 }
-function setGoal(page, typing) {
-  return [goalEntry(typing === GOAL_KEYS_ID ? { is: "field" } : { is: "keys", page })];
+function setGoal(setGoal) {
+  return [goalEntry(setGoal.isFieldOpen ? { is: "field" } : { is: "keys", keys: setGoal.keys })];
 }
 function fieldLines(d) {
   const { ui, width, style: s } = d;
@@ -7155,7 +7188,7 @@ function drawGoalPart(part, d, isSelected) {
     return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
   }
   if (part.is === "keys")
-    return pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT);
+    return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT);
   return fieldLines(d);
 }
 
@@ -7591,6 +7624,13 @@ function stopEntries(screen, ui) {
     }
   ];
 }
+function emptyEntries(empty, under = []) {
+  return [
+    { kind: "note", text: empty.title, isStrong: true },
+    ...empty.hint ? [{ kind: "note", text: empty.hint, isWhole: true }] : [],
+    ...under
+  ];
+}
 function rowEntries(screen, ui, tab) {
   const { view } = screen;
   const groups = tab === "needsYou" ? NEEDS_YOU_GROUPS.map((g) => ({
@@ -7606,14 +7646,17 @@ function rowEntries(screen, ui, tab) {
     closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
   }));
   const stops = tab === "needsYou" ? [...herdrAskEntries(screen), ...stopEntries(screen, ui)] : [];
-  if (groups.every(isGroupEmpty)) {
-    const empty = emptyText(tab, AGENT, isMaybeStale(view, screen.isReadFailed));
-    return stops.length > 0 ? stops : [
-      { kind: "note", text: empty.title, isStrong: true },
-      { kind: "note", text: empty.hint, isWhole: true }
-    ];
-  }
-  return [...stops, ...groups.flatMap((g) => groupEntries(g, ui))];
+  const empty = emptyTab(view, {
+    tab,
+    agent: AGENT,
+    drawn: groups.filter((g) => !isGroupEmpty(g)).length,
+    hasBlocker: stops.length > 0,
+    isReadFailed: screen.isReadFailed === true
+  });
+  if (empty)
+    return emptyEntries(empty);
+  const hasRows = !groups.every(isGroupEmpty);
+  return [...stops, ...hasRows ? groups.flatMap((g) => groupEntries(g, ui)) : []];
 }
 function prEntries(screen, ui, now) {
   const { prs, lastActions, turns } = screen.view;
@@ -7627,14 +7670,15 @@ function prEntries(screen, ui, now) {
   });
   const out = [];
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure };
-  if (prs.drawn.length === 0) {
-    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, "session");
-    return [
-      { kind: "note", text: empty.title, isStrong: true },
-      { kind: "note", text: empty.hint, isWhole: true },
-      ...prs.refresh ? refreshEntries(screen, prs.refresh, now) : []
-    ];
-  }
+  const empty = emptyTab(screen.view, {
+    tab: "prs",
+    place: "session",
+    drawn: prs.drawn.length,
+    isFetchingPrs: screen.isFetchingPrs,
+    isGhMissing: screen.isGhMissing
+  });
+  if (empty)
+    return emptyEntries(empty, empty.under?.is === "pr-refresh" ? refreshEntries(screen, empty.under.refresh, now) : []);
   const ghNotice = ghNoticeOf(ghState);
   if (ghNotice)
     out.push({ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) });
@@ -7801,14 +7845,12 @@ function orderEntries(screen, order, now) {
 var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
-function pageEntries(page, typing, isUnfolded) {
+function pageEntries(view, typing, isUnfolded) {
+  const page = view.statusPage;
   const blank = { kind: "note", text: "" };
-  if (page.isEmpty)
-    return [
-      { kind: "note", text: page.empty.title, isStrong: true },
-      { kind: "note", text: page.empty.hint, isWhole: true },
-      ...setGoal(page, typing)
-    ];
+  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: typing === GOAL_KEYS_ID });
+  if (empty)
+    return emptyEntries(empty, empty.under?.is === "set-goal" ? setGoal(empty.under) : []);
   const description = page.head?.description;
   const head = page.goal === null && page.head ? [
     { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
@@ -7837,7 +7879,7 @@ function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
     return helpEntries(screen, tab);
   if (!isRowTab(tab))
-    return pageEntries(screen.view.statusPage, ui.typing, (id) => ui.statusUnfolded.includes(id));
+    return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id));
   return tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
 }
 
@@ -12707,12 +12749,7 @@ function sessionCalls(context) {
       const host = hostFor(ctx);
       const s = await host.read();
       const seen = { ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } };
-      const fetching = prFetches.fetchWhenDue(id, seen, isTabShown, () => fetchPrs(host, true));
-      if (!fetching)
-        return;
-      notifyChanged(id);
-      await fetching;
-      notifyChanged(id);
+      await prFetches.fetchWhenDue(id, seen, isTabShown, () => fetchPrs(host, true));
     })());
   }
   function wakeLater(ctx) {
@@ -12720,6 +12757,7 @@ function sessionCalls(context) {
   }
   return {
     change,
+    notifyChanged,
     endedTurn,
     hostFor,
     updateHostFor,
@@ -13082,7 +13120,7 @@ function createInbox(pi, deps = defaultDeps) {
     dir,
     openPanels: new Map,
     prepared: new Set,
-    prFetches: prFetchTracker(deps.now),
+    prFetches: prFetchTracker(deps.now, (id) => sessions.notifyChanged(id)),
     listeners: new Map,
     reportToHerdr: herdrReporter(logHerdr),
     logHerdr,

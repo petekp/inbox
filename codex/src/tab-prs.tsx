@@ -1,5 +1,6 @@
 import { settledMark, DOT, settledLabel } from '../../hooks/rows'
 import { bannerOf } from '../../hooks/banners'
+import { emptyTab } from '../../hooks/empty-tab'
 import type { SettledState } from '../../hooks/rows'
 import { prBlockActions } from '../../hooks/pr-tab'
 import {
@@ -10,7 +11,6 @@ import {
   PR_GROUP_TITLES,
   PR_TONES,
   prMarkId,
-  prsEmptyText,
   prRefreshFailedText,
   threadSentIn,
 } from '../../hooks/pr-rows'
@@ -291,11 +291,17 @@ function PrRows({
 export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
   const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut, failure: v.prs.failure }
   const ghNotice = ghNoticeOf(ghState)
-  const empty = prsEmptyText({ isFetching: v.isFetchingPrs, ...ghState }, 'chat')
-  if (prs.blocks.length === 0)
+  const empty = emptyTab(v, {
+    tab: 'prs',
+    place: 'chat',
+    drawn: prs.blocks.length,
+    isFetchingPrs: v.isFetchingPrs,
+    isGhMissing: v.isGhMissing,
+  })
+  if (empty)
     return (
-      <EmptyState title={empty.title} hint={empty.hint}>
-        {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
+      <EmptyState empty={empty}>
+        {empty.under?.is === 'pr-refresh' ? <PrRefreshLine v={v} refresh={empty.under.refresh} /> : null}
       </EmptyState>
     )
 

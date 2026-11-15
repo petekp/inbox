@@ -125,6 +125,11 @@ export type SessionState = Session & {
    */
   herdrReport?: { key: string; seq: number }
   /**
+   * Whether the Inbox tab's server has a PR fetch running for this chat. The hooks and updates publish the chat for the
+   * Herdr look from their own processes, so the server saves it for them. Codex only.
+   */
+  isFetchingPrs?: boolean
+  /**
    * When a hook, an update or the MCP server in Herdr last changed this state, in ms, and always above the change
    * before it. Each of their changes sets it, even one that changes nothing else. A report to a Herdr pane carries it as
    * `seq`, so Herdr drops a report of an earlier state that arrives after a later one. A session published for the

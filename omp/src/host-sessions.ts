@@ -300,11 +300,7 @@ export function sessionCalls(context: HostContext) {
         const host = hostFor(ctx)
         const s = await host.read()
         const seen = { ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } }
-        const fetching = prFetches.fetchWhenDue(id, seen, isTabShown, () => fetchPrs(host, true))
-        if (!fetching) return
-        notifyChanged(id)
-        await fetching
-        notifyChanged(id)
+        await prFetches.fetchWhenDue(id, seen, isTabShown, () => fetchPrs(host, true))
       })(),
     )
   }
@@ -315,6 +311,7 @@ export function sessionCalls(context: HostContext) {
 
   return {
     change,
+    notifyChanged,
     endedTurn,
     hostFor,
     updateHostFor,

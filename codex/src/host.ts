@@ -118,6 +118,7 @@ export function herdrOnWrite(
             terminal: target.terminal,
             writtenAt: seq,
             projectFolder: s.root,
+            isFetchingPrs: s.isFetchingPrs,
           },
           s,
           log,

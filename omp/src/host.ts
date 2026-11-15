@@ -279,7 +279,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     dir,
     openPanels: new Map(),
     prepared: new Set(),
-    prFetches: prFetchTracker(deps.now),
+    prFetches: prFetchTracker(deps.now, id => sessions.notifyChanged(id)),
     listeners: new Map(),
     reportToHerdr: herdrReporter(logHerdr),
     logHerdr,

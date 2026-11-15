@@ -4,6 +4,7 @@ import { parseStatus } from '../../hooks/status'
 import { applyStatus } from '../../hooks/status-ops'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import { STATUS_TEXT_LINES } from '../../hooks/status-page'
+import { EMPTY_STATUS_TEXT } from '../../hooks/empty-tab'
 import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { render } from '../src/panel'
@@ -139,10 +140,9 @@ test('each subject’s mark takes its tone, and a mark with no tone is muted', (
 
 test('a Status page with nothing yet reads its empty text', () => {
   const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
-  const { empty } = screen.view.statusPage
   expect(screen.view.statusPage.isEmpty).toBe(true)
-  expect(text(screen, onPage)).toContain(empty.title)
-  expect(text(screen, onPage)).toContain(empty.hint)
+  expect(text(screen, onPage)).toContain(EMPTY_STATUS_TEXT.title)
+  expect(text(screen, onPage)).toContain(EMPTY_STATUS_TEXT.hint)
 })
 
 test('no line on the Status page is wider than the panel', () => {

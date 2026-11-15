@@ -22,6 +22,7 @@ export function isSessionChange(changed: readonly string[], appHome: string, ses
  * `isTrimmed`: the host left out older closed items to keep the file under the 1 MiB Herdr's `readTextFile` reads.
  * `lastPress`: the last press file the host handled, and whether it applied or found its row already changed.
  * `projectFolder`: the absolute folder the host opens a relative path against, or null when the host gave none.
+ * `isFetchingPrs`: the host had a PR fetch running. A file from a host that does not say reads as not fetching.
  */
 export type ReadSession =
   | {
@@ -31,6 +32,7 @@ export type ReadSession =
       isTrimmed: boolean
       lastPress: LastPress | null
       projectFolder: string | null
+      isFetchingPrs: boolean
     }
   | { is: 'missing' }
   | { is: 'torn' }
@@ -75,5 +77,6 @@ export function readSession(text: string | null): ReadSession {
     lastPress: lastPressOf(file.lastPress),
     projectFolder:
       typeof file.projectFolder === 'string' && file.projectFolder.startsWith('/') ? file.projectFolder : null,
+    isFetchingPrs: file.isFetchingPrs === true,
   }
 }

@@ -1539,11 +1539,7 @@ function statusPage(s, now) {
     ...goalParts,
     goal,
     rows,
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    empty: {
-      title: "Status",
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-    }
+    error: s.overviewFailure ? STATUS_FAILED : null
   };
 }
 
@@ -3697,12 +3693,13 @@ var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
-  const { projectFolder, ...rest } = source;
+  const { projectFolder, isFetchingPrs, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
     ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
+    ...isFetchingPrs && { isFetchingPrs: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
@@ -3830,7 +3827,8 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           sessionId: id,
           terminal: target.terminal,
           writtenAt: seq,
-          projectFolder: s.root
+          projectFolder: s.root,
+          isFetchingPrs: s.isFetchingPrs
         },
         s,
         log

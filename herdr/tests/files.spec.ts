@@ -19,6 +19,15 @@ test('a session the host trimmed to fit reads as trimmed', () => {
   expect(read.is === 'read' && read.isTrimmed).toBe(true)
 })
 
+test('a host’s running PR fetch reads back, and a file from a host that does not say reads as not fetching', () => {
+  const fetching = readSession(demoEnvelopeText({ isFetchingPrs: true }))
+  const older = readSession(demoEnvelopeText())
+  if (fetching.is !== 'read' || older.is !== 'read') throw new Error('not read')
+  expect(fetching.isFetchingPrs).toBe(true)
+  expect(older.isFetchingPrs).toBe(false)
+  expect(fetching.session).toEqual(older.session)
+})
+
 test('the project folder reads back when absolute, and a relative one reads as none', () => {
   const read = readSession(demoEnvelopeText({ projectFolder: '/work/app' }))
   expect(read.is === 'read' && read.projectFolder).toBe('/work/app')

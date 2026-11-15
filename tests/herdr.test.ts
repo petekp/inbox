@@ -138,6 +138,16 @@ describe('herdrEnvelope', () => {
 
     expect([folderOf('/work/app'), folderOf('work/app'), folderOf('')]).toEqual(['/work/app', undefined, undefined])
   })
+
+  test('says a PR fetch runs only while one does, beside the session, which it leaves as it is', () => {
+    const session = emptySession()
+    const fetching = herdrEnvelope({ ...SOURCE, isFetchingPrs: true }, session)
+    const idle = herdrEnvelope({ ...SOURCE, isFetchingPrs: false }, session)
+
+    expect(fetching.isFetchingPrs).toBe(true)
+    expect('isFetchingPrs' in idle).toBe(false)
+    expect(fetching.session).toEqual(idle.session)
+  })
 })
 
 describe('pressFile', () => {

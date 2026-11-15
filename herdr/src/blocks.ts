@@ -7,6 +7,8 @@ import type { RowPress } from '../../hooks/presses'
 import { DOT, shortAgo } from '../../hooks/rows'
 import type { ActionEmphasis } from '../../hooks/rows'
 import type { StatusStall } from '../../hooks/status-page'
+import type { EmptyTab, EmptyText } from '../../hooks/empty-tab'
+import type { ShownTab } from '../../hooks/tabs'
 
 /**
  * A color the paint maps onto Herdr's theme. The first six are the shared tones of `hooks/tones.ts`, so a tone means
@@ -130,6 +132,23 @@ export type PrBlock = {
 }
 
 /** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
+/**
+ * What an empty tab draws under its text, centred: Refresh PRs's line, or the goal's buttons and its field. `id` is the
+ * row the presses belong to, whose line a press out reads in `feedback`.
+ */
+type EmptyUnderParts = {
+  id: string
+  text: string | null
+  buttons: Button[]
+  feedback: { text: string; tone: Tone } | null
+  field: Field | null
+}
+
+/** A tab's empty state from `emptyTab`, as the one block that draws it, with its `under` drawn as `parts`. */
+export function emptyBlock(tab: ShownTab, empty: EmptyTab, parts: EmptyUnderParts | null = null): Block {
+  return { kind: 'empty', id: `empty ${tab}`, empty: { title: empty.title, hint: empty.hint }, under: parts }
+}
+
 export type LineBlock = {
   kind: 'line'
   id: string
@@ -153,8 +172,8 @@ export type Block =
       buttons: Button[]
       isLabel: boolean
     }
-  /** What a tab shows when it has nothing in it, centred: its title, its hint and its buttons. */
-  | { kind: 'empty'; id: string; title: string; hint: string | null; buttons: Button[] }
+  /** What a tab shows when it has nothing in it, centred: the text `emptyTab` gives, then its `under`, drawn. */
+  | { kind: 'empty'; id: string; empty: EmptyText; under: EmptyUnderParts | null }
   | RowBlock
   | StatusLine
   | PrBlock

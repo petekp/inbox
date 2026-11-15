@@ -1,3 +1,4 @@
+import { EMPTY_STATUS_TEXT } from '../hooks/empty-tab'
 import { mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/status-page'
 import type { StatusPage, StatusRow, StatusStall } from '../hooks/status-page'
 
@@ -62,7 +63,7 @@ function goalText(page: StatusPage): string[] {
 
 /** The Status page as plain text, in the order every look draws it, with no styling. */
 export function pageText(page: StatusPage): string {
-  if (page.isEmpty) return `${page.empty.title}\n${page.empty.hint}`
+  if (page.isEmpty) return `${EMPTY_STATUS_TEXT.title}\n${EMPTY_STATUS_TEXT.hint}`
 
   const head =
     page.goal === null && page.head ? [page.head.title, ...(page.head.description ? [page.head.description] : [])] : []
