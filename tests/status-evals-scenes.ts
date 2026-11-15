@@ -201,6 +201,19 @@ function withTypedGoalBefore(s: Scene) {
   s.after.goal = null
 }
 
+/** The engine's child is a delegate that finished, and the engine still works, with `text` as where it stands. */
+function childFinished(s: Scene, text: string) {
+  s.after.children[0] = { ...s.after.children[0]!, kind: 'delegate', endedAt: minutes(8), delegateState: 'finished' }
+  s.after.subjects[0]!.text = text
+  s.facts.pieces[0]!.left = '\\bmerg(e|ing)\\b'
+}
+
+/** A second child of the engine, a subagent that still runs. */
+function secondChildRunning(s: Scene) {
+  const running = { id: 'c2', ref: 'toolu_b', kind: 'subagent', endedAt: null, delegateState: null } as const
+  s.after.children.push({ ...s.after.children[0]!, ...running })
+}
+
 const CLEAR = { text: 'Get offline sync into both stores', match: 'offline sync' }
 
 const s1Of = (s: Scene) => s.after.subjects[0]!
@@ -228,6 +241,10 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'ask-holds-several': { bad: s => (s.facts.asks[0]!.holdsUp = ['conflicts', 'engine']) },
   'children-linked': { bad: s => (s.after.children[0]!.subjectId = 's2') },
   'child-labels': { bad: s => (s.after.children[0]!.name = 'pdfx2') },
+  'step-left-named': {
+    good: s => childFinished(s, 'syncs, merge left'),
+    bad: s => childFinished(s, 'syncs on reconnect'),
+  },
   'no-news-no-move': { bad: s => (s.facts.changed = []) },
   'changes-move': { bad: s => (s1Of(s).changedAt = minutes(0)) },
   'was-on-reversal': { bad: s => (s.step.facts = { pieces: [{ id: 'conflicts', was: 'manual merge' }] }) },
@@ -474,6 +491,24 @@ export const PATH_SCENES: { rule: string; path: string; good: (s: Scene) => void
     path: 'one milestone for a done and a queued milestone',
     good: s => oneMilestoneForBoth(s, 'done', 'queued'),
     bad: s => oneMilestoneForBoth(s, 'done', 'done'),
+  },
+  {
+    rule: 'step-left-named',
+    path: 'a subject with one child finished and one still running',
+    good: s => {
+      childFinished(s, 'syncs on reconnect')
+      secondChildRunning(s)
+    },
+    bad: s => childFinished(s, 'syncs on reconnect'),
+  },
+  {
+    rule: 'step-left-named',
+    path: 'a subject an open ask holds up',
+    good: s => {
+      childFinished(s, 'syncs on reconnect')
+      s.after.askSubjects = { i1: ['s1'] }
+    },
+    bad: s => childFinished(s, 'syncs on reconnect'),
   },
   {
     rule: 'changes-move',

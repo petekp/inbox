@@ -54,6 +54,13 @@ test('a Status answer is written to the ledger after later updates, only a catch
   expect(cleared(failed).overviewFailure).toBeNull()
 })
 
+test('an applied Status answer records when its call read the Status, and a failed one leaves that time', () => {
+  const later = withStatus({ ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } })
+
+  expect(appliedStatus(later, answer, 3, 1000, null, false, 900).ledger.overview?.lastCallReadAt).toBe(900)
+  expect(failedStatus(later, null, 3, 1000).ledger.overview?.lastCallReadAt).toBeNull()
+})
+
 test('a failed Status call makes the next reply catch up over the conversation once, and that catch-up clears the failure', async () => {
   const catchUps: string[] = []
   const { host } = fakeHost(async (_prompt, system) => (system === STATUS_SYSTEM ? null : LEDGER_REPLY))

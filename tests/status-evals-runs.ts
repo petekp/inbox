@@ -253,6 +253,11 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'one-task-plan': [
     'HEAD: Export tooltip | Adding a formats tooltip to the Export button\nNEW: working | Export tooltip | shows the formats on hover',
   ],
+  'children-finished': [
+    'SET: s1 | working | PDF works, merge left\nSET: s2 | waits-on-other | waits on sync engine',
+    'DONE: s1 | PDF export merged\nSET: s3 | working | retry queue done, unchecked',
+    'NO CHANGE',
+  ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
   ],
