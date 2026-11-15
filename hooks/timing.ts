@@ -73,6 +73,15 @@ export function withListInput(input: ListInput | null, at: number): ListInput {
   return isSameRun ? { since: input.since, last: Math.max(at, input.last) } : { since: at, last: at }
 }
 
+/** The list use in `raw`, or null when `raw` is absent or is not one. */
+export function listInputOf(raw: unknown): ListInput | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { since, last } = raw as Record<string, unknown>
+  const isTime = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+
+  return isTime(since) && isTime(last) ? { since, last } : null
+}
+
 /** Whether the person has been using the list without a break since `at`, so a row due then waits to fold. */
 export function isListInUseSince(input: ListInput | null, at: number, now: number): boolean {
   return input !== null && now - input.last < FOLD_QUIET_MS && input.since <= at

@@ -151,7 +151,7 @@ describe('herdrEnvelope', () => {
 })
 
 describe('pressFile', () => {
-  test('a press file reads back with its press and holds, and no list use holding a row', () => {
+  test('a press file reads back with its press and holds, and no list use when the look reported none', () => {
     const read = (file: object) => ({ ok: true, file: { ...file, holds: { ...PRESS.holds, listInput: null } } })
     expect(pressFile(JSON.stringify(PRESS))).toEqual(read(PRESS))
     for (const action of ['pr-rank-again', 'pr-clear-finished']) {
@@ -162,6 +162,16 @@ describe('pressFile', () => {
       const opened = { ...PRESS, result: { error } }
       expect(pressFile(JSON.stringify(opened))).toEqual(read(opened))
     }
+  })
+
+  test('the list use a press file reports is kept, and a malformed one reads as none', () => {
+    const withInput = (listInput: unknown) =>
+      pressFile(JSON.stringify({ ...PRESS, holds: { ...PRESS.holds, listInput } }))
+    const listInputOf = (read: ReturnType<typeof pressFile>) =>
+      read.ok && 'holds' in read.file ? read.file.holds.listInput : 'refused'
+    expect(listInputOf(withInput({ since: 5, last: 9 }))).toEqual({ since: 5, last: 9 })
+    for (const bad of [{ since: 5 }, { since: '5', last: 9 }, 'now', null])
+      expect(listInputOf(withInput(bad))).toBeNull()
   })
 
   test('a file a host cannot apply is refused with its reason', () => {

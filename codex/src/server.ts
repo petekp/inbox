@@ -31,6 +31,7 @@ import {
   turnOf,
 } from './server-tools'
 import { makeHooksTrustNow } from './server-trust'
+import { makeBackground } from './background'
 import { pruneSessions, readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
@@ -85,7 +86,10 @@ export type PressReply = {
   delivery?: 'unconfirmed'
 }
 
-export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
+/** Answers one message. `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. */
+export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) & { settled(): Promise<void> }
+
+export function makeServer(given: ServerDeps): Server {
   const { onWrite } = given
   // Each report reads the newest state itself, so a tool call or press answers without waiting on `hc label`.
   const deps = { ...given, onWrite: onWrite && (async (s: SessionState) => void onWrite(s).catch(() => undefined)) }
@@ -97,11 +101,13 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
   const catchUpOnOpen = makeCatchUpOnOpen(deps)
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
+  const background = makeBackground()
   const { wakeAfterSettle, fetchPrsWhenDue, served, onPress, onHerdrFile } = makeSessionHost(
     deps,
     newestTurns,
     hooksTrustNow,
     currentPage,
+    background,
   )
   const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)
   deps.followHerdrPresses?.(onHerdrFile)
@@ -114,11 +120,11 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
    */
   function checkDelegatesWhenDue(id: string, s: SessionState) {
     if (s.shownTab !== 'overview' || !isHerdrCheckDue(id, now())) return
-    void delegatesInHerdr(s.ledger.overview, deps.exec)
-      .then(states => {
+    background.track(
+      delegatesInHerdr(s.ledger.overview, deps.exec).then(states => {
         if (states) return updateState(dir, id, x => statusChanged(x, o => delegatesSettled(o, states, now())))
-      })
-      .catch(() => undefined)
+      }),
+    )
   }
 
   async function callTool(
@@ -195,7 +201,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
     return { ...text(`Unknown tool: ${name}`), isError: true }
   }
 
-  return async m => {
+  const handle = async (m: Message) => {
     const { id, method, params } = m
     const ok = (result: unknown) => ({ jsonrpc: '2.0', id, result })
     switch (method) {
@@ -216,7 +222,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
           const result = ok(await callTool(name, args, session, turnOf(params)))
           if (session && !prunedFor.has(session)) {
             prunedFor.add(session)
-            void pruneSessions(dir, session).catch(() => undefined)
+            background.track(pruneSessions(dir, session))
           }
           return result
         } catch (err) {
@@ -249,4 +255,6 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
 
     return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } }
   }
+
+  return Object.assign(handle, { settled: background.settled })
 }

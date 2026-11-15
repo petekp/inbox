@@ -4164,6 +4164,13 @@ function withListInput(input, at) {
   const isSameRun = input !== null && at - input.last < FOLD_QUIET_MS;
   return isSameRun ? { since: input.since, last: Math.max(at, input.last) } : { since: at, last: at };
 }
+function listInputOf(raw) {
+  if (typeof raw !== "object" || raw === null)
+    return null;
+  const { since, last } = raw;
+  const isTime = (x) => typeof x === "number" && Number.isFinite(x);
+  return isTime(since) && isTime(last) ? { since, last } : null;
+}
 function isListInUseSince(input, at, now) {
   return input !== null && now - input.last < FOLD_QUIET_MS && input.since <= at;
 }
@@ -12172,7 +12179,7 @@ function pressFile(text) {
   if (reason)
     return { ok: false, reason };
   const read = file;
-  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } };
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: listInputOf(read.holds.listInput) } } };
 }
 
 // ../hooks/held-sends.ts

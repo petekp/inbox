@@ -61,7 +61,7 @@ import {
 } from './children'
 import { CATCH_UP_CALL, runUpdates } from './session-host'
 import { heardCall } from './call-record'
-import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue } from './host-prs'
+import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue, PR_POLL_MS } from './host-prs'
 import { tabPrs } from './pr-fetch'
 import type { FetchAsk } from './pr-fetch'
 import { prSharedStore } from './mod-pr-shared'
@@ -243,7 +243,6 @@ import {
   type ModSession,
   NO_SESSION,
   type Owner,
-  PR_POLL_MS,
   PRESENT,
   resultsOrder,
   type SavedRecord,
