@@ -20,8 +20,7 @@ export function isStatusCallCurrent(s: Session, appliedAfter: number): boolean {
 /**
  * Writes the Status call's answer for an update that is already applied. `appliedAfter` is the session's
  * `turnsApplied` when the update landed. The answer is dropped unless `isStatusCallCurrent`. A saved failure stays
- * until a catch-up call writes, since only a catch-up reads the exchange the failed call missed. A session whose
- * conversation cannot be read never catches up, so any answer clears its failure. `readAt` is when the call read the
+ * until a catch-up call writes (`isCatchUp` also covers a run that cannot catch up), since only a catch-up reads the exchange the failed call missed. `readAt` is when the call read the
  * Status.
  */
 export function appliedStatus<S extends Session>(
@@ -39,7 +38,7 @@ export function appliedStatus<S extends Session>(
   return {
     ...s,
     ledger: { ...s.ledger, overview: applied && { ...applied, lastCallReadAt: readAt } },
-    overviewFailure: isCatchUp || s.presence.isConversationUnreadable ? null : s.overviewFailure,
+    overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter,
   }

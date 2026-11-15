@@ -32,7 +32,12 @@ export function statusCallPrompt(input: StatusCallInput, read: StatusExchange): 
 }
 
 /** A Status call: what it reads as its exchange, and the model call that sends its prompt with the host's Status system text. */
-export type StatusCall = { exchange: StatusExchange; ask: Ask }
+export type StatusCall = {
+  exchange: StatusExchange
+  ask: Ask
+  /** The run cannot catch up, as when the conversation cannot be read, so this answer clears a saved failure. */
+  isCatchUpImpossible?: boolean
+}
 
 type StatusHost<S extends Session> = Pick<
   UpdateHost<S>,
@@ -197,7 +202,15 @@ export async function askAndWriteStatus<S extends Session>(
     const readSetAt = input.last?.goal?.setAt ?? null
     return answer === null
       ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === 'catch-up')
-      : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === 'catch-up', input.now)
+      : appliedStatus(
+          x,
+          answer,
+          appliedAfter,
+          now,
+          readSetAt,
+          call.exchange.kind === 'catch-up' || call.isCatchUpImpossible === true,
+          input.now,
+        )
   })
   if (!host.records) return
   const record: StatusRecord = {

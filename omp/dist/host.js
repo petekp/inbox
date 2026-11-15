@@ -10349,7 +10349,7 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
   return {
     ...s,
     ledger: { ...s.ledger, overview: applied && { ...applied, lastCallReadAt: readAt } },
-    overviewFailure: isCatchUp || s.presence.isConversationUnreadable ? null : s.overviewFailure,
+    overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter
   };
@@ -10846,7 +10846,7 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up", input.now);
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up" || call.isCatchUpImpossible === true, input.now);
   });
   if (!host.records)
     return;
@@ -10948,7 +10948,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeStatus = (after, call, tasks) => host.inOrder(async () => askAndWriteStatus(host, await readForStatus(host), call, tasks, after.presence.turnsApplied));
+  const writeStatus = (after, call, tasks) => host.inOrder(async () => askAndWriteStatus(host, await readForStatus(host), { ...call, isCatchUpImpossible: !canCatchUp }, tasks, after.presence.turnsApplied));
   const followUp = (run) => {
     const settled = run.catch(() => {
       return;

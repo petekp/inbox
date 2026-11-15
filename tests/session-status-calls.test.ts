@@ -54,13 +54,25 @@ test('a Status answer is written to the ledger after later updates, only a catch
   expect(cleared(failed).overviewFailure).toBeNull()
 })
 
-test('any Status answer clears a saved failure while the conversation cannot be read, since no catch-up will', () => {
-  const base = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
-  const failed = failedStatus(base, null, 3, 900)
-  const unreadable = { ...failed, presence: { ...failed.presence, isConversationUnreadable: true } }
+test('a Status answer clears a saved failure when the conversation cannot be read, since no catch-up will', async () => {
+  let isFirstStatus = true
+  const { host } = fakeHost(async (_prompt, system) => {
+    if (system !== STATUS_SYSTEM) return LEDGER_REPLY
+    const isFirst = isFirstStatus
+    isFirstStatus = false
 
-  expect(appliedStatus(unreadable, answer, 3, 1000).overviewFailure).toBeNull()
-  expect(appliedStatus(failed, answer, 3, 1000).overviewFailure).toEqual(failed.overviewFailure)
+    return isFirst ? null : 'HEAD: Work offline | Letting the app work without a connection'
+  })
+  const catchUp = async () => ({ kind: 'unreadable' as const })
+  await host.update(s => finishTurn(s, 'Which runtime?'))
+  await runUpdates(host)
+  expect((await host.read()).overviewFailure?.cause).toBe('no-answer')
+  await host.update(s => finishTurn(s, 'Python, then.'))
+  await runUpdates({ ...host, catchUp })
+  const after = await host.read()
+
+  expect(after.ledger.overview?.head?.title).toBe('Work offline')
+  expect(after.overviewFailure).toBeNull()
 })
 
 test('an applied Status answer records when its call read the Status, and a failed one leaves that time', () => {

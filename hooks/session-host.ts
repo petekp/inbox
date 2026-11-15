@@ -242,10 +242,16 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
-  /** Runs the Status call for an applied update, once the session's earlier Status calls have finished. */
+  /** Runs the Status call for an applied update, once the session's earlier Status calls have finished. A run that cannot catch up lets its answer clear a saved failure. */
   const writeStatus = (after: S, call: StatusCall, tasks: HostTask[]) =>
     host.inOrder(async () =>
-      askAndWriteStatus(host, await readForStatus(host), call, tasks, after.presence.turnsApplied),
+      askAndWriteStatus(
+        host,
+        await readForStatus(host),
+        { ...call, isCatchUpImpossible: !canCatchUp },
+        tasks,
+        after.presence.turnsApplied,
+      ),
     )
   const followUp = (run: Promise<void>) => {
     const settled = run.catch(() => undefined)
