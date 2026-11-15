@@ -70,8 +70,9 @@ Then, in the ChatGPT desktop app, trust the plugin's hooks: click the hook icon
 beside the prompt's approval setting, then Allow all. If the icon isn't there,
 open Settings, then Hooks, then Inbox, then Trust all. Codex runs a plugin's
 hooks only after you trust them. On Codex 0.164.0 and later, an update stops
-the hooks, so trust them again after each update. To open the inbox, press + at
-the top right of the window, then choose More tools, then Inbox.
+the hooks, so trust them again after each update. To open the inbox, open the
+side panel and choose the ⋯ menu beside New, then Inbox. This was checked on
+2026-11-14 in the ChatGPT app with Codex 0.169.
 
 [codex/README.md](codex/README.md) covers updating and running the `codex`
 command from inside the app.
@@ -225,8 +226,9 @@ Help lists the keys and what each mark means.
   a click after a press could only give the pane its focus back.
 - **ChatGPT app:** you click, or press the same keys as in the terminal. The
   tab shows no letters.
+- **Herdr app:** see [Herdr app pane](#herdr-app-pane).
 - **omp:** `/inbox` opens the panel over the conversation, and esc closes it.
-  Each action shows the letter that runs it, and Reply is `r`. Arrow keys move
+  Each action shows the letter that runs it, and Reply is `t`. Arrow keys move
   between rows and between a row's buttons, and enter presses the focused
   button. Tab, or the number keys, switch tabs. On the Status, `j` and `k`
   move between the rows that have a button, and the up and down arrows scroll
@@ -237,6 +239,28 @@ findings waiting, with a button that opens the panel. When Claude stops on an
 error, a second line says why, with a Resume button after an API error. The
 ChatGPT app has no such line. omp has a line with the same counts. It says
 `/inbox` opens the panel, and it has no stop line.
+
+### Herdr app pane
+
+In a Herdr app terminal, the inbox can open in a pane beside the terminal.
+
+1. Start Claude Code, omp or Codex in a Herdr app terminal. The first time, the
+   inbox asks "Install the inbox's Herdr mod?". Press Install.
+   Claude Code and omp ask in their own inbox. Codex asks on the ChatGPT app's
+   Inbox tab.
+2. Type `/inbox` in Claude Code or omp. The inbox opens in a pane to the right
+   of the terminal. Claude Code's Open inbox button does the same.
+3. The pane shows the inbox of the terminal you last focused in its tab. It has
+   Asks, Finds and PRs, and you can press every button. ← and → switch tabs,
+   `j` and `k` move between rows, and esc gives the keys back to the terminal.
+   Help lists the rest.
+
+Don't install saves your answer. Run `/inbox herdr` in Claude Code or omp to be
+asked again.
+
+The Codex CLI has no `/inbox`. Open the pane for it with
+`herdr-app do pane.split '{"direction":"right","pane":"<pane id>","mod":"inbox"}'`,
+taking the pane id from `herdr-app ls`.
 
 Inside a Herdr pane, Claude Code, omp and the Codex CLI also report to Herdr's
 sidebar, as pane tokens:

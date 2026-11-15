@@ -3,7 +3,7 @@ import { feedbackOf, feedbackText, hasAge, isFailure, markedFeedbackText } from 
 import type { PressState } from '../../hooks/feedback'
 import { prPressEffect } from '../../hooks/pr-press'
 import type { PrAction } from '../../hooks/pr-press'
-import { prRankText } from '../../hooks/pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart } from '../../hooks/pr-order'
 import {
   PR_GROUP_TITLES,
   PR_QUOTE_CHARS,
@@ -31,8 +31,9 @@ import type { DrawnPr } from '../../hooks/pr-views'
 import { checkKey, commentParts, readableComment, readiness, threadWhere } from '../../hooks/prs'
 import { bannerOf } from '../../hooks/banners'
 import { DOT, ROW_COPY, settledLabel, settledMark, shortAgo } from '../../hooks/rows'
+import { SETTLED_MS } from '../../hooks/timing'
 import { clipLabel } from '../../hooks/text'
-import { button } from './blocks'
+import { agedText, button } from './blocks'
 import type { Block, Button, LineBlock, Mark, RowBlock, Tone } from './blocks'
 import type { LookScreen } from './draw'
 
@@ -61,9 +62,11 @@ function prFeedback(screen: LookScreen, id: string): RowBlock['feedback'] {
   const { view, now } = screen
   const f = feedbackOf(id, view.lastActions[id], undefined, view.turns, now)
   if (!f) return null
-  const text = hasAge(f) ? `${markedFeedbackText(f, false, LOOK)}${DOT}${shortAgo(now - f.at)}` : feedbackText(f, LOOK)
+  const tone = isFailure(f) ? 'error' : 'muted'
+  if (!hasAge(f)) return { text: feedbackText(f, LOOK), tone, source: f }
+  const aged = { lead: markedFeedbackText(f, false, LOOK), at: f.at }
 
-  return { text, tone: isFailure(f) ? 'error' : 'muted' }
+  return { text: agedText(aged, now), tone, source: f, aged }
 }
 
 const markOf = (m: PrRowMark): Mark => ({
@@ -87,11 +90,12 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
   return {
     kind: 'row',
     id,
-    depth: 1,
+    depth: 0,
     mark: markOf(text.mark),
     title: text.title,
     age: t.at === null ? null : shortAgo(screen.now - t.at),
-    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: 'muted' } : null),
+    feedback:
+      prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: 'muted', source: null } : null),
     settled: null,
     isDim: text.mark.isDone,
     isSelectable: text.fold === null,
@@ -112,11 +116,11 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
   return {
     kind: 'row',
     id,
-    depth: 1,
+    depth: 0,
     mark: markOf(text.mark),
     title: text.lead ? `${text.lead} / ${text.title}` : text.title,
     age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
-    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: 'muted' } : null),
+    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: 'muted', source: null } : null),
     settled: null,
     isDim: false,
     isSelectable: text.fold === null,
@@ -131,11 +135,14 @@ function settledPr(d: DrawnPr & { state: { is: 'settled' } }): RowBlock {
   const id = prMarkId(pr.ref)
   const undo = state.canUndo
     ? [
-        button(`${id} undo`, ROW_COPY.undo, 'quiet', {
-          is: 'press',
-          press: { action: 'pr-undo', ref: pr.ref },
-          effects: [],
-        }),
+        {
+          ...button(`${id} undo`, ROW_COPY.undo, 'quiet', {
+            is: 'press',
+            press: { action: 'pr-undo', ref: pr.ref },
+            effects: [],
+          }),
+          runsOutAt: state.at + SETTLED_MS,
+        },
       ]
     : []
   const mark = settledMark(state)
@@ -178,7 +185,6 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
           {
             kind: 'heading',
             id: `${pr.ref} ${key}`,
-            depth: 1,
             text: title,
             count: rows.length,
             mark: null,
@@ -195,7 +201,6 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
     {
       kind: 'pr',
       id: prMarkId(pr.ref),
-      rank: d.rank === null ? null : prRankText(d.rank),
       number: `#${pr.number}`,
       title: pr.title,
       status: { text: head, tone: tone ? PR_TONE[tone] : 'muted' },
@@ -219,6 +224,7 @@ const note = (id: string, text: string, tone: Tone): Block => ({
   count: null,
   tone,
   isHead: true,
+  isAtEdge: false,
   isStrong: false,
   depth: 0,
 })
@@ -276,7 +282,7 @@ function clearLine(screen: LookScreen): Block[] {
     : [{ kind: 'line', id: CLEAR_FINISHED_ID, text: null, under: null, buttons, feedback: null }]
 }
 
-/** The rule that separates two PRs, from the spine, in the middle of a section's space. */
+/** The rule that separates two PRs, in the middle of a section's space. */
 const ruleBetween = (ref: string): Block => ({ kind: 'rule', id: `rule ${ref}`, text: null })
 
 /** The first row the PRs tab can open, which it opens while the person has opened none of its rows. */
@@ -298,11 +304,17 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   }
   const presses: PressState = { lastActions: view.lastActions, turns: view.turns, now: screen.now }
   const notice = ghNoticeOf(gh)
+  const othersStart = otherPrsStart(prs.drawn)
+  const caption: Block = { kind: 'caption', id: 'other prs', text: OTHER_PRS_TEXT }
+  const above = (d: DrawnPr, n: number): Block[] => [
+    ...(n > 0 ? [ruleBetween(d.pr.ref)] : []),
+    ...(d === othersStart ? [caption] : []),
+  ]
   const draw = (open: string | null) => [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
     ...orderLines(screen),
-    ...prs.drawn.flatMap((d, n) => [...(n > 0 ? [ruleBetween(d.pr.ref)] : []), ...prBlocks(screen, d, presses, open)]),
+    ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, open)]),
     ...(prs.olderText ? [ruleBetween('older prs'), note('older prs', prs.olderText, 'muted')] : []),
   ]
   const blocks = draw(selected)

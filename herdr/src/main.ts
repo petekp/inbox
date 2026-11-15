@@ -26,6 +26,7 @@ import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 import { SETTLED_MS, heldReplies, keptDiscards, withListInput } from '../../hooks/timing'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
+import type { RowWait } from '../../hooks/action-plan'
 import type { Draft } from '../../types'
 import type { Block, Button, Does, ViewChange } from './blocks'
 import { freshUi } from './draw'
@@ -35,12 +36,28 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { afterSend, isFieldDrawn, keyMove, withSelected, withTab } from './keys'
-import { moveRows } from './motion'
+import {
+  afterSend,
+  isFieldDrawn,
+  keyMove,
+  tabUndo,
+  withClosedSelection,
+  withSelected,
+  withTab,
+  withoutConfirmed,
+} from './keys'
+import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
+import type { LinesAbove } from './held-line'
+import { NEXT_FRAME_MS, NO_TRACKS, moveRows } from './motion'
 import type { Tracks } from './motion'
+import { Heights } from './heights'
 import { blockEl } from './paint-blocks'
-import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
-import { END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
+import { timeLeftDraws } from './time-left'
+import type { SentText } from './out'
+import type { TimeLeft } from './time-left'
+import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { fitEl, spacedEls } from './paint-space'
+import { EDGE, END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PRESS_LABEL } from './press-file'
 import { PressQueue, claimedPath } from './press-queue'
@@ -55,8 +72,8 @@ const AGE_TICK_MS = 60_000
 /** A read mid-write gives torn JSON: the look reads again this soon, this many times. */
 const TORN_RETRY_MS = 30
 const TORN_RETRIES = 5
-/** The draw after a move's first frame, which starts its transition. */
-const NEXT_FRAME_MS = 16
+
+type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; queue: PressQueue }
 
 const toggled = <T>(list: T[], x: T): T[] => (list.includes(x) ? list.filter(y => y !== x) : [...list, x])
 
@@ -112,12 +129,21 @@ export default class Inbox extends View {
   isHelpShown = false
   isNarrow = false
   drafts: Record<string, Draft> = {}
+  /** The typed replies and presses of the sessions the panel left, by session id, for when it follows them again. */
+  left: Record<string, SessionPresses> = {}
+  /** Sent texts the host confirmed whose drafts wait for their open field to close. */
+  confirmed: SentText[] = []
   input: { rowId: string; state: InputState } | null = null
   discarded: Record<string, number> = {}
   listInput: ListInput | null = null
   queue = new PressQueue(queueIo)
-  tracks: Tracks = new Map()
+  tracks: Tracks = NO_TRACKS
+  heights = new Heights()
   tracksOf = ''
+  /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
+  lastWaits: { tab: ShownTab; rows: RowWait[] } = { tab: 'needsYou', rows: [] }
+  timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
+  linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
   /** The next read for the presses still out, and the next draw for a fold or a move. */
   outTimer: Timer | null = null
@@ -168,12 +194,17 @@ export default class Inbox extends View {
     })
   }
 
-  /** Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. */
+  /**
+   * Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. A
+   * sent reply's draft goes once the host confirms its press.
+   */
   async settle(cx: Context): Promise<void> {
-    if (this.read?.is !== 'read' || this.queue.outs.length === 0) return
+    if (this.read?.is !== 'read' || !this.queue.isAwaiting()) return
     const now = Date.now()
     const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.queue.notes)
-    await this.queue.settle(view, this.read.lastPress, this.read.envelope.agent)
+    const queue = this.queue
+    const confirmed = await queue.settle(view, this.read.lastPress, this.read.envelope.agent)
+    if (queue === this.queue) this.dropConfirmed([...this.confirmed, ...confirmed])
     this.checkOutsAt(this.queue.nextCheckAt(), cx)
   }
 
@@ -195,16 +226,22 @@ export default class Inbox extends View {
     if (this.followed.is !== 'no-terminal') this.last = this.followed.terminal
     const sessionId = this.followed.is === 'session' ? this.followed.sessionId : null
     if (sessionId === this.sessionId) return
+    if (this.sessionId)
+      this.left[this.sessionId] = { drafts: this.drafts, confirmed: this.confirmed, queue: this.queue }
     this.sessionId = sessionId
     this.read = null
     this.view = null
     this.ui = freshUi(this.ui.tab)
     this.shownSince = Date.now()
-    this.drafts = {}
+    const kept = (sessionId && this.left[sessionId]) || null
+    if (sessionId) delete this.left[sessionId]
+    this.drafts = kept?.drafts ?? {}
+    this.confirmed = kept?.confirmed ?? []
     this.input?.state.release()
     this.input = null
     this.discarded = {}
-    this.queue = new PressQueue(queueIo)
+    this.heights.clear()
+    this.queue = kept?.queue ?? new PressQueue(queueIo)
     if (sessionId) this.load(sessionId, cx)
   }
 
@@ -225,6 +262,13 @@ export default class Inbox extends View {
     this.input.state.release()
     this.input = null
     this.focus?.focus()
+    this.dropConfirmed(this.confirmed)
+  }
+
+  dropConfirmed(confirmed: SentText[]): void {
+    const next = withoutConfirmed(this.drafts, confirmed, this.ui.typing, this.queue.sentTexts)
+    this.drafts = next.drafts
+    this.confirmed = next.waiting
   }
 
   /** Opens a row's field, or the goal's, keeping its draft. */
@@ -248,19 +292,18 @@ export default class Inbox extends View {
     this.input = null
     this.ui.typing = null
     this.focus?.focus()
+    this.dropConfirmed(this.confirmed)
     if (isDiscard && this.sessionId) this.load(this.sessionId, cx)
   }
 
-  /** Sends a field's text. A refused send keeps the field and its draft, and its row says why. */
+  /** Sends a field's text. A refused send keeps the field open, and its row says why. Either keeps the draft. */
   submit(rowId: string, cx: Context): void {
     const text = this.input?.state.value().trim() ?? ''
     if (text === '') return
     const isGoal = rowId === GOAL_KEYS_ID
     const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send
     const isSent = this.send({ action: 'type', id: rowId, text }, [], label, cx, isGoal ? undefined : text)
-    const next = afterSend(this.ui, this.drafts, rowId, isSent)
-    this.ui = next.ui
-    this.drafts = next.drafts
+    this.ui = afterSend(this.ui, rowId, isSent)
     this.closeStaleField()
   }
 
@@ -316,15 +359,18 @@ export default class Inbox extends View {
     this.listInput = withListInput(this.listInput, now)
     const d = b.does
     if (d.is === 'view') this.change(d.change)
-    else if (d.is === 'press') this.send(d.press, d.effects, b.label, cx)
-    else if (d.is === 'type') this.type(d)
+    else if (d.is === 'press') {
+      if ('id' in d.press && d.press.action === 'undo') this.ui = withSelected(this.ui, d.press.id)
+      this.send(d.press, d.effects, b.label, cx)
+    } else if (d.is === 'type') this.type(d)
     else if (d.is === 'send') this.submit(d.rowId, cx)
     else if (d.is === 'leave') this.leave(d.rowId, d.isDiscard, cx)
     cx.notify()
   }
 
   onKey(key: string, tabs: TabCell[], blocks: Block[], cx: Context): void {
-    const move = keyMove(key, tabs, blocks, this.ui.typing)
+    const undo = this.view ? tabUndo(this.view, this.ui.tab, this.shownSince) : null
+    const move = keyMove(key, tabs, blocks, this.ui.typing, undo)
     if (move === null) return
     if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
     else if (move.is === 'tab') this.ui = withTab(this.ui, move.tab)
@@ -340,14 +386,24 @@ export default class Inbox extends View {
     this.track(cx)
     const t = theme() as Theme
     const now = Date.now()
-    const screen = screenOf(this.followed, this.read, this.ui, {
-      now,
-      holds: this.holds(now),
-      queue: this.queue,
-    })
+    const screenFor = (ui: LookUi) =>
+      screenOf(this.followed, this.read, ui, {
+        now,
+        holds: this.holds(now),
+        queue: this.queue,
+      })
+    let screen = screenFor(this.ui)
+    if (screen.is === 'inbox' && this.lastWaits.tab === this.ui.tab) {
+      const ui = withClosedSelection(this.ui, this.lastWaits.rows, screen.waits)
+      if (ui !== this.ui) screen = screenFor((this.ui = ui))
+    }
+    this.lastWaits = { tab: this.ui.tab, rows: screen.is === 'inbox' ? screen.waits : [] }
     this.view = screen.is === 'inbox' ? screen.view : null
     this.drawTimer?.cancel()
     this.drawTimer = null
+    const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
+    const isFirst = tracksOf !== this.tracksOf
+    const resized = this.heights.takeResized()
     const paint: Paint = {
       t,
       press: (b, cx) => this.press(b, cx),
@@ -363,6 +419,13 @@ export default class Inbox extends View {
         cx.notify()
       },
       motion: new Map(),
+      heights: this.heights,
+      isAtOnce: key => isFirst || resized.has(key),
+      measure: (key, size, cx) => {
+        if (this.heights.measure(key, size)) cx.notify()
+      },
+      now,
+      timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
       isNarrow: this.isNarrow,
     }
@@ -380,25 +443,42 @@ export default class Inbox extends View {
         this.isNarrow = isNarrow
         cx.notify()
       })
-    if (screen.is === 'message') return root.child(messageEl(screen.message, t))
+    if (screen.is === 'message') {
+      this.timeLeft = new Map()
+      this.tracksOf = ''
+      return root.child(messageEl(screen.message, t))
+    }
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
     const shown = this.isHelpShown ? helpBlocks(this.ui.tab, hasStatusButtons) : screen.blocks
-    const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
-    const moved = moveRows(shown, this.tracks, now, tracksOf !== this.tracksOf)
+    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
+    this.linesAbove = held.held
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
     const isStarting = [...moved.motion.values()].some(m => m.isStart)
-    const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, screen.foldAt].filter(at => at !== null)
+    this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
+    paint.timeLeft = this.timeLeft
+    const isTimerStarting = [...this.timeLeft.values()].some(l => l.is === 'emptying' && !l.isStarted)
+    const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt].filter(at => at !== null)
     if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
     const focus = this.focus
 
     return root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))
-      .children(screen.banners.map(b => bannerEl(b, t)))
-      .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t)))
+      .child(fitEl('tabs', undefined, paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)))
+      .child(
+        fitEl(
+          'chrome',
+          undefined,
+          paint,
+          v_flex()
+            .children(screen.banners.map(b => bannerEl(b, t).mt(EDGE)))
+            .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t))),
+        ),
+      )
       .child(
         div()
           .flex_1()
@@ -410,15 +490,17 @@ export default class Inbox extends View {
               .absolute()
               .inset_0()
               .overflow_y_scroll()
-              .pt(8)
+              .pt(EDGE)
               .pb(END_SPACE)
               .on_click((_e, _cx) => {
                 const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null
                 if (field) field.state.focus()
                 else this.focus?.focus()
               })
-              .children(moved.blocks.map(b => blockEl(b, paint))),
+              .children(spacedEls(moved.blocks, paint, b => blockEl(b, paint))),
           )
+          .child(scrollFadeEl(t, 'top'))
+          .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
   }

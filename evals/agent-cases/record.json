@@ -30,6 +30,32 @@
     ]
   },
   {
+    "name": "record-question-with-0.3.0-tools",
+    "about": "In a session that 0.3.0 started, whose record tool has no context, option_notes or why, a recorded question is recorded once, and the reply passes on no request for fields the tool lacks.",
+    "tools": "0.3.0",
+    "prompt": "Task: add caching to the product API. Before you can go on, I have to choose between Redis and an in-process memory cache. You recommend the memory cache because the service runs as a single process. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "has": ["ask", "options", "rec"]
+      },
+      {
+        "reply": "redis"
+      },
+      {
+        "reply": "memory"
+      },
+      {
+        "notReply": "option[ _]?notes|re-?record|record (it|the question) again|extra fields|parameters"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
     "name": "record-design-choice",
     "about": "A choice between two designs the agent could try is recorded as a question marked as a design choice.",
     "prompt": "Task: add a settings page to the web app. Before you build it, I have to choose how its five sections are laid out: one long scrolling page, or a tab for each section. You recommend tabs, because two of the sections are long. Ask me.",
@@ -355,7 +381,10 @@
   {
     "name": "inferable-choice-not-asked",
     "about": "A choice the agent can infer from the work, and that is easy to undo, is made and named in the reply, not asked.",
-    "prompt": "Task: add a flag to cli.js that turns on verbose logging, which prints each argument it read before the greeting. cli.js already takes --quiet with the short form -q. Choosing the flag's name is the only thing left before you write it. Write your reply to me.",
+    "files": {
+      "cli.js": "const args = process.argv.slice(2)\nconst quiet = args.includes('--quiet') || args.includes('-q')\n\nif (!quiet) console.log('Hello!')\n"
+    },
+    "prompt": "Task: add a flag to cli.js that turns on verbose logging, which prints each argument it read before the greeting. cli.js already takes --quiet with the short form -q. Choosing the flag's name is the only thing left before you write it. This is cli.js, in the folder you work in:\n\n```js\nconst args = process.argv.slice(2)\nconst quiet = args.includes('--quiet') || args.includes('-q')\n\nif (!quiet) console.log('Hello!')\n```\n\nWrite your reply to me.",
     "checks": [{ "calls": "record", "kind": "question", "count": 0 }, { "reply": "verbose" }, { "noIds": true }]
   },
   {

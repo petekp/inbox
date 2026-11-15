@@ -2,10 +2,12 @@ import type { BannerView } from '../../hooks/banners'
 import { READING_TEXT } from '../../hooks/banners'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
+import type { SettledState } from '../../hooks/rows'
 import { SETTLED_MS, nextFoldAt } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import type { Block } from './blocks'
-import { chrome, tabBlocks, tabCells } from './draw'
+import { chrome, rowWaits, tabBlocks, tabCells, undoPlaceEndsAt } from './draw'
+import type { RowWait } from '../../hooks/action-plan'
 import type { LookUi, TabCell } from './draw'
 import type { ReadSession } from './files'
 import type { Followed } from './follow'
@@ -26,8 +28,12 @@ type Screen =
       /** Says the host left out older closed items, or null when the session is whole. */
       trimmedNote: string | null
       blocks: Block[]
+      /** The tab's rows, in order, and whether each waits on the person. */
+      waits: RowWait[]
       /** When a settled row folds, so the look draws again then. Null when none comes due on the clock. */
       foldAt: number | null
+      /** When a queued row next drops its spent Undo's place, so the look draws again then. See `undoPlaceEndsAt`. */
+      undoPlaceEndsAt: number | null
     }
 
 const TRIMMED_NOTE = 'This session is too large to show in full, so its older closed items are left out.'
@@ -103,7 +109,18 @@ export function screenOf(
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
-    blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines),
+    blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
+    waits: rowWaits(screen, ui.tab),
     foldAt: nextFoldAt(settled, placing),
+    undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now),
   }
+}
+
+function nextUndoPlaceEnd(settled: SettledState[], now: number): number | null {
+  const ends = settled
+    .filter(s => s.offersUndo && s.delivery === 'queued')
+    .map(undoPlaceEndsAt)
+    .filter(at => at > now)
+
+  return ends.length > 0 ? Math.min(...ends) : null
 }

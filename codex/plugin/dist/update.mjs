@@ -1134,7 +1134,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "If you agree, I'll update the runbook", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -2051,7 +2051,6 @@ var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
-var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
@@ -2123,7 +2122,7 @@ function statusPage(s, now) {
         depth,
         ...SUBJECT_MARKS[status],
         text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
-        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
+        subjectIds: closed.map((x) => x.id)
       }
     ];
   });
@@ -2460,6 +2459,18 @@ function olderPrsText(prState, links) {
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
+function fetchFailureWords(f) {
+  switch (f.kind) {
+    case "limit":
+      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
+    case "unreachable":
+      return "could not reach GitHub";
+    case "timed-out":
+      return GH_TIMED_OUT_TEXT;
+    case "error":
+      return f.text;
+  }
+}
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
 
 // ../hooks/pr-press.ts
@@ -2483,18 +2494,6 @@ function withOut(row, actions) {
 
 // ../hooks/pr-refresh.ts
 var PR_REFRESH_LABEL = "Refresh PRs";
-function fetchFailureWords(f) {
-  switch (f.kind) {
-    case "limit":
-      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
-    case "unreachable":
-      return "could not reach GitHub";
-    case "timed-out":
-      return GH_TIMED_OUT_TEXT;
-    case "error":
-      return f.text;
-  }
-}
 function tabWideProblem(prs) {
   if (prs.isGhMissing) return "gh was not found";
   if (prs.isGhSignedOut) return "gh is not signed in";
@@ -2531,7 +2530,7 @@ function prRefreshView(prs, links, presses, shownSince) {
   if (problem === null && !isPressShown) return null;
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown
   };
 }
@@ -2632,7 +2631,8 @@ function emptySession() {
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
-    dialogQuestions: []
+    dialogQuestions: [],
+    toolFields: null
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -2643,6 +2643,11 @@ function sessionFile(sessionId) {
 function missingAsNull(err) {
   if (err.code === "ENOENT") return null;
   throw err;
+}
+function savedToolFields(saved) {
+  const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
+  const fields2 = saved;
+  return fields2 && isNames(fields2.record) && isNames(fields2.close) && isNames(fields2.order_prs) ? fields2 : null;
 }
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
@@ -2701,7 +2706,8 @@ function sessionFields(saved, views) {
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} })),
+    toolFields: savedToolFields(saved.toolFields)
   };
 }
 
@@ -2892,14 +2898,13 @@ function drawnPrs(prState, links, lastActions, placing) {
     const state = settledPrState(mark, now, settleWindowMs);
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
-  let rank = 0;
-  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+  return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
 }
 
 // ../hooks/pr-order.ts
 var RANK_AGAIN_LABEL = "Rank again";
 function prOrderText(order, drawn, now) {
-  const isRanking = drawn.some((d) => d.rank !== null);
+  const isRanking = drawn.some((d) => d.isRanked);
   if (!order || !isRanking) return null;
   return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
 }
@@ -2974,6 +2979,78 @@ function prClearActions(prState, links) {
 }
 
 // ../hooks/tool-schemas.ts
+var RECORD_SCHEMA = {
+  type: "object",
+  properties: {
+    kind: {
+      type: "string",
+      enum: ["question", "task", "finding"],
+      description: "question: a decision only the user can make. task: a step only the user can do. finding: something outside the current task that deserves their attention."
+    },
+    ask: {
+      type: "string",
+      description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
+    },
+    context: {
+      type: "string",
+      description: "For a question: why it came up, in at most 20 plain words, so the user can answer without reading back through the conversation."
+    },
+    options: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
+    },
+    option_notes: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a question: one note for each option, in the order of options, saying what picking it does, in at most 12 words each."
+    },
+    rec: {
+      type: "string",
+      description: "For a question: the option you recommend, copied from options. Leave it out when you recommend none."
+    },
+    why: {
+      type: "string",
+      description: 'For a question with rec: why you recommend it, as a short clause of at most 12 words, such as "it keeps the old API".'
+    },
+    steps: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
+    },
+    design_choice: {
+      type: "boolean",
+      description: "For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference."
+    },
+    finding_kind: {
+      type: "string",
+      enum: ["issue", "opportunity"],
+      description: "For a finding. issue: something wrong or risky. opportunity: something that could be better."
+    },
+    title: { type: "string", description: "For a finding: what it is, in at most 12 plain words." },
+    detail: {
+      type: "string",
+      description: "For a finding: why it matters and what you would do, in one or two sentences."
+    },
+    path: { type: "string", description: "For a finding: the file it is about, if one." }
+  },
+  required: ["kind"]
+};
+var CLOSE_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string", description: "The id of the open item or finding, such as i35 or f32." },
+    answer: {
+      type: "string",
+      description: `The user's answer, at most 8 words, when their own message answered it. Use their words, but when they picked by position or pointing, as "the second one", give the option they picked.`
+    },
+    reason: {
+      type: "string",
+      description: 'Otherwise, why it is closed, in at most 8 words, such as "no longer applies: Inbox kept".'
+    }
+  },
+  required: ["id"]
+};
 var ORDER_SCHEMA = {
   type: "object",
   properties: {
@@ -2993,6 +3070,11 @@ var ORDER_SCHEMA = {
     }
   },
   required: ["numbers"]
+};
+var TOOL_FIELDS = {
+  record: Object.keys(RECORD_SCHEMA.properties),
+  close: Object.keys(CLOSE_SCHEMA.properties),
+  order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
 // ../hooks/arrivals.ts

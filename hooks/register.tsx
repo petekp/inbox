@@ -36,13 +36,12 @@ import {
   startTurn,
   turnEnded,
   turnStarted,
-  placed,
   cutOffTurn,
   withNewPrRefs,
   type SentBy,
 } from './session-turns'
 import { emptySession, upgradeSession, type SavedSession } from './session-files'
-import { pressOn, recorded, pruned, type SendOutcome } from './session-presses'
+import { pressOn, pruned, type SendOutcome } from './session-presses'
 import { isCompareInBackground } from './clients'
 import { sessionView, showsRunningMark, type SessionView } from './session-view'
 import {
@@ -62,7 +61,7 @@ import {
 } from './children'
 import { CATCH_UP_CALL, runUpdates } from './session-host'
 import { heardCall } from './call-record'
-import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
+import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue } from './host-prs'
 import { tabPrs } from './pr-fetch'
 import type { FetchAsk } from './pr-fetch'
 import { prSharedStore } from './mod-pr-shared'
@@ -95,8 +94,8 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
-import type { Run } from './gh'
+import { ghIn } from './gh'
+import { isGhUnstartable, pathProbe, placeChange, runOf, sessionFolder, type CommandCalls } from './mod-commands'
 import { delegatesInHerdr } from './herdr'
 import type { HerdrFile } from './herdr-press-file'
 import { applyHerdrFile } from './herdr-app'
@@ -113,7 +112,7 @@ import { ago, cellWidth, turnReply } from './text'
 import { COMPARE_PAGE_FILE } from './press-messages'
 import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
 import { isPressConfirmed, type Effect } from './press-reducer'
-import { openTarget, type PathProbe } from './open-targets'
+import { openTarget } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
@@ -233,6 +232,8 @@ import {
 } from './mod-records'
 import {
   AWAY_MS,
+  answerToolCall,
+  broughtBack,
   type Changed,
   conversation,
   currentOwner,
@@ -249,6 +250,8 @@ import {
   resultsOrder,
   type SavedRecord,
   updating,
+  withLoadedToolFields,
+  type LoadedBy,
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
@@ -380,7 +383,9 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
   return publishToHerdr(herdrCalls($), isEnding ? conversation.id : null, async () => {
     const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
 
-    return { id: conversation.id, root: conversation.root, session, dialogs, isUnread: unreadable === conversation.id }
+    const root = (await sessionFolder(commandCalls($))) ?? ''
+
+    return { id: conversation.id, root, session, dialogs, isUnread: unreadable === conversation.id }
   })
 }
 
@@ -633,8 +638,8 @@ function recordFiles($: EngineInterface): RecordFiles {
   return {
     write: (path, text) => $.fs.write(path, text),
     list: async folder => (await $.fs.list(folder).catch(() => [])).map(entry => entry.name),
-    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths])),
-    removeFolder: async path => void (await $.process.run(['rmdir', '--', path])),
+    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths], { cwd: '/' })),
+    removeFolder: async path => void (await $.process.run(['rmdir', '--', path], { cwd: '/' })),
   }
 }
 
@@ -656,15 +661,18 @@ function statusRecords($: EngineInterface, folder: string, owner: Owner): Status
   return { host: 'claude-code', folder, session: owner.id, files: recordFiles($) }
 }
 
-function pathProbe($: EngineInterface): PathProbe {
+function commandCalls($: EngineInterface): CommandCalls {
   return {
-    stat: async path => {
-      if (!(await $.fs.exists(path))) return null
-      const stat = await $.fs.stat(path)
-      return { isFile: () => stat.kind === 'file' }
-    },
-    isExecutable: async path => (await $.process.run(['test', '-x', path])).exitCode === 0,
+    root: () => $.session.root(),
+    exists: path => $.fs.exists(path),
+    stat: path => $.fs.stat(path),
+    run: (argv, init) => $.process.run(argv, init),
+    now: () => $.clock.now(),
   }
+}
+
+function processRun($: EngineInterface) {
+  return runOf(commandCalls($))
 }
 
 async function perform(
@@ -674,44 +682,14 @@ async function perform(
 ): Promise<string | null> {
   try {
     if (effect.kind === 'open') {
-      const home = (await $.env.get('HOME')) ?? ''
-      return await openTarget(processRun($), pathProbe($), effect.target, conversation.root, home)
+      const [home, folder] = await Promise.all([$.env.get('HOME'), sessionFolder(commandCalls($))])
+      return await openTarget(processRun($), pathProbe(commandCalls($)), effect.target, folder ?? '', home ?? '')
     }
     const r = await $.ui.copy({ text: effect.text, surface })
     return r.isCopied ? null : COPY_FAILURES[r.reason]
   } catch (err) {
     return err instanceof Error ? err.message : String(err)
   }
-}
-
-/**
- * `$.process.run` as the shared `Run`. It rejects when the command cannot start, and also when it is still running at
- * the timeout, with no code to tell them apart. A rejection that comes `timeoutMs` or more after the call is the
- * timeout's; one that comes sooner is a command that could not start.
- */
-function processRun($: EngineInterface): Run {
-  return async (args, { cwd, timeoutMs, env }) => {
-    const startedAt = await $.clock.now()
-    try {
-      const r = await $.process.run(args, { cwd, timeoutMs, env })
-
-      return { code: r.exitCode, stdout: r.stdout, stderr: r.stderr }
-    } catch (err) {
-      const isTimedOut = (await $.clock.now()) - startedAt >= timeoutMs
-
-      return {
-        code: isTimedOut ? TIMED_OUT_CODE : UNSTARTABLE_CODE,
-        stdout: '',
-        stderr: err instanceof Error ? err.message : String(err),
-      }
-    }
-  }
-}
-
-async function isGhUnstartable($: EngineInterface): Promise<boolean> {
-  const r = await processRun($)(['gh', '--version'], { cwd: conversation.root, timeoutMs: GH_TIMEOUT_MS })
-
-  return r.code === UNSTARTABLE_CODE
 }
 
 /**
@@ -787,13 +765,14 @@ function sessionHost(
     gh: {
       shared: prSharedStore(saveEngine($)),
       find: async () => {
-        if (ghFound === undefined) ghFound = (await isGhUnstartable($)) ? null : 'gh'
+        if (ghFound === undefined) ghFound = (await isGhUnstartable(commandCalls($))) ? null : 'gh'
         return ghFound
       },
       forget: () => {
         ghFound = undefined
       },
-      run: (_s, _bin, onUnstartable) => ghIn(processRun($), 'gh', conversation.root, onUnstartable),
+      run: (_s, _bin, onUnstartable) => async args =>
+        ghIn(processRun($), 'gh', (await sessionFolder(commandCalls($))) ?? '', onUnstartable)(args),
       noteMissing: opts.onGhMissing,
     },
     settleWindowMs: opts.settleWindowMs,
@@ -1087,7 +1066,7 @@ async function runTool(
   const owner = currentOwner()
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
   await commit($, owner, s => {
-    const r = recorded(CLAUDE_CODE, s, tool, input, now)
+    const r = answerToolCall(s, tool, input, now)
     answer = r
     return r.state
   })
@@ -1691,10 +1670,8 @@ async function pollPrs($: EngineInterface) {
     isPrsTabShown($),
     $.clock.now(),
   ])
-  const { ledger, prViews } = session
-  if (away.isAway || (!isTabShown && tabPrs(ledger).length === 0 && prViews.branchRef === null)) return
-  if (!isPrFetchDue(session, mod.prFetchEndedAt, now, isTabShown)) return
-  await fetchPrs($, isTabShown)
+  const poll = { lastFetchedAt: mod.prFetchEndedAt, now, isTabShown, isAway: away.isAway }
+  if (isPrPollDue(session, poll)) await fetchPrs($, isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
@@ -2120,7 +2097,7 @@ async function initializeInbox($: EngineInterface) {
       void pollPrs($)
     }),
   ]
-  await loadConversation($, await $.session.id())
+  await loadConversation($, await $.session.id(), 'mod-start')
   void startInHerdr(herdrCalls($), () => redrawPane($))
   mod.stopHerdrPresses?.()
   mod.stopHerdrPresses = await listenForHerdrPresses(
@@ -2139,12 +2116,18 @@ async function initializeInbox($: EngineInterface) {
  * /clear, /resume or /branch, which switch conversations under a new session
  * id without a session.start.
  */
-function loadConversation($: EngineInterface, id: string, forkedFrom?: string): Promise<void> {
+function loadConversation($: EngineInterface, id: string, by: LoadedBy, forkedFrom?: string): Promise<void> {
   const revision = ++sessionState.loadRevision
-  return prepareConversation($, id, revision, forkedFrom)
+  return prepareConversation($, id, revision, by, forkedFrom)
 }
 
-async function prepareConversation($: EngineInterface, id: string, revision: number, forkedFrom?: string) {
+async function prepareConversation(
+  $: EngineInterface,
+  id: string,
+  revision: number,
+  by: LoadedBy,
+  forkedFrom?: string,
+) {
   const writesAtRead = sessionState.savedWrites
   const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled(saveEngine($), id)])
   if (revision !== sessionState.loadRevision) return
@@ -2154,7 +2137,7 @@ async function prepareConversation($: EngineInterface, id: string, revision: num
     const latest = writesAtRead === sessionState.savedWrites ? saved : await readSettled(saveEngine($), id)
     // A fork continues its parent's inbox, so a new id with no saved state starts from the parent's.
     const parent = latest?.session || !forkedFrom ? null : await readSettled(saveEngine($), forkedFrom)
-    await applyConversation($, id, revision, sessionRoot, latest, parent?.session)
+    await applyConversation($, id, revision, by, sessionRoot, latest, parent?.session)
   })
   sessionState.applyingConversation = applying.catch(() => undefined)
   return applying
@@ -2184,16 +2167,26 @@ async function noteAgentWork($: EngineInterface, agentId: string) {
 }
 
 async function notePlace($: EngineInterface) {
-  const root = conversation.root
-  if (!root) return
-  const branch = await branchIn(processRun($), root)
-  await commit($, currentOwner(), s => placed(s, root, branch)).catch(() => undefined)
+  const change = await placeNow($)
+  if (change) await commit($, currentOwner(), change).catch(() => undefined)
+}
+
+/** The change that saves where the session runs now. Null when that folder is not known. */
+async function placeNow($: EngineInterface): Promise<((s: Session) => Session) | null> {
+  const folder = await sessionFolder(commandCalls($))
+  if (!folder) return null
+  const left = conversation.root
+  conversation.root = folder
+  const saved = (await read($, SESSION)).place?.folder ?? null
+
+  return placeChange(commandCalls($), saved, left, folder)
 }
 
 async function applyConversation(
   $: EngineInterface,
   id: string,
   revision: number,
+  by: LoadedBy,
   sessionRoot: string,
   saved: { session: SavedRecord | undefined } | null,
   parent?: SavedRecord,
@@ -2214,7 +2207,10 @@ async function applyConversation(
   const loadedAt = await $.clock.now()
   // The pane now shows another conversation, so it starts a new showing.
   await syncShown($, { since: loadedAt })
-  await replaceDrawn($, s => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
+  const turns = await $.session.turns().catch(() => null)
+  const cutOff = (s: Session) => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt))
+  // Before notePlace's save, so this conversation is never saved with the previous one's tool fields.
+  await replaceDrawn($, s => withLoadedToolFields(cutOff(s), by, saved?.session, parent, turns))
   if (revision !== sessionState.loadRevision) return
   void notePlace($)
   const isFresh = isBlankLedger(current)
@@ -2224,13 +2220,12 @@ async function applyConversation(
     )) === id
   if (!isLoading()) return
   if (saved !== null) await bringBack($, parent ?? saved.session, isLoading, parent !== undefined)
-  if (!isLoading()) return
   const { ledger, presence } = await read($, SESSION)
   const isEmpty = isBlankLedger(ledger)
   const needsCatchUp =
     presence.ledgerState !== 'current' ||
     presence.turnsStarted > presence.turnsApplied ||
-    (!isUnread && isEmpty && (await $.session.turns().catch(() => 0)) > 0)
+    (!isUnread && isEmpty && (turns ?? 0) > 0)
   if (!isLoading()) return
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
@@ -2256,24 +2251,8 @@ async function bringBack(
     isBrought = false
     if (!isLoading() || !isBlankLedger(s.ledger)) return s
     isBrought = true
-    if (isFork) return forkedFrom(s, loaded)
-    const lastActions = Object.fromEntries(
-      Object.entries(loaded.lastActions).map(([id, a]) => [
-        id,
-        a.delivery?.state === 'queued' ? { ...a, delivery: { ...a.delivery, state: 'unconfirmed' as const } } : a,
-      ]),
-    )
-    // The stop and the turn belong to the process that saved them. Whether a turn runs now is this process's.
-    const { isTurnRunning } = s.presence
 
-    return cutOffUpdate({
-      ...loaded,
-      lastActions,
-      sent: [],
-      stop: null,
-      turn: emptySession().turn,
-      presence: { ...loaded.presence, isTurnRunning },
-    })
+    return isFork ? forkedFrom(s, loaded) : broughtBack(s, loaded)
   })
   if (isBrought && !isFork)
     await update($, AWAY, a => (isLoading() ? { ...a, lastActiveAt: saved.savedAt, isAway: true } : a))
@@ -2365,7 +2344,19 @@ export const register: Register = on => {
     // from the event. A start with --resume also raises this, for the conversation
     // session.start already loaded.
     if (mod.isOn && e.session_id !== conversation.id)
-      await loadConversation($, e.session_id, e.source === 'fork' ? conversation.id : undefined)
+      await loadConversation($, e.session_id, e.source, e.source === 'fork' ? conversation.id : undefined)
+
+    return r
+  })
+
+  // The Claude app starts a new session in a spare folder and runs SessionStart only once it moves it to the project.
+  on('classic.SessionStart', { source: 'startup' }, async ($, e, next) => {
+    const r = await next(e)
+    const seen = conversation.root
+    if (mod.isOn && seen !== '' && (await sessionFolder(commandCalls($))) !== seen) {
+      void notePlace($)
+      void isPrsTabShown($).then(isShown => fetchPrs($, isShown))
+    }
 
     return r
   })
@@ -2416,9 +2407,10 @@ export const register: Register = on => {
     // session has changed conversations. A reload that classic.SessionStart already did leaves the ids equal.
     const sessionId = await $.session.id()
     if (sessionId !== conversation.id) {
-      const parent = sessionState.endReason === 'resume' ? conversation.id : undefined
+      const reason = sessionState.endReason
       sessionState.endReason = null
-      await loadConversation($, sessionId, parent || undefined)
+      const parent = reason === 'resume' ? conversation.id : undefined
+      await loadConversation($, sessionId, reason === 'clear' ? 'clear' : 'resume', parent || undefined)
     }
     const origin = e.origin
     // send() already recorded this mod's own prompts.
@@ -2664,12 +2656,11 @@ export const register: Register = on => {
     await closeDialogs($, null)
     if (!mod.isOn) return r
     const endedAt = await $.clock.now()
-    const root = conversation.root
     const run = processRun($)
-    const [listed, inHerdr, branch] = await Promise.all([
+    const [listed, inHerdr, place] = await Promise.all([
       $.agent.list().catch(() => null),
       read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, run)),
-      root ? branchIn(run, root) : null,
+      placeNow($),
     ])
     const running =
       listed && new Set(listed.filter(a => a.status === 'running' || a.status === 'pending').map(a => a.id))
@@ -2679,7 +2670,7 @@ export const register: Register = on => {
       const withDelegates = inHerdr
         ? statusChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt))
         : withSubagents
-      return root ? placed(withDelegates, root, branch) : withDelegates
+      return place ? place(withDelegates) : withDelegates
     })
     if (e.reason === 'error' && !sessionState.hasStopFromError) await setStopFromLastReply($)
     void wakeAfterSettle($).catch(() => undefined)

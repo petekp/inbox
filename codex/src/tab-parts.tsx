@@ -12,6 +12,25 @@ import { isUndoLeft } from './settle'
 import { errors, notes, copies } from './tab-state'
 import type { Tone, Key, Row } from './tab-state'
 
+/** A tab with nothing to list: its title and hint, centred in the page, with what else the tab shows under them. */
+export function EmptyState({
+  title,
+  hint,
+  children,
+}: {
+  title: string
+  hint?: string | null
+  children?: ComponentChildren
+}) {
+  return (
+    <div class="empty">
+      <div class="title">{title}</div>
+      {hint ? <div class="muted">{hint}</div> : null}
+      {children}
+    </div>
+  )
+}
+
 /** An Asks or Finds row's mark: its result's, in the mark column. An open row has none. */
 export function resultHandle(r: RowView): Pick<Row, 'handle' | 'handleTone' | 'isHandleRunning'> {
   const mark = rowResultMark(r)
@@ -148,7 +167,7 @@ export function UndoPlace({
   offersUndo: boolean
   onUndo: () => void
 }) {
-  const isShown = canUndo && (isUndoing || isUndoLeft(start, Date.now()))
+  const isShown = isUndoing || (canUndo && isUndoLeft(start, Date.now()))
   if (!isShown)
     return offersUndo ? (
       <button type="button" class="key undo spent" disabled tabIndex={-1} aria-hidden="true">

@@ -925,15 +925,32 @@ function asksForSignIn(r) {
 }
 var LIMIT = /rate limit/i;
 var UNREACHABLE = /error connecting to|dial tcp|no such host|connection refused|network is unreachable|TLS handshake|i\/o timeout|lookup .* failed/i;
+function errorsOf(stdout) {
+  try {
+    const errors = JSON.parse(stdout).errors;
+    return Array.isArray(errors) ? errors : [];
+  } catch {
+    return [];
+  }
+}
+var LIMIT_KIND = /rate_?limit/i;
+function isLimitError(error) {
+  const { type, code } = error ?? {};
+  return [type, code].some((kind) => typeof kind === "string" && LIMIT_KIND.test(kind));
+}
 function runFailureOf(r, timedOutCode, at) {
   if (r.exitCode === timedOutCode)
     return { kind: "timed-out", at };
-  if (LIMIT.test(r.stderr) || LIMIT.test(r.stdout.slice(0, 2000)))
-    return { kind: "limit", at, resetsAt: null };
-  if (UNREACHABLE.test(r.stderr))
-    return { kind: "unreachable", at };
+  const errors = errorsOf(r.stdout);
+  const limit = { kind: "limit", at, resetsAt: null };
+  if (errors.some(isLimitError))
+    return limit;
   if (/"data"\s*:\s*\{/.test(r.stdout))
     return null;
+  if (LIMIT.test(r.stderr) || LIMIT.test(JSON.stringify(errors)))
+    return limit;
+  if (UNREACHABLE.test(r.stderr))
+    return { kind: "unreachable", at };
   const line = r.stderr.trim().split(`
 `)[0]?.replace(/^gh:\s*/, "").replace(/\s*\(https?:\/\/\S+\)\s*$/, "").trim();
   const text = line || (r.exitCode === 0 ? "GitHub's answer could not be read" : `gh exited with ${r.exitCode}`);
@@ -941,8 +958,10 @@ function runFailureOf(r, timedOutCode, at) {
 }
 function limitResetOf(json) {
   try {
-    const reset = JSON.parse(json).resources?.graphql?.reset;
-    return typeof reset === "number" && reset > 0 ? reset * 1000 : null;
+    const graphql = JSON.parse(json).resources?.graphql;
+    const reset = graphql?.reset;
+    const isUsedUp = graphql?.remaining === undefined || graphql.remaining === 0;
+    return typeof reset === "number" && reset > 0 && isUsedUp ? reset * 1000 : null;
   } catch {
     return null;
   }
@@ -1032,6 +1051,7 @@ async function fetchTracked(run, state, links, ask, now, shared = {}) {
   }
   const read = [];
   const unread = {};
+  const skipped = [];
   let isAnswered = false;
   for (let n = 0;n < toRead.length; n += PRS_PER_QUERY) {
     const chunk = toRead.slice(n, n + PRS_PER_QUERY);
@@ -1041,6 +1061,7 @@ async function fetchTracked(run, state, links, ask, now, shared = {}) {
     const answer = chunkFailure ? null : readPrsAnswer(r.stdout, chunk);
     if (!answer) {
       failure ??= chunkFailure ?? { kind: "error", at: fetchedAt, text: "GitHub's answer could not be read" };
+      skipped.push(...chunk);
       continue;
     }
     isAnswered = true;
@@ -1062,7 +1083,24 @@ async function fetchTracked(run, state, links, ask, now, shared = {}) {
     const limits = await gh(["api", "rate_limit"]);
     failure = { ...failure, resetsAt: limits.exitCode === 0 ? limitResetOf(limits.stdout) : null };
   }
+  if (failure) {
+    for (const ref of skipped)
+      if (!state.views[ref])
+        unread[ref] = fetchFailureWords(failure);
+  }
   return { views, branchRef, isGhSignedOut, failure, read, unread };
+}
+function fetchFailureWords(f) {
+  switch (f.kind) {
+    case "limit":
+      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
+    case "unreachable":
+      return "could not reach GitHub";
+    case "timed-out":
+      return GH_TIMED_OUT_TEXT;
+    case "error":
+      return f.text;
+  }
 }
 function withSeen(view, previous) {
   return { ...view, wasSeenOpen: view.state === "OPEN" || previous?.wasSeenOpen === true };
@@ -1094,7 +1132,7 @@ import { homedir } from "os";
 import { dirname as dirname3, join as join4 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
-var version = "0.3.0";
+var version = "0.4.0";
 
 // ../hooks/press-labels.ts
 function actionId(p) {
@@ -2334,7 +2372,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "If you agree, I'll update the runbook", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -3118,7 +3156,7 @@ function helpKeys(look, tab, hasStatusButtons) {
     case "herdr":
       return [
         { keys: "\u2190 \u2192", does: "Switch tabs" },
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, undoKey] : [],
         ...prTabKeys,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];
@@ -3667,7 +3705,6 @@ var STATUS_TEXT_LINES = 3;
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
-var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
@@ -3747,7 +3784,7 @@ function statusPage(s, now) {
         depth,
         ...SUBJECT_MARKS[status],
         text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
-        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
+        subjectIds: closed.map((x) => x.id)
       }
     ];
   });
@@ -4348,18 +4385,6 @@ function fetchFailureNotice(f) {
       return `Could not read the PRs: ${f.text}. They show as last read.`;
   }
 }
-function fetchFailureWords(f) {
-  switch (f.kind) {
-    case "limit":
-      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
-    case "unreachable":
-      return "could not reach GitHub";
-    case "timed-out":
-      return GH_TIMED_OUT_TEXT;
-    case "error":
-      return f.text;
-  }
-}
 function tabWideProblem(prs) {
   if (prs.isGhMissing)
     return "gh was not found";
@@ -4402,7 +4427,7 @@ function prRefreshView(prs, links, presses, shownSince) {
     return null;
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown
   };
 }
@@ -4601,7 +4626,8 @@ function emptySession() {
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
-    dialogQuestions: []
+    dialogQuestions: [],
+    toolFields: null
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -4620,6 +4646,11 @@ function missingAsNull(err) {
 function staleSessionFiles(files, keep) {
   const ranked = [...files].sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name));
   return ranked.filter((f) => f.name !== `${keep}.json`).slice(0, Math.max(0, ranked.length - KEPT_SESSIONS));
+}
+function savedToolFields(saved) {
+  const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
+  const fields = saved;
+  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs) ? fields : null;
 }
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
@@ -4675,7 +4706,8 @@ function sessionFields(saved, views) {
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} })),
+    toolFields: savedToolFields(saved.toolFields)
   };
 }
 
@@ -5179,18 +5211,79 @@ function linkDialogs(s, now = Date.now()) {
   const ledger = questions.reduce((l, q) => q.answer !== undefined && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l, { ...s.ledger, items });
   return { ...s, ledger, dialogQuestions: kept };
 }
-var ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected):?\s*/i;
 var MAX_DIALOG_ANSWER = 80;
-function answerOf(q, text) {
-  const named = q?.options.filter((o) => text.toLowerCase().includes(optionKey(o))) ?? [];
-  const [only] = named;
-  if (only && named.length === 1)
-    return only.replace(RECOMMENDED_SUFFIX, "").trim();
-  return text.replace(ANSWER_PREFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
+var PAIR_FORMS = [
+  { head: /^Your questions have been answered: /, tail: /\. You can now continue with these answers in mind\.$/ },
+  { head: /^The user answered: /, tail: /\. Read the answers carefully[\s\S]*$/ },
+  {
+    head: /^The user asked for more questions before you proceed\. So far they answered: /,
+    tail: /\.(?: They also wrote: [\s\S]*)? Call \S+ again with follow-up questions[\s\S]*$/
+  },
+  { head: /^User has answered your questions: /, tail: /\. You can now continue with the user's answers in mind\.$/ },
+  { head: /^(?=")/, tail: /$/ }
+];
+var AFTER_ANSWER = /^ (?:selected preview:\n|notes: |user notes: )/;
+var SINGLE_FORMS = [
+  /^The user responded: ([\s\S]+)$/,
+  /^User (?:has )?(?:answered|selected)(?: your questions?)?: ([^"\n].*)/i,
+  /^User provided custom input: (.+)/
+];
+function quotedAnswer(pair) {
+  if (!pair.startsWith('"'))
+    return null;
+  for (let end = pair.indexOf('"', 1);end > 0; end = pair.indexOf('"', end + 1)) {
+    const after = pair.slice(end + 1);
+    if (after === "" || AFTER_ANSWER.test(after))
+      return pair.slice(1, end);
+  }
+  return null;
+}
+function pairedAnswers(questions, pairs) {
+  const leadsOf = (q) => {
+    const question = q.question.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return [...pairs.matchAll(new RegExp(`"\\s*${question}\\s*"=`, "g"))];
+  };
+  const leads = questions.map((q) => {
+    const [lead] = leadsOf(q);
+    return lead ? { at: lead.index, answerAt: lead.index + lead[0].length } : null;
+  });
+  const starts = questions.flatMap((q) => leadsOf(q).map((lead) => lead.index));
+  return leads.map((lead) => {
+    if (!lead)
+      return null;
+    const next = Math.min(pairs.length, ...starts.filter((at) => at > lead.at));
+    return quotedAnswer(pairs.slice(lead.answerAt, next).replace(/, $/, ""));
+  });
+}
+function answersOf(questions, text) {
+  const trimmed = text.trim();
+  for (const { head, tail } of PAIR_FORMS) {
+    const opened = head.exec(trimmed);
+    const rest = opened ? trimmed.slice(opened[0].length) : "";
+    const closed = opened ? tail.exec(rest) : null;
+    if (closed)
+      return pairedAnswers(questions, rest.slice(0, closed.index));
+  }
+  const single = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  return questions.map(() => single ?? null);
+}
+function chosenOf(q, answer) {
+  const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
+  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
 }
 function noteAnsweredDialog(s, questions, text, now) {
-  const answer = answerOf(questions.length === 1 ? questions[0] : null, text);
-  const added = questions.map((q, index) => ({ ...q, callId: null, index, turn: s.ledger.turn, itemId: null, answer }));
+  const answers = answersOf(questions, text);
+  const added = questions.map((q, index) => {
+    const answer = answers[index]?.trim() ? chosenOf(q, answers[index]) : undefined;
+    return {
+      ...q,
+      callId: null,
+      index,
+      turn: s.ledger.turn,
+      itemId: null,
+      ...answer === undefined ? {} : { answer }
+    };
+  });
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now);
 }
 function noteDialog(s, callId, questions) {
@@ -5245,17 +5338,18 @@ function drawnPrs(prState, links, lastActions, placing) {
     const state = settledPrState(mark, now, settleWindowMs);
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
-  let rank = 0;
-  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+  return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
 }
 
 // ../hooks/pr-order.ts
 var RANK_AGAIN_LABEL = "Rank again";
-function prRankText(rank) {
-  return `${rank}.\u2002`;
+var OTHER_PRS_TEXT = "Other PRs";
+function otherPrsStart(drawn) {
+  const at = drawn.findIndex((d) => !d.isRanked);
+  return at > 0 && drawn[at - 1]?.isRanked ? drawn[at] ?? null : null;
 }
 function prOrderText(order, drawn, now) {
-  const isRanking = drawn.some((d) => d.rank !== null);
+  const isRanking = drawn.some((d) => d.isRanked);
   if (!order || !isRanking)
     return null;
   return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
@@ -5701,20 +5795,22 @@ function isApproval(item) {
   const isYesNo = item.options.length === 2 && firstWords[0] === "no" && firstWords[1] === "yes";
   return APPROVAL_ASK.test(item.ask) || isYesNo;
 }
-function missingText(item) {
+function missingText(item, fields) {
+  const canSend = (field) => fields.includes(field);
   if (item?.kind === "task")
-    return item.helps.length === 0 ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
+    return item.helps.length === 0 && canSend("steps") ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
   if (!item)
     return "";
-  return bodyText(item) + recText(item) + approvalText(item);
+  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend);
 }
-function bodyText(item) {
-  const unnoted = item.options.filter((o) => !item.optionDescriptions?.[o]);
+function bodyText(item, canSend) {
+  const unnoted = canSend("option_notes") ? item.options.filter((o) => !item.optionDescriptions?.[o]) : [];
   const isUnnoted = unnoted.length > 0;
+  const isContextMissing = !item.context && canSend("context");
   const noNotes = unnoted.length === item.options.length ? "option_notes" : `note on ${quoted(unnoted)}`;
-  const lacks = [...item.context ? [] : ["context"], ...isUnnoted ? [noNotes] : []];
+  const lacks = [...isContextMissing ? ["context"] : [], ...isUnnoted ? [noNotes] : []];
   const asks = [
-    ...item.context ? [] : ["context (why it came up)"],
+    ...isContextMissing ? ["context (why it came up)"] : [],
     ...isUnnoted ? ["option_notes (what picking each option does)"] : []
   ];
   return lacks.length === 0 ? "" : ` It has no ${lacks.join(" or ")}: record it again with ${asks.join(" and ")}.`;
@@ -5722,13 +5818,13 @@ function bodyText(item) {
 function quoted(options) {
   return options.map((o) => `"${o}"`).join(" or ");
 }
-function recText(item) {
+function recText(item, canSend) {
   if (!item.rec)
-    return " It has no rec: when you can recommend an option, record it again with rec and why.";
-  return item.recReason ? "" : " It has no why: record it again with why, so the user sees your reason.";
+    return canSend("rec") ? ` It has no rec: when you can recommend an option, record it again with ${canSend("why") ? "rec and why" : "rec"}.` : "";
+  return item.recReason || !canSend("why") ? "" : " It has no why: record it again with why, so the user sees your reason.";
 }
-function approvalText(item) {
-  return isApproval(item) && item.helps.length === 0 ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
+function approvalText(item, canSend) {
+  return isApproval(item) && item.helps.length === 0 && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
 }
 
 // ../hooks/tool-schemas.ts
@@ -5824,6 +5920,11 @@ var ORDER_SCHEMA = {
   },
   required: ["numbers"]
 };
+var TOOL_FIELDS = {
+  record: Object.keys(RECORD_SCHEMA.properties),
+  close: Object.keys(CLOSE_SCHEMA.properties),
+  order_prs: Object.keys(ORDER_SCHEMA.properties)
+};
 
 // ../hooks/tools.ts
 var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
@@ -5845,10 +5946,10 @@ function agentTools(host) {
     { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA }
   ];
 }
-function toolAnswer(host, ledger, tool, input, now, presses) {
+function toolAnswer(host, ledger, tool, input, now, presses, fields) {
   switch (tool) {
     case "record":
-      return recordAfterCompare(host, ledger, input, now, presses) ?? recordItem(host, ledger, input, now);
+      return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields);
     case "close":
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
@@ -5869,7 +5970,7 @@ function list(value, max, each) {
 function unchanged(ledger, result) {
   return { ledger, result, personLine: null };
 }
-function recordItem(host, ledger, input, now) {
+function recordItem(host, ledger, input, now, fields) {
   if (input.kind === "finding")
     return recordFinding(host, ledger, input, now);
   if (input.kind !== "question" && input.kind !== "task")
@@ -5912,7 +6013,7 @@ function recordItem(host, ledger, input, now) {
   }
   return {
     ledger: recorded,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
     personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
   };
 }
@@ -5960,12 +6061,12 @@ function isRecordedAfterCompare(ledger, id, presses) {
     return false;
   return isAfterCompareThisTurn(id, item.reportedAt, presses);
 }
-function recordAfterCompare(host, ledger, input, now, presses) {
+function recordAfterCompare(host, ledger, input, now, presses, fields) {
   const isClosedAfterCompare = (c) => c.how === "claude" && c.kind === "question" && isAfterCompareThisTurn(c.id, c.at, presses);
   const closed = ledger.closed.findLast(isClosedAfterCompare);
   if (!closed)
     return null;
-  const r = recordItem(host, reopenItem(ledger, closed.id), input, now);
+  const r = recordItem(host, reopenItem(ledger, closed.id), input, now, fields);
   const isUpdated = r.ledger.items.some((i) => i.id === closed.id && i.reportedAt === now);
   return isUpdated ? r : null;
 }
@@ -6635,9 +6736,9 @@ function completedAttempt(state, deliveryId, outcome) {
     } : s)
   };
 }
-function recorded(host, s, tool, args, now) {
+function recorded(host, s, tool, args, now, fields) {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt };
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses);
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields);
   const ledger = withOrderStatuses(r.ledger, s.prViews.views);
   const state = linkDialogs({ ...s, ledger }, now);
   const answered = ledger.items.find((i) => !state.ledger.items.some((o) => o.id === i.id));
@@ -6684,7 +6785,7 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
     prViews: {
       views,
       branchRef,
-      isFetching: false,
+      isFetching: s.prViews.isFetching,
       ...isSignedOut ? { isGhSignedOut: true } : {},
       ...failure ? { failure } : {},
       ...Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}
@@ -6696,10 +6797,15 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
 var PRS_REFRESH_MS = 120000;
 var PRS_HIDDEN_REFRESH_MS = 10 * 60000;
 var NEW_PR_FETCH_MS = 15000;
+var PR_POLL_MS = 15000;
+function untriedPrs(s) {
+  const { views, unread = {} } = s.prViews;
+  return splitLinked(s.prViews, s.ledger).tracked.filter((ref) => !(ref in views) && !(ref in unread));
+}
 function isPrFetchDue(s, lastFetchedAt, now, isTabShown) {
   if (lastFetchedAt === undefined)
     return true;
-  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some((ref) => !(ref in s.prViews.views));
+  const hasNewPr = !s.prViews.isGhMissing && untriedPrs(s).length > 0;
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
   const refreshMs = isTabShown ? PRS_REFRESH_MS : PRS_HIDDEN_REFRESH_MS;
   return now - lastFetchedAt >= refreshMs || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
@@ -6738,15 +6844,23 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
   const s = await host.read();
   const shared = await host.gh.shared?.read() ?? NO_PR_SHARED;
   const now = await host.now();
-  if (!isPress && isLimitInForce(shared.limit, now)) {
+  if (!isPress && shared.limit && isLimitInForce(shared.limit, now)) {
     const limit = shared.limit;
-    await host.update((cur) => cur.prViews.failure?.at === limit?.at ? cur : { ...cur, prViews: { ...cur.prViews, failure: limit } });
+    await host.update((cur) => {
+      const skipped = untriedPrs(cur);
+      if (cur.prViews.failure?.at === limit.at && skipped.length === 0)
+        return cur;
+      const unread = {
+        ...cur.prViews.unread,
+        ...Object.fromEntries(skipped.map((ref) => [ref, fetchFailureWords(limit)]))
+      };
+      return { ...cur, prViews: { ...cur.prViews, failure: limit, ...skipped.length > 0 ? { unread } : {} } };
+    });
     return;
   }
   const bin = await host.gh.find();
-  host.gh.noteMissing(bin === null);
   if (bin === null)
-    return;
+    return host.gh.noteMissing(true);
   let sawUnstartable = false;
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
     sawUnstartable = true;
@@ -6755,9 +6869,8 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
   if (sawUnstartable) {
     host.gh.forget();
     const refound = await host.gh.find();
-    host.gh.noteMissing(refound === null);
     if (refound === null)
-      return;
+      return host.gh.noteMissing(true);
     if (refound !== bin)
       fetch = await fetchWith(refound);
   }
@@ -6767,6 +6880,7 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
     views: Object.fromEntries([...Object.entries(cur.views), ...read.map((ref) => [ref, fetched[ref]])].filter(([, view]) => at - (view.fetchedAt ?? 0) < PR_SHARED_MS)),
     limit: failure?.kind === "limit" ? failure : failure === null ? null : cur.limit
   }));
+  host.gh.noteMissing(false);
   await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread));
 }
 var ALREADY_RUNNING = /already running/i;
@@ -7239,7 +7353,6 @@ var blankLine = (id) => ({
   id,
   depth: 0,
   lead: { text: "", tone: null },
-  rank: null,
   mark: null,
   title: "",
   titleTone: null,
@@ -7534,12 +7647,14 @@ function prEntries(screen, ui, now) {
     });
   if (prs.order)
     out.push(...orderEntries(screen, prs.order, now));
-  for (const d of prs.drawn) {
+  const shown = prs.drawn.filter((d) => isDrawnInPlace(d, ui.shownSince));
+  const othersStart = otherPrsStart(shown);
+  for (const d of shown) {
     const { pr, state } = d;
     const markId = prMarkId(pr.ref);
     const lead = { text: `#${pr.number}`, tone: "prs" };
-    if (!isDrawnInPlace(d, ui.shownSince))
-      continue;
+    if (d === othersStart)
+      out.push({ kind: "note", text: "" }, { kind: "note", text: OTHER_PRS_TEXT });
     if (state.is === "settled") {
       out.push({
         kind: "row",
@@ -7567,7 +7682,6 @@ function prEntries(screen, ui, now) {
       line: {
         ...blankLine(markId),
         lead,
-        rank: d.rank === null ? null : prRankText(d.rank),
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
         age: doneAt(f),
@@ -7993,7 +8107,7 @@ function drawLine(line, isSelected, d) {
   const mark = markText(line.mark, now, s);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
-  const head = ` ${" ".repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ""}${leadText(line.lead, s)}`;
+  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
   const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
@@ -8293,7 +8407,6 @@ function bandLines(screen, width, now, style) {
 
 // src/controller.ts
 var ANIMATION_MS = 200;
-var PRS_CHECK_MS = 120000;
 function createPanel(deps) {
   const { source, style, timers } = deps;
   let ui = { ...INITIAL_UI, shownSince: deps.openedAt };
@@ -8414,7 +8527,7 @@ function createPanel(deps) {
     },
     async start() {
       stops.push(source.onChange(() => void refresh()));
-      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === "prs"), PRS_CHECK_MS);
+      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === "prs"), PR_POLL_MS);
       stops.push(() => timers.stop(prs));
       const delegates = timers.every(() => {
         if (ui.tab === "overview")
@@ -10624,197 +10737,549 @@ function styleOf(theme) {
   };
 }
 
-// src/ask-form.ts
-var TOKEN = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>|([^<]+)/g;
-var ATTR = /([^\s=/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
-var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-var SKIPPED = new Set(["script", "style", "svg", "pre"]);
-var CONTEXT_BLOCKS = new Set(["ul", "ol", "table"]);
-var BLOCKS = new Set(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "section", "form", "hr"]);
-var UNANSWERED_INPUTS = new Set(["hidden", "submit", "button", "reset", "image"]);
-var LABEL = /<label\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/label>/gi;
-function decoded(text) {
-  return text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
-    if (code[0] !== "#")
-      return ENTITIES[code.toLowerCase()] ?? whole;
-    const n = code[1] === "x" || code[1] === "X" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-    return Number.isFinite(n) ? String.fromCodePoint(n) : whole;
+// src/ask-form-entities.ts
+var NAMED_CODE_POINTS = "AElig=c6 Aacute=c1 Acirc=c2 Agrave=c0 Aring=c5 Atilde=c3 Auml=c4 Ccedil=c7 ETH=d0 Eacute=c9 Ecirc=ca Egrave=c8 " + "Euml=cb Iacute=cd Icirc=ce Igrave=cc Iuml=cf Ntilde=d1 Oacute=d3 Ocirc=d4 Ograve=d2 Oslash=d8 Otilde=d5 Ouml=d6 " + "THORN=de Uacute=da Ucirc=db Ugrave=d9 Uuml=dc Yacute=dd aacute=e1 acirc=e2 aelig=e6 agrave=e0 aring=e5 atilde=e3 " + "auml=e4 amp=26 apos=27 bull=2022 brvbar=a6 ccedil=e7 cedil=b8 cent=a2 copy=a9 deg=b0 curren=a4 divide=f7 " + "emsp=2003 ensp=2002 euro=20ac eacute=e9 ecirc=ea egrave=e8 eth=f0 euml=eb frac12=bd frac14=bc frac34=be gt=3e " + "iacute=ed icirc=ee iexcl=a1 igrave=ec iquest=bf iuml=ef hellip=2026 laquo=ab ldquo=201c lsquo=2018 lt=3c " + "mdash=2014 macr=af micro=b5 middot=b7 nbsp=a0 ndash=2013 ntilde=f1 oacute=f3 ocirc=f4 ograve=f2 ordf=aa ordm=ba " + "oslash=f8 otilde=f5 ouml=f6 para=b6 pound=a3 plusmn=b1 quot=22 raquo=bb rdquo=201d reg=ae rsquo=2019 sect=a7 " + "shy=ad szlig=df thorn=fe sup1=b9 sup2=b2 sup3=b3 thinsp=2009 times=d7 trade=2122 uacute=fa ucirc=fb ugrave=f9 " + "uml=a8 uuml=fc yacute=fd yuml=ff yen=a5";
+var NAMED = new Map(NAMED_CODE_POINTS.split(" ").map((pair) => {
+  const [name, hex] = pair.split("=");
+  return [name, String.fromCodePoint(parseInt(hex, 16))];
+}));
+var ENTITY = /&(#(?:x[0-9a-f]+|\d+)|[a-z][a-z0-9]+);/gi;
+var REPLACEMENT = "\uFFFD";
+function decodeEntities(text) {
+  if (!text.includes("&"))
+    return text;
+  return text.replace(ENTITY, (whole, entity) => {
+    if (entity[0] !== "#")
+      return NAMED.get(entity) ?? NAMED.get(entity.toLowerCase()) ?? whole;
+    const hex = entity[1]?.toLowerCase() === "x";
+    const code = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+    const unusable = !Number.isFinite(code) || code <= 0 || code > 1114111 || code >= 55296 && code <= 57343;
+    return unusable ? REPLACEMENT : String.fromCodePoint(code);
   });
+}
+
+// src/ask-form-dom.ts
+var VOID = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr"
+]);
+var CLOSE_ON_OPEN = new Map(Object.entries({
+  li: ["li"],
+  dt: ["dt", "dd"],
+  dd: ["dt", "dd"],
+  tr: ["tr"],
+  th: ["th", "td"],
+  td: ["th", "td"],
+  option: ["option"],
+  thead: ["thead", "tbody", "tfoot"],
+  tbody: ["thead", "tbody", "tfoot"],
+  tfoot: ["thead", "tbody", "tfoot"]
+}));
+var PARAGRAPH_CLOSERS = new Set("address article aside blockquote div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hr menu nav ol p pre section table ul".split(" "));
+var RAW_TEXT_CLOSE = new Map([
+  ["script", /<\/script\s*>/gi],
+  ["style", /<\/style\s*>/gi]
+]);
+var CONTROL_TAGS = new Set(["input", "select", "textarea"]);
+function newElement(tag, parent, attrs = new Map) {
+  return { tag, attrs, kids: [], parent, svg: false, holdsControl: false };
+}
+function textOf2(el) {
+  return el.kids.map((kid) => typeof kid === "string" ? kid : textOf2(kid)).join("");
+}
+function tagEnd(html, start) {
+  let quote = "";
+  for (let i = start;i < html.length; i++) {
+    const c = html[i];
+    if (quote) {
+      if (c === quote)
+        quote = "";
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === ">") {
+      return i;
+    }
+  }
+  return html.length - 1;
+}
+function startTag(source) {
+  const space = /\s/;
+  let i = 0;
+  while (space.test(source[i] ?? ""))
+    i++;
+  const name = /[^\s/>]+/y;
+  name.lastIndex = i;
+  const named = name.exec(source);
+  if (!named)
+    return null;
+  i += named[0].length;
+  const attrs = new Map;
+  let selfClosing = false;
+  while (i < source.length) {
+    while (space.test(source[i] ?? ""))
+      i++;
+    if (source[i] === "/") {
+      selfClosing = true;
+      break;
+    }
+    const attrName = /[^\s=/>]+/y;
+    attrName.lastIndex = i;
+    const attr = attrName.exec(source);
+    if (!attr)
+      break;
+    i += attr[0].length;
+    while (space.test(source[i] ?? ""))
+      i++;
+    let value = "";
+    if (source[i] === "=") {
+      i++;
+      while (space.test(source[i] ?? ""))
+        i++;
+      const quote = source[i];
+      if (quote === '"' || quote === "'") {
+        i++;
+        const end = source.indexOf(quote, i);
+        value = end < 0 ? source.slice(i) : source.slice(i, end);
+        i = end < 0 ? source.length : end + 1;
+      } else {
+        const bare = /[^\s>]+/y;
+        bare.lastIndex = i;
+        value = bare.exec(source)?.[0] ?? "";
+        i += value.length;
+      }
+    }
+    const key = attr[0].toLowerCase();
+    if (!attrs.has(key))
+      attrs.set(key, decodeEntities(value));
+  }
+  return { tag: named[0].toLowerCase(), attrs, selfClosing };
+}
+function isInTemplate(el) {
+  for (;el; el = el.parent)
+    if (el.tag === "template")
+      return true;
+  return false;
+}
+function markHoldsControl(from) {
+  for (let el = from;el && !el.holdsControl; el = el.parent)
+    el.holdsControl = true;
+}
+function addComment(parent, text) {
+  const comment = newElement("#comment", parent);
+  comment.kids.push(text);
+  parent.kids.push(comment);
+}
+function parseForm(html) {
+  const root = newElement("#document", null);
+  const open = [];
+  const top = () => open[open.length - 1] ?? root;
+  let i = 0;
+  while (i < html.length) {
+    if (html.startsWith("<!--", i)) {
+      const end = html.indexOf("-->", i + 4);
+      addComment(top(), html.slice(i + 4, end < 0 ? html.length : end));
+      i = end < 0 ? html.length : end + 3;
+    } else if (html[i] !== "<") {
+      const next = html.indexOf("<", i);
+      const end = next < 0 ? html.length : next;
+      top().kids.push(decodeEntities(html.slice(i, end)));
+      i = end;
+    } else if (html[i + 1] === "!" && /^<!doctype\b/i.test(html.slice(i, i + 10))) {
+      const end = html.indexOf(">", i + 2);
+      i = end < 0 ? html.length : end + 1;
+    } else if (html.startsWith("<![CDATA[", i)) {
+      const end = html.indexOf("]]>", i + 9);
+      top().kids.push(html.slice(i + 9, end < 0 ? html.length : end));
+      i = end < 0 ? html.length : end + 3;
+    } else if (html[i + 1] === "/") {
+      const end = tagEnd(html, i + 2);
+      const name = (html.slice(i + 2, end).trim().split(/\s/, 1)[0] ?? "").toLowerCase();
+      const at = open.findLastIndex((el) => el.tag === name);
+      if (at >= 0)
+        open.length = at;
+      i = end + 1;
+    } else if (html[i + 1] === "!" || html[i + 1] === "?") {
+      const end = html.indexOf(">", i + 2);
+      i = end < 0 ? html.length : end + 1;
+    } else {
+      const end = tagEnd(html, i + 1);
+      const parsed = startTag(html.slice(i + 1, end));
+      if (!parsed) {
+        top().kids.push("<");
+        i++;
+        continue;
+      }
+      const current = open[open.length - 1];
+      if (current?.tag === "p" && PARAGRAPH_CLOSERS.has(parsed.tag))
+        open.pop();
+      else if (current && CLOSE_ON_OPEN.get(parsed.tag)?.includes(current.tag))
+        open.pop();
+      const parent = top();
+      const element = newElement(parsed.tag, parent, parsed.attrs);
+      element.svg = parent !== root && parent.svg || parsed.tag === "svg";
+      parent.kids.push(element);
+      if (CONTROL_TAGS.has(parsed.tag) && !isInTemplate(parent))
+        markHoldsControl(parent);
+      i = end + 1;
+      const rawClose = RAW_TEXT_CLOSE.get(parsed.tag);
+      if (rawClose && !parsed.selfClosing) {
+        rawClose.lastIndex = i;
+        const match = rawClose.exec(html);
+        element.kids.push(html.slice(i, match?.index ?? html.length));
+        i = match ? rawClose.lastIndex : html.length;
+        continue;
+      }
+      if (!(VOID.has(parsed.tag) || element.svg && parsed.selfClosing))
+        open.push(element);
+    }
+  }
+  return root;
+}
+function descendants(from) {
+  const found = [];
+  const visit = (el) => {
+    if (el.tag === "template")
+      return;
+    for (const kid of el.kids) {
+      if (typeof kid === "string")
+        continue;
+      found.push(kid);
+      visit(kid);
+    }
+  };
+  visit(from);
+  return found;
+}
+function childElements(of) {
+  return of.kids.filter((kid) => typeof kid !== "string");
+}
+function closest(from, tag) {
+  for (let el = from;el; el = el.parent)
+    if (el.tag === tag)
+      return el;
+  return null;
+}
+function contains(outer, inner) {
+  for (let el = inner;el; el = el.parent)
+    if (el === outer)
+      return true;
+  return false;
+}
+
+// src/ask-form.ts
+var SKIPPED = new Set([
+  "button",
+  "head",
+  "iframe",
+  "link",
+  "meta",
+  "noscript",
+  "script",
+  "style",
+  "template",
+  "title"
+]);
+var BLOCK = new Set("address article aside blockquote dd details div dl dt figure figcaption footer header li main nav p section".split(" "));
+var HEADING = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "summary"]);
+var IGNORED_INPUTS = new Set(["button", "file", "image", "reset", "submit"]);
+var CONTROLS = new Set(["input", "select", "textarea"]);
+function normalized(text) {
+  return text.replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, `
+`).trim();
 }
 function oneLine(text) {
   return text.replace(/\s+/g, " ").trim();
 }
-function attrsOf(raw) {
-  return new Map([...raw.matchAll(ATTR)].map((m) => [m[1].toLowerCase(), decoded(m[2] ?? m[3] ?? m[4] ?? "")]));
-}
-function labelsFor(html) {
-  return new Map([...html.matchAll(LABEL)].flatMap((m) => {
-    const id = attrsOf(m[1] ?? "").get("for");
-    return id === undefined ? [] : [[id, oneLine(decoded((m[2] ?? "").replace(/<[^>]*>/g, " ")))]];
-  }));
-}
-function questionOf(f) {
-  const own = f.wrapped || f.detached;
-  if (f.kind === "text")
-    return oneLine(own || f.name.replace(/[_-]+/g, " "));
-  const lone = f.options.length === 1 ? optionLabel(f.options[0]) : "";
-  return oneLine(own || f.caption || f.title || lone || f.name);
-}
-function optionLabel(o) {
-  return o.wrapped || o.fallback;
-}
-function formQuestions(html) {
-  const fields = [];
-  const groups = new Map;
-  const labelFor = labelsFor(html);
-  let loose = "";
-  let caption = "";
-  let title = "";
-  let fieldsetDepth = 0;
-  let context = null;
-  let legend = null;
-  let skipped = null;
-  let label = null;
-  let select = null;
-  let option = null;
-  const flush = () => {
-    if (oneLine(loose) !== "")
-      caption = oneLine(loose);
-    loose = "";
-  };
-  const endOption = () => {
-    if (option) {
-      const text = oneLine(option.text);
-      select?.options.push({ wrapped: text, fallback: option.value, checked: option.checked });
+var isControl = (el) => CONTROLS.has(el.tag);
+function textWithoutControls(el) {
+  let text = "";
+  const visit = (node) => {
+    if (typeof node === "string") {
+      text += node;
+      return;
     }
-    option = null;
-  };
-  const detachedOf = (attrs) => {
-    const id = attrs.get("id");
-    return (id !== undefined ? labelFor.get(id) : undefined) || attrs.get("aria-label") || attrs.get("title") || "";
-  };
-  const addField = (name, kind, attrs) => {
-    flush();
-    const field = { name, kind, wrapped: "", detached: detachedOf(attrs), caption, title, options: [] };
-    caption = "";
-    fields.push(field);
-    if (kind !== "group")
-      label?.targets.push((text) => field.wrapped = text);
-    return field;
-  };
-  for (const [, slash, rawTag, rawAttrs, text] of html.matchAll(TOKEN)) {
-    const tag = rawTag?.toLowerCase();
-    const isClose = slash === "/";
-    if (skipped) {
-      if (tag === skipped.tag)
-        skipped.depth += isClose ? -1 : 1;
-      if (skipped.depth === 0)
-        skipped = null;
-      continue;
+    if (SKIPPED.has(node.tag) || isControl(node) || node.tag === "svg")
+      return;
+    if (node.tag === "br")
+      text += `
+`;
+    else if (node.tag === "img")
+      text += node.attrs.get("alt") ?? "";
+    else {
+      if (BLOCK.has(node.tag) || HEADING.has(node.tag))
+        text += " ";
+      node.kids.forEach(visit);
     }
-    if (text !== undefined) {
-      const plain = decoded(text);
-      if (option)
-        option.text += plain;
-      else if (legend !== null)
-        legend += plain;
-      else if (label)
-        label.text += plain;
-      else if (context)
-        context.text += plain;
-      else
-        loose += plain;
-      continue;
+  };
+  el.kids.forEach(visit);
+  return normalized(text);
+}
+
+class FormReader {
+  fields = [];
+  sections = [{ title: "", blocks: [] }];
+  groups = new Map;
+  labelFor = new Map;
+  inline = "";
+  fieldsetDepth = 0;
+  constructor(root) {
+    const below = descendants(root);
+    const ids = new Set(below.filter(isControl).flatMap((el) => el.attrs.get("id") || []));
+    for (const label of below.filter((el) => el.tag === "label")) {
+      const target = label.attrs.get("for");
+      if (target && ids.has(target) && !this.labelFor.has(target))
+        this.labelFor.set(target, label);
     }
-    if (!tag)
-      continue;
-    const attrs = attrsOf(rawAttrs ?? "");
-    const name = attrs.get("name") ?? "";
-    if (tag === "option" || tag === "select")
-      endOption();
-    if (isClose) {
-      if (tag === "legend" && legend !== null) {
-        if (fieldsetDepth === 1)
-          title = oneLine(legend);
-        legend = null;
-      } else if (tag === "label" && label) {
-        const done = oneLine(label.text);
-        label.targets.forEach((set) => set(done));
-        label = null;
-      } else if (tag === "fieldset") {
-        fieldsetDepth = Math.max(0, fieldsetDepth - 1);
-        if (fieldsetDepth === 0)
-          [loose, caption, title] = ["", "", ""];
-      } else if (tag === "select") {
-        select = null;
-      } else if (CONTEXT_BLOCKS.has(tag) && context) {
-        context.depth -= 1;
-        if (context.depth === 0 && oneLine(context.text) !== "")
-          caption = "";
-        if (context.depth === 0)
-          context = null;
-      } else if (BLOCKS.has(tag)) {
-        flush();
-      }
-      continue;
+    this.walkKids(root);
+    this.flush();
+  }
+  get section() {
+    return this.sections[this.sections.length - 1];
+  }
+  flush() {
+    const text = normalized(this.inline);
+    this.inline = "";
+    if (text !== "")
+      this.section.blocks.push({ kind: "text", text });
+  }
+  walkKids(el) {
+    el.kids.forEach((kid) => this.walk(kid));
+  }
+  walk(node) {
+    if (typeof node === "string") {
+      this.inline += node;
+      return;
     }
-    if (tag === "fieldset") {
-      flush();
-      fieldsetDepth += 1;
-      if (fieldsetDepth === 1)
-        [caption, title] = ["", ""];
-    } else if (tag === "legend") {
-      legend = "";
-    } else if (tag === "label") {
-      flush();
-      label = { text: "", targets: [] };
-    } else if (tag === "select" && name !== "") {
-      select = addField(name, "select", attrs);
-    } else if (tag === "option") {
-      if (select)
-        option = { text: "", value: attrs.get("value") ?? "", checked: attrs.has("selected") };
-    } else if (tag === "textarea" || tag === "input") {
-      const type = tag === "textarea" ? "textarea" : (attrs.get("type") ?? "text").toLowerCase();
-      if (tag === "textarea")
-        skipped = { tag, depth: 1 };
-      if (name === "" || UNANSWERED_INPUTS.has(type))
+    const { tag } = node;
+    if (SKIPPED.has(tag))
+      return;
+    switch (tag) {
+      case "br":
+        this.inline += `
+`;
+        return;
+      case "hr":
+        this.flush();
+        return;
+      case "input":
+      case "select":
+      case "textarea":
+        this.control(node, undefined);
+        return;
+      case "label":
+        this.label(node);
+        return;
+      case "fieldset":
+        this.fieldset(node);
+        return;
+      case "legend":
+        this.flush();
+        this.walkKids(node);
+        this.flush();
+        return;
+      case "ul":
+      case "ol":
+        this.list(node);
+        return;
+      case "pre":
+        this.flush();
+        this.section.blocks.push({ kind: "other" });
+        return;
+      case "table":
+        this.table(node);
+        return;
+      case "img":
+        if (!node.attrs.get("src")?.trim())
+          return;
+        this.flush();
+        this.section.blocks.push({ kind: "other" });
+        return;
+      case "svg":
+        this.flush();
+        this.section.blocks.push({ kind: "other" });
+        return;
+    }
+    const isBlock = BLOCK.has(tag) || HEADING.has(tag);
+    if (isBlock)
+      this.flush();
+    this.walkKids(node);
+    if (isBlock)
+      this.flush();
+  }
+  label(label) {
+    const target = label.attrs.get("for");
+    if (target && this.labelFor.get(target) === label)
+      return;
+    const controls = descendants(label).filter(isControl);
+    if (controls.length === 0) {
+      this.walkKids(label);
+      return;
+    }
+    this.flush();
+    const text = textWithoutControls(label);
+    controls.forEach((control) => this.control(control, text));
+  }
+  fieldset(fieldset) {
+    this.flush();
+    const legend = childElements(fieldset).find((el) => el.tag === "legend");
+    if (this.fieldsetDepth > 0) {
+      if (legend)
+        this.walk(legend);
+    } else {
+      this.startSection(legend ? textWithoutControls(legend) : "");
+    }
+    this.fieldsetDepth++;
+    fieldset.kids.filter((kid) => kid !== legend).forEach((kid) => this.walk(kid));
+    this.flush();
+    this.fieldsetDepth--;
+    if (this.fieldsetDepth === 0)
+      this.startSection("");
+  }
+  startSection(title) {
+    if (this.section.blocks.length === 0 && this.section.title === "")
+      this.section.title = title;
+    else
+      this.sections.push({ title, blocks: [] });
+  }
+  list(list) {
+    this.flush();
+    if (list.holdsControl) {
+      this.walkKids(list);
+      this.flush();
+      return;
+    }
+    const hasText = childElements(list).some((el) => el.tag === "li" && textWithoutControls(el) !== "");
+    if (hasText)
+      this.section.blocks.push({ kind: "other" });
+  }
+  table(table) {
+    this.flush();
+    const rows = descendants(table).filter((el) => el.tag === "tr" && closest(el, "table") === table);
+    const cellsOf = (row) => childElements(row).filter((el) => el.tag === "td" || el.tag === "th");
+    if (!table.holdsControl) {
+      if (rows.some((row) => cellsOf(row).length > 0))
+        this.section.blocks.push({ kind: "other" });
+      return;
+    }
+    let header = [];
+    for (const row of rows) {
+      const cells = cellsOf(row);
+      const rowHasControl = row.holdsControl;
+      if (cells.every((cell) => cell.tag === "th") && !rowHasControl) {
+        header = cells.map(textWithoutControls);
         continue;
-      if (type !== "radio" && type !== "checkbox") {
-        addField(name, "text", attrs);
-        continue;
       }
-      const key = `${type}:${name}`;
-      const field = groups.get(key) ?? addField(name, "group", new Map);
-      groups.set(key, field);
-      const added = {
-        wrapped: "",
-        fallback: detachedOf(attrs) || attrs.get("value") || name,
-        checked: attrs.has("checked")
-      };
-      field.options.push(added);
-      label?.targets.push((text) => added.wrapped = text);
-    } else if (CONTEXT_BLOCKS.has(tag)) {
-      flush();
-      if (context)
-        context.depth += 1;
-      else
-        context = { depth: 1, text: "" };
-    } else if (SKIPPED.has(tag) || tag === "img") {
-      flush();
-      caption = "";
-      if (tag !== "img")
-        skipped = { tag, depth: 1 };
-    } else if (BLOCKS.has(tag)) {
-      flush();
+      const rowText = cells.filter((cell) => !cell.holdsControl).map(textWithoutControls).filter((text) => text !== "").join(" \xB7 ");
+      if (rowText !== "")
+        this.section.blocks.push({ kind: "text", text: normalized(rowText) });
+      cells.forEach((cell, column) => {
+        for (const control of descendants(cell).filter(isControl)) {
+          const own = closest(control, "label");
+          const text = own && contains(cell, own) ? textWithoutControls(own) : textWithoutControls(cell);
+          this.control(control, text !== "" ? text : header[column] ?? "");
+        }
+      });
     }
   }
-  return fields.map((f) => {
-    const recommended = f.options.findIndex((o) => o.checked);
-    return {
-      question: questionOf(f),
-      options: f.options.map((o) => ({ label: optionLabel(o) })),
-      ...recommended >= 0 ? { recommended } : {}
-    };
+  detachedLabel(control) {
+    const id = control.attrs.get("id");
+    const label = id ? this.labelFor.get(id) : undefined;
+    if (label)
+      return textWithoutControls(label);
+    return normalized(control.attrs.get("aria-label") ?? control.attrs.get("title") ?? "");
+  }
+  control(control, wrapping) {
+    this.flush();
+    const label = wrapping ? wrapping : this.detachedLabel(control);
+    const name = control.attrs.get("name") ?? "";
+    if (control.tag === "select") {
+      const options = descendants(control).filter((el) => el.tag === "option").map((el) => ({ label: oneLine(textOf2(el)), checked: el.attrs.has("selected") }));
+      this.addField({ name, kind: "choice", select: true, label, options });
+      return;
+    }
+    if (control.tag === "textarea") {
+      this.addField({ name, kind: "text", select: false, label: label || nameLabel(name), options: [] });
+      return;
+    }
+    const type = (control.attrs.get("type") ?? "text").toLowerCase();
+    if (IGNORED_INPUTS.has(type) || type === "hidden" || type in Object.prototype)
+      return;
+    if (type === "radio" || type === "checkbox") {
+      const value = control.attrs.get("value");
+      const option = { label: label || (value ?? name), checked: control.attrs.has("checked") };
+      const key = `${type}\x00${name}`;
+      const group = this.groups.get(key);
+      if (group) {
+        group.options.push(option);
+        return;
+      }
+      const field = { name, kind: "choice", select: false, label: "", options: [option] };
+      this.groups.set(key, field);
+      this.addField(field);
+      return;
+    }
+    this.addField({ name, kind: "text", select: false, label: label || nameLabel(name), options: [] });
+  }
+  addField(field) {
+    this.fields.push(field);
+    this.section.blocks.push({ kind: "field", field });
+  }
+  questions() {
+    const questions = new Map;
+    for (const section of this.sections) {
+      let caption = "";
+      for (const block of section.blocks) {
+        if (block.kind === "field") {
+          const { field } = block;
+          const lone = field.kind === "choice" && field.options.length === 1 ? field.options[0].label : "";
+          questions.set(field, oneLine(field.label || caption || section.title || lone || field.name));
+          caption = "";
+        } else {
+          caption = block.kind === "text" ? block.text : "";
+        }
+      }
+    }
+    return questions;
+  }
+}
+function nameLabel(name) {
+  return name.replace(/[_-]+/g, " ");
+}
+function formQuestions(html) {
+  try {
+    return readQuestions(html);
+  } catch {
+    return [];
+  }
+}
+function readQuestions(html) {
+  const document = parseForm(html);
+  const form = descendants(document).find((el) => el.tag === "form");
+  const reader = new FormReader(form ?? document);
+  const questions = reader.questions();
+  return reader.fields.flatMap((field) => {
+    if (field.name === "")
+      return [];
+    const recommended = field.options.findIndex((o) => o.checked);
+    return [
+      {
+        question: questions.get(field) ?? field.name,
+        options: field.options.map((o) => ({ label: oneLine(o.label) })),
+        ...recommended >= 0 ? { recommended } : {}
+      }
+    ];
   });
 }
 
@@ -10842,7 +11307,7 @@ function askOutcome(event) {
   const details = event.details ?? {};
   const text = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
 `);
-  if (event.isError || text === "")
+  if (event.isError || text === "" || details.chatRedirect === true)
     return { kind: "dismissed" };
   if (Array.isArray(details.answers) && details.answers.length === 0)
     return null;
@@ -12233,7 +12698,9 @@ function sessionCalls(context) {
       return;
     deps.background((async () => {
       const host = hostFor(ctx);
-      const fetching = prFetches.fetchWhenDue(id, await host.read(), isTabShown, () => fetchPrs(host, true));
+      const s = await host.read();
+      const seen = { ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } };
+      const fetching = prFetches.fetchWhenDue(id, seen, isTabShown, () => fetchPrs(host, true));
       if (!fetching)
         return;
       notifyChanged(id);
@@ -12683,7 +13150,7 @@ function createInbox(pi, deps = defaultDeps) {
           return { content: [{ type: "text", text: "The inbox is not shown in this session." }] };
         let answer = { result: "", personLine: null };
         await change(sessionIdOf(ctx), (s) => {
-          const r = recorded(OMP, s, name, args, deps.now());
+          const r = recorded(OMP, s, name, args, deps.now(), TOOL_FIELDS);
           answer = r;
           return r.state;
         });

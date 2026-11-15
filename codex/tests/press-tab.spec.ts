@@ -11,6 +11,7 @@ import { emptyState, NOTHING_HEARD } from '../src/state'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { withItems } from './press-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 test('the tab reports active work separately from pending exchanges and failed updates', () => {
   const s = { ...withItems(), presence: { ...withItems().presence, isUpdating: false, ledgerState: 'failed' as const } }
@@ -71,6 +72,7 @@ test('the tab moves from an empty Asks to Finds when it opens on a finding or a 
       s.ledger,
       { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
       20,
+      TOOL_FIELDS,
     ).ledger,
   }
   const next = newRows(first.seen, viewOf(withFinding, 20), false)
@@ -128,7 +130,7 @@ test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothin
 
     return {
       ...v,
-      prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), state: { is: 'open' as const }, rank: null })) },
+      prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), state: { is: 'open' as const }, isRanked: false })) },
     }
   }
   const first = newRows({}, withPrs([]), false)

@@ -49,9 +49,10 @@ export function askOutcome(event: {
   isError: boolean
   details?: unknown
 }): DialogOutcome | null {
-  const details = (event.details ?? {}) as { timedOut?: unknown; answers?: unknown }
+  const details = (event.details ?? {}) as { timedOut?: unknown; answers?: unknown; chatRedirect?: unknown }
   const text = event.content.flatMap(b => (b.type === 'text' && b.text ? [b.text] : [])).join('\n')
-  if (event.isError || text === '') return { kind: 'dismissed' }
+  // Only omp 18.18.2 and older set `chatRedirect`, on the result of "Chat about this".
+  if (event.isError || text === '' || details.chatRedirect === true) return { kind: 'dismissed' }
   if (Array.isArray(details.answers) && details.answers.length === 0) return null
   const answer = formAnswerText(details.answers) ?? text
 

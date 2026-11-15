@@ -1,8 +1,10 @@
 import type { FoldKind } from '../../types'
 import type { BannerView } from '../../hooks/banners'
+import type { Feedback } from '../../hooks/feedback'
 import type { Effect } from '../../hooks/press-reducer'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
+import { DOT, shortAgo } from '../../hooks/rows'
 import type { ActionEmphasis } from '../../hooks/rows'
 import type { StatusStall } from '../../hooks/status-page'
 
@@ -45,6 +47,10 @@ export type Button = {
   isOut: boolean
   hotkey: string | null
   does: Does
+  /** When the time this button offers runs out, as Undo's does. It draws the time left as a fill that empties. */
+  runsOutAt?: number
+  /** A spent Undo, which keeps its place so the row does not change shape, but draws nothing and takes no press. */
+  isHidden?: true
 }
 
 export const button = (
@@ -61,13 +67,16 @@ export type Field = { rowId: string; buttons: Button[] }
 export type RowBlock = {
   kind: 'row'
   id: string
-  /** One step in, for a Closed list's lines and the rows under a PR. */
+  /** One step in, for a Closed list's lines. A PR's rows stay at 0: their marks hang at the edge under its title. */
   depth: 0 | 1
   mark: Mark | null
   title: string
   age: string | null
-  /** The row's press status, or a Closed line's outcome. */
-  feedback: { text: string; tone: Tone } | null
+  /**
+   * The row's press status, or a Closed line's outcome, with the press result it reads when it has one. `aged` is its
+   * words and the time its age counts from, for a status that ends with its age, as a PR row's does.
+   */
+  feedback: { text: string; tone: Tone; source: Feedback | null; aged?: Aged } | null
   /** Shown once the row has closed, until it folds. */
   settled: { label: string; tone: Tone } | null
   isDim: boolean
@@ -79,7 +88,17 @@ export type RowBlock = {
   buttons: Button[]
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
+  /** The line the row had above its buttons, kept while a press puts its status under them. See `holdLinesAbove`. */
+  heldLine?: { text: string; tone: Tone; isHidden: boolean }
+  /** Draws the status under the buttons, where the shared rule puts it above them. See `holdLinesAbove`. */
+  isStatusHeldUnder?: true
 }
+
+/** A status's words and the time its age counts from. */
+export type Aged = { lead: string; at: number }
+
+/** A status that ends with its age: its words, then how long ago its time was. */
+export const agedText = (a: Aged, now: number): string => `${a.lead}${DOT}${shortAgo(now - a.at)}`
 
 /** A line of the Status page: a subject, a milestone or a child, with its mark, name, stall word and lines under it. */
 export type StatusLine = {
@@ -97,11 +116,10 @@ export type StatusLine = {
   buttons: Button[]
 }
 
-/** A PR's title line and the line under it: its rank, number and title, where it stands, and its buttons. */
+/** A PR's title line and the line under it: its number and title, where it stands, and its buttons. */
 export type PrBlock = {
   kind: 'pr'
   id: string
-  rank: string | null
   number: string
   title: string
   status: { text: string; tone: Tone }
@@ -124,12 +142,11 @@ export type LineBlock = {
 export type Block =
   /**
    * A group's title with its count, or with `isLabel` a quiet label over a part, such as the goal's, ruled to its
-   * buttons. `depth` 1 nests it under a PR.
+   * buttons.
    */
   | {
       kind: 'heading'
       id: string
-      depth: 0 | 1
       text: string
       count: number | null
       mark: Mark | null
@@ -147,7 +164,8 @@ export type Block =
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
   /**
-   * A line of text. `isHead` drops its padding above and below, as the Status page's head does, and `isStrong` draws it
+   * A line of text. `isHead` keeps it close to the head's other lines, as the Status page's head does. `isAtEdge` starts it
+   * at the panel's edge, not where rows' text starts. `isStrong` draws it
    * as the head's title: the goal, or what the session is for. `count` follows the text, quiet, as the goal's does.
    */
   | {
@@ -157,6 +175,7 @@ export type Block =
       count: string | null
       tone: Tone
       isHead: boolean
+      isAtEdge: boolean
       isStrong: boolean
       depth: number
     }
@@ -165,5 +184,7 @@ export type Block =
   /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
   | { kind: 'rule'; id: string; text: string | null }
   | { kind: 'gap'; id: string }
+  /** A muted line at the edge that names the blocks under it, as Other PRs. */
+  | { kind: 'caption'; id: string; text: string }
   /** A message in the list, as the PRs tab's GitHub notice, with the buttons that act on its problem at its end. */
   | { kind: 'banner'; id: string; banner: BannerView; buttons: Button[]; feedback: { text: string; tone: Tone } | null }

@@ -174,7 +174,7 @@ export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): 
     case 'herdr':
       return [
         { keys: '← →', does: 'Switch tabs' },
-        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }, undoKey] : []),
         ...prTabKeys,
         { keys: 'esc', does: "Move focus back to the agent's terminal" },
       ]

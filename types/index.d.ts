@@ -155,7 +155,7 @@ export type SessionStatus = {
   look: { startedAt: number } | null
 }
 
-/** The folder a session started in, and its branch when the host last read it. */
+/** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */
 export type Place = { folder: string; branch: string | null }
 
 export type Item = {
@@ -566,11 +566,8 @@ export type HostTaskStatus = 'pending' | 'in-progress' | 'done' | 'dropped' | 'b
 export type HostTask = { id: string; text: string; status: HostTaskStatus }
 
 /**
- * Why a Status call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
- * parser refused, and `answer` holds the start of the second answer.
- */
-/**
- * A Status call that wrote nothing. `catchUpsFailed` counts the catch-ups that failed while it stood, and
+ * A Status call that wrote nothing. `cause` is `no-answer` when the call gave no text, or `refused` when it answered
+ * twice with text the parser refused, and then `answer` holds the start of the second answer. `catchUpsFailed` counts the catch-ups that failed while it stood, and
  * `catchUpTurn` is `turnsStarted` at the last of them, so the next catch-up waits longer after each (`needsCatchUp`).
  * Saved failures from before these fields read as none.
  */
@@ -679,7 +676,7 @@ export type Session = {
      */
     lastTypedMessageAt: number | null
   }
-  /** Where the session started. Null until the host names it. */
+  /** Where the session runs. Null until the host names it. */
   place: Place | null
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks
@@ -737,7 +734,16 @@ export type Session = {
    * per-reply update.
    */
   dialogQuestions: TurnDialogQuestion[]
+  /**
+   * The input fields of each inbox tool the agent has in this conversation, which a tool's answer may ask it to send.
+   * Only the mod saves them, since Claude Code keeps a conversation's first tools when the conversation resumes on a
+   * later build. Null when the session does not know them, as in a session saved before they were kept.
+   */
+  toolFields: ToolFields | null
 }
+
+/** The input fields of each inbox tool, by the tool's name. */
+export type ToolFields = { record: string[]; close: string[]; order_prs: string[] }
 
 declare module 'claude-code' {
   interface PluginState {

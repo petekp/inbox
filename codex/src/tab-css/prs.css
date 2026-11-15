@@ -25,10 +25,22 @@
 .pr-refresh-line .pr-actions {
   margin-left: auto;
 }
+/* The refresh line under an empty tab's centred text. */
+.empty .pr-order > div {
+  padding: 0;
+}
+.empty .pr-refresh-line {
+  justify-content: center;
+}
+.empty .pr-refresh-line > .pr-refresh-text {
+  flex: 0 1 auto;
+}
+.empty .pr-refresh-line .pr-actions {
+  margin-left: 0;
+}
 .pr-head {
   font-weight: 600;
 }
-.pr-head .rank,
 .pr-head .num,
 .pr-head .pr-verdict {
   font-weight: 400;
@@ -62,6 +74,12 @@
 /* A block's padding is inside the element that animates, so the block's height is its content's height. */
 section.pr-entry {
   padding: 0;
+}
+section.other-prs {
+  padding-bottom: 0;
+}
+section.other-prs + section::before {
+  display: none;
 }
 .pr-entry-content {
   padding: 10px 0;

@@ -1,6 +1,7 @@
 import { feedbackText } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
 import { actionId } from '../../hooks/press-labels'
+import { isPressConfirmed } from '../../hooks/press-reducer'
 import { pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
@@ -8,6 +9,7 @@ import { deliveryLabel } from '../../hooks/rows'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { LocalResult, RowNote } from '../../types'
+import { button } from './blocks'
 import type { Block, Button } from './blocks'
 import type { LastPress } from './files'
 
@@ -42,8 +44,8 @@ export type Out = {
   isTaken: boolean
 }
 
-/** A line the look draws on a row in place of the one the publish gave. */
-export type RowLine = { text: string; tone: 'error' | 'muted' }
+/** A line the look draws on a row in place of the one the publish gave, and the press result it reads. */
+export type RowLine = { text: string; tone: 'error' | 'muted'; source: Feedback }
 
 /** The id the look tells a button's press by: a row press's `actionId`, a PR press's action. */
 export const outAction = (p: RowPress | PrPress): string => ('id' in p ? actionId(p) : p.action)
@@ -61,15 +63,34 @@ export function rowSignature(view: SessionView, rowId: string): string {
 const resultLine = (result: LocalResult): RowLine => ({
   text: feedbackText({ is: 'local', result }, 'herdr'),
   tone: result.state === 'failed' ? 'error' : 'muted',
+  source: { is: 'local', result },
 })
 
 /** A press a host took and never reported, in the words the hosts use for a message they could not confirm. */
-const unconfirmedLine = (out: Out): RowLine =>
-  out.result ? resultLine(out.result) : { text: deliveryLabel('unconfirmed', out.label, out.reply), tone: 'muted' }
+function unconfirmedLine(out: Out, now: number): RowLine {
+  if (out.result) return resultLine(out.result)
+  const label = deliveryLabel('unconfirmed', out.label, out.reply)
+
+  return { text: label, tone: 'muted', source: { is: 'unconfirmed', label, at: now } }
+}
+
+/** A press the look could not send, in the words the hosts use for one. */
+export function notSentLine(reason: string): RowLine {
+  const source: Feedback = { is: 'notSent', reason, retry: null }
+
+  return { text: feedbackText(source, 'herdr'), tone: 'error', source }
+}
 
 /** A press no host took by the give-up time, once the look has taken its file back. */
 export const notAppliedLine = (out: Out, agent: string): RowLine =>
-  out.result ? resultLine(out.result) : { text: `Not applied: ${agent}'s inbox did not answer.`, tone: 'error' }
+  out.result ? resultLine(out.result) : notAppliedText(`${agent}'s inbox did not answer.`)
+
+/** A press that ended without a host applying it. */
+export const notAppliedText = (why: string): RowLine => ({
+  text: `Not applied: ${why}`,
+  tone: 'error',
+  source: { is: 'notSent', reason: why, retry: null },
+})
 
 type Settled = {
   outs: Out[]
@@ -94,13 +115,42 @@ export function settleOuts(outs: readonly Out[], view: SessionView, lastPress: L
     }
     if (rowSignature(view, out.rowId) !== out.before) continue
     const isPassed = lastPress !== null && lastPress.id > out.pressId
-    if (out.isWritten && out.isTaken && isPassed) settled.lines[out.rowId] = unconfirmedLine(out)
+    if (out.isWritten && out.isTaken && isPassed) settled.lines[out.rowId] = unconfirmedLine(out, now)
     else if (!out.isWritten || out.waitingSince === null || now - out.waitingSince < GIVE_UP_MS) settled.outs.push(out)
-    else if (out.isTaken) settled.lines[out.rowId] = unconfirmedLine(out)
+    else if (out.isTaken) settled.lines[out.rowId] = unconfirmedLine(out, now)
     else settled.toClaim.push(out)
   }
 
   return settled
+}
+
+/** A row's last press as the view gives it, to tell whether a press saved a new one. */
+export const lastActionKey = (view: SessionView, rowId: string): string =>
+  JSON.stringify(view.lastActions[rowId] ?? null)
+
+/** A reply or goal the look sent, from its `type` press, with its row's `lastActionKey` when pressed. */
+export type SentText = { pressId: string; rowId: string; text: string; lastBefore: string }
+
+/**
+ * Whether the host confirmed a sent text's press, as `isPressConfirmed` decides, or null until a read shows the host
+ * finished it: `lastPress` names it, or names a later press, since a host applies presses oldest first. `lastPress`
+ * carries no send error, so the row's delivery gives it, and a press that saved no last press on its row was not sent.
+ */
+export function isSentConfirmed(sent: SentText, view: SessionView, lastPress: LastPress | null): boolean | null {
+  const isNamed = lastPress?.id === sent.pressId
+  const isPassed = lastPress !== null && lastPress.id > sent.pressId
+  if (!isNamed && !isPassed) return null
+  const delivery = view.lastActions[sent.rowId]?.delivery
+  const isChanged = lastActionKey(view, sent.rowId) !== sent.lastBefore
+
+  return (
+    isChanged &&
+    isPressConfirmed({
+      error: delivery?.state === 'failed' ? delivery.reason : null,
+      note: isNamed && lastPress?.outcome === 'stale' ? 'stale' : null,
+      isUnconfirmed: delivery?.state === 'unconfirmed',
+    })
+  )
 }
 
 /** When the look next needs to read for its presses: a reread, or giving up. */
@@ -117,24 +167,42 @@ const withOutButtons = (buttons: Button[], outRows: ReadonlySet<string>): Button
   buttons.map(b => (b.does.is === 'press' && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b))
 
 /**
+ * A settled row's buttons while its Undo press is out. The plan drops Undo once its time ends, even while the press is
+ * out, so the look draws the Undo it sent drawn out, in the place the spent Undo keeps or after the row's buttons.
+ */
+function withUndoOut(rowId: string, buttons: Button[], out: Out | undefined): Button[] {
+  if (out?.action !== 'undo') return buttons
+  const id = `${rowId} undo`
+  const kept = buttons.find(b => b.id === id)
+  if (kept && !kept.isHidden) return buttons
+  const { isHidden: _, ...spent } = kept ?? button(id, out.label, 'quiet')
+  const drawn: Button = { ...spent, label: out.label, isOut: true }
+
+  return kept ? buttons.map(b => (b === kept ? drawn : b)) : [...buttons, drawn]
+}
+
+/**
  * The blocks with the look's presses drawn: every press button on a row with a press out draws out, and the row's
  * line reads the press under way, how the look's own opens went, or why a press ended unreported, in place of the line
- * the publish gave.
+ * the publish gave. While the press is out, its line reads as the press under way, wherever a look places that.
  */
-export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<string, RowLine>): Block[] {
+export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<string, RowLine>, now: number): Block[] {
   const byRow = new Map(outs.map(o => [o.rowId, o]))
   const outRows = new Set(byRow.keys())
   const lineOf = (id: string): RowLine | null => {
     const out = byRow.get(id)
     if (!out) return lines[id] ?? null
-    if (out.result) return resultLine(out.result)
-    return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted' }
+    const source: Feedback = out.pending ?? { is: 'sending', label: SENDING, at: now }
+    if (out.result) return { ...resultLine(out.result), source }
+    return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted', source }
   }
 
   return blocks.map((b): Block => {
     if (b.kind === 'row' || b.kind === 'pr' || b.kind === 'line' || b.kind === 'banner') {
       const line = lineOf(b.id)
-      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...(line ? { feedback: line } : {}) }
+      const isSettledRow = b.kind === 'row' && b.settled !== null
+      const buttons = isSettledRow ? withUndoOut(b.id, b.buttons, byRow.get(b.id)) : b.buttons
+      return { ...b, buttons: withOutButtons(buttons, outRows), ...(line ? { feedback: line } : {}) }
     }
     if (b.kind === 'status' || b.kind === 'heading' || b.kind === 'empty')
       return { ...b, buttons: withOutButtons(b.buttons, outRows) }

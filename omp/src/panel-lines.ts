@@ -55,8 +55,6 @@ export type Line = {
   depth: number
   /** The mark before the title. An Asks or Finds row has none, so its title starts in the mark's place. */
   lead: Lead | null
-  /** A ranked PR's number in the agent's order, drawn dim before the lead. */
-  rank: string | null
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
   mark: ResultMark | null
   title: string
@@ -111,7 +109,6 @@ export const blankLine = (id: string): Line => ({
   id,
   depth: 0,
   lead: { text: '', tone: null },
-  rank: null,
   mark: null,
   title: '',
   titleTone: null,

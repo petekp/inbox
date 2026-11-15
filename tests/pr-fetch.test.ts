@@ -1,9 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 
 import { press } from '../hooks/host-press'
-import { fetchPrs } from '../hooks/host-prs'
+import { fetchPrs, isPrFetchDue } from '../hooks/host-prs'
 import { CLOSED_PR_REFRESH_MS, fetchTracked, LIMIT_RETRY_MS, NO_PR_SHARED, PR_SHARED_MS } from '../hooks/pr-fetch'
 import type { PrShared } from '../hooks/pr-fetch'
+import { runFailureOf } from '../hooks/pr-query'
 import { fetchFailureNotice, PR_REFRESH_LABEL, refreshProblem } from '../hooks/pr-refresh'
 import { ghNoticeOf, PR_REFRESH_ID } from '../hooks/pr-rows'
 import { applyPrPress, prBlockActions } from '../hooks/pr-tab'
@@ -267,6 +268,28 @@ test('a limit error stops every session’s polling until GitHub’s reset time,
   expect(sessionView(state(), clock, 1000, NO_HOLDS).prs.refresh).toBeNull()
 })
 
+const UNREACHABLE: Answer = { exitCode: 1, stdout: '', stderr: 'error connecting to api.github.com' }
+
+for (const [why, answer] of [
+  ['could not reach GitHub', UNREACHABLE],
+  ['met the limit', LIMIT_ANSWER],
+] as const) {
+  test(`after a fetch that ${why}, the PRs it skipped wait 2 minutes, and a PR linked after it is due 15 seconds after it`, async () => {
+    const base = emptySession()
+    const start = { ...base, ledger: { ...base.ledger, prs: ['acme/app#1'] } }
+    const run = async (args: string[]) => (args[1] === 'rate_limit' ? { ...UNREACHABLE, stderr: 'HTTP 500' } : answer)
+    const { host, state } = hostOf(run, start, () => NOW)
+    const isDue = () => isPrFetchDue(state(), NOW, NOW + 15_000, true)
+
+    await fetchPrs(host, false)
+    expect(isDue()).toBe(false)
+    await host.update(s => ({ ...s, ledger: { ...s.ledger, prs: [...s.ledger.prs, 'acme/app#2'] } }))
+    expect(isDue()).toBe(true)
+    await fetchPrs(host, false)
+    expect(isDue()).toBe(false)
+  })
+}
+
 test('a limit error GitHub gives no reset for stops polling for a while, and a fetch that cannot reach GitHub or gets an error says so at the top and keeps the views', async () => {
   const base = emptySession()
   const start: Session = {
@@ -340,6 +363,10 @@ test('Refresh PRs at the top reads Refreshing, then why it could not refresh, in
     )
   const pending = applyPrPress(start.ledger, start.prViews, {}, { action: 'pr-refresh' }, { now: NOW, turnsStarted: 0 })
   expect('stale' in pending ? null : pending.lasts[PR_REFRESH_ID]?.result?.state).toBe('pending')
+  const out = 'stale' in pending ? start : { ...start, lastActions: { ...pending.lasts } }
+  expect(sessionView(out, NOW, 1000, NO_HOLDS).prs.refresh?.actions.map(a => [a.label, a.isOut])).toEqual([
+    [PR_REFRESH_LABEL, true],
+  ])
 
   await press(pressHost, { action: 'pr-refresh' }, false, NO_HOLDS)
   expect(refreshed()).toBe(`Could not refresh PRs: GitHub's limit resets at ${clockTime(resetAt)}`)
@@ -362,4 +389,38 @@ test('Refresh PRs at the top reads Refreshing, then why it could not refresh, in
   expect(after).toEqual({ text: null, actions: [], showsPress: true })
   const faded = sessionView(state(), NOW + SETTLED_MS, 1000, { ...NO_HOLDS, shownSince: NOW - 1 }).prs.refresh
   expect(faded).toBeNull()
+})
+
+test('an answer that holds data is never a limit, whatever its titles say, and a real limit answer still is', async () => {
+  const titled = prNodeOf({ ...viewJson('acme/app#1'), title: 'Handle GitHub rate limits' })
+  const good = { exitCode: 0, stdout: JSON.stringify({ data: { viewer: { login: 'me' }, pr0: titled } }), stderr: '' }
+  expect(runFailureOf(good, 124, NOW)).toBeNull()
+
+  const gh = ghStandIn(() => ({ node: titled }))
+  const refs = ['acme/app#1']
+  const fetched = await fetchTracked(gh.run, prState({}), links(refs), ask, () => NOW)
+  expect(fetched.failure).toBeNull()
+  expect(fetched.read).toEqual(refs)
+
+  const limit = { kind: 'limit', at: NOW, resetsAt: null }
+  expect(runFailureOf(LIMIT_ANSWER, 124, NOW)).toEqual(limit)
+  expect(runFailureOf({ ...LIMIT_ANSWER, stderr: '' }, 124, NOW)).toEqual(limit)
+  expect(runFailureOf({ ...LIMIT_ANSWER, stdout: '' }, 124, NOW)).toEqual(limit)
+
+  const limitedError = { type: 'RATE_LIMITED', message: 'API rate limit exceeded for user ID 1.' }
+  const partial = { data: { viewer: { login: 'me' }, pr0: null }, errors: [limitedError] }
+  expect(runFailureOf({ exitCode: 0, stdout: JSON.stringify(partial), stderr: '' }, 124, NOW)).toEqual(limit)
+
+  const titledError = { type: 'NOT_FOUND', message: 'Could not resolve "Handle GitHub rate limits".' }
+  const notFound = { data: { viewer: { login: 'me' }, pr0: titled }, errors: [titledError] }
+  expect(runFailureOf({ exitCode: 0, stdout: JSON.stringify(notFound), stderr: '' }, 124, NOW)).toBeNull()
+})
+
+test('a limit that leaves the hourly budget unspent does not wait for the hourly reset', async () => {
+  const resetAt = NOW + 50 * 60_000
+  const unspent = JSON.stringify({ resources: { graphql: { limit: 5000, remaining: 4000, reset: resetAt / 1000 } } })
+  const run = async (args: string[]) =>
+    args[1] === 'rate_limit' ? { exitCode: 0, stdout: unspent, stderr: '' } : LIMIT_ANSWER
+  const fetched = await fetchTracked(run, prState({}), links(['acme/app#1']), ask, () => NOW)
+  expect(fetched.failure).toEqual({ kind: 'limit', at: NOW, resetsAt: null })
 })

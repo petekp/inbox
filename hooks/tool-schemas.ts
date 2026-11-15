@@ -1,4 +1,5 @@
 import { MAX_ORDERED_PRS } from './pr-fetch'
+import type { Session, ToolFields } from '../types'
 
 export const RECORD_SCHEMA = {
   type: 'object',
@@ -104,4 +105,23 @@ export const ORDER_SCHEMA = {
     },
   },
   required: ['numbers'],
+}
+
+/** The input fields of each inbox tool in this build. */
+export const TOOL_FIELDS: ToolFields = {
+  record: Object.keys(RECORD_SCHEMA.properties),
+  close: Object.keys(CLOSE_SCHEMA.properties),
+  order_prs: Object.keys(ORDER_SCHEMA.properties),
+}
+
+/** The input fields of each inbox tool in 0.3.0. A session saved before sessions kept their fields gets these. */
+export const V0_3_TOOL_FIELDS: ToolFields = {
+  record: ['kind', 'ask', 'options', 'rec', 'steps', 'design_choice', 'finding_kind', 'title', 'detail', 'path'],
+  close: ['id', 'answer', 'reason'],
+  order_prs: ['repo', 'numbers', 'label', 'why'],
+}
+
+/** The fields of the inbox tools the session's agent has: those it saved, or 0.3.0's when it saved none. */
+export function sessionToolFields(s: Pick<Session, 'toolFields'>): ToolFields {
+  return s.toolFields ?? V0_3_TOOL_FIELDS
 }

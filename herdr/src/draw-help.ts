@@ -11,7 +11,6 @@ export function helpBlocks(tab: ShownTab, hasStatusButtons: boolean): Block[] {
   const heading = (id: string, text: string): Block => ({
     kind: 'heading',
     id,
-    depth: 0,
     text,
     count: null,
     mark: null,

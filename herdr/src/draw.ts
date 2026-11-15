@@ -1,6 +1,6 @@
 import type { Closed, FoldKind } from '../../types'
 import type { RowPress } from '../../hooks/presses'
-import type { ClosedDelivery, ResultMark, RowView } from '../../hooks/rows'
+import type { ClosedDelivery, ResultMark, RowView, SettledState } from '../../hooks/rows'
 import {
   NEEDS_YOU_GROUPS,
   ROW_COPY,
@@ -21,7 +21,8 @@ import {
   shownOptionDescriptions,
   waitingCount,
 } from '../../hooks/rows'
-import { firstWaiting, rowKeyPlan } from '../../hooks/action-plan'
+import { firstWaiting, rowAfterClose, rowKeyPlan } from '../../hooks/action-plan'
+import type { RowWait } from '../../hooks/action-plan'
 import { stepEffects } from '../../hooks/help-steps'
 import { emptyText, groupEmptyText, tabBarBanners } from '../../hooks/banners'
 import type { BannerView } from '../../hooks/banners'
@@ -32,7 +33,7 @@ import { FINDING_GROUPS, HELD_MARK } from '../../hooks/help'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
-import { isDrawnInPlace } from '../../hooks/timing'
+import { QUEUED_AFTER_MS, SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerStatus } from '../../hooks/view'
 import type { PressKind } from '../../types'
 import { button } from './blocks'
@@ -111,6 +112,39 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
   })
 }
 
+/**
+ * When a settled row's spent Undo stops keeping its place, if its message is still queued then. The host sends an
+ * answer or Fix held for Undo when Undo ends, and a message still queued `QUEUED_AFTER_MS` later waits for the agent.
+ */
+export const undoPlaceEndsAt = (state: SettledState): number => state.at + SETTLED_MS + QUEUED_AFTER_MS
+
+/**
+ * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
+ * hidden, as the Codex tab hides a spent Undo, so the row does not change shape before it folds. The panel draws Undo on
+ * a line of its own, so a hidden one is an empty line. A row whose message waits for the agent stays until the agent
+ * takes it, so it drops the place from `undoPlaceEndsAt` rather than hold that empty line.
+ */
+function undoButtons(row: RowView, agent: string, now: number): Button[] {
+  if (row.state.is !== 'settled') return []
+  const id = `${row.id} undo`
+  const runsOutAt = row.state.at + SETTLED_MS
+  const undo = row.actions.find(a => a.press.action === 'undo')
+  if (undo)
+    return [
+      {
+        ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
+        isOut: undo.isOut,
+        runsOutAt,
+      },
+    ]
+
+  const isWaitingForAgent = row.state.delivery === 'queued' && now >= undoPlaceEndsAt(row.state)
+
+  return row.state.offersUndo && !isWaitingForAgent
+    ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isHidden: true, runsOutAt }]
+    : []
+}
+
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */
 function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send): Field {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel
@@ -152,7 +186,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     mark: markOf(rowResultMark(row)),
     title: rowTitle(row, LOOK),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
-    feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
+    feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
     settled: isSettled
       ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) }
       : null,
@@ -160,7 +194,11 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     isSelectable: !isSettled,
     isSelected,
     body: isSelected ? rowBody(row, isAllShown) : [],
-    buttons: isSettled || (isSelected && !isTyping) ? rowButtons(row, isAllShown, screen.agent) : [],
+    buttons: isSettled
+      ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)]
+      : isSelected && !isTyping
+        ? rowButtons(row, isAllShown, screen.agent)
+        : [],
     field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
   }
 }
@@ -188,7 +226,7 @@ function closedBlock(d: ClosedLine, now: number): RowBlock {
     mark: markOf(d.mark),
     title: d.title,
     age: shortAgo(now - d.at),
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted' },
+    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted', source: null },
     settled: null,
     isDim: true,
     isSelectable: false,
@@ -208,7 +246,6 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
     {
       kind: 'heading',
       id: `group ${g.kind}`,
-      depth: 0,
       text: g.title,
       count: count > 0 ? count : null,
       mark: g.mark,
@@ -225,6 +262,7 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
       count: null,
       tone: 'muted',
       isHead: false,
+      isAtEdge: false,
       isStrong: false,
       depth: 0,
     })
@@ -266,12 +304,24 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
   }))
 }
 
-/** The row the look opens: the one the person selected while it still waits, else the first that waits. */
-function selectedOf(groups: Group[], selected: string | null): string | null {
-  const rows = groups.flatMap(g => g.rows).filter(isWaitingRow)
-  if (selected !== null && rows.some(r => r.id === selected)) return selected
+const waitsOf = (groups: Group[]): RowWait[] =>
+  groups.flatMap(g => g.rows).map(r => ({ id: r.id, isWaiting: isWaitingRow(r) }))
 
-  return firstWaiting(rows.map(r => ({ id: r.id, isWaiting: true })))
+/** The rows a row tab lists, in order, and whether each waits on the person. None on the PRs and Status tabs. */
+export const rowWaits = (screen: LookScreen, tab: ShownTab): RowWait[] =>
+  tab === 'needsYou' || tab === 'findings' ? waitsOf(groupsOf(screen.view, tab, screen.shownSince)) : []
+
+/**
+ * The row the look opens: the one the person selected while it can open. While it is settled, as when its Undo is
+ * out, the row `rowAfterClose` gives. Else the first that waits.
+ */
+function selectedOf(groups: Group[], selected: string | null): string | null {
+  const isSettled = (id: string) => groups.some(g => g.rows.some(r => r.id === id && r.state.is === 'settled'))
+  const waits = waitsOf(groups)
+  if (selected === null || !waits.some(r => r.id === selected)) return firstWaiting(waits)
+  if (!isSettled(selected)) return selected
+
+  return rowAfterClose(waits, selected) ?? firstWaiting(waits)
 }
 
 function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'findings'): Block[] {

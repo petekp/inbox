@@ -246,10 +246,11 @@ agent. Until then it keeps its label, so its width holds.
 
 **PR order**:
 The order an agent set for the PRs tab with `order_prs`, first to last, such as
-a merge ranking. Its open PRs draw first, each with its rank, under a line that
-names what the person does with the order, as "Merge in this order", and the
-agent that set it. The agent's reason for the order draws under that line. The
-other PRs follow in the tab's own order. The order does not link the PRs it
+a merge ranking. Its open PRs draw first, in its order and with no number,
+under a line that names what the person does with the order, as "Merge in this
+order", and the agent that set it. The agent's reason for the order draws under
+that line. The other PRs follow in the tab's own order, under a muted "Other
+PRs" line. The order does not link the PRs it
 ranks, so clearing or replacing it takes the PRs only it ranked off the tab.
 The conversation saves it as `Ledger.prOrder`.
 _Avoid_: ranking, as the stored thing
@@ -326,6 +327,17 @@ adds "next" on one, and only a next build keeps Status call records.
 `different` or `unsupported`, with a reason for the last two. Each such entry
 needs a row in "Differences on purpose" in `docs/looks.md`, and
 `scripts/check-structure.mjs` fails when one is missing.
+
+**Tool fields**:
+The input fields each inbox tool has for the agent of one conversation
+(`ToolFields`). A tool's answer asks the agent only for fields in this list.
+The list can be older than the build: Claude Code keeps a conversation's first
+tool schemas when the conversation resumes on a later build, so the mod saves
+the list as `Session.toolFields`. Only a conversation the mod saw start gets
+this build's list. A fork gets its parent's, and any other conversation with no
+saved list gets 0.3.0's. Codex takes the list from the server's last
+`tools/list` answer, and omp registers this build's tools.
+`hooks/tool-schemas.ts:TOOL_FIELDS`, `V0_3_TOOL_FIELDS`.
 
 The engine has two terms of its own. Its `surface` is where Claude Code runs,
 and includes `mobile` and `vscode`; `lookOf` in `hooks/palettes.ts` maps it to

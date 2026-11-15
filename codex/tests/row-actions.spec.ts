@@ -11,6 +11,7 @@ import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { buttons, named, task, window } from './row-actions-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, keeps a done row in place past its Undo while the pointer is on the list, folds it once the pointer leaves, and folds a done row at once on a tab switch', async () => {
   const state = emptyState('renderer')
@@ -181,7 +182,13 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     assert.doesNotMatch(root.textContent ?? '', /the build passed/)
     assert.equal(presses.length, 3)
 
-    state.ledger = recordItem(CODEX, state.ledger, { kind: 'task', ask: 'Tag the release' }, Date.now()).ledger
+    state.ledger = recordItem(
+      CODEX,
+      state.ledger,
+      { kind: 'task', ask: 'Tag the release' },
+      Date.now(),
+      TOOL_FIELDS,
+    ).ledger
     await pause(POLL_MS + 100)
     root.querySelector<HTMLElement>('.row .line')!.click()
     await pause(PRESS_GUARD_MS + 50)
@@ -207,7 +214,13 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
       assert.match(root.textContent ?? '', /2 closed/)
 
-      state.ledger = recordItem(CODEX, state.ledger, { kind: 'task', ask: 'Publish the notes' }, Date.now()).ledger
+      state.ledger = recordItem(
+        CODEX,
+        state.ledger,
+        { kind: 'task', ask: 'Publish the notes' },
+        Date.now(),
+        TOOL_FIELDS,
+      ).ledger
       await pause(POLL_MS + 100)
       root.querySelector<HTMLElement>('.row .line')!.click()
       await pause(PRESS_GUARD_MS + 50)
