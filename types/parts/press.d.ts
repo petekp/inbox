@@ -19,6 +19,8 @@ export type LastAction = {
   pressOrder?: number
   /** The turns started when it was pressed, so a handed-off row folds until the update for a later turn applies. */
   turnsStarted?: number
+  /** When the turn that followed a hand-off press ended, answered or not. A PR's hand-off button reads "… again" only once a fetch has read the PR after it. */
+  repliedAt?: number
   /** The latest Local press's outcome: its opens and copies, pending until each has run. Talk, Hand-off and Mark presses clear it. */
   result?: LocalResult
   /** Whether the press's message reached the agent. Missing on a press that sent nothing, and on one saved before the mod kept it, which reads as arrived. */

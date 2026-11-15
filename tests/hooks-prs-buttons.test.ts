@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { SESSION_VERSION } from '../hooks/session-version'
 import type { TabsProps } from '../hooks/tabs-client'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
+import { PR_READ_WAIT_MS, PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { PANE, SAVED_SESSION, leaveAndReturn } from './hooks-helpers'
 
@@ -80,18 +80,23 @@ test(
     await first
     await clock.settle()
     expect(w.sent.at(-1)).toContain('PR #12 (https://github.com/acme/greet/pull/12) conflicts with main.')
-    expect(await pane.find({ text: /✓ Asked to resolve conflicts ·/ })).toBeDefined()
+    expect(await pane.find({ text: /Resolving conflicts…/ })).toBeDefined()
+    expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts')
+    expect(await pane.find({ text: /Asked to resolve conflicts/ })).toBeUndefined()
 
-    isHeld = false
-    mergeable = 'MERGEABLE'
-    await clock.advance(PRESS_GUARD_MS)
-    expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
-    const sends = w.sent.length
-    await pane.press({ key: 'resolve-acme/greet#12' })
+    await $.turn.start({ turnId: 't2', text: 'Resolve the conflicts' })
+    await $.turn.complete({ answer: 'Pushed.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
     await clock.settle()
-    expect(w.sent.length).toBe(sends)
-    expect(await pane.find({ key: 'resolve-acme/greet#12' })).toBeUndefined()
-    expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
+    expect(await pane.find({ text: /Resolving conflicts…/ })).toBeUndefined()
+    expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts')
+    isHeld = false
+    const sentBefore = w.sent.length
+    await pane.press({ key: 'resolve-acme/greet#12' })
+    expect(w.sent.length).toBe(sentBefore)
+
+    await clock.advance(PR_READ_WAIT_MS)
+    await leaveAndReturn(pane, clock, 'prs')
+    expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
   },
 )
 
@@ -175,23 +180,26 @@ test(
     await clock.advance(3000)
 
     expect(await pane.find({ key: 'merge-acme/greet#12' })).toBeDefined()
-    await pane.press({ key: 'merge-acme/greet#12' })
-    expect(w.sent.at(-1)).toContain('Merge PR #12 (https://github.com/acme/greet/pull/12) into main.')
-    await clock.settle()
-    expect(await pane.find({ text: /✓ Asked to merge\u2007·/ })).toBeDefined()
-    expect((await pane.find({ key: 'merge-acme/greet#12' }))?.props.label).toBe('Merge again')
     const merges = w.sent.length
-    await clock.advance(PRESS_GUARD_MS)
-    w.beforeAct = async () => {
-      decision = 'CHANGES_REQUESTED'
+    const refetchAs = async (value: string) => {
+      decision = value
       const fetched = new Promise<void>(resolve => (onFetched = resolve))
       await $.command.run({ command: 'inbox', args: '' } as never)
       await fetched
     }
+    w.beforeAct = () => refetchAs('CHANGES_REQUESTED')
     await pane.press({ key: 'merge-acme/greet#12' })
     expect(w.sent.length).toBe(merges)
     expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
-    decision = 'APPROVED'
+    await refetchAs('APPROVED')
+    await clock.advance(PRESS_GUARD_MS)
+
+    await pane.press({ key: 'merge-acme/greet#12' })
+    expect(w.sent.at(-1)).toContain('Merge PR #12 (https://github.com/acme/greet/pull/12) into main.')
+    await clock.settle()
+    expect(await pane.find({ text: /Merging…/ })).toBeDefined()
+    expect((await pane.find({ key: 'merge-acme/greet#12' }))?.props.label).toBe('Merge')
+    expect(await pane.find({ text: /Asked to merge/ })).toBeUndefined()
 
     branchFails = 'HTTP 502'
     isSlow = true
