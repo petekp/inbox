@@ -107,6 +107,7 @@ export function TabBar({ v }: { v: View }) {
             type="button"
             class={`tab ${shown === t.id ? 'shown' : ''}`}
             title={t.label}
+            data-tab={t.id}
             onClick={() => {
               switchTab(t.id)
               tabState.draw()
@@ -122,36 +123,38 @@ export function TabBar({ v }: { v: View }) {
           </button>
         ))}
       </div>
-      {tabBarBanners(
-        [
-          ...(tabState.serverNote ? [bannerOf(tabState.serverNote.kind, tabState.serverNote.text)] : []),
-          ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
-          ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
-          ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
-        ],
-        error,
-        tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
-          ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
-          : null,
-      ).map(b =>
-        b.kind === 'server-builds-differ' ? (
-          <Banner banner={b} label="Reload" press={() => location.reload()} />
-        ) : b.kind === 'tab-update-failed' ? (
-          <Banner
-            banner={b}
-            label={ROW_COPY.retry}
-            press={() => {
-              const page = tabState.updateError?.page
-              tabState.updateError = null
-              tabState.draw()
-              if (page) void swapPage(page)
-            }}
-          />
-        ) : (
-          <Banner banner={b} />
-        ),
-      )}
-      <HerdrAskBanner v={v} />
+      <div class="banner-stack" data-motion="banners">
+        {tabBarBanners(
+          [
+            ...(tabState.serverNote ? [bannerOf(tabState.serverNote.kind, tabState.serverNote.text)] : []),
+            ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
+            ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
+            ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
+          ],
+          error,
+          tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
+            ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
+            : null,
+        ).map(b =>
+          b.kind === 'server-builds-differ' ? (
+            <Banner banner={b} label="Reload" press={() => location.reload()} />
+          ) : b.kind === 'tab-update-failed' ? (
+            <Banner
+              banner={b}
+              label={ROW_COPY.retry}
+              press={() => {
+                const page = tabState.updateError?.page
+                tabState.updateError = null
+                tabState.draw()
+                if (page) void swapPage(page)
+              }}
+            />
+          ) : (
+            <Banner banner={b} />
+          ),
+        )}
+        <HerdrAskBanner v={v} />
+      </div>
     </nav>
   )
 }

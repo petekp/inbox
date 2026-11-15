@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T04:25:42.497Z. 213097 characters follow.
+// Built at 2026-11-15T04:55:10.180Z. 213467 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4159,21 +4159,60 @@ function holdLinesAbove(blocks, held, now) {
   return { blocks: shown, held: next };
 }
 
+// ../hooks/springs.ts
+var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
+var LONGEST_MOVE_PX = 2000;
+var FRAME_MS = 16;
+var STEP_MS = 1;
+function springStep(s, target, ms, spring = HEIGHT_SPRING) {
+  const w = 2 * Math.PI / spring.response;
+  let { x, v } = s;
+  for (let t = 0;t < ms; t += STEP_MS) {
+    const dt = Math.min(STEP_MS, ms - t);
+    v += (-w * w * (x - target) - 2 * spring.damping * w * v) * dt;
+    x += v * dt;
+  }
+  return { x, v };
+}
+var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
+function springFrames(from, target, spring = HEIGHT_SPRING) {
+  const frames = [from.x];
+  let s = from;
+  while (!isAtRest(s, target, spring) && (frames.length - 1) * FRAME_MS < 1e4) {
+    s = springStep(s, target, FRAME_MS, spring);
+    frames.push(s.x);
+  }
+  frames[frames.length - 1] = target;
+  return frames;
+}
+var msToRest = (from, target, spring) => (springFrames(from, target, spring).length - 1) * FRAME_MS;
+function settleMs(spring) {
+  const fromRest = msToRest({ x: 0, v: 0 }, LONGEST_MOVE_PX, spring);
+  let longest = fromRest;
+  let s = { x: 0, v: 0 };
+  for (let ms = FRAME_MS;ms < fromRest; ms += FRAME_MS) {
+    s = springStep(s, LONGEST_MOVE_PX, FRAME_MS, spring);
+    longest = Math.max(longest, msToRest(s, 0, spring));
+  }
+  return longest;
+}
+var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
+
 // ../hooks/row-motion.ts
-var ENTER_MS = 300;
-var MOVE_MS = 200;
-var EXIT_MS = 200;
-var ROW_STATE_MS = {
-  entering: ENTER_MS,
-  opening: MOVE_MS,
-  closing: MOVE_MS,
-  settling: MOVE_MS,
-  leaving: EXIT_MS,
+var ENTER_FADE_MS = 300;
+var FADE_MS = 200;
+var ROW_FADE_MS = {
+  entering: ENTER_FADE_MS,
+  opening: FADE_MS,
+  closing: FADE_MS,
+  settling: FADE_MS,
+  leaving: FADE_MS,
   closed: 0,
   open: 0,
   settled: 0,
   undoing: 0
 };
+var ROW_STATE_MS = Object.fromEntries(Object.entries(ROW_FADE_MS).map(([state, fadeMs]) => [state, fadeMs > 0 ? Math.max(fadeMs, HEIGHT_SETTLE_MS) : 0]));
 function isMoving(state) {
   return ROW_STATE_MS[state] > 0;
 }
@@ -4226,43 +4265,6 @@ function rest(track, form, target, now) {
   return track?.state === state ? track : { state, since: now, hasPanel: state === "open" };
 }
 
-// src/springs.ts
-var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
-var LONGEST_MOVE_PX = 2000;
-var FRAME_MS = 16;
-var STEP_MS = 1;
-function springStep(s, target, ms, spring) {
-  const w = 2 * Math.PI / spring.response;
-  let { x, v } = s;
-  for (let t = 0;t < ms; t += STEP_MS) {
-    const dt = Math.min(STEP_MS, ms - t);
-    v += (-w * w * (x - target) - 2 * spring.damping * w * v) * dt;
-    x += v * dt;
-  }
-  return { x, v };
-}
-var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
-function msToRest(from, target, spring) {
-  let s = from;
-  let ms = 0;
-  while (!isAtRest(s, target, spring) && ms < 1e4) {
-    s = springStep(s, target, FRAME_MS, spring);
-    ms += FRAME_MS;
-  }
-  return ms;
-}
-function settleMs(spring) {
-  const fromRest = msToRest({ x: 0, v: 0 }, LONGEST_MOVE_PX, spring);
-  let longest = fromRest;
-  let s = { x: 0, v: 0 };
-  for (let ms = FRAME_MS;ms < fromRest; ms += FRAME_MS) {
-    s = springStep(s, LONGEST_MOVE_PX, FRAME_MS, spring);
-    longest = Math.max(longest, msToRest(s, 0, spring));
-  }
-  return longest;
-}
-var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
-
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [] };
 var NEXT_FRAME_MS = 16;
@@ -4278,7 +4280,7 @@ function glideOf(track, isStart, last, now) {
       return { ...last, box: to };
     if (isLive)
       return { box: to, fadeMs: last.fadeMs, endsAt: restAt(now, last.fadeMs) };
-    const fadeMs = ROW_STATE_MS[state];
+    const fadeMs = ROW_FADE_MS[state];
     return { box: to === "open" ? "shut" : "open", fadeMs, endsAt: restAt(now, fadeMs) };
   }
   if (!isLive || last.box !== "open")
@@ -4658,7 +4660,7 @@ function panelEl(r, m, p, isLeaving) {
     return [];
   const key = panelId(r.id);
   const opacity = m?.panel ?? null;
-  const glide = { duration: ROW_STATE_MS[m?.state ?? "open"], easing: "ease-out" };
+  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], easing: "ease-out" };
   return [
     v_flex3().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];

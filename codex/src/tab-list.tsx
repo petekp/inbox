@@ -20,11 +20,18 @@ import { discardReply, outPending } from './tab-press'
 import { act, listsOf } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
 import type { DrawnPrs } from './tab-pr-steps'
+import { stepStatus } from './tab-status-steps'
+import type { DrawnStatus } from './tab-status-steps'
 import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
-export function stepLists(v: View): { lists: Lists; prs: DrawnPrs | null; changed: Set<string> } {
+export function stepLists(v: View): {
+  lists: Lists
+  prs: DrawnPrs | null
+  status: DrawnStatus | null
+  changed: Set<string>
+} {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
@@ -33,6 +40,7 @@ export function stepLists(v: View): { lists: Lists; prs: DrawnPrs | null; change
   const changed = new Set<string>()
   const kept = new Set<string>()
   const prs = t === 'prs' ? stepPrs(v, now, changed, kept) : null
+  const status = t === 'overview' ? stepStatus(v.statusPage, now, changed, kept) : null
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
@@ -69,7 +77,7 @@ export function stepLists(v: View): { lists: Lists; prs: DrawnPrs | null; change
     entries: lists.findings.filter(x => ('row' in x ? x.row.kind : x.settled.finding?.kind) === g.kind),
   }))
   for (const id of [...drawnRows.keys()]) if (!kept.has(id)) drawnRows.delete(id)
-  return { lists, prs, changed }
+  return { lists, prs, status, changed }
 }
 
 export async function undo(r: RowView) {

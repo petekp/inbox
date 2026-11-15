@@ -1,7 +1,8 @@
-/** The Codex app's enter, move and exit lengths, from its bundled styles, in ms. */
-export const ENTER_MS = 300
-export const MOVE_MS = 200
-export const EXIT_MS = 200
+import { HEIGHT_SETTLE_MS } from './springs'
+
+/** How long a row's content fades in as it enters, and how long a fade lasts as it opens, closes or leaves, in ms. */
+export const ENTER_FADE_MS = 300
+export const FADE_MS = 200
 
 /**
  * A row's state. The resting states draw one form: `closed` its line, `open` its line and panel, `settled` its
@@ -21,18 +22,26 @@ export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
  */
 export type RowTrack = { state: RowState; since: number; hasPanel: boolean }
 
-/** How long each moving state lasts, in ms. Resting states are 0. */
-export const ROW_STATE_MS: Record<RowState, number> = {
-  entering: ENTER_MS,
-  opening: MOVE_MS,
-  closing: MOVE_MS,
-  settling: MOVE_MS,
-  leaving: EXIT_MS,
+/** How long each state's fade lasts, in ms. Resting states are 0. */
+export const ROW_FADE_MS: Record<RowState, number> = {
+  entering: ENTER_FADE_MS,
+  opening: FADE_MS,
+  closing: FADE_MS,
+  settling: FADE_MS,
+  leaving: FADE_MS,
   closed: 0,
   open: 0,
   settled: 0,
   undoing: 0,
 }
+
+/**
+ * How long each moving state lasts, in ms: until its height spring and its fade have both come to rest, so a row
+ * keeps what it moves away from drawn while any of it shows. Resting states are 0.
+ */
+export const ROW_STATE_MS: Record<RowState, number> = Object.fromEntries(
+  Object.entries(ROW_FADE_MS).map(([state, fadeMs]) => [state, fadeMs > 0 ? Math.max(fadeMs, HEIGHT_SETTLE_MS) : 0]),
+) as Record<RowState, number>
 
 type Form = Exclude<RowTarget, 'undoing'>
 

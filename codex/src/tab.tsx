@@ -8,6 +8,7 @@ import { tabState, handoff, root, instanceAbort } from './tab-state'
 import { noteShownRows, rowsInView, SUBJECTS_ATTRIBUTE } from './tab-shown'
 import type { Kept, Lists } from './tab-state'
 import type { DrawnPrs } from './tab-pr-steps'
+import type { DrawnStatus } from './tab-status-steps'
 import { later, dispose, request, applyHost, READ_TIMEOUT_MS } from './tab-host'
 import type { HostContext } from './tab-host'
 import { measure, animateDraw, revealSelected, applyPageVariables, wakeForMoves } from './tab-motion'
@@ -30,7 +31,15 @@ let hostContext: HostContext = {}
 
 const LOADING_DELAY_MS = 300
 
-function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): ComponentChildren {
+function App({
+  lists,
+  prs,
+  status,
+}: {
+  lists: Lists | null
+  prs: DrawnPrs | null
+  status: DrawnStatus | null
+}): ComponentChildren {
   if (!tabState.view || !lists)
     return tabState.readError !== null ? (
       <Banner
@@ -64,7 +73,7 @@ function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): Com
           <Prs v={v} prs={prs} now={now} />
         ) : null
       ) : (
-        <StatusTab page={v.statusPage} />
+        <StatusTab page={v.statusPage} drawn={status ?? { goal: [], rows: [] }} />
       )}
       <footer>
         <button
@@ -99,8 +108,9 @@ function draw() {
   const step = tabState.view ? stepLists(tabState.view) : null
   tabState.lastLists = step?.lists ?? null
   tabState.lastPrs = step?.prs ?? null
+  tabState.lastStatus = step?.status ?? null
   wakeForMoves()
-  render(<App lists={tabState.lastLists} prs={tabState.lastPrs} />, root)
+  render(<App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />, root)
   animateDraw(before, step?.changed ?? new Set())
   noteStatusInView()
   const fieldToFocus =

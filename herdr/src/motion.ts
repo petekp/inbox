@@ -1,7 +1,7 @@
-import { ROW_STATE_MS, isMoving, stepRow } from '../../hooks/row-motion'
+import { ROW_FADE_MS, ROW_STATE_MS, isMoving, stepRow } from '../../hooks/row-motion'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 import type { Block, RowBlock } from './blocks'
-import { HEIGHT_SETTLE_MS } from './springs'
+import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
@@ -64,7 +64,7 @@ function glideOf(track: RowTrack, isStart: boolean, last: Glide | null, now: num
     const to = state === 'entering' ? 'open' : 'shut'
     if (!isStart && last !== null) return { ...last, box: to }
     if (isLive) return { box: to, fadeMs: last.fadeMs, endsAt: restAt(now, last.fadeMs) }
-    const fadeMs = ROW_STATE_MS[state]
+    const fadeMs = ROW_FADE_MS[state]
 
     return { box: to === 'open' ? 'shut' : 'open', fadeMs, endsAt: restAt(now, fadeMs) }
   }

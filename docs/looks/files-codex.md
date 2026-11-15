@@ -7,7 +7,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab.tsx` | Codex adapter. The tab's entry: `App`, `draw`, the key and pointer listeners, and the start that connects to Codex. |
 | `codex/src/tab-state.ts` | Codex adapter. The page's state. `tabState` holds each value that more than one tab file sets, and the file also holds the shared maps and sets and the row types. |
 | `codex/src/tab-host.ts` | Codex adapter. The bridge to Codex: timers, `request` and `callTool`, the message listener, the host's theme, and `dispose`. |
-| `codex/src/tab-motion.ts` | Codex adapter. Row motion: measured heights, the animation each row state starts, folds, and the draws that end a move. |
+| `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the spring glide each height change plays, the animation each row state starts, tab widths, folds, and the draws that end a move. |
+| `codex/src/tab-status-steps.ts` | Codex adapter. Steps the Status page's lines through the row states, so a line enters and leaves from its place. |
 | `codex/src/tab-selection.ts` | Codex adapter. The shown tab and its open row: switching tabs, following arrivals, and opening and selecting rows. |
 | `codex/src/tab-swap.ts` | Codex adapter. The swap to the server's newer page, and the state the old page hands to it. |
 | `codex/src/tab-read.ts` | Codex adapter. Reads the view and applies it, and sends the replies and discards the server holds with each request. |
