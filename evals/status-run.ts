@@ -34,7 +34,7 @@ import {
   unjudgedTargets,
 } from './status-report'
 import type { GradedCase, ReplayRun, StepRecord } from './status-report'
-import type { CallKind } from '../hooks/session-host'
+import type { CallKind } from '../types'
 
 type RunRecord = Run & ReplayRun
 
