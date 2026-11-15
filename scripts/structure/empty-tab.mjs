@@ -8,7 +8,10 @@ const TITLES_HOME = 'hooks/banners.ts'
 const LOOK_DIRS = ['hooks', 'codex/src', 'omp/src', 'herdr/src']
 /** The empty texts, each with the source files besides the owner that may import it. Tests sit outside these folders. */
 const OWNED_TEXTS = { EMPTY_TITLES: [], EMPTY_STATUS_TEXT: [], prsEmptyHint: [] }
-const SHARED_TEXTS = { NOTHING_NEEDED_TEXT: [OWNER, 'hooks/band.ts'] }
+const SHARED_TEXTS = {
+  NOTHING_NEEDED_TEXT: [OWNER, 'hooks/band.ts'],
+  MAYBE_STALE_TEXT: [OWNER, 'hooks/band.ts', 'hooks/herdr.ts'],
+}
 /**
  * Each look's one empty drawer, the folder it lives in, and which call argument or JSX attribute takes the `emptyTab`
  * result. The check looks for each drawer only in its folder, since Codex and omp also name their empty session state
@@ -142,7 +145,8 @@ function checkDrawer(drawer, sources, errors) {
 /**
  * Each tab's empty state comes from `emptyTab` in `hooks/empty-tab.ts`, and each look draws it with one drawer. The
  * check fails when a look imports the empty texts, holds an empty title as literal text, defines a second drawer, or
- * gives a drawer anything but an `emptyTab` result. It cannot see a look that draws empty text as plain lines of its own.
+ * gives a drawer anything but an `emptyTab` result. It cannot see a look that draws empty text as plain lines of its own,
+ * holds a hint as literal text, or decides on its own when to call `emptyTab`.
  */
 export function checkEmptyTab(root, errors) {
   if (!existsSync(join(root, OWNER))) return
@@ -154,7 +158,8 @@ export function checkEmptyTab(root, errors) {
 }
 
 function checkSources(root, sources, errors) {
-  const titles = new Set(emptyTitles(sources, errors))
+  const stale = constText(sources.get(TITLES_HOME), 'MAYBE_STALE_TEXT')
+  const titles = new Set([...emptyTitles(sources, errors), ...(stale === null ? [] : [stale])])
   const importable = { ...OWNED_TEXTS, ...SHARED_TEXTS }
   const kindEmpty = []
 

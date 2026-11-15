@@ -139,6 +139,7 @@ export function sessionCalls(context: HostContext) {
                 terminal: target.terminal,
                 writtenAt: now,
                 projectFolder: memory.shownCwd?.(),
+                isFetchingPrs: prFetches.isFetching(id),
               },
               s,
               context.logHerdr,

@@ -2921,6 +2921,15 @@ function emptyState(sessionId) {
     delegateCalls: []
   };
 }
+function isPrFetchRunning(s) {
+  if (s.prFetchPid === void 0) return false;
+  try {
+    process.kill(s.prFetchPid, 0);
+    return true;
+  } catch (err) {
+    return err.code !== "ESRCH";
+  }
+}
 function statePath(dir, sessionId) {
   return join(dir, "sessions", sessionFile(sessionId));
 }
@@ -3826,7 +3835,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           terminal: target.terminal,
           writtenAt: seq,
           projectFolder: s.root,
-          isFetchingPrs: s.isFetchingPrs
+          isFetchingPrs: isPrFetchRunning(s)
         },
         s,
         log

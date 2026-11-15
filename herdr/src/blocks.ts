@@ -131,7 +131,6 @@ export type PrBlock = {
   feedback: { text: string; tone: Tone } | null
 }
 
-/** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
 /**
  * What an empty tab draws under its text, centred: Refresh PRs's line, or the goal's buttons and its field. `id` is the
  * row the presses belong to, whose line a press out reads in `feedback`.
@@ -149,6 +148,7 @@ export function emptyBlock(tab: ShownTab, empty: EmptyTab, parts: EmptyUnderPart
   return { kind: 'empty', id: `empty ${tab}`, empty: { title: empty.title, hint: empty.hint }, under: parts }
 }
 
+/** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
 export type LineBlock = {
   kind: 'line'
   id: string

@@ -12620,7 +12620,8 @@ function sessionCalls(context) {
         sessionId: id,
         terminal: target.terminal,
         writtenAt: now,
-        projectFolder: memory.shownCwd?.()
+        projectFolder: memory.shownCwd?.(),
+        isFetchingPrs: prFetches.isFetching(id)
       }, s, context.logHerdr);
       const view = sessionView(s, now, deps.settleWindowMs);
       return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };

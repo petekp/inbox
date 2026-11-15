@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T04:47:18.341Z. 215756 characters follow.
+// Built at 2026-11-15T05:06:15.877Z. 215818 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4554,8 +4554,8 @@ function fitHeight(id, m, p) {
     return;
   return measured - (m?.isPanelLeftOut ? p.heights.get(panelId(id)) ?? 0 : 0);
 }
-function fitEl(id, m, p, el) {
-  const height = p.isAtOnce(id) ? undefined : fitHeight(id, m, p);
+function fitEl(id, m, p, el, isPaneSized = false) {
+  const height = isPaneSized || p.isAtOnce(id) ? undefined : fitHeight(id, m, p);
   const sized = div().id(`size ${id}`).flex_none().on_size_change((size, cx) => p.measure(id, size, cx)).child(el);
   return springHeight(v_flex().id(`fit ${id}`).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0))).child(sized);
 }
@@ -4573,7 +4573,7 @@ function spacedEls(blocks, p, el) {
   return spacesOf(blocks, (b) => (p.motion.get(b.id)?.box ?? null) !== null).map((s) => {
     const id = s.block.id;
     const m = p.motion.get(id);
-    const spaced = div().flex_none().pt(s.above).pb(s.below).child(fitEl(id, m, p, el(s.block)));
+    const spaced = div().flex_none().pt(s.above).pb(s.below).child(fitEl(id, m, p, el(s.block), s.block.kind === "empty"));
     return boxEl(s, m, p, spaced);
   });
 }

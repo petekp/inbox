@@ -125,10 +125,10 @@ export type SessionState = Session & {
    */
   herdrReport?: { key: string; seq: number }
   /**
-   * Whether the Inbox tab's server has a PR fetch running for this chat. The hooks and updates publish the chat for the
-   * Herdr look from their own processes, so the server saves it for them. Codex only.
+   * The process id of the Inbox tab's server while it runs a PR fetch for this chat. The hooks and updates publish the
+   * chat for the Herdr look from their own processes, so the server saves it for them. Codex only.
    */
-  isFetchingPrs?: boolean
+  prFetchPid?: number
   /**
    * When a hook, an update or the MCP server in Herdr last changed this state, in ms, and always above the change
    * before it. Each of their changes sets it, even one that changes nothing else. A report to a Herdr pane carries it as
@@ -183,6 +183,17 @@ export function emptyState(sessionId: string): SessionState {
     coveredTurn: null,
     openCatchUpKey: null,
     delegateCalls: [],
+  }
+}
+
+/** Whether a server saved a PR fetch for this chat and still runs. A server that quit mid-fetch leaves its id behind. */
+export function isPrFetchRunning(s: SessionState): boolean {
+  if (s.prFetchPid === undefined) return false
+  try {
+    process.kill(s.prFetchPid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ESRCH'
   }
 }
 
