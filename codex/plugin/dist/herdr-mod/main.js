@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T04:17:22.626Z. 220068 characters follow.
+// Built at 2026-11-15T04:23:32.907Z. 220187 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -3527,6 +3527,7 @@ var note = (id, text, tone) => ({
   count: null,
   tone,
   isHead: true,
+  isAtEdge: false,
   isStrong: false,
   depth: 0
 });
@@ -3718,14 +3719,20 @@ var note2 = (id, text, tone) => ({
   count: null,
   tone,
   isHead: false,
+  isAtEdge: false,
   isStrong: false,
   depth: 0
 });
-var headNote = (id, text, tone) => ({ ...note2(id, text, tone), isHead: true });
+var headNote = (id, text, tone) => ({
+  ...note2(id, text, tone),
+  isHead: true,
+  isAtEdge: true
+});
 var headTitle = (id, text, count) => ({
   ...note2(id, text, null),
   count,
   isHead: true,
+  isAtEdge: true,
   isStrong: true
 });
 function goalBlocks(page, { isUnfolded, goalField }) {
@@ -3924,6 +3931,7 @@ function groupBlocks(g, ui, selected, screen) {
       count: null,
       tone: "muted",
       isHead: false,
+      isAtEdge: false,
       isStrong: false,
       depth: 0
     });
@@ -4816,7 +4824,7 @@ function headingEl(b, p, isInert) {
   const { t } = p;
   const buttons = h_flex2().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
-    return h_flex2().flex_wrap().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(statusPartEl(b.text).text_color(t.muted)).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
+    return h_flex2().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(statusPartEl(b.text).text_color(t.muted)).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
   return h_flex2().pl(EDGE).pr(EDGE).items_center().child(markEl(b.mark, t)).child(div4().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div4().text_color(t.muted).child(`${SEP}${b.count}`))).child(div4().flex_1()).child(buttons);
 }
 function emptyEl(b, p, isInert) {
@@ -4843,7 +4851,7 @@ function ruleEl(b, t) {
 function noteEl(b, t) {
   const text = div4().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
   const count = b.count === null ? [] : [div4().whitespace_nowrap().text_color(t.muted).child(b.count)];
-  return h_flex2().flex_wrap().items_baseline().pl(TEXT_X + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
+  return h_flex2().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -4865,7 +4873,7 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div4().pl(TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
+    return div4().pl(EDGE).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
     return noteEl(b, t);
   if (b.kind === "caption")

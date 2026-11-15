@@ -166,7 +166,8 @@ export type Block =
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
   /**
-   * A line of text. `isHead` keeps it close to the head's other lines, as the Status page's head does, and `isStrong` draws it
+   * A line of text. `isHead` keeps it close to the head's other lines, as the Status page's head does. `isAtEdge` starts it
+   * at the panel's edge, not where rows' text starts. `isStrong` draws it
    * as the head's title: the goal, or what the session is for. `count` follows the text, quiet, as the goal's does.
    */
   | {
@@ -176,6 +177,7 @@ export type Block =
       count: string | null
       tone: Tone
       isHead: boolean
+      isAtEdge: boolean
       isStrong: boolean
       depth: number
     }

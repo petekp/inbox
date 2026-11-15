@@ -268,6 +268,7 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
       count: null,
       tone: 'muted',
       isHead: false,
+      isAtEdge: false,
       isStrong: false,
       depth: 0,
     })

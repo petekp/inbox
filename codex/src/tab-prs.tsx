@@ -23,7 +23,7 @@ import type { TabView as View } from './core'
 import { tabState, sending, errors, undoing, drawnRows } from './tab-state'
 import type { Key, Row } from './tab-state'
 import { act, pendingLocal, pressesOf, prKey, pressTitle } from './tab-rows'
-import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner } from './tab-parts'
+import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner, EmptyState } from './tab-parts'
 import { PR_REFRESH } from '../../hooks/pr-press'
 import type { PrRefreshView } from '../../hooks/pr-refresh'
 import { ListRow } from './tab-list'
@@ -293,13 +293,9 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
   const empty = prsEmptyText({ isFetching: v.isFetchingPrs, ...ghState }, 'chat')
   if (prs.blocks.length === 0)
     return (
-      <main>
-        <div class="empty">
-          <div class="title">{empty.title}</div>
-          <div class="muted">{empty.hint}</div>
-        </div>
+      <EmptyState title={empty.title} hint={empty.hint}>
         {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
-      </main>
+      </EmptyState>
     )
 
   const isRefreshInBanner = ghNotice !== null && v.prs.refresh !== null && v.prs.refresh.text === null

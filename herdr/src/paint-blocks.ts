@@ -320,7 +320,7 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
 
 const ruleLine = (t: Theme): Element => div().flex_1().border_t(1).border_color(t.border)
 
-/** A group's heading, its text where its rows' text starts. A label heading rules the goal's text to its buttons. */
+/** A group's heading, its text where its rows' text starts. A label heading starts at the edge and rules the goal's text to its buttons. */
 function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const buttons = h_flex()
@@ -331,7 +331,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
   if (b.isLabel)
     return h_flex()
       .flex_wrap()
-      .pl(TEXT_X)
+      .pl(EDGE)
       .pr(EDGE)
       .gap(CONTROL_GAP)
       .items_center()
@@ -435,7 +435,7 @@ function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
   return h_flex()
     .flex_wrap()
     .items_baseline()
-    .pl(TEXT_X + b.depth * NEST)
+    .pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST)
     .pr(EDGE)
     .whitespace_normal()
     .when(b.isStrong, e => e.text_size(HEAD_TEXT).line_height(HEAD_LINE))
@@ -456,7 +456,7 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'rule') return ruleEl(b, t)
   if (b.kind === 'field')
     return div()
-      .pl(TEXT_X)
+      .pl(EDGE)
       .pr(EDGE)
       .child(fieldEl(b.field, p, 0, isLeaving))
   if (b.kind === 'note') return noteEl(b, t)

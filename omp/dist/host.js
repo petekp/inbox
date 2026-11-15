@@ -10818,197 +10818,549 @@ function styleOf(theme) {
   };
 }
 
-// src/ask-form.ts
-var TOKEN = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>|([^<]+)/g;
-var ATTR = /([^\s=/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
-var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-var SKIPPED = new Set(["script", "style", "svg", "pre"]);
-var CONTEXT_BLOCKS = new Set(["ul", "ol", "table"]);
-var BLOCKS = new Set(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "section", "form", "hr"]);
-var UNANSWERED_INPUTS = new Set(["hidden", "submit", "button", "reset", "image"]);
-var LABEL = /<label\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/label>/gi;
-function decoded(text) {
-  return text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
-    if (code[0] !== "#")
-      return ENTITIES[code.toLowerCase()] ?? whole;
-    const n = code[1] === "x" || code[1] === "X" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-    return Number.isFinite(n) ? String.fromCodePoint(n) : whole;
+// src/ask-form-entities.ts
+var NAMED_CODE_POINTS = "AElig=c6 Aacute=c1 Acirc=c2 Agrave=c0 Aring=c5 Atilde=c3 Auml=c4 Ccedil=c7 ETH=d0 Eacute=c9 Ecirc=ca Egrave=c8 " + "Euml=cb Iacute=cd Icirc=ce Igrave=cc Iuml=cf Ntilde=d1 Oacute=d3 Ocirc=d4 Ograve=d2 Oslash=d8 Otilde=d5 Ouml=d6 " + "THORN=de Uacute=da Ucirc=db Ugrave=d9 Uuml=dc Yacute=dd aacute=e1 acirc=e2 aelig=e6 agrave=e0 aring=e5 atilde=e3 " + "auml=e4 amp=26 apos=27 bull=2022 brvbar=a6 ccedil=e7 cedil=b8 cent=a2 copy=a9 deg=b0 curren=a4 divide=f7 " + "emsp=2003 ensp=2002 euro=20ac eacute=e9 ecirc=ea egrave=e8 eth=f0 euml=eb frac12=bd frac14=bc frac34=be gt=3e " + "iacute=ed icirc=ee iexcl=a1 igrave=ec iquest=bf iuml=ef hellip=2026 laquo=ab ldquo=201c lsquo=2018 lt=3c " + "mdash=2014 macr=af micro=b5 middot=b7 nbsp=a0 ndash=2013 ntilde=f1 oacute=f3 ocirc=f4 ograve=f2 ordf=aa ordm=ba " + "oslash=f8 otilde=f5 ouml=f6 para=b6 pound=a3 plusmn=b1 quot=22 raquo=bb rdquo=201d reg=ae rsquo=2019 sect=a7 " + "shy=ad szlig=df thorn=fe sup1=b9 sup2=b2 sup3=b3 thinsp=2009 times=d7 trade=2122 uacute=fa ucirc=fb ugrave=f9 " + "uml=a8 uuml=fc yacute=fd yuml=ff yen=a5";
+var NAMED = new Map(NAMED_CODE_POINTS.split(" ").map((pair) => {
+  const [name, hex] = pair.split("=");
+  return [name, String.fromCodePoint(parseInt(hex, 16))];
+}));
+var ENTITY = /&(#(?:x[0-9a-f]+|\d+)|[a-z][a-z0-9]+);/gi;
+var REPLACEMENT = "\uFFFD";
+function decodeEntities(text) {
+  if (!text.includes("&"))
+    return text;
+  return text.replace(ENTITY, (whole, entity) => {
+    if (entity[0] !== "#")
+      return NAMED.get(entity) ?? NAMED.get(entity.toLowerCase()) ?? whole;
+    const hex = entity[1]?.toLowerCase() === "x";
+    const code = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+    const unusable = !Number.isFinite(code) || code <= 0 || code > 1114111 || code >= 55296 && code <= 57343;
+    return unusable ? REPLACEMENT : String.fromCodePoint(code);
   });
+}
+
+// src/ask-form-dom.ts
+var VOID = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr"
+]);
+var CLOSE_ON_OPEN = new Map(Object.entries({
+  li: ["li"],
+  dt: ["dt", "dd"],
+  dd: ["dt", "dd"],
+  tr: ["tr"],
+  th: ["th", "td"],
+  td: ["th", "td"],
+  option: ["option"],
+  thead: ["thead", "tbody", "tfoot"],
+  tbody: ["thead", "tbody", "tfoot"],
+  tfoot: ["thead", "tbody", "tfoot"]
+}));
+var PARAGRAPH_CLOSERS = new Set("address article aside blockquote div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hr menu nav ol p pre section table ul".split(" "));
+var RAW_TEXT_CLOSE = new Map([
+  ["script", /<\/script\s*>/gi],
+  ["style", /<\/style\s*>/gi]
+]);
+var CONTROL_TAGS = new Set(["input", "select", "textarea"]);
+function newElement(tag, parent, attrs = new Map) {
+  return { tag, attrs, kids: [], parent, svg: false, holdsControl: false };
+}
+function textOf2(el) {
+  return el.kids.map((kid) => typeof kid === "string" ? kid : textOf2(kid)).join("");
+}
+function tagEnd(html, start) {
+  let quote = "";
+  for (let i = start;i < html.length; i++) {
+    const c = html[i];
+    if (quote) {
+      if (c === quote)
+        quote = "";
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === ">") {
+      return i;
+    }
+  }
+  return html.length - 1;
+}
+function startTag(source) {
+  const space = /\s/;
+  let i = 0;
+  while (space.test(source[i] ?? ""))
+    i++;
+  const name = /[^\s/>]+/y;
+  name.lastIndex = i;
+  const named = name.exec(source);
+  if (!named)
+    return null;
+  i += named[0].length;
+  const attrs = new Map;
+  let selfClosing = false;
+  while (i < source.length) {
+    while (space.test(source[i] ?? ""))
+      i++;
+    if (source[i] === "/") {
+      selfClosing = true;
+      break;
+    }
+    const attrName = /[^\s=/>]+/y;
+    attrName.lastIndex = i;
+    const attr = attrName.exec(source);
+    if (!attr)
+      break;
+    i += attr[0].length;
+    while (space.test(source[i] ?? ""))
+      i++;
+    let value = "";
+    if (source[i] === "=") {
+      i++;
+      while (space.test(source[i] ?? ""))
+        i++;
+      const quote = source[i];
+      if (quote === '"' || quote === "'") {
+        i++;
+        const end = source.indexOf(quote, i);
+        value = end < 0 ? source.slice(i) : source.slice(i, end);
+        i = end < 0 ? source.length : end + 1;
+      } else {
+        const bare = /[^\s>]+/y;
+        bare.lastIndex = i;
+        value = bare.exec(source)?.[0] ?? "";
+        i += value.length;
+      }
+    }
+    const key = attr[0].toLowerCase();
+    if (!attrs.has(key))
+      attrs.set(key, decodeEntities(value));
+  }
+  return { tag: named[0].toLowerCase(), attrs, selfClosing };
+}
+function isInTemplate(el) {
+  for (;el; el = el.parent)
+    if (el.tag === "template")
+      return true;
+  return false;
+}
+function markHoldsControl(from) {
+  for (let el = from;el && !el.holdsControl; el = el.parent)
+    el.holdsControl = true;
+}
+function addComment(parent, text) {
+  const comment = newElement("#comment", parent);
+  comment.kids.push(text);
+  parent.kids.push(comment);
+}
+function parseForm(html) {
+  const root = newElement("#document", null);
+  const open = [];
+  const top = () => open[open.length - 1] ?? root;
+  let i = 0;
+  while (i < html.length) {
+    if (html.startsWith("<!--", i)) {
+      const end = html.indexOf("-->", i + 4);
+      addComment(top(), html.slice(i + 4, end < 0 ? html.length : end));
+      i = end < 0 ? html.length : end + 3;
+    } else if (html[i] !== "<") {
+      const next = html.indexOf("<", i);
+      const end = next < 0 ? html.length : next;
+      top().kids.push(decodeEntities(html.slice(i, end)));
+      i = end;
+    } else if (html[i + 1] === "!" && /^<!doctype\b/i.test(html.slice(i, i + 10))) {
+      const end = html.indexOf(">", i + 2);
+      i = end < 0 ? html.length : end + 1;
+    } else if (html.startsWith("<![CDATA[", i)) {
+      const end = html.indexOf("]]>", i + 9);
+      top().kids.push(html.slice(i + 9, end < 0 ? html.length : end));
+      i = end < 0 ? html.length : end + 3;
+    } else if (html[i + 1] === "/") {
+      const end = tagEnd(html, i + 2);
+      const name = (html.slice(i + 2, end).trim().split(/\s/, 1)[0] ?? "").toLowerCase();
+      const at = open.findLastIndex((el) => el.tag === name);
+      if (at >= 0)
+        open.length = at;
+      i = end + 1;
+    } else if (html[i + 1] === "!" || html[i + 1] === "?") {
+      const end = html.indexOf(">", i + 2);
+      i = end < 0 ? html.length : end + 1;
+    } else {
+      const end = tagEnd(html, i + 1);
+      const parsed = startTag(html.slice(i + 1, end));
+      if (!parsed) {
+        top().kids.push("<");
+        i++;
+        continue;
+      }
+      const current = open[open.length - 1];
+      if (current?.tag === "p" && PARAGRAPH_CLOSERS.has(parsed.tag))
+        open.pop();
+      else if (current && CLOSE_ON_OPEN.get(parsed.tag)?.includes(current.tag))
+        open.pop();
+      const parent = top();
+      const element = newElement(parsed.tag, parent, parsed.attrs);
+      element.svg = parent !== root && parent.svg || parsed.tag === "svg";
+      parent.kids.push(element);
+      if (CONTROL_TAGS.has(parsed.tag) && !isInTemplate(parent))
+        markHoldsControl(parent);
+      i = end + 1;
+      const rawClose = RAW_TEXT_CLOSE.get(parsed.tag);
+      if (rawClose && !parsed.selfClosing) {
+        rawClose.lastIndex = i;
+        const match = rawClose.exec(html);
+        element.kids.push(html.slice(i, match?.index ?? html.length));
+        i = match ? rawClose.lastIndex : html.length;
+        continue;
+      }
+      if (!(VOID.has(parsed.tag) || element.svg && parsed.selfClosing))
+        open.push(element);
+    }
+  }
+  return root;
+}
+function descendants(from) {
+  const found = [];
+  const visit = (el) => {
+    if (el.tag === "template")
+      return;
+    for (const kid of el.kids) {
+      if (typeof kid === "string")
+        continue;
+      found.push(kid);
+      visit(kid);
+    }
+  };
+  visit(from);
+  return found;
+}
+function childElements(of) {
+  return of.kids.filter((kid) => typeof kid !== "string");
+}
+function closest(from, tag) {
+  for (let el = from;el; el = el.parent)
+    if (el.tag === tag)
+      return el;
+  return null;
+}
+function contains(outer, inner) {
+  for (let el = inner;el; el = el.parent)
+    if (el === outer)
+      return true;
+  return false;
+}
+
+// src/ask-form.ts
+var SKIPPED = new Set([
+  "button",
+  "head",
+  "iframe",
+  "link",
+  "meta",
+  "noscript",
+  "script",
+  "style",
+  "template",
+  "title"
+]);
+var BLOCK = new Set("address article aside blockquote dd details div dl dt figure figcaption footer header li main nav p section".split(" "));
+var HEADING = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "summary"]);
+var IGNORED_INPUTS = new Set(["button", "file", "image", "reset", "submit"]);
+var CONTROLS = new Set(["input", "select", "textarea"]);
+function normalized(text) {
+  return text.replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, `
+`).trim();
 }
 function oneLine(text) {
   return text.replace(/\s+/g, " ").trim();
 }
-function attrsOf(raw) {
-  return new Map([...raw.matchAll(ATTR)].map((m) => [m[1].toLowerCase(), decoded(m[2] ?? m[3] ?? m[4] ?? "")]));
-}
-function labelsFor(html) {
-  return new Map([...html.matchAll(LABEL)].flatMap((m) => {
-    const id = attrsOf(m[1] ?? "").get("for");
-    return id === undefined ? [] : [[id, oneLine(decoded((m[2] ?? "").replace(/<[^>]*>/g, " ")))]];
-  }));
-}
-function questionOf(f) {
-  const own = f.wrapped || f.detached;
-  if (f.kind === "text")
-    return oneLine(own || f.name.replace(/[_-]+/g, " "));
-  const lone = f.options.length === 1 ? optionLabel(f.options[0]) : "";
-  return oneLine(own || f.caption || f.title || lone || f.name);
-}
-function optionLabel(o) {
-  return o.wrapped || o.fallback;
-}
-function formQuestions(html) {
-  const fields = [];
-  const groups = new Map;
-  const labelFor = labelsFor(html);
-  let loose = "";
-  let caption = "";
-  let title = "";
-  let fieldsetDepth = 0;
-  let context = null;
-  let legend = null;
-  let skipped = null;
-  let label = null;
-  let select = null;
-  let option = null;
-  const flush = () => {
-    if (oneLine(loose) !== "")
-      caption = oneLine(loose);
-    loose = "";
-  };
-  const endOption = () => {
-    if (option) {
-      const text = oneLine(option.text);
-      select?.options.push({ wrapped: text, fallback: option.value, checked: option.checked });
+var isControl = (el) => CONTROLS.has(el.tag);
+function textWithoutControls(el) {
+  let text = "";
+  const visit = (node) => {
+    if (typeof node === "string") {
+      text += node;
+      return;
     }
-    option = null;
-  };
-  const detachedOf = (attrs) => {
-    const id = attrs.get("id");
-    return (id !== undefined ? labelFor.get(id) : undefined) || attrs.get("aria-label") || attrs.get("title") || "";
-  };
-  const addField = (name, kind, attrs) => {
-    flush();
-    const field = { name, kind, wrapped: "", detached: detachedOf(attrs), caption, title, options: [] };
-    caption = "";
-    fields.push(field);
-    if (kind !== "group")
-      label?.targets.push((text) => field.wrapped = text);
-    return field;
-  };
-  for (const [, slash, rawTag, rawAttrs, text] of html.matchAll(TOKEN)) {
-    const tag = rawTag?.toLowerCase();
-    const isClose = slash === "/";
-    if (skipped) {
-      if (tag === skipped.tag)
-        skipped.depth += isClose ? -1 : 1;
-      if (skipped.depth === 0)
-        skipped = null;
-      continue;
+    if (SKIPPED.has(node.tag) || isControl(node) || node.tag === "svg")
+      return;
+    if (node.tag === "br")
+      text += `
+`;
+    else if (node.tag === "img")
+      text += node.attrs.get("alt") ?? "";
+    else {
+      if (BLOCK.has(node.tag) || HEADING.has(node.tag))
+        text += " ";
+      node.kids.forEach(visit);
     }
-    if (text !== undefined) {
-      const plain = decoded(text);
-      if (option)
-        option.text += plain;
-      else if (legend !== null)
-        legend += plain;
-      else if (label)
-        label.text += plain;
-      else if (context)
-        context.text += plain;
-      else
-        loose += plain;
-      continue;
+  };
+  el.kids.forEach(visit);
+  return normalized(text);
+}
+
+class FormReader {
+  fields = [];
+  sections = [{ title: "", blocks: [] }];
+  groups = new Map;
+  labelFor = new Map;
+  inline = "";
+  fieldsetDepth = 0;
+  constructor(root) {
+    const below = descendants(root);
+    const ids = new Set(below.filter(isControl).flatMap((el) => el.attrs.get("id") || []));
+    for (const label of below.filter((el) => el.tag === "label")) {
+      const target = label.attrs.get("for");
+      if (target && ids.has(target) && !this.labelFor.has(target))
+        this.labelFor.set(target, label);
     }
-    if (!tag)
-      continue;
-    const attrs = attrsOf(rawAttrs ?? "");
-    const name = attrs.get("name") ?? "";
-    if (tag === "option" || tag === "select")
-      endOption();
-    if (isClose) {
-      if (tag === "legend" && legend !== null) {
-        if (fieldsetDepth === 1)
-          title = oneLine(legend);
-        legend = null;
-      } else if (tag === "label" && label) {
-        const done = oneLine(label.text);
-        label.targets.forEach((set) => set(done));
-        label = null;
-      } else if (tag === "fieldset") {
-        fieldsetDepth = Math.max(0, fieldsetDepth - 1);
-        if (fieldsetDepth === 0)
-          [loose, caption, title] = ["", "", ""];
-      } else if (tag === "select") {
-        select = null;
-      } else if (CONTEXT_BLOCKS.has(tag) && context) {
-        context.depth -= 1;
-        if (context.depth === 0 && oneLine(context.text) !== "")
-          caption = "";
-        if (context.depth === 0)
-          context = null;
-      } else if (BLOCKS.has(tag)) {
-        flush();
-      }
-      continue;
+    this.walkKids(root);
+    this.flush();
+  }
+  get section() {
+    return this.sections[this.sections.length - 1];
+  }
+  flush() {
+    const text = normalized(this.inline);
+    this.inline = "";
+    if (text !== "")
+      this.section.blocks.push({ kind: "text", text });
+  }
+  walkKids(el) {
+    el.kids.forEach((kid) => this.walk(kid));
+  }
+  walk(node) {
+    if (typeof node === "string") {
+      this.inline += node;
+      return;
     }
-    if (tag === "fieldset") {
-      flush();
-      fieldsetDepth += 1;
-      if (fieldsetDepth === 1)
-        [caption, title] = ["", ""];
-    } else if (tag === "legend") {
-      legend = "";
-    } else if (tag === "label") {
-      flush();
-      label = { text: "", targets: [] };
-    } else if (tag === "select" && name !== "") {
-      select = addField(name, "select", attrs);
-    } else if (tag === "option") {
-      if (select)
-        option = { text: "", value: attrs.get("value") ?? "", checked: attrs.has("selected") };
-    } else if (tag === "textarea" || tag === "input") {
-      const type = tag === "textarea" ? "textarea" : (attrs.get("type") ?? "text").toLowerCase();
-      if (tag === "textarea")
-        skipped = { tag, depth: 1 };
-      if (name === "" || UNANSWERED_INPUTS.has(type))
+    const { tag } = node;
+    if (SKIPPED.has(tag))
+      return;
+    switch (tag) {
+      case "br":
+        this.inline += `
+`;
+        return;
+      case "hr":
+        this.flush();
+        return;
+      case "input":
+      case "select":
+      case "textarea":
+        this.control(node, undefined);
+        return;
+      case "label":
+        this.label(node);
+        return;
+      case "fieldset":
+        this.fieldset(node);
+        return;
+      case "legend":
+        this.flush();
+        this.walkKids(node);
+        this.flush();
+        return;
+      case "ul":
+      case "ol":
+        this.list(node);
+        return;
+      case "pre":
+        this.flush();
+        this.section.blocks.push({ kind: "other" });
+        return;
+      case "table":
+        this.table(node);
+        return;
+      case "img":
+        if (!node.attrs.get("src")?.trim())
+          return;
+        this.flush();
+        this.section.blocks.push({ kind: "other" });
+        return;
+      case "svg":
+        this.flush();
+        this.section.blocks.push({ kind: "other" });
+        return;
+    }
+    const isBlock = BLOCK.has(tag) || HEADING.has(tag);
+    if (isBlock)
+      this.flush();
+    this.walkKids(node);
+    if (isBlock)
+      this.flush();
+  }
+  label(label) {
+    const target = label.attrs.get("for");
+    if (target && this.labelFor.get(target) === label)
+      return;
+    const controls = descendants(label).filter(isControl);
+    if (controls.length === 0) {
+      this.walkKids(label);
+      return;
+    }
+    this.flush();
+    const text = textWithoutControls(label);
+    controls.forEach((control) => this.control(control, text));
+  }
+  fieldset(fieldset) {
+    this.flush();
+    const legend = childElements(fieldset).find((el) => el.tag === "legend");
+    if (this.fieldsetDepth > 0) {
+      if (legend)
+        this.walk(legend);
+    } else {
+      this.startSection(legend ? textWithoutControls(legend) : "");
+    }
+    this.fieldsetDepth++;
+    fieldset.kids.filter((kid) => kid !== legend).forEach((kid) => this.walk(kid));
+    this.flush();
+    this.fieldsetDepth--;
+    if (this.fieldsetDepth === 0)
+      this.startSection("");
+  }
+  startSection(title) {
+    if (this.section.blocks.length === 0 && this.section.title === "")
+      this.section.title = title;
+    else
+      this.sections.push({ title, blocks: [] });
+  }
+  list(list) {
+    this.flush();
+    if (list.holdsControl) {
+      this.walkKids(list);
+      this.flush();
+      return;
+    }
+    const hasText = childElements(list).some((el) => el.tag === "li" && textWithoutControls(el) !== "");
+    if (hasText)
+      this.section.blocks.push({ kind: "other" });
+  }
+  table(table) {
+    this.flush();
+    const rows = descendants(table).filter((el) => el.tag === "tr" && closest(el, "table") === table);
+    const cellsOf = (row) => childElements(row).filter((el) => el.tag === "td" || el.tag === "th");
+    if (!table.holdsControl) {
+      if (rows.some((row) => cellsOf(row).length > 0))
+        this.section.blocks.push({ kind: "other" });
+      return;
+    }
+    let header = [];
+    for (const row of rows) {
+      const cells = cellsOf(row);
+      const rowHasControl = row.holdsControl;
+      if (cells.every((cell) => cell.tag === "th") && !rowHasControl) {
+        header = cells.map(textWithoutControls);
         continue;
-      if (type !== "radio" && type !== "checkbox") {
-        addField(name, "text", attrs);
-        continue;
       }
-      const key = `${type}:${name}`;
-      const field = groups.get(key) ?? addField(name, "group", new Map);
-      groups.set(key, field);
-      const added = {
-        wrapped: "",
-        fallback: detachedOf(attrs) || attrs.get("value") || name,
-        checked: attrs.has("checked")
-      };
-      field.options.push(added);
-      label?.targets.push((text) => added.wrapped = text);
-    } else if (CONTEXT_BLOCKS.has(tag)) {
-      flush();
-      if (context)
-        context.depth += 1;
-      else
-        context = { depth: 1, text: "" };
-    } else if (SKIPPED.has(tag) || tag === "img") {
-      flush();
-      caption = "";
-      if (tag !== "img")
-        skipped = { tag, depth: 1 };
-    } else if (BLOCKS.has(tag)) {
-      flush();
+      const rowText = cells.filter((cell) => !cell.holdsControl).map(textWithoutControls).filter((text) => text !== "").join(" \xB7 ");
+      if (rowText !== "")
+        this.section.blocks.push({ kind: "text", text: normalized(rowText) });
+      cells.forEach((cell, column) => {
+        for (const control of descendants(cell).filter(isControl)) {
+          const own = closest(control, "label");
+          const text = own && contains(cell, own) ? textWithoutControls(own) : textWithoutControls(cell);
+          this.control(control, text !== "" ? text : header[column] ?? "");
+        }
+      });
     }
   }
-  return fields.map((f) => {
-    const recommended = f.options.findIndex((o) => o.checked);
-    return {
-      question: questionOf(f),
-      options: f.options.map((o) => ({ label: optionLabel(o) })),
-      ...recommended >= 0 ? { recommended } : {}
-    };
+  detachedLabel(control) {
+    const id = control.attrs.get("id");
+    const label = id ? this.labelFor.get(id) : undefined;
+    if (label)
+      return textWithoutControls(label);
+    return normalized(control.attrs.get("aria-label") ?? control.attrs.get("title") ?? "");
+  }
+  control(control, wrapping) {
+    this.flush();
+    const label = wrapping ? wrapping : this.detachedLabel(control);
+    const name = control.attrs.get("name") ?? "";
+    if (control.tag === "select") {
+      const options = descendants(control).filter((el) => el.tag === "option").map((el) => ({ label: oneLine(textOf2(el)), checked: el.attrs.has("selected") }));
+      this.addField({ name, kind: "choice", select: true, label, options });
+      return;
+    }
+    if (control.tag === "textarea") {
+      this.addField({ name, kind: "text", select: false, label: label || nameLabel(name), options: [] });
+      return;
+    }
+    const type = (control.attrs.get("type") ?? "text").toLowerCase();
+    if (IGNORED_INPUTS.has(type) || type === "hidden" || type in Object.prototype)
+      return;
+    if (type === "radio" || type === "checkbox") {
+      const value = control.attrs.get("value");
+      const option = { label: label || (value ?? name), checked: control.attrs.has("checked") };
+      const key = `${type}\x00${name}`;
+      const group = this.groups.get(key);
+      if (group) {
+        group.options.push(option);
+        return;
+      }
+      const field = { name, kind: "choice", select: false, label: "", options: [option] };
+      this.groups.set(key, field);
+      this.addField(field);
+      return;
+    }
+    this.addField({ name, kind: "text", select: false, label: label || nameLabel(name), options: [] });
+  }
+  addField(field) {
+    this.fields.push(field);
+    this.section.blocks.push({ kind: "field", field });
+  }
+  questions() {
+    const questions = new Map;
+    for (const section of this.sections) {
+      let caption = "";
+      for (const block of section.blocks) {
+        if (block.kind === "field") {
+          const { field } = block;
+          const lone = field.kind === "choice" && field.options.length === 1 ? field.options[0].label : "";
+          questions.set(field, oneLine(field.label || caption || section.title || lone || field.name));
+          caption = "";
+        } else {
+          caption = block.kind === "text" ? block.text : "";
+        }
+      }
+    }
+    return questions;
+  }
+}
+function nameLabel(name) {
+  return name.replace(/[_-]+/g, " ");
+}
+function formQuestions(html) {
+  try {
+    return readQuestions(html);
+  } catch {
+    return [];
+  }
+}
+function readQuestions(html) {
+  const document = parseForm(html);
+  const form = descendants(document).find((el) => el.tag === "form");
+  const reader = new FormReader(form ?? document);
+  const questions = reader.questions();
+  return reader.fields.flatMap((field) => {
+    if (field.name === "")
+      return [];
+    const recommended = field.options.findIndex((o) => o.checked);
+    return [
+      {
+        question: questions.get(field) ?? field.name,
+        options: field.options.map((o) => ({ label: oneLine(o.label) })),
+        ...recommended >= 0 ? { recommended } : {}
+      }
+    ];
   });
 }
 
@@ -11036,7 +11388,7 @@ function askOutcome(event) {
   const details = event.details ?? {};
   const text = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
 `);
-  if (event.isError || text === "")
+  if (event.isError || text === "" || details.chatRedirect === true)
     return { kind: "dismissed" };
   if (Array.isArray(details.answers) && details.answers.length === 0)
     return null;
