@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T20:30:44.485Z. 235243 characters follow.
+// Built at 2026-11-15T21:25:00.546Z. 235996 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2035,7 +2035,7 @@ function rowFeedbackText(row, look) {
   return f.is === "done" ? f.label : f.is === "local" ? localText(f.result, look) : feedbackText(f, look);
 }
 function pressUnderWaySince(f) {
-  if (f?.is === "working" || f?.is === "sending")
+  if (f?.is === "working" && f.isHandoff !== true || f?.is === "sending")
     return f.at;
   return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
 }
@@ -2057,8 +2057,14 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isUnreported = last.action === "compare" && !(reportedAt !== undefined && reportedAt >= last.at);
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
-    return { is: "working", label: working, at: last.at };
+  const isWorking = last.kind === "talk" || last.kind === "handoff" && isPrRowId(id);
+  if (isWorking && working && (isAwaiting || isUnreported && !isPastLimit))
+    return {
+      is: "working",
+      label: working,
+      at: last.at,
+      ...last.kind === "handoff" ? { isHandoff: true } : {}
+    };
   if (pending === "sending")
     return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
   if (isUnreported)
@@ -2093,7 +2099,12 @@ var WORKING_LABELS = {
   discuss: "Discussing…",
   "thread-discuss": "Discussing…",
   "thread-draft": "Drafting a reply…",
-  "pr-rank-again": "Ranking…"
+  "pr-rank-again": "Ranking…",
+  "pr-conflicts": "Resolving conflicts…",
+  "pr-address-all": "Addressing…",
+  "pr-merge": "Merging…",
+  "thread-address": "Addressing…",
+  "check-fix": "Fixing…"
 };
 var DONE_LABELS = {
   address: () => "Handed off",
@@ -2315,10 +2326,16 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
-function lastPressOf(presses, rowId) {
+function isAwaitingFreshRead(last, fetchedAt) {
+  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt;
+}
+function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+  const pressing = pressOutAction(last, feedback);
+  const out = outAction(last, feedback);
+  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt);
+  return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out };
 }
 function again(row, action, label) {
   return isAgain(row.last, action, row.pressing === action) ? `${label} again` : label;
@@ -2794,7 +2811,7 @@ function prOrderActions(row) {
 
 // ../hooks/pr-tab.ts
 function threadActions(pr, t, presses) {
-  const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt);
   const on = { ref: pr.ref, thread: t.id };
   return withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
@@ -2831,7 +2848,7 @@ function threadActions(pr, t, presses) {
   ]);
 }
 function checkActions(pr, c, presses) {
-  const row = lastPressOf(presses, prCheckId(pr, c));
+  const row = lastPressOf(presses, prCheckId(pr, c), pr.fetchedAt);
   const on = { ref: pr.ref, check: checkKey(c) };
   const isCancelled = c.bucket === "cancelled";
   const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, prCheckId(pr, o)).out === "check-rerun");
@@ -2867,7 +2884,7 @@ function checkActions(pr, c, presses) {
   return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
 }
 function prBlockActions(pr, isThreadSent, branchRef, presses) {
-  const row = lastPressOf(presses, prMarkId(pr.ref));
+  const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt);
   const { status } = readiness(pr, isThreadSent);
   const waitingOn = threadsOnYou(pr, isThreadSent).length;
   const moves = [

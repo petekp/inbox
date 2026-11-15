@@ -1,4 +1,4 @@
-import type { LastAction, Turns } from '../types'
+import type { LastAction, Session, Turns } from '../types'
 
 export function isAwaitingReply(
   last: Pick<LastAction, 'turnsStarted' | 'delivery'> | undefined,
@@ -7,6 +7,31 @@ export function isAwaitingReply(
   const pressed = last?.delivery?.state !== 'failed' ? last?.turnsStarted : undefined
 
   return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed
+}
+
+/**
+ * `lastActions` with `repliedAt` on each press the reply that just applied answered: awaiting a reply under `before`
+ * and not under `after`. `repliedAt` is when that reply ended, or `now` when the host did not say.
+ */
+function withReplied(
+  lastActions: Record<string, LastAction>,
+  before: Turns,
+  after: Turns,
+  repliedAt: number,
+): Record<string, LastAction> {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, last]) => [
+      id,
+      isAwaitingReply(last, before) && !isAwaitingReply(last, after) ? { ...last, repliedAt } : last,
+    ]),
+  )
+}
+
+/** `s.lastActions` with `repliedAt` on the presses the reply that raised the applied turns to `after` answered. */
+export function repliedBy(s: Session, after: Turns, now: number): Session['lastActions'] {
+  const repliedAt = Math.min(now, s.presence.lastReplyAt ?? now)
+
+  return withReplied(s.lastActions, s.presence, after, repliedAt)
 }
 
 export function isHandedOff(

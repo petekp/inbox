@@ -11,7 +11,8 @@ import type { ViewInput } from './view'
 
 export type Feedback =
   | { is: 'done'; label: string; at: number; isHandedStep?: true; isStillWaiting?: true }
-  | { is: 'working'; label: string; at: number }
+  /** `isHandoff` is a hand-off's work, which can run for minutes, so it does not hold the tab's other rows in place. */
+  | { is: 'working'; label: string; at: number; isHandoff?: true }
   | { is: 'stillOpen'; at: number }
   | { is: 'noComparison'; at: number }
   /** The labels of a message on its way read as the row draws them, from `deliveryLabel`, as "Queued: Yes" or "Queued reply: Call it hello". */
@@ -41,10 +42,10 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
  * When a row's press under way began, or null while none is: its talk press waits on the agent's reply, its message is
  * sending, or its open or copy runs. A settled row on its tab that was still in place when the press began waits for it
  * to end, so nothing shifts under the row being worked on. A queued or unconfirmed message does not count, since it can
- * wait a whole turn or for good.
+ * wait a whole turn or for good. A hand-off's work does not count either, since it can run for minutes.
  */
 export function pressUnderWaySince(f: Feedback | null): number | null {
-  if (f?.is === 'working' || f?.is === 'sending') return f.at
+  if ((f?.is === 'working' && f.isHandoff !== true) || f?.is === 'sending') return f.at
 
   return f?.is === 'local' && f.result.state === 'pending' ? f.result.at : null
 }
@@ -71,8 +72,14 @@ export function feedbackOf(
   const isUnreported = last.action === 'compare' && !(reportedAt !== undefined && reportedAt >= last.at)
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS
   const working = WORKING_LABELS[last.action]
-  if (last.kind === 'talk' && working && (isAwaiting || (isUnreported && !isPastLimit)))
-    return { is: 'working', label: working, at: last.at }
+  const isWorking = last.kind === 'talk' || (last.kind === 'handoff' && isPrRowId(id))
+  if (isWorking && working && (isAwaiting || (isUnreported && !isPastLimit)))
+    return {
+      is: 'working',
+      label: working,
+      at: last.at,
+      ...(last.kind === 'handoff' ? { isHandoff: true as const } : {}),
+    }
   if (pending === 'sending')
     return { is: 'sending', label: deliveryLabel('sending', last.text, last.reply), at: last.at }
   if (isUnreported) return { is: 'noComparison', at: last.at }
@@ -134,6 +141,11 @@ const WORKING_LABELS: Record<string, string> = {
   'thread-discuss': 'Discussing…',
   'thread-draft': 'Drafting a reply…',
   'pr-rank-again': 'Ranking…',
+  'pr-conflicts': 'Resolving conflicts…',
+  'pr-address-all': 'Addressing…',
+  'pr-merge': 'Merging…',
+  'thread-address': 'Addressing…',
+  'check-fix': 'Fixing…',
 }
 
 const DONE_LABELS: Record<string, (text: string) => string> = {

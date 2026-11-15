@@ -2622,6 +2622,16 @@ function isAwaitingReply(last, turns) {
   const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
   return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
 }
+function withReplied(lastActions, before, after, repliedAt) {
+  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [
+    id,
+    isAwaitingReply(last, before) && !isAwaitingReply(last, after) ? { ...last, repliedAt } : last
+  ]));
+}
+function repliedBy(s, after, now) {
+  const repliedAt = Math.min(now, s.presence.lastReplyAt ?? now);
+  return withReplied(s.lastActions, s.presence, after, repliedAt);
+}
 function isHandedOff(last, turns) {
   return last?.kind === "handoff" && isAwaitingReply(last, turns);
 }
@@ -4339,7 +4349,7 @@ function rowFeedbackText(row, look) {
   return f.is === "done" ? f.label : f.is === "local" ? localText(f.result, look) : feedbackText(f, look);
 }
 function pressUnderWaySince(f) {
-  if (f?.is === "working" || f?.is === "sending")
+  if (f?.is === "working" && f.isHandoff !== true || f?.is === "sending")
     return f.at;
   return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
 }
@@ -4361,8 +4371,14 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isUnreported = last.action === "compare" && !(reportedAt !== undefined && reportedAt >= last.at);
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
-    return { is: "working", label: working, at: last.at };
+  const isWorking = last.kind === "talk" || last.kind === "handoff" && isPrRowId(id);
+  if (isWorking && working && (isAwaiting || isUnreported && !isPastLimit))
+    return {
+      is: "working",
+      label: working,
+      at: last.at,
+      ...last.kind === "handoff" ? { isHandoff: true } : {}
+    };
   if (pending === "sending")
     return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
   if (isUnreported)
@@ -4397,7 +4413,12 @@ var WORKING_LABELS = {
   discuss: "Discussing\u2026",
   "thread-discuss": "Discussing\u2026",
   "thread-draft": "Drafting a reply\u2026",
-  "pr-rank-again": "Ranking\u2026"
+  "pr-rank-again": "Ranking\u2026",
+  "pr-conflicts": "Resolving conflicts\u2026",
+  "pr-address-all": "Addressing\u2026",
+  "pr-merge": "Merging\u2026",
+  "thread-address": "Addressing\u2026",
+  "check-fix": "Fixing\u2026"
 };
 var DONE_LABELS = {
   address: () => "Handed off",
@@ -4557,10 +4578,16 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
-function lastPressOf(presses, rowId) {
+function isAwaitingFreshRead(last, fetchedAt) {
+  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt;
+}
+function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+  const pressing = pressOutAction(last, feedback);
+  const out = outAction(last, feedback);
+  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt);
+  return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out };
 }
 function again(row, action, label) {
   return isAgain(row.last, action, row.pressing === action) ? `${label} again` : label;
@@ -5624,7 +5651,7 @@ function prOrderActions(row) {
 
 // ../hooks/pr-tab.ts
 function threadActions(pr, t, presses) {
-  const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt);
   const on = { ref: pr.ref, thread: t.id };
   return withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
@@ -5661,7 +5688,7 @@ function threadActions(pr, t, presses) {
   ]);
 }
 function checkActions(pr, c, presses) {
-  const row = lastPressOf(presses, prCheckId(pr, c));
+  const row = lastPressOf(presses, prCheckId(pr, c), pr.fetchedAt);
   const on = { ref: pr.ref, check: checkKey(c) };
   const isCancelled = c.bucket === "cancelled";
   const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, prCheckId(pr, o)).out === "check-rerun");
@@ -5697,7 +5724,7 @@ function checkActions(pr, c, presses) {
   return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
 }
 function prBlockActions(pr, isThreadSent, branchRef, presses) {
-  const row = lastPressOf(presses, prMarkId(pr.ref));
+  const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt);
   const { status } = readiness(pr, isThreadSent);
   const waitingOn = threadsOnYou(pr, isThreadSent).length;
   const moves = [
@@ -10024,9 +10051,11 @@ function applied(s, parsed, now, promptAt) {
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
   const isCurrent = !hasDroppedReply;
   const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
+  const turnsApplied = Math.max(s.presence.turnsApplied, next.turnsStarted);
   return linkDialogs({
     ...s,
     ledger,
+    lastActions: repliedBy(s, { ...s.presence, turnsApplied }, now),
     pending: s.pending.slice(1),
     presence: {
       ...s.presence,
@@ -10034,7 +10063,7 @@ function applied(s, parsed, now, promptAt) {
       hasDroppedReply,
       failedAttempts: isCurrent ? 0 : failedAttempts,
       isConversationUnreadable: isCurrent ? false : s.presence.isConversationUnreadable,
-      turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
+      turnsApplied
     }
   });
 }
@@ -10329,6 +10358,7 @@ function appliedCatchUp(s, begun, parsed, now) {
   return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
+    lastActions: repliedBy(s, { ...s.presence, turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted) }, now),
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,

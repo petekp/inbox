@@ -14,6 +14,7 @@ import { withArrival, withUnconfirmed } from './press-reducer'
 import { prRefs } from './prs'
 import type { Exchange, Ledger, Press, Session } from '../types'
 import { NO_TURN } from './session-files'
+import { repliedBy } from './last-actions'
 
 /**
  * A resumed conversation still holds the guidance from
@@ -289,10 +290,12 @@ export function applied<S extends Session>(s: S, parsed: Update | null, now: num
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed
   const isCurrent = !hasDroppedReply
   const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1
+  const turnsApplied = Math.max(s.presence.turnsApplied, next.turnsStarted)
 
   return linkDialogs({
     ...s,
     ledger,
+    lastActions: repliedBy(s, { ...s.presence, turnsApplied }, now),
     pending: s.pending.slice(1),
     presence: {
       ...s.presence,
@@ -300,7 +303,7 @@ export function applied<S extends Session>(s: S, parsed: Update | null, now: num
       hasDroppedReply,
       failedAttempts: isCurrent ? 0 : failedAttempts,
       isConversationUnreadable: isCurrent ? false : s.presence.isConversationUnreadable,
-      turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted),
+      turnsApplied,
     },
   })
 }

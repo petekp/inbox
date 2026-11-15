@@ -43,7 +43,7 @@ test('a bulk PR prompt arrives on every affected row without acknowledging a new
   const rows = [`pr:${pr.ref}`, ...threads.map(t => `${pr.ref} thread ${t.id}`)]
   for (const id of rows) {
     assert.equal(bulk.lastActions[id]?.delivery?.state, 'arrived')
-    assert.equal(feedbackOf(id, bulk.lastActions[id], undefined, bulk.presence, 110)?.is, 'done')
+    assert.equal(feedbackOf(id, bulk.lastActions[id], undefined, bulk.presence, 110)?.is, 'working')
   }
   at = 200
   await call('inbox_press', { press: { action: 'thread-discuss', ref: pr.ref, thread: threads[0]!.id }, thread: 's1' })

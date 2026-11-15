@@ -237,7 +237,7 @@ test('a press on the PRs tab says when it was made, and a failing check keeps As
   })
   const drawn = text(pressed, { ...INITIAL_UI, tab: 'prs' })
   expect(drawn).toMatch(/✓ Asked to resolve conflicts\s+5m ago/)
-  expect(drawn).toMatch(/Addressed\s+2m ago/)
+  expect(drawn).toMatch(/Addressing…/)
   expect(drawn).toMatch(new RegExp(`${check.name}\\s+✓ Asked to fix\\s+14m ago`))
   const open = text(pressed, { ...INITIAL_UI, tab: 'prs', selectedId: checkId }).split('\n')
   const buttons = open.findIndex(l => l.includes('Fix again'))

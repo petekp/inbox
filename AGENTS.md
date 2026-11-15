@@ -47,6 +47,7 @@ Every action shows what it did as soon as it is pressed. When Discuss showed not
 
 - Each `Action` declares its `kind`, a `PressKind`.
 - A Talk or Hand-off press leaves a ✓ and its label on the row, as in "✓ Discussed". A Talk press reads "Explaining…" or "Discussing…" until the agent's reply, and a handed-off row the reply left open reads "Still open". It stores its action id from `actionId()`, so the same action then reads "… again".
+- A PR hand-off press, such as Resolve conflicts or Fix, reads "Resolving conflicts…" or "Fixing…" with its button out until the agent's reply, then offers "… again" only once a fetch after the reply still shows the problem.
 - A Local press, an open or a copy, shows "Opening x…" on its row, then its result: "✓ Opened x", or in red why it could not. It never reports through a toast.
 - A Mark or View press shows itself, as closing a row or opening the text field does.
 - Row and PR presses use `applyPress()` and `applyPrPress()`. The mod's `runPress()` and the Codex server run their effects through each host. A click and a key press record the same result.

@@ -182,11 +182,24 @@ export type PlannedPrAction = Omit<PrAction, 'isOut'>
  */
 export type LastPress = { last: LastAction | undefined; pressing: string | null; out: string | null }
 
-export function lastPressOf(presses: PressState, rowId: string): LastPress {
+/**
+ * A hand-off press the agent has answered, whose PR no fetch has read since: the PR may still show the problem the agent
+ * fixed. Its button stays out, without "again", until that fetch. A PR view saved before the inbox kept `fetchedAt` has
+ * no time to compare, so it counts as read.
+ */
+function isAwaitingFreshRead(last: LastAction | undefined, fetchedAt: number | undefined): boolean {
+  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt
+}
+
+/** `fetchedAt` is when a fetch last read the PR the row belongs to. */
+export function lastPressOf(presses: PressState, rowId: string, fetchedAt?: number): LastPress {
   const last = presses.lastActions[rowId]
   const feedback = pressFeedbackIn(rowId, { is: 'open' }, last, presses.turns, presses.now)
+  const pressing = pressOutAction(last, feedback)
+  const out = outAction(last, feedback)
+  const isChecking = last?.kind === 'handoff' && pressing === null && isAwaitingFreshRead(last, fetchedAt)
 
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) }
+  return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out }
 }
 
 export function again(row: LastPress, action: PrActionId, label: string): string {

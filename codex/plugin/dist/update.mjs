@@ -1234,6 +1234,18 @@ function isAwaitingReply(last, turns) {
   const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
   return pressed2 !== void 0 && pressed2 <= turns.turnsStarted && turns.turnsApplied <= pressed2;
 }
+function withReplied(lastActions, before, after, repliedAt) {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, last]) => [
+      id,
+      isAwaitingReply(last, before) && !isAwaitingReply(last, after) ? { ...last, repliedAt } : last
+    ])
+  );
+}
+function repliedBy(s, after, now) {
+  const repliedAt = Math.min(now, s.presence.lastReplyAt ?? now);
+  return withReplied(s.lastActions, s.presence, after, repliedAt);
+}
 function isHandedOff(last, turns) {
   return last?.kind === "handoff" && isAwaitingReply(last, turns);
 }
@@ -2472,7 +2484,7 @@ function outcomeLabel(c) {
 
 // ../hooks/feedback.ts
 function pressUnderWaySince(f) {
-  if (f?.is === "working" || f?.is === "sending") return f.at;
+  if (f?.is === "working" && f.isHandoff !== true || f?.is === "sending") return f.at;
   return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
 }
 function feedbackOf(id, last, note, turns, now, reportedAt) {
@@ -2490,8 +2502,14 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
-    return { is: "working", label: working, at: last.at };
+  const isWorking = last.kind === "talk" || last.kind === "handoff" && isPrRowId(id);
+  if (isWorking && working && (isAwaiting || isUnreported && !isPastLimit))
+    return {
+      is: "working",
+      label: working,
+      at: last.at,
+      ...last.kind === "handoff" ? { isHandoff: true } : {}
+    };
   if (pending === "sending")
     return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
   if (isUnreported) return { is: "noComparison", at: last.at };
@@ -2522,7 +2540,12 @@ var WORKING_LABELS = {
   discuss: "Discussing\u2026",
   "thread-discuss": "Discussing\u2026",
   "thread-draft": "Drafting a reply\u2026",
-  "pr-rank-again": "Ranking\u2026"
+  "pr-rank-again": "Ranking\u2026",
+  "pr-conflicts": "Resolving conflicts\u2026",
+  "pr-address-all": "Addressing\u2026",
+  "pr-merge": "Merging\u2026",
+  "thread-address": "Addressing\u2026",
+  "check-fix": "Fixing\u2026"
 };
 var DONE_LABELS = {
   address: () => "Handed off",
@@ -2623,10 +2646,16 @@ var PR_READ_FIRST_LABELS = {
   ...PR_FIX_LABELS,
   "check-rerun": RERUN_LABEL
 };
-function lastPressOf(presses, rowId) {
+function isAwaitingFreshRead(last, fetchedAt) {
+  return last?.repliedAt !== void 0 && fetchedAt !== void 0 && fetchedAt <= last.repliedAt;
+}
+function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+  const pressing = pressOutAction(last, feedback);
+  const out = outAction(last, feedback);
+  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt);
+  return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out };
 }
 function withOut(row, actions) {
   return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
@@ -3984,9 +4013,11 @@ function applied(s, parsed, now, promptAt) {
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
   const isCurrent = !hasDroppedReply;
   const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
+  const turnsApplied = Math.max(s.presence.turnsApplied, next.turnsStarted);
   return linkDialogs({
     ...s,
     ledger,
+    lastActions: repliedBy(s, { ...s.presence, turnsApplied }, now),
     pending: s.pending.slice(1),
     presence: {
       ...s.presence,
@@ -3994,7 +4025,7 @@ function applied(s, parsed, now, promptAt) {
       hasDroppedReply,
       failedAttempts: isCurrent ? 0 : failedAttempts,
       isConversationUnreadable: isCurrent ? false : s.presence.isConversationUnreadable,
-      turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
+      turnsApplied
     }
   });
 }
@@ -4236,6 +4267,11 @@ function appliedCatchUp(s, begun, parsed, now) {
   return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
+    lastActions: repliedBy(
+      s,
+      { ...s.presence, turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted) },
+      now
+    ),
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
