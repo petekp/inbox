@@ -1,13 +1,21 @@
 import { ROW_FADE_MS, ROW_STATE_MS, isMoving, stepRow } from '../../hooks/row-motion'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
+import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
- * its last enter or leave set, which runs on until `endsAt` even if the block's state moves on.
+ * its last enter or leave set, which runs on until `endsAt` even if the block's state moves on. `wrapEndsAt` is when
+ * the title of a row that last closed stops keeping its wrap.
  */
-type Tracked = { track: RowTrack; block: Block; opened: RowBlock | null; glide: Glide | null }
+type Tracked = {
+  track: RowTrack
+  block: Block
+  opened: RowBlock | null
+  glide: Glide | null
+  wrapEndsAt: number | null
+}
 
 /** Each block's track and the block as last drawn, and the ids of every block the last draw showed, in order. */
 export type Tracks = { rows: ReadonlyMap<string, Tracked>; order: readonly string[] }
@@ -27,6 +35,8 @@ type Glide = { box: 'open' | 'shut'; fadeMs: number; endsAt: number }
  * its measured height less its panel's: through a close after its first draw, through all of a close that turns an
  * open back, and in the draw after a close, before the row measures without the panel. A close's first draw keeps the
  * panel's height, so the row the selection moves to measures its new height in that draw and both start together.
+ * `isWrapHeld` says a row that is not open keeps its title wrapped, from the draw it stops being open until its title's
+ * box has glided to one line and come to rest, so only the end of the first line changes as the title is cut.
  */
 export type RowMotion = {
   state: RowState
@@ -36,13 +46,14 @@ export type RowMotion = {
   panel: 0 | 1 | null
   closing: RowBlock | null
   isPanelLeftOut: boolean
+  isWrapHeld: boolean
 }
 
 /** The draw after a move's first frame, which starts its transition or spring. */
 export const NEXT_FRAME_MS = 16
 
 const targetOf = (b: Block): RowTarget =>
-  b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : b.isSelected && !b.isCollapsed ? 'open' : 'closed'
+  b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : isOpenRow(b) ? 'open' : 'closed'
 
 const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
 
@@ -100,11 +111,13 @@ export function moveRows(
   const motion = new Map<string, RowMotion>()
   const add = (block: Block, track: RowTrack) => {
     const last = was.rows.get(block.id)
-    const isOpen = block.kind === 'row' && block.isSelected && !block.isCollapsed
+    const isOpen = block.kind === 'row' && isOpenRow(block)
+    const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
+    const wrapEndsAt = isOpen ? null : wasOpen ? restAt(now, 0) : (last?.wrapEndsAt ?? null)
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const glide = glideOf(track, isStart, last?.glide ?? null, now)
-    rows.set(block.id, { track, block, opened, glide })
+    rows.set(block.id, { track, block, opened, glide, wrapEndsAt })
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
     motion.set(block.id, {
@@ -116,6 +129,7 @@ export function moveRows(
       closing,
       isPanelLeftOut:
         (closing !== null && (!isStart || isFolding(last?.track.state))) || (wasClosing && block.kind === 'row'),
+      isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt,
     })
   }
   for (const b of blocks) {
@@ -137,6 +151,7 @@ export function moveRows(
     .flatMap(t => [
       ...(isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : []),
       ...(t.glide ? [t.glide.endsAt] : []),
+      ...(t.wrapEndsAt !== null ? [t.wrapEndsAt] : []),
     ])
     .filter(at => at > now)
 

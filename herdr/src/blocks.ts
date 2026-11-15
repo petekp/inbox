@@ -101,6 +101,9 @@ export type RowBlock = {
 /** A status's words and the time its age counts from. */
 export type Aged = { lead: string; at: number }
 
+/** A row drawn open, with its title wrapped and its panel under it. */
+export const isOpenRow = (r: RowBlock): boolean => r.isSelected && !r.isCollapsed
+
 /** A status that ends with its age: its words, then how long ago its time was. */
 export const agedText = (a: Aged, now: number): string => `${a.lead}${DOT}${shortAgo(now - a.at)}`
 

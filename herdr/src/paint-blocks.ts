@@ -5,6 +5,7 @@ import { ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
+import { isOpenRow } from './blocks'
 import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
 import {
   BOX_RADIUS,
@@ -25,7 +26,7 @@ import {
 } from './paint-theme'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
-import { panelId } from './paint-space'
+import { panelId, restId, sizeEl, titleEl } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -56,7 +57,7 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
         .w(TIMED_W)
         .rounded(BUTTON_H / 2),
     )
-    .when(left !== undefined, e => (left ? e.child(timeLeftEl(left, runsOutAt ?? 0, p.now, t)) : e))
+    .when(left !== undefined, e => (left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e))
     .child(b.label)
   const shaped =
     isPill && runsOutAt === undefined
@@ -146,7 +147,8 @@ function rowEl(r: RowBlock, p: Paint): Element {
   const { t } = p
   const m = p.motion.get(r.id)
   const isLeaving = m?.state === 'leaving'
-  const isOpen = r.isSelected && !r.isCollapsed
+  const isOpen = isOpenRow(r)
+  const isWrapped = isOpen || m?.isWrapHeld === true
   const isPressable = r.isSelectable && !isLeaving
   const line = h_flex()
     .id(`title ${r.id}`)
@@ -158,7 +160,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
         .flex_1()
         .min_w(0)
         .text_color(r.isDim ? t.muted : t.foreground)
-        .when(!isOpen, e => e.truncate())
+        .when(!isWrapped, e => e.truncate())
         .when(isOpen, e => e.font_semibold())
         .child(r.title),
     )
@@ -188,9 +190,16 @@ function rowEl(r: RowBlock, p: Paint): Element {
         .hover(s => s.bg(t.hover))
         .on_click((_e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))),
     )
-    .child(line)
-    .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))
-    .children(panelEl(r, m, p, isLeaving))
+    .child(titleEl(r, p, line))
+    .child(
+      sizeEl(
+        restId(r.id),
+        p,
+        v_flex()
+          .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))
+          .children(panelEl(r, m, p, isLeaving)),
+      ),
+    )
 }
 
 /**
