@@ -12,7 +12,7 @@ import type { ModelCall, Replay } from '../evals/status-replay'
 import { REPLAYS } from '../evals/status-replays'
 import { blockingFailures, gradeReplay, gradeStep, tally } from '../evals/status-grade'
 import { RULES } from '../evals/status-rules'
-import { subject, statusOf, sessionOf, baseScene, contextOf, SCENES } from './status-evals-scenes'
+import { subject, statusOf, sessionOf, baseScene, contextOf, PATH_SCENES, SCENES } from './status-evals-scenes'
 import { GOOD_RUNS } from './status-evals-runs'
 import type { Scene } from './status-evals-scenes'
 
@@ -27,6 +27,13 @@ test('every fixed rule passes a good page and fails a bad one', () => {
   for (const [rule, scene] of Object.entries(SCENES)) {
     expect({ rule, failures: failuresOf(rule, scene.good) }).toEqual({ rule, failures: [] })
     expect({ rule, fails: failuresOf(rule, scene.bad).length > 0 }).toEqual({ rule, fails: true })
+  }
+})
+
+test('each rule passes and fails a page on the paths beside its main one', () => {
+  for (const { rule, path, good, bad } of PATH_SCENES) {
+    expect({ rule, path, failures: failuresOf(rule, good) }).toEqual({ rule, path, failures: [] })
+    expect({ rule, path, fails: failuresOf(rule, bad).length > 0 }).toEqual({ rule, path, fails: true })
   }
 })
 
@@ -239,7 +246,7 @@ test('a failure left on the page counts once, at the step where it first appears
 const RULE_IDS = new Set<string>(RULES.map(r => r.id))
 const JUDGE_ONLY_IDS = new Set<string>(JUDGE_CHECKS.map(c => c.id).filter(id => !RULE_IDS.has(id)))
 
-test('every replay is well formed: times rise, facts name known pieces, asks open before they close, and each target or known failing judge check is a check its step runs', () => {
+test('every replay is well formed: times rise, facts name known pieces, asks open before they close, each target is a check its step runs, and each check a step expects to fail is one of its targets', () => {
   for (const r of REPLAYS) {
     let facts: Facts = { ...r.start.facts, changed: [] }
     const opened = new Set(r.start.ledger.items?.map(i => i.id) ?? [])
@@ -273,9 +280,9 @@ test('every replay is well formed: times rise, facts name known pieces, asks ope
         const isRun = RULE_IDS.has(t) || (JUDGE_ONLY_IDS.has(t) && step.checkpoint === true)
         expect({ where, target: t, ok: isRun }).toEqual({ where, target: t, ok: true })
       }
-      for (const id of Object.keys(step.judgeUntil ?? {})) {
-        const isJudged = JUDGE_ONLY_IDS.has(id) && step.checkpoint === true
-        expect({ where, judgeUntil: id, ok: isJudged }).toEqual({ where, judgeUntil: id, ok: true })
+      for (const id of Object.keys(step.until ?? {})) {
+        const isTarget = step.targets?.includes(id) === true
+        expect({ where, until: id, ok: isTarget }).toEqual({ where, until: id, ok: true })
       }
     }
   }
@@ -357,6 +364,15 @@ test('the facts read the same pieces, asks and running work the judge is told ab
   expect(text).toMatch(/- Sync engine: being worked on now\. syncs on reconnect\. Changed at this step\./)
   expect(text).toMatch(/"Last-write-wins or manual merge\?" holds up Sync conflicts/)
   expect(text).toMatch(/- Review the sync engine diff, for Sync engine/)
+})
+
+test('a goal that replaces another names the goal it replaced in the facts, from its step on', () => {
+  const start: Facts = { ...baseScene().facts, goal: { text: 'Import ready to demo', match: 'import', milestones: [] } }
+  const replaced = factsAfter(start, { goal: { text: 'Search under 100 ms in 3.1', match: '100 ms', milestones: [] } })
+
+  expect(factsText(start)).not.toMatch(/It replaced the goal/)
+  expect(factsText(replaced)).toMatch(/Goal: Search under 100 ms in 3\.1\nIt replaced the goal: Import ready to demo\n/)
+  expect(factsText(factsAfter(replaced, { focus: 'search' }))).toMatch(/It replaced the goal: Import ready to demo/)
 })
 
 test('the head is a title and a one-line description', () => {
