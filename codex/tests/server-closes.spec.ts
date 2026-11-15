@@ -8,9 +8,10 @@ import { parseReply } from '../../hooks/reply-parse'
 import { notePrompt, viewOf } from '../src/core'
 import type { View } from '../src/core'
 import { makeServer } from '../src/server'
+import type { Server } from '../src/server'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
-import { tempDir } from './helpers'
+import { removeTempDir, tempDir } from './helpers'
 import { setup } from './server-fixtures'
 
 test('a row the tab holds keeps its closed record through more closes than the Closed list keeps, from the agent’s tools and the per-reply update, and its reply still sends', async () => {
@@ -117,7 +118,8 @@ test('a close Codex read, then undone, is reported again when the row closes a s
 for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as const) {
   test(`Done notification batches survive ${failure} and retain honest delivery and Undo state`, async t => {
     const dir = tempDir()
-    t.after(() => rm(dir, { recursive: true, force: true }))
+    const servers: Server[] = []
+    t.after(() => removeTempDir(dir, ...servers))
     await updateState(dir, 's1', s => ({
       ...s,
       ledger: {
@@ -142,8 +144,8 @@ for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as
     let queues = 0
     let atDispatch: Awaited<ReturnType<typeof readState>> | null = null
     const temporary = `${statePath(dir, 's1')}.${process.pid}.tmp`
-    const server = () =>
-      makeServer({
+    const server = () => {
+      const made = makeServer({
         comparePage: '/plugin/dist/compare-page.html',
         dir,
         now: () => now,
@@ -162,6 +164,10 @@ for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as
             : { code: 0, stdout: 'Queued message done-batch', stderr: '' }
         },
       })
+      servers.push(made)
+
+      return made
+    }
     let handle = server()
     const call = (name: string, args: Record<string, unknown> = {}) =>
       handle({

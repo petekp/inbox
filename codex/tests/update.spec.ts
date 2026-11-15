@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { fork } from 'node:child_process'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
-import { mkdir, rm, symlink } from 'node:fs/promises'
+import { mkdir, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -12,7 +12,8 @@ import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
 import { runUpdates as runBothCalls } from '../src/update'
 import { makeServer } from '../src/server'
-import { ledgerOnly, movedRollout, rolloutAt, tempDir } from './helpers'
+import type { Server } from '../src/server'
+import { ledgerOnly, movedRollout, removeTempDir, rolloutAt, tempDir } from './helpers'
 import { ex } from './update-fixtures'
 
 const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
@@ -33,7 +34,8 @@ if (process.env.INBOX_STATUS_WORKER_DIR) {
 
 test('a killed update worker leaves pending exchanges recoverable', async t => {
   const dir = tempDir()
-  t.after(() => rm(dir, { recursive: true, force: true }))
+  const servers: Server[] = []
+  t.after(() => removeTempDir(dir, ...servers))
   await updateState(dir, 's1', s => ({
     ...s,
     pending: [{ ex: ex(1, 'Should I deploy?'), turnsStarted: 1 }],
@@ -224,7 +226,8 @@ test('a finished turn gives the inbox model at most forty distinct nonempty acti
 
 test('view polls preserve live worker activity and reconcile a killed worker without spending its retry', async t => {
   const dir = tempDir()
-  t.after(() => rm(dir, { recursive: true, force: true }))
+  const servers: Server[] = []
+  t.after(() => removeTempDir(dir, ...servers))
   await updateState(dir, 's1', s => ({
     ...s,
     pending: [{ ex: ex(1, 'Should I deploy?'), turnsStarted: 1 }],
@@ -241,8 +244,8 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
     }
   })
   await once(worker, 'message', { signal: AbortSignal.timeout(5_000) })
-  const server = () =>
-    makeServer({
+  const server = () => {
+    const made = makeServer({
       comparePage: '/plugin/dist/compare-page.html',
       dir,
       now: Date.now,
@@ -250,6 +253,10 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
       fallbackCli: async () => '/codex',
       tabHtml: '<html></html>',
     })
+    servers.push(made)
+
+    return made
+  }
   const poll = async (handle = server()) => {
     const answer = await handle({
       jsonrpc: '2.0',
