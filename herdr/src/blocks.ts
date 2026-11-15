@@ -227,7 +227,8 @@ export type Block =
   | { kind: 'field'; id: string; field: Field }
   /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
   | { kind: 'rule'; id: string; text: string | null }
-  | { kind: 'gap'; id: string }
+  /** A section's space above the block after it, or with `isMilestoneStep` the smaller space between two milestones. */
+  | { kind: 'gap'; id: string; isMilestoneStep?: true }
   /** A muted line at the edge that names the blocks under it, as Other PRs. */
   | { kind: 'caption'; id: string; text: string }
   /** A message in the list, as the PRs tab's GitHub notice, with the buttons that act on its problem at its end. */

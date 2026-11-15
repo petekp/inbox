@@ -126,25 +126,22 @@
 .status-head .goal-text {
   display: flow-root;
 }
-/* A blank line's space between the goal's buttons and its milestones, above a milestone that `isSpacedAbove` spaces,
-   and between a milestone and the rows under it, as the terminal and omp leave. */
-.status-head.goal + .list,
-.status-page .row.milestone + .row {
+/* A blank line's space between the goal's buttons and its milestones, as the terminal and omp leave. A milestone's rows
+   follow its name as a subject's children do. A row's padding more sits above a milestone that `isSpacedAbove` spaces,
+   and above the Later label, so a milestone's work sits closer to its own name than to the next milestone. */
+.status-head.goal + .list {
   margin-top: var(--section-gap);
-}
-/* The gap above a folded milestone's rows is content, so the rows open from and close to 0. */
-.status-page .row.milestone + .fold-rows::before {
-  content: '';
-  display: block;
-  height: var(--section-gap);
 }
 .status-page .milestone-group {
   position: relative;
   --space-above: 0px;
 }
 .status-page .milestone-group.spaced {
-  --space-above: var(--section-gap);
+  --space-above: var(--status-row-pad);
   padding-top: var(--space-above);
+}
+.status-page .milestone-group + .row.part-line {
+  margin-top: var(--status-row-pad);
 }
 /* The path's line, from under a milestone's mark to the next milestone's mark, through the space above that one. */
 .status-page .milestone-group.path-continues::before,
@@ -157,7 +154,7 @@
   border-left: 1px solid var(--tree-line);
 }
 .status-page .milestone-group.gap-under::before {
-  bottom: calc(-1 * (var(--section-gap) + var(--status-row-pad)));
+  bottom: calc(-2 * var(--status-row-pad));
 }
 .status-page .milestone-group.path-to-next::before {
   border-left-style: dashed;

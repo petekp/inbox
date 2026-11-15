@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T06:00:19.008Z. 228414 characters follow.
+// Built at 2026-11-15T06:13:18.121Z. 228637 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1523,7 +1523,7 @@ function isSpacedAbove(milestones, n, isUnfolded) {
   const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
   const above = milestones[n - 1];
   const m = milestones[n];
-  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above) || !drawsNameOnly(m);
+  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
 }
 
 // ../hooks/status-goal-page.ts
@@ -3890,7 +3890,7 @@ function goalBlocks(page, { isUnfolded, goalField }) {
     ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
   ];
   const milestones = g.milestones.flatMap((m, n) => [
-    ...isSpacedAbove(g.milestones, n, isUnfolded) ? [{ kind: "gap", id: `gap ${m.id}` }] : [],
+    ...isSpacedAbove(g.milestones, n, isUnfolded) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
     ...m.startsLater ? [{ kind: "rule", id: "goal later", text: LATER_TEXT }] : [],
     milestoneBlock(m, g.milestones[n - 1]?.line ?? null, isUnfolded),
     ...milestoneRows(m, isUnfolded).flatMap((r) => rowBlocks(r, isUnfolded).map((b) => besidePath(b, m.line)))
@@ -4730,7 +4730,10 @@ function itemGap(prev, b) {
     return ITEM_GAP;
   return INSET;
 }
+var isMilestone = (b) => ("path" in b) && b.path?.is === "milestone";
 function gapBetween(prev, b) {
+  if (isMilestone(prev))
+    return isMilestone(b) ? CONTROL_GAP : INSET;
   const isLabelled = prev.kind === "heading" || prev.kind === "caption" || prev.kind === "rule" && prev.text !== null;
   if (isLabelled)
     return HEAD_GAP;
@@ -4748,38 +4751,39 @@ function gapBetween(prev, b) {
     return EDGE;
   return itemGap(prev, b);
 }
-function aboveOf(prev, b, isSection) {
+function aboveOf(prev, b, section) {
   if (prev === null)
     return 0;
-  const gap = isSection ? GROUP_GAP : gapBetween(prev, b);
+  const gap = section ?? gapBetween(prev, b);
   return Math.max(0, gap - padOf(prev) - padOf(b));
 }
 var panelId = (id) => `panel ${id}`;
 function spacesOf(blocks, isMoving) {
   const out = [];
   let prev = null;
-  let isSection = false;
+  let section = null;
   let resting = null;
-  let isSectionSinceResting = false;
+  let sectionSinceResting = null;
   for (const b of blocks) {
     if (b.kind === "gap") {
-      isSection = prev !== null;
-      isSectionSinceResting = resting !== null;
+      const space = b.isMilestoneStep ? ITEM_GAP : GROUP_GAP;
+      section = prev === null ? null : space;
+      sectionSinceResting = resting === null ? null : space;
       continue;
     }
-    const above = aboveOf(prev, b, isSection);
+    const above = aboveOf(prev, b, section);
     const run = out.at(-1);
     const isUnderRun = run !== undefined && isMoving(run.block) && !isMoving(b);
-    const shut = isUnderRun ? aboveOf(resting, b, isSectionSinceResting) : above;
+    const shut = isUnderRun ? aboveOf(resting, b, sectionSinceResting) : above;
     const held = Math.min(shut, above);
     if (run && isUnderRun)
       Object.assign(run, { below: above - held, floor: shut - held });
     out.push({ block: b, above: held, below: 0, floor: 0 });
     prev = b;
-    isSection = false;
+    section = null;
     if (!isMoving(b)) {
       resting = b;
-      isSectionSinceResting = false;
+      sectionSinceResting = null;
     }
   }
   return out;

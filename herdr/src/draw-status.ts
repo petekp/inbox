@@ -209,7 +209,9 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
         ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
       ]
   const milestones = g.milestones.flatMap((m, n): Block[] => [
-    ...(isSpacedAbove(g.milestones, n, isUnfolded) ? [{ kind: 'gap', id: `gap ${m.id}` } as const] : []),
+    ...(isSpacedAbove(g.milestones, n, isUnfolded)
+      ? [{ kind: 'gap', id: `gap ${m.id}`, ...(n > 0 ? { isMilestoneStep: true as const } : {}) } as const]
+      : []),
     ...(m.startsLater ? [{ kind: 'rule', id: 'goal later', text: LATER_TEXT } as const] : []),
     milestoneBlock(m, g.milestones[n - 1]?.line ?? null, isUnfolded),
     ...milestoneRows(m, isUnfolded).flatMap(r => rowBlocks(r, isUnfolded).map(b => besidePath(b, m.line))),

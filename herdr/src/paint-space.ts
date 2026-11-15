@@ -26,8 +26,11 @@ function itemGap(prev: Block, b: Block): number {
   return INSET
 }
 
+const isMilestone = (b: Block): boolean => 'path' in b && b.path?.is === 'milestone'
+
 /** The space the eye sees between one block's last line and the next block's first. */
 function gapBetween(prev: Block, b: Block): number {
+  if (isMilestone(prev)) return isMilestone(b) ? CONTROL_GAP : INSET
   const isLabelled = prev.kind === 'heading' || prev.kind === 'caption' || (prev.kind === 'rule' && prev.text !== null)
   if (isLabelled) return HEAD_GAP
   if (prev.kind === 'rule' || b.kind === 'rule') return GROUP_GAP / 2
@@ -40,9 +43,10 @@ function gapBetween(prev: Block, b: Block): number {
   return itemGap(prev, b)
 }
 
-function aboveOf(prev: Block | null, b: Block, isSection: boolean): number {
+/** The space above `b`, after `prev`: `section`, the space a gap block opened, or else the space between the two. */
+function aboveOf(prev: Block | null, b: Block, section: number | null): number {
   if (prev === null) return 0
-  const gap = isSection ? GROUP_GAP : gapBetween(prev, b)
+  const gap = section ?? gapBetween(prev, b)
 
   return Math.max(0, gap - padOf(prev) - padOf(b))
 }
@@ -65,27 +69,28 @@ export type Space = { block: Block; above: number; below: number; floor: number 
 export function spacesOf(blocks: Block[], isMoving: (b: Block) => boolean): Space[] {
   const out: Space[] = []
   let prev: Block | null = null
-  let isSection = false
+  let section: number | null = null
   let resting: Block | null = null
-  let isSectionSinceResting = false
+  let sectionSinceResting: number | null = null
   for (const b of blocks) {
     if (b.kind === 'gap') {
-      isSection = prev !== null
-      isSectionSinceResting = resting !== null
+      const space = b.isMilestoneStep ? ITEM_GAP : GROUP_GAP
+      section = prev === null ? null : space
+      sectionSinceResting = resting === null ? null : space
       continue
     }
-    const above = aboveOf(prev, b, isSection)
+    const above = aboveOf(prev, b, section)
     const run = out.at(-1)
     const isUnderRun = run !== undefined && isMoving(run.block) && !isMoving(b)
-    const shut = isUnderRun ? aboveOf(resting, b, isSectionSinceResting) : above
+    const shut = isUnderRun ? aboveOf(resting, b, sectionSinceResting) : above
     const held = Math.min(shut, above)
     if (run && isUnderRun) Object.assign(run, { below: above - held, floor: shut - held })
     out.push({ block: b, above: held, below: 0, floor: 0 })
     prev = b
-    isSection = false
+    section = null
     if (!isMoving(b)) {
       resting = b
-      isSectionSinceResting = false
+      sectionSinceResting = null
     }
   }
 

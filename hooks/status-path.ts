@@ -120,8 +120,9 @@ type SpacedMilestone = {
 }
 
 /**
- * Whether a look leaves a blank line's space above the milestone at `n`. Two milestones that each draw only their
- * name, such as done ones folded to their names, sit on adjacent lines. The Later label always has space above it.
+ * Whether a look leaves a step's space above the milestone at `n`: under a milestone that draws more than its name, so a
+ * milestone's work sits closer to its own name than to the next milestone. Under a milestone that draws only its name,
+ * such as a done one folded to its name, the next sits on the adjacent line. The Later label always has space above it.
  */
 export function isSpacedAbove(
   milestones: readonly (SpacedMilestone & { startsLater: boolean })[],
@@ -133,5 +134,5 @@ export function isSpacedAbove(
   const above = milestones[n - 1]
   const m = milestones[n]
 
-  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above) || !drawsNameOnly(m)
+  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above)
 }

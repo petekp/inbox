@@ -3754,7 +3754,7 @@ function isSpacedAbove(milestones, n, isUnfolded) {
   const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
   const above = milestones[n - 1];
   const m = milestones[n];
-  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above) || !drawsNameOnly(m);
+  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
 }
 
 // ../hooks/status-goal-page.ts
@@ -7322,10 +7322,7 @@ function goalSection(page, typing, isUnfolded) {
         ...isSpacedAbove(milestones, n, isUnfolded) ? [goalEntry({ is: "gap", line: milestones[n - 1]?.line ?? null })] : [],
         ...row.startsLater ? [goalEntry({ is: "later" })] : [],
         goalEntry({ is: "milestone", row }),
-        ...rows.length > 0 ? [
-          goalEntry({ is: "gap", line: row.line }),
-          ...rows.map((r) => ({ kind: "page", row: r, path: row.line }))
-        ] : []
+        ...rows.map((r) => ({ kind: "page", row: r, path: row.line }))
       ];
     })
   ];

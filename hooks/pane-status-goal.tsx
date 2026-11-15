@@ -16,7 +16,7 @@ import {
   REPLY_ROWS,
 } from './pane-sizes'
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
-import { SECTION_GAP_PT } from './layout'
+import { SECTION_GAP_PT, STATUS_ROW_PAD_PT } from './layout'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
 import {
@@ -215,9 +215,15 @@ export function paneStatusGoal(
       ])}
     </Box>
   )
-  /** A blank line in the terminal, and on desktop the space Codex leaves there, `SECTION_GAP_PT`. */
-  const milestoneGap = look === 'terminal' ? 1 : SECTION_GAP_PT / DESKTOP_LINE_PT
-  const gap = (key: string): Drawn => ({ el: <Box key={key} height={milestoneGap} />, lines: exactly(milestoneGap) })
+  /**
+   * A blank line in the terminal. On desktop, the space Codex leaves there: `SECTION_GAP_PT` under the goal's text, and
+   * `STATUS_ROW_PAD_PT` between two milestones, so a milestone's work sits closer to its own name than to the next.
+   */
+  const gap = (key: string, isUnderGoalText: boolean): Drawn => {
+    const height = look === 'terminal' ? 1 : (isUnderGoalText ? SECTION_GAP_PT : STATUS_ROW_PAD_PT) / DESKTOP_LINE_PT
+
+    return { el: <Box key={key} height={height} />, lines: exactly(height) }
+  }
   /** The milestone's line: its mark, then its name, or the fold of a done milestone folded to its name. */
   const milestoneLine = (m: MilestoneRow): Drawn => {
     const mark = markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted)
@@ -246,19 +252,15 @@ export function paneStatusGoal(
       isSelected: isSelected(m.id),
     })
   }
-  /** A milestone, then a blank line's space and the work that serves it, one step in. */
-  const milestoneLines = (m: MilestoneRow): Drawn[] => {
-    const rows = milestoneRows(m, isUnfolded)
-
-    return [milestoneLine(m), ...(rows.length > 0 ? [gap(`goal-${m.id}-rows-gap`), ...drawRows(rows)] : [])]
-  }
+  /** A milestone, then on the next line the work that serves it, one step in. */
+  const milestoneLines = (m: MilestoneRow): Drawn[] => [milestoneLine(m), ...drawRows(milestoneRows(m, isUnfolded))]
   /**
    * The milestones in path order. The space under a milestone the path's line leaves from is part of its group, so the
    * line runs through it. The Later label sits above the first milestone under Later.
    */
   const milestoneSection = (milestones: MilestoneRow[]): Drawn[] => {
     const spaceAbove = (n: number) =>
-      isSpacedAbove(milestones, n, isUnfolded) ? [gap(`goal-${milestones[n]?.id}-gap`)] : []
+      isSpacedAbove(milestones, n, isUnfolded) ? [gap(`goal-${milestones[n]?.id}-gap`, n === 0)] : []
 
     return milestones.flatMap((m, n) => {
       const hasLineAbove = (milestones[n - 1]?.line ?? null) !== null

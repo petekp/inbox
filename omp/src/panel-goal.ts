@@ -16,7 +16,7 @@ import { cellWidth } from '../../hooks/text'
 
 /**
  * A part of the goal's section on the Status page: its heading row with the goal's buttons, the goal's text with its
- * was, Now and awaiting lines, a blank line before a milestone or its rows with the path's line through it, the Later
+ * was, Now and awaiting lines, a blank line before a milestone with the path's line through it, the Later
  * label, a milestone, or on the empty page New or its field.
  */
 export type GoalPart =
@@ -39,9 +39,9 @@ const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
 
 /**
  * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at the right
- * edge, then the goal's text, or the line that says no goal is set, then the milestones as a path, with a blank line
- * between a milestone and the rows of its work. A blank line comes before each milestone unless it and the one above
- * draw only their names, and the Later label before the first that waits under it. The path's line runs in the mark
+ * edge, then the goal's text, or the line that says no goal is set, then the milestones as a path. A milestone's work
+ * starts on the line after its name or its text. A blank line comes before each milestone unless the one above draws
+ * only its name, and before the Later label above the first that waits under it. The path's line runs in the mark
  * column from each milestone to the next. While the person types a goal, the field takes the text's place, and the
  * buttons leave.
  */
@@ -62,12 +62,7 @@ export function goalSection(page: StatusPage, typing: string | null, isUnfolded:
           : []),
         ...(row.startsLater ? [goalEntry({ is: 'later' })] : []),
         goalEntry({ is: 'milestone', row }),
-        ...(rows.length > 0
-          ? [
-              goalEntry({ is: 'gap', line: row.line }),
-              ...rows.map((r): Entry => ({ kind: 'page', row: r, path: row.line })),
-            ]
-          : []),
+        ...rows.map((r): Entry => ({ kind: 'page', row: r, path: row.line })),
       ]
     }),
   ]

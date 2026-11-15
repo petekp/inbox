@@ -424,7 +424,7 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
 /**
  * The goal's section, first on every page that is not empty: its heading row, the title, a rule and the goal's buttons at
  * the right edge, then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then
- * the milestones, each after a blank line's space and with that space between it and its rows. While the person types a
+ * the milestones, each with its rows on the lines under it. While the person types a
  * goal, the field takes the text's place and the buttons leave the heading.
  * The buttons wrap under the rule, still at the right, when they do not fit beside the title.
  */
