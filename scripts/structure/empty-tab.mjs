@@ -1,4 +1,4 @@
-import { readdirSync, realpathSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { API, isFunction, nameOf, propertyOf, ts } from './ts.mjs'
@@ -23,6 +23,7 @@ const DRAWERS = [
 const HERDR_EMPTY_HOME = 'herdr/src/blocks.ts'
 
 function lookFiles(root, dir) {
+  if (!existsSync(join(root, dir))) return []
   return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(entry => {
     const path = `${dir}/${entry.name}`
     if (entry.isDirectory()) return dir === 'hooks' ? [] : lookFiles(root, path)
@@ -58,10 +59,11 @@ const isText = node => ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLi
 
 function constText(source, name) {
   let text = null
-  walk(source, node => {
-    if (ts.isVariableDeclaration(node) && nameOf(node.name) === name && node.initializer && isText(node.initializer))
-      text = node.initializer.text
-  })
+  if (source)
+    walk(source, node => {
+      if (ts.isVariableDeclaration(node) && nameOf(node.name) === name && node.initializer && isText(node.initializer))
+        text = node.initializer.text
+    })
   return text
 }
 
@@ -143,14 +145,15 @@ function checkDrawer(drawer, sources, errors) {
  * gives a drawer anything but an `emptyTab` result. It cannot see a look that draws empty text as plain lines of its own.
  */
 export function checkEmptyTab(root, errors) {
+  if (!existsSync(join(root, OWNER))) return
   withSources(
     root,
     LOOK_DIRS.flatMap(dir => lookFiles(root, dir)),
-    sources => checkSources(sources, errors),
+    sources => checkSources(root, sources, errors),
   )
 }
 
-function checkSources(sources, errors) {
+function checkSources(root, sources, errors) {
   const titles = new Set(emptyTitles(sources, errors))
   const importable = { ...OWNED_TEXTS, ...SHARED_TEXTS }
   const kindEmpty = []
@@ -172,7 +175,8 @@ function checkSources(sources, errors) {
       }
     })
   }
-  for (const drawer of DRAWERS) checkDrawer(drawer, sources, errors)
+  for (const drawer of DRAWERS) if (existsSync(join(root, drawer.dir))) checkDrawer(drawer, sources, errors)
+  if (!sources.has(HERDR_EMPTY_HOME)) return
   const strayEmpty = kindEmpty.filter(at => !at.startsWith(`${HERDR_EMPTY_HOME}:`))
   if (kindEmpty.length !== 1 || strayEmpty.length > 0)
     errors.push(
