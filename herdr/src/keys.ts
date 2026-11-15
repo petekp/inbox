@@ -136,7 +136,7 @@ export function withClosedSelection(ui: LookUi, last: RowWait[], now: RowWait[])
  * The new rows start their bar's clock `at` this draw, since the look finds them only in the tab it shows. `last` and
  * `now` are the tab's rows at the last draw and at this one.
  */
-export function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[], at: number): LookUi {
+function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[], at: number): LookUi {
   const added = now.filter(r => !last.some(l => l.id === r.id)).map(r => r.id)
   const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added)
   const shown =
