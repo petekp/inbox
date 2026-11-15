@@ -1,6 +1,7 @@
 import { expect, setSystemTime, test } from 'bun:test'
 
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
+import { PRESS_GUARD_MS } from '../../hooks/timing'
 import { NOW } from './fixtures'
 import { allOf, focusTerminal, giveKeysElsewhere, keysHolder, openPanel, typeIn } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
@@ -134,4 +135,26 @@ test('a reply sent before the panel follows another terminal is still out when i
   await panel.settle()
   expect(panel.panel.queue.outs.map(o => `row ${o.rowId}`)).toEqual([rowId])
   expect(panel.panel.queue.sentTexts.map(t => t.text)).toEqual(['Ran it and it passed'])
+})
+
+test('a click on an open row’s title collapses it and closes its reply field, and the draft is there once it expands', async () => {
+  const panel = await openPanel()
+  const rowId = idsOf(panel.paint(), 'row ').find(id => {
+    panel.click(byId(panel.paint(), id)!)
+    return allOf(byId(panel.paint(), id)!).some(n => n.label === 'Reply')
+  })!
+  const pressReply = () => panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
+  pressReply()
+  typeIn(panel.panel.input!.state, 'Ran it and it passed')
+  setSystemTime(new Date(NOW + PRESS_GUARD_MS + 1))
+  try {
+    panel.click(byId(panel.paint(), rowId.replace(/^row /, 'title '))!)
+    expect(panel.panel.ui.typing).toBeNull()
+    expect(allOf(byId(panel.paint(), rowId)!).some(n => n.label === 'Reply')).toBe(false)
+    panel.click(byId(panel.paint(), rowId)!)
+    pressReply()
+    expect(panel.panel.input?.state.value()).toBe('Ran it and it passed')
+  } finally {
+    setSystemTime(new Date(NOW))
+  }
 })

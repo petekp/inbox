@@ -4,6 +4,7 @@ Part of [the look map](../looks.md#omp).
 
 | Topic | omp | Why | Where |
 | --- | --- | --- | --- |
+| A collapsed row the cursor rests on | Keeps the ❯ cursor, and draws its line without the selected row's body and buttons. | `z` acts on the cursor row, so the panel keeps it visible. | `omp/src/panel-draw.ts:drawLine` |
 | Recommended answer | The answer is underlined and ends "(recommended)". Where the button, focused, would not fit a line of its own, it reads the answer alone, still underlined. The terminal never drops the word and underlines nothing. | The panel wraps a button to the next line but never shortens one, and omp cuts each panel line at its width, so a label wider than a line would lose its end. The panel draws plain text with no button fill, so the underline marks the answer whether or not the word shows. | `omp/src/panel-draw.ts:labelMark`, `omp/src/panel-draw.ts:buttonCell`, `hooks/rows.ts:actionLabel` |
 | Where an empty tab's text sits | At the top left, as in the inline terminal. | The panel is lines in the session's flow, sized to its tallest tab, so centred text would float between the conversation and the prompt. | `omp/src/panel-entries.ts:emptyEntries` |
 | Reply while its send is out | The draft stays through the press, and is deleted once the press is confirmed and the draft is unedited, as in the Codex tab. | omp's send returns as soon as omp takes the message, so the draft is kept only for a moment. | `omp/src/controller.ts:createPanel`, `omp/src/host.ts:sendToAgent` |

@@ -4,6 +4,7 @@ export const SHARED = [
   'arrivals',
   'children',
   'clients',
+  'collapse',
   'conversation',
   'demo',
   'dialogs',

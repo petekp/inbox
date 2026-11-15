@@ -144,16 +144,22 @@ function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
 
 function rowEl(r: RowBlock, p: Paint): Element {
   const { t } = p
+  const m = p.motion.get(r.id)
+  const isLeaving = m?.state === 'leaving'
+  const isOpen = r.isSelected && !r.isCollapsed
+  const isPressable = r.isSelectable && !isLeaving
   const line = h_flex()
+    .id(`title ${r.id}`)
     .items_start()
+    .when(isPressable && isOpen, e => e.cursor_pointer().on_click((_e, cx) => p.collapse(r.id, true, cx)))
     .child(markEl(r.mark, t))
     .child(
       div()
         .flex_1()
         .min_w(0)
         .text_color(r.isDim ? t.muted : t.foreground)
-        .when(!r.isSelected, e => e.truncate())
-        .when(r.isSelected, e => e.font_semibold())
+        .when(!isOpen, e => e.truncate())
+        .when(isOpen, e => e.font_semibold())
         .child(r.title),
     )
     .when(r.age !== null, e =>
@@ -170,8 +176,6 @@ function rowEl(r: RowBlock, p: Paint): Element {
     ...(r.feedback && !isStatusUnder(r) ? [r.feedback] : []),
     ...(r.heldLine ? [r.heldLine] : []),
   ]
-  const m = p.motion.get(r.id)
-  const isLeaving = m?.state === 'leaving'
 
   return v_flex()
     .id(`row ${r.id}`)
@@ -179,8 +183,10 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .pr(EDGE)
     .py(ROW_PAD_PT)
     .when(r.isSelected, e => e.bg(t.selected))
-    .when(r.isSelectable && !r.isSelected && !isLeaving, e =>
-      e.hover(s => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx)),
+    .when(isPressable && !isOpen, e =>
+      e
+        .hover(s => s.bg(t.hover))
+        .on_click((_e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))),
     )
     .child(line)
     .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))

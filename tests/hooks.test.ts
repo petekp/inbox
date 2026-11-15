@@ -14,7 +14,7 @@ import { rowKeyPlan } from '../hooks/action-plan'
 import { statusKeyPlan, statusKeyRows } from '../hooks/status-keys'
 import { shownTabs } from '../hooks/tabs'
 import { world } from './hooks-world'
-import { PANE } from './hooks-helpers'
+import { PANE, openTitle } from './hooks-helpers'
 
 const inOrder = (drawn: string[], plan: string[]) => {
   let at = 0
@@ -138,7 +138,8 @@ test(
           .filter(b => !(b.key ?? '').endsWith('-key'))
           .map(b => ({ key: b.key ?? '', label: clean(b.text) }))
         const controls = [...buttons.map(b => b.label), ...links.map(l => clean(l.label))]
-        const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
+        const open = await openTitle(pane)
+        const texts = [...(await pane.findAll({ type: 'Text' })).map(t => t.text ?? ''), ...(open ? [open.title] : [])]
         return { buttons, controls, texts }
       }
       for (const tab of tabs) {

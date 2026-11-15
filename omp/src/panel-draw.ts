@@ -133,16 +133,14 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       ? [together]
       : [fit(buttons, width), fit(`${' '.repeat(visibleLength(head))}${status}`, width)]
   }
+  const isOpen = isSelected && line.isCollapsed !== true
   const pad = line.depth * 2
   const out: string[] = []
   const status = line.status
     ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}`
     : ''
   const statusUnder =
-    line.feedback &&
-    line.settled === null &&
-    !isShut(line, ui) &&
-    isStatusUnderActions(line.feedback.source, isSelected)
+    line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isOpen)
       ? line.feedback
       : null
   const mark = markText(line.mark, now, s)
@@ -163,26 +161,24 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     ? s.dim(shownTitle)
     : line.titleTone
       ? s.tone(line.titleTone, s.bold(shownTitle))
-      : isSelected
+      : isOpen
         ? s.bold(shownTitle)
         : shownTitle
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
-  const contextLine = isSelected ? line.row?.contextLine : null
+  const contextLine = isOpen ? line.row?.contextLine : null
   if (contextLine) out.push(...indented(contextLine, indent, width, Infinity, s.dim))
   const holdsUp = line.row?.holdsUpLine
   if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
   const recLine = line.row?.recLine
   if (recLine)
     out.push(
-      ...(isSelected
-        ? indented(recLine, indent, width, 3, s.dim)
-        : [fit(`${' '.repeat(indent)}${s.dim(recLine)}`, width)]),
+      ...(isOpen ? indented(recLine, indent, width, 3, s.dim) : [fit(`${' '.repeat(indent)}${s.dim(recLine)}`, width)]),
     )
-  if (line.body && isSelected) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
-  if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
-  if (!isSelected) return out
+  if (line.body && isOpen) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
+  if (line.detail && (isOpen || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
+  if (!isOpen) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
   for (const o of line.row?.optionDescriptions ?? [])
     out.push(fit(' '.repeat(indent) + o.label + s.dim(`: ${o.description}`), width))

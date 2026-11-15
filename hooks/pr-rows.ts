@@ -200,16 +200,28 @@ export function isPrTabRunning(prs: PrView[], lastActions: Record<string, LastAc
  * The rows of the PR blocks `prs` in drawn order, each block's review threads, failing checks, then cancelled checks,
  * and whether each still waits on the person: a thread not sent to the agent, a check whose Fix was not handed off.
  */
-export function prRowWaits(prs: PrView[], lastActions: Record<string, LastAction>): RowWait[] {
+export function prRowWaits(
+  prs: PrView[],
+  lastActions: Record<string, LastAction>,
+  collapsed: readonly string[] = [],
+): RowWait[] {
   const isSent = threadSentIn(lastActions)
+  const isCollapsed = (id: string) => collapsed.includes(id)
 
   return prs.flatMap(pr => [
-    ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), isWaiting: !isSent(pr, t) })),
+    ...waitingThreads(pr).map(t => {
+      const id = prThreadId(pr, t)
+      return { id, isWaiting: !isSent(pr, t), isCollapsed: isCollapsed(id) }
+    }),
     ...blockingChecks(pr).map(c => {
       const id = prCheckId(pr, c)
       const last = lastActions[id]
 
-      return { id, isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === 'failed' }
+      return {
+        id,
+        isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === 'failed',
+        isCollapsed: isCollapsed(id),
+      }
     }),
   ])
 }

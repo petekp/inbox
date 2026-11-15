@@ -85,6 +85,8 @@ export type RowBlock = {
   /** Whether the person can select it to see its body and buttons. */
   isSelectable: boolean
   isSelected: boolean
+  /** The person collapsed it, so it draws closed while selected. */
+  isCollapsed?: true
   /** What the selected row shows under its line, in order, each line with the mark that leads it, if any. */
   body: { text: string; tone: Tone; mark?: Mark }[]
   buttons: Button[]

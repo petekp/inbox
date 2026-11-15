@@ -18,7 +18,7 @@ import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/ho
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
 import { applyHerdrFile } from '../../hooks/herdr-app'
-import { isLookFile } from '../../hooks/herdr-press-file'
+import { isPressFile } from '../../hooks/herdr-press-file'
 import type { HerdrFile, PressFile } from '../../hooks/herdr-press-file'
 import type { Holds } from '../../hooks/timing'
 import { viewOf } from './core'
@@ -200,10 +200,10 @@ export function makeSessionHost(
     }
   }
 
-  /** Applies a file the Herdr look wrote: a press, or a look at the Status. */
+  /** Applies a file the Herdr look wrote: a press, a look at the Status, or a collapse. */
   async function onHerdrFile(id: string, file: HerdrFile): Promise<void> {
-    if (isLookFile(file)) await applyHerdrFile(hostFor(id), file)
-    else await onPress(id, file.press, id, file.holds, file)
+    if (isPressFile(file)) await onPress(id, file.press, id, file.holds, file)
+    else await applyHerdrFile(hostFor(id), file)
   }
 
   const files: PathProbe = {

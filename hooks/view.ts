@@ -59,6 +59,8 @@ export type ViewInput = {
    * a row, so it names them and the server keeps them in place. Other looks pass none.
    */
   undoShown?: string[]
+  /** The rows that draw collapsed, from `hooks/collapse.ts:collapsedRows`. */
+  collapsed?: string[]
 }
 
 export type InboxView = {
@@ -72,6 +74,8 @@ export type InboxView = {
   }
   findings: { count: number; rows: RowView[]; closed: ClosedView<ClosedFinding>[]; pressOutSince: number | null }
   status: ItemStatus
+  /** The rows that draw collapsed, by id. Each look draws a collapsed row closed, even while it is selected. */
+  collapsed: string[]
 }
 
 /** A closed entry as a look draws it. `mark` is `closedMark` of the entry and its delivery. */
@@ -109,6 +113,7 @@ export function inboxView({
   lastTypedMessageAt,
   listInput,
   undoShown,
+  collapsed = [],
 }: ViewInput): InboxView {
   const isFindingId = (id: string) =>
     ledger.findings.some(f => f.id === id) || ledger.closedFindings.some(f => f.id === id)
@@ -354,6 +359,7 @@ export function inboxView({
       ].sort((a, b) => b.closedAt - a.closedAt),
     },
     status,
+    collapsed,
   }
 }
 
