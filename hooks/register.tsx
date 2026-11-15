@@ -96,10 +96,10 @@ import {
 } from './claude'
 import { ghIn } from './gh'
 import { isGhUnstartable, pathProbe, placeChange, runOf, sessionFolder, type CommandCalls } from './mod-commands'
-import { delegatesInHerdr } from './herdr'
 import type { HerdrFile } from './herdr-press-file'
 import { applyHerdrFile } from './herdr-app'
 import {
+  delegatesAsked,
   followDelegates as followHerdrDelegates,
   listenForHerdrPresses,
   startInHerdr,
@@ -1179,7 +1179,7 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
 }
 
 function followDelegates($: EngineInterface, isShown: boolean) {
-  followHerdrDelegates(isShown, paneState, herdrCalls($).every, () => {
+  followHerdrDelegates(isShown, paneState, herdrCalls($), () => {
     const owner = currentOwner()
     return {
       run: processRun($),
@@ -2638,10 +2638,9 @@ export const register: Register = on => {
     await closeDialogs($, null)
     if (!mod.isOn) return r
     const endedAt = await $.clock.now()
-    const run = processRun($)
     const [listed, inHerdr, place] = await Promise.all([
       $.agent.list().catch(() => null),
-      read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, run)),
+      read($, SESSION).then(s => delegatesAsked(herdrCalls($), upgradeSession(s).ledger.overview)),
       placeNow($),
     ])
     const running =
