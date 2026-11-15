@@ -14,7 +14,9 @@ Part of [the look map](../looks.md#files).
 | `omp/src/host-panel.ts` | omp host. The `Inbox` calls the panel makes on the host, and the live source the panel draws from. |
 | `omp/src/omp-messages.ts` | omp host. Reads omp's messages and session branch: a message's text, why a turn stopped, the conversation as turns, and the line under a `record` or `close` call. |
 | `omp/src/tool-calls.ts` | omp host. What an omp tool call and its result say: the call's activity line, an `ask` call's questions from either input shape, and how an `ask` dialog ended. It imports no omp package. |
-| `omp/src/ask-form.ts` | omp host. Reads the questions and options of the HTML form omp's `ask` tool takes from 18.18.3 on, following omp's own form parser. It imports no omp package. |
+| `omp/src/ask-form.ts` | omp host. Reads the questions and options of the HTML form omp's `ask` tool takes from 18.18.3 on, following omp's own form parser, which `omp/tests/ask-form.spec.ts` compares it with. It imports no omp package. |
+| `omp/src/ask-form-dom.ts` | omp host. Reads form HTML into elements, closing tags as omp's HTML reader does. It imports no omp package. |
+| `omp/src/ask-form-entities.ts` | omp host. Decodes the named entities and numeric references omp's HTML reader decodes. It imports no omp package. |
 | `omp/src/state.ts` | omp host. One JSON file per session under omp's agent folder, with a lock held in the process. `OmpState` extends the shared `Session`. |
 | `omp/src/commands.ts` | omp host. Opens links and paths for omp's `SessionHost`. |
 | `omp/src/theme.ts` | omp host. Maps the panel's styles onto omp's theme. |
