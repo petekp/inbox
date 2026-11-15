@@ -1,7 +1,9 @@
 // Reads the questions of the HTML form omp's `ask` tool takes from omp 18.18.3 on. omp's own parser is not exported
 // from a package root, which is all a compiled omp resolves for an extension, so this reads the form itself. It follows
 // `parseHtmlForm` in `pi-tui/src/html-form/parse.ts` and `fieldQuestions` in `pi-tui/src/html-form/data.ts`, and
-// `omp/tests/ask-form.spec.ts` compares the two over a corpus of forms.
+// `omp/tests/ask-form.spec.ts` compares the two over a corpus of forms. One difference is on purpose: an option is
+// recommended only when the form preselects it with `selected` or `checked`, where omp also shows a select's first
+// option as chosen when none is.
 import { childElements, closest, contains, descendants, parseForm, textOf, type FormElement } from './ask-form-dom'
 
 /** A form field as `dialogQuestions` reads a question. `recommended` is the index of the option the form preselects. */
@@ -196,7 +198,7 @@ class FormReader {
 
   private list(list: FormElement): void {
     this.flush()
-    if (descendants(list).some(isControl)) {
+    if (list.holdsControl) {
       this.walkKids(list)
       this.flush()
       return
@@ -209,20 +211,20 @@ class FormReader {
     this.flush()
     const rows = descendants(table).filter(el => el.tag === 'tr' && closest(el, 'table') === table)
     const cellsOf = (row: FormElement) => childElements(row).filter(el => el.tag === 'td' || el.tag === 'th')
-    if (!descendants(table).some(isControl)) {
+    if (!table.holdsControl) {
       if (rows.some(row => cellsOf(row).length > 0)) this.section.blocks.push({ kind: 'other' })
       return
     }
     let header: string[] = []
     for (const row of rows) {
       const cells = cellsOf(row)
-      const rowHasControl = descendants(row).some(isControl)
+      const rowHasControl = row.holdsControl
       if (cells.every(cell => cell.tag === 'th') && !rowHasControl) {
         header = cells.map(textWithoutControls)
         continue
       }
       const rowText = cells
-        .filter(cell => !descendants(cell).some(isControl))
+        .filter(cell => !cell.holdsControl)
         .map(textWithoutControls)
         .filter(text => text !== '')
         .join(' · ')
@@ -252,13 +254,7 @@ class FormReader {
     if (control.tag === 'select') {
       const options = descendants(control)
         .filter(el => el.tag === 'option')
-        .map(el => ({
-          label: oneLine(textOf(el)),
-          checked: el.attrs.has('selected'),
-          disabled: el.attrs.has('disabled'),
-        }))
-      const first = options.find(o => !o.disabled)
-      if (!control.attrs.has('multiple') && !options.some(o => o.checked) && first) first.checked = true
+        .map(el => ({ label: oneLine(textOf(el)), checked: el.attrs.has('selected') }))
       this.addField({ name, kind: 'choice', select: true, label, options })
       return
     }
@@ -267,7 +263,8 @@ class FormReader {
       return
     }
     const type = (control.attrs.get('type') ?? 'text').toLowerCase()
-    if (IGNORED_INPUTS.has(type) || type === 'hidden') return
+    // omp finds an input type in a plain object, so a type named like an Object property is ignored too.
+    if (IGNORED_INPUTS.has(type) || type === 'hidden' || type in Object.prototype) return
     if (type === 'radio' || type === 'checkbox') {
       const value = control.attrs.get('value')
       const option = { label: label || (value ?? name), checked: control.attrs.has('checked') }
@@ -315,8 +312,16 @@ function nameLabel(name: string): string {
   return name.replace(/[_-]+/g, ' ')
 }
 
-/** The questions of an `ask` form, in form order, one per named field. */
+/** The questions of an `ask` form, in form order, one per named field. It gives none for a form it cannot read. */
 export function formQuestions(html: string): FormQuestion[] {
+  try {
+    return readQuestions(html)
+  } catch {
+    return []
+  }
+}
+
+function readQuestions(html: string): FormQuestion[] {
   const document = parseForm(html)
   const form = descendants(document).find(el => el.tag === 'form')
   const reader = new FormReader(form ?? document)

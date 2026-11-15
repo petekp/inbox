@@ -1,12 +1,17 @@
 import { decodeEntities } from './ask-form-entities'
 
-/** An element of a parsed form. `kids` holds child elements and the text between them; comments are dropped. */
+/**
+ * An element of a parsed form. `kids` holds child elements and the text between them. A comment is an element tagged
+ * `#comment` that holds its text, since omp counts that text in an option's label.
+ */
 export type FormElement = {
   tag: string
   attrs: Map<string, string>
   kids: (FormElement | string)[]
   parent: FormElement | null
   svg: boolean
+  /** Whether an `input`, `select` or `textarea` stands anywhere below this element. */
+  holdsControl: boolean
 }
 
 const VOID = new Set([
@@ -25,27 +30,33 @@ const VOID = new Set([
   'track',
   'wbr',
 ])
-const CLOSE_ON_OPEN: Record<string, string[]> = {
-  li: ['li'],
-  dt: ['dt', 'dd'],
-  dd: ['dt', 'dd'],
-  tr: ['tr'],
-  th: ['th', 'td'],
-  td: ['th', 'td'],
-  option: ['option'],
-  thead: ['thead', 'tbody', 'tfoot'],
-  tbody: ['thead', 'tbody', 'tfoot'],
-  tfoot: ['thead', 'tbody', 'tfoot'],
-}
+const CLOSE_ON_OPEN = new Map<string, string[]>(
+  Object.entries({
+    li: ['li'],
+    dt: ['dt', 'dd'],
+    dd: ['dt', 'dd'],
+    tr: ['tr'],
+    th: ['th', 'td'],
+    td: ['th', 'td'],
+    option: ['option'],
+    thead: ['thead', 'tbody', 'tfoot'],
+    tbody: ['thead', 'tbody', 'tfoot'],
+    tfoot: ['thead', 'tbody', 'tfoot'],
+  }),
+)
 const PARAGRAPH_CLOSERS = new Set(
   'address article aside blockquote div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hr menu nav ol p pre section table ul'.split(
     ' ',
   ),
 )
-const RAW_TEXT_CLOSE: Record<string, RegExp> = { script: /<\/script\s*>/gi, style: /<\/style\s*>/gi }
+const RAW_TEXT_CLOSE = new Map([
+  ['script', /<\/script\s*>/gi],
+  ['style', /<\/style\s*>/gi],
+])
+const CONTROL_TAGS = new Set(['input', 'select', 'textarea'])
 
 function newElement(tag: string, parent: FormElement | null, attrs = new Map<string, string>()): FormElement {
-  return { tag, attrs, kids: [], parent, svg: false }
+  return { tag, attrs, kids: [], parent, svg: false, holdsControl: false }
 }
 
 /** The text below an element, without its tags. */
@@ -116,7 +127,26 @@ function startTag(source: string): { tag: string; attrs: Map<string, string>; se
   return { tag: named[0].toLowerCase(), attrs, selfClosing }
 }
 
-/** Reads HTML into elements the way omp's `parseHTML` does, including which tags a new tag closes. */
+function isInTemplate(el: FormElement | null): boolean {
+  for (; el; el = el.parent) if (el.tag === 'template') return true
+
+  return false
+}
+
+function markHoldsControl(from: FormElement): void {
+  for (let el: FormElement | null = from; el && !el.holdsControl; el = el.parent) el.holdsControl = true
+}
+
+function addComment(parent: FormElement, text: string): void {
+  const comment = newElement('#comment', parent)
+  comment.kids.push(text)
+  parent.kids.push(comment)
+}
+
+/**
+ * Reads HTML into elements with omp's rules for which tags a new tag closes, its void and raw-text tags, and its
+ * entities. It does not read an `<rss>` or `<feed>` document as XML, as omp does.
+ */
 export function parseForm(html: string): FormElement {
   const root = newElement('#document', null)
   const open: FormElement[] = []
@@ -125,6 +155,7 @@ export function parseForm(html: string): FormElement {
   while (i < html.length) {
     if (html.startsWith('<!--', i)) {
       const end = html.indexOf('-->', i + 4)
+      addComment(top(), html.slice(i + 4, end < 0 ? html.length : end))
       i = end < 0 ? html.length : end + 3
     } else if (html[i] !== '<') {
       const next = html.indexOf('<', i)
@@ -162,13 +193,14 @@ export function parseForm(html: string): FormElement {
       }
       const current = open[open.length - 1]
       if (current?.tag === 'p' && PARAGRAPH_CLOSERS.has(parsed.tag)) open.pop()
-      else if (current && CLOSE_ON_OPEN[parsed.tag]?.includes(current.tag)) open.pop()
+      else if (current && CLOSE_ON_OPEN.get(parsed.tag)?.includes(current.tag)) open.pop()
       const parent = top()
       const element = newElement(parsed.tag, parent, parsed.attrs)
       element.svg = (parent !== root && parent.svg) || parsed.tag === 'svg'
       parent.kids.push(element)
+      if (CONTROL_TAGS.has(parsed.tag) && !isInTemplate(parent)) markHoldsControl(parent)
       i = end + 1
-      const rawClose = Object.hasOwn(RAW_TEXT_CLOSE, parsed.tag) ? RAW_TEXT_CLOSE[parsed.tag] : undefined
+      const rawClose = RAW_TEXT_CLOSE.get(parsed.tag)
       if (rawClose && !parsed.selfClosing) {
         rawClose.lastIndex = i
         const match = rawClose.exec(html)
@@ -183,9 +215,20 @@ export function parseForm(html: string): FormElement {
   return root
 }
 
-/** Each element below `from`, in document order. */
+/** Each element below `from`, in document order. Nothing inside a `<template>` counts, as in omp. */
 export function descendants(from: FormElement): FormElement[] {
-  return from.kids.flatMap(kid => (typeof kid === 'string' ? [] : [kid, ...descendants(kid)]))
+  const found: FormElement[] = []
+  const visit = (el: FormElement) => {
+    if (el.tag === 'template') return
+    for (const kid of el.kids) {
+      if (typeof kid === 'string') continue
+      found.push(kid)
+      visit(kid)
+    }
+  }
+  visit(from)
+
+  return found
 }
 
 export function childElements(of: FormElement): FormElement[] {

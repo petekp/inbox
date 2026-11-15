@@ -15,7 +15,8 @@ function ompQuestions(html: string) {
   return form.fields
     .filter(field => field.name !== '')
     .map(field => {
-      const recommended = field.kind === 'choice' ? field.options.findIndex(o => o.checked) : -1
+      const isImplicitSelect = field.kind === 'choice' && field.select && !/\bselected\b/.test(html)
+      const recommended = field.kind === 'choice' && !isImplicitSelect ? field.options.findIndex(o => o.checked) : -1
 
       return {
         question: questions.get(field) ?? '',
@@ -71,6 +72,18 @@ const FORMS: Record<string, string> = {
     '<p>Intro text</p><form><input name="a"></form><form><p>Second</p><input name="b"></form>',
   'no form at all': '<p>Which?</p><input name="a"><select name="b"><option>x</option></select>',
   entities: `<form><p>Keep it &mdash; or drop it?</p><input name="a"><p>Fish &amp; chips &hellip; &#233; &#x1F600; &bogus; &#0;</p><input name="b"></form>`,
+  'select with a selected option':
+    '<form><select name="s"><option>A</option><option selected>B</option></select></form>',
+  'select with its first option selected':
+    '<form><select name="s"><option selected>A</option><option>B</option></select></form>',
+  'comment inside an option':
+    '<form><select name="s"><option>Yes<!-- default --></option><option>No</option></select></form>',
+  'form inside a template': '<template><form><input name="a"></form></template><input name="b">',
+  'label inside a template': '<form><template><label for="x">T</label></template><input id="x" name="a"></form>',
+  'control inside a template': '<form><template><input name="a"></template><input name="b"></form>',
+  'template inside an option': '<form><select name="s"><option>Yes<template>T</template></option></select></form>',
+  'input type named like an object method':
+    '<form><input type="constructor" name="a"><input type="toString" name="b"></form>',
   'select with a disabled first option':
     '<form><select name="s"><option disabled>Pick</option><option>A</option><option>B</option></select></form>',
   'multiple select': '<form><select name="s" multiple><option>A</option><option>B</option></select></form>',
@@ -129,4 +142,27 @@ test('every named entity omp decodes reads the same', () => {
   expect(names.length).toBeGreaterThan(100)
   const html = `<form>${names.map(n => `<p>&${n};&${n.toUpperCase()};</p><input type="radio" name="${n}">`).join('')}</form>`
   expect(formQuestions(html)).toEqual(ompQuestions(html))
+})
+
+test('a select with no selected option recommends none, though omp shows its first option as chosen', () => {
+  const html = '<form><p>Which region?</p><select name="region"><option>US</option><option>EU</option></select></form>'
+  expect(formQuestions(html)).toEqual([{ question: 'Which region?', options: [{ label: 'US' }, { label: 'EU' }] }])
+})
+
+test('a tag named like an Object property reads like any other unknown tag', () => {
+  const html = '<form><p>Q</p><constructor><input name="a"></constructor><toString></toString></form>'
+  expect(formQuestions(html)).toEqual([{ question: 'a', options: [] }])
+})
+
+test('a form nested 5,000 divs deep gives its questions or none, and never throws', () => {
+  const html = `<form>${'<div>'.repeat(5000)}<input name="a"></form>`
+  expect(() => formQuestions(html)).not.toThrow()
+})
+
+test('a form of 20 KB of nested lists is read in under a second', () => {
+  const html = `<form>${'<ul><li>x'.repeat(2000)}<input name="a"></form>`
+  const started = performance.now()
+  const questions = formQuestions(html)
+  expect(performance.now() - started).toBeLessThan(1000)
+  expect(questions).toEqual(ompQuestions(html))
 })
