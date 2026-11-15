@@ -245,6 +245,31 @@ test('a turn the person ended by dismissing an ask dialog reaches the inbox mode
   )
 })
 
+test('a turn the person ended with Chat about this on omp 18.18.2 reaches the inbox model as a dismissed dialog', async () => {
+  createInbox(pi(), deps())
+  await prompt('Pick a license')
+  const input = { questions: [{ question: 'MIT or Apache?', options: [{ label: 'MIT' }, { label: 'Apache' }] }] }
+  const redirected = [
+    { type: 'text', text: 'User chose to chat about this instead of answering.\n\nQuestions asked:\nMIT or Apache?' },
+  ]
+  const details = { chatRedirect: true, questions: ['MIT or Apache?'] }
+  await call('tool_result', { toolName: 'ask', input, content: redirected, isError: false, details })
+  await call('agent_end', {
+    type: 'agent_end',
+    messages: [
+      { role: 'assistant', content: [{ type: 'toolCall' }], stopReason: 'toolUse' },
+      { role: 'toolResult', toolName: 'ask', content: redirected, isError: false, details },
+      { role: 'assistant', content: [], stopReason: 'aborted' },
+    ],
+  })
+  await settle()
+  expect(state().dialogQuestions.map((q: { question: string }) => q.question)).toEqual(['MIT or Apache?'])
+  expect(w.completions).toHaveLength(1)
+  expect(w.completions[0]!.prompt).toContain(
+    '"MIT or Apache?" (options: MIT / Apache); the user dismissed it without answering',
+  )
+})
+
 test("a turn the person ended by cancelling an HTML form ask reaches the inbox model with the form's question", async () => {
   createInbox(pi(), deps())
   await prompt('Pick a license')
