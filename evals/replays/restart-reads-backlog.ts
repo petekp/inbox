@@ -56,11 +56,7 @@ export const restartReadsBacklog: Replay = {
       turn: 1,
       overview: overview({ head: null, subjects: [], lastLookAt: null }),
       items: [
-        asked(
-          'i1',
-          runsAsk.text,
-          'Three draft PRs block the next release. Each waits on runs that need your yes.',
-        ),
+        asked('i1', runsAsk.text, 'Three draft PRs block the next release. Each waits on runs that need your yes.'),
       ],
     },
     facts: { ...NO_FACTS, asks: [runsAsk] },
