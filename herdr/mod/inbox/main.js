@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T07:03:57.241Z. 233504 characters follow.
+// Built at 2026-11-15T07:11:50.590Z. 234939 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4884,13 +4884,34 @@ var columnEl = (depth, top, height, t) => {
   const el = div().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
   return height === null ? el.bottom(0) : el.h(height);
 };
-function throughSpaceEls(b, t) {
+var pathColumn = (line) => line === null ? [] : [{ depth: 0, isDashed: line === "to-next" }];
+function runsIn(b) {
   const path = "path" in b ? b.path : undefined;
   const tree = "tree" in b ? b.tree ?? [] : [];
   const line = path === undefined ? null : path.is === "work" ? path.line : path.above;
-  const columns = tree.flatMap(({ depth, is }) => is === "past" || is === "mid" || is === "last" ? [columnEl(depth, 0, null, t)] : []);
-  return [...pathLineEl(line, 0, null, t), ...columns];
+  const columns = tree.filter((s) => s.is === "past" || s.is === "mid" || s.is === "last");
+  return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
 }
+function runsOn(b) {
+  const path = "path" in b ? b.path : undefined;
+  const tree = "tree" in b ? b.tree ?? [] : [];
+  const line = path === undefined ? null : path.is === "work" ? path.line : path.below;
+  const columns = tree.filter((s) => s.is === "down" || s.is === "past" || s.is === "mid");
+  return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
+}
+function passingOf(blocks, isShut) {
+  const isNeighbor = (b) => b.kind !== "gap" && !isShut(b);
+  return blocks.map((b, i) => {
+    const above = blocks.slice(0, i).findLast(isNeighbor);
+    const below = blocks.slice(i + 1).find(isNeighbor);
+    if (!above || !below)
+      return [];
+    const own = new Set(runsOn(b).map((c) => c.depth));
+    const into = new Set(runsIn(below).map((c) => c.depth));
+    return runsOn(above).filter((c) => !own.has(c.depth) && into.has(c.depth));
+  });
+}
+var wholeColumnEl = (c, t) => c.isDashed ? pathLineEl("to-next", 0, null, t)[0] : columnEl(c.depth, 0, null, t);
 function contentStrokeEls(b, t, fade) {
   const path = "path" in b ? b.path : undefined;
   const tree = "tree" in b ? b.tree ?? [] : [];
@@ -4912,12 +4933,18 @@ function contentStrokeEls(b, t, fade) {
   return [...path ? pathEls(path) : [], ...treeEls];
 }
 function spacedEls(blocks, p, el) {
-  return spacesOf(blocks, (b) => p.motion.get(b.id)?.box === "shut").map((s) => {
+  const isShut = (b) => p.motion.get(b.id)?.box === "shut";
+  const spaces = spacesOf(blocks, isShut);
+  const passing = passingOf(spaces.map((s) => s.block), isShut);
+  return spaces.map((s, i) => {
     const b = s.block;
+    const passes = passing[i] ?? [];
+    const comesIn = runsIn(b);
+    const intoSpace = [...comesIn, ...passes.filter((c) => !comesIn.some((o) => o.depth === c.depth))];
     const m = p.motion.get(b.id);
     const isOpen = m?.box === "open" && fitHeight(b, m, p) !== undefined;
     const fade = (e) => m?.box ? e.opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" }) : e;
-    return v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p, throughSpaceEls(b, p.t))).child(contentEl(b, m, p, fade(el(b)), contentStrokeEls(b, p.t, fade)));
+    return v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, fade(el(b)), [...contentStrokeEls(b, p.t, fade), ...passes.map((c) => wholeColumnEl(c, p.t))]));
   });
 }
 

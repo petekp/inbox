@@ -235,17 +235,54 @@ const columnEl = (depth: number, top: number, height: number | null, t: Theme): 
   return height === null ? el.bottom(0) : el.h(height)
 }
 
-/** The path's line and the tree columns that run in from above a block, drawn again across the block's space. */
-function throughSpaceEls(b: Block, t: Theme): Element[] {
+/** A column a stroke takes at `depth`, dashed where it is the path's line into the milestone that reads next. */
+type Column = { depth: number; isDashed: boolean }
+
+const pathColumn = (line: PathLine): Column[] => (line === null ? [] : [{ depth: 0, isDashed: line === 'to-next' }])
+
+/** The columns a block's strokes run in on from above it. */
+function runsIn(b: Block): Column[] {
   const path = 'path' in b ? b.path : undefined
   const tree = 'tree' in b ? (b.tree ?? []) : []
   const line = path === undefined ? null : path.is === 'work' ? path.line : path.above
-  const columns = tree.flatMap(({ depth, is }) =>
-    is === 'past' || is === 'mid' || is === 'last' ? [columnEl(depth, 0, null, t)] : [],
-  )
+  const columns = tree.filter(s => s.is === 'past' || s.is === 'mid' || s.is === 'last')
 
-  return [...pathLineEl(line, 0, null, t), ...columns]
+  return [...pathColumn(line), ...columns.map(s => ({ depth: s.depth, isDashed: false }))]
 }
+
+/** The columns a block's strokes run on to below it. */
+function runsOn(b: Block): Column[] {
+  const path = 'path' in b ? b.path : undefined
+  const tree = 'tree' in b ? (b.tree ?? []) : []
+  const line = path === undefined ? null : path.is === 'work' ? path.line : path.below
+  const columns = tree.filter(s => s.is === 'down' || s.is === 'past' || s.is === 'mid')
+
+  return [...pathColumn(line), ...columns.map(s => ({ depth: s.depth, isDashed: false }))]
+}
+
+/**
+ * The columns that run past each block where its own strokes do not run on below it: those the nearest block above
+ * runs on and the nearest block below runs in. A block between them that enters or leaves, as the Later label or a
+ * last row whose column ends at its arm, then keeps the column whole across its gliding box. A block whose box is
+ * shutting is no neighbor.
+ */
+function passingOf(blocks: Block[], isShut: (b: Block) => boolean): Column[][] {
+  const isNeighbor = (b: Block) => b.kind !== 'gap' && !isShut(b)
+
+  return blocks.map((b, i) => {
+    const above = blocks.slice(0, i).findLast(isNeighbor)
+    const below = blocks.slice(i + 1).find(isNeighbor)
+    if (!above || !below) return []
+    const own = new Set(runsOn(b).map(c => c.depth))
+    const into = new Set(runsIn(below).map(c => c.depth))
+
+    return runsOn(above).filter(c => !own.has(c.depth) && into.has(c.depth))
+  })
+}
+
+/** A column drawn across the whole of its box. */
+const wholeColumnEl = (c: Column, t: Theme): Element =>
+  c.isDashed ? pathLineEl('to-next', 0, null, t)[0]! : columnEl(c.depth, 0, null, t)
 
 /**
  * The path's line and the nesting connectors beside a block's content, each in the column under the marks of rows at
@@ -292,8 +329,18 @@ function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): E
  * whenever the list overflows.
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
-  return spacesOf(blocks, b => p.motion.get(b.id)?.box === 'shut').map(s => {
+  const isShut = (b: Block) => p.motion.get(b.id)?.box === 'shut'
+  const spaces = spacesOf(blocks, isShut)
+  const passing = passingOf(
+    spaces.map(s => s.block),
+    isShut,
+  )
+
+  return spaces.map((s, i) => {
     const b = s.block
+    const passes = passing[i] ?? []
+    const comesIn = runsIn(b)
+    const intoSpace = [...comesIn, ...passes.filter(c => !comesIn.some(o => o.depth === c.depth))]
     const m = p.motion.get(b.id)
     const isOpen = m?.box === 'open' && fitHeight(b, m, p) !== undefined
     const fade = (e: Element): Element =>
@@ -302,7 +349,15 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     return v_flex()
       .id(`box ${b.id}`)
       .flex_none()
-      .child(spaceEl(s, p, throughSpaceEls(b, p.t)))
-      .child(contentEl(b, m, p, fade(el(b)), contentStrokeEls(b, p.t, fade)))
+      .child(
+        spaceEl(
+          s,
+          p,
+          intoSpace.map(c => wholeColumnEl(c, p.t)),
+        ),
+      )
+      .child(
+        contentEl(b, m, p, fade(el(b)), [...contentStrokeEls(b, p.t, fade), ...passes.map(c => wholeColumnEl(c, p.t))]),
+      )
   })
 }

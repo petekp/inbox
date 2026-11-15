@@ -19,12 +19,15 @@ type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
 export type Jump = { at: number; id: string; by: number }
 export type TitleForm = { at: number; id: string; isCut: boolean; box: number; isBoxResting: boolean }
+export type ColumnGap = { at: number; id: string; x: number; y: number }
+type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
 
 const linesOf = (n: Painted): number =>
   n.style.isTruncated ? 1 : Math.max(1, Math.ceil((n.text ?? '').length / WRAP_AT))
 
 function layout(root: Painted, shown: (id: string) => number | undefined) {
   const boxes = new Map<string, Box>()
+  const placed = new Map<Painted, Box>()
   const sized: { node: Painted; height: number }[] = []
   const place = (n: Painted, top: number, line: number): number => {
     const lh = n.style.line ?? line
@@ -45,13 +48,52 @@ function layout(root: Painted, shown: (id: string) => number | undefined) {
     const sprung = n.id !== null && n.springs.has('height') ? shown(n.id) : undefined
     const height = sprung ?? n.style.h ?? pt + content + (n.style.pb ?? 0)
     sized.push({ node: n, height })
+    placed.set(n, { top, height })
     if (n.id !== null) boxes.set(n.id, { top, height })
 
     return height
   }
   place(root, 0, 0)
 
-  return { boxes, sized }
+  return { boxes, sized, placed }
+}
+
+function segmentsOf(root: Painted, placed: Map<Painted, Box>): Segment[] {
+  const out: Segment[] = []
+  const walk = (n: Painted, clip: [number, number], id: string) => {
+    const box = placed.get(n)
+    if (!box) return
+    const own: [number, number] = n.style.isClipped
+      ? [Math.max(clip[0], box.top), Math.min(clip[1], box.top + box.height)]
+      : clip
+    for (const k of n.kids) {
+      if (!k.style.isAbsolute) {
+        walk(k, own, k.id ?? id)
+        continue
+      }
+      if (k.style.w !== 1) continue
+      const y0 = box.top + (k.style.top ?? 0)
+      const runsOn = k.style.h === undefined
+      const y1 = runsOn ? box.top + box.height - (k.style.bottom ?? 0) : y0 + (k.style.h ?? 0)
+      const shown = { y0: Math.max(y0, own[0]), y1: Math.min(y1, own[1]) }
+      if (shown.y1 < shown.y0) continue
+      out.push({ id, x: k.style.left ?? 0, ...shown, runsIn: (k.style.top ?? 0) === 0, runsOn })
+    }
+  }
+  walk(root, [-Infinity, Infinity], '')
+
+  return out
+}
+
+function gapsOf(segments: Segment[], end: number): { id: string; x: number; y: number }[] {
+  const isMet = (s: Segment, y: number) =>
+    segments.some(o => o !== s && o.x === s.x && o.y0 <= y + 0.5 && o.y1 >= y - 0.5)
+  const ends = segments.flatMap(s => [
+    ...(s.runsIn && s.y0 > 0.5 ? [{ s, y: s.y0 }] : []),
+    ...(s.runsOn && s.y1 < end - 0.5 ? [{ s, y: s.y1 }] : []),
+  ])
+
+  return ends.filter(({ s, y }) => !isMet(s, y)).map(({ s, y }) => ({ id: s.id, x: s.x, y }))
 }
 
 class Springs {
@@ -103,6 +145,7 @@ export class Frames {
   private last: Map<string, Box> | null = null
   jumps: Jump[] = []
   titles: TitleForm[] = []
+  gaps: ColumnGap[] = []
 
   draw(blocks: Block[], now: number) {
     const isFirst = this.last === null
@@ -135,7 +178,9 @@ export class Frames {
     const was = this.springs.shown()
     this.springs.declare(tree)
     const shown = this.springs.shown()
-    const { boxes, sized } = layout(tree, id => shown.get(id))
+    const { boxes, sized, placed } = layout(tree, id => shown.get(id))
+    const end = placed.get(tree)?.height ?? 0
+    for (const gap of gapsOf(segmentsOf(tree, placed), end)) this.gaps.push({ at: now, ...gap })
     if (this.last) {
       const stillAt = (id: string) => (was.has(id) && shown.has(id) ? this.lastShown.get(id) : shown.get(id))
       for (const [id, box] of layout(tree, stillAt).boxes) {
@@ -161,10 +206,13 @@ export class Frames {
   }
 }
 
-export function framesOf(steps: [number, Block[]][], ms = 1500): { jumps: Jump[]; titles: TitleForm[] } {
+export function framesOf(
+  steps: [number, Block[]][],
+  ms = 1500,
+): { jumps: Jump[]; titles: TitleForm[]; gaps: ColumnGap[] } {
   const frames = new Frames()
   const [first] = steps
-  if (!first) return { jumps: [], titles: [] }
+  if (!first) return { jumps: [], titles: [], gaps: [] }
   const start = 1_000_000
   for (let at = -500; at < ms; at += FRAME_MS) {
     const step = steps.findLast(([from]) => at >= from) ?? first
@@ -174,6 +222,7 @@ export function framesOf(steps: [number, Block[]][], ms = 1500): { jumps: Jump[]
   return {
     jumps: frames.jumps.map(j => ({ ...j, at: j.at - start })),
     titles: frames.titles.map(t => ({ ...t, at: t.at - start })),
+    gaps: frames.gaps.map(g => ({ ...g, at: g.at - start })),
   }
 }
 
