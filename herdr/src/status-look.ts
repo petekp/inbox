@@ -110,6 +110,7 @@ type Run = {
   terminal: string
   startedAt: number
   lastShownAt: number
+  drawnWrittenAt: number
   shown: Record<string, number>
 }
 
@@ -125,8 +126,8 @@ export class StatusLook {
   private run: Run | null = null
 
   drew(drawn: StatusDrawn | null, now: number): void {
-    const isSame = JSON.stringify(drawn) === JSON.stringify(this.drawn)
-    if (!isSame) this.restsFrom = now
+    const isSamePlaces = JSON.stringify(drawn?.placed ?? null) === JSON.stringify(this.drawn?.placed ?? null)
+    if (!isSamePlaces) this.restsFrom = now
     this.drawn = drawn
   }
 
@@ -137,9 +138,17 @@ export class StatusLook {
     const goesOn = d !== null && run?.sessionId === d.sessionId && now - run.lastShownAt <= LOOK_GAP_MS
     const ended = run && !goesOn ? lookOf(run) : null
     if (!goesOn)
-      this.run = d && { sessionId: d.sessionId, terminal: d.terminal, startedAt: now, lastShownAt: now, shown: {} }
+      this.run = d && {
+        sessionId: d.sessionId,
+        terminal: d.terminal,
+        startedAt: now,
+        lastShownAt: now,
+        drawnWrittenAt: d.writtenAt,
+        shown: {},
+      }
     if (this.run && d) {
       this.run.lastShownAt = now
+      this.run.drawnWrittenAt = d.writtenAt
       const isAtRest = d.placed !== null && now - this.restsFrom >= HEIGHT_SETTLE_MS
       const shownAt = Math.min(now, d.writtenAt)
       for (const id of isAtRest && d.placed ? surelyShown(d.placed) : []) this.run.shown[id] = shownAt
@@ -149,10 +158,10 @@ export class StatusLook {
   }
 }
 
-function lookOf({ sessionId, terminal, startedAt, lastShownAt, shown }: Run): EndedLook | null {
+function lookOf({ sessionId, terminal, startedAt, lastShownAt, drawnWrittenAt, shown }: Run): EndedLook | null {
   if (lastShownAt - startedAt < LOOK_MIN_MS) return null
 
-  return { sessionId, terminal, look: { startedAt, endedAt: lastShownAt, shown } }
+  return { sessionId, terminal, look: { startedAt, endedAt: lastShownAt, shown, drawnWrittenAt } }
 }
 
 /** Writes an ended look to its session's press folder, then wakes the host on the session's terminal. */

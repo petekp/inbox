@@ -108,6 +108,7 @@ const isTime = (x: unknown): x is number => typeof x === 'number' && Number.isFi
 function lookProblem(look: unknown): string | null {
   if (!isRecord(look) || !isTime(look.startedAt) || !isTime(look.endedAt)) return 'look without its times'
   if (look.endedAt < look.startedAt) return 'look ends before it starts'
+  if (!isTime(look.drawnWrittenAt)) return 'look without when its Status was written'
 
   return isTimes(look.shown) ? null : 'look without shown rows'
 }

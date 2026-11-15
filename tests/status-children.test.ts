@@ -403,7 +403,12 @@ const seenIds = (o: SessionStatus) => o.subjects.filter(x => isSubjectSeen(o, x)
 
 test('a reported look counts as seen the subjects it showed after they changed, and keeps the look this host has open', () => {
   const open = lookStarted(TWO(), 15 * MIN)!
-  const reported = lookReported(open, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 20 * MIN, s2: 5 * MIN } })!
+  const reported = lookReported(open, {
+    startedAt: 20 * MIN,
+    endedAt: 21 * MIN,
+    shown: { s1: 20 * MIN, s2: 5 * MIN },
+    drawnWrittenAt: 21 * MIN,
+  })!
 
   expect(seenIds(reported)).toEqual(['s1'])
   expect(reported.lastLookAt).toBe(21 * MIN)
@@ -411,7 +416,12 @@ test('a reported look counts as seen the subjects it showed after they changed, 
 })
 
 test('a reported look shorter than five seconds counts nothing', () => {
-  const short = { startedAt: 20 * MIN, endedAt: 20 * MIN + LOOK_MIN_MS - 1, shown: { s1: 20 * MIN } }
+  const short = {
+    startedAt: 20 * MIN,
+    endedAt: 20 * MIN + LOOK_MIN_MS - 1,
+    shown: { s1: 20 * MIN },
+    drawnWrittenAt: 21 * MIN,
+  }
 
   expect(seenIds(lookReported(TWO(), short)!)).toEqual([])
   expect(lookReported(TWO(), { ...short, endedAt: 20 * MIN + LOOK_MIN_MS })!.lastLookAt).toBe(20 * MIN + LOOK_MIN_MS)
@@ -419,10 +429,36 @@ test('a reported look shorter than five seconds counts nothing', () => {
 
 test('a reported look that ended before the last look counts the subjects it showed, and leaves the last look when it was', () => {
   const missed = lookEnded(lookStarted(TWO(), 30 * MIN), 31 * MIN, {})!
-  const late = lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 20 * MIN } })!
+  const late = lookReported(missed, {
+    startedAt: 20 * MIN,
+    endedAt: 21 * MIN,
+    shown: { s1: 20 * MIN },
+    drawnWrittenAt: 21 * MIN,
+  })!
 
   expect(seenIds(missed)).toEqual([])
   expect(seenIds(late)).toEqual(['s1'])
   expect(late.lastLookAt).toBe(31 * MIN)
-  expect(lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 5 * MIN } })).toBe(missed)
+  expect(
+    lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 5 * MIN }, drawnWrittenAt: 21 * MIN }),
+  ).toBe(missed)
+})
+
+test('a reported look counts the Status only as it stood when the host wrote the last Status the look drew', () => {
+  const drewOld = { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 18 * MIN }, drawnWrittenAt: 18 * MIN }
+  const reported = lookReported(TWO(), drewOld)!
+
+  expect(seenIds(reported)).toEqual(['s1'])
+  expect(reported.lastLookAt).toBe(18 * MIN)
+
+  const missed = lookEnded(lookStarted(TWO(), 30 * MIN), 31 * MIN, {})!
+  const late = lookReported(missed, {
+    ...drewOld,
+    endedAt: 32 * MIN,
+    shown: { s1: 30 * MIN },
+    drawnWrittenAt: 30 * MIN,
+  })!
+
+  expect(late.lastLookAt).toBe(31 * MIN)
+  expect(late.missedInLastLook.s1).toBe(30 * MIN)
 })

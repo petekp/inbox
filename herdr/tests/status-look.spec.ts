@@ -1,11 +1,12 @@
 import './gpui-stand-in'
-import { expect, test } from 'bun:test'
+import { expect, setSystemTime, test } from 'bun:test'
 import { pressFolder } from '../../hooks/herdr'
 import { pressFile } from '../../hooks/herdr-press-file'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import { LOOK_MIN_MS } from '../../hooks/status-children'
 import { seenSubjectIds, statusListRows } from '../../hooks/status-page'
 import type { StatusDrawn } from '../src/status-look'
+import { allOf, openPanel, writtenFiles } from './gpui-stand-in'
 
 const { isPaneShown, statusPlaced, surelyShown, StatusLook, writeLook } = await import('../src/status-look')
 const { tabBlocks } = await import('../src/draw')
@@ -32,15 +33,9 @@ test('every subject row on the Status counts as on screen when the whole list fi
 })
 
 test('in a list that scrolls, only rows whose first line is in view at both ends of the scroll count', () => {
-  const { placed } = demoPlaced(0)
-  expect(surelyShown({ ...placed, room: 30 })).toEqual([])
-  const room = placed.height - BLOCK_HEIGHT
-  const shown = new Set(surelyShown({ ...placed, room }))
-  const atTop = placed.rows.filter(r => r.top < BLOCK_HEIGHT).flatMap(r => r.subjects)
-  const inMiddle = placed.rows.filter(r => r.top >= BLOCK_HEIGHT && r.top + 20 <= room).flatMap(r => r.subjects)
-  expect(inMiddle.length).toBeGreaterThan(0)
-  expect(inMiddle.every(id => shown.has(id))).toBe(true)
-  expect(atTop.some(id => shown.has(id))).toBe(false)
+  const rows = [0, 100, 160, 200, 230, 240].map((top, i) => ({ top, subjects: [`s${i}`] }))
+  expect(surelyShown({ rows, height: 400, room: 250 })).toEqual(['s2', 's3', 's4'])
+  expect(surelyShown({ rows, height: 600, room: 250 })).toEqual([])
 })
 
 test('the Status rows have no places until every drawn block has a measured height', () => {
@@ -96,16 +91,29 @@ test('a look at the Status ends at the last check that found it shown, with each
   expect(ended).toEqual({
     sessionId: 's1',
     terminal: 't-s1',
-    look: { startedAt: NOW, endedAt: NOW + 6_000, shown: { a: NOW + 6_000 } },
+    look: { startedAt: NOW, endedAt: NOW + 6_000, shown: { a: NOW + 6_000 }, drawnWrittenAt: NOW + 100_000 },
   })
   expect(look.check(false, NOW + 8_000)).toBeNull()
 })
 
-test('a row counts as shown no later than when the host wrote the file the look drew', () => {
+test('a look reports when the host wrote the last file it drew, and no row counts as shown after that write', () => {
   const look = new StatusLook()
   look.drew(drawnOf('s1', fitting, NOW - 4_000), NOW)
-  checksEverySecond(look, NOW, NOW + 6_000)
-  expect(look.check(false, NOW + 7_000)?.look.shown).toEqual({ a: NOW - 4_000 })
+  checksEverySecond(look, NOW, NOW + 3_000)
+  look.drew(drawnOf('s1', fitting, NOW + 3_500), NOW + 3_500)
+  checksEverySecond(look, NOW + 4_000, NOW + 6_000)
+  expect(look.check(false, NOW + 7_000)?.look).toMatchObject({ shown: { a: NOW + 3_500 }, drawnWrittenAt: NOW + 3_500 })
+})
+
+test('a new file that leaves every row in its place does not restart the wait for the rows to rest', () => {
+  const look = new StatusLook()
+  look.drew(drawnOf('s1', fitting, NOW), NOW)
+  const lastCheck = NOW + HEIGHT_SETTLE_MS + 5_000
+  for (let at = NOW + HEIGHT_SETTLE_MS; at <= lastCheck; at += 1_000) {
+    look.drew(drawnOf('s1', fitting, at - 100), at - 100)
+    look.check(true, at)
+  }
+  expect(look.check(false, NOW + 20_000)?.look.shown).toEqual({ a: lastCheck - 100 })
 })
 
 test('a look shorter than a look’s least time is not reported', () => {
@@ -157,6 +165,7 @@ test('a check long after the last one ends the look at the last one and starts a
     startedAt: NOW + 60_000,
     endedAt: NOW + 66_000,
     shown: { a: NOW + 66_000 },
+    drawnWrittenAt: NOW + 100_000,
   })
 })
 
@@ -178,7 +187,7 @@ test('an ended look goes to its session’s press folder as a look file the host
     write: async (path: string, text: string) => (written.push({ path, text }), null),
     wake: async (terminal: string) => void woken.push(terminal),
   }
-  const look = { startedAt: NOW, endedAt: NOW + 6_000, shown: { a: NOW + 6_000 } }
+  const look = { startedAt: NOW, endedAt: NOW + 6_000, shown: { a: NOW + 6_000 }, drawnWrittenAt: NOW }
   await writeLook(io, '/app', { sessionId: 's1', terminal: 't1', look })
   expect(written).toHaveLength(1)
   expect(written[0]!.path.startsWith(`${pressFolder('/app', 's1')}/`)).toBe(true)
@@ -188,4 +197,45 @@ test('an ended look goes to its session’s press folder as a look file the host
   const failing = { ...io, write: async () => 'disk full' }
   await writeLook(failing, '/app', { sessionId: 's1', terminal: 't1', look })
   expect(woken).toEqual(['t1'])
+})
+
+test('the Inbox view reports the Status rows it measured and drew when the person leaves the Status tab or closes the pane', async () => {
+  let at = NOW + 1_000
+  setSystemTime(at)
+  const { panel, paint, click, settle, measure } = await openPanel()
+  const tab = (label: string) => allOf(paint()).find(n => n.label?.startsWith(label))!
+  const looks = () =>
+    writtenFiles.flatMap(({ path, text }) => {
+      const read = path.startsWith(`${pressFolder('/app', 's1')}/`) ? pressFile(text) : null
+      return read?.ok && 'look' in read.file ? [read.file.look] : []
+    })
+  const shownFor = async (ms: number) => {
+    for (const end = at + ms; at < end;) {
+      at += 1_000
+      setSystemTime(at)
+      measure(n => ({ width: 600, height: n.id === 'inbox-list' ? 100_000 : BLOCK_HEIGHT }))
+      paint()
+      await panel.checkLook()
+    }
+  }
+  writtenFiles.length = 0
+  click(tab('Status'))
+  await shownFor(8_000)
+  click(tab('Asks'))
+  paint()
+  await panel.checkLook()
+  await settle()
+
+  const { subjects } = demoPlaced(100_000)
+  const [first] = looks()
+  expect(looks()).toHaveLength(1)
+  expect(Object.keys(first!.shown).sort()).toEqual([...subjects].sort())
+  expect(Object.values(first!.shown).every(shownAt => shownAt === NOW)).toBe(true)
+  expect(first!.drawnWrittenAt).toBe(NOW)
+
+  click(tab('Status'))
+  await shownFor(8_000)
+  await panel.close()
+  expect(looks()).toHaveLength(2)
+  setSystemTime()
 })

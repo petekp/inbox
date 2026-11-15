@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T22:01:28.669Z. 239358 characters follow.
+// Built at 2026-11-15T22:27:09.083Z. 239562 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -5598,8 +5598,8 @@ class StatusLook {
   restsFrom = 0;
   run = null;
   drew(drawn, now) {
-    const isSame = JSON.stringify(drawn) === JSON.stringify(this.drawn);
-    if (!isSame)
+    const isSamePlaces = JSON.stringify(drawn?.placed ?? null) === JSON.stringify(this.drawn?.placed ?? null);
+    if (!isSamePlaces)
       this.restsFrom = now;
     this.drawn = drawn;
   }
@@ -5609,9 +5609,17 @@ class StatusLook {
     const goesOn = d !== null && run?.sessionId === d.sessionId && now - run.lastShownAt <= LOOK_GAP_MS;
     const ended = run && !goesOn ? lookOf(run) : null;
     if (!goesOn)
-      this.run = d && { sessionId: d.sessionId, terminal: d.terminal, startedAt: now, lastShownAt: now, shown: {} };
+      this.run = d && {
+        sessionId: d.sessionId,
+        terminal: d.terminal,
+        startedAt: now,
+        lastShownAt: now,
+        drawnWrittenAt: d.writtenAt,
+        shown: {}
+      };
     if (this.run && d) {
       this.run.lastShownAt = now;
+      this.run.drawnWrittenAt = d.writtenAt;
       const isAtRest = d.placed !== null && now - this.restsFrom >= HEIGHT_SETTLE_MS;
       const shownAt = Math.min(now, d.writtenAt);
       for (const id of isAtRest && d.placed ? surelyShown(d.placed) : [])
@@ -5620,10 +5628,10 @@ class StatusLook {
     return ended;
   }
 }
-function lookOf({ sessionId, terminal, startedAt, lastShownAt, shown }) {
+function lookOf({ sessionId, terminal, startedAt, lastShownAt, drawnWrittenAt, shown }) {
   if (lastShownAt - startedAt < LOOK_MIN_MS)
     return null;
-  return { sessionId, terminal, look: { startedAt, endedAt: lastShownAt, shown } };
+  return { sessionId, terminal, look: { startedAt, endedAt: lastShownAt, shown, drawnWrittenAt } };
 }
 async function writeLook(io, appHome, ended) {
   const id = newPressId(ended.look.endedAt, io.random());
