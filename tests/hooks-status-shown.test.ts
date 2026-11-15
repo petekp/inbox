@@ -9,7 +9,6 @@ import { PANE } from './hooks-helpers'
 const desktopLook = async ($: Engine, on: On, bodyRows: number) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   let seen: unknown = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
@@ -41,7 +40,7 @@ const desktopLook = async ($: Engine, on: On, bodyRows: number) => {
 }
 
 test(
-  'on a next build, a look at the desktop Status counts as seen only the first subjects, whose rows were surely in the pane’s window',
+  'a look at the desktop Status counts as seen only the first subjects, whose rows were surely in the pane’s window',
   { timeoutMs: 20_000 },
   async ($, on) => {
     const look = await desktopLook($, on, 12)
@@ -51,16 +50,15 @@ test(
   },
 )
 
-test('on a next build, a look at a desktop Status that fits the pane’s window counts every subject as seen', async ($, on) => {
+test('a look at a desktop Status that fits the pane’s window counts every subject as seen', async ($, on) => {
   const look = await desktopLook($, on, 400)
 
   expect(look.seen).toEqual(look.ids)
 })
 
-test('on a next build, a look at the terminal Status that showed a named fold counts as seen the work it stands for', async ($, on) => {
+test('a look at the terminal Status that showed a named fold counts as seen the work it stands for', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   let seen: unknown = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
@@ -87,10 +85,9 @@ test('on a next build, a look at the terminal Status that showed a named fold co
   expect(o.subjects.filter(x => !isSubjectSeen(o, x)).map(x => x.name)).toEqual([])
 })
 
-test('on a next build, a look at the terminal Status counts as seen only the subjects whose first line was in the pane’s window, at any of its scrolls', async ($, on) => {
+test('a look at the terminal Status counts as seen only the subjects whose first line was in the pane’s window, at any of its scrolls', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   let seen: unknown = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {

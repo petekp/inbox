@@ -1,4 +1,4 @@
-import { isRowTab, drawnTabOf } from '../../hooks/tabs'
+import { isRowTab } from '../../hooks/tabs'
 import { isGuarded, PRESS_GUARD_MS } from '../../hooks/timing'
 import { firstWaiting, listWaits } from '../../hooks/action-plan'
 import type { RowWait } from '../../hooks/action-plan'
@@ -21,11 +21,9 @@ export function switchTab(to: ShownTab) {
   tabState.isHelpShown = false
 }
 
-/** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Status page, as from an older server. */
+/** The tab drawn: the shown tab, or Asks in place of a Status while the view has no Status page, as from an older server. */
 export function drawnTab(): ShownTab {
-  const drawn = drawnTabOf(tabState.tab, tabState.view?.isNextBuild === true)
-
-  return drawn === 'overview' && !tabState.view?.statusPage ? 'needsYou' : drawn
+  return tabState.tab === 'overview' && !tabState.view?.statusPage ? 'needsYou' : tabState.tab
 }
 
 export function follow(v: View, added: Record<Tab, string[]>) {

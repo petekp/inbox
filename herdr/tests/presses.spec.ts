@@ -267,7 +267,6 @@ test('a settled answer keeps its spent Undo’s place until its message has wait
     const queue = { outs: [], notes: {}, lines: {} }
     return screenOf({ is: 'session', terminal: 't1', sessionId: 's1' }, read, uiOn('needsYou'), {
       now,
-      isNextBuild: true,
       holds,
       queue,
     })

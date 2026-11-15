@@ -5,10 +5,9 @@ import { statusPage } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('on a next build, a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, j and k wrap past its last and first rows, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
+test('a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, j and k wrap past its last and first rows, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply =
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
@@ -78,10 +77,9 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
 })
 
-test('on a next build, a look at the Status that ends while a Status call is out keeps its time, and the answer that lands after it stays unseen', async ($, on) => {
+test('a look at the Status that ends while a Status call is out keeps its time, and the answer that lands after it stays unseen', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   let session: Parameters<typeof statusPage>[0] | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
@@ -123,7 +121,7 @@ test('on a next build, a look at the Status that ends while a Status call is out
   ])
 })
 
-test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {
+test('a release build, with no next-build mark, keys Status, Asks, Finds and PRs 1 to 4, draws a Status page a next build saved, tells Claude so, starts a look, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
@@ -143,32 +141,64 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   await clock.settle()
-  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
-  expect(await pane.find({ key: 'status-head' })).toBeUndefined()
-  expect(await pane.find({ text: /Holds up/ })).toBeUndefined()
+  expect(w.files).toEqual([])
+  expect(await pane.find({ text: 'v1.2.3' })).toBeDefined()
+  expect((await pane.find({ key: 'status-head' }))?.text).toBe(
+    'Adding a greeting CLIBuilding a CLI that greets by name',
+  )
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeUndefined()
   const tabKeys = (await pane.findAll({ type: 'Button' }))
     .filter(b => (b.key ?? '').startsWith('tab-key-'))
     .map(b => [b.key, b.props.hotkey])
   expect(tabKeys).toEqual([
-    ['tab-key-needsYou', '1'],
-    ['tab-key-findings', '2'],
-    ['tab-key-prs', '3'],
+    ['tab-key-overview', '1'],
+    ['tab-key-needsYou', '2'],
+    ['tab-key-findings', '3'],
+    ['tab-key-prs', '4'],
   ])
-  const saved = [...w.stored].find(([k]) => k.startsWith('s:'))
-  expect(saved && JSON.parse(saved[1]).ledger.overview.look).toBeNull()
-  expect(saved && JSON.parse(saved[1]).ledger.overview.askSubjects).toEqual({ i1: ['s1'] })
   expect(page.value).toBe('overview')
-  expect(prompts.at(-1)).toContain('is open beside the conversation, on its Asks tab, listing every open item.')
+  expect(prompts.at(-1)).toContain('on its Status tab, which shows a guide to the session')
 
-  await pane.press({ key: 'tab-key-findings' })
+  await pane.press({ key: 'tab-key-needsYou' })
   await clock.settle()
   expect(page.value).toBeNull()
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+  expect(await pane.find({ text: /Holds up Runtime/ })).toBeDefined()
+
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  expect(page.value).toBe('overview')
+  const saved = [...w.stored].find(([k]) => k.startsWith('s:'))
+  expect(saved && JSON.parse(saved[1]).ledger.overview.look).not.toBeNull()
+})
+
+test('a release build draws the row tab it saved, with the Status one key away', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  on('state.get', { plugin: 'inbox', key: 'tab' } as const, () => ({
+    value: { value: 'findings', version: 1 } as never,
+  }))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'finding',
+    finding_kind: 'issue',
+    title: 'No lint script',
+    detail: 'Only tests run.',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ key: 'address-f1' })).toBeDefined()
+  expect(await pane.find({ key: 'status-head' })).toBeUndefined()
+  await pane.press({ key: 'tab-key-overview' })
+  expect(await pane.find({ text: /once the work starts\./ })).toBeDefined()
 })
 
 test('the Status page says what it is for before the session has any work', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const terminal = await $.ui.mount(PANE)
@@ -178,10 +208,9 @@ test('the Status page says what it is for before the session has any work', asyn
   expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
 })
 
-test('on a next build, seen finished work folds into "N done" with no mark, a press unfolds it to list the finished rows one step in and a second folds it, and j selects the fold so f unfolds it, and desktop’s fold line takes its click', async ($, on) => {
+test('seen finished work folds into "N done" with no mark, a press unfolds it to list the finished rows one step in and a second folds it, and j selects the fold so f unfolds it, and desktop’s fold line takes its click', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply =
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node chosen\nNEW: working | Plan | being written\nDONE: s2 | written'

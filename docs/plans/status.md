@@ -1,10 +1,10 @@
 # The Status tab
 
-Status: built. The Status call runs after every reply in every build. In every build, its result reaches the carry text the agent reads and the focus line the inbox publishes to Herdr. Only next builds draw the Status tab. "Not built yet" lists the decided changes still to build. The evals that judge the tab are in "How the Status is judged".
+Status: built. The Status call runs after every reply in every build. In every build, its result reaches the carry text the agent reads and the focus line the inbox publishes to Herdr. Every build draws the Status tab. "Not built yet" lists the decided changes still to build. The evals that judge the tab are in "How the Status is judged".
 
 ## Summary
 
-The Status is the inbox's first tab on a next build. It is about the session's work. Asks and Finds are about what the person has to do. As of the agent's last reply, it answers four questions:
+The Status is the inbox's first tab. It is about the session's work. Asks and Finds are about what the person has to do. As of the agent's last reply, it answers four questions:
 
 - **What is this session's work?**
 - **Where does each piece of it stand?**
