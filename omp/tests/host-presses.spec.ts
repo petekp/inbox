@@ -33,7 +33,7 @@ async function withQuestion() {
 }
 
 async function until(isReady: () => boolean) {
-  for (let waited = 0; !isReady() && waited < 10_000; waited += 10) await Bun.sleep(10)
+  for (let waited = 0; !isReady() && waited < 4000; waited += 10) await Bun.sleep(10)
   expect(isReady()).toBe(true)
 }
 

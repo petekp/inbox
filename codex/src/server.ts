@@ -86,7 +86,7 @@ export type PressReply = {
   delivery?: 'unconfirmed'
 }
 
-/** Answers one message. `settled` resolves once the writes it started and did not wait for have landed. */
+/** Answers one message. `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. */
 export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) & { settled(): Promise<void> }
 
 export function makeServer(given: ServerDeps): Server {

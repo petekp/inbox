@@ -34,8 +34,7 @@ if (process.env.INBOX_STATUS_WORKER_DIR) {
 
 test('a killed update worker leaves pending exchanges recoverable', async t => {
   const dir = tempDir()
-  const servers: Server[] = []
-  t.after(() => removeTempDir(dir, ...servers))
+  t.after(() => removeTempDir(dir))
   await updateState(dir, 's1', s => ({
     ...s,
     pending: [{ ex: ex(1, 'Should I deploy?'), turnsStarted: 1 }],

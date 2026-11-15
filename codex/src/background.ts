@@ -1,6 +1,6 @@
-/** The writes a server starts and does not wait for, so a caller can wait until they have all landed. */
+/** The work a server starts and does not wait for, so a caller can wait until it has all ended. */
 export type Background = {
-  /** Records `work`, which never rejects, as running until it ends. */
+  /** Records `work` as running until it settles. A rejection is dropped. */
   track(work: Promise<unknown>): void
   /** Resolves once no tracked work runs, including work that started while it waited. */
   settled(): Promise<void>

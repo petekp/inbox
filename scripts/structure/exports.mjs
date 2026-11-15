@@ -56,7 +56,9 @@ function dynamicImportNames(call) {
   const pattern = declaration && ts.isVariableDeclaration(declaration) ? declaration.name : null
   if (!pattern || !ts.isObjectBindingPattern(pattern) || pattern.elements.some(e => e.dotDotDotToken)) return ['*']
 
-  return pattern.elements.map(e => nameOf(e.propertyName ?? e.name))
+  const names = pattern.elements.map(e => nameOf(e.propertyName ?? e.name))
+
+  return names.includes(null) ? ['*'] : names
 }
 
 /** The names a file exports itself, and each module it takes names from: `'*'` for every name. */

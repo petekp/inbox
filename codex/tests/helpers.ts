@@ -15,7 +15,6 @@ export function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'inbox-codex-'))
 }
 
-/** Removes a temporary folder once the writes each of `servers` started have landed, so none lands in a folder being removed. */
 export async function removeTempDir(dir: string, ...servers: Server[]): Promise<void> {
   await Promise.all(servers.map(server => server.settled()))
   await rm(dir, { recursive: true, force: true })
