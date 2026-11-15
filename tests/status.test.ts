@@ -156,7 +156,9 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
   const answered = page(o, MIN, { isTurnRunning: true }, []).rows[0]
 
   expect(o.askSubjects).toEqual({ i1: ['s1'] })
-  expect(asksText(o, [askItem('i1'), askItem('i3')])).toBe('i1 | Ask i1? | s1\ni3 | Ask i3? | -')
+  expect(asksText(o, [askItem('i1'), { ...askItem('i3'), context: 'PRs 4 | 5 block the 2.5 release' }])).toBe(
+    'i1 | Ask i1? | s1\ni3 | Ask i3? | - | PRs 4 / 5 block the 2.5 release',
+  )
   expect(held).toMatchObject({ mark: '◆', tone: 'needsYou', isRunning: false })
   expect(answered).toMatchObject({ mark: '●', tone: null, isRunning: true })
   expect(page(after(o, 'DONE: s1 | works offline', MIN), MIN, {}, [askItem('i1')]).rows[0]).toMatchObject({

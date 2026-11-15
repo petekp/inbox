@@ -161,6 +161,30 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: Export settings | 3.2 live',
     ].join('\n'),
   ],
+  'restart-reads-backlog': [
+    [
+      'HEAD: Next release | Readying the next release from three draft PRs',
+      'NEW: waits-on-other | Eval fixes | PR drafted, evals not run',
+      'NEW: waits-on-other | Status replays | PR drafted, full run pending',
+      'NEW: waits-on-other | Release checklist | PR drafted, needs a full check',
+      'LINK: i1 | Eval fixes',
+      'LINK: i1 | Status replays',
+      'LINK: i1 | Release checklist',
+      'GOAL: Next release ready | working PRs merged; queued Release checks passed',
+      'SERVES: Eval fixes | PRs merged',
+      'SERVES: Status replays | PRs merged',
+      'SERVES: Release checklist | PRs merged',
+    ].join('\n'),
+  ],
+  'chat-states-direction': [
+    [
+      'GOAL: Next release ready | working PRs merged; queued Release checks passed',
+      'SERVES: s1 | PRs merged',
+      'SERVES: s2 | PRs merged',
+      'SERVES: s3 | PRs merged',
+    ].join('\n'),
+  ],
+  'unrelated-ask-reasons': ['SET: s1 | working | two tests crash on 4.3\nLINK: i1 | s1\nLINK: i2 | s2\nLINK: i3 | s3'],
   'goal-work-left': [
     [
       'HEAD: 3.1 search | Getting search under 100 ms for 3.1',
