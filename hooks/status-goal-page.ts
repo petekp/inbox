@@ -1,14 +1,28 @@
-import type { Item, Milestone, SessionStatus } from '../types'
+import type { Item, SessionStatus } from '../types'
 import { HELD_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
+import { milestonePath, namesOnlyMilestoneUnderWay } from './status-path'
+import type { PathLine, PathPlace, PathStep } from './status-path'
 
-/** A milestone under the goal. Its place never changes, so a change draws its name in bold until the person looks. */
+/** A milestone under the goal, in the goal's path. A change draws its name in bold until the person looks. */
 export type MilestoneRow = {
   id: string
   mark: string
   tone: StatusTone
   name: string
+  place: PathPlace
+  /** "now", "now · 3h" or "next", drawn muted at the right of the name's first line. */
+  word: string | null
+  line: PathLine
+  /** Whether the "Later" label and its rule draw above it. */
+  startsLater: boolean
+  /** Whether it changed since the person last looked, so its name draws bold. */
+  isChanged: boolean
+  /** Whether its name draws muted: it waits under Later, was dropped, or is done and folded to its name. */
+  isMuted: boolean
+  /** The fold a done milestone holds its work in once the person has seen it, so a look draws its rows only unfolded. */
+  foldId: string | null
   /** Where it stands. Null when it says nothing. */
   text: string | null
   /** "waiting" while an open ask holds it up. */
@@ -26,12 +40,13 @@ export type GoalBlock = {
   /** The section's heading: `GOAL_HEADING`, or "Goal met". */
   label: string
   text: string
-  /** "1 of 5 done", drawn after the goal's text. Null once the goal is met and while its milestones are not written. */
-  count: string | null
   isMet: boolean
   /** The goal this one replaced, while the person has not seen it. */
   was: string | null
-  /** What the session works on now, as "Now: " and the head's description, drawn under the goal's text and its was line. */
+  /**
+   * What the session works on now, as "Now: " and the head's description, drawn under the goal's text and its was line.
+   * Null when it only names the milestone that reads "now".
+   */
   now: string | null
   /** The line drawn in place of the milestones until the Status call writes them for this goal. */
   awaiting: string | null
@@ -64,7 +79,8 @@ export function oldestAsk(
   return oldest ? { id: oldest.id, kind: oldest.kind } : null
 }
 
-function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): MilestoneRow {
+function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]): MilestoneRow {
+  const m = step.milestone
   const isOpen = m.status !== 'done' && m.status !== 'dropped'
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => (to === m.id ? [id] : [])))
   const holds = items.filter(i => {
@@ -80,6 +96,13 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
     id: m.id,
     ...(isHeld ? HELD_MARK : SUBJECT_MARKS[m.status]),
     name: m.name,
+    place: step.place,
+    word: step.word,
+    line: step.line,
+    startsLater: step.startsLater,
+    isChanged,
+    isMuted: step.place === 'later' || step.place === 'dropped',
+    foldId: null,
     text: m.text || null,
     stall: isHeld ? { text: 'waiting', tone: 'needsYou' } : null,
     was: isChanged ? m.was : null,
@@ -88,8 +111,8 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
   }
 }
 
-/** The goal block with its Now line, from the saved Status and the open asks. */
-export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalParts {
+/** The goal block with its Now line and its milestones in path order, from the saved Status and the open asks at `now`. */
+export function goalPage(o: SessionStatus | null, items: readonly Item[], now: number): GoalParts {
   const g = o?.goal ?? null
   if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null }
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt)
@@ -97,21 +120,21 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
   const shown = o.milestones.filter(
     m => m.status !== 'dropped' || (o.lastLookAt !== null && m.changedAt > o.lastLookAt),
   )
-  const done = kept.filter(m => m.status === 'done').length
   const isMet = g.metAt !== null
   const isAwaiting = g.isAwaitingMilestones || kept.length === 0
   const head = o.head
+  const nowText = head ? head.description || head.title : null
+  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, kept)
 
   return {
     goal: {
       label: isMet ? 'Goal met' : GOAL_HEADING,
       text: g.text,
-      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
       was: isWasShown ? g.was : null,
-      now: head ? `Now: ${head.description || head.title}` : null,
+      now: nowText !== null && !isNowSaid ? `Now: ${nowText}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : shown.map(m => milestoneRow(m, o, items)),
+      milestones: g.isAwaitingMilestones ? [] : milestonePath(shown, now).map(step => milestoneRow(step, o, items)),
     },
     canRestoreGoal: false,
   }

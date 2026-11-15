@@ -150,6 +150,7 @@ function withGoal(s: Scene) {
     was: null,
     changedAt: minutes(0),
     closedAt: null,
+    startedAt: null,
   })
   s.after.goal = {
     text: 'Offline sync in both stores',
@@ -285,6 +286,17 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     bad: s => {
       withGoal(s)
       s.after.milestones[1]!.name = 'Sync conflicts'
+    },
+  },
+  'milestone-next': {
+    good: s => {
+      withGoal(s)
+      s.facts.goal!.next = 'resolved'
+    },
+    bad: s => {
+      withGoal(s)
+      s.facts.goal!.next = 'resolved'
+      s.after.milestones[1]!.status = 'working'
     },
   },
   'serves-linked': {

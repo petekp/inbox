@@ -84,6 +84,8 @@ export type Milestone = {
   was: string | null
   changedAt: number
   closedAt: number | null
+  /** When its status last turned `working` from another, so the page can say how long it has been under way. Null in a Status an earlier build saved. */
+  startedAt: number | null
 }
 
 /** What a subject serves: one milestone by its id, or `none` for work the goal does not need. */

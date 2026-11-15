@@ -18,6 +18,7 @@ import {
   findMilestone,
   hasSameWords,
   linkableMilestone,
+  withNextMilestone,
   linksWith,
   moveMilestone,
   settleGoal,
@@ -94,7 +95,8 @@ function headAfter(last: StatusHead | null, op: Extract<Op, { kind: 'head' }>, w
 /**
  * Subject changes first, then the goal, then milestones, then reversals and the head, then links. So the goal's guard
  * reads the subjects as the answer left them, a MILESTONE line adds to a goal the same answer set, a WAS or LINK can
- * name a subject the same answer added, and the head reads the subjects as the answer left them.
+ * name a subject the same answer added, and the head reads the subjects as the answer left them. NEXT moves its
+ * milestone once the goal has settled, so a goal just set keeps its plan's order before NEXT moves one.
  */
 const OP_ORDER: Record<Op['kind'], number> = {
   none: 0,
@@ -109,6 +111,7 @@ const OP_ORDER: Record<Op['kind'], number> = {
   was: 3,
   link: 4,
   serves: 4,
+  next: 4,
 }
 
 /**
@@ -180,6 +183,7 @@ export function applyOps(
     s.changedAt = now
   }
   const named = new Set<string>()
+  let nextRef: string | null = null
   const markNamed = (m: Milestone | null) => {
     if (m) named.add(m.id)
   }
@@ -188,6 +192,11 @@ export function applyOps(
     .sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
+    if (op.kind === 'next') {
+      markNamed(findMilestone(o, op.ref))
+      nextRef = op.ref
+      continue
+    }
     if (op.kind === 'goal' || op.kind === 'retire' || op.kind === 'milestone' || op.kind === 'serves') {
       o = applyGoalOp(o, op, now, find, last ?? o)
       if (op.kind === 'milestone') markNamed(findMilestone(o, op.name))
@@ -264,7 +273,9 @@ export function applyOps(
   if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
-  return settleGoal(o, now, readSetAt, named)
+  const settled = settleGoal(o, now, readSetAt, named)
+
+  return nextRef === null ? settled : withNextMilestone(settled, nextRef, now)
 }
 
 /**

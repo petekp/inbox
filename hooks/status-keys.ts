@@ -6,8 +6,8 @@ import type { StatusPage, StatusRow } from './status-page'
 
 /**
  * A press on the Status page. `show-ask` opens Asks with that ask selected. `type-goal` opens Reply's field for the
- * goal, prefilled with `text`. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, or
- * folds it again, in the look that drew it. None sends a message.
+ * goal, prefilled with `text`. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold or a
+ * done milestone folded to its name, or folds it again, in the look that drew it. None sends a message.
  */
 type StatusPress =
   | { action: 'show-ask'; askId: string }
@@ -42,22 +42,26 @@ function viewAsk(ask: { id: string; kind: Item['kind'] }): StatusKey {
  * the fold itself, which each look draws as its fold line rather than as a button.
  */
 export function statusKeyPlan(row: StatusRow): StatusKey[] {
-  if (row.kind === 'done-fold')
-    return [
-      {
-        press: { action: 'toggle-fold', foldId: row.id },
-        label: row.text,
-        hotkey: 'f',
-        kind: 'view',
-        emphasis: 'quiet',
-      },
-    ]
+  if (row.kind === 'done-fold') return [toggleFold(row.id, row.text)]
 
   return row.kind === 'subject' && row.ask !== null ? [viewAsk(row.ask)] : []
 }
 
-/** A milestone's buttons: View question or View task while an open ask holds it up. */
+const toggleFold = (foldId: string, label: string): StatusKey => ({
+  press: { action: 'toggle-fold', foldId },
+  label,
+  hotkey: 'f',
+  kind: 'view',
+  emphasis: 'quiet',
+})
+
+/**
+ * A milestone's buttons: View question or View task while an open ask holds it up, or the fold of a done milestone
+ * folded to its name, which each look draws as the milestone's row.
+ */
 export function milestoneKeyPlan(m: MilestoneRow): StatusKey[] {
+  if (m.foldId !== null) return [toggleFold(m.foldId, m.name)]
+
   return m.ask === null ? [] : [viewAsk(m.ask)]
 }
 

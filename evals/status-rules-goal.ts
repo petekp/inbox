@@ -1,5 +1,6 @@
 import { parseStatus } from '../hooks/status'
 import { isOpen, MILESTONES_MAX, MILESTONES_MIN, nameKey } from '../hooks/status-limits'
+import { milestonePath } from '../hooks/status-path'
 import { rightStatuses } from './status-facts'
 import { label, milestonesOf, subjectsFor } from './status-rule-helpers'
 import type { Rule, RuleContext } from './status-rules'
@@ -121,6 +122,24 @@ export const GOAL_RULES: Rule[] = [
         ...kept.filter(m => subjects.has(nameKey(m.name))).map(m => `milestone "${m.name}" is named after a subject`),
       ]
     },
+  },
+  {
+    id: 'milestone-next',
+    reads: 'facts',
+    opportunity: ctx => hasCall(ctx) && ctx.result.facts.goal?.next !== undefined,
+    property: 15,
+    text: 'The milestone that reads next is the queued one the facts say the plan takes up next.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const fact = result.facts.goal?.milestones.find(m => m.id === result.facts.goal?.next)
+      if (!o?.goal || o.goal.isAwaitingMilestones || fact === undefined) return []
+      const next = milestonePath(milestonesOf(o), 0).find(s => s.place === 'next')?.milestone
+      if (next === undefined) return [`no milestone reads next, and ${fact.name} comes next`]
+      return new RegExp(fact.match, 'i').test(next.name)
+        ? []
+        : [`"${next.name}" reads next, and ${fact.name} comes next`]
+    },
+    key: failure => failure.slice(failure.lastIndexOf(', and ')),
   },
   {
     id: 'serves-linked',

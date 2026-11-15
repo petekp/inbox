@@ -163,6 +163,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             was: null,
             changedAt: now - 40 * MIN,
             closedAt: now - 40 * MIN,
+            startedAt: null,
           },
           {
             id: 'm2',
@@ -172,6 +173,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             was: null,
             changedAt: now - 35 * MIN,
             closedAt: null,
+            startedAt: now - 35 * MIN,
           },
           {
             id: 'm3',
@@ -181,6 +183,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             was: null,
             changedAt: now - 5 * MIN,
             closedAt: null,
+            startedAt: null,
           },
         ],
         nextMilestoneId: 4,

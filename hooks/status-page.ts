@@ -5,7 +5,7 @@ import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, oldestAsk } from './status-goal-page'
-import type { GoalParts } from './status-goal-page'
+import type { GoalParts, MilestoneRow } from './status-goal-page'
 import { childRow, countsByMark, isFinishedUnseen, partRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
@@ -195,7 +195,7 @@ export function statusPage(
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
     STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt
-  const goalParts = goalPage(o, s.ledger.items)
+  const goalParts = goalPage(o, s.ledger.items, now)
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map(m => m.id))
   const servedBy = (x: Subject) => (o?.goal ? o.serves[x.id] : undefined)
   /** The milestone the page draws `x` under: one it serves that the goal shows. */
@@ -217,21 +217,29 @@ export function statusPage(
   const other = subjects.filter(isOther)
   // The open fold is chosen across all the work the goal needs, so a row's fold does not hang on where it sits.
   const open = needed.filter(isOpen).sort(pageOrder)
-  const foldable = open.filter(x => !isHeld(x) && !isNew(x) && !hasChildRow(x))
+  const canFold = (x: Subject) => !isHeld(x) && !isNew(x) && !hasChildRow(x)
+  const foldable = open.filter(canFold)
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)))
-  const split = (part: Subject[]): PartSplit => {
+  /** A part's split. Under a Later milestone, every open row that can fold does. */
+  const split = (part: Subject[], isLater = false): PartSplit => {
     const unseenClosed = unseenClosedOf(part)
     const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS)
+    const isFoldedOpen = (x: Subject) => isOpen(x) && (folded.includes(x) || (isLater && canFold(x)))
     return {
-      shown: [...part.filter(x => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
+      shown: [...part.filter(x => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
       newClosed,
       named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter(x => folded.includes(x)),
+      foldedOpen: part.filter(isFoldedOpen),
       foldedDone: part.filter(x => x.status === 'done' && !isNew(x)),
     }
   }
   const top = split(main.filter(x => milestoneOf(x) === null))
-  const underMilestones = (goalParts.goal?.milestones ?? []).map(m => split(main.filter(x => milestoneOf(x) === m.id)))
+  const underMilestones = (goalParts.goal?.milestones ?? []).map(m =>
+    split(
+      main.filter(x => milestoneOf(x) === m.id),
+      m.place === 'later',
+    ),
+  )
   const otherUnseenClosed = unseenClosedOf(other)
   const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS)
   /** Work the goal does not need folds once seen. Work not linked to a shown milestone folds as the open fold says. */
@@ -345,13 +353,28 @@ export function statusPage(
     ...foldedPart('', top, 0),
     ...(otherRows.length > 0 ? [{ kind: 'part' as const, id: 'other', depth: 0, text: OTHER_WORK }, ...otherRows] : []),
   ]
-  /** A milestone's rows, one step in. */
-  const milestoneRows = (id: string, p: PartSplit): StatusRow[] => [...looseRows(id, 1), ...foldedPart(`${id}-`, p, 1)]
-  const g = goalParts.goal
-  const goal = g && {
-    ...g,
-    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]!) })),
+  /**
+   * A milestone with its rows one step in. A done one the person has seen, with every row under it seen and finished,
+   * shrinks to its name and holds its finished rows behind a fold.
+   */
+  const withRows = (m: MilestoneRow, p: PartSplit): MilestoneRow => {
+    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)]
+    const changedAt = o?.milestones.find(x => x.id === m.id)?.changedAt ?? Infinity
+    const isAllSeen =
+      p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some(l => l.milestoneId === m.id)
+    const isShrunk = m.place === 'done' && look !== null && changedAt <= look && isAllSeen
+    return isShrunk
+      ? {
+          ...m,
+          text: null,
+          isMuted: true,
+          foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
+          rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1),
+        }
+      : { ...m, rows }
   }
+  const g = goalParts.goal
+  const goal = g && { ...g, milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]!)) }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
 
   return {
@@ -373,7 +396,10 @@ export function seenSubjectIds(row: StatusRow): string[] {
   return row.kind === 'subject' ? [row.id] : row.kind === 'fold' ? row.subjectIds : []
 }
 
-/** Every row of the Status's list in the order the looks draw them: each milestone's rows, then the list after the goal. */
+/**
+ * Every row of the Status's list in the order the looks draw them: each milestone's rows, then the list after the goal.
+ * A milestone folded to its name holds none.
+ */
 export function statusListRows(page: StatusPage): StatusRow[] {
-  return [...(page.goal?.milestones ?? []).flatMap(m => m.rows), ...page.rows]
+  return [...(page.goal?.milestones ?? []).flatMap(m => (m.foldId === null ? m.rows : [])), ...page.rows]
 }
