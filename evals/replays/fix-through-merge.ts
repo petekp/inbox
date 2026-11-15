@@ -1,7 +1,6 @@
 import type { Replay } from '../status-replay'
 import { minutes } from '../status-replay'
 import { delegate, NO_FACTS, overview, subject } from './builders'
-import { MERGE_LEFT } from './children-finished'
 
 const shareDelegate = delegate('c1', 'Send a shared note once', 's1', -20)
 const settingsDelegate = delegate('c2', 'Build the settings toggle', 's2', -60)
@@ -22,7 +21,7 @@ export const fixThroughMerge: Replay = {
       overview: overview({
         head: { title: 'Notes 2.5', description: 'Landing the 2.5 fixes from delegates' },
         subjects: [
-          subject('s1', 'working', 'Share sheet bug', 'delegate fixing the double send', -20),
+          subject('s1', 'working', 'Share sheet bug', 'delegate on it', -20),
           subject('s2', 'working', 'Settings toggle', 'delegate building the toggle', -40),
         ],
         children: [
@@ -35,12 +34,12 @@ export const fixThroughMerge: Replay = {
     facts: {
       ...NO_FACTS,
       focus: 'landing the notes 2.5 fixes',
-      focusMatch: '2\\.5|notes|beta',
+      focusMatch: '2\\.5|notes',
       pieces: [
         {
           id: 'share',
           names: ['Share sheet bug', 'double send fix'],
-          match: '^(?!.*(beta|testflight)).*(share|double|twice|duplicate)',
+          match: '^(?!.*(beta|testflight)).*(share|double|twice|duplicate|send)',
           state: 'working',
           stands: 'fix being built',
         },
@@ -75,12 +74,7 @@ export const fixThroughMerge: Replay = {
       facts: {
         pieces: [
           { id: 'share', stands: 'fix built and reviewed, merge left', alsoRight: ['waits-on-other'] },
-          {
-            id: 'settings',
-            stands: 'toggle built, merge left after the check',
-            left: MERGE_LEFT,
-            alsoRight: ['waits-on-other'],
-          },
+          { id: 'settings', stands: 'toggle built, merge left after the check', alsoRight: ['waits-on-other'] },
         ],
       },
       targets: ['piece-once', 'marks-true'],
@@ -96,6 +90,8 @@ export const fixThroughMerge: Replay = {
           'The full check passed on #31, the double send fix, and it is merged. I started the 2.5 beta build with the fix in it, and it goes to TestFlight once it builds. The settings toggle check is still running.',
       },
       facts: {
+        focus: 'shipping the 2.5 beta with the fixes',
+        focusMatch: '2\\.5|beta',
         pieces: [
           { id: 'share', state: 'done', stands: 'fix merged', alsoRight: [] },
           {

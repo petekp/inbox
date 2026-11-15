@@ -7,7 +7,7 @@ const engineDelegate = delegate('c2', 'Build the sync retry queue', 's3', -40)
 const conflictsDelegate = delegate('c3', 'Build the manual merge for sync conflicts', 's2', -90)
 
 /** The merge or the full check left, not done: "merge left", "merges next", "unmerged", "final check left". */
-export const MERGE_LEFT =
+const MERGE_LEFT =
   '\\b(merg(e|es|ing)\\b(?! (done|finished|complete))|unmerged|not (yet )?merged)|\\bchecks? (left|next|pending|to go)'
 /** Checking the delegate's work left, not done: "not checked yet", "unreviewed", "needs a review". */
 const CHECK_LEFT =
