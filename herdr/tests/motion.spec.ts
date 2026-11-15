@@ -129,6 +129,7 @@ test('the block under moving blocks keeps its space as they glide, and the runâ€
       count: null,
       tone: null,
       isHead: false,
+      isAtEdge: false,
       isStrong: false,
       depth: 0,
     },

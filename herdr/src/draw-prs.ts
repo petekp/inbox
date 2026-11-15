@@ -224,6 +224,7 @@ const note = (id: string, text: string, tone: Tone): Block => ({
   count: null,
   tone,
   isHead: true,
+  isAtEdge: false,
   isStrong: false,
   depth: 0,
 })
