@@ -3,7 +3,7 @@ import { feedbackOf, feedbackText, hasAge, isFailure, markedFeedbackText } from 
 import type { PressState } from '../../hooks/feedback'
 import { prPressEffect } from '../../hooks/pr-press'
 import type { PrAction } from '../../hooks/pr-press'
-import { prRankText } from '../../hooks/pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart } from '../../hooks/pr-order'
 import {
   PR_GROUP_TITLES,
   PR_QUOTE_CHARS,
@@ -199,7 +199,6 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
     {
       kind: 'pr',
       id: prMarkId(pr.ref),
-      rank: d.rank === null ? null : prRankText(d.rank),
       number: `#${pr.number}`,
       title: pr.title,
       status: { text: head, tone: tone ? PR_TONE[tone] : 'muted' },
@@ -302,11 +301,17 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   }
   const presses: PressState = { lastActions: view.lastActions, turns: view.turns, now: screen.now }
   const notice = ghNoticeOf(gh)
+  const othersStart = otherPrsStart(prs.drawn)
+  const caption: Block = { kind: 'caption', id: 'other prs', text: OTHER_PRS_TEXT }
+  const above = (d: DrawnPr, n: number): Block[] => [
+    ...(n > 0 ? [ruleBetween(d.pr.ref)] : []),
+    ...(d === othersStart ? [caption] : []),
+  ]
   const draw = (open: string | null) => [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
     ...orderLines(screen),
-    ...prs.drawn.flatMap((d, n) => [...(n > 0 ? [ruleBetween(d.pr.ref)] : []), ...prBlocks(screen, d, presses, open)]),
+    ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, open)]),
     ...(prs.olderText ? [ruleBetween('older prs'), note('older prs', prs.olderText, 'muted')] : []),
   ]
   const blocks = draw(selected)

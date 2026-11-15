@@ -23,7 +23,7 @@ function itemGap(prev: Block, b: Block): number {
 
 /** The space the eye sees between one block's last line and the next block's first. */
 function gapBetween(prev: Block, b: Block): number {
-  const isLabelled = prev.kind === 'heading' || (prev.kind === 'rule' && prev.text !== null)
+  const isLabelled = prev.kind === 'heading' || prev.kind === 'caption' || (prev.kind === 'rule' && prev.text !== null)
   if (isLabelled) return HEAD_GAP
   if (prev.kind === 'rule' || b.kind === 'rule') return GROUP_GAP / 2
   if (prev.kind === 'note' && prev.isHead && b.kind === 'note' && b.isHead) return LINE_GAP

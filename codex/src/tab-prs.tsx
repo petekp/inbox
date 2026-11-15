@@ -14,7 +14,7 @@ import {
   prRefreshFailedText,
   threadSentIn,
 } from '../../hooks/pr-rows'
-import { prRankText } from '../../hooks/pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart } from '../../hooks/pr-order'
 import type { PrOrderView } from '../../hooks/pr-order'
 import type { PrAction } from '../../hooks/pr-press'
 import { readiness } from '../../hooks/prs'
@@ -186,13 +186,12 @@ function PrEntry({ b, v, prs, now }: { b: DrawnPrBlock; v: View; prs: DrawnPrs; 
   )
 }
 
-function PrHead({ v, pr, rank }: DrawnPrBlock & { v: View }) {
+function PrHead({ v, pr }: DrawnPrBlock & { v: View }) {
   const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions), 'Codex')
   const tone = PR_TONES[status]
 
   return (
     <div class="pr-head">
-      {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
       <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
       <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
       <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
@@ -306,6 +305,7 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
 
   const isRefreshInBanner = ghNotice !== null && v.prs.refresh !== null && v.prs.refresh.text === null
   const refresh = v.prs.refresh
+  const othersRef = otherPrsStart(prs.blocks)?.pr.ref ?? null
 
   return (
     <main>
@@ -332,9 +332,16 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
         </section>
       ) : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
-      {prs.blocks.map(b => (
-        <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />
-      ))}
+      {prs.blocks.flatMap(b => [
+        ...(b.pr.ref === othersRef
+          ? [
+              <section key="other-prs" class="other-prs">
+                <div class="group-title muted">{OTHER_PRS_TEXT}</div>
+              </section>,
+            ]
+          : []),
+        <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />,
+      ])}
       {v.prs.olderText ? (
         <section>
           <div class="group-title muted">{v.prs.olderText}</div>

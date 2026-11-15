@@ -20,7 +20,7 @@ import {
   threadSentIn,
 } from '../../hooks/pr-rows'
 import { isDismissed, openPrViews } from '../../hooks/pr-views'
-import { prRankText } from '../../hooks/pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart } from '../../hooks/pr-order'
 import type { PrRowMark } from '../../hooks/pr-rows'
 import type { PrCheck, PrThread } from '../../types'
 import type { PrOrderView } from '../../hooks/pr-order'
@@ -187,11 +187,13 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       },
     })
   if (prs.order) out.push(...orderEntries(screen, prs.order, now))
-  for (const d of prs.drawn) {
+  const shown = prs.drawn.filter(d => isDrawnInPlace(d, ui.shownSince))
+  const othersStart = otherPrsStart(shown)
+  for (const d of shown) {
     const { pr, state } = d
     const markId = prMarkId(pr.ref)
     const lead: Lead = { text: `#${pr.number}`, tone: 'prs' }
-    if (!isDrawnInPlace(d, ui.shownSince)) continue
+    if (d === othersStart) out.push({ kind: 'note', text: '' }, { kind: 'note', text: OTHER_PRS_TEXT })
     if (state.is === 'settled') {
       out.push({
         kind: 'row',
@@ -219,7 +221,6 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       line: {
         ...blankLine(markId),
         lead,
-        rank: d.rank === null ? null : prRankText(d.rank),
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
         age: doneAt(f),
