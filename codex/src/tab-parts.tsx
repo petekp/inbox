@@ -101,7 +101,7 @@ export function legendMarkClass(m: LegendEntry): string {
   return ['mark', tone, m.isRunning ? 'running' : null].filter(Boolean).join(' ')
 }
 
-/** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. */
+/** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. A title with no mark starts at the mark column, where its rows' marks do. */
 export function GroupTitle({
   title,
   count,
@@ -112,7 +112,7 @@ export function GroupTitle({
   mark?: { mark: string; tone: Tone }
 }) {
   return (
-    <div class="group-title">
+    <div class={mark ? 'group-title' : 'group-title unmarked'}>
       {mark ? <span class={`group-mark ${mark.tone}`}>{mark.mark}</span> : null}
       <b>{title}</b>
       {count > 0 ? (
