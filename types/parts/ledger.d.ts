@@ -11,6 +11,8 @@ export type Finding = {
   at: number
   /** The item that replaced this finding by asking about it. A finding closed as "asked as iN" reopens when that item closes with the work undone. */
   askedAs?: string
+  /** When the question that had replaced it closed with the work undone, which reopened it. */
+  reopenedAt?: number
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']

@@ -175,10 +175,12 @@ export function recordPrompt<S extends Session>(
   text: string,
   isOpen: boolean,
   sentBy: SentBy | null,
+  personSource: 'prompt' | 'command' = 'prompt',
 ): { state: S; notes: string[] } {
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 }
   const r = promptNotes(host, ledger, { text, isPress: sentBy !== null, isOpen }, s.told)
-  const person = s.turn.person === null ? text : `${s.turn.person}\n\n${text}`
+  const promptPerson = s.turn.person === null ? text : `${s.turn.person}\n\n${text}`
+  const person = personSource === 'command' ? s.turn.person : promptPerson
 
   return {
     state: {

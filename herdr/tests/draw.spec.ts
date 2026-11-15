@@ -4,16 +4,21 @@ import { rowKeyPlan } from '../../hooks/action-plan'
 import { CLEAR_FINISHED_ID } from '../../hooks/pr-rows'
 import { actionLabel } from '../../hooks/rows'
 import type { RowView } from '../../hooks/rows'
+import { demoSession } from '../../hooks/demo'
+import { sessionView } from '../../hooks/session-view'
 import { goalKeyPlan, statusKeyPlan } from '../../hooks/status-keys'
 import { shownTabs } from '../../hooks/tabs'
-import { NO_HOLDS } from '../../hooks/timing'
+import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
+import type { LastAction } from '../../types'
+import { agedText } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { readSession } from '../src/files'
+import { NO_LINES_ABOVE, holdLinesAbove } from '../src/held-line'
 import { keyMove } from '../src/keys'
 import { screenOf } from '../src/screen'
 import type { Followed } from '../src/follow'
-import { NOW, demoEnvelopeText, demoScreen, finishedScreen, uiOn } from './fixtures'
+import { AGENT, NOW, demoEnvelopeText, demoScreen, finishedScreen, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
   const { keys, more } = rowKeyPlan(row, isAllShown)
@@ -60,12 +65,10 @@ test('a selected question draws why it came up first under its title, in the Why
   expect(collapsed.body.some(l => l.text === question.contextLine)).toBe(false)
 })
 
-test('the tabs follow the build’s shared tab plan, with their counts', () => {
-  for (const isNextBuild of [false, true]) {
-    const cells = tabCells(demoScreen(isNextBuild), 'needsYou')
-    expect(cells.map(c => c.label)).toEqual(shownTabs(isNextBuild).map(t => t.label))
-    expect(cells.filter(c => c.isSelected).map(c => c.id)).toEqual(['needsYou'])
-  }
+test('the tabs follow the shared tab plan, with their counts', () => {
+  const cells = tabCells(demoScreen(), 'needsYou')
+  expect(cells.map(c => c.label)).toEqual(shownTabs().map(t => t.label))
+  expect(cells.filter(c => c.isSelected).map(c => c.id)).toEqual(['needsYou'])
 })
 
 test('a group’s Closed fold shows its lines only while open', () => {
@@ -90,11 +93,76 @@ test('the Status page draws the goal’s and each row’s buttons in their plans
   }
 })
 
+test('the Status page draws the goal’s milestones on a path: a seen done one as its fold, the line from each to the next and beside its work, dashed into the one that reads next, each word, and Later above the ones that wait', () => {
+  const screen = demoScreen()
+  const blocks = tabBlocks(screen, uiOn('overview'))
+  const drawn = screen.view.statusPage.goal!.milestones.map(m => blocks.find(b => b.id === m.id)!)
+  expect(drawn.map(b => b.kind)).toEqual(['fold', 'status', 'status', 'status', 'status'])
+  expect(drawn.map(b => ('path' in b ? b.path : null))).toEqual([
+    { is: 'milestone', above: null, below: 'continues' },
+    { is: 'milestone', above: 'continues', below: 'continues' },
+    { is: 'milestone', above: 'continues', below: 'to-next' },
+    { is: 'milestone', above: 'to-next', below: null },
+    { is: 'milestone', above: null, below: null },
+  ])
+  expect(drawn.map(b => (b.kind === 'status' ? b.word : null))).toEqual([
+    null,
+    undefined,
+    'now · 1h',
+    'next',
+    undefined,
+  ])
+  expect(blocks.find(b => b.id === 's1')).toMatchObject({ path: { is: 'work', line: 'to-next' } })
+  expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
+})
+
+test('the Status page joins each parent to the rows under it: work beside the path’s line by an arm, other work by the milestone’s connector down to an elbow at its last row with nothing past it, and a subject’s children by its own connector', () => {
+  const screen = demoScreen()
+  const blocks = tabBlocks(screen, uiOn('overview'))
+  const treeOf = (id: string) => {
+    const b = blocks.find(b => b.id === id)
+    return b && 'tree' in b ? b.tree : undefined
+  }
+  expect(screen.view.statusPage.goal!.milestones.map(m => treeOf(m.id))).toEqual([
+    undefined,
+    undefined,
+    undefined,
+    [{ depth: 0, is: 'down' }],
+    [{ depth: 0, is: 'down' }],
+  ])
+  expect(['s1', 'c1', 'c4', 's3', 's2', 'c5'].map(treeOf)).toEqual([
+    [
+      { depth: 0, is: 'arm' },
+      { depth: 1, is: 'down' },
+    ],
+    [{ depth: 1, is: 'mid' }],
+    [{ depth: 1, is: 'last' }],
+    [{ depth: 0, is: 'last' }],
+    [{ depth: 0, is: 'down' }],
+    [{ depth: 0, is: 'last' }],
+  ])
+  const page = screen.view.statusPage
+  const milestones = page.goal!.milestones.map(m => (m.rows.some(r => r.id === 's1') ? { ...m, line: null } : m))
+  const ended = { ...screen, view: { ...screen.view, statusPage: { ...page, goal: { ...page.goal!, milestones } } } }
+  const endedBlocks = tabBlocks(ended, uiOn('overview'))
+  const endedTreeOf = (id: string) => {
+    const b = endedBlocks.find(b => b.id === id)
+    return b && 'tree' in b ? b.tree : undefined
+  }
+  expect(['s1', 'c1', 'c4'].map(endedTreeOf)).toEqual([
+    [
+      { depth: 0, is: 'last' },
+      { depth: 1, is: 'down' },
+    ],
+    [{ depth: 1, is: 'mid' }],
+    [{ depth: 1, is: 'last' }],
+  ])
+})
+
 test('each case of the followed terminal draws its own message, and a read session draws the inbox', () => {
   const read = readSession(demoEnvelopeText())
   const o = {
     now: NOW,
-    isNextBuild: true,
     holds: { ...NO_HOLDS, shownSince: NOW },
     queue: { outs: [], notes: {}, lines: {} },
   }
@@ -132,7 +200,7 @@ test('the PRs tab draws Clear merged and closed above the first PR, m presses it
   expect(line.buttons.map(b => [b.label, b.hotkey, b.does])).toEqual([
     ['Clear merged and closed', 'm', { is: 'press', press: { action: 'pr-clear-finished' }, effects: [] }],
   ])
-  const thread = blocks.find(b => b.kind === 'row' && b.depth === 1 && b.isSelectable)
+  const thread = blocks.find(b => b.kind === 'row' && b.isSelectable)
   if (thread?.kind !== 'row') throw new Error('no thread row')
   const onThread = tabBlocks(
     finishedScreen({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' }),
@@ -142,4 +210,124 @@ test('the PRs tab draws Clear merged and closed above the first PR, m presses it
   expect(keyMove('m', tabs, onThread, null)).toEqual({ is: 'press', button: line.buttons[0]! })
   const branchOnly = tabBlocks(finishedScreen({ 'acme/visor#31': 'MERGED' }), uiOn('prs'))
   expect(branchOnly.some(b => b.id === CLEAR_FINISHED_ID)).toBe(false)
+})
+
+const earlierReply: LastAction = {
+  kind: 'handoff',
+  action: 'type',
+  text: 'Send',
+  reply: 'Not yet',
+  at: NOW - 600_000,
+  turnsStarted: 13,
+}
+const discuss: LastAction = { kind: 'talk', action: 'discuss', text: 'Discuss', at: NOW - 1000, turnsStarted: 14 }
+
+function heldAcross(draws: [LastAction | null, number, string][]) {
+  const session = demoSession(NOW, AGENT)
+  const { d23: _, ...others } = session.lastActions
+  let held = NO_LINES_ABOVE
+  return draws.map(([last, applied, selected]) => {
+    const s = {
+      ...session,
+      lastActions: last ? { ...others, d23: last } : others,
+      presence: { ...session.presence, turnsStarted: 14, turnsApplied: applied },
+    }
+    const screen = { ...demoScreen(), view: sessionView(s, NOW, SETTLED_MS, NO_HOLDS) }
+    const drawn = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected })), held, NOW)
+    held = drawn.held
+    const row = rowsOf(drawn.blocks).find(b => b.id === 'd23')!
+    const line = row.heldLine
+    const status = row.feedback ? `${row.isStatusHeldUnder ? 'under ' : ''}${row.feedback.text}` : null
+    return [status, line ? `${line.isHidden ? 'hidden ' : ''}${line.text}` : null]
+  })
+}
+
+test('a row keeps its status line above its buttons while the host shows its press under way, until the press ends', () => {
+  expect(
+    heldAcross([
+      [earlierReply, 14, 'd23'],
+      [discuss, 14, 'd23'],
+      [discuss, 15, 'd23'],
+    ]),
+  ).toEqual([
+    ['Still open', null],
+    ['Discussing…', 'Still open'],
+    ['✓ Discussed', null],
+  ])
+})
+
+test('a row deselected while its press is under way keeps its held line for when it is selected again', () => {
+  expect(
+    heldAcross([
+      [earlierReply, 14, 'd23'],
+      [discuss, 14, 'd22'],
+      [discuss, 14, 'd23'],
+    ]),
+  ).toEqual([
+    ['Still open', null],
+    ['Discussing…', null],
+    ['Discussing…', 'Still open'],
+  ])
+})
+
+test('a held failure keeps its space without its words, also once the press ends with its status under the buttons', () => {
+  const failed: LastAction = {
+    ...discuss,
+    at: NOW - 600_000,
+    turnsStarted: 13,
+    delivery: { state: 'failed', reason: 'the terminal was closed' },
+  }
+  const queued: LastAction = { ...discuss, delivery: { state: 'queued', message: 'Discuss' } }
+  const unconfirmed: LastAction = { ...discuss, delivery: { state: 'unconfirmed', message: 'Discuss' } }
+  expect(
+    heldAcross([
+      [failed, 14, 'd23'],
+      [queued, 14, 'd23'],
+      [unconfirmed, 14, 'd23'],
+    ]),
+  ).toEqual([
+    ['Not sent: the terminal was closed', null],
+    ['Queued: Discuss', 'hidden Not sent: the terminal was closed'],
+    ['Not confirmed: Discuss', 'hidden Not sent: the terminal was closed'],
+  ])
+})
+
+test('a row with no line above its buttons keeps its press’s done status under them until it is closed', () => {
+  expect(
+    heldAcross([
+      [null, 14, 'd23'],
+      [discuss, 14, 'd23'],
+      [discuss, 15, 'd23'],
+      [discuss, 15, 'd22'],
+      [discuss, 15, 'd23'],
+    ]),
+  ).toEqual([
+    [null, null],
+    ['Discussing…', null],
+    ['under ✓ Discussed', null],
+    ['✓ Discussed', null],
+    ['✓ Discussed', null],
+  ])
+})
+
+test('a held line that ends with its age keeps counting it', () => {
+  const row = { ...rowsOf(tabBlocks(demoScreen(), uiOn('findings', { selected: 'd23' }))).find(r => r.isSelected)! }
+  const aged = { lead: '✓ Replied', at: NOW - 120_000 }
+  const done: RowBlock = {
+    ...row,
+    feedback: {
+      text: agedText(aged, NOW),
+      tone: 'muted',
+      source: { is: 'done', label: '✓ Replied', at: aged.at },
+      aged,
+    },
+  }
+  const sending: RowBlock = {
+    ...row,
+    feedback: { text: 'Sending…', tone: 'muted', source: { is: 'sending', label: 'Sending…', at: NOW } },
+  }
+  const first = holdLinesAbove([done], NO_LINES_ABOVE, NOW)
+  const later = holdLinesAbove([sending], first.held, NOW + 60_000)
+  expect(rowsOf(later.blocks)[0]?.heldLine?.text).toBe(agedText(aged, NOW + 60_000))
+  expect(agedText(aged, NOW + 60_000)).not.toBe(agedText(aged, NOW))
 })

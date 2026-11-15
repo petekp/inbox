@@ -44,6 +44,11 @@ function fixture(t: TestContext) {
   cpSync(join(ROOT, 'scripts'), join(root, 'scripts'), { recursive: true })
   for (const file of readdirSync(join(ROOT, 'hooks')).filter(f => f.endsWith('.ts')))
     write(`hooks/${file}`, 'export const value = 1\n')
+  write(
+    'hooks/empty-tab.ts',
+    'const EMPTY_TITLES = {}\nexport const emptyTab = () => EMPTY_TITLES, emptyState = () => null\n',
+  )
+  write('codex/src/tab-parts.ts', 'export const EmptyState = () => null\n')
   write('hooks/register.tsx', 'export const value = 1\n')
   write('hooks/row-client.tsx', 'export const value = 1\n')
   write('types/index.d.ts', 'export interface Value {}\n')
@@ -455,6 +460,7 @@ for (const { name, text, at, code } of refusedHooksModules)
 function exportsFixture(t: TestContext, files: Record<string, string>) {
   const root = tempDir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q'], { cwd: root })
   cpSync(join(ROOT, 'scripts'), join(root, 'scripts'), { recursive: true })
   mkdirSync(join(root, 'codex'))
   symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')

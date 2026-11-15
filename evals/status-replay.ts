@@ -1,4 +1,5 @@
-import { childStarted, childWorked } from '../hooks/children'
+import { childStarted, childWorked, delegatesSettled } from '../hooks/children'
+import type { HerdrAgent } from '../hooks/herdr'
 import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { applyExchangeUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
@@ -13,17 +14,15 @@ import { emptySession } from '../hooks/session-files'
 import { appliedStatus, failedStatus } from '../hooks/session-status'
 import { statusCallPrompt } from '../hooks/status-records'
 import type { StatusExchange, StatusRecord } from '../hooks/status-records'
-import type { CallKind } from '../hooks/session-host'
 import { statusPage } from '../hooks/status-page'
 import { goalPressed } from '../hooks/goal-press'
 import { GOAL_KEYS_ID } from '../hooks/status-keys'
 import type { RowPress } from '../hooks/presses'
 import type { StatusPage } from '../hooks/status-page'
 import { CODEX } from '../codex/src/texts'
-import type { ChildKind, Exchange, HostTask, Item, Ledger, Place, Session } from '../types'
-import { factsAfter } from './status-facts'
+import type { CallKind, ChildKind, Exchange, HostTask, Item, Ledger, Place, Session } from '../types'
+import { factsAfter, factsForPage } from './status-facts'
 import type { Facts, FactsChange } from './status-facts'
-import type { JudgeCheckId } from './status-judge'
 import { pageText } from './status-page-text'
 
 /** Something a host reports between calls, which the replay runs through the host's own reducers. */
@@ -31,6 +30,8 @@ type HostEvent =
   | { child: 'start'; ref: string; kind: ChildKind; name: string }
   | { child: 'act'; ref: string }
   | { child: 'end'; ref: string }
+  /** The delegate with `ref` finishes: Herdr shows it done, and every other running delegate still working. */
+  | { child: 'finish'; ref: string }
   /** The person shows the Status tab for this many seconds. */
   | { look: number }
   /** An ask opens or closes, in a replay that runs no ledger call. */
@@ -66,8 +67,12 @@ export type Step = {
   checkpoint?: boolean
   /** The rule or judge check ids of the failure this step was written to reproduce. */
   targets?: string[]
-  /** Judge checks this step fails until an issue is built, as a rule's `until` does for a rule. */
-  judgeUntil?: Partial<Record<JudgeCheckId, string>>
+  /**
+   * Targets this step is expected to fail until a change is built, each with what it waits on: a rule's or a judge
+   * check's id. Its failures here are listed apart, and its target test is left out. A rule's failures still count in
+   * its spread over the whole run, unlike a rule's own `until`, which takes it out everywhere.
+   */
+  until?: Record<string, string>
 }
 
 export type Replay = {
@@ -150,11 +155,19 @@ function itemOf(e: Extract<HostEvent, { askOpens: unknown }>['askOpens'], turn: 
   }
 }
 
+function delegateFinished(o: Ledger['overview'], ref: string, now: number): Ledger['overview'] {
+  const running = (o?.children ?? []).filter(c => c.kind === 'delegate' && c.endedAt === null)
+  const agent = (r: string): HerdrAgent => ({ status: r === ref ? 'done' : 'working', focus: null })
+
+  return delegatesSettled(o, new Map(running.map(c => [c.ref.replace(/^herdr:/, ''), agent(c.ref)])), now)
+}
+
 function withEvent(s: Session, e: HostEvent, now: number): Session {
   const o = s.ledger.overview
   const withStatus = (overview: Ledger['overview']) => ({ ...s, ledger: { ...s.ledger, overview } })
   if ('child' in e) {
     if (e.child === 'start') return withStatus(childStarted(o, e, now))
+    if (e.child === 'finish') return withStatus(delegateFinished(o, e.ref, now))
     return withStatus(e.child === 'act' ? childWorked(o, e.ref, now) : childEnded(o, e.ref, now))
   }
   if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000, 'all'))
@@ -240,7 +253,7 @@ async function statusCall(
   const session =
     answer === null
       ? failedStatus(current, last.text, turns, now)
-      : appliedStatus(current, answer, turns, now, readSetAt)
+      : appliedStatus(current, answer, turns, now, readSetAt, false, input.now)
 
   return { session, log, isFailed: answer === null, readSetAt }
 }
@@ -347,7 +360,7 @@ async function runStep(
     session,
     page,
     text: pageText(page),
-    facts: factsAfter(facts, step.facts),
+    facts: factsForPage(factsAfter(facts, step.facts), session.ledger.overview?.goal?.text ?? null),
     calls,
     isStatusFailed,
     readSetAt,

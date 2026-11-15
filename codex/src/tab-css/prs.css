@@ -25,10 +25,22 @@
 .pr-refresh-line .pr-actions {
   margin-left: auto;
 }
+/* The refresh line under an empty tab's centred text. */
+.empty .pr-order > div {
+  padding: 0;
+}
+.empty .pr-refresh-line {
+  justify-content: center;
+}
+.empty .pr-refresh-line > .pr-refresh-text {
+  flex: 0 1 auto;
+}
+.empty .pr-refresh-line .pr-actions {
+  margin-left: 0;
+}
 .pr-head {
   font-weight: 600;
 }
-.pr-head .rank,
 .pr-head .num,
 .pr-head .pr-verdict {
   font-weight: 400;
@@ -40,10 +52,10 @@
   padding-top: 6px;
 }
 .pr-groups {
+  --mark-x: 41px;
   margin-top: 12px;
 }
 .pr-groups .list {
-  --mark-x: 41px;
   --text-x: 67px;
 }
 .pr-group .list {
@@ -63,14 +75,16 @@
 section.pr-entry {
   padding: 0;
 }
+section.other-prs {
+  padding-bottom: 0;
+}
+section.other-prs + section::before {
+  display: none;
+}
 .pr-entry-content {
   padding: 10px 0;
 }
-/*
- * A settling block's settled line has a row's padding, so the block it drew open keeps its place under it. That
- * block fades while the height shrinks, since the settled block's padding would still show its top.
- */
+/* A settling block's settled line has a row's padding, so the body it drew open fades while the height shrinks over it. */
 .pr-was-open {
-  margin-top: calc(-2 * var(--row-pad));
-  animation: fade-out var(--move) forwards;
+  animation: fade-out var(--fade) forwards;
 }

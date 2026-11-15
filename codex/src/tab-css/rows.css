@@ -150,7 +150,8 @@
 .row.closing .line .meta {
   display: none;
 }
-.row.selected .line .rec-line {
+.row.selected .line .rec-line,
+.row.closing .line .rec-line {
   white-space: normal;
 }
 /* Drawn while the row is open and while it closes, so collapse() measures the closed line without it. */

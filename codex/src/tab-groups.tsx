@@ -9,8 +9,8 @@ import {
   settledLabel,
   shortAgo,
 } from '../../hooks/rows'
-import { emptyText, groupEmptyText } from '../../hooks/banners'
-import { isMaybeStale } from '../../hooks/band'
+import { groupEmptyText } from '../../hooks/banners'
+import { emptyTab } from '../../hooks/empty-tab'
 import { entryId, settledIn } from '../../hooks/action-plan'
 import { FINDING_GROUPS } from '../../hooks/help'
 import type { ResultMark } from '../../hooks/rows'
@@ -21,7 +21,7 @@ import { unfolded, closedAll, sending, closingFolds, drawnRows, tabState } from 
 import type { Row, Entry, Lists } from './tab-state'
 import { toggleFold } from './tab-motion'
 import { act } from './tab-rows'
-import { ResultMarkView, GroupTitle } from './tab-parts'
+import { ResultMarkView, GroupTitle, EmptyState } from './tab-parts'
 import { Entries } from './tab-list'
 
 function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): ClosedLine[] {
@@ -185,28 +185,23 @@ function notHeardText(v: View): [string, string?] | null {
 
 export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   const all = lists.byTab.needsYou
-  const isNothing = lists.questions.length === 0 && lists.tasks.length === 0
-  const hasClosed =
-    itemsClosed(v, 'question', lists.questions).length > 0 || itemsClosed(v, 'task', lists.tasks).length > 0
+  const closedCount = itemsClosed(v, 'question', lists.questions).length + itemsClosed(v, 'task', lists.tasks).length
   const notHeard = notHeardText(v)
-  if (isNothing && !hasClosed)
-    return notHeard ? (
-      <div class="empty">
-        <div class="title">{notHeard[0]}</div>
-        {notHeard[1] ? <div class="muted">{notHeard[1]}</div> : null}
-      </div>
-    ) : (
-      <div class="empty">
-        <div class="title">{emptyText('needsYou', 'Codex', isMaybeStale(v)).title}</div>
-        <div class="muted">{emptyText('needsYou', 'Codex').hint}</div>
-      </div>
-    )
+  const empty = emptyTab(v, {
+    tab: 'needsYou',
+    agent: 'Codex',
+    drawn: lists.questions.length + lists.tasks.length + closedCount,
+    hasBlocker: false,
+    isReadFailed: false,
+    hostText: notHeard ? { title: notHeard[0], hint: notHeard[1] ?? null } : null,
+  })
+  if (empty) return <EmptyState empty={empty} />
 
   return (
     <main>
       {notHeard ? (
         <section>
-          <div class="group-title">
+          <div class="group-title unmarked">
             {notHeard[0]}
             {notHeard[1] ? <div class="muted">{notHeard[1]}</div> : null}
           </div>
@@ -231,14 +226,14 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
       at: f.closedAt,
       delivery: f.delivery,
     }))
-  const isNothing = lists.findings.length === 0
-  if (isNothing && closedTotal(v.findings.closed, settled) === 0)
-    return (
-      <div class="empty">
-        <div class="title">{emptyText('findings', 'Codex', isMaybeStale(v)).title}</div>
-        <div class="muted">{emptyText('findings', 'Codex').hint}</div>
-      </div>
-    )
+  const empty = emptyTab(v, {
+    tab: 'findings',
+    agent: 'Codex',
+    drawn: lists.findings.length + closedTotal(v.findings.closed, settled),
+    hasBlocker: false,
+    isReadFailed: false,
+  })
+  if (empty) return <EmptyState empty={empty} />
 
   return (
     <main>

@@ -22,8 +22,9 @@ function goalRefusedOf(saved: unknown): GoalRefusal | null {
   const r = saved as Partial<Record<keyof GoalRefusal, unknown>> | null
   const line = REFUSAL_LINES.find(x => x === r?.line)
   const why = REFUSAL_WHYS.find(x => x === r?.why)
+  const unplaced = Array.isArray(r?.unplaced) ? r.unplaced.filter(id => typeof id === 'string') : []
 
-  return line && why ? { line, why } : null
+  return line && why ? { line, why, ...(unplaced.length > 0 ? { unplaced } : {}) } : null
 }
 
 function time(value: unknown): number | null {
@@ -63,6 +64,7 @@ function milestoneOf(saved: unknown): Milestone | null {
   const status = STATUSES.find(x => x === m?.status)
   const changedAt = time(m?.changedAt)
   if (!m || typeof m.id !== 'string' || typeof m.name !== 'string' || !status || changedAt === null) return null
+  const madeNextAt = time(m.madeNextAt)
 
   return {
     id: m.id,
@@ -72,6 +74,8 @@ function milestoneOf(saved: unknown): Milestone | null {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === 'done' || status === 'dropped' ? changedAt : null),
+    startedAt: time(m.startedAt),
+    ...(madeNextAt === null ? {} : { madeNextAt }),
   }
 }
 

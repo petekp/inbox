@@ -64,10 +64,12 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'NEW: working | Sync engine | queues edits offline',
       'NEW: queued | Sync conflicts | not started',
       'NEW: queued | Sync toggle | not started',
+      'NEW: queued | 2.5 release | not started',
       'GOAL: Offline sync in 2.5 | working Works offline; queued Conflicts handled; queued 2.5 live',
       'SERVES: s1 | Works offline',
       'SERVES: s2 | Conflicts handled',
       'SERVES: s3 | Works offline',
+      'SERVES: s4 | 2.5 live',
     ].join('\n'),
     'NEW: decide | - | Last-write-wins or manual merge for conflicts? | Last-write-wins / Manual merge | -',
     [
@@ -78,6 +80,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: s1 | m1',
       'SERVES: s2 | m2',
       'SERVES: s3 | m1',
+      'SERVES: s4 | m3',
     ].join('\n'),
     'CLOSED: i1 | manual merge',
     'SET: s2 | working | manual merge under way\nSET: m2 | working | manual merge under way',
@@ -88,16 +91,16 @@ export const GOOD_RUNS: Record<string, string[]> = {
     'NONE',
     'UNCHANGED',
     'NEW: decide | - | Should the offline banner show on web too? | Yes / No | -',
-    'SET: s4 | working | shows on phones\nLINK: i2 | Offline banner',
+    'SET: s5 | working | shows on phones\nLINK: i2 | Offline banner',
     'CLOSED: i2 | the person dropped it',
-    'DONE: s4 | shows on phones\nSET: s1 | working | Android syncs, iOS loses last edit',
+    'DONE: s5 | shows on phones\nSET: s1 | working | Android syncs, iOS loses last edit',
     'NONE',
     'DONE: s1 | syncs after a crash on Android and iOS\nDONE: m1 | works on both phones',
   ],
   'long-turn': [
     'DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match, recency not in yet',
     'UNCHANGED',
-    'DONE: s2 | pinned first, then by last edit\nSET: s3 | working | short typos match\nGOAL: Search under 100 ms in 3.1 | queued Under 100 ms; queued 3.1 live',
+    'DONE: s2 | pinned first, then by last edit\nSET: s3 | working | short typos match\nNEW: queued | Search speed | 0.3 s, the target is 100 ms\nNEW: queued | 3.1 release | not started\nGOAL: Search under 100 ms in 3.1 | queued Under 100 ms; queued 3.1 live\nSERVES: s4 | Under 100 ms\nSERVES: s5 | 3.1 live',
   ],
   'catch-up-from-empty': [
     [
@@ -161,6 +164,30 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: Export settings | 3.2 live',
     ].join('\n'),
   ],
+  'restart-reads-backlog': [
+    [
+      'HEAD: Next release | Readying the next release from three draft PRs',
+      'NEW: waits-on-other | Eval fixes | PR drafted, evals not run',
+      'NEW: waits-on-other | Status replays | PR drafted, full run pending',
+      'NEW: waits-on-other | Release checklist | PR drafted, needs a full check',
+      'LINK: i1 | Eval fixes',
+      'LINK: i1 | Status replays',
+      'LINK: i1 | Release checklist',
+      'GOAL: Next release ready | working PRs merged; queued Release checks passed',
+      'SERVES: Eval fixes | PRs merged',
+      'SERVES: Status replays | PRs merged',
+      'SERVES: Release checklist | PRs merged',
+    ].join('\n'),
+  ],
+  'chat-states-direction': [
+    [
+      'GOAL: Next release ready | working PRs merged; queued Release checks passed',
+      'SERVES: s1 | PRs merged',
+      'SERVES: s2 | PRs merged',
+      'SERVES: s3 | PRs merged',
+    ].join('\n'),
+  ],
+  'unrelated-ask-reasons': ['SET: s1 | working | two tests crash on 4.3\nLINK: i1 | s1\nLINK: i2 | s2\nLINK: i3 | s3'],
   'goal-work-left': [
     [
       'HEAD: 3.1 search | Getting search under 100 ms for 3.1',
@@ -226,6 +253,11 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'one-task-plan': [
     'HEAD: Export tooltip | Adding a formats tooltip to the Export button\nNEW: working | Export tooltip | shows the formats on hover',
   ],
+  'children-finished': [
+    'SET: s1 | working | PDF works, merge left\nSET: s2 | waits-on-other | waits on sync engine',
+    'DONE: s1 | PDF export merged\nSET: s3 | working | retry queue done, unchecked',
+    'NO CHANGE',
+  ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
   ],
@@ -255,6 +287,29 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: s4 | -',
     ].join('\n'),
   ],
+  'next-milestone': [
+    [
+      'SET: s1 | working | deletes next',
+      'GOAL: Notes 2.4 released | working Conflicts resolved; queued Export button shipped; queued Store release',
+      'SERVES: s1 | m1',
+      'SERVES: s2 | m2',
+    ].join('\n'),
+    [
+      'SET: s2 | queued | waits for 2.5',
+      'SERVES: s2 | -',
+      'DROP: m2 | moved to 2.5',
+      'MILESTONE: queued | Old notes migrated | not started',
+      'NEXT: m4',
+      'NEW: queued | Migration script | not started',
+      'SERVES: s3 | m4',
+    ].join('\n'),
+    [
+      'HEAD: 2.4 release | Migrating old notes for 2.4',
+      'DONE: s1 | edits and deletes merge',
+      'SET: s3 | working | reads the old format',
+      'SET: m4 | working | reads the old format',
+    ].join('\n'),
+  ],
   'goal-outcome-dropped': [
     ...STALE_GOAL_ANSWERS,
     [
@@ -262,6 +317,24 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'RETIRE: 2.5 is not going to the store',
       'HEAD: Share sheet hang | Fixing the share sheet hang on iPad',
       'SET: s5 | working | waits on a thumbnail on iPad',
+    ].join('\n'),
+  ],
+}
+
+/** A second right run of a replay whose step allows two right answers, as a recorded model wrote it. */
+export const OTHER_GOOD_RUNS: Record<string, string[]> = {
+  'milestone-dropped': [
+    [
+      'SET: s5 | queued | own setting, not started',
+      'SET: s2 | queued | waits for store release',
+      'SET: s3 | queued | waits for store release',
+      'GOAL: Notes 2.5 web beta out | working Sync fixed; queued Release notes; queued Beta published',
+      'SERVES: s1 | Sync fixed',
+      'SERVES: s2 | -',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
+      'SERVES: s5 | -',
+      'SERVES: s6 | Release notes',
     ].join('\n'),
   ],
 }

@@ -12,7 +12,6 @@ import {
   rowFeedbackText,
 } from './feedback'
 import { HELD_MARK } from './help'
-import { mod } from './mod-state'
 import type { PaneBase, PaneClient, Row } from './pane-context'
 import {
   DESKTOP_CELL_PT,
@@ -32,8 +31,7 @@ import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './termina
 import { ago, clipLabel } from './text'
 import { resultGlyph, runningMark } from './timing'
 
-/** A next build draws the Status, so only it names the subject an ask holds up. */
-export const holdsUpLineOf = (r: RowView | undefined) => (mod.isNextBuild ? (r?.holdsUpLine ?? null) : null)
+export const holdsUpLineOf = (r: RowView | undefined) => r?.holdsUpLine ?? null
 
 export const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
 
@@ -114,16 +112,17 @@ export function paneRowLines({
         <Text color={color}>{treeText(pos, lead)}</Text>
       </Box>
     )
-  /** A 1 pt line in the divider color on desktop, `across` the pane or `down` it. */
+  /** A 1 pt line on desktop, `across` the pane or `down` it: a rule in the divider color, unless given the tree line's. */
   const desktopHairline = (
     key: string,
     direction: 'across' | 'down',
     box: { marginTop?: number; marginBottom?: number; marginLeft?: number; width?: number } = {},
+    color: string = pal.divider,
   ) => (
     <Box
       key={key}
       {...(direction === 'across' ? { height: DESKTOP_HAIR_LINES } : { width: DESKTOP_HAIR_CELLS })}
-      backgroundColor={pal.divider}
+      backgroundColor={color}
       {...box}
     />
   )

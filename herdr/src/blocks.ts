@@ -1,10 +1,15 @@
 import type { FoldKind } from '../../types'
 import type { BannerView } from '../../hooks/banners'
+import type { Feedback } from '../../hooks/feedback'
 import type { Effect } from '../../hooks/press-reducer'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
+import { DOT, shortAgo } from '../../hooks/rows'
 import type { ActionEmphasis } from '../../hooks/rows'
 import type { StatusStall } from '../../hooks/status-page'
+import type { PathLine } from '../../hooks/status-path'
+import type { EmptyTab, EmptyText } from '../../hooks/empty-tab'
+import type { ShownTab } from '../../hooks/tabs'
 
 /**
  * A color the paint maps onto Herdr's theme. The first six are the shared tones of `hooks/tones.ts`, so a tone means
@@ -45,6 +50,10 @@ export type Button = {
   isOut: boolean
   hotkey: string | null
   does: Does
+  /** When the time this button offers runs out, as Undo's does. It draws the time left as a fill that empties. */
+  runsOutAt?: number
+  /** A spent Undo, which keeps its place so the row does not change shape, but draws nothing and takes no press. */
+  isHidden?: true
 }
 
 export const button = (
@@ -61,25 +70,58 @@ export type Field = { rowId: string; buttons: Button[] }
 export type RowBlock = {
   kind: 'row'
   id: string
-  /** One step in, for a Closed list's lines and the rows under a PR. */
+  /** One step in, for a Closed list's lines. A PR's rows stay at 0: their marks hang at the edge under its title. */
   depth: 0 | 1
   mark: Mark | null
   title: string
   age: string | null
-  /** The row's press status, or a Closed line's outcome. */
-  feedback: { text: string; tone: Tone } | null
+  /**
+   * The row's press status, or a Closed line's outcome, with the press result it reads when it has one. `aged` is its
+   * words and the time its age counts from, for a status that ends with its age, as a PR row's does.
+   */
+  feedback: { text: string; tone: Tone; source: Feedback | null; aged?: Aged } | null
   /** Shown once the row has closed, until it folds. */
   settled: { label: string; tone: Tone } | null
   isDim: boolean
   /** Whether the person can select it to see its body and buttons. */
   isSelectable: boolean
   isSelected: boolean
+  /** The person collapsed it, so it draws closed while selected. */
+  isCollapsed?: true
   /** What the selected row shows under its line, in order, each line with the mark that leads it, if any. */
   body: { text: string; tone: Tone; mark?: Mark }[]
   buttons: Button[]
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
+  /** The line the row had above its buttons, kept while a press puts its status under them. See `holdLinesAbove`. */
+  heldLine?: { text: string; tone: Tone; isHidden: boolean }
+  /** Draws the status under the buttons, where the shared rule puts it above them. See `holdLinesAbove`. */
+  isStatusHeldUnder?: true
 }
+
+/** A status's words and the time its age counts from. */
+export type Aged = { lead: string; at: number }
+
+/** A row drawn open, with its title wrapped and its panel under it. */
+export const isOpenRow = (r: RowBlock): boolean => r.isSelected && !r.isCollapsed
+
+/** A status that ends with its age: its words, then how long ago its time was. */
+export const agedText = (a: Aged, now: number): string => `${a.lead}${DOT}${shortAgo(now - a.at)}`
+
+/**
+ * The goal's path beside a Status block, in the milestones' mark column. Beside a milestone, `above` runs through the
+ * space above it into its mark, and `below` from under its mark to its end. Beside a milestone's work, `line` runs its
+ * whole height.
+ */
+export type PathSide = { is: 'milestone'; above: PathLine; below: PathLine } | { is: 'work'; line: PathLine }
+
+/**
+ * A stroke of a nesting connector beside a Status block, in the column under the marks of rows at `depth`. `down` runs
+ * from under the block's own mark to its end. `mid` runs the block's whole height with an arm to its mark, and `last`
+ * runs down to that arm and ends there. `past` runs the whole height with no arm. `arm` is the arm alone, where the
+ * path's line is the column.
+ */
+export type TreeStroke = { depth: number; is: 'down' | 'mid' | 'last' | 'past' | 'arm' }
 
 /** A line of the Status page: a subject, a milestone or a child, with its mark, name, stall word and lines under it. */
 export type StatusLine = {
@@ -89,19 +131,22 @@ export type StatusLine = {
   mark: Mark | null
   name: string
   isBold: boolean
-  /** A child or a plain line, whose name draws quiet, under the subject it belongs to. */
+  /** A child or a plain line, or a milestone that waits or was dropped, whose name draws quiet. */
   isMuted: boolean
   stall: { text: string; tone: StatusStall['tone'] } | null
+  /** A milestone's "now" or "next", muted at the right of its name's line where the name and it fit on one line. */
+  word?: string
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */
   under: string[]
   buttons: Button[]
+  path?: PathSide
+  tree?: TreeStroke[]
 }
 
-/** A PR's title line and the line under it: its rank, number and title, where it stands, and its buttons. */
+/** A PR's title line and the line under it: its number and title, where it stands, and its buttons. */
 export type PrBlock = {
   kind: 'pr'
   id: string
-  rank: string | null
   number: string
   title: string
   status: { text: string; tone: Tone }
@@ -109,6 +154,23 @@ export type PrBlock = {
   error: string | null
   buttons: Button[]
   feedback: { text: string; tone: Tone } | null
+}
+
+/**
+ * What an empty tab draws under its text, centred: Refresh PRs's line, or the goal's buttons and its field. `id` is the
+ * row the presses belong to, whose line a press out reads in `feedback`.
+ */
+type EmptyUnderParts = {
+  id: string
+  text: string | null
+  buttons: Button[]
+  feedback: { text: string; tone: Tone } | null
+  field: Field | null
+}
+
+/** A tab's empty state from `emptyTab`, as the one block that draws it, with its `under` drawn as `parts`. */
+export function emptyBlock(tab: ShownTab, empty: EmptyTab, parts: EmptyUnderParts | null = null): Block {
+  return { kind: 'empty', id: `empty ${tab}`, empty: { title: empty.title, hint: empty.hint }, under: parts }
 }
 
 /** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
@@ -124,46 +186,64 @@ export type LineBlock = {
 export type Block =
   /**
    * A group's title with its count, or with `isLabel` a quiet label over a part, such as the goal's, ruled to its
-   * buttons. `depth` 1 nests it under a PR.
+   * buttons.
    */
   | {
       kind: 'heading'
       id: string
-      depth: 0 | 1
       text: string
       count: number | null
       mark: Mark | null
       buttons: Button[]
       isLabel: boolean
     }
-  /** What a tab shows when it has nothing in it, centred: its title, its hint and its buttons. */
-  | { kind: 'empty'; id: string; title: string; hint: string | null; buttons: Button[] }
+  /** What a tab shows when it has nothing in it, centred: the text `emptyTab` gives, then its `under`, drawn. */
+  | { kind: 'empty'; id: string; empty: EmptyText; under: EmptyUnderParts | null }
   | RowBlock
   | StatusLine
   | PrBlock
   | LineBlock
-  /** A Closed fold or a Status done fold, which the person opens and shuts. */
-  | { kind: 'fold'; id: string; depth: number; text: string; isOpen: boolean; change: ViewChange }
+  /**
+   * A Closed fold or a Status done fold, which the person opens and shuts. A done milestone folded to its name draws
+   * its `mark` in the mark column and the chevron after its name.
+   */
+  | {
+      kind: 'fold'
+      id: string
+      depth: number
+      text: string
+      isOpen: boolean
+      change: ViewChange
+      mark?: Mark
+      path?: PathSide
+      tree?: TreeStroke[]
+    }
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
   /**
-   * A line of text. `isHead` drops its padding above and below, as the Status page's head does, and `isStrong` draws it
-   * as the head's title: the goal, or what the session is for. `count` follows the text, quiet, as the goal's does.
+   * A line of text. `isHead` keeps it close to the head's other lines, as the Status page's head does. `isAtEdge` starts it
+   * at the panel's edge, not where rows' text starts. `isStrong` draws it
+   * as the head's title: the goal, or what the session is for.
    */
   | {
       kind: 'note'
       id: string
       text: string
-      count: string | null
       tone: Tone
       isHead: boolean
+      isAtEdge: boolean
       isStrong: boolean
       depth: number
+      path?: PathSide
+      tree?: TreeStroke[]
     }
   /** The goal's field while the person types a goal, in place of the goal's text. */
   | { kind: 'field'; id: string; field: Field }
   /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
   | { kind: 'rule'; id: string; text: string | null }
-  | { kind: 'gap'; id: string }
+  /** A section's space above the block after it, or with `isMilestoneStep` the smaller space between two milestones. */
+  | { kind: 'gap'; id: string; isMilestoneStep?: true }
+  /** A muted line at the edge that names the blocks under it, as Other PRs. */
+  | { kind: 'caption'; id: string; text: string }
   /** A message in the list, as the PRs tab's GitHub notice, with the buttons that act on its problem at its end. */
   | { kind: 'banner'; id: string; banner: BannerView; buttons: Button[]; feedback: { text: string; tone: Tone } | null }

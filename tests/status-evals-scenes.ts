@@ -150,6 +150,7 @@ function withGoal(s: Scene) {
     was: null,
     changedAt: minutes(0),
     closedAt: null,
+    startedAt: null,
   })
   s.after.goal = {
     text: 'Offline sync in both stores',
@@ -200,6 +201,19 @@ function withTypedGoalBefore(s: Scene) {
   s.after.goal = null
 }
 
+/** The engine's child is a delegate that finished, and the engine still works, with `text` as where it stands. */
+function childFinished(s: Scene, text: string) {
+  s.after.children[0] = { ...s.after.children[0]!, kind: 'delegate', endedAt: minutes(8), delegateState: 'finished' }
+  s.after.subjects[0]!.text = text
+  s.facts.pieces[0]!.left = '\\bmerg(e|ing)\\b'
+}
+
+/** A second child of the engine, a subagent that still runs. */
+function secondChildRunning(s: Scene) {
+  const running = { id: 'c2', ref: 'toolu_b', kind: 'subagent', endedAt: null, delegateState: null } as const
+  s.after.children.push({ ...s.after.children[0]!, ...running })
+}
+
 const CLEAR = { text: 'Get offline sync into both stores', match: 'offline sync' }
 
 const s1Of = (s: Scene) => s.after.subjects[0]!
@@ -227,22 +241,16 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'ask-holds-several': { bad: s => (s.facts.asks[0]!.holdsUp = ['conflicts', 'engine']) },
   'children-linked': { bad: s => (s.after.children[0]!.subjectId = 's2') },
   'child-labels': { bad: s => (s.after.children[0]!.name = 'pdfx2') },
+  'step-left-named': {
+    good: s => childFinished(s, 'syncs, merge left'),
+    bad: s => childFinished(s, 'syncs on reconnect'),
+  },
   'no-news-no-move': { bad: s => (s.facts.changed = []) },
   'changes-move': { bad: s => (s1Of(s).changedAt = minutes(0)) },
   'was-on-reversal': { bad: s => (s.step.facts = { pieces: [{ id: 'conflicts', was: 'manual merge' }] }) },
   'was-not-cut': { bad: s => (s2Of(s).was = 'Show the banner on hover and keep…') },
   'failure-shown': { bad: s => (s.isStatusFailed = true) },
   'head-title': { bad: s => (s.after.head = { title: 'Offline sync', description: 'offline sync' }) },
-  'filed-mark': {
-    good: s => {
-      s.facts.pieces[1]!.state = 'filed'
-      s2Of(s).status = 'filed' as SubjectStatus
-    },
-    bad: s => {
-      s.facts.pieces[1]!.state = 'filed'
-      s2Of(s).status = 'done'
-    },
-  },
   'answer-readable': {
     good: s => (s.calls = [statusCall('SET: s1 | working | syncs on reconnect')]),
     bad: s => (s.calls = [statusCall('The engine now syncs on reconnect.')]),
@@ -285,6 +293,17 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     bad: s => {
       withGoal(s)
       s.after.milestones[1]!.name = 'Sync conflicts'
+    },
+  },
+  'milestone-next': {
+    good: s => {
+      withGoal(s)
+      s.facts.goal!.next = 'resolved'
+    },
+    bad: s => {
+      withGoal(s)
+      s.facts.goal!.next = 'resolved'
+      s.after.milestones[1]!.status = 'working'
     },
   },
   'serves-linked': {
@@ -380,3 +399,121 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
 }
+
+function milestoneOnly(s: Scene) {
+  withGoal(s)
+  s.after.subjects.pop()
+  delete s.after.serves.s2
+  s.after.askSubjects = { i1: ['m2'] }
+}
+
+function oneMilestoneForBoth(s: Scene, survive: 'working' | 'done', status: SubjectStatus) {
+  withGoal(s)
+  s.after.milestones = [{ ...s.after.milestones[0]!, name: 'Offline sync built', status }]
+  s.after.serves = { s1: 'm1', s2: 'm1' }
+  s.facts.goal!.milestones[0]!.state = survive
+}
+
+function renamedMilestone(s: Scene, status: SubjectStatus) {
+  withGoal(s)
+  s.after.milestones[0] = { ...s.after.milestones[0]!, name: 'Offline editing works', status }
+}
+
+function milestoneChanged(s: Scene, at: number) {
+  milestoneOnly(s)
+  s.facts.changed = ['conflicts']
+  s.after.milestones[1]!.changedAt = minutes(at)
+}
+
+function linkedToMilestones(s: Scene, holdsUp: string[], ids: string[]) {
+  withGoal(s)
+  s.facts.asks[0]!.holdsUp = holdsUp
+  s.after.askSubjects = ids.length > 0 ? { i1: ids } : {}
+}
+
+export const PATH_SCENES: { rule: string; path: string; good: (s: Scene) => void; bad: (s: Scene) => void }[] = [
+  {
+    rule: 'open-pieces-kept',
+    path: 'a queued piece that is the only one serving its milestone',
+    good: milestoneOnly,
+    bad: s => {
+      milestoneOnly(s)
+      s.facts.pieces[0]!.servesAlso = 'resolved'
+    },
+  },
+  {
+    rule: 'open-pieces-kept',
+    path: 'a queued piece whose milestone is closed',
+    good: milestoneOnly,
+    bad: s => {
+      milestoneOnly(s)
+      s.after.milestones[1]!.status = 'done'
+    },
+  },
+  {
+    rule: 'asks-linked',
+    path: 'a link to the milestone a held piece is the whole of',
+    good: milestoneOnly,
+    bad: s => {
+      milestoneOnly(s)
+      s.after.askSubjects = { i1: ['m1'] }
+    },
+  },
+  {
+    rule: 'asks-linked',
+    path: 'a link to a milestone a held piece also serves',
+    good: s => {
+      linkedToMilestones(s, ['conflicts'], ['s2', 'm1'])
+      s.facts.pieces[1]!.servesAlso = 'survive'
+    },
+    bad: s => linkedToMilestones(s, ['conflicts'], ['s2', 'm1']),
+  },
+  {
+    rule: 'asks-linked',
+    path: 'an ask that holds up nothing',
+    good: s => linkedToMilestones(s, [], []),
+    bad: s => linkedToMilestones(s, [], ['m1']),
+  },
+  {
+    rule: 'milestones-true',
+    path: 'a milestone named its own way, found by the subject it holds',
+    good: s => renamedMilestone(s, 'working'),
+    bad: s => renamedMilestone(s, 'queued'),
+  },
+  {
+    rule: 'milestones-true',
+    path: 'one milestone for a working and a queued milestone',
+    good: s => oneMilestoneForBoth(s, 'working', 'working'),
+    bad: s => oneMilestoneForBoth(s, 'working', 'queued'),
+  },
+  {
+    rule: 'milestones-true',
+    path: 'one milestone for a done and a queued milestone',
+    good: s => oneMilestoneForBoth(s, 'done', 'queued'),
+    bad: s => oneMilestoneForBoth(s, 'done', 'done'),
+  },
+  {
+    rule: 'step-left-named',
+    path: 'a subject with one child finished and one still running',
+    good: s => {
+      childFinished(s, 'syncs on reconnect')
+      secondChildRunning(s)
+    },
+    bad: s => childFinished(s, 'syncs on reconnect'),
+  },
+  {
+    rule: 'step-left-named',
+    path: 'a subject an open ask holds up',
+    good: s => {
+      childFinished(s, 'syncs on reconnect')
+      s.after.askSubjects = { i1: ['s1'] }
+    },
+    bad: s => childFinished(s, 'syncs on reconnect'),
+  },
+  {
+    rule: 'changes-move',
+    path: 'a changed piece drawn as its milestone',
+    good: s => milestoneChanged(s, 10),
+    bad: s => milestoneChanged(s, 0),
+  },
+]

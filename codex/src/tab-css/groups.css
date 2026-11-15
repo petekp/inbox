@@ -17,10 +17,11 @@ section + section::before {
   background: var(--soft);
 }
 .group-title {
+  position: relative;
   padding: 0 14px 6px var(--text-x);
 }
-.group-title {
-  position: relative;
+.group-title.unmarked {
+  padding-left: var(--mark-x);
 }
 .group-title b {
   font-weight: 600;

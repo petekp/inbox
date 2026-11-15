@@ -1,5 +1,5 @@
 import { ago } from '../../hooks/text'
-import { HELP_COPY, helpKeys, markLegend, tabLegend } from '../../hooks/help'
+import { HELP_COPY, helpKeys, MARK_LEGEND, tabLegend } from '../../hooks/help'
 import { bannerOf, tabBarBanners } from '../../hooks/banners'
 import { DOT, ROW_COPY } from '../../hooks/rows'
 import { isRowTab, shownTabs, tabBadge } from '../../hooks/tabs'
@@ -14,10 +14,12 @@ import { swapPage } from './tab-swap'
 import { read } from './tab-read'
 import { pulseInStep, MarkGlyph, legendMarkClass, GroupTitle, Banner } from './tab-parts'
 import { HerdrAskBanner } from './tab-herdr-ask'
+import { bannerMotion, lineMotion } from './tab-line-steps'
+import type { BannerLine } from './tab-line-steps'
 
 /** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
-export function HelpPage({ v }: { v: View }) {
-  const keys = helpKeys('codex', v.isNextBuild === true, drawnTab(), false)
+export function HelpPage() {
+  const keys = helpKeys('codex', drawnTab(), false)
 
   return (
     <main class="status-page help">
@@ -35,7 +37,7 @@ export function HelpPage({ v }: { v: View }) {
       <section>
         <GroupTitle title={HELP_COPY.marks} count={0} />
         <div class="list">
-          {markLegend(v.isNextBuild === true).map(m => (
+          {MARK_LEGEND.map(m => (
             <div key={m.mark} class="row">
               <span class={legendMarkClass(m)} ref={m.isRunning ? pulseInStep : undefined}>
                 <MarkGlyph text={m.mark} />
@@ -48,7 +50,7 @@ export function HelpPage({ v }: { v: View }) {
       <section>
         <GroupTitle title={HELP_COPY.tabs} count={0} />
         <div class="help-keys">
-          {tabLegend(v.isNextBuild === true).flatMap(t => [
+          {tabLegend().flatMap(t => [
             <b key={`${t.keys}-symbol`}>{t.keys}</b>,
             <span key={`${t.keys}-name`} class="muted">
               {t.does}
@@ -68,6 +70,22 @@ const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, string> = {
 }
 
 const LATE_READ_MS = 60_000
+
+/** The banners under the tab bar, each keyed by its kind. */
+export function tabBanners(v: View): BannerLine[] {
+  return tabBarBanners(
+    [
+      ...(tabState.serverNote ? [bannerOf(tabState.serverNote.kind, tabState.serverNote.text)] : []),
+      ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
+      ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
+      ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
+    ],
+    footerOf(v).error,
+    tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
+      ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
+      : null,
+  ).map(banner => ({ id: banner.kind, banner }))
+}
 
 function footerOf(v: View) {
   return footerStatus(
@@ -96,17 +114,17 @@ export function Status({ v }: { v: View }) {
 export function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
   const badgeOf = (id: ShownTab) => tabBadge(id, counts)
-  const { error } = footerOf(v)
   const shown = drawnTab()
 
   return (
     <nav>
       <div class="tabs">
-        {shownTabs(v.isNextBuild === true).map(t => (
+        {shownTabs().map(t => (
           <button
             type="button"
             class={`tab ${shown === t.id ? 'shown' : ''}`}
             title={t.label}
+            data-tab={t.id}
             onClick={() => {
               switchTab(t.id)
               tabState.draw()
@@ -122,36 +140,29 @@ export function TabBar({ v }: { v: View }) {
           </button>
         ))}
       </div>
-      {tabBarBanners(
-        [
-          ...(tabState.serverNote ? [bannerOf(tabState.serverNote.kind, tabState.serverNote.text)] : []),
-          ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
-          ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
-          ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
-        ],
-        error,
-        tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
-          ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
-          : null,
-      ).map(b =>
-        b.kind === 'server-builds-differ' ? (
-          <Banner banner={b} label="Reload" press={() => location.reload()} />
-        ) : b.kind === 'tab-update-failed' ? (
-          <Banner
-            banner={b}
-            label={ROW_COPY.retry}
-            press={() => {
-              const page = tabState.updateError?.page
-              tabState.updateError = null
-              tabState.draw()
-              if (page) void swapPage(page)
-            }}
-          />
-        ) : (
-          <Banner banner={b} />
-        ),
-      )}
-      <HerdrAskBanner v={v} />
+      <div class="banner-stack" data-motion="banners">
+        {(tabState.lastBanners ?? []).map(({ id, banner: b }) => (
+          <div key={id} {...lineMotion(bannerMotion(id))}>
+            {b.kind === 'server-builds-differ' ? (
+              <Banner banner={b} label="Reload" press={() => location.reload()} />
+            ) : b.kind === 'tab-update-failed' ? (
+              <Banner
+                banner={b}
+                label={ROW_COPY.retry}
+                press={() => {
+                  const page = tabState.updateError?.page
+                  tabState.updateError = null
+                  tabState.draw()
+                  if (page) void swapPage(page)
+                }}
+              />
+            ) : (
+              <Banner banner={b} />
+            )}
+          </div>
+        ))}
+        <HerdrAskBanner v={v} />
+      </div>
     </nav>
   )
 }

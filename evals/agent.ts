@@ -1,6 +1,15 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
@@ -9,6 +18,7 @@ import { CODEX } from '../codex/src/texts'
 import { OMP } from '../omp/src/texts'
 import { MODEL } from '../codex/src/update'
 import { agentTools } from '../hooks/tools'
+import { probeTools } from './probe-tools'
 import { failures } from './agent-checks'
 import type { Agent, Call, Case, Outcome } from './agent-checks'
 import {
@@ -32,6 +42,7 @@ import {
   CODEX_ISOLATION_CONFIG,
   CODEX_WEB_SEARCH_CONFIG,
   codexEnv,
+  codexResourceCall,
 } from './codex-isolation'
 import {
   earlierRuns,
@@ -91,7 +102,10 @@ const CLAUDE_MODEL = values['claude-model']
 const OMP_RUN_MODEL = values['omp-model']
 const OMP_RUN_MODEL_ID = OMP_RUN_MODEL.split('/').at(-1)
 
-/** A fresh folder for one run: the stand-in server's state and log, and an empty working folder. */
+/**
+ * A fresh folder for one run: the stand-in server's state and log, the working folder with the case's files, and the
+ * `PATH` for an agent's shell, with the case's scripts first.
+ */
 function sandbox(c: Case, agent: Agent) {
   const dir = mkdtempSync(join(tmpdir(), 'inbox-agent-eval-'))
   const work = join(dir, 'work')
@@ -100,6 +114,13 @@ function sandbox(c: Case, agent: Agent) {
     mkdirSync(dirname(join(work, path)), { recursive: true })
     writeFileSync(join(work, path), text)
   }
+  const bin = join(dir, 'bin')
+  for (const [name, script] of Object.entries(c.bin ?? {})) {
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(join(bin, name), script)
+    chmodSync(join(bin, name), 0o755)
+  }
+  const path = c.bin ? [bin, process.env.PATH].filter(Boolean).join(delimiter) : process.env.PATH
   const state = join(dir, 'state.json')
   const log = join(dir, 'calls.jsonl')
   writeFileSync(
@@ -110,6 +131,7 @@ function sandbox(c: Case, agent: Agent) {
       shown: c.ledger ?? {},
       ledger: c.toolLedger ?? c.ledger ?? {},
       lastActions: c.lastActions ?? {},
+      tools: c.tools ?? null,
     }),
   )
   writeFileSync(log, '')
@@ -117,7 +139,7 @@ function sandbox(c: Case, agent: Agent) {
   const calls = (): Call[] =>
     lines(readFileSync(log, 'utf8')).map(l => ({ tool: l.tool, args: l.args, result: l.result }))
 
-  return { dir, work, state, log, serverArgs, calls }
+  return { dir, work, path, state, log, serverArgs, calls }
 }
 
 async function runClaude(c: Case): Promise<Outcome> {
@@ -264,7 +286,7 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
       s.work,
       message(c, CODEX),
     ],
-    { cwd: s.work, env: codexEnv(s.dir, home) },
+    { cwd: s.work, env: { ...codexEnv(s.dir, home), PATH: s.path } },
   )
   const events = lines(r.stdout)
   assertCodexUsedOnlyProbe(events)
@@ -276,7 +298,7 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
   return {
     reply,
     calls: s.calls(),
-    error: r.code === 0 ? null : `codex exited ${r.code}: ${r.stderr.slice(0, 300)}`,
+    error: r.code === 0 ? codexResourceCall(events) : `codex exited ${r.code}: ${r.stderr.slice(0, 300)}`,
     model: null,
     raw: r.stdout,
   }
@@ -319,7 +341,7 @@ async function ompIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome> {
     {
       cwd: s.work,
       env: {
-        PATH: process.env.PATH,
+        PATH: s.path,
         HOME: home,
         ANTHROPIC_OAUTH_TOKEN: signIn.token,
         INBOX_EVAL_STATE: s.state,
@@ -403,8 +425,13 @@ function job(agent: Agent, c: Case, n: number) {
   return { agent, name: c.name, run: n, requested: REQUESTED[agent] }
 }
 
+const casesFor = (a: Agent) => cases.filter(c => c.agents?.includes(a) ?? true)
+
 async function assertOnlyCodexProbe() {
   if (!agents.includes('codex')) return
+  const configCase = casesFor('codex').find(c => Object.keys(c.files ?? {}).some(f => f.split('/')[0] === '.codex'))
+  if (configCase)
+    throw new IsolationError(`${configCase.name} writes a .codex folder, which the preflight does not see`)
   const probe = sandbox({ name: 'preflight', about: '', prompt: '', checks: [] }, 'codex')
   try {
     await assertCodexOffersOnlyProbe(codexCli, probe.work, codexEnv(probe.dir, codexHome(probe)))
@@ -440,6 +467,7 @@ const about = provenance(
       [CLAUDE_CODE, CODEX, OMP].flatMap(host => [
         [`guidanceText ${host.agent}`, guidanceText(host)],
         [`tools ${host.agent}`, JSON.stringify(agentTools(host))],
+        [`tools 0.3.0 ${host.agent}`, JSON.stringify(probeTools(host, '0.3.0'))],
       ]),
     ),
     'close description Claude': guidedCloseDescription(CLAUDE_CODE, ''),
@@ -456,7 +484,6 @@ const preflight = await Promise.all([assertOnlyCodexProbe(), assertOnlyOmpProbeS
   () => null,
   (e: unknown) => `preflight: ${String(e)}`,
 )
-const casesFor = (a: Agent) => cases.filter(c => c.agents?.includes(a) ?? true)
 const jobs: Job<Result>[] = agents.flatMap(a =>
   casesFor(a).flatMap(c =>
     Array.from({ length: runs }, (_, n) => ({

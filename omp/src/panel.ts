@@ -21,7 +21,7 @@ import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
 import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
-import { drawGoalPart, goalPartId } from './panel-goal'
+import { drawGoalPart, goalPartId, workRowLines } from './panel-goal'
 import { drawPageRow } from './panel-page'
 import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { fit, indented, spread } from './panel-text'
@@ -31,7 +31,9 @@ type ResumePress = { action: 'resume' }
 type HerdrAskPress = { action: 'herdr-ask'; isYes: boolean }
 /** Shows every option of a question whose options fold. The panel handles it, so no host sees it. */
 type OptionsPress = { action: 'all-options'; id: string }
-export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress
+/** Collapses a row, or expands it once collapsed. The panel draws it at once, and the host saves it. */
+type CollapsePress = { action: 'collapse'; id: string; isCollapsed: boolean }
+export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress | CollapsePress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {
@@ -43,6 +45,7 @@ export type PanelScreen = {
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
   version: string
+  /** Whether the extension's folder holds `NEXT_BUILD_MARK`, which adds "next" to the version label. */
   isNextBuild?: boolean
   isDemo?: boolean
   /** The last read of the session failed, so the screen is the one before it. */
@@ -228,7 +231,13 @@ export function drawPanel(
       if (e.kind === 'page') subjectAt.push(...seenSubjectIds(e.row).map(id => [id, start] as [string, number]))
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
       const isSelected = id !== null && id === pageSelected?.id
-      body.push(...(e.kind === 'page' ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected)))
+      body.push(
+        ...(e.kind === 'page'
+          ? e.joint
+            ? workRowLines(w => drawPageRow(e.row, { ...d, width: w }, isSelected), e.joint, d)
+            : drawPageRow(e.row, d, isSelected)
+          : drawGoalPart(e.part, d, isSelected)),
+      )
       if (isSelected) pageSelectedAt = [start, body.length - 1]
     } else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
     else if (e.kind === 'key')
@@ -309,7 +318,7 @@ export function tallestTabHeight(
   style: Style,
   height?: number,
 ): number {
-  const heights = shownTabs(screen.isNextBuild === true).map(
+  const heights = shownTabs().map(
     t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length,
   )
 

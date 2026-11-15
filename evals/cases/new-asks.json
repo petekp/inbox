@@ -245,6 +245,32 @@
     ]
   },
   {
+    "name": "if-you-agree-continue-not-new",
+    "about": "An offer to go on with work the person already asked for adds nothing, even when it says \"If you agree\".",
+    "ledger": {
+      "turn": 4,
+      "nextId": 4,
+      "card": {
+        "goal": "Translate every help page to Spanish",
+        "done": [],
+        "now": "Translating the help pages",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "translate every help page in docs/help to Spanish",
+      "turn": 4,
+      "activity": ["edited docs/help/es/billing.md", "edited docs/help/es/account.md"],
+      "reply": "Translated the billing and account pages. Both keep the English headings as anchors, so the existing links still work.\n\nFour pages are left: login, export, teams and api.\n\nIf you agree, I'll go on with the next file."
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
     "name": "describe-what-you-saw-not-new",
     "about": "A question asking the person to describe what they saw adds nothing.",
     "ledger": {

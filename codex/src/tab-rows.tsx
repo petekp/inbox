@@ -49,7 +49,16 @@ import { isTabInPlace } from './settle'
 import { listInput } from './list-input'
 import { later, callTool } from './tab-host'
 import { revealSelected, drawIn } from './tab-motion'
-import { drawnTab, tabWaits, shownSettled, open, keepPressedOpen } from './tab-selection'
+import {
+  drawnTab,
+  tabWaits,
+  shownSettled,
+  open,
+  keepPressedOpen,
+  openRowId,
+  isOpenGuarded,
+  select,
+} from './tab-selection'
 import { applyView, replies, holds } from './tab-read'
 import { isNotSent, copy, startTyping, discardReply, lastPressKey } from './tab-press'
 import { resultHandle, inlineHtml } from './tab-parts'
@@ -141,6 +150,53 @@ function openAfterClose(v: View, id: string) {
   later(revealSelected, 0)
 }
 
+/** A click on a row's title: it opens a closed row, and collapses or expands the open one. */
+export function pressTitle(t: Tab, rows: Row[], index: number) {
+  const v = tabState.view
+  const row = rows[index]
+  if (!v || !row) return
+  const isOpen = openRowId(rows, t, v) === row.id
+  if (isOpen && isOpenGuarded()) return
+  if (isOpen || v.collapsed.includes(row.id)) toggleCollapse(t, row.id, index)
+  else select(t, rows, index)
+}
+
+/** The collapse key: collapses or expands the row the cursor is on. */
+export function pressCollapseKey(t: Tab, rows: Row[], at: number) {
+  const row = rows[at]
+  if (row) toggleCollapse(t, row.id, at)
+}
+
+/**
+ * Collapses the row `id`, or expands it once collapsed, in this draw. The cursor stays on the row, so a collapse opens
+ * no other row, and a collapse closes the row's reply field, keeping its draft. The view drawn here counts as the
+ * newest, so no view asked for before the press replaces it. The server's answer replaces it in the order the presses
+ * were made, so an earlier collapse's answer cannot undo a later one.
+ */
+function toggleCollapse(t: Tab, id: string, index: number) {
+  const v = tabState.view
+  if (!v) return
+  const isCollapsed = !v.collapsed.includes(id)
+  if (!isCollapsed) open(t, id, index)
+  else if (selection[t]?.id !== id) selection[t] = { id, openedAt: 0, index }
+  if (isCollapsed && tabState.typing === id) tabState.typing = null
+  const seq = ++tabState.requested
+  tabState.shown = seq
+  tabState.view = { ...v, collapsed: isCollapsed ? [...v.collapsed, id] : v.collapsed.filter(x => x !== id) }
+  tabState.draw()
+  const generation = tabState.viewGeneration
+  void callTool<PressReply>('inbox_press', {
+    press: { action: 'collapse', id, isCollapsed },
+    thread: v.thread,
+    demo: tabState.isDemo,
+    ...holds(),
+  })
+    .then(r => {
+      if (!tabState.isDisposed && generation === tabState.viewGeneration && r.view) applyView(r.view, seq)
+    })
+    .catch(() => undefined)
+}
+
 function sendReply(id: string, text: string) {
   const draft = drafts.get(id)
   void act(id, { action: 'type', id, text }, () => {
@@ -180,8 +236,7 @@ function itemRow(v: View, r: RowView): Row {
     ...resultHandle(r),
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
-    // A next build draws the Status, so only it names the subject an ask holds up.
-    ...(v.isNextBuild === true && r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
+    ...(r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     ...(r.recLine ? { recLine: r.recLine } : {}),
     ...(r.contextLine ? { context: r.contextLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),

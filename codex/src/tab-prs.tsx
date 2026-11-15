@@ -1,5 +1,6 @@
 import { settledMark, DOT, settledLabel } from '../../hooks/rows'
 import { bannerOf } from '../../hooks/banners'
+import { emptyTab } from '../../hooks/empty-tab'
 import type { SettledState } from '../../hooks/rows'
 import { prBlockActions } from '../../hooks/pr-tab'
 import {
@@ -10,11 +11,10 @@ import {
   PR_GROUP_TITLES,
   PR_TONES,
   prMarkId,
-  prsEmptyText,
   prRefreshFailedText,
   threadSentIn,
 } from '../../hooks/pr-rows'
-import { prRankText } from '../../hooks/pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart } from '../../hooks/pr-order'
 import type { PrOrderView } from '../../hooks/pr-order'
 import type { PrAction } from '../../hooks/pr-press'
 import { readiness } from '../../hooks/prs'
@@ -22,9 +22,8 @@ import type { PrView } from '../../types'
 import type { TabView as View } from './core'
 import { tabState, sending, errors, undoing, drawnRows } from './tab-state'
 import type { Key, Row } from './tab-state'
-import { select } from './tab-selection'
-import { act, pendingLocal, pressesOf, prKey } from './tab-rows'
-import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner } from './tab-parts'
+import { act, pendingLocal, pressesOf, prKey, pressTitle } from './tab-rows'
+import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner, EmptyState } from './tab-parts'
 import { PR_REFRESH } from '../../hooks/pr-press'
 import type { PrRefreshView } from '../../hooks/pr-refresh'
 import { ListRow } from './tab-list'
@@ -186,13 +185,12 @@ function PrEntry({ b, v, prs, now }: { b: DrawnPrBlock; v: View; prs: DrawnPrs; 
   )
 }
 
-function PrHead({ v, pr, rank }: DrawnPrBlock & { v: View }) {
+function PrHead({ v, pr }: DrawnPrBlock & { v: View }) {
   const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions), 'Codex')
   const tone = PR_TONES[status]
 
   return (
     <div class="pr-head">
-      {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
       <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
       <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
       <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
@@ -280,7 +278,7 @@ function PrRows({
               row={row}
               track={tracks?.get(row.id) ?? drawnRows.get(row.id)!.track}
               now={now}
-              onSelect={() => select('prs', prs.rows, prs.rows.indexOf(row))}
+              onSelect={() => pressTitle('prs', prs.rows, prs.rows.indexOf(row))}
             />
           </div>
         ))}
@@ -292,20 +290,23 @@ function PrRows({
 export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
   const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut, failure: v.prs.failure }
   const ghNotice = ghNoticeOf(ghState)
-  const empty = prsEmptyText({ isFetching: v.isFetchingPrs, ...ghState }, 'chat')
-  if (prs.blocks.length === 0)
+  const empty = emptyTab(v, {
+    tab: 'prs',
+    place: 'chat',
+    drawn: prs.blocks.length,
+    isFetchingPrs: v.isFetchingPrs,
+    isGhMissing: v.isGhMissing,
+  })
+  if (empty)
     return (
-      <main>
-        <div class="empty">
-          <div class="title">{empty.title}</div>
-          <div class="muted">{empty.hint}</div>
-        </div>
-        {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
-      </main>
+      <EmptyState empty={empty}>
+        {empty.under?.is === 'pr-refresh' ? <PrRefreshLine v={v} refresh={empty.under.refresh} /> : null}
+      </EmptyState>
     )
 
   const isRefreshInBanner = ghNotice !== null && v.prs.refresh !== null && v.prs.refresh.text === null
   const refresh = v.prs.refresh
+  const othersRef = otherPrsStart(prs.blocks)?.pr.ref ?? null
 
   return (
     <main>
@@ -332,12 +333,19 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
         </section>
       ) : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
-      {prs.blocks.map(b => (
-        <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />
-      ))}
+      {prs.blocks.flatMap(b => [
+        ...(b.pr.ref === othersRef
+          ? [
+              <section key="other-prs" class="other-prs">
+                <div class="group-title unmarked muted">{OTHER_PRS_TEXT}</div>
+              </section>,
+            ]
+          : []),
+        <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />,
+      ])}
       {v.prs.olderText ? (
         <section>
-          <div class="group-title muted">{v.prs.olderText}</div>
+          <div class="group-title unmarked muted">{v.prs.olderText}</div>
         </section>
       ) : null}
     </main>

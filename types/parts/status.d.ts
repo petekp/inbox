@@ -84,6 +84,10 @@ export type Milestone = {
   was: string | null
   changedAt: number
   closedAt: number | null
+  /** When its status last turned `working` from another, so the page can say how long it has been under way. Null in a Status an earlier build saved. */
+  startedAt: number | null
+  /** When a NEXT line last moved it ahead of the other queued milestones. It marks the milestone changed, but is no progress, so `changedAt` keeps its time. */
+  madeNextAt?: number
 }
 
 /** What a subject serves: one milestone by its id, or `none` for work the goal does not need. */
@@ -110,6 +114,11 @@ export type GoalRefusal = {
     | 'restates'
     /** The GOAL line names under `MILESTONES_MIN` milestones. */
     | 'few-milestones'
+  /**
+   * For a GOAL line that cut part of the goal, the ids of the open subjects it held that the line neither kept under a
+   * milestone it named again nor sent to Other work.
+   */
+  unplaced?: string[]
 }
 
 /** A goal the person removed, with its milestones and the links to them, so Undo can bring it back. */
@@ -151,7 +160,12 @@ export type SessionStatus = {
   missedInLastLook: Record<string, number | null>
   /** The look in progress, while the Status tab is shown. Null otherwise. */
   look: { startedAt: number } | null
+  /**
+   * When the last Status call whose answer applied read this Status. Each delegate that finished after it is listed to
+   * the next call, so every finish reaches the call once. Null before the first.
+   */
+  lastCallReadAt: number | null
 }
 
-/** The folder a session started in, and its branch when the host last read it. */
+/** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */
 export type Place = { folder: string; branch: string | null }

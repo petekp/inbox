@@ -59,6 +59,10 @@ export type ViewInput = {
    * a row, so it names them and the server keeps them in place. Other looks pass none.
    */
   undoShown?: string[]
+  /** The settled rows whose Undo press is out in the look, by id. They keep their `undo` action after Undo ends. */
+  undoOut?: string[]
+  /** The rows that draw collapsed, from `hooks/collapse.ts:collapsedRows`. */
+  collapsed?: string[]
 }
 
 export type InboxView = {
@@ -72,6 +76,8 @@ export type InboxView = {
   }
   findings: { count: number; rows: RowView[]; closed: ClosedView<ClosedFinding>[]; pressOutSince: number | null }
   status: ItemStatus
+  /** The rows that draw collapsed, by id. Each look draws a collapsed row closed, even while it is selected. */
+  collapsed: string[]
 }
 
 /** A closed entry as a look draws it. `mark` is `closedMark` of the entry and its delivery. */
@@ -109,6 +115,8 @@ export function inboxView({
   lastTypedMessageAt,
   listInput,
   undoShown,
+  undoOut = [],
+  collapsed = [],
 }: ViewInput): InboxView {
   const isFindingId = (id: string) =>
     ledger.findings.some(f => f.id === id) || ledger.closedFindings.some(f => f.id === id)
@@ -245,7 +253,13 @@ export function inboxView({
     const last = lastActions[row.id]
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt))
+    const actions = actionsOf(
+      row,
+      last,
+      state,
+      pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt),
+      undoOut.includes(row.id),
+    )
 
     const held = state.is === 'open' ? heldSubjectsOf(ledger.overview, row.id) : []
 
@@ -354,6 +368,7 @@ export function inboxView({
       ].sort((a, b) => b.closedAt - a.closedAt),
     },
     status,
+    collapsed,
   }
 }
 

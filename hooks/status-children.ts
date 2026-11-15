@@ -15,6 +15,16 @@ export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: num
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
 }
 
+/** Whether `c` is a delegate that finished after `at`, or at any time when `at` is null. */
+function isFinishedAfter(c: Child, at: number | null): boolean {
+  return c.delegateState === 'finished' && c.endedAt !== null && (at === null || c.endedAt > at)
+}
+
+/** Whether the page draws a row for `c`: it runs, or it is a delegate that finished after the person last looked. */
+export function isChildShown(c: Child, now: number, lastLookAt: number | null): boolean {
+  return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt)
+}
+
 /** What a host reports about a child: everything but the id and the link, which the Status owns. A delegate's state is null until reported. */
 type ChildReport = Omit<Child, 'id' | 'subjectId' | 'delegateState'> & Partial<Pick<Child, 'delegateState'>>
 
@@ -93,18 +103,30 @@ function servesText(o: SessionStatus, subjectId: string): string {
   return to === undefined ? '?' : to === 'none' ? '-' : to
 }
 
-/** The open asks as the call reads them, each with the subjects it holds up. */
-export function asksText(o: SessionStatus | null, asks: readonly Pick<Item, 'id' | 'ask'>[]): string {
+/** The open asks as the call reads them, each with the subjects it holds up and, when the agent gave one, why it asked. */
+export function asksText(o: SessionStatus | null, asks: readonly Pick<Item, 'id' | 'ask' | 'context'>[]): string {
   return asks
-    .map(a => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(', ') || '-'}`)
+    .map(a => {
+      const held = `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(', ') || '-'}`
+      const why = a.context ? clipWords(a.context.replaceAll('|', '/'), ASK_READ_WORDS) : ''
+      return why === '' ? held : `${held} | ${why}`
+    })
     .join(NL)
 }
 
-/** The running children as the call reads them. */
+/**
+ * The children as the call reads them: each running one, and each delegate that finished since the last call read the
+ * Status, while its subject is open. A finished delegate whose subject closed gives the call nothing to change.
+ */
 export function runningText(o: SessionStatus | null, now: number): string {
+  const isSubjectOpen = (id: string | null) => id === null || (o?.subjects.some(s => s.id === id && isOpen(s)) ?? false)
+  const isFinishNew = (c: Child) => isFinishedAfter(c, o?.lastCallReadAt ?? null) && isSubjectOpen(c.subjectId)
+  const state = (c: Child) =>
+    !isChildRunning(c, now) ? 'finished' : c.delegateState === 'blocked' ? 'blocked' : 'running'
+
   return (o?.children ?? [])
-    .filter(c => isChildRunning(c, now))
-    .map(c => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? '-'}`)
+    .filter(c => isChildRunning(c, now) || isFinishNew(c))
+    .map(c => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? '-'} | ${state(c)}`)
     .join(NL)
 }
 

@@ -1,5 +1,5 @@
 import type { Tab } from '../types'
-import { MAYBE_STALE_TEXT } from './banners'
+import { MAYBE_STALE_TEXT, NOTHING_NEEDED_TEXT } from './banners'
 import type { SessionView } from './session-view'
 import { ROW_TABS } from './tabs'
 
@@ -18,5 +18,5 @@ export function bandCounts(view: Pick<SessionView, Tab>): { id: Tab; label: stri
 
 /** What the band reads when no tab has a count. */
 export function noCountsText(view: Pick<SessionView, 'status'>, isReadFailed = false): string {
-  return isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : 'Nothing needed'
+  return isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : NOTHING_NEEDED_TEXT
 }

@@ -2,6 +2,7 @@ import type { Replay } from './status-replay'
 import { askHoldsTwo } from './replays/ask-holds-two'
 import { catchUpFromEmpty } from './replays/catch-up-from-empty'
 import { catchUpShipped } from './replays/catch-up-shipped'
+import { childrenFinished } from './replays/children-finished'
 import { coordinatorDay } from './replays/coordinator-day'
 import { removedGoal } from './replays/removed-goal'
 import { goalFromWork } from './replays/goal-from-work'
@@ -23,6 +24,8 @@ import { singleTask } from './replays/single-task'
 import { goalOutcomeDropped } from './replays/goal-outcome-dropped'
 import { staleGoal } from './replays/stale-goal'
 import { nextRelease } from './replays/next-release'
+import { nextMilestone } from './replays/next-milestone'
+import { chatStatesDirection, restartReadsBacklog, unrelatedAskReasons } from './replays/restart-reads-backlog'
 
 export const REPLAYS: Replay[] = [
   coordinatorDay,
@@ -49,4 +52,9 @@ export const REPLAYS: Replay[] = [
   staleGoal,
   goalOutcomeDropped,
   nextRelease,
+  nextMilestone,
+  restartReadsBacklog,
+  chatStatesDirection,
+  unrelatedAskReasons,
+  childrenFinished,
 ]

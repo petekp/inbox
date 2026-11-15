@@ -126,12 +126,7 @@ export function paneStatusLines({
   /** A row's stall word in the stall's tone, never split by a wrap. */
   const stallSpan = (stall: StatusStall): TerminalSpan => {
     const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
-    const tone =
-      stall.tone === 'needsYou'
-        ? { isNeedsYou: true as const }
-        : stall.tone === 'done'
-          ? { isDone: true as const }
-          : { isMuted: true as const }
+    const tone = stall.tone === 'needsYou' ? { isNeedsYou: true as const } : { isMuted: true as const }
 
     return { text, isUnbroken: true, ...tone }
   }
@@ -184,7 +179,7 @@ export function paneStatusLines({
     const firstLineMiddle = 0.5
     const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
       <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
-        {desktopHairline('line', 'down', ends)}
+        {desktopHairline('line', 'down', ends, pal.line)}
       </Box>
     )
     const arm = DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP
@@ -193,7 +188,7 @@ export function paneStatusLines({
         ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reach })]
         : [
             hair('to-arm', false, { marginTop: reach }),
-            desktopHairline('arm', 'across', { width: arm }),
+            desktopHairline('arm', 'across', { width: arm }, pal.line),
             ...(shape === 'mid' ? [hair('on', true, { marginBottom: reach })] : []),
           ]
 

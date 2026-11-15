@@ -3,7 +3,7 @@ import { CLEAR_FINISHED_ID } from '../../hooks/pr-rows'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
-import { UNDO_KEY } from '../../hooks/help'
+import { COLLAPSE_KEY, UNDO_KEY } from '../../hooks/help'
 import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
@@ -82,7 +82,7 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
 
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: 'sending' } }, press }
   }
-  if (press.action === 'herdr-ask') return { ui: { ...ui, focus: null }, press }
+  if (press.action === 'herdr-ask' || press.action === 'collapse') return { ui: { ...ui, focus: null }, press }
   if (!isPrPress(press) && press.action === 'type') {
     const draft = ui.drafts[line.id] ?? { text: '', since: now }
 
@@ -126,7 +126,7 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   // The Status lists no lines, and its selection is a Status row's id.
   const base: PanelUi = isPage ? ui : { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
-  const shown = shownTabs(screen.isNextBuild === true)
+  const shown = shownTabs()
   const isTabKey = key === 'tab' || key === 'shift+tab' || shown.some(t => t.hotkey === key)
   if (key === '?' || (base.isHelpShown && key === 'escape'))
     return { ui: { ...base, isHelpShown: key === '?' && !base.isHelpShown, pageTop: 0 } }
@@ -164,6 +164,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   const tabLine = lines.find(l => l.isTabButtons && l.buttons.some(b => b.key === key))
   const tabButton = tabLine?.buttons.find(b => b.key === key)
   if (tabLine && tabButton) return activate(screen, base, tabLine, tabButton, now)
+  if (key === COLLAPSE_KEY && selected && !selected.isTabButtons && isSelectable(selected))
+    return { ui: base, press: { action: 'collapse', id: selected.id, isCollapsed: selected.isCollapsed !== true } }
+  if (selected?.isCollapsed) return { ui: base }
   if (selected?.fold && key === 'enter') {
     const kind = selected.fold
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter(k => k !== kind) : [...base.unfolded, kind]

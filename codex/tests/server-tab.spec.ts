@@ -47,29 +47,17 @@ test('the view request saves the tab the page shows, ignores a name that is not 
   )
 })
 
-test('a release build saves its first tab for a Status the page names, and starts no look, while a next build saves the Status', async () => {
-  const withStatus = async (isNextBuild: boolean) => {
-    const server = await setup(
-      0,
-      () => 100,
-      async () => 'codex',
-      isNextBuild,
-    )
-    await updateState(server.dir, 's1', s => ({
-      ...s,
-      ledger: { ...s.ledger, overview: { ...EMPTY_SESSION_STATUS, head: { title: 'h', description: '' } } },
-    }))
-    await server.call('inbox_view', { tab: 'overview' }, { thread_id: 's1' })
+test('a release build saves a Status the page names and starts a look', async () => {
+  const server = await setup(0, () => 100)
+  await updateState(server.dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, overview: { ...EMPTY_SESSION_STATUS, head: { title: 'h', description: '' } } },
+  }))
+  await server.call('inbox_view', { tab: 'overview' }, { thread_id: 's1' })
 
-    return readState(server.dir, 's1')
-  }
-  const release = await withStatus(false)
-  assert.equal(release.shownTab, 'needsYou')
-  assert.equal(release.ledger.overview?.look, null)
-
-  const next = await withStatus(true)
-  assert.equal(next.shownTab, 'overview')
-  assert.equal(next.ledger.overview?.look?.startedAt, 100)
+  const saved = await readState(server.dir, 's1')
+  assert.equal(saved.shownTab, 'overview')
+  assert.equal(saved.ledger.overview?.look?.startedAt, 100)
 })
 
 test('with no dev build, the view names the installed page and inbox_tab_page serves it, so a tab from an older build replaces itself', async () => {

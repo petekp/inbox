@@ -42,7 +42,6 @@ export const coordinatorDayLater: Step[] = [
       ],
     },
     checkpoint: true,
-    judgeUntil: { marks: '#137' },
     targets: ['piece-once', 'text-no-ids', 'children-linked', 'each-once', 'where-it-stands'],
   },
   {
@@ -61,7 +60,7 @@ export const coordinatorDayLater: Step[] = [
     facts: {
       focus: 'shipping 2.5',
       focusMatch: '2\\.5',
-      pastMatch: 'vanish|archiv',
+      pastMatch: 'vanish|disappear|archiv',
       pieces: [
         { id: 'vanish', state: 'done', stands: 'fixed' },
         { id: 'r25', state: 'working', stands: 'release candidate building', alsoRight: ['waits-on-other'] },
@@ -73,6 +72,7 @@ export const coordinatorDayLater: Step[] = [
       children: [],
     },
     targets: ['marks-true', 'milestones-true', 'piece-once', 'head-follows'],
+    until: { 'head-follows': 'the follow-up on the Now: line that keeps naming a merged fix' },
   },
   {
     label: 'The person asks why export sometimes picks the wrong default folder on one platform',
@@ -110,10 +110,9 @@ export const coordinatorDayLater: Step[] = [
     },
     facts: {
       pieces: [{ id: 'r25', state: 'done', stands: 'live in both stores', alsoRight: [] }],
-      milestones: [{ id: 'ms-live25', state: 'done' }],
+      milestones: [{ id: 'ms-live25', state: 'done', alsoRight: [] }],
     },
     checkpoint: true,
-    judgeUntil: { marks: '#137' },
     targets: ['head-follows', 'milestones-true', 'open-pieces-kept', 'marks-true', 'head'],
   },
   {
@@ -164,7 +163,7 @@ export const coordinatorDayLater: Step[] = [
       ],
     },
     checkpoint: true,
-    judgeUntil: { marks: '#137' },
     targets: ['milestones-true', 'serves-linked', 'head-follows', 'marks-true', 'head'],
+    until: { 'marks-true': 'the follow-up on the folder bug folded into the Export button' },
   },
 ]

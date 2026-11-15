@@ -15,7 +15,7 @@ import type { ToneName } from '../../hooks/tones'
 import { ROW_COPY } from '../../hooks/rows'
 import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../hooks/tabs'
 import { footerStatus } from '../../hooks/view'
-import { keptOpen } from '../../hooks/action-plan'
+import { openOnArrival } from '../../hooks/action-plan'
 import { GOAL_FIELD, GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { StatusPage } from '../../hooks/status-page'
 import { versionLabel } from '../../hooks/banners'
@@ -70,8 +70,7 @@ export function followRows(
   const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded.added)
   if (to) return { ui: withTab(ui, to, now), seen: recorded.seen }
   const arrived = recorded.added[tab]
-  if (ui.selectedId !== null || arrived.length === 0) return { ui, seen: recorded.seen }
-  const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), arrived)
+  const kept = openOnArrival(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), ui.selectedId, arrived)
 
   return { ui: kept === null ? ui : { ...ui, selectedId: kept }, seen: recorded.seen }
 }
@@ -112,7 +111,7 @@ export function tabBar(d: Draw): string {
     findings: screen.view.findings.count,
     prs: screen.view.prs.count,
   }
-  const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
+  const tabs: TabCell[] = shownTabs().map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
     badge: tabBadge(t.id, counts),

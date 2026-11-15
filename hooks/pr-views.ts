@@ -57,10 +57,10 @@ export function isViewKept(
 
 /**
  * A PR block a look draws: a tracked PR, which is open, or a PR dismissed while the look shows the PRs tab, which
- * settles in place as a dismissed row does. `rank` is its number in the agent's order, from 1, or null when the order
- * does not rank it. A look draws it before an open block's title.
+ * settles in place as a dismissed row does. `isRanked` says whether the agent's order ranks it. Ranked blocks draw
+ * first, and a look starts the rest with `otherPrsStart`.
  */
-export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState; rank: number | null }
+export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState; isRanked: boolean }
 
 /** The PRs of the drawn blocks that are not settled. */
 export function openPrViews(drawn: DrawnPr[]): PrView[] {
@@ -71,7 +71,7 @@ export function openPrViews(drawn: DrawnPr[]): PrView[] {
  * How a settled block reads and marks its close: ✓ for a merge, the lapsed mark for a PR closed without one, ✕ for
  * the person's Dismiss. Each offers Undo while it lasts, which keeps the PR on the tab.
  */
-function settledPrState(mark: LastAction, now: number, settleWindowMs: number): SettledState {
+function settledPrState(mark: LastAction, now: number, settleWindowMs: number, isUndoOut: boolean): SettledState {
   const closed =
     mark.text === PR_MERGED_LABEL
       ? ({ how: 'update', outcome: PR_MERGED_LABEL } as const)
@@ -80,7 +80,7 @@ function settledPrState(mark: LastAction, now: number, settleWindowMs: number): 
         : ({ how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const)
   const state = closedRowState(closed, mark.at, now, settleWindowMs, null)
 
-  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true }
+  return { ...state, canUndo: isUndoOut || isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true }
 }
 
 /**
@@ -95,17 +95,16 @@ export function drawnPrs(
 ): DrawnPr[] {
   const { now, settleWindowMs } = placing
   const ranked = links.prOrder?.refs ?? []
-  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr): Omit<DrawnPr, 'rank'>[] => {
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr): Omit<DrawnPr, 'isRanked'>[] => {
     if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: 'open' } }]
     const mark = dismissal(lastActions, pr.ref)
     if (mark === null) return []
-    const state = settledPrState(mark, now, settleWindowMs)
+    const state = settledPrState(mark, now, settleWindowMs, (placing.undoOut ?? []).includes(prMarkId(pr.ref)))
 
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : []
   })
-  let rank = 0
 
-  return drawn.map(d => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }))
+  return drawn.map(d => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }))
 }
 
 /**

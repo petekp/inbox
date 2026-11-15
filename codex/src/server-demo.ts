@@ -1,5 +1,6 @@
 import type { PrPress } from '../../hooks/pr-press'
 import { isCompareInBackground } from '../../hooks/clients'
+import { withCollapse } from '../../hooks/collapse'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/press-effects'
 import type { RowPress } from '../../hooks/presses'
 import { pressOn } from '../../hooks/session-presses'
@@ -69,5 +70,11 @@ export function makeDemo(
     }
   }
 
-  return { demoOf, onDemoPress }
+  async function collapseDemo(id: string, row: string, isCollapsed: boolean, holds: Holds): Promise<TabView> {
+    const next = withCollapse(demoOf(id), row, isCollapsed, now())
+    demos.set(id, next)
+    return served(next, id, true, holds)
+  }
+
+  return { demoOf, onDemoPress, collapseDemo }
 }

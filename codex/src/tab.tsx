@@ -1,6 +1,6 @@
 import { render } from 'preact'
 import type { ComponentChildren } from 'preact'
-import { HELP_COPY, UNDO_KEY } from '../../hooks/help'
+import { COLLAPSE_KEY, HELP_COPY, UNDO_KEY } from '../../hooks/help'
 import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { steppedIndex } from '../../hooks/action-plan'
@@ -8,13 +8,14 @@ import { tabState, handoff, root, instanceAbort } from './tab-state'
 import { noteShownRows, rowsInView, SUBJECTS_ATTRIBUTE } from './tab-shown'
 import type { Kept, Lists } from './tab-state'
 import type { DrawnPrs } from './tab-pr-steps'
+import type { DrawnStatus } from './tab-status-steps'
 import { later, dispose, request, applyHost, READ_TIMEOUT_MS } from './tab-host'
 import type { HostContext } from './tab-host'
 import { measure, animateDraw, revealSelected, applyPageVariables, wakeForMoves } from './tab-motion'
 import { switchTab, drawnTab, selectedIndex, select, rowActions } from './tab-selection'
 import { restoreState } from './tab-swap'
 import { read, poll } from './tab-read'
-import { tabRows } from './tab-rows'
+import { pressCollapseKey, tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
 import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
@@ -30,7 +31,15 @@ let hostContext: HostContext = {}
 
 const LOADING_DELAY_MS = 300
 
-function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): ComponentChildren {
+function App({
+  lists,
+  prs,
+  status,
+}: {
+  lists: Lists | null
+  prs: DrawnPrs | null
+  status: DrawnStatus | null
+}): ComponentChildren {
   if (!tabState.view || !lists)
     return tabState.readError !== null ? (
       <Banner
@@ -54,7 +63,7 @@ function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): Com
       ) : null}
       <TabBar v={v} />
       {tabState.isHelpShown ? (
-        <HelpPage v={v} />
+        <HelpPage />
       ) : shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
       ) : shown === 'findings' ? (
@@ -64,7 +73,7 @@ function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): Com
           <Prs v={v} prs={prs} now={now} />
         ) : null
       ) : (
-        <StatusTab page={v.statusPage} />
+        <StatusTab v={v} drawn={status ?? { head: [], goal: [], rows: [] }} />
       )}
       <footer>
         <button
@@ -99,8 +108,10 @@ function draw() {
   const step = tabState.view ? stepLists(tabState.view) : null
   tabState.lastLists = step?.lists ?? null
   tabState.lastPrs = step?.prs ?? null
+  tabState.lastStatus = step?.status ?? null
+  tabState.lastBanners = step?.banners ?? null
   wakeForMoves()
-  render(<App lists={tabState.lastLists} prs={tabState.lastPrs} />, root)
+  render(<App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />, root)
   animateDraw(before, step?.changed ?? new Set())
   noteStatusInView()
   const fieldToFocus =
@@ -166,7 +177,7 @@ document.addEventListener(
       draw()
       return
     }
-    const switched = shownTabs(tabState.view.isNextBuild === true).find(t => t.hotkey === e.key)
+    const switched = shownTabs().find(t => t.hotkey === e.key)
     if (switched) {
       switchTab(switched.id)
       draw()
@@ -196,8 +207,13 @@ document.addEventListener(
       if (pressUndoKey(tabState.view, t)) e.preventDefault()
       return
     }
+    if (e.key === COLLAPSE_KEY) {
+      e.preventDefault()
+      pressCollapseKey(t, rows, at)
+      return
+    }
     const row = rows[at]
-    if (!row) return
+    if (!row || tabState.view.collapsed.includes(row.id)) return
     const { keys, more } = rowActions(row)
     const k = [...keys, ...more].find(x => x.hotkey === e.key)
     if (k) {

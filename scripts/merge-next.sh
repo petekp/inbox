@@ -106,6 +106,9 @@ branch=$(git symbolic-ref -q --short HEAD) || fail "HEAD is not on a branch. Che
 case $branch in
 next | main) fail "This is $branch. Run it on a PR branch." ;;
 esac
+resume_with="$SCRIPT --continue"
+[ "$check" = 1 ] || resume_with="$resume_with --no-check"
+
 command -v npm >/dev/null 2>&1 || fail "npm is not installed."
 command -v bun >/dev/null 2>&1 || fail "Bun is not installed: https://bun.sh"
 
@@ -119,7 +122,7 @@ if [ "$resume" = 1 ]; then
     if [ -n "$unresolved" ]; then
         echo "merge-next: These files are not resolved and staged:" >&2
         echo "$unresolved" | sed 's/^/  /' >&2
-        fail "Resolve each, stage it with git add, then run $SCRIPT --continue."
+        fail "Resolve each, stage it with git add, then run $resume_with."
     fi
 else
     if is_merging; then
@@ -140,7 +143,7 @@ else
             echo "merge-next: These source files conflict:" >&2
             echo "$conflicts" | sed 's/^/  /' >&2
             echo "merge-next: The merge is still in progress. Leave the bundles: --continue rebuilds them." >&2
-            fail "Resolve each source file, stage it with git add, then run $SCRIPT --continue."
+            fail "Resolve each source file, stage it with git add, then run $resume_with."
         fi
         echo "Only bundles conflict."
     fi
@@ -152,7 +155,7 @@ fi
 
 if is_merging; then
     rebuild ||
-        fail "The build failed, and the merge is still in progress. Fix the sources, stage them with git add, then run $SCRIPT --continue."
+        fail "The build failed, and the merge is still in progress. Fix the sources, stage them with git add, then run $resume_with."
 else
     rebuild || fail "The build failed after the merge. Fix the sources, commit them, then run $SCRIPT again."
 fi

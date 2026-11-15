@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 
-import { SESSION_LABEL, follow } from '../src/follow'
+import { SESSION_LABEL } from '../../hooks/herdr'
+import { follow } from '../src/follow'
 import type { Where } from '../src/follow'
 
 const claude = { name: 'Claude Code', shell: false }

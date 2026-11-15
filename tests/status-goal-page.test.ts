@@ -33,10 +33,11 @@ const linked = (): SessionStatus =>
     new Set(['i1']),
   )
 
-test('a goal shows how far the work is after its text, its Edit comes before its milestones in the order j and k move, and the head draws as its Now line', () => {
+test('a goal shows its milestones as a path, its Edit comes before its milestones in the order j and k move, and the head draws as its Now line', () => {
   const p = page(linked(), 40, {}, [askItem('i1')])
 
-  expect(p.goal).toMatchObject({ label: 'Goal', count: '1 of 3 done' })
+  expect(p.goal).toMatchObject({ label: 'Goal' })
+  expect(p.goal?.milestones.map(m => m.word)).toEqual([null, 'now', 'next'])
   expect(p.goal?.text).toBe('Import ready to demo')
   expect(p.goal?.now).toBe('Now: Making CSV import ready to demo')
   expect(p.head).not.toBeNull()
@@ -227,12 +228,11 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
 
   expect(page(typed, 46).goal).toMatchObject({
     label: 'Goal',
-    count: null,
     was: 'Import ready to demo',
     awaiting: 'Milestones after the next reply',
     milestones: [],
   })
-  expect(page(met, 55).goal).toMatchObject({ label: 'Goal met', count: null, isMet: true, awaiting: null })
+  expect(page(met, 55).goal).toMatchObject({ label: 'Goal met', isMet: true, awaiting: null })
   expect(
     statusKeyRows(page(met, 55))
       .find(t => t.id === 'goal')

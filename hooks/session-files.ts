@@ -3,7 +3,7 @@ import { TOLD_NOTHING } from './inbox-text'
 import { upgradeLastActions } from './last-actions'
 import { upgradeHostTasks } from './host-tasks'
 import { withCheckKeys } from './saved-check-keys'
-import type { PrView, PrViews, Session, Told, TurnDialogQuestion } from '../types'
+import type { PrView, PrViews, Session, Told, ToolFields, TurnDialogQuestion } from '../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
 
@@ -35,6 +35,7 @@ export function emptySession(): Session {
     sent: [],
     lastActions: {},
     heldRows: [],
+    collapsed: {},
     shownSince: null,
     prViews: NO_PRS,
     stop: null,
@@ -44,6 +45,7 @@ export function emptySession(): Session {
     overviewTurn: 0,
     hostTasks: [],
     dialogQuestions: [],
+    toolFields: null,
   }
 }
 
@@ -88,6 +90,16 @@ export type SavedSession = Partial<
   prViews?: Partial<PrViews>
 }
 
+/** A saved session's `toolFields`: `saved` when it holds a list of field names for each inbox tool, and null otherwise. */
+function savedToolFields(saved: unknown): ToolFields | null {
+  const isNames = (v: unknown) => Array.isArray(v) && v.every(f => typeof f === 'string')
+  const fields = saved as Partial<ToolFields> | null | undefined
+
+  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs)
+    ? (fields as ToolFields)
+    : null
+}
+
 /** A saved presence without `statedStep`, which a build of the Progress tab saved and nothing reads. */
 function withoutStatedStep(presence: SavedSession['presence']): SavedSession['presence'] {
   const { statedStep: _statedStep, ...rest } = (presence ?? {}) as Partial<Session['presence']> & {
@@ -130,6 +142,7 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     ...(saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress }),
     heldRows: saved.heldRows ?? [],
+    collapsed: saved.collapsed ?? {},
     shownSince: saved.shownSince ?? null,
     prViews: {
       ...NO_PRS,
@@ -160,5 +173,6 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map(q => ({ ...q, descriptions: q.descriptions ?? {} })),
+    toolFields: savedToolFields(saved.toolFields),
   }
 }

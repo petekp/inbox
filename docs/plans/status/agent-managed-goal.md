@@ -160,7 +160,7 @@ All four looks draw the goal from `goalPage` in `hooks/status-goal-page.ts` and 
 
 Remove goal is a visual change. Each look gets a mock in `.scratch/demo/`, which the coordinator shows Pete before the merge.
 
-What stays the same in every look: the goal line, "Goal met", the count, the was line, the milestones, and the goal's Edit button. A goal the call replaced shows the old one as its was line until the person looks. That is the only sign the goal changed, and it already exists.
+What stays the same in every look: the goal line, "Goal met", the was line, the milestones, and the goal's Edit button. A goal the call replaced shows the old one as its was line until the person looks. That is the only sign the goal changed, and it already exists.
 
 Checks per look: an inferred goal appearing, a met goal, a replaced goal with its was line, a typed goal, a typed goal waiting for milestones, and Remove goal.
 

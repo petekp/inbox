@@ -5,12 +5,24 @@ import { DOT, rowResultMark } from '../../hooks/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { BannerView } from '../../hooks/banners'
+import type { EmptyTab } from '../../hooks/empty-tab'
 import type { StatusTone, LegendEntry } from '../../hooks/help'
 import type { ResultMark, RowView } from '../../hooks/rows'
 import { parseInline } from '../../hooks/inline'
 import { isUndoLeft } from './settle'
 import { errors, notes, copies } from './tab-state'
 import type { Tone, Key, Row } from './tab-state'
+
+/** A tab's empty state from `emptyTab`, centred in the page, with its drawn `under` as children. */
+export function EmptyState({ empty, children }: { empty: EmptyTab; children?: ComponentChildren }) {
+  return (
+    <div class="empty">
+      <div class="title">{empty.title}</div>
+      {empty.hint ? <div class="muted">{empty.hint}</div> : null}
+      {children}
+    </div>
+  )
+}
 
 /** An Asks or Finds row's mark: its result's, in the mark column. An open row has none. */
 export function resultHandle(r: RowView): Pick<Row, 'handle' | 'handleTone' | 'isHandleRunning'> {
@@ -89,7 +101,7 @@ export function legendMarkClass(m: LegendEntry): string {
   return ['mark', tone, m.isRunning ? 'running' : null].filter(Boolean).join(' ')
 }
 
-/** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. */
+/** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. A title with no mark starts at the mark column, where its rows' marks do. */
 export function GroupTitle({
   title,
   count,
@@ -100,7 +112,7 @@ export function GroupTitle({
   mark?: { mark: string; tone: Tone }
 }) {
   return (
-    <div class="group-title">
+    <div class={mark ? 'group-title' : 'group-title unmarked'}>
       {mark ? <span class={`group-mark ${mark.tone}`}>{mark.mark}</span> : null}
       <b>{title}</b>
       {count > 0 ? (
@@ -148,7 +160,7 @@ export function UndoPlace({
   offersUndo: boolean
   onUndo: () => void
 }) {
-  const isShown = canUndo && (isUndoing || isUndoLeft(start, Date.now()))
+  const isShown = isUndoing || (canUndo && isUndoLeft(start, Date.now()))
   if (!isShown)
     return offersUndo ? (
       <button type="button" class="key undo spent" disabled tabIndex={-1} aria-hidden="true">

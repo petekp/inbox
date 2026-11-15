@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
-import { BAND, PANE, selectRow, replyField, replyKey } from './hooks-helpers'
+import { BAND, PANE, openTitle, selectRow, replyField, replyKey } from './hooks-helpers'
 
 test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends, then settles and folds into Closed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -197,5 +197,5 @@ test('a held row’s label that does not fit after its title’s last word follo
   await pane.unmount()
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
   await selectRow(desktop, 'i2')
-  expect(await label(desktop)).toEqual([' · Answered: --shout'])
+  expect((await openTitle(desktop))?.after).toBe(' · Answered: --shout')
 })

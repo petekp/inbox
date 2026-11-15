@@ -102,10 +102,15 @@ let appTerminal: { target: Extract<HerdrTarget, { kind: 'terminal' }>; hasMod: b
 let home: string | undefined
 const openHerdrPanel = herdrPanelOpener()
 
-async function targetOf(calls: HerdrCalls) {
+async function currentTarget(calls: HerdrCalls) {
   const [HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME] = await calls.env()
+
+  return { target: herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME }), HOME }
+}
+
+async function targetOf(calls: HerdrCalls) {
+  const { target, HOME } = await currentTarget(calls)
   home = HOME
-  const target = herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME })
   appTerminal =
     target?.kind === 'terminal' ? { target, hasMod: await hasHerdrMod(openCalls(calls).isFile, target) } : null
 
@@ -246,6 +251,7 @@ export function publishToHerdr(
             terminal: target.terminal,
             writtenAt: now,
             projectFolder: root,
+            isFetchingPrs: session.prViews.isFetching,
           },
           session,
           calls.log,
@@ -363,9 +369,14 @@ type DelegateCalls = {
   settle: (agents: ReadonlyMap<string, HerdrAgent>, at: number) => Promise<unknown>
 }
 
-async function checkDelegates(calls: DelegateCalls) {
+/** What Herdr shows about the agents of the session `o` holds, asked as `delegatesInHerdr` says. */
+export async function delegatesAsked(calls: HerdrCalls, o: SessionStatus | null) {
+  return delegatesInHerdr(o, calls.run, (await currentTarget(calls)).target)
+}
+
+async function checkDelegates(calls: DelegateCalls, herdr: HerdrCalls) {
   if (!isHerdrCheckDue(calls.ownerId, await calls.now())) return
-  const agents = await delegatesInHerdr(await calls.overview(), calls.run)
+  const agents = await delegatesAsked(herdr, await calls.overview())
   if (agents) await calls.settle(agents, await calls.now())
 }
 
@@ -377,7 +388,7 @@ async function checkDelegates(calls: DelegateCalls) {
 export function followDelegates(
   isShown: boolean,
   state: { herdrCheckTimer: Timer | null },
-  every: HerdrCalls['every'],
+  herdr: HerdrCalls,
   delegateCalls: () => DelegateCalls,
 ) {
   const stop = () => {
@@ -385,12 +396,12 @@ export function followDelegates(
     state.herdrCheckTimer = null
   }
   if (!isShown) return stop()
-  void checkDelegates(delegateCalls()).catch(() => undefined)
-  state.herdrCheckTimer ??= every(HERDR_CHECK_MS, () => {
+  void checkDelegates(delegateCalls(), herdr).catch(() => undefined)
+  state.herdrCheckTimer ??= herdr.every(HERDR_CHECK_MS, () => {
     const calls = delegateCalls()
     void calls
       .isStatusShown()
-      .then(isStillShown => (isStillShown ? checkDelegates(calls) : stop()))
+      .then(isStillShown => (isStillShown ? checkDelegates(calls, herdr) : stop()))
       .catch(() => undefined)
   })
 }

@@ -1,4 +1,5 @@
 import { HERDR_CHECK_MS } from '../../hooks/herdr'
+import { PR_POLL_MS } from '../../hooks/host-prs'
 import { isPrPress, pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import { isPressConfirmed } from '../../hooks/press-reducer'
@@ -15,7 +16,9 @@ import { followRows } from './panel-tabs'
 import type { SeenRows } from './panel-tabs'
 
 const ANIMATION_MS = 200
-const PRS_CHECK_MS = 120_000
+
+const collapsedAfter = (collapsed: string[], p: { id: string; isCollapsed: boolean }) =>
+  p.isCollapsed ? [...collapsed.filter(id => id !== p.id), p.id] : collapsed.filter(id => id !== p.id)
 
 /** What the panel needs from a session, so the live inbox and the demo can both supply it. */
 export type PanelSource = {
@@ -28,6 +31,8 @@ export type PanelSource = {
   resume(): Promise<string | null>
   /** Answers the question before omp installs the inbox's Herdr mod. */
   answerHerdr?(isYes: boolean): Promise<void>
+  /** Saves the row `id` as collapsed or expanded. */
+  collapse(id: string, isCollapsed: boolean): Promise<void>
   fetchPrsWhenDue(isTabShown: boolean): void
   /** Asks Herdr about the running delegates, when a check is due. */
   checkDelegatesWhenDue(): void
@@ -143,6 +148,11 @@ export function createPanel(deps: PanelDeps): Panel {
     if (p.action === 'resume') return resume()
     if (p.action === 'herdr-ask') return source.answerHerdr?.(p.isYes).then(() => refresh())
     if (p.action === 'all-options') return
+    if (p.action === 'collapse') {
+      if (screen) screen = { ...screen, view: { ...screen.view, collapsed: collapsedAfter(screen.view.collapsed, p) } }
+      deps.requestRender()
+      return source.collapse(p.id, p.isCollapsed).then(() => refresh())
+    }
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
     const sentDraft = !isPrPress(p) && p.action === 'type' ? ui.drafts[p.id] : undefined
@@ -189,7 +199,7 @@ export function createPanel(deps: PanelDeps): Panel {
     },
     async start() {
       stops.push(source.onChange(() => void refresh()))
-      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === 'prs'), PRS_CHECK_MS)
+      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === 'prs'), PR_POLL_MS)
       stops.push(() => timers.stop(prs))
       const delegates = timers.every(() => {
         if (ui.tab === 'overview') source.checkDelegatesWhenDue()

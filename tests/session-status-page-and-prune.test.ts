@@ -16,6 +16,7 @@ import { allRows } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import { prMarkId } from '../hooks/pr-rows'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 import { answer } from './session-helpers'
 
 const ITEM: Item = {
@@ -111,6 +112,16 @@ test('a session saved by the Progress trial build loads without its results, sub
   expect(loaded.overviewFailure).toBeNull()
 })
 
+test('a session saved before sessions kept their tool fields, or with fields that are not lists of names, loads knowing none of them, and one saved with them keeps them', () => {
+  const saved = (toolFields: unknown) => upgradeSession({ ...emptySession(), toolFields } as never).toolFields
+
+  expect(upgradeSession({}).toolFields).toBeNull()
+  expect(saved({ record: 'kind,ask', close: [], order_prs: [] })).toBeNull()
+  expect(saved({ record: [1], close: [], order_prs: [] })).toBeNull()
+  expect(saved({ record: ['kind'], close: [] })).toBeNull()
+  expect(saved(TOOL_FIELDS)).toEqual(TOOL_FIELDS)
+})
+
 test('a sample saved without a Status is replaced, and the sample session carries its own', () => {
   const old = demoView(1_000_000, 'Claude')
 
@@ -121,10 +132,19 @@ test('a sample saved without a Status is replaced, and the sample session carrie
   expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.goal?.milestones.map(m => m.rows.map(r => r.kind))).toEqual([
     ['subject'],
+    ['subject'],
     ['subject', 'child', 'child', 'child'],
     ['subject'],
+    ['fold'],
   ])
-  expect(page.rows.map(r => r.kind)).toEqual(['part', 'subject', 'child', 'subject', 'done-fold'])
+  expect(page.goal?.milestones.map(m => [m.place, m.foldId])).toEqual([
+    ['done', 'm4-done'],
+    ['done', null],
+    ['now', null],
+    ['next', null],
+    ['later', null],
+  ])
+  expect(page.rows.map(r => r.kind)).toEqual(['part', 'subject', 'child', 'done-fold'])
 })
 
 test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {

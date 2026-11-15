@@ -23,7 +23,7 @@ Adding offline sync to the notes app
 ● Export button
   works on web
   ├ ◆ Lay out the PDF export · waiting
-  └ ✓ Check the print styles · finished
+  └ ✓ Check the print styles
 ◌ 2.4 release
   in store review
 ✓ Sync engine
@@ -69,6 +69,8 @@ The first words the person reads tell them what the session is focused on, in th
 - **Bad:** `Lint error` over `Fixing the lint error`, after one step on the way.
 - **Bad:** `Offline sync` over `PR ready for review`. That is where one piece stands, not the session's focus.
 - **Bad:** `Offline sync` over `Offline sync`. The description only repeats the title.
+- **Good:** `Now: Handling sync conflicts, then the settings toggle`, under the goal `Offline sync in 2.5`. While a goal is set, the head is one `Now:` line, and the goal already names the aim, so it names the part underway.
+- **Bad:** `Now: Adding offline sync, shipping in 2.5`, under the goal `Offline sync in 2.5`. It only repeats the goal, and tells the person nothing the goal line does not.
 - **Bad:** the title `Add offline sync so notes save without a connection`. That is a sentence.
 
 ### Where does each piece of it stand?
@@ -95,14 +97,14 @@ One row per piece, whatever words the conversation used for it. Finished work do
 
 #### 5. Each mark is true, and every open piece stays on the page
 
-The person can trust a mark at a glance. A piece that is delivered, dropped or filed for later closes, with its own mark. Every piece still open is on the page, as a row or in the "N more" fold, however many there are and however old. The page gets shorter by closing what is done, dropped, filed or listed twice, never by losing open work.
+The person can trust a mark at a glance. A piece that is delivered, dropped or filed for later closes. The page has no mark of its own for filed work, so it closes as delivered, and where it stands says it is filed. Every piece still open is on the page, as a row or in the "N more" fold, however many there are and however old. A piece not started yet whose whole outcome is a milestone may show as that milestone alone, as `○ Live in store ← next` stands for a 2.5 release no one has started. The page gets shorter by closing what is done, dropped, filed or listed twice, never by losing open work.
 
 - **Good:** `✓ 2.4 release: live in the store`, with a separate `● Sync bug: cause found`.
 - **Good:** a piece set aside for a day keeps its row: `○ Export button: works on web`.
-- **Good:** `→ Dark mode toggle: filed for later`, then folded apart from the done count.
+- **Good:** `✓ Dark mode toggle: filed for later`.
 - **Bad:** `● 2.4 release: published, sync bug next`. The release is over.
 - **Bad:** ten `○` rows that read "filed for later", all evening.
-- **Bad:** `✓ Dark mode toggle: filed for later`, counted with delivered work in "▸ 4 done".
+- **Bad:** `○ Dark mode toggle: filed for later`. Filed work is closed.
 - **Bad:** nine pieces are open, and the page shows six, with no fold and no ✓ or ✗ for the other three.
 
 A milestone's mark follows the work that serves it. It reads as being worked on while any of that work is, and it closes once that work is closed and some of it was delivered. The person reads the goal block first, so a `○` milestone over a `●` row tells them nothing has started on it when it has.
@@ -114,6 +116,8 @@ A milestone's mark follows the work that serves it. It reads as being worked on 
 
 A few words on what works, what is left or what it waits on, in the work's own terms. It does not name the step that ran, the tool that runs now, an id, or what was said in the conversation. A row that covers several parts keeps every part whose state differs. When those parts do not fit in a few words, each gets its own row.
 
+While every child row under a working piece has finished, and no ask holds it up, where it stands names the step left in this session, so the person sees why the row still works. When the step left is another piece's work, the piece waits on it. When neither the session nor where it stands says what came of a finished delegate, the step left is checking its work.
+
 - **Good:** `Export button: works on web and iOS`.
 - **Good:** `2.5 release: in review`, for a coordinator's stream.
 - **Good:** `Sync engine: Android works, iOS loses edits`, or a row for each.
@@ -122,6 +126,11 @@ A few words on what works, what is left or what it waits on, in the work's own t
 - **Bad:** `Export button: reviewer running`, when the reviewer shows as a child row. That repeats the child row.
 - **Bad:** `Export button: export button merged`. That repeats the name.
 - **Bad:** `Sync conflicts: discussed three options`. That is the conversation, not the work.
+- **Good:** `● Export button: PDF works, merge left`, over `└ ✓ Lay out the PDF export · finished`.
+- **Bad:** `● Export button: PDF layout works`, over the same finished delegate. Nothing says why it still works.
+- **Bad:** `● Sync conflicts: waits on the sync engine`. The step left is another piece's work, so the row is ◌.
+- **Good:** `● Sync engine: retry queue done, unchecked`, over `└ ✓ Build the sync retry queue · finished`, when the reply talked about other work.
+- **Bad:** `● Sync engine: retry queue under way`, over the same finished delegate. That says the finished work still runs.
 
 #### 7. Running work shows under the piece it serves, in plain words
 
@@ -185,7 +194,7 @@ When the session drops one approach for another, the person sees both until they
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only time a row shows is how long an open subject has been idle, past a day, which code writes, so none goes stale. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only time a subject row shows is how long an open subject has been idle, past a day. The goal's current milestone shows how long it has been under way, past an hour, as `now · 3h`. Code writes both, so neither goes stale. The milestone's time replaces the rule that only an idle row shows a time. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
 - **Good:** `◌ 2.4 release: in store review`, while the build waits for review.

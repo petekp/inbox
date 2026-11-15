@@ -62,6 +62,7 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   lastLookAt: null,
   missedInLastLook: {},
   look: null,
+  lastCallReadAt: null,
   goal: null,
   removedGoals: [],
   goalRemoved: null,

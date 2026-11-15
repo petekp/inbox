@@ -21,6 +21,7 @@ import type { BannerView } from '../../hooks/banners'
 import type { ClosedDelivery, RowView, ResultMark } from '../../hooks/rows'
 import type { Feedback } from '../../hooks/feedback'
 import type { StatusRow } from '../../hooks/status-page'
+import type { WorkJoint } from '../../hooks/status-path'
 import type { HelpKey, LegendEntry } from '../../hooks/help'
 import type { PanelPress, PanelScreen, PanelUi, Tone } from './panel'
 
@@ -55,8 +56,6 @@ export type Line = {
   depth: number
   /** The mark before the title. An Asks or Finds row has none, so its title starts in the mark's place. */
   lead: Lead | null
-  /** A ranked PR's number in the agent's order, drawn dim before the lead. */
-  rank: string | null
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
   mark: ResultMark | null
   title: string
@@ -87,6 +86,8 @@ export type Line = {
   isDetailShown: boolean
   /** A handed-off row, drawn as its one line until the person opens it. */
   isFolded: boolean
+  /** A row the person collapsed: drawn as its one line, even while selected, until they expand it. */
+  isCollapsed?: boolean
   /**
    * The PRs tab's own buttons, drawn on one line after the line's title, if any, with their press status after them,
    * or under them when it does not fit. Their keys work from any row of the tab.
@@ -100,7 +101,8 @@ export type Entry =
   /** A note stops at 3 lines. One with `isWhole`, such as an empty page's hint, is the page's content and wraps in full. */
   | { kind: 'note'; text: string; isStrong?: boolean; isPlain?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
-  | { kind: 'page'; row: StatusRow }
+  /** A Status row, with the goal's path line beside it while it is the work of a milestone the path runs on from. */
+  | { kind: 'page'; row: StatusRow; joint?: WorkJoint }
   | { kind: 'goal'; part: GoalPart }
   | { kind: 'banner'; banner: BannerView }
   /** A key Help lists, its keys padded to `column`. */
@@ -111,7 +113,6 @@ export const blankLine = (id: string): Line => ({
   id,
   depth: 0,
   lead: { text: '', tone: null },
-  rank: null,
   mark: null,
   title: '',
   titleTone: null,
@@ -208,7 +209,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
         ? {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
-            undo: state.canUndo && undo ? undo.press : null,
+            undo: undo ? undo.press : null,
             at: state.at,
           }
         : null,
@@ -311,7 +312,8 @@ export function pressFeedback(screen: PanelScreen, id: string, now: number, isMa
 export const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
 export const linesOf = (entries: Entry[]): Line[] => entries.flatMap(e => (e.kind === 'row' ? [e.line] : []))
-export const waitsOf = (lines: Line[]) => lines.map(l => ({ id: l.id, isWaiting: isSelectable(l) && l.isWaiting }))
+export const waitsOf = (lines: Line[]) =>
+  lines.map(l => ({ id: l.id, isWaiting: isSelectable(l) && l.isWaiting, isCollapsed: l.isCollapsed === true }))
 export const isSelectable = (line: Line) => line.settled === null && !line.isStatic
 /** A folded line the person has not opened: it draws one line and takes only Enter. */
 export const isShut = (line: Line, ui: Pick<PanelUi, 'opened'>) => line.isFolded && ui.opened !== line.id

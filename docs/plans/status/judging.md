@@ -29,7 +29,6 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 | `evals/status-run.ts` | The runner and its results file |
 | `tests/status-evals.test.ts`, `tests/status-bar.test.ts` | The checks with no model calls |
 | `tests/status-evals-scenes.ts` | The pages and Status call answers those checks grade |
-| `tests/status-evals-known-failing.test.ts` | The known failing cases, each of which fails until the issue it names is built |
 
 ### What goes in the suite
 
@@ -76,6 +75,7 @@ These run after every step of every replay, on the saved Status, the page `statu
 - No subject matches an ask, a finding, a task for the person or a standing rule in the fact list. No text restates an open ask or finding.
 - Each open ask is linked to every subject the fact list says it holds up, and to no other. A held subject's text names no decision, such as "needs your decision" or "your call".
 - Each running child is linked to the subject the fact list names.
+- A working subject whose child rows have all finished, and that no ask holds up, names in where it stands the step left in this session, as the fact list gives it.
 - A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. The replays start their delegates with ids and show no Herdr focus, so this check stays known failing for them. The eval-trust follow-ups name the replay step it needs.
 - On a step the fact list marks as no news, no row's or milestone's last-changed time or place moves.
 - On a step the fact list marks as a change, each changed piece's last-changed time moves.
@@ -90,6 +90,7 @@ The goal adds these:
 - No goal is set at a step that makes no next goal clear.
 - A step that makes the next goal clear, from the person's words or the work, shows that goal.
 - Each milestone in the fact list has a milestone with a mark its state allows.
+- Where the fact list says which queued milestone the plan takes up next, that milestone reads next.
 - A goal has 2 to 5 milestones, none named after a subject.
 - A subject the goal needs is not under Other work, and one it does not need is not linked to a milestone.
 - A goal the fact list marks as left by the work is retired or met, not still open. One whose outcome the person dropped is retired, not shown met.
@@ -119,7 +120,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 - No text repeats an ask or a finding in any words, or says that its piece waits on the person's decision.
 - A was line names the plan that was replaced, or the piece that merged in.
 
-**Checkpoints:** Replay A after steps 3, 9, 12 and 14. Replay B after steps 4 and 8. Replay C after steps 1 and 4. The short case `mid-turn-activity` after its one step. The judge runs there only with `--judge`. The judge does not yet check the goal, the milestones or the split into Other work: those three checks, and an `n/a` verdict for a page with nothing a check judges, come with its next revision.
+**Checkpoints:** Replay A after steps 3, 9, 12 and 14. Replay B after steps 4 and 8. Replay C after steps 1 and 4. The short case `mid-turn-activity` after its one step. The judge runs there only with `--judge`. The judge also checks the goal, the milestones and the split into Other work, and answers `n/a` for a check with nothing to judge on the page. The case's facts give the goal and its milestones as the author sees them. The model plans its own milestones, so the judge accepts any milestones that are outcomes the goal needs, with marks that follow the pieces under them.
 
 **How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of Git, in `.scratch/status-judge-pages/` in the main checkout, and the judge's author is not given that folder. `build-pages.ts` in that folder holds each page as saved state and draws it with `statusPage`, so after a change to how the page is drawn, one run draws every page again. `./scripts/eval.sh --suite status --judge-pages <folder>` runs the check, once on each page. A revision round adds `--judge-set 1`, so the second set is judged only at the end. It runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
 
@@ -141,9 +142,9 @@ A release run may block falsely with a chance of at most 0.05 when every rate si
 
 The report lists each test with its failures, its count, its 95% interval and the count at which it blocks. A test over its tolerance but under its blocking count is listed for reading. A code hold that fails blocks. Known failing cases are listed apart and block nothing. A target counts a failure on any piece; counting only the pieces its step changes is not built yet.
 
-**Calls that fail.** A call that ends with no answer before the host's time limit, as on a network error, failed outside the model. The runner tries that call again from the same prompt, twice, and then the run can't be graded. A call that answers past the limit fails as it would in the host. The runner stops at 220 Status calls, both models together, re-asks and retries included, and exits 2: a stopped run has no grade.
+**Calls that fail.** A call that ends with no answer before the host's time limit, as on a network error, failed outside the model. The runner tries that call again from the same prompt, twice, and then the run can't be graded. A call that answers past the limit fails as it would in the host. Each model stops at 220 Status calls, re-asks and retries included. That model's later runs then have no grade, and the other model's runs go on.
 
-**Exit status.** 0 when nothing blocks; 1 when a test or a code hold blocks; 2 when the run stopped at 220 Status calls or a case could not be graded; 3 when the run stopped because a session could reach more than the stand-in inbox.
+**Exit status.** 0 when nothing blocks; 1 when a test or a code hold blocks; 2 when a case could not be graded, as when its model reached 220 Status calls; 3 when the run stopped because a session could reach more than the stand-in inbox.
 
 ### Free checks in `check.sh`
 
@@ -151,14 +152,10 @@ These make no model calls.
 
 - **Saved ledgers load.** Every case's ledger in both suites loads through `upgradeLedger` and keeps its items, findings and Status.
 - **Compare keeps its question open.** Each agent case after a Compare press checks that the agent makes no `close` call. `evals/check-cases.ts` checks both.
-- **The rules catch what they claim.** Each fixed rule runs on a hand-written good page and a bad one.
+- **The rules catch what they claim.** Each fixed rule runs on a hand-written good page and a bad one, and each path a rule takes beside its main one on its own pair.
 - **The replay harness grades a known run.** A recorded good run of each replay passes every rule. A recorded bad run fails at the step and property it was written to break.
 - **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Status call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. A Status answer that lands after a clear writes into the cleared session: #152. When two update processes run their Status calls newer-first, the older answer overwrites the newer one: #153.
-- **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
-  - work filed for later closes with its own mark, #137;
-  - a look marks as seen only the rows that were on screen, #139.
-
-  The rules for the same changes in the replays name their issue too. Until it is built, such a rule's failures are listed apart and block nothing. A replay step marks a judge check the same way: at Replay A's checkpoints, the judge's marks check waits on #137, since filed work there can only close as ✓ or ✗.
+- **Known failing cases.** A rule for a failure that code owns names its issue, as `child-labels` names #149. Until it is built, the rule's failures are listed apart and block nothing. A replay step marks one of its targets the same way, rule or judge check, with `until`: its failures at that step are listed apart, with the replay and step, and its target test is left out. A rule's failures there still count in its spread. A failure that first shows at such a step and stays on the page counts at no later step, since only fresh failures count. The report lists each `until` target that passed in every run, so one left after its fix lands shows. [eval-trust-follow-ups-set-aside.md](../eval-trust-follow-ups-set-aside.md) lists every check set aside. At `mid-turn-activity`'s step, the judge's where-it-stands check waits on the mid-turn wording follow-up.
 
 ### Calls for one release run
 
@@ -177,4 +174,4 @@ These make no model calls.
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
 | **Total** | **232** | **54** | **82** |
 
-An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run makes 189 Status calls before re-asks and retries. The runner stops at 220 Status calls, so a release run takes one model at a time, with `--agent claude` and then `--agent codex`.
+An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run makes 189 Status calls before re-asks and retries. Each model stops at 220 Status calls, so one `--agent both` run grades both models.

@@ -3,8 +3,8 @@ import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, hostStatusSyste
 import type { StatusCallInput } from './status-prompt'
 import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './clients'
-import type { Exchange, Session, SessionStatus, HostTask } from '../types'
-import type { Ask, UpdateHost, CallKind } from './session-host'
+import type { CallKind, Exchange, Session, SessionStatus, HostTask } from '../types'
+import type { Ask, UpdateHost } from './session-host'
 import { heardCall, withCall } from './call-record'
 import type { HeardCall } from './call-record'
 
@@ -182,7 +182,7 @@ export async function askAndWriteStatus<S extends Session>(
     const readSetAt = input.last?.goal?.setAt ?? null
     return answer === null
       ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === 'catch-up')
-      : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === 'catch-up')
+      : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === 'catch-up', input.now)
   })
   if (!host.records) return
   const record: StatusRecord = {

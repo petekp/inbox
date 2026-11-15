@@ -95,25 +95,19 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
   },
 ]
 
-/** Marks only the Status tab draws, which a release build does not show. */
-const STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS['waits-on-other'].mark])
-
-/** The marks a build's Help explains: a release build leaves out the ones only the Status tab draws. */
-export function markLegend(isNextBuild: boolean): readonly LegendEntry[] {
-  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter(m => !STATUS_ONLY_MARKS.has(m.mark))
-}
-
 export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks', tabs: 'Tabs' } as const
 
 export type HelpKey = { keys: string; does: string }
 
 /** The symbol each tab draws where its name does not fit, with its name, in Help's key layout. */
-export function tabLegend(isNextBuild: boolean): HelpKey[] {
-  return shownTabs(isNextBuild).map(t => ({ keys: t.symbol, does: t.label }))
+export function tabLegend(): HelpKey[] {
+  return shownTabs().map(t => ({ keys: t.symbol, does: t.label }))
 }
 
 /** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
 export const UNDO_KEY = 'u'
+/** Collapses the selected row, or expands it once collapsed. */
+export const COLLAPSE_KEY = 'z'
 
 /** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prClearActions` bind from any row of the tab. */
 const PR_TAB_HELP_KEYS: HelpKey[] = [
@@ -126,8 +120,8 @@ const PR_TAB_HELP_KEYS: HelpKey[] = [
  * button, which the terminal and omp select with j and k. Desktop takes no keys, so its Help lists marks only. Each
  * look binds these keys in its own adapter.
  */
-export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasStatusButtons: boolean): HelpKey[] {
-  const tabKeys = shownTabs(isNextBuild)
+export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): HelpKey[] {
+  const tabKeys = shownTabs()
     .map(t => t.hotkey)
     .join(' ')
   const hasRows = isRowTab(tab)
@@ -135,6 +129,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
   const undoKey = { keys: UNDO_KEY, does: 'Undo the last close' }
+  const collapseKey = { keys: COLLAPSE_KEY, does: 'Collapse or expand the selected row' }
   switch (look) {
     case 'desktop':
       return []
@@ -142,14 +137,14 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
       return [
         switchTabs,
         ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
-        ...(hasRows ? [undoKey] : []),
+        ...(hasRows ? [collapseKey, undoKey] : []),
         ...prTabKeys,
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
       ]
     case 'codex':
       return [
         switchTabs,
-        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }, undoKey] : []),
+        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }, collapseKey, undoKey] : []),
         ...prTabKeys,
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, or leave a reply field' },
@@ -163,6 +158,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
               { keys: '← →', does: 'Pick a button' },
               { keys: '↵', does: 'Press the picked button' },
               { keys: 't', does: 'Reply to the selected row' },
+              collapseKey,
               undoKey,
               ...prTabKeys,
             ]
@@ -182,7 +178,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
     case 'herdr':
       return [
         { keys: '← →', does: 'Switch tabs' },
-        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }, collapseKey, undoKey] : []),
         ...prTabKeys,
         { keys: 'esc', does: "Move focus back to the agent's terminal" },
       ]

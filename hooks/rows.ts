@@ -144,7 +144,6 @@ export type RowView = {
   optionDescriptions: OptionDescription[]
   /**
    * "Holds up" and the names of the open subjects an open ask holds up, comma-separated, as the Status call linked them.
-   * A look draws it on a next build, which draws the Status.
    */
   holdsUpLine: string | null
   /** "Why", the recommended option and the agent's reason for it, on a question whose record gave one. */

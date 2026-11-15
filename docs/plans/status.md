@@ -1,10 +1,10 @@
 # The Status tab
 
-Status: built. The Status call runs after every reply in every build. In every build, its result reaches the carry text the agent reads and the focus line the inbox publishes to Herdr. Only next builds draw the Status tab. "Not built yet" lists the decided changes still to build. The evals that judge the tab are in "How the Status is judged".
+Status: built. The Status call runs after every reply in every build. In every build, its result reaches the carry text the agent reads and the focus line the inbox publishes to Herdr. Every build draws the Status tab. "Not built yet" lists the decided changes still to build. The evals that judge the tab are in "How the Status is judged".
 
 ## Summary
 
-The Status is the inbox's first tab on a next build. It is about the session's work. Asks and Finds are about what the person has to do. As of the agent's last reply, it answers four questions:
+The Status is the inbox's first tab. It is about the session's work. Asks and Finds are about what the person has to do. As of the agent's last reply, it answers four questions:
 
 - **What is this session's work?**
 - **Where does each piece of it stand?**
@@ -54,7 +54,6 @@ From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Last look,
 
 Decided, and still to build:
 
-- A closed mark and a fold of its own for work filed for later: #137.
 - A look marks as seen only the rows that were on screen: #139. Every look does.
 - In Codex, a Status answer from before a clear stays out of the cleared session: #152.
 - An older Status answer never overwrites a newer one: #153.
@@ -62,6 +61,7 @@ Decided, and still to build:
 
 ## Left out
 
+- A closed mark and a fold of its own for work filed for later. Filed work closes as done, with "filed for later" as where it stands. A mark of its own would be a new feature, so [#137](https://github.com/petekp/inbox/issues/137) is closed as not planned.
 - Opening a delegate's session from its child row.
 - Where a delegate's work stands, reported by the delegate and drawn on its child row in the coordinator.
 - A coordinator showing ◆ when a delegate's own ask waits on the person.

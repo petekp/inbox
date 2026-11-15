@@ -30,7 +30,7 @@ function pageText(text: string, room: number, maxLines: number, paint: (t: strin
 }
 
 /** Stands in for each space that joins a name's last word, `STALL_GAP` and the stall word, so a wrap never splits them. */
-export const GLUE = '\uE000'
+const GLUE = '\uE000'
 
 /**
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
@@ -69,7 +69,7 @@ function stalledName(
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(' ', GLUE)
   const wrapped = (shown: string) => wrapText(`${shown}${tail}`, room)
   const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= STATUS_TEXT_LINES))
-  const words = stall.tone === 'muted' ? s.dim(stall.text) : s.tone(stall.tone, stall.text)
+  const words = stall.tone === 'muted' ? s.dim(stall.text) : s.tone('needsYou', stall.text)
 
   return lines.map(l =>
     l.endsWith(tail)

@@ -1,6 +1,6 @@
 import type { Closed, FoldKind } from '../../types'
 import type { RowPress } from '../../hooks/presses'
-import type { ClosedDelivery, ResultMark, RowView } from '../../hooks/rows'
+import type { ClosedDelivery, ResultMark, RowView, SettledState } from '../../hooks/rows'
 import {
   NEEDS_YOU_GROUPS,
   ROW_COPY,
@@ -21,23 +21,26 @@ import {
   shownOptionDescriptions,
   waitingCount,
 } from '../../hooks/rows'
-import { firstWaiting, rowKeyPlan } from '../../hooks/action-plan'
+import { firstWaiting, rowAfterClose, rowKeyPlan } from '../../hooks/action-plan'
+import type { RowWait } from '../../hooks/action-plan'
 import { stepEffects } from '../../hooks/help-steps'
-import { emptyText, groupEmptyText, tabBarBanners } from '../../hooks/banners'
+import { groupEmptyText, tabBarBanners } from '../../hooks/banners'
 import type { BannerView } from '../../hooks/banners'
-import { isMaybeStale } from '../../hooks/band'
+import { emptyTab } from '../../hooks/empty-tab'
 import { isFailure, rowFeedbackText } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
 import { FINDING_GROUPS, HELD_MARK } from '../../hooks/help'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
-import { isDrawnInPlace } from '../../hooks/timing'
+import { QUEUED_AFTER_MS, SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerStatus } from '../../hooks/view'
 import type { PressKind } from '../../types'
-import { button } from './blocks'
+import { button, emptyBlock } from './blocks'
 import type { Block, Button, Does, Field, Mark, RowBlock, Tone } from './blocks'
 import { prTabBlocks } from './draw-prs'
+import { prRowWaits } from '../../hooks/pr-rows'
+import { openPrViews } from '../../hooks/pr-views'
 import { statusBlocks } from './draw-status'
 import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 
@@ -74,9 +77,10 @@ export type LookScreen = {
   agent: string
   now: number
   shownSince: number
-  isNextBuild: boolean
   /** Whether the host could not find gh, which the session's PR state records and the shared view leaves out. */
   isGhMissing: boolean
+  /** Whether the host has a PR fetch running, from the published file. */
+  isFetchingPrs: boolean
 }
 
 const HOLDS_UP_MARK: Mark = { text: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false }
@@ -112,6 +116,39 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
   })
 }
 
+/**
+ * When a settled row's spent Undo stops keeping its place, if its message is still queued then. The host sends an
+ * answer or Fix held for Undo when Undo ends, and a message still queued `QUEUED_AFTER_MS` later waits for the agent.
+ */
+export const undoPlaceEndsAt = (state: SettledState): number => state.at + SETTLED_MS + QUEUED_AFTER_MS
+
+/**
+ * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
+ * hidden, as the Codex tab hides a spent Undo, so the row does not change shape before it folds. The panel draws Undo on
+ * a line of its own, so a hidden one is an empty line. A row whose message waits for the agent stays until the agent
+ * takes it, so it drops the place from `undoPlaceEndsAt` rather than hold that empty line.
+ */
+function undoButtons(row: RowView, agent: string, now: number): Button[] {
+  if (row.state.is !== 'settled') return []
+  const id = `${row.id} undo`
+  const runsOutAt = row.state.at + SETTLED_MS
+  const undo = row.actions.find(a => a.press.action === 'undo')
+  if (undo)
+    return [
+      {
+        ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
+        isOut: undo.isOut,
+        runsOutAt,
+      },
+    ]
+
+  const isWaitingForAgent = row.state.delivery === 'queued' && now >= undoPlaceEndsAt(row.state)
+
+  return row.state.offersUndo && !isWaitingForAgent
+    ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isHidden: true, runsOutAt }]
+    : []
+}
+
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */
 function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send): Field {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel
@@ -125,14 +162,14 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
   }
 }
 
-function rowBody(row: RowView, isAllShown: boolean, isNextBuild: boolean): RowBlock['body'] {
+function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
   const lines: { text: string | null; tone: Tone; mark?: Mark }[] = [
     { text: row.contextLine, tone: 'muted' },
     { text: row.detail, tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: 'muted' },
     ...shownOptionDescriptions(row, isAllShown).map(o => ({ text: `${o.label}: ${o.description}`, tone: null })),
     { text: row.recLine, tone: 'muted' },
-    { text: isNextBuild ? row.holdsUpLine : null, tone: 'muted', mark: HOLDS_UP_MARK },
+    { text: row.holdsUpLine, tone: 'muted', mark: HOLDS_UP_MARK },
   ]
 
   return lines.flatMap(l => (l.text ? [{ ...l, text: l.text }] : []))
@@ -144,6 +181,8 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
   const isAllShown = ui.optionsShown.includes(row.id)
   const text = rowFeedbackText(row, LOOK)
   const isSelected = !isSettled && row.id === selected
+  const isCollapsed = screen.view.collapsed.includes(row.id)
+  const isOpen = isSelected && !isCollapsed
   const isTyping = ui.typing === row.id
 
   return {
@@ -153,16 +192,21 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     mark: markOf(rowResultMark(row)),
     title: rowTitle(row, LOOK),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
-    feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
+    feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
     settled: isSettled
       ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) }
       : null,
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
-    body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSettled || (isSelected && !isTyping) ? rowButtons(row, isAllShown, screen.agent) : [],
-    field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
+    ...(isCollapsed && { isCollapsed }),
+    body: isOpen ? rowBody(row, isAllShown) : [],
+    buttons: isSettled
+      ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)]
+      : isOpen && !isTyping
+        ? rowButtons(row, isAllShown, screen.agent)
+        : [],
+    field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
   }
 }
 
@@ -189,7 +233,7 @@ function closedBlock(d: ClosedLine, now: number): RowBlock {
     mark: markOf(d.mark),
     title: d.title,
     age: shortAgo(now - d.at),
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted' },
+    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted', source: null },
     settled: null,
     isDim: true,
     isSelectable: false,
@@ -209,7 +253,6 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
     {
       kind: 'heading',
       id: `group ${g.kind}`,
-      depth: 0,
       text: g.title,
       count: count > 0 ? count : null,
       mark: g.mark,
@@ -223,9 +266,9 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
       kind: 'note',
       id: `empty ${g.kind}`,
       text: groupEmptyText(g.title),
-      count: null,
       tone: 'muted',
       isHead: false,
+      isAtEdge: false,
       isStrong: false,
       depth: 0,
     })
@@ -267,22 +310,42 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
   }))
 }
 
-/** The row the look opens: the one the person selected while it still waits, else the first that waits. */
-function selectedOf(groups: Group[], selected: string | null): string | null {
-  const rows = groups.flatMap(g => g.rows).filter(isWaitingRow)
-  if (selected !== null && rows.some(r => r.id === selected)) return selected
+const waitsOf = (groups: Group[], collapsed: string[]): RowWait[] =>
+  groups
+    .flatMap(g => g.rows)
+    .map(r => ({ id: r.id, isWaiting: isWaitingRow(r), isCollapsed: collapsed.includes(r.id) }))
 
-  return firstWaiting(rows.map(r => ({ id: r.id, isWaiting: true })))
+/** The rows a tab lists, in order, whether each waits on the person, and whether the person collapsed it. */
+export function rowWaits({ view, shownSince }: LookScreen, tab: ShownTab): RowWait[] {
+  if (tab === 'prs') return prRowWaits(openPrViews(view.prs.drawn), view.lastActions, view.collapsed)
+
+  return tab === 'overview' ? [] : waitsOf(groupsOf(view, tab, shownSince), view.collapsed)
+}
+
+/**
+ * The row the look opens: the one the person selected while it can open. While it is settled, as when its Undo is
+ * out, the row `rowAfterClose` gives. Else the first that waits.
+ */
+function selectedOf(groups: Group[], selected: string | null, collapsed: string[]): string | null {
+  const isSettled = (id: string) => groups.some(g => g.rows.some(r => r.id === id && r.state.is === 'settled'))
+  const waits = waitsOf(groups, collapsed)
+  if (selected === null || !waits.some(r => r.id === selected)) return firstWaiting(waits)
+  if (!isSettled(selected)) return selected
+
+  return rowAfterClose(waits, selected) ?? firstWaiting(waits)
 }
 
 function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'findings'): Block[] {
   const groups = groupsOf(screen.view, tab, screen.shownSince)
-  const isEmpty = groups.every(g => g.rows.length === 0 && g.closed.length === 0)
-  if (isEmpty) {
-    const empty = emptyText(tab, screen.agent, isMaybeStale(screen.view))
-    return [{ kind: 'empty', id: `empty ${tab}`, title: empty.title, hint: empty.hint, buttons: [] }]
-  }
-  const selected = selectedOf(groups, ui.selected)
+  const empty = emptyTab(screen.view, {
+    tab,
+    agent: screen.agent,
+    drawn: groups.filter(g => g.rows.length > 0 || g.closed.length > 0).length,
+    hasBlocker: false,
+    isReadFailed: false,
+  })
+  if (empty) return [emptyBlock(tab, empty)]
+  const selected = selectedOf(groups, ui.selected, screen.view.collapsed)
 
   return groups.flatMap((g, n): Block[] => [
     ...(n > 0 ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null } as const] : []),
@@ -292,11 +355,11 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
 
 export type TabCell = { id: ShownTab; label: string; badge: string | null; isSelected: boolean }
 
-export function tabCells(screen: Pick<LookScreen, 'view' | 'isNextBuild'>, tab: ShownTab): TabCell[] {
+export function tabCells(screen: Pick<LookScreen, 'view'>, tab: ShownTab): TabCell[] {
   const { view } = screen
   const counts = { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count }
 
-  return shownTabs(screen.isNextBuild).map(t => ({
+  return shownTabs().map(t => ({
     id: t.id,
     label: t.label,
     badge: tabBadge(t.id, counts),
@@ -309,7 +372,7 @@ export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView
   const status = footerStatus(
     tab,
     screen.view.status,
-    { isFetching: false, hasPrs: screen.view.prs.drawn.length > 0 },
+    { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
     screen.view.statusPage.error,
   )
 
@@ -319,7 +382,7 @@ export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView
 export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {
   if (ui.tab === 'overview') {
     const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null
-    return statusBlocks(screen.view.statusPage, { isUnfolded: id => ui.statusUnfolded.includes(id), goalField })
+    return statusBlocks(screen.view, { isUnfolded: id => ui.statusUnfolded.includes(id), goalField })
   }
   if (ui.tab === 'prs') return prTabBlocks(screen, ui.selected)
 
