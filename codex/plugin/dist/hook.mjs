@@ -1399,7 +1399,6 @@ var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
-var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
@@ -1471,7 +1470,7 @@ function statusPage(s, now) {
         depth,
         ...SUBJECT_MARKS[status],
         text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
-        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
+        subjectIds: closed.map((x) => x.id)
       }
     ];
   });
@@ -1816,6 +1815,18 @@ function olderPrsText(prState, links) {
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
+function fetchFailureWords(f) {
+  switch (f.kind) {
+    case "limit":
+      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
+    case "unreachable":
+      return "could not reach GitHub";
+    case "timed-out":
+      return GH_TIMED_OUT_TEXT;
+    case "error":
+      return f.text;
+  }
+}
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
 
 // ../hooks/pr-press.ts
@@ -1839,18 +1850,6 @@ function withOut(row, actions) {
 
 // ../hooks/pr-refresh.ts
 var PR_REFRESH_LABEL = "Refresh PRs";
-function fetchFailureWords(f) {
-  switch (f.kind) {
-    case "limit":
-      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
-    case "unreachable":
-      return "could not reach GitHub";
-    case "timed-out":
-      return GH_TIMED_OUT_TEXT;
-    case "error":
-      return f.text;
-  }
-}
 function tabWideProblem(prs) {
   if (prs.isGhMissing) return "gh was not found";
   if (prs.isGhSignedOut) return "gh is not signed in";
@@ -1887,7 +1886,7 @@ function prRefreshView(prs, links, presses, shownSince) {
   if (problem === null && !isPressShown) return null;
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown
   };
 }

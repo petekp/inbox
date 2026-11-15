@@ -298,7 +298,9 @@ export function sessionCalls(context: HostContext) {
     deps.background(
       (async () => {
         const host = hostFor(ctx)
-        const fetching = prFetches.fetchWhenDue(id, await host.read(), isTabShown, () => fetchPrs(host, true))
+        const s = await host.read()
+        const seen = { ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } }
+        const fetching = prFetches.fetchWhenDue(id, seen, isTabShown, () => fetchPrs(host, true))
         if (!fetching) return
         notifyChanged(id)
         await fetching

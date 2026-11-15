@@ -6,7 +6,7 @@ import { feedbackOf, feedbackText } from '../../hooks/feedback'
 import { GH_TIMED_OUT_TEXT } from '../../hooks/pr-fetch'
 import { ghNoticeOf, PR_REFRESH_ID } from '../../hooks/pr-rows'
 import type { LastAction, Session } from '../../types'
-import { readState } from '../src/state'
+import { readState, updateState } from '../src/state'
 import { run } from '../src/run'
 import { ghAnswer, PRS_STALE_MS, prServer, viewAfterFetch } from './server-fixtures'
 import { PRS_HIDDEN_REFRESH_MS } from '../../hooks/host-prs'
@@ -197,4 +197,23 @@ test('a view polls the PRs again after 2 minutes while the PRs tab is shown, and
   at += PRS_STALE_MS
   await viewAfterFetch(call)
   assert.equal(queries(), 3)
+})
+
+test('while gh is missing, a PR the session tracks but never read sends the PRs tab looking for gh at most 6 times in 10 minutes of views every 3 seconds', async () => {
+  let at = 100
+  const { dir, call, calls } = await prServer(
+    () => ({ code: -1, stdout: '', stderr: '' }),
+    () => at,
+  )
+  await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: ['acme/app#9'] } }))
+  const looks = () => calls.filter(c => c[1] === '--version').length
+  await viewAfterFetch(call)
+  const perLook = looks()
+  assert.ok(perLook > 0)
+  for (let n = 0; n < 200; n++) {
+    at += 3000
+    await call('inbox_view', { tab: 'prs' })
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  assert.ok(looks() / perLook <= 6, `looked for gh ${looks() / perLook} times`)
 })

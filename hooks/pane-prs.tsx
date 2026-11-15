@@ -395,22 +395,31 @@ export function panePrBlocks({
 
     return prTabLine('pr-order', lines)
   }
-  /** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
+  const refresh = view.prs.refresh
+  const isRefreshInBanner = ghNotice !== null && refresh !== null && refresh.text === null
+  const prRefreshButtons = () => (prRefreshKeys.length > 0 ? keyRow(PR_REFRESH_ID, prRefreshKeys) : null)
+  const prRefreshStatus = () => {
+    const pressed = refresh?.showsPress ? lastActionText(PR_REFRESH_ID) : null
+
+    return pressed ? (
+      <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
+        {pressed.text}
+      </Text>
+    ) : null
+  }
+  /**
+   * The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. While a
+   * notice names the cause, the notice holds Refresh PRs and its status instead.
+   */
   const prRefreshLines = () => {
-    const refresh = view.prs.refresh
     if (!refresh) return []
-    const pressed = refresh.showsPress ? lastActionText(PR_REFRESH_ID) : null
     const lines = (
       <Box flexDirection="column">
         <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
           {refresh.text ? <Text wrap="wrap">{refresh.text}</Text> : null}
-          {prRefreshKeys.length > 0 ? keyRow(PR_REFRESH_ID, prRefreshKeys) : null}
+          {prRefreshButtons()}
         </Box>
-        {pressed ? (
-          <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-            {pressed.text}
-          </Text>
-        ) : null}
+        {prRefreshStatus()}
       </Box>
     )
 
@@ -421,16 +430,22 @@ export function panePrBlocks({
   const prsView = () =>
     prGroups.length === 0 ? (
       <Box flexDirection="column" flexGrow={1}>
-        {emptyState(
-          prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'),
-          view.prs.refresh ? prRefreshLines() : [],
-        )}
+        {emptyState(prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'), prRefreshLines())}
       </Box>
     ) : (
       sections(
         [
-          ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
-          ...prRefreshLines(),
+          ...(ghNotice
+            ? [
+                section(
+                  banner(
+                    bannerOf(ghNotice.kind, ghNotice.text),
+                    isRefreshInBanner ? { action: prRefreshButtons(), extra: prRefreshStatus() } : {},
+                  ),
+                ),
+              ]
+            : []),
+          ...(isRefreshInBanner ? [] : prRefreshLines()),
           ...prClearLines(),
           ...prOrderLines(),
           ...prGroups.map(prBlockIn),
