@@ -83,7 +83,7 @@ export function reopenAskedFindings(ledger: Ledger, closes: Closed[]): Ledger {
       findings: reopened.findings.map(f => {
         const { askedAs: _askedAs, ...rest } = f
 
-        return f.id === record.id ? rest : f
+        return f.id === record.id ? { ...rest, reopenedAt: c.at } : f
       }),
     }
   }, ledger)

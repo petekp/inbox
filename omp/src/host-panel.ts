@@ -18,6 +18,7 @@ import type { PanelSource } from './controller'
 import type { PanelScreen } from './panel'
 import { readState } from './state'
 import { sessionIdOf } from './host-context'
+import { withCollapse } from '../../hooks/collapse'
 import type { HostContext, OmpContext } from './host-context'
 import type { SessionCalls } from './host-sessions'
 import type { OmpHerdrAsk } from './host-herdr-ask'
@@ -49,6 +50,8 @@ export type Inbox = {
   herdrFile(ctx: OmpContext, file: HerdrFile): Promise<void>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(ctx: OmpContext): Promise<string | null>
+  /** Saves the row `row` as collapsed or expanded. */
+  collapse(ctx: OmpContext, row: string, isCollapsed: boolean): Promise<void>
 }
 
 export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAsk: OmpHerdrAsk) {
@@ -133,6 +136,9 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       if ((await applyHerdrFile(hostFor(ctx), file)).wakesAfterSettle) wakeLater(ctx)
     },
     resume: ctx => sendToAgent(ctx, RESUME_TEXT),
+    collapse: async (ctx, row, isCollapsed) => {
+      await change(sessionIdOf(ctx), s => withCollapse(s, row, isCollapsed, deps.now()))
+    },
   }
 
   const liveSource = (ctx: OmpContext): PanelSource => ({
@@ -144,6 +150,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
     },
     resume: async () => inbox.resume(ctx),
     answerHerdr: herdrAsk.answer,
+    collapse: (id, isCollapsed) => inbox.collapse(ctx, id, isCollapsed),
     fetchPrsWhenDue: isTabShown => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),

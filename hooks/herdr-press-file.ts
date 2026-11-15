@@ -21,13 +21,23 @@ export type PressFile = {
 /** A look at the Status the Herdr look drew, written once the look ended. It has no press. */
 type LookFile = { format: typeof HERDR_FORMAT; id: string; look: ReportedLook }
 
+/** A row the person collapsed in the Herdr look, or expanded, at `at`. */
+export type CollapseFile = {
+  format: typeof HERDR_FORMAT
+  id: string
+  collapse: { row: string; isCollapsed: boolean; at: number }
+}
+
 /** A file the Herdr look writes to a session's press folder. */
-export type HerdrFile = PressFile | LookFile
+export type HerdrFile = PressFile | LookFile | CollapseFile
 
 export const isLookFile = (file: HerdrFile): file is LookFile => 'look' in file
 
-/** When a file's press was made, or its look ended, so a host applies a folder's files in that order. */
-export const fileTime = (file: HerdrFile) => (isLookFile(file) ? file.look.endedAt : file.pressedAt)
+export const isPressFile = (file: HerdrFile): file is PressFile => 'press' in file
+
+/** When a file's press or collapse was made, or its look ended, so a host applies a folder's files in that order. */
+export const fileTime = (file: HerdrFile) =>
+  isLookFile(file) ? file.look.endedAt : isPressFile(file) ? file.pressedAt : file.collapse.at
 
 /** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
 const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref' | null> = {
@@ -119,6 +129,11 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
   if ('look' in file) {
     const reason = lookProblem(file.look)
     return reason ? { ok: false, reason } : { ok: true, file: file as LookFile }
+  }
+  if ('collapse' in file) {
+    const c = file.collapse
+    const isCollapse = isRecord(c) && typeof c.row === 'string' && typeof c.isCollapsed === 'boolean' && isTime(c.at)
+    return isCollapse ? { ok: true, file: file as CollapseFile } : { ok: false, reason: 'collapse without row or time' }
   }
   if (typeof file.pressedAt !== 'number' || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: 'no pressedAt' }

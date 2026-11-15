@@ -124,8 +124,6 @@ import {
   rowKeyPlan,
   rowsIn,
   firstWaiting,
-  keptOpen,
-  rowAfterClose,
   steppedIndex,
   tabUndos,
   latestUndo,
@@ -145,7 +143,7 @@ import {
   withListInput,
   type Holds,
 } from './timing'
-import { helpKeys, UNDO_KEY } from './help'
+import { COLLAPSE_KEY, helpKeys, UNDO_KEY } from './help'
 import { agentTools, NOT_SAVED } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
@@ -256,6 +254,16 @@ import {
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
+import {
+  arrivedSelection,
+  closeMove,
+  collapseKeyPress,
+  leftRowsSelection,
+  pinnedOn,
+  shownWaits,
+  titlePress,
+} from './pane-open-row'
+import { withCollapse } from './collapse'
 import { desktopSpaceLines } from './pane-status-tops'
 import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { runningSessions } from './running-sessions'
@@ -847,6 +855,55 @@ function later($: EngineInterface, waitMs: number, run: () => unknown) {
     await $.clock.sleep(waitMs)
     await run()
   })().catch(() => undefined)
+}
+
+/**
+ * A click on row `id`'s title, or with `id` null the `z` key. A collapse keeps the cursor on its row and is saved in the
+ * sample copy while the sample shows.
+ */
+async function toggleRow($: EngineInterface, id: string | null) {
+  const [{ view, now }, tab, selection] = await Promise.all([drawnState($), readRowTab($), read($, SELECTION)])
+  const toggle = id === null ? collapseKeyPress(view, tab, selection) : titlePress(view, tab, selection, now, id)
+  if (tab === null || toggle === null) return
+  const { is, id: row, index } = toggle
+  if (is === 'select') return select($, tab, row, index)
+  const isCollapsed = is === 'collapse'
+  if (isCollapsed)
+    await Promise.all([
+      update($, SELECTION, s => pinnedOn(s, tab, row, index)),
+      update($, TYPING, t => (t === row ? null : t)),
+    ])
+  const at = await $.clock.now()
+  if (await read($, DEMO)) await update($, DEMO, d => d && withCollapse(d, row, isCollapsed, at))
+  else await commit($, currentOwner(), s => withCollapse(s, row, isCollapsed, at))
+  if (!isCollapsed) await select($, tab, row, index)
+}
+
+async function openLeftRows($: EngineInterface) {
+  const { view, now } = await drawnState($)
+  let isMoved = false
+  await update($, SELECTION, s => {
+    const moved = leftRowsSelection(view, now, s)
+    isMoved = moved !== null
+    return moved ?? s
+  })
+  // The opened row's buttons draw dim while guarded; a fresh value redraws them once the guard ends.
+  if (isMoved) later($, PRESS_GUARD_MS, () => update($, SELECTION, s => ({ ...s })))
+}
+
+async function openAfterClose(
+  $: EngineInterface,
+  id: string,
+  wasWaiting: boolean,
+  skipScroll = false,
+): Promise<{ isMoved: boolean; undoBlock: UiScrollBlock }> {
+  const [{ view }, tab, selection] = await Promise.all([drawnState($), readRowTab($), read($, SELECTION)])
+  const move = closeMove(view, tab, selection, id, wasWaiting)
+  if (tab === null || move === null) return { isMoved: false, undoBlock: 'nearest' }
+  if (move.following !== null && move.index >= 0) await select($, tab, move.following, move.index, !skipScroll)
+  else await update($, SELECTION, s => ({ ...s, [tab]: { ...NO_CURSOR, index: s[tab].index } }))
+
+  return { isMoved: true, undoBlock: move.undoBlock }
 }
 
 /** Redraws when the soonest Compare press reaches its limit, then waits for the next one. */
@@ -1459,15 +1516,6 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
   await $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
 }
 
-async function selectClicked($: EngineInterface, id: string) {
-  const [{ view, now }, tab, selection] = await Promise.all([drawnState($), readRowTab($), read($, SELECTION)])
-  if (tab === null) return
-  const prViews = openPrViews(view.prs.drawn)
-  const index = tabRowIds(view, prViews)[tab].indexOf(id)
-  if (index < 0 || isGuarded(selection[tab].openedAt, now)) return
-  await select($, tab, id, index)
-}
-
 /** A Status row's View press: Asks shows with the ask selected and in view. */
 async function showAsk($: EngineInterface, askId: string) {
   const { view } = await drawnState($)
@@ -1489,29 +1537,6 @@ async function setFold($: EngineInterface, key: string, isUnfolded: unknown) {
 
 async function setFoldHover($: EngineInterface, key: string, isHover: boolean) {
   if (foldOf(key)) await update($, FOLD_HOVER, hovered => (isHover ? key : hovered === key ? null : hovered))
-}
-
-async function openLeftRows($: EngineInterface) {
-  const { view, now } = await drawnState($)
-  const prViews = openPrViews(view.prs.drawn)
-  const ids = tabRowIds(view, prViews)
-  const settled = new Set(settledRowIds(allRows(view)))
-  let isMoved = false
-  await update($, SELECTION, s => {
-    const moved = Object.fromEntries(
-      (Object.keys(s) as Tab[]).map(t => {
-        const c = s[t]
-        const list = ids[t]
-        if (c.id === null || list.includes(c.id) || settled.has(c.id)) return [t, c]
-        isMoved = true
-        const index = Math.min(c.index, list.length - 1)
-        return [t, index < 0 ? NO_CURSOR : { id: list[index]!, index, openedAt: now }]
-      }),
-    ) as Record<Tab, Cursor>
-    return isMoved ? moved : s
-  })
-  // The opened row's buttons draw dim while guarded; a fresh value redraws them once the guard ends.
-  if (isMoved) later($, PRESS_GUARD_MS, () => update($, SELECTION, s => ({ ...s })))
 }
 
 async function unlessGuarded($: EngineInterface, rowId: string, press: UiPressArgument, onPress: Action['onPress']) {
@@ -1547,28 +1572,21 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     read($, UNFOLDED),
     isPaneShown($),
   ])
-  const { prViews: prState, lastActions, stop, isDemo, isUnread, view } = drawn
+  const { prViews: prState, stop, isDemo, isUnread, view } = drawn
   const prs = view.prs.drawn
-  const prViews = openPrViews(prs)
-  const ids = tabRowIds(view, prViews)
   if (isOpening) paneState.recordedRows = null
   const added = newRows(isDemo, {
     ...listedRowIds(view),
     prs: prState.isFetching ? null : prRowIds(prs),
   })
   if (!isShown) return
-  const keeps = (['needsYou', 'findings'] as const).flatMap(t => {
-    const id = added[t].length > 0 ? keptOpen(tabWaits(t, view, prViews, lastActions), added[t]) : null
-    return id === null ? [] : [{ t, cursor: { id, index: ids[t].indexOf(id), openedAt: 0 } }]
+  let opened: Tab[] = []
+  await update($, SELECTION, s => {
+    const arrived = arrivedSelection(view, added, s)
+    opened = arrived.opened
+    return arrived.selection
   })
-  if (keeps.length > 0) {
-    await update($, SELECTION, s => {
-      const kept = { ...s }
-      for (const { t, cursor } of keeps) if (s[t].id === null && s[t].openedAt === 0) kept[t] = cursor
-      return kept
-    })
-    if (paneState.isInlinePane && keeps.some(k => k.t === tab)) void scrollToOpenRow($, tab)
-  }
+  if (paneState.isInlinePane && opened.includes(tab)) void scrollToOpenRow($, tab)
   const settled = new Set(settledRowIds(allRows(view)))
   const isEmpty =
     tab === 'prs'
@@ -1698,7 +1716,8 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
-  const wasWaiting = (await shownWaits($)).rows.some(r => r.id === rowId && r.isWaiting)
+  const [{ view: drawn }, shownTab] = await Promise.all([drawnState($), readRowTab($)])
+  const wasWaiting = shownWaits(drawn, shownTab).rows.some(r => r.id === rowId && r.isWaiting)
   if (await read($, DEMO)) return runDemoPress($, p, wasWaiting, undoRevision, surface)
   const now = await $.clock.now()
   const draft = !isPrPress(p) && p.action === 'type' ? (await read($, DRAFTS))[p.id] : undefined
@@ -1782,43 +1801,6 @@ async function undoKeyAfterPress(
   return row?.state.is === 'settled' && row.actions.some(a => a.press.action === 'undo')
     ? `undo-${pressRowId(p)}`
     : null
-}
-
-async function shownWaits($: EngineInterface) {
-  const [{ lastActions, view }, tab] = await Promise.all([drawnState($), readRowTab($)])
-  const prViews = openPrViews(view.prs.drawn)
-  if (tab === null) return { tab, rows: [], ids: [] }
-
-  return {
-    tab,
-    rows: tabWaits(tab, view, prViews, lastActions),
-    ids: tabRowIds(view, prViews)[tab],
-  }
-}
-
-async function openAfterClose(
-  $: EngineInterface,
-  id: string,
-  wasWaiting: boolean,
-  skipScroll = false,
-): Promise<{ isMoved: boolean; undoBlock: UiScrollBlock }> {
-  const [{ tab, rows, ids }, selection] = await Promise.all([shownWaits($), read($, SELECTION)])
-  if (tab === null || !wasWaiting || selection[tab].id !== id || rows.find(r => r.id === id)?.isWaiting)
-    return { isMoved: false, undoBlock: 'nearest' }
-  const following = rowAfterClose(rows, id)
-  const index = following === null ? -1 : ids.indexOf(following)
-  if (following !== null && index >= 0) await select($, tab, following, index, !skipScroll)
-  else await update($, SELECTION, s => ({ ...s, [tab]: { ...NO_CURSOR, index: s[tab].index } }))
-
-  return {
-    isMoved: true,
-    undoBlock:
-      following === null
-        ? 'nearest'
-        : rows.findIndex(r => r.id === following) > rows.findIndex(r => r.id === id)
-          ? 'start'
-          : 'end',
-  }
 }
 
 async function reopenPressed($: EngineInterface, id: string) {
@@ -2810,7 +2792,7 @@ export const register: Register = on => {
         requestId: e.requestId,
         surface: e.surface,
       })
-    } else if (e.element.startsWith('select-')) await selectClicked($, e.element.slice('select-'.length))
+    } else if (/^(select|collapse)-/.test(e.element)) await toggleRow($, e.element.replace(/^\w+-/, ''))
     else if (e.element.startsWith('fold-') && typeof data?.hover === 'boolean')
       await setFoldHover($, e.element.slice('fold-'.length), data.hover)
     else if (e.element.startsWith('fold-')) await setFold($, e.element.slice('fold-'.length), data?.isUnfolded)
@@ -3101,6 +3083,7 @@ export const register: Register = on => {
       updateDrafts: fn => update($, DRAFTS, fn),
       sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
       select: (tab, id, index) => select($, tab, id, index),
+      pressTitle: id => toggleRow($, id),
       showTab: tab => showTab($, tab),
       updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
       updateUnfolded: fn => update($, UNFOLDED, fn),
@@ -3225,6 +3208,7 @@ export const register: Register = on => {
         ...client,
         indexOf,
         at,
+        collapsed: new Set(view.collapsed),
         Box,
         space,
         Text,
@@ -3242,7 +3226,6 @@ export const register: Register = on => {
         optionsShown,
         blankLine,
         Button,
-        tab,
         settledLayout,
         columnsFor,
         gutterMark,
@@ -3501,6 +3484,13 @@ export const register: Register = on => {
     const moveKeys: KeyAction[] = [
       { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => moveBy(1) },
       { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => moveBy(-1) },
+      {
+        key: 'collapse',
+        label: 'Collapse',
+        hotkey: COLLAPSE_KEY,
+        kind: 'view',
+        onPress: () => (isListShown && !isHelpShown ? toggleRow($, null) : undefined),
+      },
     ]
     const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
       key: `tab-key-${id}`,
@@ -3511,7 +3501,7 @@ export const register: Register = on => {
     }))
 
     const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
-    const selectedActions = selectedRow ? rowActions(selectedRow) : null
+    const selectedActions = selectedRow && !view.collapsed.includes(selectedRow.id) ? rowActions(selectedRow) : null
     const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
     const rowKeys = [
       ...statusRowKeys,

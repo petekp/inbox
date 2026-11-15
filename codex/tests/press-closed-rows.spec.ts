@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import { applyPress } from '../../hooks/press-reducer'
 import { recordClose, recordItem } from '../../hooks/tools'
 import { closedShown } from '../../hooks/rows'
-import { firstWaiting, keptOpen, listWaits, rowAfterClose } from '../../hooks/action-plan'
+import { firstWaiting, keptOpen, listWaits, openOnArrival, rowAfterClose } from '../../hooks/action-plan'
 import { QUEUED_AFTER_MS, NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
 import type { RowWait } from '../../hooks/action-plan'
 import { viewOf } from '../src/core'
@@ -216,4 +216,15 @@ test('after a close the next waiting row opens, else the nearest one before it, 
   assert.equal(rowAfterClose([w('i1')], 'i9'), null)
   assert.equal(keptOpen([w('i3'), w('i1'), w('i2')], ['i3']), 'i1')
   assert.equal(keptOpen([w('i3'), w('i1', false)], ['i3']), null)
+})
+
+test('a finished row never opens a collapsed row, and a row that arrives while every row is collapsed opens', () => {
+  const w = (id: string, isWaiting = true): RowWait => ({ id, isWaiting })
+  const c = (id: string): RowWait => ({ id, isWaiting: true, isCollapsed: true })
+  assert.equal(rowAfterClose([w('i1', false), c('i2'), w('i3')], 'i1'), 'i3')
+  assert.equal(rowAfterClose([c('i1'), w('i2', false), c('i3')], 'i2'), null)
+  assert.equal(firstWaiting([c('i1'), c('i2')]), null)
+  assert.equal(openOnArrival([c('i1'), c('i2'), w('i3')], 'i2', ['i3']), 'i3')
+  assert.equal(openOnArrival([c('i1'), w('i2'), w('i3')], 'i2', ['i3']), null)
+  assert.equal(openOnArrival([c('i1'), c('i2')], 'i2', []), null)
 })

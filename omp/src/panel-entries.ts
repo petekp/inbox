@@ -384,5 +384,10 @@ export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: 
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen, tab)
   if (!isRowTab(tab)) return pageEntries(screen.view.statusPage, ui.typing, id => ui.statusUnfolded.includes(id))
 
-  return tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
+  const collapsed = new Set(screen.view.collapsed)
+  const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
+
+  return entries.map(e =>
+    e.kind === 'row' && collapsed.has(e.line.id) ? { ...e, line: { ...e.line, isCollapsed: true } } : e,
+  )
 }

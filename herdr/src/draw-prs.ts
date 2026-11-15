@@ -193,7 +193,15 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
           },
           ...rows.map((r): RowBlock => {
             const isSelected = r.isSelectable && r.id === selected
-            return { ...r, isSelected, body: isSelected ? r.body : [], buttons: isSelected ? r.buttons : [] }
+            const isCollapsed = screen.view.collapsed.includes(r.id)
+            const isOpen = isSelected && !isCollapsed
+            return {
+              ...r,
+              isSelected,
+              ...(isCollapsed && { isCollapsed }),
+              body: isOpen ? r.body : [],
+              buttons: isOpen ? r.buttons : [],
+            }
           }),
         ]
 
@@ -287,7 +295,7 @@ const ruleBetween = (ref: string): Block => ({ kind: 'rule', id: `rule ${ref}`, 
 
 /** The first row the PRs tab can open, which it opens while the person has opened none of its rows. */
 function firstSelectable(blocks: Block[]): string | null {
-  return blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelectable)?.id ?? null
+  return blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelectable && !b.isCollapsed)?.id ?? null
 }
 
 /** The PRs tab as the look draws it, from the shared PR plans in the desktop look's order. */

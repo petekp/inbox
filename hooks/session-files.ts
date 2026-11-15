@@ -35,6 +35,7 @@ export function emptySession(): Session {
     sent: [],
     lastActions: {},
     heldRows: [],
+    collapsed: {},
     shownSince: null,
     prViews: NO_PRS,
     stop: null,
@@ -141,6 +142,7 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     ...(saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress }),
     heldRows: saved.heldRows ?? [],
+    collapsed: saved.collapsed ?? {},
     shownSince: saved.shownSince ?? null,
     prViews: {
       ...NO_PRS,

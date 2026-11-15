@@ -120,7 +120,9 @@ export type PaneBase = {
   railWidth: number
   listColumns: number
   indexOf: Map<string, number>
+  /** The cursor's index. Its row draws open unless the person collapsed it. */
   at: number
+  collapsed: ReadonlySet<string>
   isOpenGuarded: boolean
   statusKeyRow: ReturnType<typeof statusSelected>
   shownStatus: ReturnType<typeof footerStatus>
@@ -140,6 +142,8 @@ export type PaneHandlers = {
   selectStatusRow: (id: string, focusKey?: string) => Promise<void>
   sendTyped: (id: string, text: string, surface: UiPressArgument['surface']) => Promise<void>
   select: (tab: Tab, id: string, index: number) => Promise<void>
+  /** A click on a row's title: it opens a closed row, and collapses or expands the open one. */
+  pressTitle: (id: string) => Promise<void>
   showTab: (tab: ShownTab) => Promise<void>
   runPress: (p: RowPress | PrPress, surface: UiPressArgument['surface']) => Promise<void>
   readAgain: () => Promise<void>

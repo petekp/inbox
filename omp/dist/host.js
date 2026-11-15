@@ -1560,7 +1560,7 @@ function reopenAskedFindings(ledger, closes) {
       ...reopened,
       findings: reopened.findings.map((f) => {
         const { askedAs: _askedAs, ...rest } = f;
-        return f.id === record.id ? rest : f;
+        return f.id === record.id ? { ...rest, reopenedAt: c.at } : f;
       })
     };
   }, ledger);
@@ -3102,6 +3102,7 @@ function tabLegend() {
   return shownTabs().map((t) => ({ keys: t.symbol, does: t.label }));
 }
 var UNDO_KEY = "u";
+var COLLAPSE_KEY = "z";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "Clear the merged and closed PRs" }
@@ -3113,6 +3114,7 @@ function helpKeys(look, tab, hasStatusButtons) {
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
+  const collapseKey = { keys: COLLAPSE_KEY, does: "Collapse or expand the selected row" };
   switch (look) {
     case "desktop":
       return [];
@@ -3120,14 +3122,14 @@ function helpKeys(look, tab, hasStatusButtons) {
       return [
         switchTabs,
         ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
-        ...hasRows ? [undoKey] : [],
+        ...hasRows ? [collapseKey, undoKey] : [],
         ...prTabKeys,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, undoKey] : [],
+        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
         ...prTabKeys,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, or leave a reply field" }
@@ -3140,6 +3142,7 @@ function helpKeys(look, tab, hasStatusButtons) {
           { keys: "\u2190 \u2192", does: "Pick a button" },
           { keys: "\u21B5", does: "Press the picked button" },
           { keys: "t", does: "Reply to the selected row" },
+          collapseKey,
           undoKey,
           ...prTabKeys
         ] : [
@@ -3156,7 +3159,7 @@ function helpKeys(look, tab, hasStatusButtons) {
     case "herdr":
       return [
         { keys: "\u2190 \u2192", does: "Switch tabs" },
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, undoKey] : [],
+        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
         ...prTabKeys,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];
@@ -4540,14 +4543,22 @@ function threadSentIn(lastActions) {
 function isPrTabRunning(prs, lastActions) {
   return prs.some((pr) => waitingThreads(pr).some((t) => threadRowText(pr, t, lastActions).mark.isRunning));
 }
-function prRowWaits(prs, lastActions) {
+function prRowWaits(prs, lastActions, collapsed = []) {
   const isSent = threadSentIn(lastActions);
+  const isCollapsed = (id) => collapsed.includes(id);
   return prs.flatMap((pr) => [
-    ...waitingThreads(pr).map((t) => ({ id: prThreadId(pr, t), isWaiting: !isSent(pr, t) })),
+    ...waitingThreads(pr).map((t) => {
+      const id = prThreadId(pr, t);
+      return { id, isWaiting: !isSent(pr, t), isCollapsed: isCollapsed(id) };
+    }),
     ...blockingChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const last = lastActions[id];
-      return { id, isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed" };
+      return {
+        id,
+        isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed",
+        isCollapsed: isCollapsed(id)
+      };
     })
   ]);
 }
@@ -4618,6 +4629,7 @@ function emptySession() {
     sent: [],
     lastActions: {},
     heldRows: [],
+    collapsed: {},
     shownSince: null,
     prViews: NO_PRS,
     stop: null,
@@ -4680,6 +4692,7 @@ function sessionFields(saved, views) {
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
+    collapsed: saved.collapsed ?? {},
     shownSince: saved.shownSince ?? null,
     prViews: {
       ...NO_PRS,
@@ -6295,8 +6308,19 @@ function actionsOf(row, last, state, feedback) {
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
 }
+var opensFor = (r) => r.isWaiting && !r.isCollapsed;
 function firstWaiting(rows) {
-  return rows.find((r) => r.isWaiting)?.id ?? null;
+  return rows.find(opensFor)?.id ?? null;
+}
+function openOnArrival(rows, picked, added) {
+  if (added.length === 0)
+    return null;
+  if (picked === null)
+    return keptOpen(rows, added);
+  return drawsOpen(rows, picked) ? null : firstWaiting(rows.filter((r) => added.includes(r.id)));
+}
+function drawsOpen(rows, id) {
+  return id !== null && !rows.find((r) => r.id === id)?.isCollapsed;
 }
 function steppedIndex(at, step, count) {
   if (count === 0)
@@ -6311,7 +6335,7 @@ function rowAfterClose(rows, closedId) {
   const at = rows.findIndex((r) => r.id === closedId);
   if (at < 0)
     return null;
-  return (rows.slice(at + 1).find((r) => r.isWaiting) ?? rows.slice(0, at).reverse().find((r) => r.isWaiting))?.id ?? null;
+  return (rows.slice(at + 1).find(opensFor) ?? rows.slice(0, at).reverse().find(opensFor))?.id ?? null;
 }
 function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
@@ -6397,7 +6421,8 @@ function inboxView({
   shownSince,
   lastTypedMessageAt,
   listInput,
-  undoShown
+  undoShown,
+  collapsed = []
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
@@ -6566,7 +6591,8 @@ function inboxView({
         ...fixesSent
       ].sort((a, b) => b.closedAt - a.closedAt)
     },
-    status
+    status,
+    collapsed
   };
 }
 function heldLabel(c) {
@@ -6592,6 +6618,39 @@ var FAILED_UPDATE_TEXT = {
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
   return { isUpdating, isRetrying: recovery === "retrying", error };
+}
+
+// ../hooks/collapse.ts
+var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
+function newsByRow({ ledger, prViews, lastActions }) {
+  const pressed = (id) => lastActions[id]?.at;
+  const prs = Object.values(prViews.views);
+  return new Map([
+    ...ledger.items.map((i) => [i.id, { at: latest(i.reportedAt, pressed(i.id)), untimedUrl: null }]),
+    ...ledger.findings.map((f) => [f.id, { at: latest(f.reopenedAt, pressed(f.id)), untimedUrl: null }]),
+    ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
+      const id = prThreadId(pr, t);
+      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+      return [id, { at: latest(t.reply?.at, pressed(id)), untimedUrl }];
+    })),
+    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
+      const id = prCheckId(pr, c);
+      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
+      return [id, { at: latest(c.finishedAt, pressed(id)), untimedUrl }];
+    }))
+  ]);
+}
+var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null);
+function collapsedRows(s) {
+  const news = newsByRow(s);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
+}
+function withCollapse(s, row, isCollapsed, at) {
+  const news = newsByRow(s);
+  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
+  const untimedUrl = news.get(row)?.untimedUrl ?? null;
+  const collapse = { at, ...untimedUrl !== null && { untimedUrl } };
+  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
 }
 
 // ../hooks/session-view.ts
@@ -6628,7 +6687,8 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
-    lastTypedMessageAt: s.presence.lastTypedMessageAt
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    collapsed: collapsedRows(s)
   });
   return {
     ...inbox,
@@ -7518,7 +7578,7 @@ function pressFeedback(screen, id, now, isMarkDone = false) {
 }
 var doneAt = (f) => f?.source?.is === "done" ? f.source.at : null;
 var linesOf = (entries) => entries.flatMap((e) => e.kind === "row" ? [e.line] : []);
-var waitsOf = (lines) => lines.map((l) => ({ id: l.id, isWaiting: isSelectable(l) && l.isWaiting }));
+var waitsOf = (lines) => lines.map((l) => ({ id: l.id, isWaiting: isSelectable(l) && l.isWaiting, isCollapsed: l.isCollapsed === true }));
 var isSelectable = (line) => line.settled === null && !line.isStatic;
 var isShut = (line, ui) => line.isFolded && ui.opened !== line.id;
 
@@ -7831,7 +7891,9 @@ function entriesOf(screen, ui, tab, now) {
     return helpEntries(screen, tab);
   if (!isRowTab(tab))
     return pageEntries(screen.view.statusPage, ui.typing, (id) => ui.statusUnfolded.includes(id));
-  return tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
+  const collapsed = new Set(screen.view.collapsed);
+  const entries = tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
+  return entries.map((e) => e.kind === "row" && collapsed.has(e.line.id) ? { ...e, line: { ...e.line, isCollapsed: true } } : e);
 }
 
 // src/panel-keys.ts
@@ -7887,7 +7949,7 @@ function activate(screen, ui, line, button, now) {
       return { ui };
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: "sending" } }, press };
   }
-  if (press.action === "herdr-ask")
+  if (press.action === "herdr-ask" || press.action === "collapse")
     return { ui: { ...ui, focus: null }, press };
   if (!isPrPress(press) && press.action === "type") {
     const draft = ui.drafts[line.id] ?? { text: "", since: now };
@@ -7963,6 +8025,10 @@ function handleKey(screen, ui, key, now, text) {
   const tabButton = tabLine?.buttons.find((b) => b.key === key);
   if (tabLine && tabButton)
     return activate(screen, base, tabLine, tabButton, now);
+  if (key === COLLAPSE_KEY && selected && !selected.isTabButtons && isSelectable(selected))
+    return { ui: base, press: { action: "collapse", id: selected.id, isCollapsed: selected.isCollapsed !== true } };
+  if (selected?.isCollapsed)
+    return { ui: base };
   if (selected?.fold && key === "enter") {
     const kind = selected.fold;
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter((k) => k !== kind) : [...base.unfolded, kind];
@@ -8100,10 +8166,11 @@ function drawLine(line, isSelected, d) {
     const together = `${buttons}${status}`;
     return visibleLength(together) <= width ? [together] : [fit(buttons, width), fit(`${" ".repeat(visibleLength(head))}${status}`, width)];
   }
+  const isOpen = isSelected && line.isCollapsed !== true;
   const pad = line.depth * 2;
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
-  const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
+  const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isOpen) ? line.feedback : null;
   const mark = markText(line.mark, now, s);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
@@ -8111,12 +8178,12 @@ function drawLine(line, isSelected, d) {
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
   const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
-  const title = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isSelected ? s.bold(shownTitle) : shownTitle;
+  const title = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isOpen ? s.bold(shownTitle) : shownTitle;
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width));
   if (line.settled || isShut(line, ui))
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
-  const contextLine = isSelected ? line.row?.contextLine : null;
+  const contextLine = isOpen ? line.row?.contextLine : null;
   if (contextLine)
     out.push(...indented(contextLine, indent, width, Infinity, s.dim));
   const holdsUp = line.row?.holdsUpLine;
@@ -8124,12 +8191,12 @@ function drawLine(line, isSelected, d) {
     out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
   const recLine = line.row?.recLine;
   if (recLine)
-    out.push(...isSelected ? indented(recLine, indent, width, 3, s.dim) : [fit(`${" ".repeat(indent)}${s.dim(recLine)}`, width)]);
-  if (line.body && isSelected)
+    out.push(...isOpen ? indented(recLine, indent, width, 3, s.dim) : [fit(`${" ".repeat(indent)}${s.dim(recLine)}`, width)]);
+  if (line.body && isOpen)
     out.push(...indented(line.body, indent, width, BODY_LINES, (t) => t));
-  if (line.detail && (isSelected || line.isDetailShown))
+  if (line.detail && (isOpen || line.isDetailShown))
     out.push(...indented(line.detail, indent, width, 4, s.dim));
-  if (!isSelected)
+  if (!isOpen)
     return out;
   if (line.file)
     out.push(" ".repeat(indent) + s.tone("accent", line.file));
@@ -8183,9 +8250,7 @@ function followRows(screen, ui, seen, isOpening, now) {
   if (to)
     return { ui: withTab(ui, to, now), seen: recorded.seen };
   const arrived = recorded.added[tab];
-  if (ui.selectedId !== null || arrived.length === 0)
-    return { ui, seen: recorded.seen };
-  const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), arrived);
+  const kept = openOnArrival(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), ui.selectedId, arrived);
   return { ui: kept === null ? ui : { ...ui, selectedId: kept }, seen: recorded.seen };
 }
 var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
@@ -8407,6 +8472,7 @@ function bandLines(screen, width, now, style) {
 
 // src/controller.ts
 var ANIMATION_MS = 200;
+var collapsedAfter = (collapsed, p) => p.isCollapsed ? [...collapsed.filter((id) => id !== p.id), p.id] : collapsed.filter((id) => id !== p.id);
 function createPanel(deps) {
   const { source, style, timers } = deps;
   let ui = { ...INITIAL_UI, shownSince: deps.openedAt };
@@ -8477,6 +8543,12 @@ function createPanel(deps) {
       return source.answerHerdr?.(p.isYes).then(() => refresh());
     if (p.action === "all-options")
       return;
+    if (p.action === "collapse") {
+      if (screen)
+        screen = { ...screen, view: { ...screen.view, collapsed: collapsedAfter(screen.view.collapsed, p) } };
+      deps.requestRender();
+      return source.collapse(p.id, p.isCollapsed).then(() => refresh());
+    }
     const rowId = pressRowId(p);
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
     const sentDraft = !isPrPress(p) && p.action === "type" ? ui.drafts[p.id] : undefined;
@@ -9174,7 +9246,8 @@ var CLIENTS = {
       "status-named-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" },
       "status-idle-age": { kind: "full" },
-      "question-back-stays-open": { kind: "full" }
+      "question-back-stays-open": { kind: "full" },
+      "collapse-rows": { kind: "full" }
     }
   },
   codex: {
@@ -9311,7 +9384,8 @@ var CLIENTS = {
       "question-back-stays-open": {
         kind: "different",
         reason: "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere."
-      }
+      },
+      "collapse-rows": { kind: "full" }
     }
   },
   omp: {
@@ -9400,7 +9474,8 @@ var CLIENTS = {
       "status-named-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" },
       "status-idle-age": { kind: "full" },
-      "question-back-stays-open": { kind: "full" }
+      "question-back-stays-open": { kind: "full" },
+      "collapse-rows": { kind: "full" }
     }
   }
 };
@@ -10663,6 +10738,10 @@ function demoSource(deps) {
       changed();
       return { error: null, note: null, isUnconfirmed: false };
     },
+    collapse: async (id, isCollapsed) => {
+      state = withCollapse(state, id, isCollapsed, deps.now());
+      changed();
+    },
     resume: async () => null,
     fetchPrsWhenDue: () => {},
     checkDelegatesWhenDue: () => {},
@@ -11520,7 +11599,8 @@ import { fileURLToPath } from "url";
 
 // ../hooks/herdr-press-file.ts
 var isLookFile = (file) => ("look" in file);
-var fileTime = (file) => isLookFile(file) ? file.look.endedAt : file.pressedAt;
+var isPressFile = (file) => ("press" in file);
+var fileTime = (file) => isLookFile(file) ? file.look.endedAt : isPressFile(file) ? file.pressedAt : file.collapse.at;
 var PRESS_TARGETS = {
   answer: "id",
   type: "id",
@@ -11599,6 +11679,11 @@ function pressFile(text) {
   if ("look" in file) {
     const reason = lookProblem(file.look);
     return reason ? { ok: false, reason } : { ok: true, file };
+  }
+  if ("collapse" in file) {
+    const c = file.collapse;
+    const isCollapse = isRecord(c) && typeof c.row === "string" && typeof c.isCollapsed === "boolean" && isTime(c.at);
+    return isCollapse ? { ok: true, file } : { ok: false, reason: "collapse without row or time" };
   }
   if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: "no pressedAt" };
@@ -12097,6 +12182,11 @@ async function applyHerdrFile(host, file) {
     await host.update((s) => lookReportedOn(s, file.look));
     return LOOK_OUTCOME;
   }
+  if (!isPressFile(file)) {
+    const { row, isCollapsed, at } = file.collapse;
+    await host.update((s) => withCollapse(s, row, isCollapsed, at));
+    return LOOK_OUTCOME;
+  }
   const { result } = file;
   const outcome = await press(result ? { ...host, perform: async () => result.error } : host, file.press, false, file.holds);
   const lastHerdrPress = { id: file.id, outcome: outcome.note === "stale" ? "stale" : "applied" };
@@ -12436,7 +12526,10 @@ function panelCalls(context, sessions, herdrAsk) {
       if ((await applyHerdrFile(hostFor(ctx), file)).wakesAfterSettle)
         wakeLater(ctx);
     },
-    resume: (ctx) => sendToAgent(ctx, RESUME_TEXT)
+    resume: (ctx) => sendToAgent(ctx, RESUME_TEXT),
+    collapse: async (ctx, row, isCollapsed) => {
+      await change(sessionIdOf(ctx), (s) => withCollapse(s, row, isCollapsed, deps.now()));
+    }
   };
   const liveSource = (ctx) => ({
     screen: (holds) => inbox.screen(ctx, holds),
@@ -12446,6 +12539,7 @@ function panelCalls(context, sessions, herdrAsk) {
     },
     resume: async () => inbox.resume(ctx),
     answerHerdr: herdrAsk.answer,
+    collapse: (id, isCollapsed) => inbox.collapse(ctx, id, isCollapsed),
     fetchPrsWhenDue: (isTabShown) => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),

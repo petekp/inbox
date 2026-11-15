@@ -68,6 +68,7 @@ export type FeatureId =
   | 'seen-on-screen'
   | 'status-idle-age'
   | 'question-back-stays-open'
+  | 'collapse-rows'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -153,6 +154,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
+      'collapse-rows': { kind: 'full' },
     },
   },
   codex: {
@@ -311,6 +313,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere.",
       },
+      'collapse-rows': { kind: 'full' },
     },
   },
   omp: {
@@ -405,6 +408,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
+      'collapse-rows': { kind: 'full' },
     },
   },
 }

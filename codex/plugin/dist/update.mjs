@@ -362,7 +362,7 @@ function reopenAskedFindings(ledger, closes) {
       ...reopened,
       findings: reopened.findings.map((f) => {
         const { askedAs: _askedAs, ...rest } = f;
-        return f.id === record2.id ? rest : f;
+        return f.id === record2.id ? { ...rest, reopenedAt: c.at } : f;
       })
     };
   }, ledger);
@@ -2544,6 +2544,9 @@ function prRefreshActions(row) {
 function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
 }
+function prCheckId(pr, check) {
+  return checkRowId(pr.ref, checkKey(check));
+}
 function threadRowId(ref, thread) {
   return `${ref} thread ${thread}`;
 }
@@ -2623,6 +2626,7 @@ function emptySession() {
     sent: [],
     lastActions: {},
     heldRows: [],
+    collapsed: {},
     shownSince: null,
     prViews: NO_PRS,
     stop: null,
@@ -2677,6 +2681,7 @@ function sessionFields(saved, views) {
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
+    collapsed: saved.collapsed ?? {},
     shownSince: saved.shownSince ?? null,
     prViews: {
       ...NO_PRS,
@@ -3192,7 +3197,8 @@ function inboxView({
   shownSince,
   lastTypedMessageAt,
   listInput,
-  undoShown
+  undoShown,
+  collapsed = []
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
@@ -3381,7 +3387,8 @@ function inboxView({
         ...fixesSent
       ].sort((a, b) => b.closedAt - a.closedAt)
     },
-    status
+    status,
+    collapsed
   };
 }
 function heldLabel(c) {
@@ -3397,6 +3404,36 @@ var FAILED_UPDATE_TEXT = {
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
   return { isUpdating, isRetrying: recovery === "retrying", error };
+}
+
+// ../hooks/collapse.ts
+var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
+function newsByRow({ ledger, prViews, lastActions }) {
+  const pressed2 = (id) => lastActions[id]?.at;
+  const prs = Object.values(prViews.views);
+  return new Map([
+    ...ledger.items.map((i) => [i.id, { at: latest(i.reportedAt, pressed2(i.id)), untimedUrl: null }]),
+    ...ledger.findings.map((f) => [f.id, { at: latest(f.reopenedAt, pressed2(f.id)), untimedUrl: null }]),
+    ...prs.flatMap(
+      (pr) => waitingThreads(pr).map((t) => {
+        const id = prThreadId(pr, t);
+        const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+        return [id, { at: latest(t.reply?.at, pressed2(id)), untimedUrl }];
+      })
+    ),
+    ...prs.flatMap(
+      (pr) => blockingChecks(pr).map((c) => {
+        const id = prCheckId(pr, c);
+        const untimedUrl = c.finishedAt === void 0 ? c.url ?? "" : null;
+        return [id, { at: latest(c.finishedAt, pressed2(id)), untimedUrl }];
+      })
+    )
+  ]);
+}
+var isUnchanged = (news, c) => news !== void 0 && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null);
+function collapsedRows(s) {
+  const news = newsByRow(s);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
 }
 
 // ../hooks/session-view.ts
@@ -3429,7 +3466,8 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
-    lastTypedMessageAt: s.presence.lastTypedMessageAt
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    collapsed: collapsedRows(s)
   });
   return {
     ...inbox,
