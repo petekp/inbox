@@ -17,10 +17,8 @@ section + section::before {
   background: var(--soft);
 }
 .group-title {
-  padding: 0 14px 6px var(--text-x);
-}
-.group-title {
   position: relative;
+  padding: 0 14px 6px var(--text-x);
 }
 .group-title.unmarked {
   padding-left: var(--mark-x);
