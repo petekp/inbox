@@ -25,7 +25,10 @@ function cursorRow(cursor: Cursor, rows: RowWait[]): string | null {
 /** What a press on a row's title or the `z` key does to row `id`, at `index` in its tab. */
 type RowToggle = { is: 'select' | 'collapse' | 'expand'; id: string; index: number } | null
 
-/** A click on row `id`'s title: it opens a closed row, collapses the open one, and expands a collapsed one. */
+/**
+ * A click on row `id`'s title: it opens a closed row, collapses the open one, and expands a collapsed one. A click
+ * while the press guard runs after the row opened collapses nothing, so a double click leaves it open.
+ */
 export function titlePress(
   view: SessionView,
   tab: Tab | null,
@@ -36,10 +39,11 @@ export function titlePress(
   if (tab === null) return null
   const { rows, ids } = shownWaits(view, tab)
   const index = ids.indexOf(id)
-  if (index < 0 || isGuarded(selection[tab].openedAt, now)) return null
+  if (index < 0) return null
   if (view.collapsed.includes(id)) return { is: 'expand', id, index }
+  if (cursorRow(selection[tab], rows) !== id) return { is: 'select', id, index }
 
-  return { is: cursorRow(selection[tab], rows) === id ? 'collapse' : 'select', id, index }
+  return isGuarded(selection[tab].openedAt, now) ? null : { is: 'collapse', id, index }
 }
 
 /** The `z` key: collapses or expands the row the cursor is on. */

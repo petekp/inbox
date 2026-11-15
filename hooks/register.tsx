@@ -876,9 +876,9 @@ async function toggleRow($: EngineInterface, id: string | null) {
   if (tab === null || toggle === null) return
   const { is, index } = toggle
   if (is === 'select') return select($, tab, toggle.id, index)
-  if (is === 'collapse') await update($, SELECTION, s => pinnedOn(s, tab, toggle.id, index))
-  const [at, isDemo] = await Promise.all([$.clock.now(), read($, DEMO)])
   const isCollapsed = is === 'collapse'
+  if (isCollapsed) await update($, SELECTION, s => pinnedOn(s, tab, toggle.id, index))
+  const [at, isDemo] = await Promise.all([$.clock.now(), read($, DEMO)])
   if (isDemo)
     await update($, DEMO, d => d && withCollapse({ ...d, collapsed: d.collapsed ?? {} }, toggle.id, isCollapsed, at))
   else await commit($, currentOwner(), s => withCollapse(s, toggle.id, isCollapsed, at))
@@ -2803,7 +2803,7 @@ export const register: Register = on => {
         requestId: e.requestId,
         surface: e.surface,
       })
-    } else if (e.element.startsWith('select-')) await toggleRow($, e.element.slice('select-'.length))
+    } else if (/^(select|collapse)-/.test(e.element)) await toggleRow($, e.element.replace(/^\w+-/, ''))
     else if (e.element.startsWith('fold-') && typeof data?.hover === 'boolean')
       await setFoldHover($, e.element.slice('fold-'.length), data.hover)
     else if (e.element.startsWith('fold-')) await setFold($, e.element.slice('fold-'.length), data?.isUnfolded)

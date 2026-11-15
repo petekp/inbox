@@ -190,7 +190,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       TOOL_FIELDS,
     ).ledger
     await pause(POLL_MS + 100)
-    root.querySelector<HTMLElement>('.row .line')!.click()
+    await until(() => root.querySelector('.row.selected') !== null)
     await pause(PRESS_GUARD_MS + 50)
     named(root, 'Done').click()
     await until(() => buttons(root).some(b => b.textContent === 'Undo'))

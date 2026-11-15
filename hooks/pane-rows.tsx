@@ -147,6 +147,8 @@ export function paneRows(
       )
     }
     const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
+    const handleText =
+      row.handle && !row.isHandleRunning ? <Text color={pal.muted}>{row.handle}</Text> : row.handle || ' '
     const isTyping = Input !== null && !!row.typeHint && typing === row.id
     const textWidth = listColumns - 1 - columns.textAt
     const submitLabel = look === 'desktop' ? ROW_COPY.send : 'send'
@@ -257,7 +259,7 @@ export function paneRows(
     const desktopAfter = f?.isAfterTitle && !isStatusUnder ? unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine) : ''
     const desktopTitle = hasClient ? (
       <elements.Client
-        key={`select-${row.id}`}
+        key={`collapse-${row.id}`}
         module="./title-client.tsx"
         width="100%"
         props={{
@@ -327,9 +329,11 @@ export function paneRows(
               <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
             ) : look === 'desktop' ? (
               (gutterMark(row) ?? <Text>{row.handle}</Text>)
+            ) : isSelected ? (
+              <Text>{handleText}</Text>
             ) : (
               <Button plain key={`select-${row.id}`} onPress={() => void pressTitle(row.id)}>
-                {row.handle && !row.isHandleRunning ? <Text color={pal.muted}>{row.handle}</Text> : row.handle || ' '}
+                {handleText}
               </Button>
             )}
           </Box>
@@ -338,7 +342,7 @@ export function paneRows(
           <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={space.rowPad}>
             {withSideAge(
               row,
-              <Button plain key={`title-${row.id}`} onPress={() => void pressTitle(row.id)}>
+              <Button plain key={`collapse-${row.id}`} onPress={() => void pressTitle(row.id)}>
                 <Text wrap="wrap">
                   <Text bold>{row.title}</Text>
                   {titleAfter ? (
