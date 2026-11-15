@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T17:15:59.195Z. 235054 characters follow.
+// Built at 2026-11-15T17:37:54.759Z. 235016 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4732,10 +4732,7 @@ var TONE_COLORS = {
 };
 var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
-function opaqueOver(c, under) {
-  if (c.length !== 9)
-    return c;
-  const share = parseInt(c.slice(7, 9), 16) / 255;
+function mixInto(c, under, share) {
   const channel = (at) => Math.round(parseInt(c.slice(at, at + 2), 16) * share + parseInt(under.slice(at, at + 2), 16) * (1 - share));
   return `#${[1, 3, 5].map((at) => channel(at).toString(16).padStart(2, "0")).join("")}`;
 }
@@ -4871,7 +4868,8 @@ function spaceEl(s, p, columns) {
   const box = springHeight(div().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
-var lineColor = (t) => opaqueOver(t.border, t.background);
+var TREE_LINE_SHARE = 0.2;
+var lineColor = (t) => mixInto(t.foreground, t.background, TREE_LINE_SHARE);
 var PATH_X = EDGE + 4;
 function pathLineEl(line, top, height, t) {
   if (line === null)
