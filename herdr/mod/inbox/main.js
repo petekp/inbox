@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T22:36:30.268Z. 236293 characters follow.
+// Built at 2026-11-15T22:49:02.881Z. 236898 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -770,6 +770,11 @@ function questionNumbers(ledger, promptTurn) {
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
 // ../hooks/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
@@ -999,11 +1004,6 @@ function threadWhere(t, path = t.path) {
 function took(ms) {
   const secs = Math.max(0, Math.round(ms / 1000));
   return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/open-targets.ts
@@ -1773,6 +1773,14 @@ var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
 var PR_READ_WAIT_MS = 60000;
+function timedChangeAt(lastActions, now) {
+  const ends = Object.entries(lastActions).flatMap(([id, l]) => {
+    if (l.action === "compare")
+      return [l.at + COMPARE_LIMIT_MS];
+    return l.kind === "handoff" && isPrRowId(id) && l.repliedAt !== undefined ? [l.repliedAt + PR_READ_WAIT_MS] : [];
+  }).filter((at) => at > now);
+  return ends.length > 0 ? Math.min(...ends) : null;
+}
 function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
@@ -2277,7 +2285,10 @@ var PR_FIX_LABELS = {
 };
 var PR_READ_FIRST_LABELS = {
   ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL
+  "check-rerun": RERUN_LABEL,
+  "pr-address-all": "Address all",
+  "pr-merge": "Merge",
+  "thread-address": "Address"
 };
 function isPrReadFirstPress(p) {
   return p.action === "pr-conflicts" || p.action === "check-fix" || p.action === "check-rerun";
@@ -2331,11 +2342,11 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
+function isViewBeforeReply(last, fetchedAt) {
+  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt;
+}
 function isAwaitingFreshRead(last, fetchedAt, now) {
-  const repliedAt = last?.repliedAt;
-  if (repliedAt === undefined || fetchedAt === undefined)
-    return false;
-  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS;
+  return isViewBeforeReply(last, fetchedAt) && now - last.repliedAt < PR_READ_WAIT_MS;
 }
 function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
@@ -5543,7 +5554,8 @@ function screenOf(followed, read, ui, o) {
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
     waits: rowWaits(screen, ui.tab),
     foldAt: nextFoldAt(settled, placing),
-    undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now)
+    undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now),
+    timedChangeAt: timedChangeAt(view.lastActions, o.now)
   };
 }
 function nextUndoPlaceEnd(settled, now) {
@@ -5902,7 +5914,7 @@ class Inbox extends View {
     paint.timeLeft = this.timeLeft;
     const nextFrame = isStarting ? now + NEXT_FRAME_MS : null;
     const timed = timeLeftNextAt(moved.blocks, now);
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, timed].filter((at) => at !== null);
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;

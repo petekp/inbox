@@ -789,6 +789,11 @@ function promptNotes(host, ledger, prompt, told) {
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
 // ../hooks/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
@@ -797,8 +802,8 @@ function isAwaitingReply(last, turns) {
 function repliedAtTurnEnd(lastActions, turns, endedAt) {
   return Object.fromEntries(
     Object.entries(lastActions).map(([id, last]) => {
-      const isAnswered = last.kind === "handoff" && last.repliedAt === void 0 && last.turnsStarted !== void 0 && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
-      return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt ?? 0) } : last];
+      const isAnswered = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === void 0 && last.turnsStarted !== void 0 && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
+      return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt) } : last];
     })
   );
 }
@@ -1026,11 +1031,6 @@ function inPrOrder(prs, ranked = []) {
   return [...prs].sort(
     (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
   );
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/open-targets.ts
@@ -1939,12 +1939,16 @@ var PR_FIX_LABELS = {
 };
 var PR_READ_FIRST_LABELS = {
   ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL
+  "check-rerun": RERUN_LABEL,
+  "pr-address-all": "Address all",
+  "pr-merge": "Merge",
+  "thread-address": "Address"
 };
+function isViewBeforeReply(last, fetchedAt) {
+  return last?.repliedAt !== void 0 && fetchedAt !== void 0 && fetchedAt <= last.repliedAt;
+}
 function isAwaitingFreshRead(last, fetchedAt, now) {
-  const repliedAt = last?.repliedAt;
-  if (repliedAt === void 0 || fetchedAt === void 0) return false;
-  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS;
+  return isViewBeforeReply(last, fetchedAt) && now - last.repliedAt < PR_READ_WAIT_MS;
 }
 function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
@@ -3384,11 +3388,12 @@ function turnStarted(s, at) {
   const startedAt = s.presence.isTurnRunning ? s.presence.turnStartedAt ?? at : at;
   return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } };
 }
-function turnEnded(s, at) {
+function turnEnded(s, at, clock) {
   const lastReplyAt = at ?? s.presence.lastReplyAt;
+  const endedAt = at ?? clock;
   return {
     ...s,
-    lastActions: repliedAtTurnEnd(s.lastActions, s.presence, at),
+    lastActions: endedAt === void 0 ? s.lastActions : repliedAtTurnEnd(s.lastActions, s.presence, endedAt),
     presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt }
   };
 }
@@ -4822,7 +4827,7 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
-      const endsTurn = (s2) => input.source === "compact" ? s2 : statusChanged(turnEnded(s2, null), (o) => childrenCutOff(o, now()));
+      const endsTurn = (s2) => input.source === "compact" ? s2 : statusChanged(turnEnded(s2, null, now()), (o) => childrenCutOff(o, now()));
       const folder = rolloutPath === null ? null : meta.folder;
       const [branch, withHistory] = await Promise.all([
         folder === null ? null : branchIn(deps.run, folder),

@@ -90,10 +90,21 @@ export const PR_FIX_LABELS: Record<PrFixPress['action'], string> = {
   'check-fix': 'Fix',
 }
 
-/** The labels of the buttons whose press reads the PR first. */
-export const PR_READ_FIRST_LABELS: Record<PrReadFirstPress['action'], string> = {
+/** A hand-off press that reads the PR first only while the saved view predates the reply to its earlier press. */
+export type PrStaleReadPress =
+  { action: 'pr-address-all' | 'pr-merge'; ref: string } | { action: 'thread-address'; ref: string; thread: string }
+
+/** The labels of the buttons whose press reads the PR first, always or while its view predates the reply. */
+export const PR_READ_FIRST_LABELS: Record<PrReadFirstPress['action'] | PrStaleReadPress['action'], string> = {
   ...PR_FIX_LABELS,
   'check-rerun': RERUN_LABEL,
+  'pr-address-all': 'Address all',
+  'pr-merge': 'Merge',
+  'thread-address': 'Address',
+}
+
+export function isPrStaleReadPress(p: PrPress): p is PrStaleReadPress {
+  return p.action === 'pr-address-all' || p.action === 'pr-merge' || p.action === 'thread-address'
 }
 
 export function isPrReadFirstPress(p: PrPress): p is PrReadFirstPress {
@@ -184,16 +195,20 @@ export type PlannedPrAction = Omit<PrAction, 'isOut'>
 export type LastPress = { last: LastAction | undefined; pressing: string | null; out: string | null }
 
 /**
+ * Whether the PR view predates the end of the turn that followed a hand-off press: no fetch has read the PR since the
+ * agent worked on it. A PR view saved before the inbox kept `fetchedAt` has no time to compare, so it counts as read.
+ */
+export function isViewBeforeReply(last: LastAction | undefined, fetchedAt: number | undefined): boolean {
+  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt
+}
+
+/**
  * A hand-off press whose turn ended, whose PR no fetch has read since: the PR may still show the problem the agent
  * fixed. Its button stays out, without "again", until that fetch, or until `PR_READ_WAIT_MS` after the turn ended,
- * since a host with no PRs tab open fetches none. A PR view saved before the inbox kept `fetchedAt` has no time to
- * compare, so it counts as read.
+ * since a host with no PRs tab open fetches none.
  */
 function isAwaitingFreshRead(last: LastAction | undefined, fetchedAt: number | undefined, now: number): boolean {
-  const repliedAt = last?.repliedAt
-  if (repliedAt === undefined || fetchedAt === undefined) return false
-
-  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS
+  return isViewBeforeReply(last, fetchedAt) && now - last!.repliedAt! < PR_READ_WAIT_MS
 }
 
 /** `fetchedAt` is when a fetch last read the PR the row belongs to. */

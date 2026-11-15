@@ -1229,6 +1229,11 @@ function questionNumbers(ledger, promptTurn) {
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
 // ../hooks/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
@@ -1452,11 +1457,6 @@ function inPrOrder(prs, ranked = []) {
   return [...prs].sort(
     (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
   );
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/open-targets.ts
@@ -2637,12 +2637,16 @@ var PR_FIX_LABELS = {
 };
 var PR_READ_FIRST_LABELS = {
   ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL
+  "check-rerun": RERUN_LABEL,
+  "pr-address-all": "Address all",
+  "pr-merge": "Merge",
+  "thread-address": "Address"
 };
+function isViewBeforeReply(last, fetchedAt) {
+  return last?.repliedAt !== void 0 && fetchedAt !== void 0 && fetchedAt <= last.repliedAt;
+}
 function isAwaitingFreshRead(last, fetchedAt, now) {
-  const repliedAt = last?.repliedAt;
-  if (repliedAt === void 0 || fetchedAt === void 0) return false;
-  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS;
+  return isViewBeforeReply(last, fetchedAt) && now - last.repliedAt < PR_READ_WAIT_MS;
 }
 function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];

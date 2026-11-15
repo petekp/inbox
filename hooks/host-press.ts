@@ -1,5 +1,13 @@
-import { readFirstEffect, PR_READ_FIRST_LABELS, pressRowId, isPrPress, isPrReadFirstPress } from './pr-press'
-import type { PrReadFirstPress, PrPress } from './pr-press'
+import {
+  readFirstEffect,
+  PR_READ_FIRST_LABELS,
+  pressRowId,
+  isPrPress,
+  isPrReadFirstPress,
+  isPrStaleReadPress,
+  isViewBeforeReply,
+} from './pr-press'
+import type { PrReadFirstPress, PrStaleReadPress, PrPress } from './pr-press'
 import {
   doneWake,
   markSentToAgent,
@@ -160,7 +168,7 @@ function withoutCheck<S extends Session>(s: S, check: PrFixCheck | null): S {
  */
 async function checkPrFirst<S extends Session>(
   host: PressHost<S>,
-  p: PrReadFirstPress,
+  p: PrReadFirstPress | PrStaleReadPress,
   rowId: string,
   pressId: string,
   holds: Holds,
@@ -267,8 +275,20 @@ export async function startPress<S extends Session>(
       settleWindowMs: host.settleWindowMs,
       holds,
     })
+  const isReadFirst = async () => {
+    if (!isPrPress(p)) return false
+    if (isPrReadFirstPress(p)) return true
+    if (!isPrStaleReadPress(p)) return false
+    const saved = await host.read()
+
+    return isViewBeforeReply(saved.lastActions[rowId], saved.prViews.views[p.ref]?.fetchedAt)
+  }
   const check =
-    isPrPress(p) && isPrReadFirstPress(p) && !isStale && !(await isOut())
+    isPrPress(p) &&
+    (isPrReadFirstPress(p) || isPrStaleReadPress(p)) &&
+    !isStale &&
+    (await isReadFirst()) &&
+    !(await isOut())
       ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err: unknown) => {
           error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
           return 'unread' as const

@@ -2617,6 +2617,11 @@ function promptNotes(host, ledger, prompt, told) {
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
 // ../hooks/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
@@ -2624,8 +2629,8 @@ function isAwaitingReply(last, turns) {
 }
 function repliedAtTurnEnd(lastActions, turns, endedAt) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => {
-    const isAnswered = last.kind === "handoff" && last.repliedAt === undefined && last.turnsStarted !== undefined && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
-    return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt ?? 0) } : last];
+    const isAnswered = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === undefined && last.turnsStarted !== undefined && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
+    return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt) } : last];
   }));
 }
 function isHandedOff(last, turns) {
@@ -2757,11 +2762,6 @@ function keptTasks(tasks) {
 }
 function tasksText(tasks) {
   return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL6);
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/status-goal-gate.ts
@@ -4071,8 +4071,12 @@ var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
 var PR_READ_WAIT_MS = 60000;
-function compareEndsAt(lastActions, now) {
-  const ends = Object.values(lastActions).filter((l) => l.action === "compare").map((l) => l.at + COMPARE_LIMIT_MS).filter((at) => at > now);
+function timedChangeAt(lastActions, now) {
+  const ends = Object.entries(lastActions).flatMap(([id, l]) => {
+    if (l.action === "compare")
+      return [l.at + COMPARE_LIMIT_MS];
+    return l.kind === "handoff" && isPrRowId(id) && l.repliedAt !== undefined ? [l.repliedAt + PR_READ_WAIT_MS] : [];
+  }).filter((at) => at > now);
   return ends.length > 0 ? Math.min(...ends) : null;
 }
 function isQueuedAt(last, now) {
@@ -4543,8 +4547,14 @@ var PR_FIX_LABELS = {
 };
 var PR_READ_FIRST_LABELS = {
   ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL
+  "check-rerun": RERUN_LABEL,
+  "pr-address-all": "Address all",
+  "pr-merge": "Merge",
+  "thread-address": "Address"
 };
+function isPrStaleReadPress(p) {
+  return p.action === "pr-address-all" || p.action === "pr-merge" || p.action === "thread-address";
+}
 function isPrReadFirstPress(p) {
   return p.action === "pr-conflicts" || p.action === "check-fix" || p.action === "check-rerun";
 }
@@ -4579,11 +4589,11 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
+function isViewBeforeReply(last, fetchedAt) {
+  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt;
+}
 function isAwaitingFreshRead(last, fetchedAt, now) {
-  const repliedAt = last?.repliedAt;
-  if (repliedAt === undefined || fetchedAt === undefined)
-    return false;
-  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS;
+  return isViewBeforeReply(last, fetchedAt) && now - last.repliedAt < PR_READ_WAIT_MS;
 }
 function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
@@ -8795,7 +8805,7 @@ function createPanel(deps) {
   let screen = null;
   let animation = null;
   let frames = null;
-  let compareEnd = null;
+  let timedChange = null;
   let version = 0;
   let seen = {};
   let isOpening = true;
@@ -8817,13 +8827,13 @@ function createPanel(deps) {
       frames = null;
     }
     const now = deps.now();
-    const at = screen === null ? null : compareEndsAt(screen.view.lastActions, now);
-    if (compareEnd !== null && compareEnd.at !== at) {
-      timers.stop(compareEnd.timer);
-      compareEnd = null;
+    const at = screen === null ? null : timedChangeAt(screen.view.lastActions, now);
+    if (timedChange !== null && timedChange.at !== at) {
+      timers.stop(timedChange.timer);
+      timedChange = null;
     }
-    if (at !== null && compareEnd === null)
-      compareEnd = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) };
+    if (at !== null && timedChange === null)
+      timedChange = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) };
   };
   async function refresh(pressedId) {
     const mine = ++version;
@@ -8934,9 +8944,9 @@ function createPanel(deps) {
       if (frames !== null)
         timers.stop(frames);
       frames = null;
-      if (compareEnd !== null)
-        timers.stop(compareEnd.timer);
-      compareEnd = null;
+      if (timedChange !== null)
+        timers.stop(timedChange.timer);
+      timedChange = null;
     }
   };
 }
@@ -9502,7 +9512,8 @@ function demoView(now, agent) {
         action: "thread-address",
         text: "Address",
         at: now - 2 * MIN,
-        turnsStarted: 14
+        turnsStarted: 14,
+        repliedAt: now - 1 * MIN
       }
     },
     notes: {},
@@ -9961,19 +9972,20 @@ function turnStarted(s, at) {
   const startedAt = s.presence.isTurnRunning ? s.presence.turnStartedAt ?? at : at;
   return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } };
 }
-function turnEnded(s, at) {
+function turnEnded(s, at, clock) {
   const lastReplyAt = at ?? s.presence.lastReplyAt;
+  const endedAt = at ?? clock;
   return {
     ...s,
-    lastActions: repliedAtTurnEnd(s.lastActions, s.presence, at),
+    lastActions: endedAt === undefined ? s.lastActions : repliedAtTurnEnd(s.lastActions, s.presence, endedAt),
     presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt }
   };
 }
 function messageTyped(s, at) {
   return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } };
 }
-function cutOffTurn(s) {
-  return s.presence.isTurnRunning ? turnEnded(s, null) : s;
+function cutOffTurn(s, now) {
+  return s.presence.isTurnRunning ? turnEnded(s, null, now) : s;
 }
 function placed(s, folder, branch) {
   const place = { folder: s.place?.folder || folder, branch: branch === "HEAD" ? null : branch };
@@ -12296,7 +12308,17 @@ async function startPress(host, p, isStale, holds) {
     settleWindowMs: host.settleWindowMs,
     holds
   });
-  const check = isPrPress(p) && isPrReadFirstPress(p) && !isStale && !await isOut() ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
+  const isReadFirst = async () => {
+    if (!isPrPress(p))
+      return false;
+    if (isPrReadFirstPress(p))
+      return true;
+    if (!isPrStaleReadPress(p))
+      return false;
+    const saved = await host.read();
+    return isViewBeforeReply(saved.lastActions[rowId], saved.prViews.views[p.ref]?.fetchedAt);
+  };
+  const check = isPrPress(p) && (isPrReadFirstPress(p) || isPrStaleReadPress(p)) && !isStale && await isReadFirst() && !await isOut() ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
     error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
     return "unread";
   }) : null;
@@ -13226,7 +13248,7 @@ function turnHandlers(context, sessions) {
     const saved = await readState(dir, id).catch(() => null);
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some((c) => c.endedAt === null);
     if (isCutOff)
-      await change(id, (s) => statusChanged(cutOffTurn(s), (o) => childrenCutOff(o, deps.now()))).catch(() => {
+      await change(id, (s) => statusChanged(cutOffTurn(s, deps.now()), (o) => childrenCutOff(o, deps.now()))).catch(() => {
         return;
       });
     prepare(ctx);

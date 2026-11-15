@@ -8,7 +8,7 @@ import { checkActions, prBlockActions, threadActions } from '../hooks/pr-tab'
 import { prMarkId } from '../hooks/pr-rows'
 import { withFetchedPrs } from '../hooks/session-presses'
 import { notePrompt, turnEnded } from '../hooks/session-turns'
-import { NO_HOLDS, PR_READ_WAIT_MS } from '../hooks/timing'
+import { NO_HOLDS, PR_READ_WAIT_MS, timedChangeAt } from '../hooks/timing'
 import type { PrThread, PrView, Session } from '../types'
 import { BLOCKED_PR, FIX_REF } from './session-helpers'
 import { blockedPrHost, repliedTo } from './session-pr-helpers'
@@ -169,11 +169,40 @@ test('a hand-off button waits for a fetch only until PR_READ_WAIT_MS after the r
   expect(conflicts(at + PR_READ_WAIT_MS)).toMatchObject({ isOut: false, label: 'Resolve conflicts again' })
 })
 
-test('a turn that ends with no time stamps a hand-off no earlier than its press', async () => {
+for (const kind of KINDS.filter(k => ['Merge', 'Address all', 'Address'].includes(k.name))) {
+  test(`${kind.name} pressed after the wait reads the PR first, and sends nothing once the problem is gone`, async () => {
+    const t = await blockedPrHost((pr, at) => ({ ...pr, ...kind.problemGone, fetchedAt: at }), {
+      ...kind.start,
+      fetchedAt: 1,
+    })
+    await press(t.host, kind.press, false, NO_HOLDS)
+    await t.host.update(async s => repliedTo(s, t.delivered[0]!, await t.host.now()))
+    const clock = t.host.now
+    t.host.now = async () => (await clock()) + PR_READ_WAIT_MS
+
+    await press(t.host, kind.press, false, NO_HOLDS)
+    expect(t.delivered.length).toBe(1)
+  })
+}
+
+test('a turn that ends with no time stamps a hand-off at the host clock, never before its press', async () => {
   const t = await blockedPrHost((pr, at) => ({ ...pr, fetchedAt: at }), { ...BLOCKED_PR, fetchedAt: 1 })
   await press(t.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)
-  await t.host.update(async s => turnEnded(notePrompt(CLAUDE_CODE, s, t.delivered[0]!, false).state, null))
+  const clock = (await t.host.now()) + 5_000
+  await t.host.update(async s => turnEnded(notePrompt(CLAUDE_CODE, s, t.delivered[0]!, false).state, null, clock))
 
   const last = (await t.host.read()).lastActions[prMarkId(FIX_REF)]!
-  expect(last.repliedAt).toBeGreaterThanOrEqual(last.at)
+  expect(last.repliedAt).toBe(clock)
+})
+
+test('a hand-off button ending its wait for a fetch is a time a look redraws at', async () => {
+  const t = await blockedPrHost((pr, at) => ({ ...pr, fetchedAt: at }), { ...BLOCKED_PR, fetchedAt: 1 })
+  await press(t.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)
+  expect(timedChangeAt((await t.host.read()).lastActions, await t.host.now())).toBeNull()
+
+  await t.host.update(async s => repliedTo(s, t.delivered[0]!, await t.host.now()))
+  const { lastActions } = await t.host.read()
+  const at = lastActions[prMarkId(FIX_REF)]!.repliedAt! + PR_READ_WAIT_MS
+  expect(timedChangeAt(lastActions, at - 1)).toBe(at)
+  expect(timedChangeAt(lastActions, at)).toBeNull()
 })
