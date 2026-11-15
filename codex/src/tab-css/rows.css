@@ -151,8 +151,8 @@
   display: none;
 }
 /* The line returns with the end of the close, fading in so it does not pop in over the settled height. */
-.row:not(.selected):not(.closing) .line .holds-up {
-  animation: holds-up-in var(--enter-fade) ease-out;
+.row.just-closed .line .holds-up {
+  animation: holds-up-in var(--enter-fade);
 }
 @keyframes holds-up-in {
   from {

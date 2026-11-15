@@ -28,6 +28,11 @@ import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultM
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
+/** Rows whose panel is closing, and rows whose close just ended, whose Holds up line then fades in over the settled height. */
+const rowsClosing = new Set<string>()
+const rowsJustClosed = new Set<string>()
+const JUST_CLOSED_MS = 600
+
 export function stepLists(v: View): {
   lists: Lists
   prs: DrawnPrs | null
@@ -152,6 +157,12 @@ export function ListRow({
 }) {
   const isClosing = track.hasPanel && (track.state === 'closing' || track.state === 'leaving')
   const isSelected = track.hasPanel && !isClosing
+  if (isClosing) rowsClosing.add(row.id)
+  else if (rowsClosing.delete(row.id)) {
+    rowsJustClosed.add(row.id)
+    setTimeout(() => rowsJustClosed.delete(row.id), JUST_CLOSED_MS)
+  }
+  const isJustClosed = !isSelected && rowsJustClosed.has(row.id)
   const isTreeHung = row.hasTree && (isSelected || isClosing)
   const handle = (
     <span
@@ -198,7 +209,7 @@ export function ListRow({
 
   return (
     <div
-      class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}`}
+      class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}${isJustClosed ? ' just-closed' : ''}`}
       onClick={isSelected ? undefined : onSelect}
     >
       {handle}

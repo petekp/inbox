@@ -298,14 +298,8 @@ test('in the terminal and desktop looks, a recommended answer with a description
       look,
     ).toBe(true)
     if (look === 'terminal') {
-      expect(
-        texts.some(t => t.includes('├')),
-        look,
-      ).toBe(true)
-      expect(
-        texts.some(t => t.includes('└')),
-        look,
-      ).toBe(true)
+      for (const key of ['trunk-d11', 'tree-context', 'tree-option-0', 'tree-option-1', 'tree-holds-up'])
+        expect(await pane.find({ key }), `${look} ${key}`).toBeTruthy()
     } else {
       expect(await pane.find({ key: 'row-d11-trunk' }), look).toBeTruthy()
       expect(await pane.find({ key: 'row-d11-option-0-tree' }), look).toBeTruthy()
