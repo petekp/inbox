@@ -44,7 +44,14 @@ export function makeSessionHost(
 ) {
   const { dir, now } = deps
   const gh = ghFinder(deps.exec)
-  const prFetches = prFetchTracker(now)
+  const prFetches = prFetchTracker(now, id => {
+    void hostFor(id)
+      .update(s => {
+        const prFetchPid = prFetches.isFetching(id) ? process.pid : undefined
+        return s.prFetchPid === prFetchPid ? s : { ...s, prFetchPid }
+      })
+      .catch(() => undefined)
+  })
   let isGhMissing = false
   let prShared: PrShared = NO_PR_SHARED
 

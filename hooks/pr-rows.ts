@@ -67,22 +67,6 @@ export function ghNoticeOf(gh: {
   return null
 }
 
-/** The hint under an empty PRs tab. `place` is the host's word for a conversation with the agent. */
-export function prsEmptyHint(place: string): string {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`
-}
-
-/** What an empty PRs tab says. When gh cannot read the PRs, its hint is the `ghNoticeOf` text. */
-export function prsEmptyText(
-  prs: { isFetching: boolean; isGhMissing: boolean; isGhSignedOut: boolean },
-  place: string,
-) {
-  return {
-    title: prs.isFetching ? 'Checking for PRs…' : 'No PRs',
-    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place),
-  }
-}
-
 /** The line a PR block shows when its last refresh failed. */
 export function prRefreshFailedText(error: string): string {
   return `Last refresh failed: ${error}`

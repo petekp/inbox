@@ -32,7 +32,7 @@ import type { PaneStatusLines } from './pane-status-lines'
 import type { StatusTone } from './help'
 import type { MilestoneRow } from './status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT } from './status-goal-page'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan } from './status-keys'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey } from './status-keys'
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
@@ -338,10 +338,9 @@ export function paneStatusGoal(
       ...milestones.flatMap(m => [gap(`goal-${m.id}-gap`), ...milestoneLines(m)]),
     ]
   }
-  const goalKeys = (page: StatusPage) => keysLine({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
   /** New, or the field it opened, with no frame, for the empty page's centred column. */
-  const setGoalBare = (page: StatusPage): Drawn[] =>
-    isTypingGoal
+  const setGoalBare = (setGoal: { keys: StatusKey[]; isFieldOpen: boolean }): Drawn[] =>
+    setGoal.isFieldOpen
       ? [
           uncounted(
             <Box key="goal-field-bare" flexDirection="column" width="100%">
@@ -349,6 +348,6 @@ export function paneStatusGoal(
             </Box>,
           ),
         ]
-      : goalKeys(page)
-  return { goalSection, setGoalBare, markRun }
+      : keysLine({ id: GOAL_KEYS_ID, keys: setGoal.keys })
+  return { goalSection, setGoalBare, markRun, isTypingGoal }
 }

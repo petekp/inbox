@@ -1,6 +1,7 @@
 import type { UiPressArgument } from 'claude-code'
 import type { PrCheck, PrThread, PrView } from '../types'
 import { bannerOf } from './banners'
+import { emptyTab } from './empty-tab'
 import type { PaneAskTabs } from './pane-asks'
 import type { PaneBase, PaneHandlers, Row } from './pane-context'
 import type { PaneFrame } from './pane-frame'
@@ -21,7 +22,6 @@ import {
   prCheckId,
   prMarkId,
   prRefreshFailedText,
-  prsEmptyText,
   prThreadId,
   PR_REFRESH_ID,
   RANK_AGAIN_ID,
@@ -427,10 +427,17 @@ export function panePrBlocks({
   }
   const prClearLines = () =>
     prClearKeys.length === 0 ? [] : prTabLine('pr-clear', keyRow(CLEAR_FINISHED_ID, prClearKeys))
+  const emptyPrs = emptyTab(view, {
+    tab: 'prs',
+    place: 'session',
+    drawn: prGroups.length,
+    isFetchingPrs: prState.isFetching,
+    isGhMissing: ghState.isGhMissing,
+  })
   const prsView = () =>
-    prGroups.length === 0 ? (
+    emptyPrs ? (
       <Box flexDirection="column" flexGrow={1}>
-        {emptyState(prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'), prRefreshLines())}
+        {emptyState(emptyPrs, emptyPrs.under?.is === 'pr-refresh' ? prRefreshLines() : [])}
       </Box>
     ) : (
       sections(

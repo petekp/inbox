@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T04:55:05.245Z. 220037 characters follow.
+// Built at 2026-11-15T05:06:45.944Z. 222758 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -67,11 +67,8 @@ function tabBarBanners(host, statusError, pressNote) {
   ];
 }
 var READING_TEXT = "Reading the inbox…";
+var NOTHING_NEEDED_TEXT = "Nothing needed";
 var MAYBE_STALE_TEXT = "May be out of date";
-function emptyText(tab, agent, isStale = false) {
-  const text = tab === "needsYou" ? { title: "Nothing needed", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
-  return isStale ? { ...text, title: MAYBE_STALE_TEXT } : text;
-}
 
 // ../hooks/tabs.ts
 var TAB_NAMES = [
@@ -93,6 +90,9 @@ function isListedTab(tab) {
 }
 function isRowTab(tab) {
   return tab !== "overview";
+}
+function screenTabOf(tab) {
+  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
@@ -1658,11 +1658,7 @@ function statusPage(s, now) {
     ...goalParts,
     goal,
     rows,
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    empty: {
-      title: "Status",
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-    }
+    error: s.overviewFailure ? STATUS_FAILED : null
   };
 }
 
@@ -2331,15 +2327,6 @@ function ghNoticeOf(gh) {
   if (gh.failure)
     return { kind: gh.failure.kind === "limit" ? "gh-limited" : "gh-failed", text: fetchFailureNotice(gh.failure) };
   return null;
-}
-function prsEmptyHint(place) {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
-}
-function prsEmptyText(prs, place) {
-  return {
-    title: prs.isFetching ? "Checking for PRs…" : "No PRs",
-    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place)
-  };
 }
 function prRefreshFailedText(error) {
   return `Last refresh failed: ${error}`;
@@ -3356,9 +3343,56 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
   };
 }
 
+// ../hooks/empty-tab.ts
+var EMPTY_TITLES = {
+  needsYou: NOTHING_NEEDED_TEXT,
+  findings: "No findings yet",
+  prs: "No PRs",
+  prsFetching: "Checking for PRs…"
+};
+var EMPTY_STATUS_TEXT = {
+  title: screenTabOf("overview").label,
+  hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+};
+function prsEmptyHint(place) {
+  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+}
+function emptyTab(view, look) {
+  if (look.tab === "overview") {
+    const page = view.statusPage;
+    if (!page.isEmpty)
+      return null;
+    return {
+      ...EMPTY_STATUS_TEXT,
+      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
+    };
+  }
+  if (look.tab === "prs") {
+    if (look.drawn > 0)
+      return null;
+    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure };
+    const { refresh } = view.prs;
+    return {
+      title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
+      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
+      under: refresh ? { is: "pr-refresh", refresh } : null
+    };
+  }
+  if (look.drawn > 0 || look.hasBlocker)
+    return null;
+  if (look.tab === "needsYou" && look.hostText)
+    return { ...look.hostText, under: null };
+  const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
+  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab];
+  return { title, hint, under: null };
+}
+
 // src/blocks.ts
 var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
 var agedText = (a, now) => `${a.lead}${DOT}${shortAgo(now - a.at)}`;
+function emptyBlock(tab, empty, parts = null) {
+  return { kind: "empty", id: `empty ${tab}`, empty: { title: empty.title, hint: empty.hint }, under: parts };
+}
 
 // src/draw-prs.ts
 var LOOK = "herdr";
@@ -3530,8 +3564,7 @@ var note = (id, text, tone) => ({
   isStrong: false,
   depth: 0
 });
-function refreshParts(screen) {
-  const refresh = screen.view.prs.refresh;
+function refreshParts(screen, refresh = screen.view.prs.refresh) {
   if (!refresh)
     return null;
   const buttons = refresh.actions.map((a, n) => prButton(null, a, `refresh ${n}`));
@@ -3577,12 +3610,16 @@ function prTabBlocks(screen, selected) {
   const { view } = screen;
   const prs = view.prs;
   const gh = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure };
-  if (prs.drawn.length === 0) {
-    const empty = prsEmptyText({ isFetching: false, ...gh }, PLACE);
-    return [
-      { kind: "empty", id: "empty prs", title: empty.title, hint: empty.hint, buttons: [] },
-      ...refreshLine(screen)
-    ];
+  const empty = emptyTab(view, {
+    tab: "prs",
+    place: PLACE,
+    drawn: prs.drawn.length,
+    isFetchingPrs: screen.isFetchingPrs,
+    isGhMissing: screen.isGhMissing
+  });
+  if (empty) {
+    const refresh = empty.under?.is === "pr-refresh" ? refreshParts(screen, empty.under.refresh) : null;
+    return [emptyBlock("prs", empty, refresh && { id: PR_REFRESH_ID, ...refresh, field: null })];
   }
   const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
   const notice = ghNoticeOf(gh);
@@ -3761,18 +3798,21 @@ function goalBlocks(page, { isUnfolded, goalField }) {
   ]);
   return [heading, ...lines, ...milestones];
 }
-function statusBlocks(page, ui) {
+function statusBlocks(view, ui) {
+  const page = view.statusPage;
   const { isUnfolded } = ui;
-  if (page.isEmpty && ui.goalField === null)
-    return [
-      {
-        kind: "empty",
-        id: "empty overview",
-        title: page.empty.title,
-        hint: page.empty.hint,
-        buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page))
-      }
-    ];
+  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: ui.goalField !== null });
+  if (empty) {
+    const setGoal = empty.under?.is === "set-goal" ? empty.under : null;
+    const parts = setGoal && {
+      id: GOAL_KEYS_ID,
+      text: null,
+      buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
+      feedback: null,
+      field: setGoal.isFieldOpen ? ui.goalField : null
+    };
+    return [emptyBlock("overview", empty, parts)];
+  }
   const description = page.head?.description;
   const head = page.goal === null && page.head ? [
     headTitle("head title", page.head.title, null),
@@ -3988,11 +4028,15 @@ function selectedOf(groups, selected, collapsed) {
 }
 function rowTabBlocks(screen, ui, tab) {
   const groups = groupsOf(screen.view, tab, screen.shownSince);
-  const isEmpty = groups.every((g) => g.rows.length === 0 && g.closed.length === 0);
-  if (isEmpty) {
-    const empty = emptyText(tab, screen.agent, isMaybeStale(screen.view));
-    return [{ kind: "empty", id: `empty ${tab}`, title: empty.title, hint: empty.hint, buttons: [] }];
-  }
+  const empty = emptyTab(screen.view, {
+    tab,
+    agent: screen.agent,
+    drawn: groups.filter((g) => g.rows.length > 0 || g.closed.length > 0).length,
+    hasBlocker: false,
+    isReadFailed: false
+  });
+  if (empty)
+    return [emptyBlock(tab, empty)];
   const selected = selectedOf(groups, ui.selected, screen.view.collapsed);
   return groups.flatMap((g, n) => [
     ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null }] : [],
@@ -4010,13 +4054,13 @@ function tabCells(screen, tab) {
   }));
 }
 function chrome(screen, tab) {
-  const status = footerStatus(tab, screen.view.status, { isFetching: false, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
+  const status = footerStatus(tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   return { banners: tabBarBanners([], status.error, null), status: status.text };
 }
 function tabBlocks(screen, ui) {
   if (ui.tab === "overview") {
     const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null;
-    return statusBlocks(screen.view.statusPage, { isUnfolded: (id) => ui.statusUnfolded.includes(id), goalField });
+    return statusBlocks(screen.view, { isUnfolded: (id) => ui.statusUnfolded.includes(id), goalField });
   }
   if (ui.tab === "prs")
     return prTabBlocks(screen, ui.selected);
@@ -4067,7 +4111,8 @@ function readSession(text) {
     isTrimmed: file.trimmed === true,
     savesCollapses: "collapsed" in file.session,
     lastPress: lastPressOf2(file.lastPress),
-    projectFolder: typeof file.projectFolder === "string" && file.projectFolder.startsWith("/") ? file.projectFolder : null
+    projectFolder: typeof file.projectFolder === "string" && file.projectFolder.startsWith("/") ? file.projectFolder : null,
+    isFetchingPrs: file.isFetchingPrs === true
   };
 }
 
@@ -4174,7 +4219,7 @@ function keyMove(key, tabs, blocks, typing, undo = null) {
   const selected = blocks.find((b) => b.kind === "row" && b.isSelected);
   if (key === COLLAPSE_KEY && selected?.isSelectable)
     return { is: "collapse", id: selected.id, isCollapsed: !selected.isCollapsed };
-  const lines = blocks.flatMap((b) => b.kind === "line" || b.kind === "banner" ? b.buttons : []);
+  const lines = blocks.flatMap((b) => b.kind === "line" || b.kind === "banner" ? b.buttons : b.kind === "empty" ? b.under?.buttons ?? [] : []);
   const pressed = [...selected?.buttons ?? [], ...lines].find((b) => b.hotkey === key && !b.isOut);
   return pressed ? { is: "press", button: pressed } : null;
 }
@@ -4564,6 +4609,13 @@ var BUTTON_H = 28;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
 var SEP = " · ";
+var onSize = (view, key, read) => (size, cx) => {
+  const value = read(size);
+  if (value === view[key])
+    return;
+  view[key] = value;
+  cx.notify();
+};
 
 // src/paint-space.ts
 import { div } from "gpui-kit";
@@ -4639,8 +4691,8 @@ function fitHeight(id, m, p) {
     return;
   return measured - (m?.isPanelLeftOut ? p.heights.get(panelId(id)) ?? 0 : 0);
 }
-function fitEl(id, m, p, el) {
-  const height = p.isAtOnce(id) ? undefined : fitHeight(id, m, p);
+function fitEl(id, m, p, el, isPaneSized = false) {
+  const height = isPaneSized || p.isAtOnce(id) ? undefined : fitHeight(id, m, p);
   const sized = div().id(`size ${id}`).flex_none().on_size_change((size, cx) => p.measure(id, size, cx)).child(el);
   return springHeight(v_flex().id(`fit ${id}`).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0))).child(sized);
 }
@@ -4658,7 +4710,7 @@ function spacedEls(blocks, p, el) {
   return spacesOf(blocks, (b) => (p.motion.get(b.id)?.box ?? null) !== null).map((s) => {
     const id = s.block.id;
     const m = p.motion.get(id);
-    const spaced = div().flex_none().pt(s.above).pb(s.below).child(fitEl(id, m, p, el(s.block)));
+    const spaced = div().flex_none().pt(s.above).pb(s.below).child(fitEl(id, m, p, el(s.block), s.block.kind === "empty"));
     return boxEl(s, m, p, spaced);
   });
 }
@@ -4832,7 +4884,9 @@ function headingEl(b, p, isInert) {
 }
 function emptyEl(b, p, isInert) {
   const { t } = p;
-  return v_flex3().items_center().p(GROUP_GAP).gap(LINE_GAP).child(div4().font_semibold().text_center().whitespace_normal().child(b.title)).when(b.hint !== null, (e) => e.child(div4().text_center().whitespace_normal().text_color(t.muted).child(b.hint ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))));
+  const { empty, under } = b;
+  const centred = (text, color = t.foreground) => div4().text_center().whitespace_normal().text_color(color).child(text);
+  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(GROUP_GAP).gap(LINE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div4().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div4()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
 }
 function foldEl(b, p, isInert) {
   const { t } = p;
@@ -4990,7 +5044,16 @@ function drawOuts(blocks, outs, lines, now) {
       const buttons = isSettledRow ? withUndoOut(b.id, b.buttons, byRow.get(b.id)) : b.buttons;
       return { ...b, buttons: withOutButtons(buttons, outRows), ...line ? { feedback: line } : {} };
     }
-    if (b.kind === "status" || b.kind === "heading" || b.kind === "empty")
+    if (b.kind === "empty" && b.under) {
+      const line = lineOf(b.under.id);
+      const under = {
+        ...b.under,
+        buttons: withOutButtons(b.under.buttons, outRows),
+        ...line ? { feedback: line } : {}
+      };
+      return { ...b, under };
+    }
+    if (b.kind === "status" || b.kind === "heading")
       return { ...b, buttons: withOutButtons(b.buttons, outRows) };
     return b;
   });
@@ -5203,7 +5266,8 @@ function screenOf(followed, read, ui, o) {
     agent: read.envelope.agent,
     now: o.now,
     shownSince: holds.shownSince ?? o.now,
-    isGhMissing: read.session.prViews.isGhMissing === true
+    isGhMissing: read.session.prViews.isGhMissing === true,
+    isFetchingPrs: read.isFetchingPrs
   };
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
   const settled = rows.flatMap((r) => r.state.is === "settled" ? [r.state] : []);
@@ -5249,6 +5313,7 @@ class Inbox extends View {
   shownSince = Date.now();
   isHelpShown = false;
   isNarrow = false;
+  listRoom = null;
   drafts = {};
   left = {};
   confirmed = [];
@@ -5556,15 +5621,10 @@ class Inbox extends View {
       now,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
-      isNarrow: this.isNarrow
+      isNarrow: this.isNarrow,
+      listRoom: this.listRoom
     };
-    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change((size, cx) => {
-      const isNarrow = size.width < NARROW_PANE;
-      if (isNarrow === this.isNarrow)
-        return;
-      this.isNarrow = isNarrow;
-      cx.notify();
-    });
+    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "isNarrow", (s) => s.width < NARROW_PANE));
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
@@ -5587,7 +5647,7 @@ class Inbox extends View {
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", undefined, paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", undefined, paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div5().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", undefined, paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", undefined, paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div5().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

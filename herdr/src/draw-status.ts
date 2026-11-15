@@ -7,7 +7,9 @@ import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { unfoldedRows } from '../../hooks/status-page-parts'
 import { cellWidth } from '../../hooks/text'
-import { button } from './blocks'
+import { button, emptyBlock } from './blocks'
+import { emptyTab } from '../../hooks/empty-tab'
+import type { SessionView } from '../../hooks/session-view'
 import type { Block, Button, Does, Field, Mark, Tone } from './blocks'
 
 /** The most cells a merged line holds before it cuts its names: three lines of the pane at its usual width. */
@@ -187,18 +189,22 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
 }
 
 /** The Status page as the look draws it, in the shared page's order. */
-export function statusBlocks(page: StatusPage, ui: StatusUi): Block[] {
+export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
+  const page = view.statusPage
   const { isUnfolded } = ui
-  if (page.isEmpty && ui.goalField === null)
-    return [
-      {
-        kind: 'empty',
-        id: 'empty overview',
-        title: page.empty.title,
-        hint: page.empty.hint,
-        buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
-      },
-    ]
+  const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: ui.goalField !== null })
+  if (empty) {
+    const setGoal = empty.under?.is === 'set-goal' ? empty.under : null
+    const parts = setGoal && {
+      id: GOAL_KEYS_ID,
+      text: null,
+      buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
+      feedback: null,
+      field: setGoal.isFieldOpen ? ui.goalField : null,
+    }
+
+    return [emptyBlock('overview', empty, parts)]
+  }
   const description = page.head?.description
   const head =
     page.goal === null && page.head

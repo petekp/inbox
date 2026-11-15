@@ -1,7 +1,7 @@
 import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import { statePath, readState, tryWithLock, updateState, withLock } from './state'
+import { isPrFetchRunning, statePath, readState, tryWithLock, updateState, withLock } from './state'
 import type { SessionState } from './state'
 import { viewOf } from './core'
 import { CODEX } from './texts'
@@ -118,6 +118,7 @@ export function herdrOnWrite(
             terminal: target.terminal,
             writtenAt: seq,
             projectFolder: s.root,
+            isFetchingPrs: isPrFetchRunning(s),
           },
           s,
           log,

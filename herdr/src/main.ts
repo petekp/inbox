@@ -58,7 +58,7 @@ import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
 import { fitEl, spacedEls } from './paint-space'
-import { EDGE, END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
+import { EDGE, END_SPACE, LINE, NARROW_PANE, onSize, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PressQueue } from './press-queue'
 import type { PressTarget } from './press-queue'
@@ -93,6 +93,7 @@ export default class Inbox extends View {
   shownSince = Date.now()
   isHelpShown = false
   isNarrow = false
+  listRoom: number | null = null
   drafts: Record<string, Draft> = {}
   /** The typed replies and presses of the sessions the panel left, by session id, for when it follows them again. */
   left: Record<string, SessionPresses> = {}
@@ -420,6 +421,7 @@ export default class Inbox extends View {
       timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
       isNarrow: this.isNarrow,
+      listRoom: this.listRoom,
     }
     const root = v_flex()
       .id('inbox')
@@ -429,12 +431,7 @@ export default class Inbox extends View {
       .text_color(t.foreground)
       .text_size(TEXT)
       .line_height(LINE)
-      .on_size_change((size, cx) => {
-        const isNarrow = size.width < NARROW_PANE
-        if (isNarrow === this.isNarrow) return
-        this.isNarrow = isNarrow
-        cx.notify()
-      })
+      .on_size_change(onSize(this, 'isNarrow', s => s.width < NARROW_PANE))
     if (screen.is === 'message') {
       this.timeLeft = new Map()
       this.tracksOf = ''
@@ -484,6 +481,7 @@ export default class Inbox extends View {
               .overflow_y_scroll()
               .pt(EDGE)
               .pb(END_SPACE)
+              .on_size_change(onSize(this, 'listRoom', s => Math.max(0, s.height - EDGE - END_SPACE)))
               .on_click((_e, _cx) => {
                 const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null
                 if (field) field.state.focus()

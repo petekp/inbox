@@ -113,7 +113,6 @@ export type StatusPage = GoalParts & {
   rows: StatusRow[]
   /** The status line's error while the last Status call wrote nothing. */
   error: string | null
-  empty: { title: string; hint: string }
 }
 
 const OTHER_WORK = 'Other work'
@@ -361,10 +360,6 @@ export function statusPage(
     goal,
     rows,
     error: s.overviewFailure ? STATUS_FAILED : null,
-    empty: {
-      title: 'Status',
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts.",
-    },
   }
 }
 

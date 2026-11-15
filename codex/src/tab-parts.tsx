@@ -5,6 +5,7 @@ import { DOT, rowResultMark } from '../../hooks/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { BannerView } from '../../hooks/banners'
+import type { EmptyTab } from '../../hooks/empty-tab'
 import type { StatusTone, LegendEntry } from '../../hooks/help'
 import type { ResultMark, RowView } from '../../hooks/rows'
 import { parseInline } from '../../hooks/inline'
@@ -12,20 +13,12 @@ import { isUndoLeft } from './settle'
 import { errors, notes, copies } from './tab-state'
 import type { Tone, Key, Row } from './tab-state'
 
-/** A tab with nothing to list: its title and hint, centred in the page, with what else the tab shows under them. */
-export function EmptyState({
-  title,
-  hint,
-  children,
-}: {
-  title: string
-  hint?: string | null
-  children?: ComponentChildren
-}) {
+/** A tab's empty state from `emptyTab`, centred in the page, with its drawn `under` as children. */
+export function EmptyState({ empty, children }: { empty: EmptyTab; children?: ComponentChildren }) {
   return (
     <div class="empty">
-      <div class="title">{title}</div>
-      {hint ? <div class="muted">{hint}</div> : null}
+      <div class="title">{empty.title}</div>
+      {empty.hint ? <div class="muted">{empty.hint}</div> : null}
       {children}
     </div>
   )

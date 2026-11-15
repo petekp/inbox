@@ -1,4 +1,4 @@
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan } from '../../hooks/status-keys'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey } from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import { STALL_GAP, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
@@ -21,7 +21,7 @@ export type GoalPart =
   | { is: 'heading'; text: string; page: StatusPage | null }
   | { is: 'title'; goal: GoalBlock | null; isTyping: boolean }
   | { is: 'milestone'; row: MilestoneRow }
-  | { is: 'keys'; page: StatusPage }
+  | { is: 'keys'; keys: StatusKey[] }
   | { is: 'gap' }
   | { is: 'field' }
 
@@ -59,8 +59,8 @@ export function goalSection(page: StatusPage, typing: string | null, isUnfolded:
 }
 
 /** Under the empty state: New, or the field it opened. */
-export function setGoal(page: StatusPage, typing: string | null): Entry[] {
-  return [goalEntry(typing === GOAL_KEYS_ID ? { is: 'field' } : { is: 'keys', page })]
+export function setGoal(setGoal: { keys: StatusKey[]; isFieldOpen: boolean }): Entry[] {
+  return [goalEntry(setGoal.isFieldOpen ? { is: 'field' } : { is: 'keys', keys: setGoal.keys })]
 }
 
 /** The goal's text field with the draft in it and the cursor after it, under its placeholder. */
@@ -136,7 +136,6 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
 
     return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]
   }
-  if (part.is === 'keys')
-    return pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)
+  if (part.is === 'keys') return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT)
   return fieldLines(d)
 }

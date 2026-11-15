@@ -204,8 +204,16 @@ export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<st
       const buttons = isSettledRow ? withUndoOut(b.id, b.buttons, byRow.get(b.id)) : b.buttons
       return { ...b, buttons: withOutButtons(buttons, outRows), ...(line ? { feedback: line } : {}) }
     }
-    if (b.kind === 'status' || b.kind === 'heading' || b.kind === 'empty')
-      return { ...b, buttons: withOutButtons(b.buttons, outRows) }
+    if (b.kind === 'empty' && b.under) {
+      const line = lineOf(b.under.id)
+      const under = {
+        ...b.under,
+        buttons: withOutButtons(b.under.buttons, outRows),
+        ...(line ? { feedback: line } : {}),
+      }
+      return { ...b, under }
+    }
+    if (b.kind === 'status' || b.kind === 'heading') return { ...b, buttons: withOutButtons(b.buttons, outRows) }
 
     return b
   })
