@@ -237,7 +237,11 @@ In a Herdr app terminal, the inbox can open in a pane beside the terminal.
    Help lists the rest.
 
 Don't install saves your answer. Run `/inbox herdr` in Claude Code or omp to be
-asked again. The Codex CLI has no `/inbox`.
+asked again.
+
+The Codex CLI has no `/inbox`. Open the pane for it with
+`herdr-app do pane.split '{"direction":"right","pane":"<pane id>","mod":"inbox"}'`,
+taking the pane id from `herdr-app ls`.
 
 Inside a Herdr pane, Claude Code, omp and the Codex CLI also report to Herdr's
 sidebar, as pane tokens:
