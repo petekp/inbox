@@ -54,6 +54,19 @@ export const tint = (c: Color, share: number): Color =>
     .padStart(2, '0')}` as Color
 
 /**
+ * A color laid over `under` as one opaque color, the same as it draws there. Two strokes in it that meet then draw no
+ * darker or brighter point, as two translucent strokes would.
+ */
+export function opaqueOver(c: Color, under: Color): Color {
+  if (c.length !== 9) return c
+  const share = parseInt(c.slice(7, 9), 16) / 255
+  const channel = (at: number) =>
+    Math.round(parseInt(c.slice(at, at + 2), 16) * share + parseInt(under.slice(at, at + 2), 16) * (1 - share))
+
+  return `#${[1, 3, 5].map(at => channel(at).toString(16).padStart(2, '0')).join('')}` as Color
+}
+
+/**
  * The look's text sizes and line heights: one text size, and the Status page's head. gpui reads a bare number given to
  * `line_height` as a multiplier, so the line heights are px strings.
  */

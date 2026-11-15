@@ -122,7 +122,8 @@ export function paneStatusPath(
   /**
    * A work row's joint in the milestones' mark column: its arm to the row's mark on the first line, and the connector or
    * the path's line beside its lines. The terminal draws the path's own glyph past an arm, since it draws over the line.
-   * On desktop the path's hairline runs on its own, and each stretch is drawn once, so no two overlap.
+   * On desktop the divider color is translucent, so each point is drawn once: the column's stretches stack, and an arm
+   * beside the path's own hairline starts a hairline to its right.
    */
   const jointEl = ({ arm, beside }: WorkJoint) => {
     if (look === 'terminal') {
@@ -135,16 +136,27 @@ export function paneStatusPath(
       )
     }
     const isConnectorAbove = beside === 'connector' || arm === 'elbow'
+    const isBesidePath = beside !== null && beside !== 'connector'
+    const armSlot =
+      arm !== null ? (
+        <Box
+          key="arm"
+          height={DESKTOP_HAIR_LINES}
+          width={isBesidePath ? desktopArm - DESKTOP_HAIR_CELLS : desktopArm}
+          {...(isBesidePath ? { marginLeft: DESKTOP_HAIR_CELLS } : {})}
+          backgroundColor={pal.divider}
+        />
+      ) : (
+        <Box key="arm" height={DESKTOP_HAIR_LINES} flexDirection="row">
+          {beside === 'connector' ? <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.divider} /> : null}
+        </Box>
+      )
     return (
       <Box key="joint" position="absolute" top={0} bottom={0} left={0} flexDirection="row">
         <Box width={FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
         <Box flexDirection="column" flexShrink={0}>
           {desktopColumn('above', isConnectorAbove, statusFrameEdge + 0.5)}
-          <Box
-            height={DESKTOP_HAIR_LINES}
-            width={desktopArm}
-            backgroundColor={arm === null ? undefined : pal.divider}
-          />
+          {armSlot}
           {desktopColumn('below', beside === 'connector', null)}
         </Box>
       </Box>

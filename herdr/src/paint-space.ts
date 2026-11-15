@@ -5,7 +5,18 @@ import { ROW_PAD_PT } from '../../hooks/layout'
 import type { Block, PathSide, TreeStroke } from './blocks'
 import type { PathLine } from '../../hooks/status-path'
 import type { RowMotion } from './motion'
-import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE, LINE_GAP, NEST } from './paint-theme'
+import {
+  CONTROL_GAP,
+  EDGE,
+  GROUP_GAP,
+  HEAD_GAP,
+  INSET,
+  ITEM_GAP,
+  LINE,
+  LINE_GAP,
+  NEST,
+  opaqueOver,
+} from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
@@ -152,13 +163,16 @@ function boxEl(s: Space, m: RowMotion | undefined, p: Paint, inner: Element): El
     .transition('opacity', { duration: m.fadeMs, easing: 'ease-out' })
 }
 
+/** The path's line and the nesting connectors, in the border color made opaque over the panel's background. */
+const lineColor = (t: Theme) => opaqueOver(t.border, t.background)
+
 /** Where the path's line runs: under the middle of a milestone's mark. */
 const PATH_X = EDGE + 4
 
 /** A stretch of the path's line from `top`, down to `height` or to the end of its block. Dashed into the milestone that reads next. */
 function pathLineEl(line: PathLine, top: number, height: number | null, t: Theme): Element[] {
   if (line === null) return []
-  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(t.border)
+  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t))
   const sized = height === null ? el.bottom(0) : el.h(height)
 
   return [line === 'to-next' ? sized.border_dashed() : sized]
@@ -181,7 +195,7 @@ function treeEls(tree: TreeStroke[], top: number, t: Theme): Element[] {
 
   return tree.flatMap(({ depth, is }) => {
     const x = PATH_X + depth * NEST
-    const column = div().absolute().left(x).w(1).border_l_1().border_color(t.border)
+    const column = div().absolute().left(x).w(1).border_l_1().border_color(lineColor(t))
     const arm = div()
       .absolute()
       .left(x + 1)
@@ -189,7 +203,7 @@ function treeEls(tree: TreeStroke[], top: number, t: Theme): Element[] {
       .w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP)
       .h(1)
       .border_t_1()
-      .border_color(t.border)
+      .border_color(lineColor(t))
     if (is === 'down') return [column.top(top + parseInt(LINE)).bottom(0)]
     if (is === 'past') return [column.top(0).bottom(0)]
     if (is === 'arm') return [arm]

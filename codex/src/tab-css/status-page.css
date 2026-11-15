@@ -37,13 +37,14 @@
 .status-page .unbroken {
   white-space: nowrap;
 }
-/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark, a step in. */
+/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark, a step in. Its color is
+   opaque, the text's share mixed into the page's background, so where an arm meets a column no pixel draws twice as dark. */
 .status-page .list {
   --step: calc(var(--text-x) - var(--mark-x));
-  --mark-middle: 6px;
+  --mark-middle: 5.5px;
   --arm-gap: 2px;
   --tree-x: calc(var(--mark-x) + var(--mark-middle));
-  --tree-line: color-mix(in oklab, var(--text) 15%, transparent);
+  --tree-line: color-mix(in srgb, var(--text) 15%, var(--bg));
 }
 .status-page .row.has-children,
 .status-page .row.branch-mid,
@@ -156,8 +157,11 @@
 .status-page .milestone-group.gap-under::before {
   bottom: calc(-2 * var(--status-row-pad));
 }
+/* Dashes of whole pixels from the line's top. A dashed border stretches its dashes to fit the line, which blurs their ends. */
 .status-page .milestone-group.path-to-next::before {
-  border-left-style: dashed;
+  width: 1px;
+  border-left: 0;
+  background: repeating-linear-gradient(to bottom, var(--tree-line) 0 3px, transparent 3px 5px);
 }
 /* A milestone's nesting connector, from under its mark to the arm of its last work row, as a subject's tree line runs to
    its children. Where the path's line runs past the work, each work row draws only its arm, and the path's line is the

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T06:32:32.905Z. 230781 characters follow.
+// Built at 2026-11-15T06:40:57.348Z. 231198 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4722,6 +4722,13 @@ var TONE_COLORS = {
 };
 var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
+function opaqueOver(c, under) {
+  if (c.length !== 9)
+    return c;
+  const share = parseInt(c.slice(7, 9), 16) / 255;
+  const channel = (at) => Math.round(parseInt(c.slice(at, at + 2), 16) * share + parseInt(under.slice(at, at + 2), 16) * (1 - share));
+  return `#${[1, 3, 5].map((at) => channel(at).toString(16).padStart(2, "0")).join("")}`;
+}
 var TEXT = 13;
 var LINE = "20px";
 var SMALL_TEXT = 12;
@@ -4845,11 +4852,12 @@ function boxEl(s, m, p, inner) {
   const sized = box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor);
   return springHeight(sized).opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
 }
+var lineColor = (t) => opaqueOver(t.border, t.background);
 var PATH_X = EDGE + 4;
 function pathLineEl(line, top, height, t) {
   if (line === null)
     return [];
-  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(t.border);
+  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
   const sized = height === null ? el.bottom(0) : el.h(height);
   return [line === "to-next" ? sized.border_dashed() : sized];
 }
@@ -4862,8 +4870,8 @@ function treeEls(tree, top, t) {
   const armAt = Math.round(top + parseInt(LINE) / 2);
   return tree.flatMap(({ depth, is }) => {
     const x = PATH_X + depth * NEST;
-    const column = div().absolute().left(x).w(1).border_l_1().border_color(t.border);
-    const arm = div().absolute().left(x + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(t.border);
+    const column = div().absolute().left(x).w(1).border_l_1().border_color(lineColor(t));
+    const arm = div().absolute().left(x + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t));
     if (is === "down")
       return [column.top(top + parseInt(LINE)).bottom(0)];
     if (is === "past")
