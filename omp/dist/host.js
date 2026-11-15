@@ -9893,12 +9893,13 @@ function placed(s, folder, branch) {
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
-function recordPrompt(host, s, text, isOpen, sentBy) {
+function recordPrompt(host, s, text, isOpen, sentBy, personSource = "prompt") {
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
   const r = promptNotes(host, ledger, { text, isPress: sentBy !== null, isOpen }, s.told);
-  const person = s.turn.person === null ? text : `${s.turn.person}
+  const promptPerson = s.turn.person === null ? text : `${s.turn.person}
 
 ${text}`;
+  const person = personSource === "command" ? s.turn.person : promptPerson;
   return {
     state: {
       ...s,
