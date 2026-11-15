@@ -111,7 +111,7 @@ The person can trust a mark at a glance. A piece that is delivered, dropped or f
 
 A few words on what works, what is left or what it waits on, in the work's own terms. It does not name the step that ran, the tool that runs now, an id, or what was said in the conversation. A row that covers several parts keeps every part whose state differs. When those parts do not fit in a few words, each gets its own row.
 
-While every child row under a working piece has finished, and no ask holds it up, where it stands names the step left in this session, so the person sees why the row still works. When the step left is another piece's work, the piece waits on it.
+While every child row under a working piece has finished, and no ask holds it up, where it stands names the step left in this session, so the person sees why the row still works. When the step left is another piece's work, the piece waits on it. When the session has said nothing yet of what a finished delegate did, the step left is checking its work.
 
 - **Good:** `Export button: works on web and iOS`.
 - **Good:** `2.5 release: in review`, for a coordinator's stream.
@@ -124,6 +124,8 @@ While every child row under a working piece has finished, and no ask holds it up
 - **Good:** `● Export button: PDF works, merge left`, over `└ ✓ Lay out the PDF export · finished`.
 - **Bad:** `● Export button: PDF layout works`, over the same finished delegate. Nothing says why it still works.
 - **Bad:** `● Sync conflicts: waits on the sync engine`. The step left is another piece's work, so the row is ◌.
+- **Good:** `● Sync engine: retry queue done, unchecked`, over `└ ✓ Build the sync retry queue · finished`, when the reply talked about other work.
+- **Bad:** `● Sync engine: retry queue under way`, over the same finished delegate. That says the finished work still runs.
 
 #### 7. Running work shows under the piece it serves, in plain words
 

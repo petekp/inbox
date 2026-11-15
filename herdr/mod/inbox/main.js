@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T18:38:18.499Z. 235079 characters follow.
+// Built at 2026-11-15T20:08:35.759Z. 235168 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -243,6 +243,12 @@ function clockTime(ms) {
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
+}
+function isChildShown(c, now, lastLookAt) {
+  return isChildRunning(c, now) || isFinishedUnseen(c, lastLookAt);
 }
 function subjectSeenAt(o, id) {
   return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
@@ -1392,9 +1398,6 @@ function countsByMark(folded) {
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
 }
-function isFinishedUnseen(c, lastLookAt) {
-  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
-}
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
@@ -1636,7 +1639,7 @@ function statusPage(s, now) {
   const hasMilestones = milestoneIds.size > 0;
   const isUnneeded = (x) => servedBy(x) === "none";
   const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
   const needed = subjects.filter((x) => !isUnneeded(x));

@@ -15,6 +15,16 @@ export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: num
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
 }
 
+/** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
+export function isFinishedUnseen(c: Child, lastLookAt: number | null): boolean {
+  return c.delegateState === 'finished' && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt)
+}
+
+/** Whether the page draws a row for `c`: it runs, or it is a delegate that finished after the person last looked. */
+export function isChildShown(c: Child, now: number, lastLookAt: number | null): boolean {
+  return isChildRunning(c, now) || isFinishedUnseen(c, lastLookAt)
+}
+
 /** What a host reports about a child: everything but the id and the link, which the Status owns. A delegate's state is null until reported. */
 type ChildReport = Omit<Child, 'id' | 'subjectId' | 'delegateState'> & Partial<Pick<Child, 'delegateState'>>
 
@@ -104,11 +114,17 @@ export function asksText(o: SessionStatus | null, asks: readonly Pick<Item, 'id'
     .join(NL)
 }
 
-/** The running children as the call reads them. */
+/**
+ * The child rows the page draws, as the call reads them, each running or finished. A finished delegate whose subject
+ * closed is left out: it gives the call nothing to change.
+ */
 export function runningText(o: SessionStatus | null, now: number): string {
+  const isSubjectOpen = (id: string | null) => id === null || (o?.subjects.some(s => s.id === id && isOpen(s)) ?? false)
+  const state = (c: Child) => (isChildRunning(c, now) ? 'running' : 'finished')
+
   return (o?.children ?? [])
-    .filter(c => isChildRunning(c, now))
-    .map(c => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? '-'}`)
+    .filter(c => isChildShown(c, now, o?.lastLookAt ?? null) && (isChildRunning(c, now) || isSubjectOpen(c.subjectId)))
+    .map(c => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? '-'} | ${state(c)}`)
     .join(NL)
 }
 

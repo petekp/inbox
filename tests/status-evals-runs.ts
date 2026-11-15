@@ -255,6 +255,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
   ],
   'children-finished': [
     'SET: s1 | working | PDF works, merge left\nSET: s2 | waits-on-other | waits on the sync engine',
+    'DONE: s1 | PDF export merged\nSET: s3 | working | retry queue done, unchecked',
   ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',

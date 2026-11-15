@@ -1298,6 +1298,12 @@ function noCountsText(view, isReadFailed = false) {
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
+}
+function isChildShown(c, now, lastLookAt) {
+  return isChildRunning(c, now) || isFinishedUnseen(c, lastLookAt);
+}
 function withChild(last, c, now) {
   const o = last ?? EMPTY_SESSION_STATUS;
   const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
@@ -1345,7 +1351,9 @@ function asksText(o, asks) {
   }).join(NL);
 }
 function runningText(o, now) {
-  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL);
+  const isSubjectOpen = (id) => id === null || (o?.subjects.some((s) => s.id === id && isOpen(s)) ?? false);
+  const state = (c) => isChildRunning(c, now) ? "running" : "finished";
+  return (o?.children ?? []).filter((c) => isChildShown(c, now, o?.lastLookAt ?? null) && (isChildRunning(c, now) || isSubjectOpen(c.subjectId))).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"} | ${state(c)}`).join(NL);
 }
 function lookStarted(o, now) {
   return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } };
@@ -3669,9 +3677,6 @@ function countsByMark(folded) {
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
 }
-function isFinishedUnseen(c, lastLookAt) {
-  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
-}
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
@@ -3919,7 +3924,7 @@ function statusPage(s, now) {
   const hasMilestones = milestoneIds.size > 0;
   const isUnneeded = (x) => servedBy(x) === "none";
   const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
   const needed = subjects.filter((x) => !isUnneeded(x));
@@ -10507,7 +10512,7 @@ Input:
 - <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
 - <subjects>: the open subjects, one per line: id | status | name | where it stands | how long ago it last changed
 - <finished>: subjects already done or dropped. Do not add them again.
-- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <running>: work apart from the turn, such as a subagent, a background task, a workflow or a delegate session, that runs or finished since the person last looked, one per line: id | kind | name | the subject it belongs to, or - when it has none yet | running or finished
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet | why the agent asked it, when it said
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 ${GOAL_INPUT}
@@ -10550,7 +10555,7 @@ Rules:
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
-- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When the subject stays working after the item finished, where it stands says what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate finished". Write that once, in the exchange that says the item finished, unless where it stands already says what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other.
+- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for an item in <running>, or its progress in its subject's text: code shows it under its subject. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When an item finished, as <running> or the exchange shows, and its subject stays working, where it stands says what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate laying out the PDF" or "delegate finished". When the exchange says nothing of a finished item's result, say it is not checked yet: "PDF done, not checked". Write that once, unless where it stands already says what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
 - The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.
 

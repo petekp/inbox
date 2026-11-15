@@ -187,8 +187,8 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     breaks: 'milestone-next',
   },
   'children-finished': {
-    at: 0,
-    answer: GOOD_RUNS['children-finished']![0]!.replace('PDF works, merge left', 'PDF layout works'),
+    at: 1,
+    answer: 'DONE: s1 | PDF export merged',
     breaks: 'step-left-named',
   },
   'next-release': {

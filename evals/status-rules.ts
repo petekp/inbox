@@ -1,7 +1,6 @@
 import { isOpen, NAME_WORDS } from '../hooks/status-limits'
-import { isChildRunning } from '../hooks/status-children'
+import { isChildRunning, isChildShown } from '../hooks/status-children'
 import { NAMED_FOLD_TEXT, namedFoldMore, statusListRows } from '../hooks/status-page'
-import { isFinishedUnseen } from '../hooks/status-page-parts'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts, Piece } from './status-facts'
@@ -277,9 +276,7 @@ const FIXED_RULES: Rule[] = [
       const look = o?.lastLookAt ?? null
       const held = new Set(result.session.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
       const childRows = (s: Subject) =>
-        (o?.children ?? []).filter(
-          c => c.subjectId === s.id && (isChildRunning(c, result.now) || isFinishedUnseen(c, look)),
-        )
+        (o?.children ?? []).filter(c => c.subjectId === s.id && isChildShown(c, result.now, look))
       const isEveryChildFinished = (s: Subject) => {
         const rows = childRows(s)
         return rows.length > 0 && rows.every(c => !isChildRunning(c, result.now))

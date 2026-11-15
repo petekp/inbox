@@ -1220,6 +1220,12 @@ function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
+}
+function isChildShown(c, now, lastLookAt) {
+  return isChildRunning(c, now) || isFinishedUnseen(c, lastLookAt);
+}
 function withChild(last, c, now) {
   const o = last ?? EMPTY_SESSION_STATUS;
   const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
@@ -1266,9 +1272,6 @@ function countsByMark(folded) {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
-}
-function isFinishedUnseen(c, lastLookAt) {
-  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
 }
 var DAY_MS = 24 * 60 * 6e4;
 function subjectStall(x, isHeld, isWorkRunning, now) {
@@ -1480,7 +1483,7 @@ function statusPage(s, now) {
   const hasMilestones = milestoneIds.size > 0;
   const isUnneeded = (x) => servedBy(x) === "none";
   const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf2(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
   const needed = subjects.filter((x) => !isUnneeded(x));

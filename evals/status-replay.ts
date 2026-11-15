@@ -1,4 +1,5 @@
-import { childStarted, childWorked } from '../hooks/children'
+import { childStarted, childWorked, delegatesSettled } from '../hooks/children'
+import type { HerdrAgent } from '../hooks/herdr'
 import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { applyExchangeUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
@@ -29,6 +30,8 @@ type HostEvent =
   | { child: 'start'; ref: string; kind: ChildKind; name: string }
   | { child: 'act'; ref: string }
   | { child: 'end'; ref: string }
+  /** The delegate with `ref` finishes: Herdr shows it done, and every other running delegate still working. */
+  | { child: 'finish'; ref: string }
   /** The person shows the Status tab for this many seconds. */
   | { look: number }
   /** An ask opens or closes, in a replay that runs no ledger call. */
@@ -152,11 +155,19 @@ function itemOf(e: Extract<HostEvent, { askOpens: unknown }>['askOpens'], turn: 
   }
 }
 
+function delegateFinished(o: Ledger['overview'], ref: string, now: number): Ledger['overview'] {
+  const running = (o?.children ?? []).filter(c => c.kind === 'delegate' && c.endedAt === null)
+  const agent = (r: string): HerdrAgent => ({ status: r === ref ? 'done' : 'working', focus: null })
+
+  return delegatesSettled(o, new Map(running.map(c => [c.ref.replace(/^herdr:/, ''), agent(c.ref)])), now)
+}
+
 function withEvent(s: Session, e: HostEvent, now: number): Session {
   const o = s.ledger.overview
   const withStatus = (overview: Ledger['overview']) => ({ ...s, ledger: { ...s.ledger, overview } })
   if ('child' in e) {
     if (e.child === 'start') return withStatus(childStarted(o, e, now))
+    if (e.child === 'finish') return withStatus(delegateFinished(o, e.ref, now))
     return withStatus(e.child === 'act' ? childWorked(o, e.ref, now) : childEnded(o, e.ref, now))
   }
   if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000, 'all'))

@@ -7,12 +7,13 @@ const engineDelegate = delegate('c2', 'Build the sync retry queue', 's3', -40)
 
 /**
  * A coordinator whose delegate finished while the subject it served stays working, as the coordinator checks and
- * merges the work, and a subject whose work left is another subject's.
+ * merges the work, and a subject whose work left is another subject's. Then a delegate finishes while the reply talks
+ * about other work.
  */
 export const childrenFinished: Replay = {
   name: 'children-finished',
   about:
-    'A coordinator. The export delegate finished, and the coordinator runs the checks, then merges. Sync conflicts is built, and cannot merge until the sync engine change another delegate builds lands.',
+    'A coordinator. The export delegate finished, and the coordinator runs the checks, then merges. Sync conflicts is built, and cannot merge until the sync engine change another delegate builds lands. Then the engine delegate finishes while the reply talks only about the export merge.',
   hasLedgerCalls: false,
   start: {
     ledger: {
@@ -85,6 +86,24 @@ export const childrenFinished: Replay = {
             state: 'waits-on-other',
             stands: 'manual merge built, waits on the sync engine change',
           },
+        ],
+      },
+      targets: ['step-left-named', 'marks-true'],
+    },
+    {
+      label: 'The engine delegate finishes, and the reply talks only about merging the export',
+      at: 10,
+      events: [{ child: 'finish', ref: engineDelegate.ref }],
+      call: {
+        kind: 'reply',
+        person: 'Did the full check pass on the export?',
+        activity: ['Ran: ./scripts/check.sh', 'Ran: git merge export-pdf'],
+        reply: 'The full check passed on the PDF export, and I merged it into the release branch.',
+      },
+      facts: {
+        pieces: [
+          { id: 'export', state: 'done', stands: 'PDF export merged' },
+          { id: 'engine', stands: 'retry queue done, not checked yet', left: 'check|review|unread|not read' },
         ],
       },
       targets: ['step-left-named', 'marks-true'],
