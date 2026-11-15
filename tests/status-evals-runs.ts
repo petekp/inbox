@@ -258,6 +258,10 @@ export const GOOD_RUNS: Record<string, string[]> = {
     'DONE: s1 | PDF export merged\nSET: s3 | working | retry queue done, unchecked',
     'NO CHANGE',
   ],
+  'fix-through-merge': [
+    'SET: s1 | working | fix reviewed, merge left\nSET: s2 | working | toggle works, merge left',
+    'DONE: s1 | fix merged\nNEW: working | 2.5 beta | building with the share sheet fix',
+  ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
   ],

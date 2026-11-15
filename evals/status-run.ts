@@ -42,11 +42,6 @@ type RunRecord = Run & ReplayRun
 const ROOT = process.env.INBOX_EVAL_ROOT ?? process.cwd()
 const JUDGE_MODEL = 'opus'
 const JUDGE_EFFORT = 'high'
-/**
- * The most Status calls one run makes for each model. Once a model would pass it, that model's runs have no grade, and
- * the other model's runs go on.
- */
-const STATUS_CALLS_MAX = 220
 /** A call that fails before the model answers is tried this many more times, from the same prompt. */
 const CALL_RETRIES = 2
 const CALL_RETRY_WAIT_MS = 10_000
@@ -238,6 +233,19 @@ function job(agent: Agent, replay: Replay, n: number) {
 
 /** A replay's runs per model, or a short case's, unless `--runs` sets one count for every case. */
 const runsOf = (replay: Replay) => (values.runs !== undefined ? runCount(values.runs) : replay.isShort ? 5 : 3)
+/** The Status calls one run of `replay` plans: one for each step with a call, except a step whose answer stands in for the model's. */
+const plannedCalls = (replay: Replay) =>
+  replay.steps.filter(s => s.call && !(s.call.kind === 'reply' && s.call.answer !== undefined)).length
+/** The share of the planned Status calls a run may add for re-asks and retries, and the fewest it may add. */
+const RETRY_SHARE = 0.25
+const RETRY_FLOOR = 10
+const PLANNED_CALLS = replays.reduce((n, r) => n + plannedCalls(r) * runsOf(r), 0)
+/**
+ * The most Status calls one run makes for each model: the planned calls of the selected replays and their runs, plus
+ * `RETRY_SHARE` of them or `RETRY_FLOOR`, whichever is more. Once a model would pass it, that model's runs have no
+ * grade, and the other model's runs go on.
+ */
+const STATUS_CALLS_MAX = Math.max(Math.ceil(PLANNED_CALLS * (1 + RETRY_SHARE)), PLANNED_CALLS + RETRY_FLOOR)
 const jobs: Job<RunRecord>[] = agents.flatMap(agent =>
   replays.flatMap(replay =>
     Array.from({ length: runsOf(replay) }, (_, n) => ({
