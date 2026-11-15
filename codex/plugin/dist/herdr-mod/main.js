@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T23:08:30.604Z. 243158 characters follow.
+// Built at 2026-11-15T23:18:24.353Z. 243141 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -5176,7 +5176,7 @@ function rowEl(r, p) {
   const isOpen = isOpenRow(r);
   const isWrapped = isOpen || m?.isWrapHeld === true;
   const isPressable = r.isSelectable && !isLeaving;
-  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.cursor_pointer().on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
