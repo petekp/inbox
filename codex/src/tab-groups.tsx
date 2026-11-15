@@ -21,7 +21,7 @@ import { unfolded, closedAll, sending, closingFolds, drawnRows, tabState } from 
 import type { Row, Entry, Lists } from './tab-state'
 import { toggleFold } from './tab-motion'
 import { act } from './tab-rows'
-import { ResultMarkView, GroupTitle } from './tab-parts'
+import { ResultMarkView, GroupTitle, EmptyState } from './tab-parts'
 import { Entries } from './tab-list'
 
 function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): ClosedLine[] {
@@ -191,15 +191,12 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
   const notHeard = notHeardText(v)
   if (isNothing && !hasClosed)
     return notHeard ? (
-      <div class="empty">
-        <div class="title">{notHeard[0]}</div>
-        {notHeard[1] ? <div class="muted">{notHeard[1]}</div> : null}
-      </div>
+      <EmptyState title={notHeard[0]} hint={notHeard[1]} />
     ) : (
-      <div class="empty">
-        <div class="title">{emptyText('needsYou', 'Codex', isMaybeStale(v)).title}</div>
-        <div class="muted">{emptyText('needsYou', 'Codex').hint}</div>
-      </div>
+      <EmptyState
+        title={emptyText('needsYou', 'Codex', isMaybeStale(v)).title}
+        hint={emptyText('needsYou', 'Codex').hint}
+      />
     )
 
   return (
@@ -234,10 +231,10 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
   const isNothing = lists.findings.length === 0
   if (isNothing && closedTotal(v.findings.closed, settled) === 0)
     return (
-      <div class="empty">
-        <div class="title">{emptyText('findings', 'Codex', isMaybeStale(v)).title}</div>
-        <div class="muted">{emptyText('findings', 'Codex').hint}</div>
-      </div>
+      <EmptyState
+        title={emptyText('findings', 'Codex', isMaybeStale(v)).title}
+        hint={emptyText('findings', 'Codex').hint}
+      />
     )
 
   return (

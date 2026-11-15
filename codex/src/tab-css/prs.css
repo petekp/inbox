@@ -25,6 +25,19 @@
 .pr-refresh-line .pr-actions {
   margin-left: auto;
 }
+/* The refresh line under an empty tab's centred text. */
+.empty .pr-order > div {
+  padding: 0;
+}
+.empty .pr-refresh-line {
+  justify-content: center;
+}
+.empty .pr-refresh-line > .pr-refresh-text {
+  flex: 0 1 auto;
+}
+.empty .pr-refresh-line .pr-actions {
+  margin-left: 0;
+}
 .pr-head {
   font-weight: 600;
 }

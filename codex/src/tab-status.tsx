@@ -14,7 +14,7 @@ import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
-import { pulseInStep, markClassOf, MarkGlyph } from './tab-parts'
+import { pulseInStep, markClassOf, MarkGlyph, EmptyState } from './tab-parts'
 
 let measuring: CanvasRenderingContext2D | null | undefined
 
@@ -355,11 +355,9 @@ function GoalError() {
 export function StatusTab({ page }: { page: StatusPage }) {
   if (page.isEmpty)
     return (
-      <div class="empty">
-        <div class="title">{page.empty.title}</div>
-        <div class="muted">{page.empty.hint}</div>
+      <EmptyState title={page.empty.title} hint={page.empty.hint}>
         <SetGoal page={page} />
-      </div>
+      </EmptyState>
     )
   const head =
     page.goal === null && page.head ? (
