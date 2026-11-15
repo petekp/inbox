@@ -2,6 +2,7 @@ import type { Replay } from './status-replay'
 import { askHoldsTwo } from './replays/ask-holds-two'
 import { catchUpFromEmpty } from './replays/catch-up-from-empty'
 import { catchUpShipped } from './replays/catch-up-shipped'
+import { childrenFinished } from './replays/children-finished'
 import { coordinatorDay } from './replays/coordinator-day'
 import { removedGoal } from './replays/removed-goal'
 import { goalFromWork } from './replays/goal-from-work'
@@ -55,4 +56,5 @@ export const REPLAYS: Replay[] = [
   restartReadsBacklog,
   chatStatesDirection,
   unrelatedAskReasons,
+  childrenFinished,
 ]
