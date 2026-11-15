@@ -2464,7 +2464,7 @@ var ACTION_KEYS = {
   dismiss: "x",
   discard: "x"
 };
-function actionsOf(row, last, state, feedback) {
+function actionsOf(row, last, state, feedback, isUndoOut = false) {
   const { id, item, steps: steps2 } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
@@ -2480,10 +2480,11 @@ function actionsOf(row, last, state, feedback) {
       isFolded: flags.isFolded ?? false,
       isFollowUp: FOLLOW_UPS.has(press2.action),
       ...ACTION_KEYS[press2.action] ? { hotkey: ACTION_KEYS[press2.action] } : {},
-      isOut: out === pressAction
+      isOut: out === pressAction || press2.action === "undo" && isUndoOut
     };
   };
-  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
+  if (state.is === "settled")
+    return state.canUndo || state.offersUndo && isUndoOut ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
   if (state.is === "held")
     return [
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
@@ -2550,6 +2551,7 @@ function inboxView({
   lastTypedMessageAt,
   listInput,
   undoShown,
+  undoOut = [],
   collapsed = []
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
@@ -2655,7 +2657,13 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const actions = actionsOf(
+      row,
+      last,
+      state,
+      pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt),
+      undoOut.includes(row.id)
+    );
     const held2 = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,

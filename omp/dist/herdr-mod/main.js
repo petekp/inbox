@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T05:06:45.944Z. 222758 characters follow.
+// Built at 2026-11-15T05:25:04.262Z. 222374 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2868,7 +2868,7 @@ function listUndos(entries) {
 function prUndos(prs) {
   return prs.flatMap((d) => d.state.is === "settled" && d.state.canUndo ? [{ press: { action: "pr-undo", ref: d.pr.ref }, at: d.state.at }] : []);
 }
-function actionsOf(row, last, state, feedback) {
+function actionsOf(row, last, state, feedback, isUndoOut = false) {
   const { id, item, steps } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
@@ -2884,11 +2884,11 @@ function actionsOf(row, last, state, feedback) {
       isFolded: flags.isFolded ?? false,
       isFollowUp: FOLLOW_UPS.has(press.action),
       ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
-      isOut: out === pressAction
+      isOut: out === pressAction || press.action === "undo" && isUndoOut
     };
   };
   if (state.is === "settled")
-    return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
+    return state.canUndo || state.offersUndo && isUndoOut ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
   if (state.is === "held")
     return [
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
@@ -3041,6 +3041,7 @@ function inboxView({
   lastTypedMessageAt,
   listInput,
   undoShown,
+  undoOut = [],
   collapsed = []
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
@@ -3128,7 +3129,7 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt), undoOut.includes(row.id));
     const held = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
@@ -5014,17 +5015,6 @@ function nextOutCheckAt(outs, now) {
   return later.length ? Math.min(...later) : null;
 }
 var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
-function withUndoOut(rowId, buttons, out) {
-  if (out?.action !== "undo")
-    return buttons;
-  const id = `${rowId} undo`;
-  const kept = buttons.find((b) => b.id === id);
-  if (kept && !kept.isHidden)
-    return buttons;
-  const { isHidden: _, ...spent } = kept ?? button(id, out.label, "quiet");
-  const drawn = { ...spent, label: out.label, isOut: true };
-  return kept ? buttons.map((b) => b === kept ? drawn : b) : [...buttons, drawn];
-}
 function drawOuts(blocks, outs, lines, now) {
   const byRow = new Map(outs.map((o) => [o.rowId, o]));
   const outRows = new Set(byRow.keys());
@@ -5040,9 +5030,7 @@ function drawOuts(blocks, outs, lines, now) {
   return blocks.map((b) => {
     if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
       const line = lineOf(b.id);
-      const isSettledRow = b.kind === "row" && b.settled !== null;
-      const buttons = isSettledRow ? withUndoOut(b.id, b.buttons, byRow.get(b.id)) : b.buttons;
-      return { ...b, buttons: withOutButtons(buttons, outRows), ...line ? { feedback: line } : {} };
+      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
     }
     if (b.kind === "empty" && b.under) {
       const line = lineOf(b.under.id);
@@ -5352,7 +5340,8 @@ class Inbox extends View {
       replies: heldReplies(this.ui.typing, this.drafts),
       discarded: this.discarded,
       shownSince: this.shownSince,
-      listInput: this.listInput && withListInput(this.listInput, now)
+      listInput: this.listInput && withListInput(this.listInput, now),
+      undoOut: this.queue.outs.filter((o) => o.action === "undo").map((o) => o.rowId)
     };
   }
   load(sessionId, cx) {

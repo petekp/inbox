@@ -6235,7 +6235,7 @@ var ACTION_KEYS = {
 function latestUndo(undos) {
   return undos.reduce((latest, u) => latest === null || u.at >= latest.at ? u : latest, null);
 }
-function actionsOf(row, last, state, feedback) {
+function actionsOf(row, last, state, feedback, isUndoOut = false) {
   const { id, item, steps } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
@@ -6251,11 +6251,11 @@ function actionsOf(row, last, state, feedback) {
       isFolded: flags.isFolded ?? false,
       isFollowUp: FOLLOW_UPS.has(press.action),
       ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
-      isOut: out === pressAction
+      isOut: out === pressAction || press.action === "undo" && isUndoOut
     };
   };
   if (state.is === "settled")
-    return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
+    return state.canUndo || state.offersUndo && isUndoOut ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
   if (state.is === "held")
     return [
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
@@ -6407,6 +6407,7 @@ function inboxView({
   lastTypedMessageAt,
   listInput,
   undoShown,
+  undoOut = [],
   collapsed = []
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
@@ -6494,7 +6495,7 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt), undoOut.includes(row.id));
     const held = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
@@ -7533,7 +7534,7 @@ function lineOfRow(row, isAllShown) {
     settled: state.is === "settled" ? {
       label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
-      undo: state.canUndo && undo ? undo.press : null,
+      undo: undo ? undo.press : null,
       at: state.at
     } : null,
     buttons: state.is === "settled" ? [] : rowButtons(row, isAllShown),

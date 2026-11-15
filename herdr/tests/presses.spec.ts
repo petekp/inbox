@@ -179,7 +179,12 @@ test('keys switch tabs, step rows, press a selected row’s hotkey, and leave th
 
 const ASKS = [{ id: 'needsYou' as const, label: 'Asks', badge: null, isSelected: true }]
 
-function dismissedRows(ats: Record<string, number>, shownSince: number, listInput: ListInput | null = null) {
+function dismissedRows(
+  ats: Record<string, number>,
+  shownSince: number,
+  listInput: ListInput | null = null,
+  undoOut: string[] = [],
+) {
   const s = demoSession(NOW, AGENT)
   const closed = s.ledger.closed.map(c => {
     const at = ats[c.id]
@@ -187,7 +192,7 @@ function dismissedRows(ats: Record<string, number>, shownSince: number, listInpu
     const item = { ...s.ledger.items[0]!, id: c.id, ask: c.ask }
     return { ...c, at, how: 'dismissed' as const, outcome: 'dismissed', item }
   })
-  const holds = { replies: {}, discarded: {}, shownSince, listInput }
+  const holds = { replies: {}, discarded: {}, shownSince, listInput, undoOut }
   const view = sessionView({ ...s, ledger: { ...s.ledger, closed } }, NOW, SETTLED_MS, holds)
   return { view, blocks: tabBlocks({ ...demoScreen(), view, shownSince }, uiOn('needsYou')) }
 }
@@ -236,8 +241,10 @@ test('once Undo ends, a row the list holds keeps a hidden Undo that u skips, and
 
 test('an Undo whose press is still out when its time ends stays drawn out in its place until the press ends', () => {
   const at = NOW - SETTLED_MS - 500
-  const { blocks } = dismissedRows({ d8: at }, at - 1000, { since: at, last: NOW - 100 })
-  const out = drawOuts(blocks, [outOn('d8', { action: 'undo', label: 'Undo' })], {}, NOW)
+  const input = { since: at, last: NOW - 100 }
+  const { blocks } = dismissedRows({ d8: at }, at - 1000, input)
+  const withOut = dismissedRows({ d8: at }, at - 1000, input, ['d8']).blocks
+  const out = drawOuts(withOut, [outOn('d8', { action: 'undo', label: 'Undo' })], {}, NOW)
   expect(undoOf(out, 'd8')).toMatchObject({ label: 'Undo', isOut: true })
   expect(undoOf(out, 'd8')?.isHidden).toBeUndefined()
   expect(rowsOf(out).find(r => r.id === 'd8')?.buttons.length).toBe(
