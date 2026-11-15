@@ -29,6 +29,7 @@ import {
   knownFailing,
   layerLines,
   layerTests,
+  passingUntils,
   reasks,
   stepName,
   unjudgedTargets,
@@ -280,6 +281,8 @@ console.log(`code holds: ${holds.length === 0 ? 'none failed' : `${holds.length}
 for (const h of holds) console.log(`  x ${h}`)
 const known = knownFailing(cases)
 if (known.length > 0) console.log(`known failing: ${known.join('; ')}`)
+const passing = passingUntils(cases)
+if (passing.length > 0) console.log(`passed in every run, so its until may be stale: ${passing.join('; ')}`)
 const unjudged = unjudgedTargets(cases, values.judge)
 if (unjudged.length > 0) console.log(`needs --judge: ${unjudged.join(', ')}`)
 for (const agent of agents) {

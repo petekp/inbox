@@ -30,7 +30,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
-| 1 | The person asks for offline sync, shipped in 2.5. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The goal is set, and each piece links to a milestone. The head names the aim. Three pieces. |
+| 1 | The person asks for offline sync, shipped in 2.5. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The goal is set, and each piece links to a milestone. The head names the aim. Four pieces: the three planned, and the 2.5 release. |
 | 2 | The engine works. The agent fixes a lint error, runs two review subagents and asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine. ◆ on conflicts, from the ledger's new ask. Each piece links to its milestone. |
 | 3 | The person answers "manual merge" | The ask closes, ◆ clears, and the conflicts row shows the choice |
 | 4 | The person reverses: last-write-wins with a backup copy | Checkpoint. A was line on conflicts, and no new piece |
@@ -46,7 +46,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | --- | --- | --- |
 | 1 | A mid-turn call at 12 minutes. The activity finishes one piece and starts another. The host's task list holds file and test steps beside the features. | Checkpoint. The finished piece closes, and the next is ●, since the turn still runs. No file name or test step becomes a row. Where it stands says what works, not what the agent is doing. |
 | 2 | A mid-turn call at 25 minutes. The activity shows more investigation and nothing new. | `NO CHANGE` is right, and no row moves |
-| 4 | The reply and two more were dropped, and a catch-up reads the whole conversation. The person had asked to get search under 100 ms on big libraries and ship it in 3.1. | Checkpoint. The goal is set. Finished work is not ● or ◐. The missed change reaches the page. |
+| 4 | The reply and two more were dropped, and a catch-up reads the whole conversation. The person had asked to get search under 100 ms on big libraries and ship it in 3.1. | Checkpoint. The goal is set, and the speed work left and the 3.1 release are open pieces. Finished work is not ● or ◐. The missed change reaches the page. |
 
 The person's "speed up search on large libraries" at steps 1 and 2 is a direction, so no goal is set there.
 
