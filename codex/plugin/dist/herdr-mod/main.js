@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T01:40:15.372Z. 205486 characters follow.
+// Built at 2026-11-15T02:43:34.558Z. 205398 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1527,7 +1527,6 @@ var STALL_GAP = " · ";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
-var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
@@ -1602,7 +1601,7 @@ function statusPage(s, now) {
         depth,
         ...SUBJECT_MARKS[status],
         text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
-        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
+        subjectIds: closed.map((x) => x.id)
       }
     ];
   });
