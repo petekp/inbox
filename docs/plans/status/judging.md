@@ -142,7 +142,7 @@ A release run may block falsely with a chance of at most 0.05 when every rate si
 
 The report lists each test with its failures, its count, its 95% interval and the count at which it blocks. A test over its tolerance but under its blocking count is listed for reading. A code hold that fails blocks. Known failing cases are listed apart and block nothing. A target counts a failure on any piece; counting only the pieces its step changes is not built yet.
 
-**Calls that fail.** A call that ends with no answer before the host's time limit, as on a network error, failed outside the model. The runner tries that call again from the same prompt, twice, and then the run can't be graded. A call that answers past the limit fails as it would in the host. Each model stops a quarter past the planned Status calls, re-asks and retries included. That model's later runs then have no grade, and the other model's runs go on.
+**Calls that fail.** A call that ends with no answer before the host's time limit, as on a network error, failed outside the model. The runner tries that call again from the same prompt, twice, and then the run can't be graded. A call that answers past the limit fails as it would in the host. Each model stops a quarter past the planned Status calls of the replays a run selects, or 10 past them when that is more, re-asks and retries included. That model's later runs then have no grade, and the other model's runs go on.
 
 **Exit status.** 0 when nothing blocks; 1 when a test or a code hold blocks; 2 when a case could not be graded, as when its model reached its Status call limit; 3 when the run stopped because a session could reach more than the stand-in inbox.
 
@@ -174,4 +174,4 @@ These make no model calls.
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
 | **Total** | **232** | **54** | **82** |
 
-An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run plans 222 Status calls before re-asks and retries. Each model stops a quarter past the planned calls of the replays a run selects, 278 for all of them, so one `--agent both` run grades both models. `STATUS_CALLS_MAX` in `evals/status-run.ts` sets it.
+An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run plans 222 Status calls before re-asks and retries. Each model stops a quarter past the planned calls of the replays a run selects, or 10 past them when that is more, 278 for all of them, so one `--agent both` run grades both models. `STATUS_CALLS_MAX` in `evals/status-run.ts` sets it.

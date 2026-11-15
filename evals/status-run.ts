@@ -236,13 +236,16 @@ const runsOf = (replay: Replay) => (values.runs !== undefined ? runCount(values.
 /** The Status calls one run of `replay` plans: one for each step with a call, except a step whose answer stands in for the model's. */
 const plannedCalls = (replay: Replay) =>
   replay.steps.filter(s => s.call && !(s.call.kind === 'reply' && s.call.answer !== undefined)).length
-/** The share of the planned Status calls a run may add for re-asks and retries. */
+/** The share of the planned Status calls a run may add for re-asks and retries, and the fewest it may add. */
 const RETRY_SHARE = 0.25
+const RETRY_FLOOR = 10
+const PLANNED_CALLS = replays.reduce((n, r) => n + plannedCalls(r) * runsOf(r), 0)
 /**
  * The most Status calls one run makes for each model: the planned calls of the selected replays and their runs, plus
- * `RETRY_SHARE` of them. Once a model would pass it, that model's runs have no grade, and the other model's runs go on.
+ * `RETRY_SHARE` of them or `RETRY_FLOOR`, whichever is more. Once a model would pass it, that model's runs have no
+ * grade, and the other model's runs go on.
  */
-const STATUS_CALLS_MAX = Math.ceil(replays.reduce((n, r) => n + plannedCalls(r) * runsOf(r), 0) * (1 + RETRY_SHARE))
+const STATUS_CALLS_MAX = Math.max(Math.ceil(PLANNED_CALLS * (1 + RETRY_SHARE)), PLANNED_CALLS + RETRY_FLOOR)
 const jobs: Job<RunRecord>[] = agents.flatMap(agent =>
   replays.flatMap(replay =>
     Array.from({ length: runsOf(replay) }, (_, n) => ({
