@@ -21,7 +21,7 @@ These are code fixes. None changes what a model reads. Items 1, 3, 4 and 6 are f
 
 ### Items leave or linger at the wrong time
 
-7. **A question re-asked after 12 prompts disappears at that moment.** A restatement merges into the old item and keeps its old turn, so it expires in the same update. Fix: a restatement refreshes the item's turn.
+7. **Fixed: a question re-asked after 12 prompts used to disappear when its old item expired.** Questions and tasks now stay open across turn counts, and a restatement merges into the existing row.
 8. **Findings past 30 are deleted silently.** Nothing records them, and `record` still answers "Recorded". Fix: move them to Closed as "list full", and say so in the result.
 9. **A typed reply that is itself a question closes the question.** The inbox model is then told never to add it again. This happened in this session: a question was closed with a follow-up question as its answer. It needs a fixture before a fix.
 10. **The Herdr sidebar shows a stale NOW** for the whole next turn after the last question is answered.

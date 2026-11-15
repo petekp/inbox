@@ -35,13 +35,22 @@ export const focusOf = (line: Line, ui: PanelUi): number =>
 type KeyResult = { ui: PanelUi; press?: PanelPress; close?: true }
 
 function withSelection(ui: PanelUi, id: string | null): PanelUi {
-  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null, openedAt: 0 }
+  return {
+    ...ui,
+    selectedId: id,
+    focus: null,
+    detailTop: 0,
+    detailScrollMax: 0,
+    opened: ui.opened === id ? ui.opened : null,
+    openedAt: 0,
+  }
 }
 
 /** Shows `tab`. Its showing starts at `now` unless it already shows, so its settled rows stay. */
 export const withTab = (ui: PanelUi, tab: ShownTab, now: number): PanelUi => ({
   ...withSelection(ui, null),
   tab,
+  document: null,
   pageTop: 0,
   pageReveal: isRowTab(tab) ? null : true,
   shownSince: tab === ui.tab ? ui.shownSince : now,
@@ -126,6 +135,13 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   // The Status lists no lines, and its selection is a Status row's id.
   const base: PanelUi = isPage ? ui : { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
+  const isUp = key === 'up' || key === 'k'
+  if (base.document) {
+    if (key === 'b' || key === 'escape') return { ui: { ...base, document: null, pageTop: 0 } }
+    if (isUp || key === 'down' || key === 'j')
+      return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } }
+    return { ui: base }
+  }
   const shown = shownTabs(screen.isNextBuild === true)
   const isTabKey = key === 'tab' || key === 'shift+tab' || shown.some(t => t.hotkey === key)
   if (key === '?' || (base.isHelpShown && key === 'escape'))
@@ -135,10 +151,16 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
     const page = pageKey(screen, base, key, now)
     if (page) return page
   }
-  const isUp = key === 'up' || key === 'k'
   if (base.isHelpShown && !isTabKey && !isUp && key !== 'down' && key !== 'j') return { ui: base }
   if ((base.isHelpShown || isPage) && (isUp || key === 'down' || key === 'j'))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } }
+  if (!isPage && selected?.detail && base.detailScrollMax > 0 && (key === 'up' || key === 'down'))
+    return {
+      ui: {
+        ...base,
+        detailTop: Math.max(0, Math.min(base.detailScrollMax, base.detailTop + (key === 'up' ? -1 : 1))),
+      },
+    }
   const selectable = lines.filter(isSelectable)
   const at = selectable.findIndex(l => l.id === selected?.id)
   if ((key === 'up' || key === 'k' || key === 'down' || key === 'j') && selectable.length > 0) {

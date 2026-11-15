@@ -16,6 +16,7 @@ import { restoreState } from './tab-swap'
 import { read, poll } from './tab-read'
 import { tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
+import { DocumentReader } from './tab-document'
 import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
 import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
@@ -53,7 +54,9 @@ function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): Com
         </div>
       ) : null}
       <TabBar v={v} />
-      {tabState.isHelpShown ? (
+      {tabState.document ? (
+        <DocumentReader document={tabState.document} close={closeDocument} />
+      ) : tabState.isHelpShown ? (
         <HelpPage v={v} />
       ) : shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
@@ -111,6 +114,11 @@ function draw() {
   }
 }
 
+function closeDocument() {
+  tabState.document = null
+  draw()
+}
+
 tabState.draw = draw
 
 /** Notes the Status subject rows on screen now, while the tab shows the real Status, for the look under way. The demo's ids name sample rows. */
@@ -160,6 +168,17 @@ document.addEventListener(
       }
       return
     }
+    const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
+    if (tabState.document) {
+      if (e.key === 'b' || e.key === 'Escape') {
+        e.preventDefault()
+        closeDocument()
+      } else if (move) {
+        e.preventDefault()
+        root.querySelector<HTMLElement>('.document-reader')?.scrollBy({ top: move * 40 })
+      }
+      return
+    }
     if (e.key === '?' || (e.key === 'Escape' && tabState.isHelpShown)) {
       e.preventDefault()
       tabState.isHelpShown = e.key === '?' && !tabState.isHelpShown
@@ -185,7 +204,6 @@ document.addEventListener(
     }
     const rows = tabRows(tabState.view, t)
     const at = selectedIndex(rows, t, tabState.view)
-    const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
     if (move !== 0) {
       e.preventDefault()
       select(t, rows, steppedIndex(at, move, rows.length))

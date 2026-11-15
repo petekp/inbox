@@ -152,16 +152,55 @@ function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
 
+// ../hooks/inline.ts
+var INLINE = /`([^`\n]+)`|\*\*(?=\S)(.+?)(?<=\S)\*\*(?!\*)|~~(?=\S)(.+?)(?<=\S)~~|(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])|(?<!\w)_(?=\S)([^_\n]+?)(?<=\S)_(?!\w)|\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/gi;
+function httpsHref(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password) return null;
+    const href = parsed.origin + [parsed.pathname, parsed.search, parsed.hash].join("").replace(/@/g, "%40");
+    return href.length <= 2048 ? href : null;
+  } catch {
+    return null;
+  }
+}
+function parseInline(text2, outer = {}) {
+  const spans = [];
+  let at = 0;
+  for (const m of text2.matchAll(INLINE)) {
+    if (m.index > at) spans.push({ ...outer, text: text2.slice(at, m.index) });
+    const [, code, bold, strike, star, under, label, url] = m;
+    if (code !== void 0) spans.push({ ...outer, text: code, code: true });
+    else if (bold !== void 0) spans.push(...parseInline(bold, { ...outer, bold: true }));
+    else if (strike !== void 0) spans.push(...parseInline(strike, { ...outer, strike: true }));
+    else if (star !== void 0 || under !== void 0)
+      spans.push({ ...outer, text: star ?? under ?? "", italic: true });
+    else {
+      const href = httpsHref(url ?? "");
+      spans.push(
+        href ? { ...outer, text: label ?? "", link: href } : { ...outer, text: `${label ?? ""} (${url ?? ""})` }
+      );
+    }
+    at = m.index + m[0].length;
+  }
+  if (at < text2.length) spans.push({ ...outer, text: text2.slice(at) });
+  return spans;
+}
+function linkLabel(text2) {
+  return parseInline(text2).map((span) => span.text).join("");
+}
+
 // ../hooks/ask-match.ts
+var CLOSED_CONTEXT_LIMIT = 12;
 function words2(text2) {
   return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec) return null;
-  const named = new Set(words2(rec));
+  const named = new Set(words2(linkLabel(rec)));
   let best = null;
   for (const option of options) {
-    const w = words2(option);
+    const w = words2(linkLabel(option));
     if (w.length > words2(best ?? "").length && w.every((x) => named.has(x))) best = option;
   }
   const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
@@ -299,8 +338,9 @@ function matchOpen(items, a, sameBatch = /* @__PURE__ */ new Set()) {
   );
 }
 function repeatsClosed(closed, a, since, closedFindings = []) {
-  const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
-  const settled = closed.filter((c) => c.at < since && c.how !== "expired");
+  const context = closed.slice(-CLOSED_CONTEXT_LIMIT);
+  const recent = context.filter((c) => c.at >= since && !isAskedForChoices(c));
+  const settled = context.filter((c) => c.at < since && c.how !== "expired");
   return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a)) || dismissedFindingOf(closedFindings, a.ask) !== void 0;
 }
 function dismissedFindingOf(closedFindings, ask) {
@@ -333,6 +373,7 @@ function closedFindingRecord(finding, closing, now, askedAs) {
   return { ...finding, ...askedAs ? { askedAs } : {}, ...closing, closedAt: now };
 }
 function closeItem(ledger, id, closing, now) {
+  if (ledger.items.some((i) => i.id === id && i.sourceManaged)) return ledger;
   const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
   return reopenAskedFindings(
     { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
@@ -379,10 +420,6 @@ function asksAbout(item, finding, isClaimed = false) {
   }
   const itemPrs = prNumbers(`${item.label ?? ""} ${item.ask}`);
   return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
-}
-function pruneClosed(ledger, keep) {
-  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
-  return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
 }
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
@@ -458,6 +495,8 @@ var GRAPHEME = new RegExp(
   String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
   "gu"
 );
+var OSC8 = /\x1b\]8;[^;\x07\x1b]*;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+var ANSI_TOKEN = new RegExp(`\\x1b\\[[0-9;]*m|${OSC8.source}`, "g");
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -481,6 +520,15 @@ function readKind(kind) {
 }
 var NEEDS_PERSON = /(?:^|[\s;&|])(?:login|logout|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen)(?=[\s:]|$)|\binit --interactive\b/i;
 var PERSON_ONLY_REASON = /credential|password|passphrase|secret|\btoken|\b2fa\b|\bmfa\b|\bdevice\b|phone|android|tablet|account|sign(?:ed)?[- ]?in|log(?:ged)?[- ]?in|only you|you hold|your (?:mac|machine|laptop|computer|keychain)|\bsudo\b/i;
+function recordedAsksOnly(u, isPersonsAnswer2) {
+  const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
+  return {
+    ...u,
+    closed: u.closed.filter((c) => (!/^i\d+$/.test(c.id) || isPersonsAnswer2(c.outcome)) && !stillAsked.has(c.id)),
+    added: [],
+    updated: []
+  };
+}
 function readHelp(kind, value, name, blocks, source) {
   const isQuoted = (text2) => source === null || source.includes(text2);
   const block = value.match(/^block\s+(\d+)$/i);
@@ -649,8 +697,6 @@ function todoAsk(work) {
 }
 
 // ../hooks/ledger-update.ts
-var MAX_OPEN = 20;
-var STALE_AFTER = 12;
 var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
 var PUT_OFF2 = /^\s*(?:(?:the )?(?:user|person) )?(?:dismissed|declined|deferred (?:to|until|till|for)|postponed|put (?:it )?off|set aside|not now|later\b|can wait|won'?t fix|skipped)|\b(?:user|person) (?:said|says|asked|wants|chose|decided|declined|dismissed|deferred|put it off)\b/i;
 var EXPIRED = "expired, unanswered";
@@ -685,14 +731,22 @@ function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
 }
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
+  const feedIds = new Set(ledger.findings.filter((f) => f.feedOwned).map((f) => f.id));
+  const sourceItemIds = new Set(ledger.items.filter((i) => i.sourceManaged).map((i) => i.id));
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const isPutOffFinding = (c) => ledger.findings.some((f) => f.id === c.id) && PUT_OFF2.test(c.outcome);
   const closing = new Map(
-    u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome) && !isPutOffFinding(c)).map((c) => [c.id, c.outcome])
+    u.closed.filter(
+      (c) => !feedIds.has(c.id) && !sourceItemIds.has(c.id) && !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome) && !isPutOffFinding(c)
+    ).map((c) => [c.id, c.outcome])
   );
   const closed = [...ledger.closed];
   const items = [];
   for (const item of ledger.items) {
+    if (item.sourceManaged) {
+      items.push(item);
+      continue;
+    }
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
     const isQuestionBackOutcome = outcome !== void 0 && item.kind === "question" && isQuestionBack(outcome, item.options);
@@ -701,13 +755,17 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     else items.push(withUpdate({ ...item, helps }, u.updated));
   }
   const recordedThisTurn = new Set(
-    [...ledger.items, ...ledger.closed.flatMap((c) => c.item ?? [])].filter((i) => i.from === "record" && i.turn === turn).map((i) => i.kind)
+    [...ledger.items, ...ledger.closed.flatMap((c) => c.item ?? [])].filter((i) => !i.sourceManaged && i.from === "record" && i.turn === turn).map((i) => i.kind)
   );
   let nextId = ledger.nextId;
   let added = 0;
   const addedIds = [];
   const created = /* @__PURE__ */ new Set();
   for (const a of u.added) {
+    if (items.some((i) => i.sourceManaged && matchOpen([i], a) >= 0)) {
+      addedIds.push(null);
+      continue;
+    }
     if (repeatsClosed(ledger.closed, a, promptAt, ledger.closedFindings)) {
       addedIds.push(null);
       continue;
@@ -741,23 +799,22 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       options: ["Proceed", "Not yet"],
       rec: null
     };
-    const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
+    const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => !f.feedOwned && restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
     if (isKnown) continue;
     items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update" });
     nextId += 1;
     added += 1;
   }
-  const kept = items.filter((i) => i.from === "record" || turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN);
-  for (const i of items) if (!kept.includes(i)) closed.push(closedRecord(i, { outcome: EXPIRED, how: "expired" }, now));
   const askedBy = /* @__PURE__ */ new Map();
   for (const a of u.asked) {
     const id = typeof a.item === "number" ? addedIds[a.item] : a.item;
-    const asker = kept.find((i) => i.id === id);
+    const asker = items.find((i) => i.id === id);
     const finding = ledger.findings.find((f) => f.id === a.id);
-    if (asker && finding && asksAbout(asker, finding, true)) askedBy.set(a.id, asker.id);
+    if (asker && finding && !finding.sourceManaged && asksAbout(asker, finding, true)) askedBy.set(a.id, asker.id);
   }
-  for (const i of kept.filter((i2) => created.has(i2.id)))
-    for (const f of ledger.findings) if (!askedBy.has(f.id) && asksAbout(i, f)) askedBy.set(f.id, i.id);
+  for (const i of items.filter((i2) => created.has(i2.id)))
+    for (const f of ledger.findings)
+      if (!f.sourceManaged && !f.feedOwned && !askedBy.has(f.id) && asksAbout(i, f)) askedBy.set(f.id, i.id);
   const { findings, closedFindings } = ledger.findings.reduce((l, f) => {
     const asker = askedBy.get(f.id);
     const outcome = closing.get(f.id);
@@ -767,7 +824,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   return reopenAskedFindings(
     {
       ...ledger,
-      items: kept,
+      items,
       closed,
       findings,
       closedFindings,
@@ -1032,6 +1089,7 @@ var EMPTY = {
   closed: [],
   findings: [],
   closedFindings: [],
+  untrackedWork: [],
   prs: [],
   prOrder: null,
   nextId: 1,
@@ -1154,11 +1212,11 @@ TODO: <work>
 Write plainly. No jargon, no filler, no markdown.`;
 }
 function ledgerBlocks(ledger) {
-  const open2 = ledger.items.map(
+  const open2 = ledger.items.filter((i) => !i.sourceManaged).map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
   ).join(NL4);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).slice(-MAX_CLOSED).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
+  const findings = ledger.findings.filter((f) => !f.feedOwned).map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
+  const closed = ledger.closed.slice(-CLOSED_CONTEXT_LIMIT).filter((d) => d.how !== "expired" && !isAskedForChoices(d)).slice(-MAX_CLOSED).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
   const dismissedFindings = ledger.closedFindings.filter((f) => f.how === "dismissed").slice(-MAX_CLOSED).map((f) => `${f.kind}: ${f.title} \u2192 ${outcomeText(f)}`);
   const decided = [...closed, ...dismissedFindings].join(NL4);
   return [
@@ -1197,7 +1255,7 @@ function screenText(host, isOpen2, tab) {
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => !i.sourceManaged && i.turn === ledger.batchTurn);
 }
 function numberOf(label) {
   const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
@@ -1778,7 +1836,8 @@ var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" },
+  progress: { title: "Progress", mark: "\u21BB", tone: "findings" }
 };
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
@@ -1839,6 +1898,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: FINDING_GROUPS.progress.mark,
+    tone: FINDING_GROUPS.progress.tone,
+    isRunning: false,
+    words: "Progress reported by the feed"
   }
 ];
 var STATUS_ONLY_MARKS = /* @__PURE__ */ new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
@@ -2289,7 +2354,7 @@ function optionDescriptionsOf(item, actions) {
   return actions.flatMap((a) => {
     if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option)) return [];
     const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    return [{ label: clipLabel(linkLabel(a.press.option), OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
 function isWaitingRow(row) {
@@ -2993,7 +3058,7 @@ var RECORD_SCHEMA = {
     },
     ask: {
       type: "string",
-      description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
+      description: "For a question or task: what you need from the user, in at most 12 words, readable without your reply. Links as [label](https://\u2026); a link counts as its label."
     },
     context: {
       type: "string",
@@ -3002,7 +3067,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one. A link here shows only its label; put the page behind an option in detail or steps."
     },
     option_notes: {
       type: "array",
@@ -3020,7 +3085,7 @@ var RECORD_SCHEMA = {
     steps: {
       type: "array",
       items: { type: "string" },
-      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
+      description: "For a task: up to 3 things the user can do in one press, each written as a command, a file path or a [label](https://\u2026) link. For a question: up to 3 files or links that help the user decide, such as a page comparing the options, each file as an absolute path."
     },
     design_choice: {
       type: "boolean",
@@ -3031,12 +3096,19 @@ var RECORD_SCHEMA = {
       enum: ["issue", "opportunity"],
       description: "For a finding. issue: something wrong or risky. opportunity: something that could be better."
     },
-    title: { type: "string", description: "For a finding: what it is, in at most 12 plain words." },
+    title: {
+      type: "string",
+      description: "For a finding: what it is, in at most 12 words. Links as [label](https://\u2026); a link counts as its label."
+    },
     detail: {
       type: "string",
-      description: "For a finding: why it matters and what you would do, in one or two sentences."
+      description: "For a question or task: why you ask and what it holds up; for a question, what each option leads to. For a finding: why it matters and what you would do. Use short paragraphs. Links as [label](https://\u2026)."
     },
-    path: { type: "string", description: "For a finding: the file it is about, if one." }
+    path: { type: "string", description: "For a finding: the file it is about, if one." },
+    document: {
+      type: "string",
+      description: "For a Markdown report the user should read in the inbox: its absolute local file path."
+    }
   },
   required: ["kind"]
 };
@@ -3081,6 +3153,13 @@ var TOOL_FIELDS = {
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
+// ../hooks/record-links.ts
+var anyCase = (word) => [...word].map((c) => `[${c.toUpperCase()}${c}]`).join("");
+var REF = new RegExp(
+  String.raw`(?<![\w/#&])(?:(?<!-)(?:PRs?|${anyCase("pull")}\s+${anyCase("request")}[sS]?|${anyCase("issue")}[sS]?|プルリク(?:エスト)?|イシュー)\s*#?|(?:[\w.-]+\/)?[\w.-]+#|#)([1-9]\d*)(?!\w)(?!\s*(?:件|本|個|つ|点|回|枚))`,
+  "g"
+);
+
 // ../hooks/arrivals.ts
 var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
@@ -3106,6 +3185,7 @@ var ACTION_KEYS = {
   issue: "i",
   type: "t",
   explain: "e",
+  "read-document": "v",
   compare: "p",
   discuss: "d",
   dismiss: "x",
@@ -3113,6 +3193,7 @@ var ACTION_KEYS = {
 };
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
+  if (item?.sourceManaged || row.finding?.sourceManaged) return [];
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
   const action = (press2, label, kind, flags = {}) => {
@@ -3130,9 +3211,12 @@ function actionsOf(row, last, state, feedback) {
       isOut: out === pressAction
     };
   };
-  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
+  const documentAction = row.document ? [action({ action: "read-document", id }, "Read report", "view")] : [];
+  if (state.is === "settled")
+    return [...state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [], ...documentAction];
   if (state.is === "held")
     return [
+      ...documentAction,
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "discard", id }, ROW_COPY.discard, "view")
     ];
@@ -3141,6 +3225,7 @@ function actionsOf(row, last, state, feedback) {
     return [
       action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
       action({ action: "issue", id }, ISSUE_LABEL, "handoff"),
+      ...documentAction,
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "explain", id }, "Explain", "talk"),
       action({ action: "discuss", id }, "Discuss", "talk"),
@@ -3149,6 +3234,7 @@ function actionsOf(row, last, state, feedback) {
   if (item.kind === "task")
     return [
       ...stepActions,
+      ...documentAction,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "explain", id }, "Explain", "talk"),
@@ -3158,12 +3244,13 @@ function actionsOf(row, last, state, feedback) {
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map(
-      (option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
+      (option, n) => action({ action: "answer", id, option }, clipLabel(linkLabel(option), OPTION_LABEL_CHARS), "mark", {
         isPrimary: option === item.rec,
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
       })
     ),
     ...stepActions,
+    ...documentAction,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
     ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
@@ -3301,10 +3388,18 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const document = row.item?.document ?? row.finding?.document ?? null;
+    const actions = actionsOf(
+      { ...row, document },
+      last,
+      state,
+      pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt)
+    );
     const held2 = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
+      document,
+      documentPreview: row.item?.documentPreview ?? row.finding?.documentPreview ?? null,
       state,
       feedback,
       actions,
@@ -3322,7 +3417,7 @@ function inboxView({
       number: n ?? null,
       title: item.ask,
       at: item.at,
-      detail: null,
+      detail: item.detail ?? null,
       fileName: null,
       replyKind: item.kind === "question" ? "answer" : "reply",
       item,
@@ -3369,6 +3464,7 @@ function inboxView({
     };
   });
   return {
+    untrackedWork: ledger.untrackedWork ?? [],
     needsYou: {
       count: counted.length,
       questions: questionRows,
@@ -3461,6 +3557,8 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
+    accountPrs: (s.prViews.accountPrs ?? []).filter((pr) => !drawn.some((d) => d.pr.ref === pr.ref)),
+    botPrSummaries: s.prViews.botPrSummaries ?? [],
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
@@ -3500,7 +3598,6 @@ function pruned(s) {
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
@@ -4437,66 +4534,6 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
   };
 }
 
-// src/run.ts
-import { execFile } from "node:child_process";
-var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve3) => {
-  const [file = "", ...rest] = args;
-  try {
-    const child = execFile(
-      file,
-      rest,
-      { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
-      (err, stdout, stderr) => {
-        const signal = err?.killed ? void 0 : err?.signal ?? void 0;
-        const errorCode = typeof err?.code === "string" ? err.code : void 0;
-        const error = errorCode && !stderr ? err.message : String(stderr);
-        resolve3({
-          code: exitCodeOf(err),
-          stdout: String(stdout),
-          stderr: error,
-          ...signal ? { signal } : {},
-          ...errorCode ? { errorCode } : {}
-        });
-      }
-    );
-    child.stdin?.on("error", () => {
-    });
-    child.stdin?.end(input);
-  } catch (err) {
-    const errorCode = err.code;
-    resolve3({
-      code: UNSTARTABLE_CODE,
-      stdout: "",
-      stderr: err instanceof Error ? err.message : String(err),
-      ...typeof errorCode === "string" ? { errorCode } : {}
-    });
-  }
-});
-function exitCodeOf(err) {
-  if (!err) return 0;
-  if (err.killed) return TIMED_OUT_CODE;
-  return typeof err.code === "number" ? err.code : UNSTARTABLE_CODE;
-}
-
-// src/update.ts
-import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
-import {
-  access,
-  copyFile,
-  lstat as lstat2,
-  mkdir as mkdir3,
-  readdir as readdir3,
-  readFile as readFile2,
-  readlink as readlink2,
-  rename as rename3,
-  rm as rm2,
-  rmdir as rmdir2,
-  stat as stat5,
-  symlink as symlink2,
-  writeFile as writeFile3
-} from "node:fs/promises";
-import { dirname as dirname4, join as join5 } from "node:path";
-
 // ../hooks/status.ts
 var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i;
 function fields(value) {
@@ -4914,6 +4951,10 @@ function orderedKeys() {
   };
 }
 var CATCH_UP_CALL = { call: "ledger", reads: "catch-up" };
+var RECORDED_ITEMS_ONLY = "INBOX_RECORDED_ITEMS_ONLY";
+function isRecordedItemsOnly(value) {
+  return value === "1" || value === "true";
+}
 async function askOverConversation(host, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
   const prompt = transcriptCatchUpPrompt(s.ledger, screen, conversation);
@@ -4928,6 +4969,7 @@ async function askOverConversation(host, names, s, screen, conversation) {
 }
 async function runUpdates(host) {
   let canCatchUp = host.catchUp !== void 0;
+  const kept = (u) => u && host.recordedItemsOnly ? recordedAsksOnly(u, isPersonsAnswer) : u;
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
@@ -4951,7 +4993,7 @@ async function runUpdates(host) {
                 await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
-              const parsed2 = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
+              const parsed2 = kept(reply.kind === "reply" ? parseReply(reply.text, reply.source) : null);
               const at = await host.now();
               const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed2 !== null, at) : x;
               const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed2, at));
@@ -4964,7 +5006,7 @@ async function runUpdates(host) {
             const promptAt = await host.now();
             const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
             const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind);
-            const parsed = parsedReply(next.ex, asked.text);
+            const parsed = kept(parsedReply(next.ex, asked.text));
             let isApplied = false;
             const after = await host.update(async (current) => {
               const at = await host.now();
@@ -4990,6 +5032,66 @@ async function runUpdates(host) {
     await Promise.all(writing);
   }
 }
+
+// src/run.ts
+import { execFile } from "node:child_process";
+var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve3) => {
+  const [file = "", ...rest] = args;
+  try {
+    const child = execFile(
+      file,
+      rest,
+      { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
+      (err, stdout, stderr) => {
+        const signal = err?.killed ? void 0 : err?.signal ?? void 0;
+        const errorCode = typeof err?.code === "string" ? err.code : void 0;
+        const error = errorCode && !stderr ? err.message : String(stderr);
+        resolve3({
+          code: exitCodeOf(err),
+          stdout: String(stdout),
+          stderr: error,
+          ...signal ? { signal } : {},
+          ...errorCode ? { errorCode } : {}
+        });
+      }
+    );
+    child.stdin?.on("error", () => {
+    });
+    child.stdin?.end(input);
+  } catch (err) {
+    const errorCode = err.code;
+    resolve3({
+      code: UNSTARTABLE_CODE,
+      stdout: "",
+      stderr: err instanceof Error ? err.message : String(err),
+      ...typeof errorCode === "string" ? { errorCode } : {}
+    });
+  }
+});
+function exitCodeOf(err) {
+  if (!err) return 0;
+  if (err.killed) return TIMED_OUT_CODE;
+  return typeof err.code === "number" ? err.code : UNSTARTABLE_CODE;
+}
+
+// src/update.ts
+import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
+import {
+  access,
+  copyFile,
+  lstat as lstat2,
+  mkdir as mkdir3,
+  readdir as readdir3,
+  readFile as readFile2,
+  readlink as readlink2,
+  rename as rename3,
+  rm as rm2,
+  rmdir as rmdir2,
+  stat as stat5,
+  symlink as symlink2,
+  writeFile as writeFile3
+} from "node:fs/promises";
+import { dirname as dirname4, join as join5 } from "node:path";
 
 // src/transcript.ts
 import { readdir as readdir2, stat as stat4 } from "node:fs/promises";
@@ -5641,7 +5743,9 @@ var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStat
   inOrder: inOrderFor(dir, sessionId),
   records
 });
-var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
+var runUpdates2 = (dir, sessionId, ask, now, optionsOrOnWrite = {}, positionalRecords) => {
+  const options = typeof optionsOrOnWrite === "function" ? { onWrite: optionsOrOnWrite, records: positionalRecords } : optionsOrOnWrite;
+  const { onWrite, records, recordedItemsOnly = false } = options;
   const store = codexStore(dir, sessionId, now, onWrite);
   return runUpdates({
     ...store,
@@ -5649,6 +5753,7 @@ var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
+    recordedItemsOnly,
     catchUp: async (s) => {
       const isMoved = await withCurrentRollout(s) !== s;
       const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath;
@@ -5679,6 +5784,11 @@ async function main() {
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
   const records = existsSync(join6(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
-  else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records);
+  else
+    await runUpdates2(dir, sessionId, ask, Date.now, {
+      onWrite,
+      records,
+      recordedItemsOnly: isRecordedItemsOnly(process.env[RECORDED_ITEMS_ONLY])
+    });
 }
 main().catch(() => process.exit(0));

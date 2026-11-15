@@ -2,7 +2,7 @@ import { cancelledChecks, failingChecks } from './pr-checks'
 import { waitingThreads } from './prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-rows'
 import type { DrawnPr } from './pr-views'
-import { closedShown, NEEDS_YOU_GROUPS, rowResultMark, settledRowIds } from './rows'
+import { closedHistoryPlan, NEEDS_YOU_GROUPS, rowResultMark, settledRowIds } from './rows'
 import { FINDING_GROUPS } from './help'
 import { ROW_TABS } from './tabs'
 import type { InboxView } from './view'
@@ -73,7 +73,9 @@ export function closedGroups(
 export function isRowTabRunning(v: InboxView, tab: ListedTab, isUnfolded: (kind: FoldKind) => boolean): boolean {
   const rows = tab === 'needsYou' ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows
   const settled = new Set(settledRowIds(rows))
-  const closed = closedGroups(v, tab, isUnfolded).flatMap(g => (g.isUnfolded ? closedShown(g.rows, settled) : []))
+  const closed = closedGroups(v, tab, isUnfolded).flatMap(g =>
+    g.isUnfolded ? closedHistoryPlan(g.rows, settled).rows : [],
+  )
 
   return rows.some(r => rowResultMark(r)?.isRunning) || closed.some(d => d.mark.isRunning)
 }

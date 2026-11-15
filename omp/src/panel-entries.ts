@@ -2,6 +2,8 @@ import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import {
   ghNoticeOf,
   prsEmptyText,
+  accountPrText,
+  botPrSummaryText,
   prRefreshFailedText,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -163,7 +165,19 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   })
   const out: Entry[] = []
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure }
+  const accountEntries: Entry[] = [
+    ...(prs.accountPrs.length > 0 ? [{ kind: 'note' as const, text: 'PRs opened by you', isPlain: true }] : []),
+    ...prs.accountPrs.map(pr => ({ kind: 'note' as const, text: accountPrText(pr) })),
+    ...prs.botPrSummaries.map(bot => ({ kind: 'note' as const, text: botPrSummaryText(bot) })),
+  ]
   if (prs.drawn.length === 0) {
+    if (accountEntries.length > 0) {
+      const ghNotice = ghNoticeOf(ghState)
+      return [
+        ...(ghNotice ? [{ kind: 'banner' as const, banner: bannerOf(ghNotice.kind, ghNotice.text) }] : []),
+        ...accountEntries,
+      ]
+    }
     const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, 'session')
     return [
       { kind: 'note', text: empty.title, isStrong: true },
@@ -283,6 +297,13 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       out.push(...entries)
     }
   }
+  const tabButtons = prButtons(prs.clear)
+  if (tabButtons.length > 0)
+    out.push({
+      kind: 'row',
+      line: { ...blankLine(CLEAR_FINISHED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true },
+    })
+  out.push(...accountEntries)
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
 
   return out

@@ -4,7 +4,7 @@ import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { prMarkId, threadSentIn } from '../../hooks/pr-rows'
 import { blockingChecks } from '../../hooks/pr-checks'
 import { waitingThreads } from '../../hooks/prs'
-import { SETTLED_MS } from '../../hooks/timing'
+import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { rowKeyPlan } from '../../hooks/action-plan'
 import { answeringOf, herdrAskOf } from '../../hooks/herdr-ask'
@@ -46,6 +46,49 @@ test('a selected row draws its buttons in the shared key plan order', () => {
       from = at + label.length
     }
   }
+})
+
+test('a feed finding draws in the Progress group', () => {
+  const state = demoState(NOW)
+  state.ledger = {
+    ...state.ledger,
+    findings: [
+      ...state.ledger.findings,
+      {
+        id: 'f99',
+        kind: 'progress',
+        title: 'Implement the progress feed',
+        detail: 'Wire the shared ledger.',
+        path: null,
+        at: NOW,
+        feedKey: 'machine/worker',
+      },
+    ],
+  }
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
+  const lines = text(screen, { ...INITIAL_UI, tab: 'findings' })
+  expect(lines).toContain('Progress')
+  expect(lines).toContain('Implement the progress feed')
+})
+
+test('the panel draws untracked live work as a warning banner', () => {
+  const state = demoState(NOW)
+  state.ledger = {
+    ...state.ledger,
+    untrackedWork: [
+      {
+        key: 'herdr/local/meta-worker/untracked-work',
+        title: 'meta-worker',
+        detail: 'working agent has no open item',
+        at: NOW,
+        feedSource: '/feed/herdr-local.json',
+      },
+    ],
+  }
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
+  const lines = text(screen, INITIAL_UI)
+  expect(lines).toContain('Untracked work')
+  expect(lines).toContain('meta-worker')
 })
 
 test('a row’s follow-ups share its buttons’ last line only when all of them fit there, and otherwise start a line of their own together', () => {
@@ -134,6 +177,25 @@ test('a button letter presses that button', () => {
   const flick = row.item!.options.find(o => o !== row.item!.rec)!
   expect(handleKey(screen, onRow(row), 'b', NOW).press).toEqual({ action: 'answer', id: row.id, option: flick })
   expect(handleKey(screen, onRow(row), 'x', NOW).press).toEqual({ action: 'dismiss', id: row.id })
+})
+
+test('the report reader scrolls with arrows and j/k, and b or Escape returns to the list', () => {
+  const screen = screenOf()
+  const row = firstQuestion(screen)
+  const ui: PanelUi = {
+    ...onRow(row),
+    document: { title: row.title, text: 'Report', error: null },
+    pageTop: 2,
+  }
+
+  expect(handleKey(screen, ui, 'up', NOW).ui.pageTop).toBe(1)
+  expect(handleKey(screen, ui, 'k', NOW).ui.pageTop).toBe(1)
+  expect(handleKey(screen, ui, 'down', NOW).ui.pageTop).toBe(3)
+  expect(handleKey(screen, ui, 'j', NOW).ui.pageTop).toBe(3)
+  expect(handleKey(screen, ui, 'b', NOW).ui).toMatchObject({ document: null, pageTop: 0 })
+  const escaped = handleKey(screen, ui, 'escape', NOW)
+  expect(escaped).toMatchObject({ ui: { document: null, pageTop: 0 } })
+  expect(escaped.close).toBeUndefined()
 })
 
 for (const isNextBuild of [false, true])

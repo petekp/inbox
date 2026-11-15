@@ -12,8 +12,11 @@ import { press, wakeAfterSettle } from '../../hooks/host-press'
 import type { PressOutcome } from '../../hooks/host-press'
 import { NO_HOLDS } from '../../hooks/timing'
 import { RESUME_TEXT } from '../../hooks/banners'
+import { applyFeedFiles } from '../../hooks/feed'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
+import { readFeedFiles } from '../../feed-reader'
+import { feedPathValue } from '../../hooks/feed-path'
 import type { PanelSource } from './controller'
 import type { PanelScreen } from './panel'
 import { readState } from './state'
@@ -36,6 +39,7 @@ export type Inbox = {
   /** Notes that the panel has the Status subject rows `ids` on screen now, for the look under way. */
   showRows(ctx: OmpContext, ids: string[]): void
   fetchPrsWhenDue(ctx: OmpContext, isTabShown: boolean): void
+  feedWhenDue(ctx: OmpContext): Promise<void>
   /**
    * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS`, so a delegate's row follows Herdr while the
    * session waits. The panel asks while it shows the Status.
@@ -86,6 +90,22 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       deps.background(change(id, s => ({ ...s, shownSince: openedAt })))
       await wakeAfterSettle(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx, false)
+    },
+    feedWhenDue: async ctx => {
+      const feedPath = await feedPathValue(deps.feedPath)
+      if (!feedPath) return
+      try {
+        const feed = await readFeedFiles(feedPath)
+        if (!feed) return
+        const id = sessionIdOf(ctx)
+        await change(id, s => {
+          const ledger = applyFeedFiles(s.ledger, feed.root, feed.files, deps.now())
+
+          return ledger === s.ledger ? s : { ...s, ledger }
+        })
+      } catch {
+        return
+      }
     },
     showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx)

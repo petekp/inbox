@@ -5,6 +5,7 @@ export function isPrRowId(id: string): boolean {
 export type RowPress =
   | { action: 'answer'; id: string; option: string }
   | { action: 'type'; id: string; text: string }
+  | { action: 'read-document'; id: string }
   | {
       action: 'explain' | 'compare' | 'done' | 'dismiss' | 'address' | 'issue' | 'discuss' | 'undo' | 'discard'
       id: string

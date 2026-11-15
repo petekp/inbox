@@ -50,7 +50,7 @@ The saved records do not say whether an answer came from a press or from the age
 | Predictive, anticipatory actions | 1, 2 | |
 | Each thing in the right place, once | 3, 7, 8 | |
 | Every item current | 2, 4, 5, 6 | |
-| The right things at the right time | None | Items expire by turn count, not time. Nothing tells the agent what changed while the person was away. These need new behavior, not new wording. |
+| The right things at the right time | None | Questions and tasks stay open across turn counts and list size. Nothing tells the agent what changed while the person was away. These need behavior, not wording. |
 | Agents use the inbox to steer the project | 1 | The agent cannot add a question, a task or a card line directly, only through its reply. A tool for that is a design question for Pete. |
 
 ## What was read

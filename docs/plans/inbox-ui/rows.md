@@ -46,7 +46,7 @@ A row has two forms:
 | Review thread, lines changed | PRs | Folds with no ✓, noted `Lines changed since this comment · still open on GitHub` | Nothing says the change fixed it, so it gets no ✓ |
 | Stop | Top of the band and pane | One red line: what stopped and what to do | Nothing |
 | Settled | Where the row was | `✓ Done · just now` with the leave bar | [Undo], after a Mark |
-| Closed fold | Under Questions, Tasks, Issues and Opportunities | `▸ 3 Closed` | Up to 3 closed items, each `ask → outcome` |
+| Closed fold | Under Questions, Tasks, Issues and Opportunities | `▸ 3 Closed` | Every closed item, newest first, with its outcome and close time |
 
 Findings are grouped under an Issues title and an Opportunities title. Each group has its own Closed fold, and a group with nothing open reads `No open issues` or `No open opportunities`. A finding handed to the agent shows ✓ in place of its mark.
 

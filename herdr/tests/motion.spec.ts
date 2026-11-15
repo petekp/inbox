@@ -41,7 +41,17 @@ test('a leaving row whose block above went too keeps its place among the blocks 
     NOW + 1,
     false,
   )
-  expect(leaving.blocks.map(b => b.id)).toEqual(['d23', 'd22', 'rule opportunity', 'group opportunity', 'd21', 'd20'])
+  expect(leaving.blocks.map(b => b.id)).toEqual([
+    'd23',
+    'd22',
+    'rule opportunity',
+    'group opportunity',
+    'd21',
+    'd20',
+    'rule progress',
+    'group progress',
+    'empty progress',
+  ])
   expect([leaving.motion.get('d23')?.state, leaving.motion.get('d22')?.state]).toEqual(['leaving', 'leaving'])
 })
 

@@ -69,7 +69,15 @@ export function ghNoticeOf(gh: {
 
 /** The hint under an empty PRs tab. `place` is the host's word for a conversation with the agent. */
 export function prsEmptyHint(place: string): string {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`
+  return `Your open PRs show here, along with PRs this ${place} links and the PR for its branch.`
+}
+
+export function accountPrText(pr: { ref: string; title: string; isDraft: boolean }): string {
+  return `${pr.ref} · ${pr.title}${pr.isDraft ? ' · draft' : ''}`
+}
+
+export function botPrSummaryText(bot: { name: string; count: number }): string {
+  return `${bot.name}: ${bot.count} open ${bot.count === 1 ? 'PR' : 'PRs'}`
 }
 
 /** What an empty PRs tab says. When gh cannot read the PRs, its hint is the `ghNoticeOf` text. */

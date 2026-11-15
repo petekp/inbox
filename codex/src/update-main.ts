@@ -7,6 +7,7 @@ import { findCli } from './cli'
 import { dataDir } from './data-dir'
 import { herdrOnWrite } from './host'
 import { readState } from './state'
+import { isRecordedItemsOnly, RECORDED_ITEMS_ONLY } from '../../hooks/session-host'
 import { run } from './run'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import { codexAsk, statusRecords, refreshStatus, runUpdates } from './update'
@@ -24,7 +25,12 @@ async function main() {
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now)
   const records = existsSync(join(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : undefined
   if (isStatusRefresh) await refreshStatus(dir, sessionId, ask, Date.now, onWrite, records)
-  else await runUpdates(dir, sessionId, ask, Date.now, onWrite, records)
+  else
+    await runUpdates(dir, sessionId, ask, Date.now, {
+      onWrite,
+      records,
+      recordedItemsOnly: isRecordedItemsOnly(process.env[RECORDED_ITEMS_ONLY]),
+    })
 }
 
 main().catch(() => process.exit(0))

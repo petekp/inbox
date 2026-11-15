@@ -1,4 +1,5 @@
 import type { Closed, Finding, Item, Ledger, Told } from '../types'
+import { CLOSED_CONTEXT_LIMIT } from './ask-match'
 import { NL, outcomeText } from './ledger-prompt'
 import type { Host } from './model-text'
 import { isOpen } from './status-limits'
@@ -22,8 +23,10 @@ export function screenText(host: Host, isOpen: boolean, tab: ScreenTab | null): 
 }
 
 export function latestBatch(ledger: Ledger): Item[] {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter(i => i.turn === ledger.batchTurn)
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter(i => !i.sourceManaged && i.turn === ledger.batchTurn)
 }
+
+const promptItems = (ledger: Ledger) => ledger.items.filter(i => !i.sourceManaged)
 
 function describe(item: Item): string {
   const parts = [`"${item.ask}"`]
@@ -134,13 +137,13 @@ export function statusCarryText(ledger: Ledger): string | null {
 }
 
 export function carryText(ledger: Ledger, title: string): string | null {
-  const findings = ledger.findings
+  const findings = ledger.findings.filter(f => !f.feedOwned)
   const lines = statusSummaryLines(ledger)
-  if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null
+  if (lines.length === 0 && promptItems(ledger).length === 0 && findings.length === 0) return null
   const out = [title, ...lines]
-  if (ledger.items.length > 0) {
+  if (promptItems(ledger).length > 0) {
     out.push('Waiting on the user:')
-    for (const item of ledger.items) out.push(itemLine(item))
+    for (const item of promptItems(ledger)) out.push(itemLine(item))
   }
   if (findings.length > 0) {
     out.push('Findings you recorded, still open:')
@@ -148,7 +151,7 @@ export function carryText(ledger: Ledger, title: string): string | null {
   }
   if (ledger.closed.length > 0) {
     out.push('Recently closed:')
-    for (const d of ledger.closed) out.push(`- "${d.ask}" → ${outcomeText(d)}`)
+    for (const d of ledger.closed.slice(-CLOSED_CONTEXT_LIMIT)) out.push(`- "${d.ask}" → ${outcomeText(d)}`)
   }
 
   return out.join(NL)
@@ -157,18 +160,19 @@ export function carryText(ledger: Ledger, title: string): string | null {
 export const CLOSE_ID_RULE = 'A close id is only for the close tool. Never write one in a reply.'
 
 export function inboxText(host: Host, ledger: Ledger, isOpen: boolean): string {
+  const findings = ledger.findings.filter(f => !f.feedOwned)
   const out = [
     `inbox: what waits on the user, as of your last reply. Anything not listed here is closed. ${CLOSE_ID_RULE}`,
   ]
-  if (ledger.items.length > 0) {
+  if (promptItems(ledger).length > 0) {
     out.push('Waiting on the user:')
-    for (const item of ledger.items) out.push(itemLine(item))
+    for (const item of promptItems(ledger)) out.push(itemLine(item))
   } else {
     out.push('Nothing is waiting on the user.')
   }
-  if (ledger.findings.length > 0) {
+  if (findings.length > 0) {
     out.push('Findings you recorded, still open:')
-    for (const f of ledger.findings) out.push(findingLine(f))
+    for (const f of findings) out.push(findingLine(f))
   }
   out.push(isOpen ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`)
 
@@ -204,7 +208,7 @@ export function promptNotes(
   const inbox = inboxText(host, ledger, prompt.isOpen)
   const toldClosed = new Set(told.closed)
   const closed = closedText(ledger.closed.filter(d => !toldClosed.has(d.id)))
-  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
+  const isEmpty = promptItems(ledger).length === 0 && ledger.findings.every(f => f.feedOwned)
   if (!closed && (inbox === told.inbox || (isEmpty && told.inbox === null))) return { notes, told }
   notes.push(closed ? `${inbox}${NL}${closed}` : inbox)
 

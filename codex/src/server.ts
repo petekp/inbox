@@ -1,3 +1,6 @@
+import { open, realpath, stat } from 'node:fs/promises'
+import { constants } from 'node:fs'
+
 import { delegatesSettled } from '../../hooks/children'
 import type { Run } from '../../hooks/gh'
 import { delegatesInHerdr, herdrCheckGate } from '../../hooks/herdr'
@@ -35,6 +38,30 @@ import { pruneSessions, readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
 import type { CodexHerdrAsk } from './server-herdr'
+import { applyFeedFiles } from '../../hooks/feed'
+import { readFeedFiles } from '../../feed-reader'
+import { feedPathValue } from '../../hooks/feed-path'
+import type { FeedPathSetting } from '../../hooks/feed-path'
+import { readDocument, withDocumentPreview } from '../../hooks/document'
+
+const documentFile = {
+  stat: async (path: string) => {
+    const target = await realpath(path)
+    const info = await stat(target)
+    return { path: target, isFile: info.isFile(), size: info.size }
+  },
+  read: async (path: string, limit: number) => {
+    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      if (!(await file.stat()).isFile()) return new Uint8Array(limit + 1)
+      const bytes = new Uint8Array(limit + 1)
+      const { bytesRead } = await file.read(bytes, 0, bytes.length, 0)
+      return bytes.subarray(0, bytesRead)
+    } finally {
+      await file.close()
+    }
+  },
+}
 
 export type ServerDeps = {
   dir: string
@@ -55,6 +82,8 @@ export type ServerDeps = {
   loadError?: () => string | null
   isPluginFolderGone?: () => boolean
   isNextBuild?: boolean
+  /** The optional external progress snapshot. */
+  feedPath?: FeedPathSetting
   /** The page template for a comparison, beside the handler's bundle. */
   comparePage: string
   /**
@@ -134,8 +163,9 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
       case 'close':
       case 'order_prs': {
         let result = ''
+        const toolInput = name === 'record' ? await withDocumentPreview(args, documentFile) : args
         await codexStore(dir, id, now, deps.onWrite).update(s => {
-          const r = recorded(CODEX, s, name, args, now(), listedToolFields())
+          const r = recorded(CODEX, s, name, toolInput, now(), listedToolFields())
           result = r.result
           return heard(r.state)
         })
@@ -146,17 +176,38 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
         return text(inboxToolText(viewOf(s, now())))
       }
       case 'inbox_view': {
+        if (typeof args.document === 'string') {
+          const s = await readState(dir, id)
+          const row = [
+            ...s.ledger.items,
+            ...s.ledger.closed.flatMap(closed => (closed.item ? [closed.item] : [])),
+            ...s.ledger.findings,
+            ...s.ledger.closedFindings,
+          ].find(item => item.id === args.document)
+          const result = row?.document
+            ? await readDocument(row.document, documentFile)
+            : { error: 'The report is no longer attached.' }
+
+          return { ...text('Inbox document'), structuredContent: result }
+        }
         const holds = holdsOf(args)
         if (args.demo === true)
           return { ...text('Inbox demo'), structuredContent: await served(demoOf(id), id, true, holds) }
         await wakeAfterSettle(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
         const sentTab = shownTabOf(args.tab)
+        const feed = await readFeedFiles(await feedPathValue(deps.feedPath))
         const s = await updateState(dir, id, s => {
           const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
+          const ledger = feed ? applyFeedFiles(s.ledger, feed.root, feed.files, now()) : s.ledger
 
-          const looked = lookOnView(s, shownTab, now(), shownRowsOf(args))
-          return { ...withHolds(looked, holds), tabSeenAt: now(), shownTab }
+          const updated = ledger === s.ledger ? s : { ...s, ledger }
+
+          return {
+            ...withHolds(lookOnView(updated, shownTab, now(), shownRowsOf(args)), holds),
+            tabSeenAt: now(),
+            shownTab,
+          }
         })
         fetchPrsWhenDue(id, s)
         checkDelegatesWhenDue(id, s)

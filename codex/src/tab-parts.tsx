@@ -1,5 +1,7 @@
 import type { ComponentChildren } from 'preact'
+import { useState } from 'preact/hooks'
 import { ActionButton, Icon } from './row-actions'
+import { request } from './tab-host'
 import { mutedMarkShape } from '../../hooks/marks'
 import { DOT, rowResultMark } from '../../hooks/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
@@ -120,15 +122,31 @@ export function inlineHtml(text: string) {
     if (s.italic) node = <i>{node}</i>
     if (s.bold) node = <b>{node}</b>
     if (s.strike) node = <s>{node}</s>
-    return s.link ? (
-      <>
-        <u>{node}</u>
-        <span class="muted"> {s.link}</span>
-      </>
-    ) : (
-      node
-    )
+    return s.link ? <InlineLink href={s.link}>{node}</InlineLink> : node
   })
+}
+
+function InlineLink({ href, children }: { href: string; children: ComponentChildren }) {
+  const [isDenied, setIsDenied] = useState(false)
+
+  return isDenied ? (
+    <>
+      {children} ({href})
+    </>
+  ) : (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        void request('ui/open-link', { url: href }, 10_000).catch(() => setIsDenied(true))
+      }}
+    >
+      {children}
+    </a>
+  )
 }
 
 /**

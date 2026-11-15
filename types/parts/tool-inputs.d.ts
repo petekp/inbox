@@ -20,6 +20,7 @@ declare module 'claude-code' {
       title?: string
       detail?: string
       path?: string
+      document?: string
     }
     mcp__inbox__close: {
       id: string

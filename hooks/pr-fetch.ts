@@ -18,6 +18,9 @@ export const MAX_PRS = 12
 /** The most PRs an agent's order can rank. They are tracked beyond `MAX_PRS`. */
 export const MAX_ORDERED_PRS = 30
 
+/** How many gh runs a fetch has going at once. */
+const GH_RUNS_AT_ONCE = 8
+
 /** How long a view read by any session of the host stands in for a fresh read, in a fetch no press asked for. */
 export const PR_SHARED_MS = 120_000
 
@@ -32,6 +35,103 @@ export type PrLinks = Pick<Ledger, 'prs' | 'prOrder'>
 
 /** Runs gh with these arguments in the session's folder. A run that cannot start or does not finish ends with code -1. */
 export type GhRun = (args: string[]) => Promise<{ exitCode: number; stdout: string; stderr: string }>
+
+type SearchPr = {
+  author?: { is_bot?: boolean; login?: string; type?: string }
+  isDraft?: boolean
+  number?: number
+  repository?: { nameWithOwner?: string }
+  title?: string
+}
+
+type AccountPrSnapshot = {
+  accountPrs: NonNullable<PrViews['accountPrs']>
+  botPrSummaries: NonNullable<PrViews['botPrSummaries']>
+}
+
+const SEARCH_FIELDS = 'author,isDraft,number,repository,title'
+
+/** Reads the user's open PRs across all repository owners and groups bot PRs from their account and organizations. */
+export async function fetchAccountPrs(run: GhRun): Promise<AccountPrSnapshot | null> {
+  const [viewer, orgs, authored] = await Promise.all([
+    run(['api', 'user', '--jq', '.login']),
+    run(['api', 'user/orgs', '--paginate', '--jq', '.[].login']),
+    run(['search', 'prs', '--state', 'open', '--author', '@me', '--limit', '1000', '--json', `${SEARCH_FIELDS},url`]),
+  ])
+  if (viewer.exitCode !== 0 || orgs.exitCode !== 0 || authored.exitCode !== 0) return null
+  const login = viewer.stdout.trim()
+  const prs = readSearchPrs(authored.stdout)
+  if (!login || prs === null) return null
+
+  const accountPrs = prs.flatMap(pr => {
+    const author = pr.author?.login?.toLowerCase()
+    const repo = pr.repository?.nameWithOwner
+    if (author !== login.toLowerCase() || pr.author?.type === 'Bot' || pr.author?.is_bot === true) return []
+    if (!repo || !Number.isSafeInteger(pr.number) || typeof pr.title !== 'string') return []
+
+    const ref = `${repo}#${pr.number}`
+    return [{ ref, title: pr.title, url: `https://github.com/${repo}/pull/${pr.number}`, isDraft: pr.isDraft === true }]
+  })
+
+  const owners = [
+    ...new Set([
+      login,
+      ...orgs.stdout.split(/\s+/).filter(Boolean),
+      ...prs.map(pr => pr.repository?.nameWithOwner?.split('/')[0]).filter((owner): owner is string => !!owner),
+    ]),
+  ]
+  const botResults: { exitCode: number; stdout: string; stderr: string }[] = []
+  for (let i = 0; i < owners.length; i += GH_RUNS_AT_ONCE) {
+    botResults.push(
+      ...(await Promise.all(
+        owners
+          .slice(i, i + GH_RUNS_AT_ONCE)
+          .map(owner =>
+            run(['search', 'prs', '--state', 'open', '--owner', owner, '--limit', '1000', '--json', SEARCH_FIELDS]),
+          ),
+      )),
+    )
+  }
+  if (botResults.some(result => result.exitCode !== 0)) return null
+
+  const bots = new Map<string, { name: string; refs: Set<string> }>()
+  for (const result of botResults) {
+    const ownerPrs = readSearchPrs(result.stdout)
+    if (ownerPrs === null) return null
+    for (const pr of ownerPrs) {
+      const author = pr.author
+      const repo = pr.repository?.nameWithOwner
+      if (!(author?.type === 'Bot' || author?.is_bot === true) || !author.login || !repo || !pr.number) continue
+      const name = botName(author.login)
+      const group = bots.get(name) ?? { name, refs: new Set<string>() }
+      group.refs.add(`${repo}#${pr.number}`)
+      bots.set(name, group)
+    }
+  }
+
+  return {
+    accountPrs: accountPrs.sort((a, b) => a.ref.localeCompare(b.ref)),
+    botPrSummaries: [...bots.values()]
+      .map(({ name, refs }) => ({ name, count: refs.size }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  }
+}
+
+function readSearchPrs(json: string): SearchPr[] | null {
+  try {
+    const data: unknown = JSON.parse(json)
+    return Array.isArray(data) ? (data as SearchPr[]) : null
+  } catch {
+    return null
+  }
+}
+
+function botName(login: string): string {
+  if (/(^|-)renovate(?:\[bot\])?$/i.test(login)) return 'Renovate'
+  if (/^dependabot(?:\[bot\])?$/i.test(login)) return 'Dependabot'
+  if (/^github-actions(?:\[bot\])?$/i.test(login)) return 'GitHub Actions'
+  return login.replace(/\[bot\]$/i, '')
+}
 
 /**
  * What every session of a host shares about GitHub: the views any of them read lately, and the limit error the last

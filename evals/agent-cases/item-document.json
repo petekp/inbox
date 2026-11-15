@@ -1,0 +1,20 @@
+[
+  {
+    "name": "record-report-path",
+    "about": "A question with a local Markdown report records the path for an inbox preview.",
+    "prompt": "Task: choose a rollout strategy. I wrote the analysis to /tmp/report.md for you to attach to the question. Ask me whether to roll out to one region or all regions.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "has": ["document", "ask", "options"],
+        "match": { "document": "^/tmp/report\\.md$" }
+      },
+      { "calls": "record", "kind": "finding", "count": 0 },
+      { "reply": "one region" },
+      { "reply": "all regions" },
+      { "noIds": true }
+    ]
+  }
+]

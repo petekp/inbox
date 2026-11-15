@@ -64,6 +64,7 @@ export type Style = {
   tone(name: Tone, s: string): string
   /** A banner's border, or its fill behind `s`. */
   banner(tone: BannerTone, part: 'line' | 'fill', s: string): string
+  link?: (url: string, text: string) => string
 }
 
 export type PanelUi = {
@@ -93,6 +94,10 @@ export type PanelUi = {
   opened: string | null
   /** How many lines of the Status page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
+  /** The selected row's scroll offset when its detail is taller than the panel. */
+  detailTop: number
+  /** Set by drawing; Up and Down scroll the selected detail while this is positive. */
+  detailScrollMax: number
   /** The Status row the next draw scrolls into view, after j or k selects it. `true` is the selected row, as when the page shows. */
   pageReveal: string | true | null
   /**
@@ -106,6 +111,8 @@ export type PanelUi = {
   isHelpShown: boolean
   /** The person's latest run of keys, which keeps a row due to fold in place until they stop. */
   listInput: ListInput | null
+  /** A report opened from a row; kept only while this panel is open. */
+  document: { title: string; text: string | null; error: string | null } | null
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -123,11 +130,14 @@ export const INITIAL_UI: PanelUi = {
   resuming: null,
   opened: null,
   pageTop: 0,
+  detailTop: 0,
+  detailScrollMax: 0,
   pageReveal: null,
   openedAt: 0,
   shownSince: 0,
   isHelpShown: false,
   listInput: null,
+  document: null,
 }
 
 export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince' | 'listInput'>): Holds {
@@ -144,6 +154,7 @@ export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 's
  * showing, a send waiting to read as queued, or a notice. Changes the host saves arrive as events instead.
  */
 export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): boolean {
+  if (ui.document) return false
   const { view } = screen
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows]
   const isPressMoving = Object.values(view.lastActions).some(
@@ -190,7 +201,7 @@ export function drawPanel(
   style: Style,
   height?: number,
   minHeight = 0,
-): { lines: string[]; pageTop: number; isRevealed: boolean; shownSubjects: string[] } {
+): { lines: string[]; pageTop: number; detailScrollMax: number; isRevealed: boolean; shownSubjects: string[] } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
@@ -203,7 +214,7 @@ export function drawPanel(
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
   const host = screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []
-  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null)
+  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null, screen.view.untrackedWork)
   const head = [
     ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
     rule,
@@ -212,7 +223,7 @@ export function drawPanel(
     ...banners.flatMap(b => bannerLines(b, width, style)),
   ]
   const body: string[] = []
-  let selectedAt = [0, 0]
+  let selectedAt: [number, number] = [0, 0]
   const pageSelected =
     isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
@@ -270,8 +281,16 @@ export function drawPanel(
     height === undefined ? Infinity : Math.max(6, height - head.length - foot.length)
   const isPage = ui.isHelpShown || !isRowTab(ui.tab)
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false))
-  const foot = footer(d, isPageTaller)
+  const selectedLines = selectedAt[1] - selectedAt[0] + 1
+  const isDetailScrolling =
+    !isPage &&
+    selected?.detail !== null &&
+    selected?.detail !== undefined &&
+    selectedLines > roomBeside(footer(d, false)) - 2
+  const foot = footer(d, isPageTaller, isDetailScrolling)
   const room = roomBeside(foot)
+  const detailScrollMax =
+    !isPage && selected?.detail !== null && selected?.detail !== undefined ? Math.max(0, selectedLines - room + 2) : 0
   const blanks = (shown: string[]) =>
     Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
   const isOverflowing = body.length > room
@@ -284,7 +303,7 @@ export function drawPanel(
     ? body
     : isPage
       ? pageWindow(body, pageTop, room, style)
-      : scrolled(body, selectedAt, room, style)
+      : scrolled(body, selectedAt, room, style, Math.min(ui.detailTop, detailScrollMax), detailScrollMax > 0)
 
   const isStatusShown = ui.tab === 'overview' && !ui.isHelpShown
   const shownLines = isOverflowing ? pageWindowLines(body.length, pageTop, room) : { start: 0, end: body.length }
@@ -295,6 +314,7 @@ export function drawPanel(
   return {
     lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)),
     pageTop,
+    detailScrollMax,
     isRevealed,
     shownSubjects,
   }

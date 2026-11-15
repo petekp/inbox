@@ -11,7 +11,7 @@ import type { ResultMark } from '../../hooks/rows'
 import { focusOf } from './panel-keys'
 import { AGENT, INDENT, UNLED_INDENT, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
-import { cutTitle, fit, indented, spread, visibleLength, wrapText } from './panel-text'
+import { cutTitle, fit, indentedLinks, linkedText, spread, visibleLength, wrapText } from './panel-text'
 import type { PanelScreen, PanelUi, Style, Tone } from './panel'
 
 export type Draw = { screen: PanelScreen; ui: PanelUi; width: number; now: number; style: Style }
@@ -147,18 +147,19 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : null
   const mark = markText(line.mark, now, s)
   const after = line.settled
-    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ''}`
+    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', linkedText(line.settled.label, s.link)) : s.dim(linkedText(line.settled.label, s.link))}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ''}`
     : line.feedback && !statusUnder
-      ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
+      ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(linkedText(line.feedback.text, s.link))}`
       : ''
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
   const head = ` ${' '.repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ''}${leadText(line.lead, s)}`
+  const titleText = linkedText(line.title, s.link)
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width
   const shownTitle = line.mark
-    ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after))
-    : line.title
+    ? cutTitle(titleText, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after))
+    : titleText
   const title = line.isDim
     ? s.dim(shownTitle)
     : line.titleTone
@@ -170,7 +171,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   const contextLine = isSelected ? line.row?.contextLine : null
-  if (contextLine) out.push(...indented(contextLine, indent, width, Infinity, s.dim))
+  if (contextLine) out.push(...indentedLinks(contextLine, indent, width, Infinity, s.dim, s.link))
   // A next build draws the Status, so only it names the subject an ask holds up.
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
   if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
@@ -178,11 +179,21 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   if (recLine)
     out.push(
       ...(isSelected
-        ? indented(recLine, indent, width, 3, s.dim)
-        : [fit(`${' '.repeat(indent)}${s.dim(recLine)}`, width)]),
+        ? indentedLinks(recLine, indent, width, 3, s.dim, s.link)
+        : [fit(`${' '.repeat(indent)}${s.dim(linkedText(recLine, s.link))}`, width)]),
     )
-  if (line.body && isSelected) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
-  if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
+  if (line.body && isSelected) out.push(...indentedLinks(line.body, indent, width, BODY_LINES, t => t, s.link))
+  if (line.detail && (isSelected || line.isDetailShown))
+    out.push(
+      ...indentedLinks(
+        line.detail,
+        indent,
+        width,
+        isSelected && line.row?.type !== 'finding' ? Infinity : 4,
+        s.dim,
+        s.link,
+      ),
+    )
   if (!isSelected) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
   for (const o of line.row?.optionDescriptions ?? [])
@@ -198,12 +209,13 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   }
   if (statusUnder) {
     const markCells = mark ? 2 : 0
-    const [first, ...rest] = indented(
+    const [first, ...rest] = indentedLinks(
       statusUnder.text,
       indent + markCells,
       width,
       4,
       feedbackPaint(statusUnder.tone, s),
+      s.link,
     )
     if (first !== undefined) out.push(' '.repeat(indent) + mark + first.slice(indent + markCells), ...rest)
   }

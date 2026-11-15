@@ -1,5 +1,5 @@
 import type { Closed, Exchange, Item, Ledger } from '../types'
-import { isAskedForChoices, LIST_CHOICES } from './ask-match'
+import { CLOSED_CONTEXT_LIMIT, isAskedForChoices, LIST_CHOICES } from './ask-match'
 import { MAX_CLOSED } from './ledger-close'
 import type { Host } from './model-text'
 import { clipMiddle, numberBlocks } from './text'
@@ -59,13 +59,18 @@ Write plainly. No jargon, no filler, no markdown.`
 
 export function ledgerBlocks(ledger: Ledger): string[] {
   const open = ledger.items
+    .filter(i => !i.sourceManaged)
     .map(
       i =>
         `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? '-'} | ${i.ask} | ${i.options.join(' / ') || '-'} | ${i.rec ?? '-'} | ${i.isDesignChoice ? 'design' : '-'}`,
     )
     .join(NL)
-  const findings = ledger.findings.map(f => `${f.id} | ${f.kind}: ${f.title}`).join(NL)
+  const findings = ledger.findings
+    .filter(f => !f.feedOwned)
+    .map(f => `${f.id} | ${f.kind}: ${f.title}`)
+    .join(NL)
   const closed = ledger.closed
+    .slice(-CLOSED_CONTEXT_LIMIT)
     .filter(d => d.how !== 'expired' && !isAskedForChoices(d))
     .slice(-MAX_CLOSED)
     .map(d => `${d.ask} → ${outcomeText(d)}`)

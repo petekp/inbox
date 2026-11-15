@@ -1,6 +1,14 @@
 import { ledgerActions } from './row-actions'
 import { clipLabel } from '../../hooks/text'
-import { allRows, DOT, replyHint, ROW_COPY, shortAgo, shownOptionDescriptions } from '../../hooks/rows'
+import {
+  allRows,
+  documentPreviewLine,
+  DOT,
+  replyHint,
+  ROW_COPY,
+  shortAgo,
+  shownOptionDescriptions,
+} from '../../hooks/rows'
 import { drawnLists, rowAfterClose } from '../../hooks/action-plan'
 import { isRowTab } from '../../hooks/tabs'
 import { feedbackOf } from '../../hooks/feedback'
@@ -53,6 +61,7 @@ import { drawnTab, tabWaits, shownSettled, open, keepPressedOpen } from './tab-s
 import { applyView, replies, holds } from './tab-read'
 import { isNotSent, copy, startTyping, discardReply, lastPressKey } from './tab-press'
 import { resultHandle, inlineHtml } from './tab-parts'
+import { inlineLinks, linkLabel } from '../../hooks/inline'
 
 function isListed(v: View, id: string): boolean {
   return (
@@ -148,9 +157,26 @@ function sendReply(id: string, text: string) {
   })
 }
 
+async function showDocument(row: RowView) {
+  const document = { title: row.title, text: null, error: null }
+  const generation = tabState.viewGeneration
+  tabState.document = document
+  tabState.draw()
+  try {
+    const result = await callTool<{ text: string } | { error: string }>('inbox_view', { document: row.id }, 10_000)
+    if (tabState.document !== document || generation !== tabState.viewGeneration) return
+    tabState.document = { ...document, ...result }
+  } catch {
+    if (tabState.document !== document || generation !== tabState.viewGeneration) return
+    tabState.document = { ...document, error: 'The report could not be read.' }
+  }
+  tabState.draw()
+}
+
 function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
   const actions = ledgerActions(r, optionsShown.has(r.id), sending.get(r.id)?.action ?? null, {
     press: p => {
+      if (p.action === 'read-document') return void showDocument(r)
       const step = p.action === 'step' ? r.steps[p.step] : undefined
       const action = r.actions.find(a => a.press.action === 'step' && p.action === 'step' && a.press.step === p.step)
       const pending: Feedback | null =
@@ -179,22 +205,25 @@ function itemRow(v: View, r: RowView): Row {
     view: r,
     ...resultHandle(r),
     ...(isHandedOff ? { fold: {} } : {}),
-    title: r.title,
+    title: inlineHtml(r.title),
+    ...(inlineLinks(r.title).length > 0 ? { titleLabel: linkLabel(r.title) } : {}),
     // A next build draws the Status, so only it names the subject an ask holds up.
     ...(v.isNextBuild === true && r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     ...(r.recLine ? { recLine: r.recLine } : {}),
     ...(r.contextLine ? { context: r.contextLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
-    ...(described.length > 0
+    ...(r.detail || described.length > 0 || r.document
       ? {
           body: (
             <div>
+              {r.detail ? <p style={{ whiteSpace: 'pre-line' }}>{inlineHtml(r.detail)}</p> : null}
               {described.map(o => (
                 <p class="option-description" title={`${o.label}: ${o.description}`}>
                   {o.label}
                   <span class="muted">: {o.description}</span>
                 </p>
               ))}
+              {r.document ? <p class="document-preview">{documentPreviewLine(r)}</p> : null}
             </div>
           ),
         }
@@ -218,7 +247,8 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
     ...resultHandle(r),
     kind: f.kind,
     ...(isHandedOff ? { fold: {} } : {}),
-    title: r.title,
+    title: inlineHtml(r.title),
+    ...(inlineLinks(r.title).length > 0 ? { titleLabel: linkLabel(r.title) } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
     body: (
       <div>
@@ -229,6 +259,7 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
             <code title={f.path}>{r.fileName}</code>
           </p>
         ) : null}
+        {r.document ? <p class="document-preview">{documentPreviewLine(r)}</p> : null}
       </div>
     ),
     ...rowKeys(r),

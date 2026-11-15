@@ -1,4 +1,6 @@
-import { parseReply } from './reply-parse'
+import { parseReply, recordedAsksOnly } from './reply-parse'
+import type { Update } from './reply-parse'
+import { isPersonsAnswer } from './ledger-update'
 import { systemText, buildPrompt } from './ledger-prompt'
 import { transcriptCatchUpPrompt } from './catch-up-text'
 import type { Host } from './model-text'
@@ -174,6 +176,20 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
   background?(statuses: Promise<void>): void
   /** Where a next build keeps a record of each Status call. A release build passes none, and records nothing. */
   records?: StatusRecords
+  /**
+   * True when only the agent's `record` calls add questions and tasks: each update applies `recordedAsksOnly` of the
+   * model's answer, so recorded asks keep their options and recommendation. Absent: the whole answer applies. Each
+   * host sets it from `RECORDED_ITEMS_ONLY` in its environment, with `isRecordedItemsOnly`.
+   */
+  recordedItemsOnly?: boolean
+}
+
+/** The environment variable that turns on `UpdateHost.recordedItemsOnly`. Off by default. */
+export const RECORDED_ITEMS_ONLY = 'INBOX_RECORDED_ITEMS_ONLY'
+
+/** Whether a value of `RECORDED_ITEMS_ONLY` turns it on: `1` or `true`. */
+export function isRecordedItemsOnly(value: string | null | undefined): boolean {
+  return value === '1' || value === 'true'
 }
 
 /**
@@ -241,6 +257,7 @@ export async function reconcileUpdateStatus<S extends Session>(
  */
 export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promise<void> {
   let canCatchUp = host.catchUp !== undefined
+  const kept = (u: Update | null) => (u && host.recordedItemsOnly ? recordedAsksOnly(u, isPersonsAnswer) : u)
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
@@ -266,7 +283,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
                 await host.update(x => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }))
                 continue
               }
-              const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
+              const parsed = kept(reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null)
               const at = await host.now()
               const noted = (x: S) => (reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at) : x)
               const after = await host.update(x => appliedCatchUp(noted(x), s, parsed, at))
@@ -279,7 +296,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             const promptAt = await host.now()
             const kind = { call: 'ledger', reads: 'reply', isRetry: next.failed === true } as const
             const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind)
-            const parsed = parsedReply(next.ex, asked.text)
+            const parsed = kept(parsedReply(next.ex, asked.text))
             let isApplied = false as boolean
             const after = await host.update(async current => {
               const at = await host.now()

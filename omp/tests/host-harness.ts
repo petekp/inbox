@@ -32,7 +32,7 @@ type World = {
   commands: Map<string, any>
   sent: { text: string; options: unknown }[]
   hidden: { content: string; options: unknown }[]
-  timers: { fn: () => void; ms: number }[]
+  timers: { fn: () => void; ms: number; stopped?: boolean }[]
   notices: string[]
   completions: { model: Model; system: string[]; prompt: string }[]
   background: Promise<unknown>[]
@@ -126,6 +126,11 @@ export const makeCtx = (id = 's1') =>
     hasUI: w.hasUI,
     isIdle: () => w.isIdle,
     setTimeout: (fn: () => void, ms: number) => w.timers.push({ fn, ms }),
+    setInterval: (fn: () => void, ms: number) => w.timers.push({ fn, ms }),
+    clearTimer: (timer: number) => {
+      const pending = w.timers[timer - 1]
+      if (pending) pending.stopped = true
+    },
     models: {
       list: () => w.models,
       resolve: (spec: string) => (spec === '@smol' ? w.smolModel : spec === '@inbox' ? w.inboxRoleModel : undefined),
@@ -171,6 +176,8 @@ export const deps = (): HostDeps => ({
   after: () => undefined,
   isUsageLimit: async (_status, message) => /usage limit/i.test(message),
   herdrTarget: null,
+  herdrPane: null,
+  recordedItemsOnly: undefined,
 })
 
 export const settle = async () => {

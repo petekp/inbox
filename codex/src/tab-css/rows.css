@@ -83,6 +83,12 @@
   width: 100%;
   min-width: 0;
 }
+.line a,
+.body a,
+.settled-line a {
+  color: var(--key);
+  text-decoration: underline;
+}
 .line .text {
   min-width: 0;
   overflow: hidden;

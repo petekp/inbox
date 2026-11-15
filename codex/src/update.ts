@@ -242,14 +242,21 @@ export const refreshStatus = (
     records,
   })
 
+type RunUpdateOptions = { onWrite?: OnWrite; records?: StatusRecords; recordedItemsOnly?: boolean }
+
 export const runUpdates = (
   dir: string,
   sessionId: string,
   ask: Ask,
   now: () => number,
-  onWrite?: OnWrite,
-  records?: StatusRecords,
+  optionsOrOnWrite: RunUpdateOptions | OnWrite = {},
+  positionalRecords?: StatusRecords,
 ): Promise<void> => {
+  const options: RunUpdateOptions =
+    typeof optionsOrOnWrite === 'function'
+      ? { onWrite: optionsOrOnWrite, records: positionalRecords }
+      : optionsOrOnWrite
+  const { onWrite, records, recordedItemsOnly = false } = options
   const store = codexStore(dir, sessionId, now, onWrite)
 
   return runSessionUpdates({
@@ -258,6 +265,7 @@ export const runUpdates = (
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
+    recordedItemsOnly,
     catchUp: async s => {
       const isMoved = (await withCurrentRollout(s)) !== s
       const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath

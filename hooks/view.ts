@@ -62,6 +62,7 @@ export type ViewInput = {
 }
 
 export type InboxView = {
+  untrackedWork: NonNullable<Ledger['untrackedWork']>
   needsYou: {
     count: number
     questions: RowView[]
@@ -238,19 +239,35 @@ export function inboxView({
   const rowOf = (
     row: Omit<
       RowView,
-      'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine' | 'recLine' | 'contextLine'
+      | 'state'
+      | 'feedback'
+      | 'actions'
+      | 'optionDescriptions'
+      | 'holdsUpLine'
+      | 'recLine'
+      | 'contextLine'
+      | 'document'
+      | 'documentPreview'
     >,
   ): RowView => {
     const state = stateOf(row.id)
     const last = lastActions[row.id]
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt)
+    const document = row.item?.document ?? row.finding?.document ?? null
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt))
+    const actions = actionsOf(
+      { ...row, document },
+      last,
+      state,
+      pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt),
+    )
 
     const held = state.is === 'open' ? heldSubjectsOf(ledger.overview, row.id) : []
 
     return {
       ...row,
+      document,
+      documentPreview: row.item?.documentPreview ?? row.finding?.documentPreview ?? null,
       state,
       feedback,
       actions,
@@ -269,7 +286,7 @@ export function inboxView({
       number: n ?? null,
       title: item.ask,
       at: item.at,
-      detail: null,
+      detail: item.detail ?? null,
       fileName: null,
       replyKind: item.kind === 'question' ? 'answer' : 'reply',
       item,
@@ -335,6 +352,7 @@ export function inboxView({
     })
 
   return {
+    untrackedWork: ledger.untrackedWork ?? [],
     needsYou: {
       count: counted.length,
       questions: questionRows,

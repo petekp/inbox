@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { guidanceText } from '../../hooks/model-text'
@@ -56,6 +56,26 @@ test("a question omp's agent records is asked for its context, notes and reason,
   })
   expect(answer.content[0].text).toContain('It has no context or option_notes:')
   expect(answer.content[0].text).toContain('It has no why:')
+})
+
+test('a record call reads a Markdown report outside the project folder for its preview', async () => {
+  createInbox(pi(), deps())
+  const target = join(w.dir, 'report.md')
+  const document = join(w.dir, 'current.md')
+  writeFileSync(target, '# Release plan\n\nShip to one region first.')
+  symlinkSync(target, document)
+
+  await record({
+    kind: 'question',
+    ask: 'Which rollout should we use?',
+    options: ['One region', 'All regions'],
+    document,
+  })
+
+  expect(state().ledger.items[0]).toMatchObject({
+    document,
+    documentPreview: '# Release plan Ship to one region first.',
+  })
 })
 
 test('a prompt with nothing to tell the agent returns no message', async () => {

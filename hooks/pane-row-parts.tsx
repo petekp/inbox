@@ -45,7 +45,7 @@ import {
   shortAgo,
 } from './rows'
 import type { TreePos } from './terminal-text'
-import { clipLabel } from './text'
+import { cutInline } from './inline'
 import { SETTLED_MS } from './timing'
 import type { UndoProps } from './undo-client'
 
@@ -56,6 +56,7 @@ export function paneRowParts(
     look,
     listColumns,
     Text,
+    inlineText,
     pal,
     Box,
     blankLine,
@@ -77,6 +78,7 @@ export function paneRowParts(
       | 'look'
       | 'listColumns'
       | 'Text'
+      | 'inlineText'
       | 'pal'
       | 'Box'
       | 'blankLine'
@@ -223,10 +225,10 @@ export function paneRowParts(
           side: <Text color={pal.age}>{shortAgo(now - d.at)}</Text>,
           children: [
             <Text wrap="wrap" color={pal.muted}>
-              {d.ask}
+              {inlineText(d.ask)}
             </Text>,
             <Text wrap="wrap" color={pal.age}>
-              {settledLabel(d.outcomeLabel, d.delivery)}
+              {inlineText(settledLabel(d.outcomeLabel, d.delivery))}
             </Text>,
             lineAction(d),
           ],
@@ -237,14 +239,14 @@ export function paneRowParts(
           <Box flexDirection="row">
             <Box flexDirection="column" flexGrow={1} flexShrink={1}>
               <Text wrap="wrap" color={pal.muted}>
-                {d.ask}
+                {inlineText(d.ask)}
               </Text>
               {resultLine(
                 d.mark,
                 `closed-${d.id}`,
                 pal.muted,
                 <Text wrap="wrap" color={pal.age}>
-                  {settledLabel(d.outcomeLabel, d.delivery)}
+                  {inlineText(settledLabel(d.outcomeLabel, d.delivery))}
                 </Text>,
               )}
               {lineAction(d)}
@@ -424,7 +426,7 @@ export function paneRowParts(
   ) => (
     <Box flexDirection="column">
       <Text wrap="truncate-end" color={pal.muted}>
-        {what}
+        {inlineText(what)}
       </Text>
       <Box position="relative" flexDirection="row" columnGap={2}>
         {undo ? (
@@ -441,8 +443,8 @@ export function paneRowParts(
           mark,
           `settled-${what}`,
           pal.muted,
-          <Text wrap="truncate-end" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
-            {settledLabel(label, delivery, reply)}
+          <Text wrap="wrap" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
+            {inlineText(settledLabel(label, delivery, reply))}
           </Text>,
         )}
         {undo ? undoButton(undo, at) : null}
@@ -451,13 +453,14 @@ export function paneRowParts(
   )
   /** Desktop draws a settled label in its title's wrapping Text, so a long one, such as a reply's words, is cut to one line's characters. */
   const desktopSettledLabel = (state: SettledState) =>
-    clipLabel(
+    cutInline(
       settledLabel(state.label, state.delivery, state.reply),
       Math.max(12, Math.floor((listColumns - 1) * DESKTOP_CLIP_CHARS_PER_CELL)),
     )
   const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
     const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
     const mark = settledMark(state)
+    const title = rowTitle(r, look)
     if (look === 'desktop')
       return desktopFrame({
         key: `settled-${r.id}`,
@@ -468,14 +471,17 @@ export function paneRowParts(
         isSideCentered: true,
         children: [
           <Text wrap="wrap">
-            {r.title}
-            <Text color={pal.muted}>{`${DOT}${desktopSettledLabel(state)}`}</Text>
+            {inlineText(r.title)}
+            <Text color={pal.muted}>
+              {DOT}
+              {inlineText(desktopSettledLabel(state))}
+            </Text>
           </Text>,
         ],
       })
     return (
       <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
-        {treeRow(pos, null, settledContent(rowTitle(r, look), state, undo, mark))}
+        {treeRow(pos, null, settledContent(title, state, undo, mark))}
       </Box>
     )
   }

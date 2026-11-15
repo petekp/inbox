@@ -45,6 +45,7 @@ export type Row = {
   /** A PR row's mark says its work is done. */
   isMarkDone?: boolean
   title: string
+  titleContent?: RenderElement[]
   titleAfter?: string
   at?: number
   subtitle?: JSX.Element

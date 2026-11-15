@@ -30,6 +30,7 @@ import type { RowProps } from './row-client'
 import { DOT, type ResultMark, rowResultMark, type RowView, shortAgo } from './rows'
 import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './terminal-text'
 import { ago, clipLabel } from './text'
+import { linkLabel } from './inline'
 import { resultGlyph, runningMark } from './timing'
 
 /** A next build draws the Status, so only it names the subject an ask holds up. */
@@ -53,6 +54,7 @@ export function paneRowLines({
   isAgeInSide,
   listColumns,
   Button,
+  inlineText,
 }: Pick<PaneClient, 'elements'> &
   Pick<
     PaneBase,
@@ -70,6 +72,7 @@ export function paneRowLines({
     | 'isAgeInSide'
     | 'listColumns'
     | 'Button'
+    | 'inlineText'
   >) {
   const feedbackLabel = (id: string, row?: Row) => {
     const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
@@ -195,14 +198,14 @@ export function paneRowLines({
   /** A feedback text with its done mark in the done mark's color, which every palette defines. */
   const withDoneMark = (text: string, doneMark: string | null | undefined) => {
     const at = doneMark ? text.indexOf(doneMark) : -1
-    if (!doneMark || at < 0) return text
+    if (!doneMark || at < 0) return inlineText(text)
 
     return [
-      text.slice(0, at),
+      ...inlineText(text.slice(0, at)),
       <Text key="done" color={pal.mark.done}>
         {doneMark}
       </Text>,
-      text.slice(at + doneMark.length),
+      ...inlineText(text.slice(at + doneMark.length)),
     ]
   }
   const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
@@ -212,13 +215,14 @@ export function paneRowLines({
     const width = listColumns - 1 - inset - side - before
     const perCell = look === 'desktop' ? DESKTOP_CHARS_PER_CELL : 1
     const budget = Math.floor((listColumns - 1 - inset - side - buttonFrame) * perCell) - before
-    const isAfterCutting = line.after !== undefined && line.text.trim().length > budget - line.after.length
+    const afterLabel = line.after === undefined ? '' : linkLabel(line.after)
+    const isAfterCutting = line.after !== undefined && linkLabel(line.text.trim()).length > budget - afterLabel.length
     const meta =
       look === 'terminal' && line.after && (!LEADING_DOT.test(line.after) || isAfterCutting)
         ? line.after.replace(LEADING_DOT, '')
         : null
-    const room = Math.max(12, budget - (meta ? 0 : (line.after?.length ?? 0)))
-    const text = line.text.trim()
+    const room = Math.max(12, budget - (meta ? 0 : afterLabel.length))
+    const text = linkLabel(line.text.trim())
     const space = text.lastIndexOf(' ', room)
     const isWrapped = look === 'terminal' && row.hasSecondLine === true && text.length > room && space > 0
     const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
@@ -226,9 +230,9 @@ export function paneRowLines({
     const afterRoom = budget - first.length
     const after = meta
       ? undefined
-      : look === 'desktop' && line.after && line.after.length > afterRoom
+      : look === 'desktop' && line.after && afterLabel.length > afterRoom
         ? afterRoom >= 2
-          ? clipLabel(line.after, afterRoom)
+          ? clipLabel(afterLabel, afterRoom)
           : undefined
         : line.after
     const hover = second ? { hover: { scope: `title-${row.id}`.slice(0, 64), inverse: true } } : {}
@@ -319,8 +323,8 @@ export function paneRowLines({
       markCells: DESKTOP_MARK_CELLS,
       sideCells: DESKTOP_SIDE_CELLS,
       before,
-      title: titleSpans.map(s => s.text).join(''),
-      after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
+      title: linkLabel(titleSpans.map(s => s.text).join('')),
+      after: linkLabel(f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim()),
       note: holdsUpLineOf(row.view) ?? '',
       noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
       recNote: row.view?.recLine ?? '',

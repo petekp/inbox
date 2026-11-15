@@ -20,7 +20,16 @@ import { discardReply, outPending } from './tab-press'
 import { act, listsOf } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
 import type { DrawnPrs } from './tab-pr-steps'
-import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
+import {
+  feedbackLabel,
+  noteOf,
+  isFeedbackShown,
+  inlineHtml,
+  MarkGlyph,
+  pulseInStep,
+  ResultMarkView,
+  UndoPlace,
+} from './tab-parts'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
@@ -143,16 +152,66 @@ export function ListRow({
   const after = (form: LineForm, only = '') =>
     form.last ? (
       <span class={`after ${afterTone ? `tone-${afterTone}` : ''}${only}`}>
-        {form.isOpen ? `${DOT}${form.last}` : form.last}
+        {form.isOpen ? DOT : null}
+        {inlineHtml(form.last)}
       </span>
     ) : null
   const side = (form: LineForm) => (
     <>
-      {form.sideLabel ? <span class="side-label">{form.sideLabel}</span> : null}
+      {form.sideLabel ? <span class="side-label">{inlineHtml(form.sideLabel)}</span> : null}
       {form.side}
     </>
   )
   const isSideSplit = closed !== null && (closed.side !== drawn.side || closed.sideLabel !== drawn.sideLabel)
+  const lineContents = (form: LineForm, only = '') => (
+    <>
+      <span class="text">
+        {row.lead ? (
+          <>
+            <span class="lead">{row.lead}</span>{' '}
+          </>
+        ) : null}
+        {row.title}
+      </span>
+      {row.meta ? <span class="meta">{row.meta}</span> : null}
+      {after(form, only)}
+      {row.context ? <span class="context-line">{inlineHtml(row.context)}</span> : null}
+      {row.holdsUp ? (
+        <span class="holds-up">
+          <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
+        </span>
+      ) : null}
+      {row.recLine ? <span class="rec-line">{inlineHtml(row.recLine)}</span> : null}
+    </>
+  )
+  const lineControl = (form: LineForm, only = '') =>
+    row.titleLabel === undefined ? (
+      <button
+        type="button"
+        class="line"
+        {...(form.isOpen ? { tabIndex: -1, 'aria-disabled': true } : { 'aria-expanded': false })}
+      >
+        {lineContents(form, only)}
+      </button>
+    ) : (
+      <div
+        class="line"
+        role="group"
+        aria-label={`Show details for ${row.titleLabel}`}
+        aria-expanded={form.isOpen}
+        aria-disabled={form.isOpen}
+        aria-keyshortcuts="Enter Space"
+        tabIndex={form.isOpen ? -1 : 0}
+        onKeyDown={event => {
+          if (event.target === event.currentTarget && !form.isOpen && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault()
+            onSelect()
+          }
+        }}
+      >
+        {lineContents(form, only)}
+      </div>
+    )
 
   return (
     <div
@@ -161,30 +220,8 @@ export function ListRow({
     >
       {handle}
       <div class="content">
-        <button
-          type="button"
-          class="line"
-          {...(isSelected ? { tabIndex: -1, 'aria-disabled': true } : { 'aria-expanded': false })}
-        >
-          <span class="text">
-            {row.lead ? (
-              <>
-                <span class="lead">{row.lead}</span>{' '}
-              </>
-            ) : null}
-            {row.title}
-          </span>
-          {row.meta ? <span class="meta">{row.meta}</span> : null}
-          {after(drawn, closed ? ' open-only' : '')}
-          {closed ? after(closed, ' closed-only') : null}
-          {row.context ? <span class="context-line">{row.context}</span> : null}
-          {row.holdsUp ? (
-            <span class="holds-up">
-              <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
-            </span>
-          ) : null}
-          {row.recLine ? <span class="rec-line">{row.recLine}</span> : null}
-        </button>
+        {lineControl(drawn, closed ? ' open-only' : '')}
+        {closed ? <div class="closed-only">{lineControl(closed)}</div> : null}
       </div>
       <span class="side" data-room={SENDING}>
         {isSideSplit ? (
@@ -244,7 +281,7 @@ function Panel({ row, isClosing, status }: { row: Row; isClosing: boolean; statu
         }
         isBlocked={isOpenGuarded}
       />
-      {status ? <div class="muted">{status}</div> : null}
+      {status ? <div class="muted">{inlineHtml(status)}</div> : null}
       {copied ? (
         <div>
           <div class="muted">Copy {copied.name} from here:</div>
@@ -277,9 +314,9 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">
-            <span class="what">{r.title}</span>
+            <span class="what">{inlineHtml(r.title)}</span>
             <span class="muted">{DOT}</span>
-            <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
+            <span class="outcome-label">{inlineHtml(settledLabel(state.label, state.delivery, state.reply))}</span>
             {error ? (
               <span class="tone-error">
                 {DOT}

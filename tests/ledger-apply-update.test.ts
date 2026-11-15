@@ -35,16 +35,46 @@ describe('applyUpdate', () => {
     expect(latestBatch(second).map(i => i.id)).toEqual(['i4'])
   })
 
-  test('closes items left unanswered for more than 12 prompts as expired', () => {
-    const first = applyUpdate({ ...EMPTY, turn: 1 }, parseReply(REPLY)!, 1, 1)
-    const later = applyUpdate({ ...first, turn: 14 }, parseReply('NONE')!, 2, 14)
-    expect(later.items.length).toBe(0)
-    expect(later.closed.map(d => [d.id, d.outcome])).toEqual([
-      ['i1', 'expired, unanswered'],
-      ['i2', 'expired, unanswered'],
-      ['i3', 'expired, unanswered'],
-    ])
-    expect(applyUpdate({ ...first, turn: 13 }, parseReply('NONE')!, 2, 13).items.length).toBe(3)
+  test('a closed ask outside the newest 12 can be added again, while a recent close is still skipped', () => {
+    const opened = applyUpdate(
+      EMPTY,
+      parseReply(Array.from({ length: 14 }, (_, n) => `NEW: do | - | Task ${n + 1} | - | -`).join('\n'))!,
+      1,
+      1,
+    )
+    const closed = opened.items.reduce(
+      (ledger, item, n) => closeItem(ledger, item.id, { how: 'answered', outcome: 'done' }, n + 2),
+      opened,
+    )
+
+    const oldAgain = applyUpdate({ ...closed, turn: 2 }, parseReply('NEW: do | - | Task 1 | - | -')!, 30, 2, 30)
+    const recentAgain = applyUpdate({ ...closed, turn: 2 }, parseReply('NEW: do | - | Task 14 | - | -')!, 30, 2, 30)
+
+    expect(oldAgain.items.map(i => i.ask)).toEqual(['Task 1'])
+    expect(recentAgain.items).toEqual([])
+  })
+
+  test('unanswered questions and tasks stay open past the old expiry age and a full list', () => {
+    const oldItems = Array.from({ length: 20 }, (_, n) => ({
+      id: 'i' + (n + 1),
+      kind: n === 1 ? ('task' as const) : ('question' as const),
+      label: null,
+      ask: 'Existing ask ' + (n + 1),
+      options: [],
+      rec: null,
+      helps: [],
+      turn: n < 2 ? 1 : 14,
+      at: 1,
+      from: 'update' as const,
+    }))
+    const ledger = { ...EMPTY, turn: 14, nextId: 21, items: oldItems }
+    const update = parseReply(
+      ['NEW: decide | - | Which cache? | Redis / Memcached | -', 'NEW: do | - | Sign in to npm | - | -'].join('\n'),
+    )!
+    const later = applyUpdate(ledger, update, 60 * 60 * 1000, 14)
+
+    expect(later.items.map(i => i.id)).toEqual([...oldItems.map(i => i.id), 'i21', 'i22'])
+    expect(later.closed).toEqual([])
   })
 
   test('merges a reworded copy of an open item instead of adding it', () => {

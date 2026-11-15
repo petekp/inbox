@@ -6,6 +6,12 @@ export type Item = {
   ask: string
   /** Why the agent asked a question, from its record's `context`. A record of the open question replaces it. */
   context?: string
+  /** The agent's explanation of why it asked and what each option or step leads to. */
+  detail?: string
+  /** An optional Markdown report path, recorded by the agent and shown only to the user. */
+  document?: string
+  /** A short excerpt from the document, shown under the item. */
+  documentPreview?: string
   options: string[]
   /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
@@ -30,6 +36,11 @@ export type Item = {
   isDesignChoice?: boolean
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
+  /** An item mirrored from a durable external source; only that source may update or remove it. */
+  sourceManaged?: true
+  /** The external feed key and file that own this item. */
+  feedKey?: string
+  feedSource?: string
   /**
    * What picking each option does, by its label as `options` has it: from the `option_notes` of the agent's records,
    * else from a dialog question this item copies.

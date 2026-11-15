@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { applyPress } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
+import { shortAgo } from '../../hooks/rows'
 import { FOLD_QUIET_MS, PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import { recordClose, recordItem } from '../../hooks/tools'
@@ -22,6 +23,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
   Object.defineProperty(window, '__inboxPage', { value: 'renderer-page', configurable: true })
   const media = window.matchMedia('(prefers-reduced-motion: reduce)')
   Object.defineProperty(media, 'matches', { value: true })
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
   const globals = {
     parent: window.parent,
     navigator: window.navigator,
@@ -232,6 +234,66 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       await pause(POLL_MS + 100)
       assert.ok(root.querySelector('.row.settled') === null, 'a settled row is drawn again after a tab switch')
       assert.match(root.textContent ?? '', /3 closed/)
+
+      state.ledger = recordItem(
+        CODEX,
+        state.ledger,
+        { kind: 'task', ask: 'Publish the timeline' },
+        Date.now(),
+        TOOL_FIELDS,
+      ).ledger
+      await pause(POLL_MS + 100)
+      root.querySelector<HTMLElement>('.row .line')!.click()
+      await pause(PRESS_GUARD_MS + 50)
+      named(root, 'Done').click()
+      await until(() => root.querySelector('.row.settled') !== null)
+      root.querySelector('.list')!.dispatchEvent(new window.Event('pointerover', { bubbles: true }) as unknown as Event)
+      Date.now = () => realNow() + 2 * SETTLED_MS + 4 * POLL_MS
+      await pause(POLL_MS + 100)
+      const timelineRow = [...root.querySelectorAll('.row.settled')].find(r =>
+        /Publish the timeline/.test(r.textContent ?? ''),
+      )
+      assert.ok(timelineRow)
+      assert.ok(timelineRow.querySelector('.key.undo:not(.spent)') === null, 'Undo is still offered')
+      assert.ok(timelineRow.querySelector('.key.undo.spent'))
+      document.documentElement.dispatchEvent(new window.Event('pointerleave') as unknown as Event)
+      await pause(FOLD_QUIET_MS + 100)
+      assert.doesNotMatch(root.querySelector('.row.settled')?.textContent ?? '', /Publish the timeline/)
+      assert.match(root.textContent ?? '', /4 closed/)
+
+      const closedAt = Date.now() - 60_000
+      const answerItem = recordItem(
+        CODEX,
+        state.ledger,
+        { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Deno'] },
+        closedAt,
+      )
+      const answerId = answerItem.ledger.items.at(-1)!.id
+      const answered = recordClose(CODEX, answerItem.ledger, { id: answerId, answer: 'Deno' }, closedAt, {
+        lastActions: {},
+        turnStartedAt: null,
+      })
+      const explainItem = recordItem(
+        CODEX,
+        answered.ledger,
+        { kind: 'question', ask: 'Explain the command output?', options: ['It is clear', 'Show me'] },
+        closedAt,
+      )
+      const explainId = explainItem.ledger.items.at(-1)!.id
+      state.ledger = recordClose(CODEX, explainItem.ledger, { id: explainId, reason: 'explained in chat' }, closedAt, {
+        lastActions: {},
+        turnStartedAt: null,
+      }).ledger
+      await pause(POLL_MS + 100)
+      root.querySelector<HTMLButtonElement>('[data-fold=\"question\"]')!.click()
+      await pause(POLL_MS + 100)
+      const history = [...root.querySelectorAll('.closed-list .entry')]
+      const answeredRow = history.find(row => row.textContent?.includes('Which cache should the API use?'))
+      const explainedRow = history.find(row => row.textContent?.includes('Explain the command output?'))
+      assert.match(answeredRow?.textContent ?? '', /Deno/)
+      assert.equal(answeredRow?.querySelector('.side')?.textContent, shortAgo(Date.now() - closedAt))
+      assert.match(explainedRow?.textContent ?? '', /Closed by Codex: explained in chat/)
+      assert.equal(explainedRow?.querySelector('.side')?.textContent, shortAgo(Date.now() - closedAt))
     } finally {
       Date.now = realNow
     }

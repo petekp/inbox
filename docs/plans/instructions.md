@@ -60,8 +60,7 @@ that updates the inbox after each reply, reads two.
 - Every way a finding leaves goes to Closed with its outcome. The code
   refuses a finding that restates one the person dismissed, and `record` answers
   why. A finding that expired or that Claude closed as fixed can be recorded
-  again. The ledger keeps the newest 12 closed findings, so a dismissal older
-  than that is forgotten.
+  again. Every closed finding stays in the session history.
 - A question or task replaces a finding only when it asks about it: its label
   is the finding's id, its ask restates the finding's title or detail or both name the same pull
   request number. When the inbox model's `ASKED` line claims the link, an ask

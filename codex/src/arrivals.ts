@@ -14,7 +14,7 @@ import type { InboxView } from '../../hooks/view'
 import type { HeardState } from './core'
 
 export type Group = 'question' | 'task' | 'finding'
-export type FoldGroup = 'question' | 'task' | 'issue' | 'opportunity'
+export type FoldGroup = 'question' | 'task' | 'issue' | 'opportunity' | 'progress'
 
 export const TAB_OF: Record<Group, ListedTab> = { question: 'needsYou', task: 'needsYou', finding: 'findings' }
 

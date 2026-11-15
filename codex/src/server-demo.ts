@@ -40,11 +40,7 @@ export function makeDemo(
           )
         : ({ stale: true } as const)
     if ('stale' in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: 'stale' }
-    const after = demoAfterPress(
-      { lastActions: s.lastActions, turns: s.presence },
-      r,
-      new Set(Object.keys(holds.replies)),
-    )
+    const after = demoAfterPress({ lastActions: s.lastActions, turns: s.presence }, r)
     const next: SessionState = {
       ...s,
       ledger: after.ledger,

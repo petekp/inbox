@@ -3,6 +3,8 @@ import { isPrPress, pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import { isPressConfirmed } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
+import type { DocumentResult } from '../../hooks/document'
+import { allRows } from '../../hooks/rows'
 import { showsRunningMark } from '../../hooks/session-view'
 import { READING_TEXT } from '../../hooks/banners'
 import { compareEndsAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
@@ -11,7 +13,7 @@ import type { ShownTab } from '../../hooks/tabs'
 import { INITIAL_UI, drawPanel, holdsOf, isAnimating, noticeFor, tallestTabHeight } from './panel'
 import type { PanelPress, PanelScreen, PanelUi, Style } from './panel'
 import { afterHandOff, handleKey, isLineWaiting } from './panel-keys'
-import { followRows } from './panel-tabs'
+import { followRows, pageWindow } from './panel-tabs'
 import type { SeenRows } from './panel-tabs'
 
 const ANIMATION_MS = 200
@@ -54,6 +56,8 @@ type PanelDeps = {
   timers: { every(fn: () => void, ms: number): unknown; stop(handle: unknown): void }
   /** The rows the terminal has, or undefined when the panel may grow. */
   height(): number | undefined
+  readDocument(path: string): Promise<DocumentResult>
+  markdown(text: string, width: number): string[]
 }
 
 type Panel = {
@@ -139,10 +143,24 @@ export function createPanel(deps: PanelDeps): Panel {
     await refresh()
   }
 
+  async function showDocument(id: string): Promise<void> {
+    if (!screen) return
+    const row = allRows(screen.view).find(candidate => candidate.id === id)
+    if (!row?.document) return
+    const document = { title: row.title, text: null, error: null }
+    ui = { ...ui, document, pageTop: 0 }
+    deps.requestRender()
+    const result = await deps.readDocument(row.document).catch(() => ({ error: 'The report could not be read.' }))
+    if (ui.document !== document) return
+    ui = { ...ui, document: { ...document, ...result } }
+    deps.requestRender()
+  }
+
   async function press(p: PanelPress): Promise<void> {
     if (p.action === 'resume') return resume()
     if (p.action === 'herdr-ask') return source.answerHerdr?.(p.isYes).then(() => refresh())
     if (p.action === 'all-options') return
+    if (!isPrPress(p) && p.action === 'read-document') return showDocument(p.id)
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
     const sentDraft = !isPrPress(p) && p.action === 'type' ? ui.drafts[p.id] : undefined
@@ -165,6 +183,25 @@ export function createPanel(deps: PanelDeps): Panel {
   return {
     render(width) {
       if (screen === null) return [` ${READING_TEXT}`]
+      if (ui.document) {
+        const body = [
+          ` ${style.bold(ui.document.title)}`,
+          style.dim('b / esc back · ↑↓ j k scroll'),
+          '',
+          ...(ui.document.error
+            ? [style.tone('error', ui.document.error)]
+            : ui.document.text === null
+              ? [style.dim('Opening report…')]
+              : ui.document.text
+                ? deps.markdown(ui.document.text, width)
+                : []),
+        ]
+        const room = Math.max(1, (deps.height() ?? body.length) - 1)
+        const top = Math.min(ui.pageTop, Math.max(0, body.length - room + 1))
+        ui = { ...ui, pageTop: top }
+
+        return pageWindow(body, top, room, style)
+      }
       const now = deps.now()
       const maxHeight = deps.height()
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
@@ -172,7 +209,14 @@ export function createPanel(deps: PanelDeps): Panel {
       heldHeight = Math.max(heldHeight, drawn.lines.length)
       if (drawn.shownSubjects.length > 0) source.showedRows(drawn.shownSubjects)
       // A reveal waits for a draw that has its target, as after Remove, whose Undo and New buttons come with the next screen.
-      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: drawn.isRevealed ? null : ui.pageReveal }
+      // A reveal waits for a draw that has its target, as after Set as goal, whose goal button comes with the next screen.
+      ui = {
+        ...ui,
+        pageTop: drawn.pageTop,
+        detailTop: Math.min(ui.detailTop, drawn.detailScrollMax),
+        detailScrollMax: drawn.detailScrollMax,
+        pageReveal: drawn.isRevealed ? null : ui.pageReveal,
+      }
 
       return drawn.lines
     },

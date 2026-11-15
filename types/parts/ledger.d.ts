@@ -3,14 +3,26 @@ import type { Closed, Item } from './items'
 
 export type Finding = {
   id: string
-  kind: 'issue' | 'opportunity'
+  kind: 'issue' | 'opportunity' | 'progress'
   title: string
   detail: string
   /** The file it is about, as Claude gave it. */
   path: string | null
+  /** An optional Markdown report path, recorded by the agent and shown only to the user. */
+  document?: string
+  /** A short excerpt from the document, shown under the finding. */
+  documentPreview?: string
   at: number
   /** The item that replaced this finding by asking about it. A finding closed as "asked as iN" reopens when that item closes with the work undone. */
   askedAs?: string
+  /** The external progress-feed entry that owns this finding. */
+  feedKey?: string
+  /** The snapshot file that owns this finding. */
+  feedSource?: string
+  /** Marks findings created by the versioned progress-feed lifecycle. */
+  feedOwned?: true
+  /** The active-items source owns this finding's lifecycle. */
+  sourceManaged?: true
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']
@@ -106,6 +118,8 @@ export type Ledger = {
   findings: Finding[]
   /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */
   closedFindings: ClosedFinding[]
+  /** Read-only warnings from live work signals that have no matching open external item. */
+  untrackedWork?: { key: string; title: string; detail: string; at: number; feedSource: string }[]
   /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
   /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. The tab also shows the PRs it ranks, which are not in `prs` unless the session linked them. */

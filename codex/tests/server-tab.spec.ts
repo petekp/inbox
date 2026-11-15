@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
@@ -9,6 +11,7 @@ import { CODEX } from '../src/texts'
 import { pageName } from '../src/server-tools'
 import { readState, updateState } from '../src/state'
 import { setup } from './server-fixtures'
+import { tempDir } from './helpers'
 
 test('the tab opens from the app-only inbox_view tool, and the model’s inbox tool mounts nothing', async () => {
   const { handle } = await setup(0)
@@ -44,6 +47,85 @@ test('the view request saves the tab the page shows, ignores a name that is not 
   assert.equal(
     screenText(CODEX, true, screenTabOf((await readState(dir, 's1')).shownTab)),
     'The Inbox tab is open beside the conversation, on its PRs tab, listing every open item.',
+  )
+})
+
+test('an Inbox view request applies the configured progress feed', async () => {
+  const path = join(tempDir(), 'feed.json')
+  writeFileSync(
+    path,
+    JSON.stringify({
+      version: 1,
+      source: 'herdr-meta-patrol',
+      writtenAt: 10,
+      entries: [
+        {
+          key: 'machine/worker',
+          state: 'working',
+          title: 'Implement the progress feed',
+          detail: 'Update state.',
+          at: 10,
+        },
+      ],
+    }),
+  )
+  const { dir, call } = await setup(
+    0,
+    () => 100,
+    async () => 'codex',
+    false,
+    path,
+  )
+  await call('inbox_view', {}, { thread_id: 's1' })
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.findings.map(f => [f.kind, f.feedKey]),
+    [['progress', 'machine/worker']],
+  )
+})
+
+test('an Inbox view merges feed files, scopes disappearance, and closes a done subagent', async () => {
+  const root = join(tempDir(), 'feeds')
+  mkdirSync(root)
+  const write = (file: string, key: string, state = 'working') =>
+    writeFileSync(
+      join(root, file),
+      JSON.stringify({
+        version: 1,
+        source: 'herdr-meta-patrol',
+        writtenAt: 10,
+        entries: [{ key, state, title: file, detail: 'Update state.', at: 10 }],
+      }),
+    )
+  const patrol = join(root, 'patrol.json')
+  write('patrol.json', 'herdr/local/worker')
+  write('subagent-s1-a1.json', 'subagent/s1/a1')
+  const { dir, call } = await setup(
+    0,
+    () => 100,
+    async () => 'codex',
+    false,
+    root,
+  )
+  const view = () => call('inbox_view', {}, { thread_id: 's1' })
+  await view()
+  unlinkSync(patrol)
+  await view()
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.findings.map(f => f.feedKey),
+    ['subagent/s1/a1'],
+  )
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.closedFindings.map(f => f.feedKey),
+    ['herdr/local/worker'],
+  )
+  write('subagent-s1-a1.json', 'subagent/s1/a1', 'done')
+  await view()
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.closedFindings.map(f => [f.feedKey, f.outcome]),
+    [
+      [undefined, 'done: no longer reported'],
+      ['subagent/s1/a1', 'done: Update state.'],
+    ],
   )
 })
 

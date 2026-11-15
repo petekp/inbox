@@ -8,7 +8,7 @@ export const runUpdates = (
   ask: (prompt: string) => Promise<string | null>,
   now: () => number,
   onWrite?: OnWrite,
-) => runBothCalls(dir, id, ledgerOnly(ask), now, onWrite)
+) => runBothCalls(dir, id, ledgerOnly(ask), now, { onWrite })
 
 export const execDeps = (dir: string) => {
   const deps = hookDeps(dir)

@@ -33,8 +33,10 @@ export function closeByAgent(
       ? { how: 'answered', outcome: how.answer }
       : { how: 'claude', outcome: `closed by ${host.agent}: ${how.reason}` }
   const item = ledger.items.find(i => i.id === id)
+  if (item?.sourceManaged) return { ledger, closed: null }
   if (item) return { ledger: closeItem(ledger, id, closing, now), closed: { item } }
   const finding = ledger.findings.find(f => f.id === id)
+  if (finding?.sourceManaged) return { ledger, closed: null }
   if (finding) return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } }
 
   return { ledger, closed: null }
@@ -43,6 +45,7 @@ export function closeByAgent(
 type Closing = Pick<Closed, 'how' | 'outcome'>
 
 export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
+  if (ledger.items.some(i => i.id === id && i.sourceManaged)) return ledger
   const records = ledger.items.filter(i => i.id === id).map(i => closedRecord(i, closing, now))
 
   return reopenAskedFindings(
@@ -110,25 +113,12 @@ export function asksAbout(item: Pick<Item, 'ask' | 'label'>, finding: Finding, i
   return [...prNumbers(`${finding.title} ${finding.detail}`)].some(n => itemPrs.has(n))
 }
 
-/**
- * Cuts each closed list to its newest MAX_CLOSED records. It keeps every older record whose id is in `keep`, and every
- * record the person dismissed, so a dismissed row can be reopened for the rest of the session.
- * closeItem, closeFinding and applyUpdate do not cut, so each host runs this on every ledger it commits.
- */
-export function pruneClosed(ledger: Ledger, keep: ReadonlySet<string>): Ledger {
-  const pruned = <T extends { id: string; how: Closed['how'] }>(records: T[]) =>
-    records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === 'dismissed')
-
-  return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) }
-}
-
 function idNumber(id: string): number {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN)
 }
 
 /**
- * Order matters: answerNote reads the batch by position, and expiry
- * keeps the last MAX_OPEN items.
+ * Order matters: answerNote reads the batch by position.
  */
 function inIdOrder<T extends { id: string }>(open: T[], entry: T): T[] {
   const at = open.findIndex(x => idNumber(x.id) > idNumber(entry.id))

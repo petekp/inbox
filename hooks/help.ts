@@ -5,9 +5,13 @@ import type { Look } from './rows'
 import { shownTabs, isRowTab } from './tabs'
 import type { ShownTab } from './tabs'
 
-export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: string; tone: 'issue' | 'done' }> = {
+export const FINDING_GROUPS: Record<
+  Finding['kind'],
+  { title: string; mark: string; tone: 'issue' | 'done' | 'findings' }
+> = {
   issue: { title: 'Issues', mark: '▲', tone: 'issue' },
   opportunity: { title: 'Opportunities', mark: '✦', tone: 'done' },
+  progress: { title: 'Progress', mark: '↻', tone: 'findings' },
 }
 
 /** A mark's tone on the Status. Null draws it muted. */
@@ -93,6 +97,12 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     isRunning: false,
     words: 'Opportunity: something that could be better',
   },
+  {
+    mark: FINDING_GROUPS.progress.mark,
+    tone: FINDING_GROUPS.progress.tone,
+    isRunning: false,
+    words: 'Progress reported by the feed',
+  },
 ]
 
 /** Marks only the Status tab draws, which a release build does not show. */
@@ -120,6 +130,10 @@ const PR_TAB_HELP_KEYS: HelpKey[] = [
   { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
   { keys: 'm', does: 'Clear the merged and closed PRs' },
 ]
+const DOCUMENT_KEYS: HelpKey[] = [
+  { keys: 'v', does: 'Read the selected report, if available' },
+  { keys: 'b', does: 'Return to the inbox from a report' },
+]
 
 /**
  * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a
@@ -131,6 +145,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
     .map(t => t.hotkey)
     .join(' ')
   const hasRows = isRowTab(tab)
+  const hasDocumentRows = tab === 'needsYou' || tab === 'findings'
   const selectsStatusRows = tab === 'overview' && hasStatusButtons
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
@@ -143,23 +158,42 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
         switchTabs,
         ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
         ...(hasRows ? [undoKey] : []),
+        ...(hasRows || selectsStatusRows
+          ? [
+              {
+                keys: hasDocumentRows ? 'j k ↑ ↓' : 'j k',
+                does: hasDocumentRows ? 'Select a row or scroll a report' : 'Select the next or previous row',
+              },
+            ]
+          : []),
+        ...(hasDocumentRows ? DOCUMENT_KEYS : []),
         ...prTabKeys,
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
       ]
     case 'codex':
       return [
         switchTabs,
-        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }, undoKey] : []),
+        ...(hasRows
+          ? [
+              {
+                keys: 'j k ↑ ↓',
+                does: hasDocumentRows ? 'Select a row or scroll a report' : 'Select the next or previous row',
+              },
+              ...(hasDocumentRows ? DOCUMENT_KEYS : []),
+            ]
+          : []),
+        ...(hasRows ? [undoKey] : []),
         ...prTabKeys,
         { keys: '?', does: 'Open or close help' },
-        { keys: 'esc', does: 'Close help, or leave a reply field' },
+        { keys: 'esc', does: 'Close help, leave a reply field, or return from a report' },
       ]
     case 'omp':
       return [
         { keys: `tab ${tabKeys}`, does: 'Switch tabs' },
         ...(hasRows
           ? [
-              { keys: '↑ ↓ j k', does: 'Move between rows' },
+              { keys: '↑ ↓ j k', does: hasDocumentRows ? 'Move between rows or scroll a report' : 'Move between rows' },
+              ...(hasDocumentRows ? DOCUMENT_KEYS : []),
               { keys: '← →', does: 'Pick a button' },
               { keys: '↵', does: 'Press the picked button' },
               { keys: 't', does: 'Reply to the selected row' },
@@ -177,7 +211,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
               { keys: '↑ ↓', does: 'Scroll the page' },
             ]),
         { keys: '?', does: 'Open or close help' },
-        { keys: 'esc', does: 'Close help, then the panel' },
+        { keys: 'esc', does: 'Close help, return from a report, then the panel' },
       ]
     case 'herdr':
       return [

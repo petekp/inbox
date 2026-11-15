@@ -1,0 +1,55 @@
+[
+  {
+    "name": "record-question-and-task-details",
+    "about": "Question and task records include a clear explanation.",
+    "prompt": "Task: publish a preview of the docs site. Before publishing, I must choose docs.example.com or preview.example.com; recommend preview.example.com because production DNS is managed separately. I must also sign in to Cloudflare myself before I can update the preview record. Ask me for the domain and tell me what sign-in step I need to take.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "has": ["ask", "options", "rec", "detail"]
+      },
+      {
+        "calls": "record",
+        "kind": "task",
+        "count": 1,
+        "has": ["ask", "steps", "detail"]
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "preview|Cloudflare"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "record-detail-as-labeled-link",
+    "about": "A useful URL in a recorded question detail uses a labeled link.",
+    "prompt": "Task: update the onboarding flow to link to the public API guide. Before continuing, I need to approve that guide. It is at https://docs.example.com/api-setup. Ask me to approve it and include the guide in the question detail.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "match": {
+          "detail": "\\[[^\\]]+\\]\\(https://docs\\.example\\.com/api-setup\\)"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "API|guide"
+      }
+    ]
+  }
+]

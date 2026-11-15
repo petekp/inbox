@@ -7,6 +7,8 @@ import {
   CLEAR_FINISHED_ID,
   PR_REFRESH_ID,
   ghNoticeOf,
+  accountPrText,
+  botPrSummaryText,
   PR_GROUP_TITLES,
   PR_TONES,
   prMarkId,
@@ -293,7 +295,7 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
   const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut, failure: v.prs.failure }
   const ghNotice = ghNoticeOf(ghState)
   const empty = prsEmptyText({ isFetching: v.isFetchingPrs, ...ghState }, 'chat')
-  if (prs.blocks.length === 0)
+  if (prs.blocks.length === 0 && v.prs.accountPrs.length === 0 && v.prs.botPrSummaries.length === 0)
     return (
       <main>
         <div class="empty">
@@ -335,6 +337,17 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
       {prs.blocks.map(b => (
         <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />
       ))}
+      {v.prs.accountPrs.length > 0 || v.prs.botPrSummaries.length > 0 ? (
+        <section class="account-prs">
+          {v.prs.accountPrs.length > 0 ? <div class="group-title">PRs opened by you</div> : null}
+          {v.prs.accountPrs.map(pr => (
+            <div class="group-title muted">{accountPrText(pr)}</div>
+          ))}
+          {v.prs.botPrSummaries.map(bot => (
+            <div class="group-title muted">{botPrSummaryText(bot)}</div>
+          ))}
+        </section>
+      ) : null}
       {v.prs.olderText ? (
         <section>
           <div class="group-title muted">{v.prs.olderText}</div>

@@ -25,7 +25,7 @@ function truecolorFill(hex: string, text: string): string {
 }
 
 /** Maps the panel's styles onto omp's theme. The separator and the accent follow the theme; the tones follow `hooks/tones.ts`. */
-export function styleOf(theme: OmpTheme): Style {
+export function styleOf(theme: OmpTheme, link?: Style['link']): Style {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES
   const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS
 
@@ -40,5 +40,6 @@ export function styleOf(theme: OmpTheme): Style {
         : truecolor(tones[name], text),
     banner: (tone, part, text) =>
       part === 'line' ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
+    ...(link ? { link } : {}),
   }
 }

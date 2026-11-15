@@ -2,12 +2,14 @@ import type { Item, Closed, PressKind, Finding } from '../types'
 import { closedState } from './ledger-close'
 import type { ClosedState } from './ledger-close'
 import { clipLabel, ago } from './text'
+import { linkLabel } from './inline'
 import { capitalized } from './press-labels'
 import type { HelpStep } from './help-steps'
 import type { RowPress } from './presses'
 import { offersUndo } from './pressed'
 import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS } from './help'
 import { canUndoClose, isUndoLeft } from './timing'
+import { baseName } from './open-targets'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
 
@@ -23,7 +25,6 @@ export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'quest
   { kind: 'question', title: 'Questions', list: 'questions' },
   { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
-
 export const CLOSED_SHOWN = 3
 
 export type ClosedDelivery = 'held' | 'sending' | 'queued' | 'unconfirmed' | { error: string; canUndo: boolean } | null
@@ -136,6 +137,8 @@ export type RowView = {
   replyKind: 'answer' | 'reply'
   item: Item | null
   finding: Finding | null
+  document: string | null
+  documentPreview: string | null
   steps: HelpStep[]
   state: RowState
   feedback: Feedback | null
@@ -160,6 +163,12 @@ export function recLineOf(item: Item | null): string | null {
   return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null
 }
 
+export function documentPreviewLine(row: Pick<RowView, 'document' | 'documentPreview'>): string | null {
+  if (!row.document) return null
+
+  return `Report preview: ${row.documentPreview || baseName(row.document) || 'Markdown document'}`
+}
+
 type OptionDescription = { label: string; description: string; isFolded: boolean }
 
 export function optionDescriptionsOf(item: Item | null, actions: ActionView[]): OptionDescription[] {
@@ -170,7 +179,7 @@ export function optionDescriptionsOf(item: Item | null, actions: ActionView[]): 
     if (a.press.action !== 'answer' || !Object.hasOwn(descriptions, a.press.option)) return []
     const description = descriptions[a.press.option]!
 
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }]
+    return [{ label: clipLabel(linkLabel(a.press.option), OPTION_LABEL_CHARS), description, isFolded: a.isFolded }]
   })
 }
 
@@ -278,7 +287,19 @@ export function closedShown<T extends { id: string }>(
 }
 
 export function closedTotal(closed: { id: string }[], drawnSettled: ReadonlySet<string>): number {
-  return closed.filter(d => !drawnSettled.has(d.id)).length
+  return closedHistoryPlan(closed, drawnSettled).total
+}
+
+export type ClosedHistoryPlan<T> = { rows: T[]; total: number }
+
+/** The closed rows shared by each look, newest first. */
+export function closedHistoryPlan<T extends { id: string }>(
+  closed: readonly T[],
+  drawnSettled: ReadonlySet<string>,
+): ClosedHistoryPlan<T> {
+  const rows = closed.filter(d => !drawnSettled.has(d.id))
+
+  return { rows, total: rows.length }
 }
 
 export function foldLabel(total: number): string {

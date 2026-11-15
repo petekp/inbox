@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { EMPTY } from '../hooks/ledger'
+import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { closeByAgent, closeItem } from '../hooks/ledger-close'
 import { addAgentItem, applyUpdate } from '../hooks/ledger-update'
-import { parseReply } from '../hooks/reply-parse'
+import { parseReply, stepHelp } from '../hooks/reply-parse'
 import { recordClose, recordItem } from '../hooks/tools'
 import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../hooks/tool-schemas'
+import { actionsOf } from '../hooks/action-plan'
+import { pressed } from '../hooks/pressed'
 
 describe('items the agent recorded', () => {
   const ask = {
@@ -17,6 +19,19 @@ describe('items the agent recorded', () => {
     helps: [],
   }
   const recorded = (turn = 1) => addAgentItem({ ...EMPTY, turn }, ask, 1000).ledger
+
+  test('reads named HTTPS task steps with the shared normalized href', () => {
+    expect(stepHelp('[GitHub](https://github.com)')).toMatchObject({
+      kind: 'link',
+      url: 'https://github.com/',
+      name: 'GitHub',
+    })
+    expect(stepHelp('[@](https://GITHUB.com/a@b)')).toMatchObject({
+      kind: 'link',
+      url: 'https://github.com/a%40b',
+      name: '@',
+    })
+  })
 
   test("a CLOSED line closes one only with the person's answer", () => {
     for (const outcome of ['done: picked Redis', 'no longer applies: cache dropped', 'no longer applies', 'moot', ''])
@@ -129,10 +144,56 @@ describe('items the agent recorded', () => {
     expect(old({ kind: 'task', ask: 'Plug in the test phone' })).toContain('It has no steps')
   })
 
-  test("one stays open after 12 prompts, when the update's items expire", () => {
+  test('unanswered questions and tasks stay open past 12 prompts', () => {
     const both = applyUpdate(recorded(), parseReply('NEW: do | - | Sign in to npm | - | -')!, 1500, 1)
     const later = applyUpdate({ ...both, turn: 14 }, parseReply('NONE')!, 2000, 14)
-    expect([later.items.map(i => i.id), later.closed.map(c => [c.id, c.how])]).toEqual([['i1'], [['i2', 'expired']]])
+    expect(later.items.map(i => i.id)).toEqual(['i1', 'i2'])
+    expect(later.closed).toEqual([])
+  })
+
+  test('recorded questions and tasks stay open when asks exceed 20', () => {
+    const items = Array.from({ length: 20 }, (_, n) => ({
+      ...ask,
+      id: 'i' + (n + 1),
+      kind: n === 1 ? ('task' as const) : ('question' as const),
+      ask: 'Existing ask ' + (n + 1),
+      label: null,
+      turn: 1,
+      at: 1000,
+      from: 'record' as const,
+    }))
+    const full = { ...EMPTY, turn: 1, nextId: 21, items }
+    const question = addAgentItem(full, { ...ask, ask: 'Which format?' }, 2000)
+    const task = addAgentItem(question.ledger, { ...ask, kind: 'task', ask: 'Sign in to npm', options: [] }, 3000)
+
+    expect(task.ledger.items.map(i => i.id)).toEqual([...items.map(i => i.id), 'i21', 'i22'])
+    expect([question.is, task.is]).toEqual(['added', 'added'])
+  })
+
+  test('an older saved ledger loads unanswered items and keeps them open', () => {
+    const loaded = upgradeLedger({
+      ...EMPTY,
+      turn: 14,
+      nextId: 3,
+      items: [
+        {
+          id: 'i1',
+          kind: 'question',
+          label: null,
+          ask: 'Which cache?',
+          options: ['Redis'],
+          rec: null,
+          helps: [],
+          turn: 1,
+        },
+        { id: 'i2', kind: 'task', label: null, ask: 'Sign in to npm', options: [], rec: null, helps: [], turn: 1 },
+      ],
+    } as never)
+    const later = applyUpdate(loaded, parseReply('NONE')!, 2000, 14)
+
+    expect(loaded.items.map(i => i.from)).toEqual(['update', 'update'])
+    expect(later.items.map(i => i.id)).toEqual(['i1', 'i2'])
+    expect(later.closed).toEqual([])
   })
 
   test('a NEW line of its kind in the turn it was recorded adds nothing, and one that restates it adds its steps and recommendation', () => {
@@ -169,6 +230,38 @@ describe('items the agent recorded', () => {
       [['Memcached'], 'Already open, so this record updated it.', null],
       [['Memcached'], 'Already open, so this record updated it.', null],
     ])
+  })
+
+  test('option caps use the visible label while the press keeps the full link', () => {
+    const option = '[PR 7171](https://github.com/anthropics/claude-code/pull/7171)'
+    const result = recordItem(
+      CLAUDE_CODE,
+      EMPTY,
+      {
+        kind: 'question',
+        ask: 'Merge this PR?',
+        detail: 'Its [changes](https://github.com/anthropics/claude-code/pull/7171/files) are small.',
+        options: [option, 'No'],
+        rec: option,
+      },
+      1000,
+    )
+    const item = result.ledger.items[0]!
+    const actions = actionsOf({ id: item.id, item, finding: null, steps: [] }, undefined, { is: 'open' }, null)
+    const answer = pressed(
+      result.ledger,
+      undefined,
+      { action: 'answer', id: item.id, option },
+      { now: 1100, turnsStarted: 1, extraSteps: [], holdMs: 0, comparePage: '', compareInBackground: false },
+    )
+    if ('stale' in answer) throw new Error('Expected the recorded answer to be current.')
+
+    expect(option.length).toBeGreaterThan(60)
+    expect(item.options).toEqual([option, 'No'])
+    expect(item.rec).toBe(option)
+    expect(actions.find(action => action.press.action === 'answer')?.label).toBe('PR 7171')
+    expect(answer.last?.text).toBe(option)
+    expect(answer.effects).toEqual([])
   })
 
   test('a record or close gives the person a line naming what it changed, and none when it changed nothing', () => {

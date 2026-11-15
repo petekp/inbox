@@ -1,17 +1,18 @@
 import { expect, test } from 'bun:test'
 
-import { CLOSED_SHOWN, earlierLabel, foldLabel } from '../../hooks/rows'
+import { addFinding } from '../../hooks/ledger-update'
+import { CLOSED_SHOWN, earlierLabel, foldLabel, settledLabel, shortAgo } from '../../hooks/rows'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { demoState } from '../src/demo'
-import { INITIAL_UI } from '../src/panel'
+import { drawPanel, INITIAL_UI } from '../src/panel'
 import type { PanelScreen, PanelUi } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
 import { followRows } from '../src/panel-tabs'
 import { emptyState } from '../src/state'
-import { drawn, ESC, firstQuestion, keys, NOW, onPage, screenOf, strip, text } from './panel-harness'
+import { drawn, ESC, firstQuestion, keys, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 test('the selected tab draws inverse and the others draw their counts', () => {
   const screen = screenOf()
@@ -47,6 +48,75 @@ test('Enter on a Closed line shows the newest closed rows, Enter on the earlier 
   for (const d of closed) expect(text(screen, all)).toContain(d.ask)
   expect(text(screen, all)).not.toContain(earlierLabel(closed.length, CLOSED_SHOWN)!)
   expect(text(screen, keys(screen, unfolded, 'enter'))).not.toContain(closed[0]!.ask)
+})
+
+test('Closed lists every record and the group fold folds it back; j/k and arrows scroll the narrow panel', () => {
+  const base = screenOf()
+  const source = base.view.needsYou.closed.questions
+  expect(source.length).toBeGreaterThan(3)
+  const closed = source.map(d => ({ ...d, delivery: { error: 'queue refused', canUndo: true } }))
+  const screen = screenOf({
+    view: {
+      ...base.view,
+      needsYou: {
+        ...base.view.needsYou,
+        questions: [],
+        tasks: [],
+        closed: { ...base.view.needsYou.closed, questions: closed },
+      },
+    },
+  })
+  const width = 40
+  const unfolded = keys(screen, { ...INITIAL_UI, selectedId: 'fold question' }, 'enter')
+  const shown = text(screen, unfolded)
+  expect(shown).toContain(`▾  ${foldLabel(closed.length)}`)
+  for (const d of closed.slice(0, CLOSED_SHOWN)) {
+    expect(shown).toContain(d.ask)
+    expect(shown).toContain(settledLabel(d.outcomeLabel, d.delivery))
+    expect(shown).toContain(shortAgo(NOW - d.at))
+  }
+  const earlier = keys(screen, { ...unfolded, selectedId: 'earlier question' }, 'enter')
+  const all = text(screen, earlier)
+  for (const d of closed) expect(all).toContain(d.ask)
+  const narrow = text(screen, earlier, width)
+  for (const d of closed) expect(narrow).toContain(d.ask.slice(0, 10))
+
+  const firstByJ = keys(screen, earlier, 'j')
+  const firstByDown = keys(screen, earlier, 'down')
+  expect(firstByJ.selectedId).toBe(`closed ${closed[0]!.id}`)
+  expect(firstByJ.selectedId).toBe(firstByDown.selectedId)
+  const lastByJ = keys(screen, firstByJ, ...Array.from({ length: closed.length - 1 }, () => 'j'))
+  const lastByDown = keys(screen, firstByDown, ...Array.from({ length: closed.length - 1 }, () => 'down'))
+  expect(lastByJ.selectedId).toBe(`closed ${closed.at(-1)!.id}`)
+  expect(lastByJ.selectedId).toBe(lastByDown.selectedId)
+  expect(keys(screen, lastByJ, 'k').selectedId).toBe(keys(screen, lastByJ, 'up').selectedId)
+
+  const frame = drawPanel(screen, lastByJ, width, NOW, style, 12)
+  expect(frame.lines.map(strip).some(line => line.includes('↑ ') && line.includes('more lines'))).toBe(true)
+  expect(frame.lines.map(strip).join('\n')).toContain(closed.at(-1)!.ask.slice(0, 10))
+  expect(frame.lines.every(line => cellWidth(strip(line)) <= width)).toBe(true)
+
+  const folded = keys(screen, { ...lastByJ, selectedId: 'fold question' }, 'enter')
+  expect(folded.unfolded).not.toContain('question')
+  expect(text(screen, folded, width)).not.toContain(closed[0]!.ask.slice(0, 10))
+  const reopened = keys(screen, { ...folded, selectedId: 'fold question' }, 'enter')
+  expect(text(screen, reopened, width)).toContain(closed[0]!.ask.slice(0, 10))
+})
+
+test('a finding closed as list full appears in the Finds Closed fold', () => {
+  const state = emptyState('list-full')
+  const finding = { kind: 'issue' as const, title: '', detail: 'detail', path: null, at: 1 }
+  const ledger = Array.from({ length: 31 }, (_, n) => n).reduce(
+    (value, n) => addFinding(value, { ...finding, title: `Problem ${n + 1}`, at: n + 1 }).ledger,
+    state.ledger,
+  )
+  const view = sessionView({ ...state, ledger }, NOW, SETTLED_MS, NO_HOLDS)
+  const screen = screenOf({ view })
+  const ui: PanelUi = { ...INITIAL_UI, tab: 'findings', unfolded: ['issue'], selectedId: 'fold issue' }
+  const shown = text(screen, ui)
+
+  expect(shown).toContain('Problem 1')
+  expect(shown).toContain('List full')
 })
 
 test('a closed row whose Done message was refused offers Undo, which presses undo for its row', () => {

@@ -28,6 +28,10 @@ export const PRESS_TIMEOUT_MS = 60_000
 
 type PrTab = {
   drawn: DrawnPr[]
+  /** The signed-in user's open PRs not already shown as a session-linked detailed block. */
+  accountPrs: NonNullable<Session['prViews']['accountPrs']>
+  /** Open bot PRs, grouped by author. */
+  botPrSummaries: NonNullable<Session['prViews']['botPrSummaries']>
   branchRef: string | null
   /** How many open PRs wait on the person. */
   count: number
@@ -156,6 +160,8 @@ function prTabOf(
 
   return {
     drawn,
+    accountPrs: (s.prViews.accountPrs ?? []).filter(pr => !drawn.some(d => d.pr.ref === pr.ref)),
+    botPrSummaries: s.prViews.botPrSummaries ?? [],
     branchRef: s.prViews.branchRef,
     count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),

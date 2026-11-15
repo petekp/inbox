@@ -4,6 +4,12 @@ Status: current. Read this before you change the UI or a business rule.
 
 The inbox has five looks: `terminal`, `desktop`, `codex`, `omp` and `herdr`. A look is one way the inbox is drawn, and `GLOSSARY.md` defines it with host, shared module, adapter and difference on purpose. The rule is that shared modules decide and adapters draw. If a rule decides what a row says, which action leads, when a tab counts as empty or what text appears, it lives in a shared module. An adapter decides only how its look draws that. The plan for finishing this split is `docs/plans/three-looks.md`.
 
+Inline Markdown links use `hooks/inline.ts` for parsing and href validation in asks, task steps, options, feedback, outcomes, and finding titles and details. Each look draws a native link where its host supports one, and otherwise keeps readable label text; the OMP terminal capability is recorded under "Differences on purpose".
+
+Question and task explanations live in `Item.detail`, are carried to each renderer as `RowView.detail`, and survive inbox-model updates. Only the agent's `record` call sets or replaces this field.
+
+An item or finding may carry a local Markdown report path and a short excerpt. `hooks/document.ts` resolves and validates the file, reads it when the agent records it, and shares the plain-text preview with each look. The row's Read report action opens a scrollable full view on demand: the mod and omp use their native Markdown components, and Codex uses sanitized Markdown HTML. The file content is never executed.
+
 ## Files
 
 Shared modules are in `hooks/`. Every host consumes them, directly or through a build. They import only shared modules and shared types. `scripts/check-structure.mjs` checks those boundaries, including type imports. Codex and omp type checking need no generated Claude engine types.
@@ -33,7 +39,7 @@ Change a rule in its owner. Do not change it in a reader.
 
 A difference is on purpose when a look cannot do something or the product decided it. Anything not listed here is drift.
 
-A row that covers a host difference names its feature id in backticks in the first column. `hooks/clients.ts` is the parity record: it classifies every feature as `full`, `different` or `unsupported` for each host (`claude-code` for the terminal and desktop looks, `codex`, `omp`). `scripts/check-structure.mjs` fails when a feature that is not `full` has no row in the table that covers its host, and when a row names an id the record lacks. The main table covers `claude-code` and `codex`. The omp table covers `omp`.
+A row that covers a host difference names its feature id in backticks in the first column. `hooks/clients.ts` lists the feature ids. `hooks/client-support.ts` classifies each as `full`, `different` or `unsupported` for each client: `claude-code` for the terminal and desktop looks, plus `codex` and `omp`. `scripts/check-structure.mjs` fails when a feature that is not `full` has no row in the table that covers its host, and when a row names an id the record lacks. The main table covers `claude-code` and `codex`. The omp table covers `omp`.
 
 The parts below hold the main table, split by subject. The omp table is in the parts under omp, whose file names start with `differences-omp`. The structure check tells the two tables apart by that name.
 

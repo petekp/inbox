@@ -1,6 +1,5 @@
 import type { LastAction, Ledger, LocalResult, Turns } from '../types'
 import { isAwaitingReply } from './last-actions'
-import { pruneClosed } from './ledger-close'
 import { reopenOnFailure, withFailure, withUnconfirmed } from './press-reducer'
 import type { Effect } from './press-reducer'
 import { withLasts } from './pressed'
@@ -62,15 +61,10 @@ export function demoReplied(
   return { lastActions, turns }
 }
 
-/**
- * The demo's state after a press: the press's ledger without records no reply holds, its last actions without
- * delivery marks, and a turn started when it sends. The row shows what a real press shows, so its shape does not
- * change when the press's own text goes.
- */
+/** The demo's state after a press: its ledger, last actions without delivery marks, and a turn started when it sends. */
 export function demoAfterPress(
   before: { lastActions: Record<string, LastAction>; turns: Turns },
   r: Pressed,
-  held: ReadonlySet<string>,
 ): { ledger: Ledger; lastActions: Record<string, LastAction>; turns: Turns } {
   const lasts = Object.fromEntries(
     Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
@@ -80,7 +74,7 @@ export function demoAfterPress(
   )
 
   return {
-    ledger: pruneClosed(r.ledger, held),
+    ledger: r.ledger,
     lastActions: withLasts(before.lastActions, lasts, r.drop),
     turns: isSent(r) ? { ...before.turns, turnsStarted: before.turns.turnsStarted + 1 } : before.turns,
   }

@@ -13,7 +13,7 @@ export const RECORD_SCHEMA = {
     ask: {
       type: 'string',
       description:
-        'For a question or task: what you need from the user, in at most 12 plain words, readable without your reply.',
+        'For a question or task: what you need from the user, in at most 12 words, readable without your reply. Links as [label](https://…); a link counts as its label.',
     },
     context: {
       type: 'string',
@@ -23,7 +23,8 @@ export const RECORD_SCHEMA = {
     options: {
       type: 'array',
       items: { type: 'string' },
-      description: 'For a question: the answers the user can pick, at most 5 words each. Give at least one.',
+      description:
+        'For a question: the answers the user can pick, at most 5 words each. Give at least one. A link here shows only its label; put the page behind an option in detail or steps.',
     },
     option_notes: {
       type: 'array',
@@ -45,7 +46,7 @@ export const RECORD_SCHEMA = {
       type: 'array',
       items: { type: 'string' },
       description:
-        'For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path.',
+        'For a task: up to 3 things the user can do in one press, each written as a command, a file path or a [label](https://…) link. For a question: up to 3 files or links that help the user decide, such as a page comparing the options, each file as an absolute path.',
     },
     design_choice: {
       type: 'boolean',
@@ -57,12 +58,21 @@ export const RECORD_SCHEMA = {
       enum: ['issue', 'opportunity'],
       description: 'For a finding. issue: something wrong or risky. opportunity: something that could be better.',
     },
-    title: { type: 'string', description: 'For a finding: what it is, in at most 12 plain words.' },
+    title: {
+      type: 'string',
+      description:
+        'For a finding: what it is, in at most 12 words. Links as [label](https://…); a link counts as its label.',
+    },
     detail: {
       type: 'string',
-      description: 'For a finding: why it matters and what you would do, in one or two sentences.',
+      description:
+        'For a question or task: why you ask and what it holds up; for a question, what each option leads to. For a finding: why it matters and what you would do. Use short paragraphs. Links as [label](https://…).',
     },
     path: { type: 'string', description: 'For a finding: the file it is about, if one.' },
+    document: {
+      type: 'string',
+      description: 'For a Markdown report the user should read in the inbox: its absolute local file path.',
+    },
   },
   required: ['kind'],
 }

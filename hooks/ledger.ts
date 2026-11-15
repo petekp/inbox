@@ -14,6 +14,7 @@ export const EMPTY: Ledger = {
   closed: [],
   findings: [],
   closedFindings: [],
+  untrackedWork: [],
   prs: [],
   prOrder: null,
   nextId: 1,
@@ -22,12 +23,18 @@ export const EMPTY: Ledger = {
   updates: 0,
 }
 
-/** Whether nothing has been recorded: no model answer applied, no Status or goal, no item and no finding. */
+/** Whether nothing has been recorded or needs attention: no Status, item, finding or live-work warning. */
 export function isBlankLedger(ledger: Ledger): boolean {
   const o = ledger.overview
   const isStatusBlank = !o || (o.head === null && o.subjects.length === 0 && o.goal === null)
 
-  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0
+  return (
+    ledger.updates === 0 &&
+    isStatusBlank &&
+    ledger.items.length === 0 &&
+    ledger.findings.length === 0 &&
+    (ledger.untrackedWork?.length ?? 0) === 0
+  )
 }
 
 /**

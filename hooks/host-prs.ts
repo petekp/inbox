@@ -2,6 +2,7 @@ import { splitLinked, fetchTracked, GH_TIMED_OUT_TEXT, isLimitInForce, NO_PR_SHA
 import { TIMED_OUT_CODE } from './gh'
 import { rerunArgs } from './pr-press'
 import type { Effect } from './press-reducer'
+import { fetchAccountPrs } from './pr-fetch'
 import { withFetchedPrs } from './session-presses'
 import type { Session } from '../types'
 import type { SessionHost } from './session-host'
@@ -101,6 +102,7 @@ export async function fetchPrs<S extends Session>(
   host.gh.noteMissing(bin === null)
   if (bin === null) return
   let sawUnstartable = false
+  const accountPrsPromise = fetchAccountPrs(host.gh.run(s, bin, () => {}))
   const fetchWith = (path: string) =>
     fetchTracked(
       host.gh.run(s, path, () => {
@@ -120,6 +122,7 @@ export async function fetchPrs<S extends Session>(
     if (refound === null) return
     if (refound !== bin) fetch = await fetchWith(refound)
   }
+  const accountPrs = await accountPrsPromise
   const { views: fetched, branchRef, isGhSignedOut, failure, read, unread } = fetch
   const at = await host.now()
   await host.gh.shared?.write(cur => ({
@@ -130,7 +133,7 @@ export async function fetchPrs<S extends Session>(
     ),
     limit: failure?.kind === 'limit' ? failure : failure === null ? null : cur.limit,
   }))
-  await host.update(cur => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread))
+  await host.update(cur => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread, accountPrs))
 }
 
 /**

@@ -1,6 +1,9 @@
 import type { Closed, ClosedFinding, Item } from '../types'
 import type { Update } from './reply-parse'
 import { stem } from './status-limits'
+import { linkLabel } from './inline'
+
+export const CLOSED_CONTEXT_LIMIT = 12
 
 export function words(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
@@ -13,10 +16,10 @@ export function words(text: string): string[] {
  */
 export function recommendedOption(options: string[], rec: string | null): string | null {
   if (!rec) return null
-  const named = new Set(words(rec))
+  const named = new Set(words(linkLabel(rec)))
   let best: string | null = null
   for (const option of options) {
-    const w = words(option)
+    const w = words(linkLabel(option))
     if (w.length > words(best ?? '').length && w.every(x => named.has(x))) best = option
   }
   const label = (text: string) => text.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase()
@@ -236,8 +239,9 @@ export function repeatsClosed(
   since: number,
   closedFindings: ClosedFinding[] = [],
 ): boolean {
-  const recent = closed.filter(c => c.at >= since && !isAskedForChoices(c))
-  const settled = closed.filter(c => c.at < since && c.how !== 'expired')
+  const context = closed.slice(-CLOSED_CONTEXT_LIMIT)
+  const recent = context.filter(c => c.at >= since && !isAskedForChoices(c))
+  const settled = context.filter(c => c.at < since && c.how !== 'expired')
 
   return (
     matchOpen(recent, a) >= 0 ||

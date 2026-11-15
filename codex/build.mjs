@@ -208,6 +208,7 @@ if (mode === '--dev') {
     })
   console.log('Watching codex/src and hooks. Open Inbox tabs and the server update after each save. Ctrl-C stops.')
 } else if (mode === '--tests') {
+  rmSync(join(here, 'test-dist'), { recursive: true, force: true })
   const tests = readdirSync(join(here, 'tests')).filter(f => f.endsWith('.spec.ts'))
   await esbuild.build({
     ...common,

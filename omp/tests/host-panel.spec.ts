@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
@@ -19,6 +19,87 @@ test('the screen carries the view, the model and the gh state', async () => {
   expect(screen.modelName).toBe('Claude Sonnet 4.5')
   expect(screen.isGhMissing).toBe(false)
   expect(screen.isFetchingPrs).toBe(false)
+})
+
+test('a configured feed updates the saved ledger', async () => {
+  const path = join(w.dir, 'feed.json')
+  writeFileSync(
+    path,
+    JSON.stringify({
+      version: 1,
+      source: 'herdr-meta-patrol',
+      writtenAt: 10,
+      entries: [
+        {
+          key: 'machine/worker',
+          state: 'working',
+          title: 'Implement the progress feed',
+          detail: 'Update state.',
+          at: 10,
+        },
+      ],
+    }),
+  )
+  const inbox = createInbox(pi(), { ...deps(), feedPath: path })
+  await inbox.feedWhenDue(makeCtx())
+  expect(state().ledger.findings).toMatchObject([{ kind: 'progress', feedKey: 'machine/worker' }])
+})
+
+test('feed directories merge writers and retain done subagents in closed history', async () => {
+  const root = join(w.dir, 'feeds')
+  mkdirSync(root)
+  const write = (file: string, key: string, state = 'working') =>
+    writeFileSync(
+      join(root, file),
+      JSON.stringify({
+        version: 1,
+        source: 'herdr-meta-patrol',
+        writtenAt: 10,
+        entries: [{ key, state, title: file, detail: 'Update state.', at: 10 }],
+      }),
+    )
+  const patrol = join(root, 'patrol.json')
+  write('patrol.json', 'herdr/local/worker')
+  write('subagent-s1-a1.json', 'subagent/s1/a1')
+  const inbox = createInbox(pi(), { ...deps(), feedPath: root })
+  await inbox.feedWhenDue(makeCtx())
+  expect(
+    state()
+      .ledger.findings.map((f: { feedKey?: string }) => f.feedKey)
+      .sort(),
+  ).toEqual(['herdr/local/worker', 'subagent/s1/a1'])
+  write('subagent-s1-a1.json', 'subagent/s1/a1', 'done')
+  unlinkSync(patrol)
+  await inbox.feedWhenDue(makeCtx())
+  expect(state().ledger.findings).toEqual([])
+  expect(
+    state()
+      .ledger.closedFindings.map((f: { feedKey?: string; outcome: string }) => `${f.feedKey}: ${f.outcome}`)
+      .sort(),
+  ).toEqual(['herdr/local/worker: done: no longer reported', 'subagent/s1/a1: done: Update state.'])
+})
+
+test('the session polls the feed while its panel is closed', async () => {
+  const path = join(w.dir, 'feed.json')
+  const write = (state: string) =>
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        source: 'claude-subagent-hook',
+        writtenAt: 10,
+        entries: [{ key: 'subagent/s1/a1', state, title: 'Subagent work', detail: 'Update state.', at: 10 }],
+      }),
+    )
+  write('working')
+  createInbox(pi(), { ...deps(), feedPath: path })
+  await call('session_start', { type: 'session_start' }, makeCtx())
+  expect(state().ledger.findings).toMatchObject([{ feedKey: 'subagent/s1/a1' }])
+  const timer = w.timers.find(t => t.ms === 30_000)!
+  write('done')
+  timer.fn()
+  await settle()
+  expect(state().ledger.closedFindings).toMatchObject([{ feedKey: 'subagent/s1/a1', outcome: 'done: Update state.' }])
 })
 
 test('opening the panel finds gh missing when no gh starts', async () => {
@@ -323,5 +404,5 @@ test('every row the agent closes while the panel shows its tab keeps its closed 
   inbox.closePanel(makeCtx())
   await settle()
   await record({ kind: 'task', ask: 'One more' })
-  expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids.slice(2))
+  expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids)
 })

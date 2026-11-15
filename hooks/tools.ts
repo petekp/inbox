@@ -2,24 +2,30 @@ import { isQuestionBack, recommendedOption } from './ask-match'
 import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
+import { cutInline } from './inline'
 import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
 import { isDismissed } from './pr-views'
 import { bodyChanges, missingText, questionBody, withBody } from './question-checks'
-import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA } from './tool-schemas'
+import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA, V0_3_TOOL_FIELDS } from './tool-schemas'
 import type { Closed, Help, Item, LastAction, Ledger, ToolFields } from '../types'
+import { recordLinksAnswer } from './record-links'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
+const MAX_ITEM_DETAIL = 1200
+const LINK_DESCRIPTION =
+  'Write links as [label](https://…); the inbox shows the label, and links are clickable where the look allows. Only https links open.'
 
 function orderDescription(host: Host): string {
   return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`
 }
 
 function recordDescription(host: Host): string {
-  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
+  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing. ${LINK_DESCRIPTION}
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
-- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
-- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, a PR's checks, conflicts, review threads or readiness, which ${host.prsIn} shows, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
+- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps, and fill detail with what holds the task up and what the step leads to. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
+- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, PR checks, conflicts, review threads or readiness, which ${host.prsIn} shows; anything the user already decided; todos or ideas the user mentioned; problems in your own change; progress; and anything only the user can do or decide. Handle those in your reply, or record them as a question or task.
+For any kind with a Markdown report the user should read, give its absolute local path in document. The inbox checks the file and shows a short excerpt; do not use this field for a file they should edit.
 Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`
 }
 
@@ -77,15 +83,26 @@ function cut(value: unknown, max: number): string {
 }
 
 const MAX_ASK = 200
+const MAX_FINDING_TITLE = 120
+const MAX_FINDING_DETAIL = 600
 const MAX_OPTION = 60
 const MAX_OPTIONS = 8
 const MAX_STEPS = 3
 const MAX_REASON = 120
 
-function list(value: unknown, max: number, each: number): string[] {
+/** A text field as the agent sent it, trimmed, before any cut. */
+function raw(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function rawList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(raw).filter(Boolean) : []
+}
+
+function list(value: unknown, max: number, each: number, inline = false): string[] {
   return Array.isArray(value)
     ? value
-        .map(v => cut(v, each))
+        .map(v => (inline ? cutInline(typeof v === 'string' ? v : '', each) : cut(v, each)))
         .filter(Boolean)
         .slice(0, max)
     : []
@@ -109,17 +126,18 @@ export function recordItem(
   ledger: Ledger,
   input: Record<string, unknown>,
   now: number,
-  fields: ToolFields,
+  fields: ToolFields = V0_3_TOOL_FIELDS,
 ): ToolAnswer {
   if (input.kind === 'finding') return recordFinding(host, ledger, input, now)
   if (input.kind !== 'question' && input.kind !== 'task')
     return unchanged(ledger, 'Not recorded: kind must be question, task or finding.')
-  const ask = cut(input.ask, MAX_ASK)
+  const ask = cutInline(typeof input.ask === 'string' ? input.ask.trim() : '', MAX_ASK)
   if (ask === '') return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`)
-  const options = input.kind === 'question' ? list(input.options, MAX_OPTIONS, MAX_OPTION) : []
+  const options = input.kind === 'question' ? list(input.options, MAX_OPTIONS, MAX_OPTION, true) : []
   if (input.kind === 'question' && options.length === 0)
     return unchanged(ledger, 'Not recorded: a question needs at least one option.')
-  const recInput = input.kind === 'question' ? cut(input.rec, MAX_OPTION) : ''
+  const recInput =
+    input.kind === 'question' ? cutInline(typeof input.rec === 'string' ? input.rec : '', MAX_OPTION) : ''
   const rec = recInput === '' ? null : recommendedOption(options, recInput)
   if (recInput !== '' && rec === null) return unchanged(ledger, 'Not recorded: rec must be one of the options.')
   const recReason = rec ? cut(input.why, MAX_REASON).replace(/^because\s+/i, '') : ''
@@ -137,9 +155,45 @@ export function recordItem(
       : ''
 
   const isDesignChoice = input.kind === 'question' && input.design_choice === true
+  const detail = cutInline(typeof input.detail === 'string' ? input.detail.trim() : '', MAX_ITEM_DETAIL)
+  const linkSteps = helps.flatMap(h => (h.kind === 'link' ? [h.url] : []))
+  const linkProblem = recordLinksAnswer(
+    [
+      { field: 'ask', text: raw(input.ask), max: MAX_ASK },
+      { field: 'detail', text: raw(input.detail), max: MAX_ITEM_DETAIL },
+      ...rawList(input.kind === 'question' ? input.options : [])
+        .slice(0, MAX_OPTIONS)
+        .map(text => ({
+          field: 'options' as const,
+          text,
+          max: MAX_OPTION,
+        })),
+    ],
+    linkSteps,
+  )
+  if (linkProblem) return unchanged(ledger, linkProblem)
+  const document = cut(input.document, 4096) || undefined
+  const documentPreview = document ? cut(input.document_preview, 180) || undefined : undefined
+  const documentError = cut(input.document_error, 160)
+  const documentNote = documentError ? ` The Markdown report was not attached: ${documentError}` : ''
   const kind: Item['kind'] = input.kind
-  const entry = { kind, ask, options, rec, helps, isDesignChoice, ...(recReason ? { recReason } : {}) }
+  const entry = {
+    kind,
+    ask,
+    options,
+    rec,
+    helps,
+    isDesignChoice,
+    ...(recReason ? { recReason } : {}),
+    ...(detail ? { detail } : {}),
+    ...(document ? { document, documentPreview } : {}),
+  }
   const r = addAgentItem(ledger, entry, now)
+  if (r.is === 'source-managed')
+    return unchanged(
+      ledger,
+      'Not recorded: a matching task is managed by the active work source and was left unchanged.',
+    )
   if (r.is === 'closed')
     return unchanged(
       ledger,
@@ -155,13 +209,15 @@ export function recordItem(
     const changes = [
       ...(r.addedSteps > 0 ? ['added its new steps'] : []),
       ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
+      ...(r.hasNewDetail ? ['replaced its detail'] : []),
+      ...(r.hasNewDocument ? ['updated its Markdown report'] : []),
       ...(r.newRec ? [`changed its recommendation to ${r.newRec}`] : []),
       ...(r.isNewReason ? ['gave its recommendation your reason'] : []),
       ...(before && after ? bodyChanges(before, after) : []),
     ]
     const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
 
-    return unchanged(recorded, `Already open, so this record updated it${updated}.${leftOut}`)
+    return unchanged(recorded, `Already open, so this record updated it${updated}.${leftOut}${documentNote}`)
   }
 
   return {
@@ -170,31 +226,42 @@ export function recordItem(
       `Recorded. The user sees it in ${host.surface}.` +
       leftOut +
       missingText(after, fields.record) +
-      (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ''),
+      (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : '') +
+      documentNote,
     personLine: `${input.kind === 'question' ? 'Question' : 'Task'}: ${ask}`,
   }
 }
 
 function recordFinding(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
-  const title = cut(input.title, 120)
-  const detail = cut(input.detail, 600)
+  const title = cutInline(raw(input.title), MAX_FINDING_TITLE)
+  const detail = cutInline(raw(input.detail), MAX_FINDING_DETAIL)
   if (title === '' || detail === '') return unchanged(ledger, 'Not recorded: a finding needs a title and a detail.')
+  const linkProblem = recordLinksAnswer([
+    { field: 'title', text: raw(input.title), max: MAX_FINDING_TITLE },
+    { field: 'detail', text: raw(input.detail), max: MAX_FINDING_DETAIL },
+  ])
+  if (linkProblem) return unchanged(ledger, linkProblem)
   const path = cut(input.path, 300)
+  const document = cut(input.document, 4096) || undefined
+  const documentPreview = document ? cut(input.document_preview, 180) || undefined : undefined
+  const documentError = cut(input.document_error, 160)
+  const documentNote = documentError ? ` The Markdown report was not attached: ${documentError}` : ''
   const kind = input.finding_kind === 'opportunity' ? 'opportunity' : 'issue'
-  const r = addFinding(ledger, { kind, title, detail, path: path || null, at: now })
+  const r = addFinding(ledger, { kind, title, detail, path: path || null, document, documentPreview, at: now })
 
   if (r.dismissed)
     return unchanged(
       ledger,
-      `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.`,
+      `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.${documentNote}`,
     )
-  if (!r.isAdded) return unchanged(r.ledger, 'Already recorded.')
+  if (!r.isAdded) return unchanged(r.ledger, `Already recorded.${documentNote}`)
 
   return {
     ledger: r.ledger,
     result:
       `Recorded. The user sees it in ${host.findingsIn}.` +
-      (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : ''),
+      (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : '') +
+      documentNote,
     personLine: `${kind === 'opportunity' ? 'Opportunity' : 'Issue'}: ${title}`,
   }
 }
@@ -216,17 +283,14 @@ function closedHow(c: Pick<Closed, 'how' | 'outcome'>): string {
   }
 }
 
-/** Whether `at` falls in the running turn, after the person's Compare press on `id`. */
+/** Whether `at` follows `id`'s Compare press in this turn. */
 function isAfterCompareThisTurn(id: string, at: number, presses: Presses): boolean {
   const last = presses.lastActions[id]
 
   return last?.action === 'compare' && at >= Math.max(last.at, presses.turnStartedAt ?? last.at)
 }
 
-/**
- * Whether the agent recorded `id` again this turn, after the person pressed Compare on it. That record updated the open
- * question, so a close with a reason would only replace it with a copy.
- */
+/** Whether this question was recorded again after its Compare press in this turn. */
 function isRecordedAfterCompare(ledger: Ledger, id: string, presses: Presses): boolean {
   const item = ledger.items.find(i => i.id === id)
   if (item?.kind !== 'question' || item.reportedAt === undefined) return false
@@ -234,10 +298,7 @@ function isRecordedAfterCompare(ledger: Ledger, id: string, presses: Presses): b
   return isAfterCompareThisTurn(id, item.reportedAt, presses)
 }
 
-/**
- * A record of a question the agent closed with a reason this turn, after the person pressed Compare on it. The question
- * reopens and the record updates it, as when the close comes after the record. Null when no such question matches.
- */
+/** Reopens and updates a question when its reasoned close followed Compare in the same turn. */
 function recordAfterCompare(
   host: Host,
   ledger: Ledger,
@@ -276,6 +337,11 @@ export function recordClose(
       ledger,
       'Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.',
     )
+  if (
+    ledger.items.some(item => item.id === id && item.sourceManaged) ||
+    ledger.findings.some(finding => finding.id === id && finding.sourceManaged)
+  )
+    return unchanged(ledger, 'Not closed: this row is owned by the active-items source. Update that source instead.')
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now)
   if (r.closed && 'item' in r.closed)
     return {

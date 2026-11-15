@@ -16,6 +16,7 @@ import type { Key, Row } from './tab-state'
 import { drawIn } from './tab-motion'
 
 export function switchTab(to: ShownTab) {
+  tabState.document = null
   if (to !== tabState.tab) tabState.shownSince = Date.now()
   tabState.tab = to
   tabState.isHelpShown = false

@@ -5,8 +5,10 @@ import {
   closedLineAction,
   settledTone,
   closedShown,
+  closedHistoryPlan,
   closedTotal,
   earlierLabel,
+  documentPreviewLine,
   foldLabel,
   isWaitingRow,
   waitingCount,
@@ -200,7 +202,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
     isDim: state.is === 'settled',
     // As in the terminal, a row a press finished reads the press's age.
     age: f?.is === 'done' ? f.at : row.at,
-    detail: row.detail,
+    detail: [row.detail, documentPreviewLine(row)].filter(Boolean).join('\n\n') || null,
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
     settled:
@@ -263,7 +265,8 @@ export function groupEntries(
   { unfolded, closedAll, optionsShown }: Pick<PanelUi, 'unfolded' | 'closedAll' | 'optionsShown'>,
 ): Entry[] {
   const settled = settledIn(g)
-  const total = closedTotal(g.closed, settled)
+  const history = closedHistoryPlan(g.closed, settled)
+  const total = history.total
   const out: Entry[] = [
     { kind: 'heading', text: g.title, count: waitingCount(g.rows), ...(g.mark ? { mark: g.mark } : {}) },
   ]

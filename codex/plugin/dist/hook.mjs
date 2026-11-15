@@ -1,7 +1,7 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
 // src/hook-main.ts
-import { dirname as dirname4, join as join5 } from "node:path";
+import { dirname as dirname4, join as join6 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/detached-update.ts
@@ -122,16 +122,55 @@ function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
 
+// ../hooks/inline.ts
+var INLINE = /`([^`\n]+)`|\*\*(?=\S)(.+?)(?<=\S)\*\*(?!\*)|~~(?=\S)(.+?)(?<=\S)~~|(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])|(?<!\w)_(?=\S)([^_\n]+?)(?<=\S)_(?!\w)|\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/gi;
+function httpsHref(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password) return null;
+    const href = parsed.origin + [parsed.pathname, parsed.search, parsed.hash].join("").replace(/@/g, "%40");
+    return href.length <= 2048 ? href : null;
+  } catch {
+    return null;
+  }
+}
+function parseInline(text2, outer = {}) {
+  const spans = [];
+  let at = 0;
+  for (const m of text2.matchAll(INLINE)) {
+    if (m.index > at) spans.push({ ...outer, text: text2.slice(at, m.index) });
+    const [, code, bold, strike, star, under, label, url] = m;
+    if (code !== void 0) spans.push({ ...outer, text: code, code: true });
+    else if (bold !== void 0) spans.push(...parseInline(bold, { ...outer, bold: true }));
+    else if (strike !== void 0) spans.push(...parseInline(strike, { ...outer, strike: true }));
+    else if (star !== void 0 || under !== void 0)
+      spans.push({ ...outer, text: star ?? under ?? "", italic: true });
+    else {
+      const href = httpsHref(url ?? "");
+      spans.push(
+        href ? { ...outer, text: label ?? "", link: href } : { ...outer, text: `${label ?? ""} (${url ?? ""})` }
+      );
+    }
+    at = m.index + m[0].length;
+  }
+  if (at < text2.length) spans.push({ ...outer, text: text2.slice(at) });
+  return spans;
+}
+function linkLabel(text2) {
+  return parseInline(text2).map((span) => span.text).join("");
+}
+
 // ../hooks/ask-match.ts
+var CLOSED_CONTEXT_LIMIT = 12;
 function words2(text2) {
   return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec) return null;
-  const named = new Set(words2(rec));
+  const named = new Set(words2(linkLabel(rec)));
   let best = null;
   for (const option of options) {
-    const w = words2(option);
+    const w = words2(linkLabel(option));
     if (w.length > words2(best ?? "").length && w.every((x) => named.has(x))) best = option;
   }
   const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
@@ -181,17 +220,29 @@ function sameAsk(a, b) {
 }
 
 // ../hooks/ledger-close.ts
-var MAX_CLOSED = 12;
 function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
   return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
 }
+function closedFindingRecord(finding, closing, now, askedAs) {
+  return { ...finding, ...askedAs ? { askedAs } : {}, ...closing, closedAt: now };
+}
 function closeItem(ledger, id, closing, now) {
+  if (ledger.items.some((i) => i.id === id && i.sourceManaged)) return ledger;
   const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
   return reopenAskedFindings(
     { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
     records
   );
+}
+function closeFinding(ledger, id, closing, now, askedAs) {
+  const finding = ledger.findings.find((f) => f.id === id);
+  if (!finding) return ledger;
+  return {
+    ...ledger,
+    findings: ledger.findings.filter((f) => f.id !== id),
+    closedFindings: [...ledger.closedFindings, closedFindingRecord(finding, closing, now, askedAs)]
+  };
 }
 var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
 function leavesWorkOpen(c) {
@@ -210,10 +261,6 @@ function reopenAskedFindings(ledger, closes) {
       })
     };
   }, ledger);
-}
-function pruneClosed(ledger, keep) {
-  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
-  return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
 }
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
@@ -278,6 +325,8 @@ var GRAPHEME = new RegExp(
   String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
   "gu"
 );
+var OSC8 = /\x1b\]8;[^;\x07\x1b]*;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+var ANSI_TOKEN = new RegExp(`\\x1b\\[[0-9;]*m|${OSC8.source}`, "g");
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -549,6 +598,7 @@ var EMPTY = {
   closed: [],
   findings: [],
   closedFindings: [],
+  untrackedWork: [],
   prs: [],
   prOrder: null,
   nextId: 1,
@@ -559,7 +609,7 @@ var EMPTY = {
 function isBlankLedger(ledger) {
   const o = ledger.overview;
   const isStatusBlank = !o || o.head === null && o.subjects.length === 0 && o.goal === null;
-  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
+  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0 && (ledger.untrackedWork?.length ?? 0) === 0;
 }
 function upgradeLedger(ledger) {
   const {
@@ -645,8 +695,9 @@ function screenText(host, isOpen2, tab) {
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => !i.sourceManaged && i.turn === ledger.batchTurn);
 }
+var promptItems = (ledger) => ledger.items.filter((i) => !i.sourceManaged);
 function describe(item) {
   const parts = [`"${item.ask}"`];
   if (item.options.length > 0) parts.push(`options: ${item.options.join(" / ")}`);
@@ -722,13 +773,13 @@ function statusSummaryLines(ledger) {
   ];
 }
 function carryText(ledger, title) {
-  const findings = ledger.findings;
+  const findings = ledger.findings.filter((f) => !f.feedOwned);
   const lines = statusSummaryLines(ledger);
-  if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null;
+  if (lines.length === 0 && promptItems(ledger).length === 0 && findings.length === 0) return null;
   const out = [title, ...lines];
-  if (ledger.items.length > 0) {
+  if (promptItems(ledger).length > 0) {
     out.push("Waiting on the user:");
-    for (const item of ledger.items) out.push(itemLine(item));
+    for (const item of promptItems(ledger)) out.push(itemLine(item));
   }
   if (findings.length > 0) {
     out.push("Findings you recorded, still open:");
@@ -736,24 +787,25 @@ function carryText(ledger, title) {
   }
   if (ledger.closed.length > 0) {
     out.push("Recently closed:");
-    for (const d of ledger.closed) out.push(`- "${d.ask}" \u2192 ${outcomeText(d)}`);
+    for (const d of ledger.closed.slice(-CLOSED_CONTEXT_LIMIT)) out.push(`- "${d.ask}" \u2192 ${outcomeText(d)}`);
   }
   return out.join(NL2);
 }
 var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
 function inboxText(host, ledger, isOpen2) {
+  const findings = ledger.findings.filter((f) => !f.feedOwned);
   const out = [
     `inbox: what waits on the user, as of your last reply. Anything not listed here is closed. ${CLOSE_ID_RULE}`
   ];
-  if (ledger.items.length > 0) {
+  if (promptItems(ledger).length > 0) {
     out.push("Waiting on the user:");
-    for (const item of ledger.items) out.push(itemLine(item));
+    for (const item of promptItems(ledger)) out.push(itemLine(item));
   } else {
     out.push("Nothing is waiting on the user.");
   }
-  if (ledger.findings.length > 0) {
+  if (findings.length > 0) {
     out.push("Findings you recorded, still open:");
-    for (const f of ledger.findings) out.push(findingLine(f));
+    for (const f of findings) out.push(findingLine(f));
   }
   out.push(isOpen2 ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
   return out.join(NL2);
@@ -774,7 +826,7 @@ function promptNotes(host, ledger, prompt, told) {
   const inbox = inboxText(host, ledger, prompt.isOpen);
   const toldClosed = new Set(told.closed);
   const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
-  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
+  const isEmpty = promptItems(ledger).length === 0 && ledger.findings.every((f) => f.feedOwned);
   if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
   notes.push(closed ? `${inbox}${NL2}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
@@ -1091,7 +1143,8 @@ var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" },
+  progress: { title: "Progress", mark: "\u21BB", tone: "findings" }
 };
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
@@ -1152,6 +1205,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: FINDING_GROUPS.progress.mark,
+    tone: FINDING_GROUPS.progress.tone,
+    isRunning: false,
+    words: "Progress reported by the feed"
   }
 ];
 var STATUS_ONLY_MARKS = /* @__PURE__ */ new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
@@ -1635,7 +1694,7 @@ function optionDescriptionsOf(item, actions) {
   return actions.flatMap((a) => {
     if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option)) return [];
     const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    return [{ label: clipLabel(linkLabel(a.press.option), OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
 function isWaitingRow(row) {
@@ -2349,7 +2408,7 @@ var RECORD_SCHEMA = {
     },
     ask: {
       type: "string",
-      description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
+      description: "For a question or task: what you need from the user, in at most 12 words, readable without your reply. Links as [label](https://\u2026); a link counts as its label."
     },
     context: {
       type: "string",
@@ -2358,7 +2417,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one. A link here shows only its label; put the page behind an option in detail or steps."
     },
     option_notes: {
       type: "array",
@@ -2376,7 +2435,7 @@ var RECORD_SCHEMA = {
     steps: {
       type: "array",
       items: { type: "string" },
-      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
+      description: "For a task: up to 3 things the user can do in one press, each written as a command, a file path or a [label](https://\u2026) link. For a question: up to 3 files or links that help the user decide, such as a page comparing the options, each file as an absolute path."
     },
     design_choice: {
       type: "boolean",
@@ -2387,12 +2446,19 @@ var RECORD_SCHEMA = {
       enum: ["issue", "opportunity"],
       description: "For a finding. issue: something wrong or risky. opportunity: something that could be better."
     },
-    title: { type: "string", description: "For a finding: what it is, in at most 12 plain words." },
+    title: {
+      type: "string",
+      description: "For a finding: what it is, in at most 12 words. Links as [label](https://\u2026); a link counts as its label."
+    },
     detail: {
       type: "string",
-      description: "For a finding: why it matters and what you would do, in one or two sentences."
+      description: "For a question or task: why you ask and what it holds up; for a question, what each option leads to. For a finding: why it matters and what you would do. Use short paragraphs. Links as [label](https://\u2026)."
     },
-    path: { type: "string", description: "For a finding: the file it is about, if one." }
+    path: { type: "string", description: "For a finding: the file it is about, if one." },
+    document: {
+      type: "string",
+      description: "For a Markdown report the user should read in the inbox: its absolute local file path."
+    }
   },
   required: ["kind"]
 };
@@ -2437,6 +2503,13 @@ var TOOL_FIELDS = {
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
+// ../hooks/record-links.ts
+var anyCase = (word) => [...word].map((c) => `[${c.toUpperCase()}${c}]`).join("");
+var REF = new RegExp(
+  String.raw`(?<![\w/#&])(?:(?<!-)(?:PRs?|${anyCase("pull")}\s+${anyCase("request")}[sS]?|${anyCase("issue")}[sS]?|プルリク(?:エスト)?|イシュー)\s*#?|(?:[\w.-]+\/)?[\w.-]+#|#)([1-9]\d*)(?!\w)(?!\s*(?:件|本|個|つ|点|回|枚))`,
+  "g"
+);
+
 // ../hooks/arrivals.ts
 var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
@@ -2462,6 +2535,7 @@ var ACTION_KEYS = {
   issue: "i",
   type: "t",
   explain: "e",
+  "read-document": "v",
   compare: "p",
   discuss: "d",
   dismiss: "x",
@@ -2469,6 +2543,7 @@ var ACTION_KEYS = {
 };
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
+  if (item?.sourceManaged || row.finding?.sourceManaged) return [];
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
   const action = (press2, label, kind, flags = {}) => {
@@ -2486,9 +2561,12 @@ function actionsOf(row, last, state, feedback) {
       isOut: out === pressAction
     };
   };
-  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
+  const documentAction = row.document ? [action({ action: "read-document", id }, "Read report", "view")] : [];
+  if (state.is === "settled")
+    return [...state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [], ...documentAction];
   if (state.is === "held")
     return [
+      ...documentAction,
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "discard", id }, ROW_COPY.discard, "view")
     ];
@@ -2497,6 +2575,7 @@ function actionsOf(row, last, state, feedback) {
     return [
       action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
       action({ action: "issue", id }, ISSUE_LABEL, "handoff"),
+      ...documentAction,
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "explain", id }, "Explain", "talk"),
       action({ action: "discuss", id }, "Discuss", "talk"),
@@ -2505,6 +2584,7 @@ function actionsOf(row, last, state, feedback) {
   if (item.kind === "task")
     return [
       ...stepActions,
+      ...documentAction,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "explain", id }, "Explain", "talk"),
@@ -2514,12 +2594,13 @@ function actionsOf(row, last, state, feedback) {
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map(
-      (option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
+      (option, n) => action({ action: "answer", id, option }, clipLabel(linkLabel(option), OPTION_LABEL_CHARS), "mark", {
         isPrimary: option === item.rec,
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
       })
     ),
     ...stepActions,
+    ...documentAction,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
     ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
@@ -2657,10 +2738,18 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const document = row.item?.document ?? row.finding?.document ?? null;
+    const actions = actionsOf(
+      { ...row, document },
+      last,
+      state,
+      pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt)
+    );
     const held2 = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
+      document,
+      documentPreview: row.item?.documentPreview ?? row.finding?.documentPreview ?? null,
       state,
       feedback,
       actions,
@@ -2678,7 +2767,7 @@ function inboxView({
       number: n ?? null,
       title: item.ask,
       at: item.at,
-      detail: null,
+      detail: item.detail ?? null,
       fileName: null,
       replyKind: item.kind === "question" ? "answer" : "reply",
       item,
@@ -2725,6 +2814,7 @@ function inboxView({
     };
   });
   return {
+    untrackedWork: ledger.untrackedWork ?? [],
     needsYou: {
       count: counted.length,
       questions: questionRows,
@@ -2817,6 +2907,8 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
+    accountPrs: (s.prViews.accountPrs ?? []).filter((pr) => !drawn.some((d) => d.pr.ref === pr.ref)),
+    botPrSummaries: s.prViews.botPrSummaries ?? [],
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
@@ -2856,7 +2948,6 @@ function pruned(s) {
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
@@ -2978,7 +3069,7 @@ async function readState(dir, sessionId) {
 }
 var LOCK_WAIT_MS = 1e4;
 var LOCK_CHILD = "held";
-var sleep = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
+var sleep = (ms) => new Promise((resolve5) => setTimeout(resolve5, ms));
 var LockBusyError = class extends Error {
 };
 var bootSession = null;
@@ -3848,7 +3939,8 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
 }
 
 // src/hook.ts
-import { resolve as resolve3 } from "node:path";
+import { resolve as resolve4 } from "node:path";
+import { homedir as homedir2 } from "node:os";
 
 // src/cli.ts
 function namedCli(env) {
@@ -4566,6 +4658,247 @@ function rolloutReads(path, tail) {
   };
 }
 
+// ../hooks/feed.ts
+var FEED_TTL_MS = 6 * 60 * 60 * 1e3;
+var MAX_FEED_FILE_BYTES = 256 * 1024;
+function parseFeed(text2) {
+  try {
+    const feed = JSON.parse(text2);
+    if (!feed || typeof feed !== "object") return null;
+    const f = feed;
+    if (f.version !== 1 || !validSource(f.source) || !validTime(f.writtenAt) || !Array.isArray(f.entries) || f.warnings !== void 0 && !Array.isArray(f.warnings))
+      return null;
+    if (f.entries.length > 40) return null;
+    const keys = /* @__PURE__ */ new Set();
+    const entries = [];
+    for (const value of f.entries) {
+      if (!value || typeof value !== "object") return null;
+      const e = value;
+      if (typeof e.key !== "string" || e.key.length === 0 || e.key.length > 100 || keys.has(e.key) || !["working", "blocked", "done"].includes(e.state) || typeof e.title !== "string" || e.title.length === 0 || typeof e.detail !== "string" || !validTime(e.at) || e.kind !== void 0 && !["work", "task"].includes(e.kind) || e.owner !== void 0 && !validOwner(e.owner) || e.signalKey !== void 0 && (typeof e.signalKey !== "string" || e.signalKey.length === 0 || e.signalKey.length > 100))
+        return null;
+      if (f.source === "meta-open-items" && (e.kind === void 0 || e.owner === void 0)) return null;
+      keys.add(e.key);
+      entries.push({ ...e, title: e.title.slice(0, 120), detail: e.detail.slice(0, 600) });
+    }
+    const warningKeys = /* @__PURE__ */ new Set();
+    const warnings = [];
+    for (const value of f.warnings ?? []) {
+      if (!value || typeof value !== "object") return null;
+      const w = value;
+      if (typeof w.key !== "string" || w.key.length === 0 || w.key.length > 100 || warningKeys.has(w.key) || typeof w.title !== "string" || w.title.length === 0 || typeof w.detail !== "string" || !validTime(w.at))
+        return null;
+      warningKeys.add(w.key);
+      warnings.push({ key: w.key, title: w.title.slice(0, 120), detail: w.detail.slice(0, 600), at: w.at });
+    }
+    if (warnings.length > 40) return null;
+    return { version: 1, source: f.source, writtenAt: f.writtenAt, entries, warnings };
+  } catch {
+    return null;
+  }
+}
+var validTime = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0;
+var validSource = (s) => typeof s === "string" && s.length > 0;
+var validOwner = (value) => {
+  if (!value || typeof value !== "object") return false;
+  const owner = value;
+  return validSource(owner.machine) && validSource(owner.agent) && owner.machine.length <= 80 && owner.agent.length <= 80;
+};
+function applyFeed(ledger, feed, now, source = "") {
+  if (feed.source === "meta-open-items") return applyMetaOpenItems(ledger, feed, now, source);
+  const keys = new Set(feed.entries.map((e) => e.key));
+  const owns = (f) => f.feedOwned === true && f.feedKey !== void 0 && f.feedSource === source;
+  const staleClosed = ledger.closedFindings.some((f) => owns(f) && !keys.has(f.feedKey));
+  let next = staleClosed ? {
+    ...ledger,
+    closedFindings: ledger.closedFindings.map(
+      (f) => owns(f) && !keys.has(f.feedKey) ? { ...f, feedKey: void 0, feedSource: void 0 } : f
+    )
+  } : ledger;
+  for (const entry of feed.entries) {
+    let finding = next.findings.find((f) => owns(f) && f.feedKey === entry.key);
+    const isClosed = next.closedFindings.some((f) => owns(f) && f.feedKey === entry.key);
+    if (!finding && (entry.state === "done" || isClosed || now - entry.at >= FEED_TTL_MS)) continue;
+    const updated = {
+      ...finding,
+      id: finding?.id ?? `f${next.nextId}`,
+      kind: "progress",
+      title: entry.title,
+      detail: detailOf(entry),
+      path: null,
+      at: entry.at,
+      feedKey: entry.key,
+      feedSource: source,
+      feedOwned: true
+    };
+    if (!finding) next = { ...next, findings: [...next.findings, updated], nextId: next.nextId + 1 };
+    else if (finding.kind !== updated.kind || finding.title !== updated.title || finding.detail !== updated.detail || finding.path !== updated.path || finding.at !== updated.at || finding.feedKey !== updated.feedKey || finding.feedSource !== updated.feedSource)
+      next = { ...next, findings: next.findings.map((f) => f.id === finding.id ? updated : f) };
+    if (entry.state === "done")
+      next = closeFinding(next, updated.id, { how: "update", outcome: `done: ${entry.detail}` }, now);
+  }
+  for (const finding of next.findings)
+    if (owns(finding) && !keys.has(finding.feedKey))
+      next = closeFinding(next, finding.id, { how: "update", outcome: "done: no longer reported" }, now);
+  return next;
+}
+function applyFeedFiles(ledger, root, files, now) {
+  const present = new Set(files.map((f) => f.path));
+  const sources = new Set(
+    [...ledger.findings, ...ledger.closedFindings, ...ledger.items].map((f) => f.feedSource).filter(Boolean)
+  );
+  let next = ledger;
+  for (const source of sources)
+    if (sourceUnder(source, root) && !present.has(source) && !next.findings.some((f) => f.feedSource === source && f.sourceManaged) && !next.items.some((i) => i.feedSource === source && i.sourceManaged))
+      next = applyFeed(next, emptyFeed, now, source);
+  for (const file of files) if (file.feed) next = applyFeed(next, file.feed, now, file.path);
+  const validPaths = new Set(files.filter((file) => file.feed).map((file) => file.path));
+  const carriedWarnings = (next.untrackedWork ?? []).filter(
+    (w) => !sourceUnder(w.feedSource, root) || present.has(w.feedSource) && !validPaths.has(w.feedSource)
+  );
+  const currentWarnings = files.flatMap(
+    (file) => file.feed ? (file.feed.warnings ?? []).map((w) => ({ ...w, feedSource: file.path })) : []
+  );
+  const untrackedWork = [...carriedWarnings, ...currentWarnings];
+  if (JSON.stringify(untrackedWork) !== JSON.stringify(next.untrackedWork ?? [])) next = { ...next, untrackedWork };
+  for (const finding of next.findings)
+    if (finding.feedOwned === true && !finding.sourceManaged && finding.feedKey && finding.feedSource && now - finding.at >= FEED_TTL_MS)
+      next = closeFinding(next, finding.id, { how: "update", outcome: "done: feed entry expired" }, now);
+  return next;
+}
+function applyMetaOpenItems(ledger, feed, now, source) {
+  const tasks = new Map(
+    feed.entries.filter((entry) => entry.kind === "task" && entry.state !== "done").map((entry) => [entry.key, entry])
+  );
+  const work = new Map(
+    feed.entries.filter((entry) => entry.kind !== "task" && entry.state !== "done").map((entry) => [entry.key, entry])
+  );
+  let next = ledger;
+  for (const item of next.items)
+    if (item.sourceManaged && item.feedSource === source && !tasks.has(item.feedKey ?? ""))
+      next = { ...next, items: next.items.filter((i) => i.id !== item.id) };
+  for (const entry of tasks.values()) {
+    const existing = next.items.find((i) => i.sourceManaged && i.feedSource === source && i.feedKey === entry.key);
+    const updated = {
+      ...existing,
+      id: existing?.id ?? `i${next.nextId}`,
+      kind: "task",
+      label: null,
+      ask: entry.title,
+      detail: entry.detail,
+      options: [],
+      rec: null,
+      helps: [],
+      turn: 0,
+      at: entry.at,
+      from: "record",
+      sourceManaged: true,
+      feedKey: entry.key,
+      feedSource: source
+    };
+    if (!existing) next = { ...next, items: [...next.items, updated], nextId: next.nextId + 1 };
+    else if (existing.ask !== updated.ask || existing.detail !== updated.detail || existing.at !== updated.at)
+      next = { ...next, items: next.items.map((i) => i.id === existing.id ? updated : i) };
+  }
+  for (const entry of work.values()) {
+    const current = next.findings.find((f) => f.sourceManaged && f.feedSource === source && f.feedKey === entry.key);
+    const updated = {
+      ...current,
+      id: current?.id ?? `f${next.nextId}`,
+      kind: "progress",
+      title: entry.title,
+      detail: detailOf(entry),
+      path: null,
+      at: entry.at,
+      feedKey: entry.key,
+      feedSource: source,
+      feedOwned: true,
+      sourceManaged: true
+    };
+    if (!current) next = { ...next, findings: [...next.findings, updated], nextId: next.nextId + 1 };
+    else if (current.title !== updated.title || current.detail !== updated.detail || current.at !== updated.at)
+      next = { ...next, findings: next.findings.map((f) => f.id === current.id ? updated : f) };
+  }
+  for (const finding of next.findings)
+    if (finding.sourceManaged && finding.feedSource === source && !work.has(finding.feedKey ?? ""))
+      next = closeFinding(next, finding.id, { how: "update", outcome: "done: no longer reported" }, now);
+  return next;
+}
+var emptyFeed = { version: 1, source: "", writtenAt: 0, entries: [] };
+var sourceUnder = (source, root) => {
+  const base = root.replace(/[\\/]+$/, "");
+  return source === base || source.startsWith(`${base}/`) || source.startsWith(`${base}\\`);
+};
+var detailOf = (entry) => entry.state === "blocked" ? `Blocked: ${entry.detail}` : entry.detail;
+
+// ../feed-reader.ts
+import { readdir as readdir3, readFile as readFile2, stat as stat5 } from "node:fs/promises";
+import { join as join4, resolve as resolve3 } from "node:path";
+var feedIo = {
+  resolve: resolve3,
+  join: join4,
+  stat: stat5,
+  list: (root) => readdir3(root, { withFileTypes: true }),
+  read: (path) => readFile2(path, "utf8")
+};
+async function readFeedFiles(path, io = feedIo) {
+  if (!path) return null;
+  const root = io.resolve(path);
+  const read = async (path2, size) => ({
+    path: path2,
+    feed: size > MAX_FEED_FILE_BYTES ? null : parseFeed(await io.read(path2))
+  });
+  try {
+    const info = await io.stat(root);
+    if (info.isFile()) return { root, files: [await read(root, info.size)] };
+    if (!info.isDirectory()) return null;
+    const files = [];
+    for (const entry of await io.list(root)) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const file = io.join(root, entry.name);
+      try {
+        files.push(await read(file, (await io.stat(file)).size));
+      } catch (error) {
+        if (!missing(error)) files.push({ path: file, feed: null });
+      }
+    }
+    return { root, files };
+  } catch (error) {
+    return missing(error) ? { root, files: [] } : null;
+  }
+}
+var missing = (error) => !!error && typeof error === "object" && "code" in error && error.code === "ENOENT";
+
+// ../hooks/feed-path.ts
+var HERDR_LOOKUP_TIMEOUT_MS = 5e3;
+function agentNameOf(output) {
+  try {
+    const parsed = JSON.parse(output);
+    if (!parsed || typeof parsed !== "object") return null;
+    const result = parsed.result;
+    if (!result || typeof result !== "object") return null;
+    const agent = result.agent;
+    if (!agent || typeof agent !== "object") return null;
+    const name = agent.name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
+}
+async function resolveInboxFeedPath(explicit, home, identity, run2) {
+  if (explicit !== void 0) return explicit;
+  if (!home || !identity.paneId) return void 0;
+  try {
+    const result = await run2([identity.binPath || "herdr", "agent", "get", identity.paneId], {
+      cwd: home,
+      timeoutMs: HERDR_LOOKUP_TIMEOUT_MS
+    });
+    if (result.code !== 0 || agentNameOf(result.stdout) !== "meta") return void 0;
+    return `${home.replace(/[\\/]+$/, "")}/.local/state/inbox/feeds`;
+  } catch {
+    return void 0;
+  }
+}
+
 // src/hook.ts
 var withoutActivity = (s, lines) => {
   const activity = s.turn.activity.filter((line) => !lines.includes(line));
@@ -4577,12 +4910,25 @@ async function handleHook(input, deps) {
   if (!id) return null;
   const meta = await rolloutMeta(input.transcript_path);
   if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null;
-  const { update: write, read } = codexStore(dir, id, now, deps.onWrite);
+  const { update: updateState2, read } = codexStore(dir, id, now, deps.onWrite);
+  const feedPath = await resolveInboxFeedPath(
+    env.INBOX_FEED,
+    env.HOME || homedir2(),
+    { paneId: env.HERDR_PANE_ID, binPath: env.HERDR_BIN_PATH },
+    deps.run
+  );
+  const feed = await readFeedFiles(feedPath);
   const cliPath = namedCli(env);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
   const withRollout = (s) => rolloutPath !== null && s.transcriptPath !== rolloutPath ? { ...s, transcriptPath: rolloutPath } : s;
   const withHost = (s) => withRollout(withCli(s));
+  const withFeed = (s) => {
+    if (!feed) return s;
+    const ledger = applyFeedFiles(s.ledger, feed.root, feed.files, now());
+    return ledger === s.ledger ? s : { ...s, ledger };
+  };
+  const write = (change) => updateState2(async (s) => withFeed(await change(s)));
   let isMarkedBehind = false;
   const readHistoryAhead = async (readBefore, tail) => {
     if (rolloutPath === null) return async (s) => s;
@@ -4649,7 +4995,7 @@ async function handleHook(input, deps) {
       const toolInput = input.tool_input ?? {};
       const command = typeof toolInput.command === "string" ? toolInput.command : "";
       if (tool === "apply_patch") {
-        const files = patchFiles(command).map((f) => resolve3(input.cwd || "/", f));
+        const files = patchFiles(command).map((f) => resolve4(input.cwd || "/", f));
         await write((s) => files.reduce((x, f) => noteActivity(x, `edited ${f}`), withRollout(s)));
         return null;
       }
@@ -4728,19 +5074,19 @@ async function handleHook(input, deps) {
 }
 
 // src/data-dir.ts
-import { homedir as homedir2 } from "node:os";
-import { join as join4 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+import { join as join5 } from "node:path";
 function dataDir(env, pluginRoot) {
   const fromEnv = env.INBOX_DATA || env.PLUGIN_DATA;
   if (fromEnv) return fromEnv;
   const m = pluginRoot.match(/^(.*)\/plugins\/cache\/([^/]+)\/([^/]+)\/[^/]+$/);
   if (m) return `${m[1]}/plugins/data/${m[3]}-${m[2]}`;
-  return join4(homedir2(), ".codex", "inbox-dev");
+  return join5(homedir3(), ".codex", "inbox-dev");
 }
 
 // src/run.ts
 import { execFile } from "node:child_process";
-var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve4) => {
+var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve5) => {
   const [file = "", ...rest] = args;
   try {
     const child = execFile(
@@ -4751,7 +5097,7 @@ var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve4) => {
         const signal = err?.killed ? void 0 : err?.signal ?? void 0;
         const errorCode = typeof err?.code === "string" ? err.code : void 0;
         const error = errorCode && !stderr ? err.message : String(stderr);
-        resolve4({
+        resolve5({
           code: exitCodeOf(err),
           stdout: String(stdout),
           stderr: error,
@@ -4765,7 +5111,7 @@ var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve4) => {
     child.stdin?.end(input);
   } catch (err) {
     const errorCode = err.code;
-    resolve4({
+    resolve5({
       code: UNSTARTABLE_CODE,
       stdout: "",
       stderr: err instanceof Error ? err.message : String(err),
@@ -4785,7 +5131,7 @@ async function main() {
   for await (const chunk of process.stdin) raw += chunk;
   const dist = dirname4(fileURLToPath(import.meta.url));
   const dir = dataDir(process.env, dirname4(dist));
-  const startUpdate = detachedUpdate(dir, process.env, join5(dist, "update.mjs"));
+  const startUpdate = detachedUpdate(dir, process.env, join6(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {
     dir,
     env: process.env,

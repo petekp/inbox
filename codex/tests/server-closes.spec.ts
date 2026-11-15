@@ -13,7 +13,7 @@ import { readState, statePath, updateState } from '../src/state'
 import { tempDir } from './helpers'
 import { setup } from './server-fixtures'
 
-test('a row the tab holds keeps its closed record through more closes than the Closed list keeps, from the agent’s tools and the per-reply update, and its reply still sends', async () => {
+test('a held row keeps its closed record from the agent’s tools and the per-reply update, and its reply still sends', async () => {
   const { dir, calls, call } = await setup(0)
   const others = Array.from({ length: 13 }, (_, n) => `i${n + 2}`)
   await updateState(dir, 's1', s => ({
@@ -39,7 +39,7 @@ test('a row the tab holds keeps its closed record through more closes than the C
 
   assert.deepEqual(
     (await readState(dir, 's1')).ledger.closed.map(c => c.id),
-    ['i1', ...others.slice(1)],
+    ['i1', ...others],
   )
   const r = await call(
     'inbox_press',
@@ -53,7 +53,7 @@ test('a row the tab holds keeps its closed record through more closes than the C
   )
 })
 
-test('every row the agent closes while the tab shows its tab keeps its closed record and stays in place, through more closes than the Closed list keeps', async () => {
+test('every row the agent closes while the tab shows it keeps its record and stays in place after the tab changes', async () => {
   const { dir, call } = await setup(0)
   const others = Array.from({ length: 13 }, (_, n) => `i${n + 2}`)
   await updateState(dir, 's1', s => ({
@@ -82,7 +82,7 @@ test('every row the agent closes while the tab shows its tab keeps its closed re
   await call('inbox_view', { shownSince: 200 }, tab)
   assert.deepEqual(
     (await readState(dir, 's1')).ledger.closed.map(c => c.id),
-    others.slice(1),
+    ['i1', ...others],
   )
 })
 

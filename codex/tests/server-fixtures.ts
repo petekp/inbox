@@ -11,6 +11,7 @@ export async function setup(
   now = () => 100,
   fallbackCli = async () => 'codex',
   isNextBuild = false,
+  feedPath?: string,
 ) {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
@@ -49,6 +50,7 @@ export async function setup(
     tabHtml: '<html></html>',
     fallbackCli,
     isNextBuild,
+    feedPath,
   })
   const call = (name: string, args: Record<string, unknown>, meta: Record<string, unknown>) =>
     handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args, _meta: meta } }) as Promise<{

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { symlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -31,6 +31,49 @@ test("a question Codex records before this build lists the tools is asked only f
   await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
   const after = await call('record', { ...question, ask: 'Which queue should jobs use?' }, meta)
   assert.match(after.result.content[0]?.text ?? '', /It has no context or option_notes: .* It has no why: /)
+})
+
+test('a recorded Markdown report outside the project folder contributes its safe preview', async () => {
+  const { dir, call } = await setup(0)
+  const reportDir = tempDir()
+  const target = join(reportDir, 'report.md')
+  const document = join(reportDir, 'current.md')
+  writeFileSync(target, '# Release plan\n\nShip to one region first.')
+  symlinkSync(target, document)
+
+  await call(
+    'record',
+    {
+      kind: 'question',
+      ask: 'Which rollout should we use?',
+      options: ['One region', 'All regions'],
+      document,
+    },
+    { 'x-codex-turn-metadata': { session_id: 's1', thread_id: 's1' } },
+  )
+
+  const item = (await readState(dir, 's1')).ledger.items.find(item => item.ask === 'Which rollout should we use?')
+  assert.deepEqual(
+    { document: item?.document, preview: item?.documentPreview },
+    { document, preview: '# Release plan Ship to one region first.' },
+  )
+  const beforeRead = await readState(dir, 's1')
+  const opened = (await call('inbox_view', { document: item!.id }, { thread_id: 's1' })) as unknown as {
+    result: { structuredContent: { text: string } }
+  }
+  assert.deepEqual(opened.result.structuredContent, { text: '# Release plan\n\nShip to one region first.' })
+  const arbitraryPath = (await call('inbox_view', { document }, { thread_id: 's1' })) as unknown as {
+    result: { structuredContent: { error: string } }
+  }
+  assert.deepEqual(arbitraryPath.result.structuredContent, { error: 'The report is no longer attached.' })
+  assert.deepEqual((await readState(dir, 's1')).ledger, beforeRead.ledger)
+  await call('close', { id: item!.id, reason: 'done' }, { 'x-codex-turn-metadata': { session_id: 's1' } })
+  const closed = await readState(dir, 's1')
+  assert.equal(closed.ledger.closed.find(entry => entry.id === item!.id)?.item?.document, document)
+  const openedClosed = (await call('inbox_view', { document: item!.id }, { thread_id: 's1' })) as unknown as {
+    result: { structuredContent: { text: string } }
+  }
+  assert.deepEqual(openedClosed.result.structuredContent, { text: '# Release plan\n\nShip to one region first.' })
 })
 
 test('a tool call from Codex in a turn UserPromptSubmit never recorded shows the hook skipped; the tab’s own calls show nothing', async () => {

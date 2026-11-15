@@ -1,4 +1,5 @@
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
+import { OSC8 } from '../../hooks/text'
 import { allRows } from '../../hooks/rows'
 import { rowKeyPlan } from '../../hooks/action-plan'
 import type { StatusRow } from '../../hooks/status-page'
@@ -19,7 +20,7 @@ export const style: Style = {
   tone: (_name, s) => `${ESC}35m${s}${ESC}39m`,
   banner: (_tone, _part, s) => s,
 }
-export const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
+export const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '').replace(OSC8, '')
 
 export const screenOf = (overrides: Partial<PanelScreen> = {}, holds = NO_HOLDS): PanelScreen => ({
   view: sessionView(demoState(NOW), NOW, SETTLED_MS, holds),

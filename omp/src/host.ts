@@ -12,12 +12,16 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
+import { FEED_POLL_MS } from '../../hooks/feed'
+import { feedPathValue } from '../../hooks/feed-path'
+import type { FeedPathSetting } from '../../hooks/feed-path'
 import { herdrReporter, herdrTarget } from '../../hooks/herdr'
 import type { HerdrTarget } from '../../hooks/herdr'
 import { herdrPanelOpener } from '../../hooks/herdr-open'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { recorded } from '../../hooks/session-presses'
+import { readDocument, withDocumentPreview } from '../../hooks/document'
 import { prFetchTracker } from '../../hooks/host-prs'
 import type { SessionHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
@@ -45,10 +49,31 @@ import { sessionCalls } from './host-sessions'
 import { MESSAGE_TYPE, turnHandlers } from './host-turns'
 import { shownLine } from './omp-messages'
 import type { ToolDetails } from './omp-messages'
+import {
+  documentFile,
+  documentLinkTarget,
+  documentMarkdown as makeDocumentMarkdown,
+  panelLink as findPanelLink,
+} from './host-document'
+import { runtimeFeedPath } from './host-feed'
+import { copyToClipboard } from './host-clipboard'
+import { inboxModel } from './host-model'
 
 const INBOX_MODEL_TIMEOUT_MS = 120_000
 
 const BAND_KEY = 'inbox-band'
+
+export const hyperlinkTools = () => import('@oh-my-pi/pi-tui/render')
+
+export { documentLinkTarget }
+
+export function documentMarkdown() {
+  return makeDocumentMarkdown(() => import('@oh-my-pi/pi-tui'))
+}
+
+export function panelLink(load = hyperlinkTools) {
+  return findPanelLink(load)
+}
 
 type Complete = (
   model: Model,
@@ -79,6 +104,11 @@ export type HostDeps = {
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
   /** The Herdr pane or app terminal omp runs in, from `herdrTarget`, or null outside Herdr. */
   herdrTarget: HerdrTarget | null
+  /** The Herdr pane id used to locate the default progress feed. */
+  herdrPane: string | null
+  /** The value of `INBOX_RECORDED_ITEMS_ONLY`, which `isRecordedItemsOnly` reads. */
+  recordedItemsOnly: string | undefined
+  feedPath?: FeedPathSetting
 }
 
 async function defaultComplete(
@@ -97,25 +127,6 @@ async function isUsageLimitOutcome(status: number | undefined, message: string):
   return ai.isUsageLimitOutcome(status, message)
 }
 
-async function copyToClipboard(text: string): Promise<string | null> {
-  const candidates =
-    process.platform === 'darwin'
-      ? [['pbcopy']]
-      : process.platform === 'win32'
-        ? [['clip']]
-        : [['wl-copy'], ['xclip', '-selection', 'clipboard']]
-  for (const argv of candidates) {
-    try {
-      const child = Bun.spawn(argv, { stdin: Buffer.from(text), stdout: 'ignore', stderr: 'ignore' })
-      if ((await child.exited) === 0) return null
-    } catch {
-      continue
-    }
-  }
-
-  return `no clipboard command started (${candidates.map(c => c[0]).join(', ')})`
-}
-
 const defaultDeps: HostDeps = {
   stateDir: pi => join(pi.pi.getAgentDir(), 'inbox'),
   now: Date.now,
@@ -130,36 +141,12 @@ const defaultDeps: HostDeps = {
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
   herdrTarget: herdrTarget(process.env),
+  herdrPane: process.env.HERDR_PANE_ID || null,
+  recordedItemsOnly: process.env.INBOX_RECORDED_ITEMS_ONLY,
+  feedPath: process.env.INBOX_FEED,
 }
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
-
-/** Orders models newest first by the `major.minor.patch` revision omp classifies from each id. */
-function byNewestRevision(a: Model, b: Model): number {
-  const parts = (m: Model) => (m.identity.revision ?? '0.0.0').split('.').map(Number)
-  const [x, y] = [parts(a), parts(b)]
-  const differing = x.findIndex((n, i) => n !== y[i])
-
-  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0)
-}
-
-/**
- * The inbox model: the person's `@inbox` role when it names a model omp can use. omp's `resolve` returns nothing for
- * an unset role, an unknown model or one with no sign-in, and the inbox then falls through. A model that resolves
- * but fails when called fails that update like any other.
- * Next the newest Sonnet model the person's providers offer, since the inbox model evals pass on Sonnet.
- * omp's model lists also hold retired Sonnets, which no longer answer. The `anthropic` provider is preferred.
- * Otherwise omp's `@smol` role.
- */
-function inboxModel(ctx: ExtensionContext): Model | null {
-  const sonnets = ctx.models
-    .list()
-    .filter(m => m.identity.family === 'sonnet')
-    .toSorted(byNewestRevision)
-  const sonnet = sonnets.find(m => m.provider === 'anthropic') ?? sonnets[0]
-
-  return ctx.models.resolve('@inbox') ?? sonnet ?? ctx.models.resolve('@smol') ?? null
-}
 
 export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inbox {
   const dir = deps.stateDir(pi)
@@ -175,6 +162,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
+  const getFeedPath = runtimeFeedPath(deps.feedPath, deps.herdrPane, run)
+  const runtimeDeps = { ...deps, feedPath: getFeedPath }
   /** The sends of each session that wait for its next run to start. */
   const runStartWaiters = new Map<string, Set<() => void>>()
 
@@ -214,7 +203,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
     return async (prompt, system, _kind, report) => {
-      const model = inboxModel(ctx)
+      const model = inboxModel(ctx.models.list(), name => ctx.models.resolve(name))
       if (!model) {
         report?.({ model: 'none', error: 'omp offers no model for the inbox', cause: 'error' })
         return null
@@ -268,14 +257,14 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   const modelNameOf = (ctx: ExtensionContext) => {
-    const model = inboxModel(ctx)
+    const model = inboxModel(ctx.models.list(), name => ctx.models.resolve(name))
 
     return model ? (model.name ?? model.id) : null
   }
 
   const logHerdr = herdrLog(dir)
   const context: HostContext = {
-    deps,
+    deps: runtimeDeps,
     dir,
     openPanels: new Map(),
     prepared: new Set(),
@@ -314,23 +303,36 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     for (const listeners of context.listeners.values()) for (const listener of listeners) listener()
   })
   const { inbox, liveSource } = panelCalls(context, sessions, herdrAsk)
-
-  pi.events.on('task:subagent:lifecycle', activity.onSubagentLifecycle)
-  pi.events.on('task:subagent:progress', activity.onSubagentProgress)
+  let stopFeedTimer: () => void = () => {}
   let isHerdrStarted = false
-  pi.on('session_start', (_event, ctx) => {
-    if (!isHerdrStarted)
+  const startSession = async (ctx: ExtensionContext, parentFile?: string) => {
+    stopFeedTimer()
+    if (!isHerdrStarted) {
       void startOmpInHerdrApp(deps.herdrTarget, run, logHerdr)
         .then(result => herdrAsk.started(result))
         .catch(() => undefined)
-    isHerdrStarted = true
-    return start(ctx)
-  })
-  pi.on('session_switch', (event, ctx) => start(ctx, event.reason === 'fork' ? event.previousSessionFile : undefined))
+      isHerdrStarted = true
+    }
+    await start(ctx, parentFile)
+    if (isUnattended(ctx) || !(await feedPathValue(runtimeDeps.feedPath))) return
+    const timer = ctx.setInterval(() => deps.background(inbox.feedWhenDue(ctx)), FEED_POLL_MS)
+    stopFeedTimer = () => ctx.clearTimer(timer)
+    await inbox.feedWhenDue(ctx)
+  }
+
+  pi.events.on('task:subagent:lifecycle', activity.onSubagentLifecycle)
+  pi.events.on('task:subagent:progress', activity.onSubagentProgress)
+  pi.on('session_start', (_event, ctx) => startSession(ctx))
+  pi.on('session_switch', (event, ctx) =>
+    startSession(ctx, event.reason === 'fork' ? event.previousSessionFile : undefined),
+  )
   // A `/btw` promotion, a fork from an entry and a command's branch give the session a new id, with the old file as
   // `previousSessionFile`. A `/branch` in the same file keeps the id, and the fork step then finds nothing to copy.
-  pi.on('session_branch', (event, ctx) => start(ctx, event.previousSessionFile))
-  pi.on('session_shutdown', turns.onSessionShutdown)
+  pi.on('session_branch', (event, ctx) => startSession(ctx, event.previousSessionFile))
+  pi.on('session_shutdown', (event, ctx) => {
+    stopFeedTimer()
+    return turns.onSessionShutdown(event, ctx)
+  })
   pi.on('before_agent_start', turns.onBeforeAgentStart)
   pi.on('input', turns.onInput)
   pi.on('agent_start', (event, ctx) => {
@@ -357,8 +359,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       execute: async (_toolCallId, args, _signal, _onUpdate, ctx) => {
         if (isUnattended(ctx)) return { content: [{ type: 'text', text: 'The inbox is not shown in this session.' }] }
         let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
+        const input =
+          name === 'record' ? await withDocumentPreview(args as Record<string, unknown>, documentFile) : args
         await change(sessionIdOf(ctx), s => {
-          const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now(), TOOL_FIELDS)
+          const r = recorded(OMP, s, name, input as Record<string, unknown>, deps.now(), TOOL_FIELDS)
           answer = r
 
           return r.state
@@ -423,6 +427,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   async function openPanelUi(ctx: ExtensionContext, isDemo: boolean): Promise<void> {
     const openedAt = deps.now()
     const { parseKey, extractPrintableText, truncateToWidth } = await import('@oh-my-pi/pi-tui')
+    const markdown = await documentMarkdown()
+    const link = await panelLink()
     const source = isDemo
       ? demoSource({
           now: deps.now,
@@ -440,7 +446,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       await ctx.ui.custom<null>((tui, theme, _keybindings, done) => {
         const panel = createPanel({
           source,
-          style: styleOf(theme),
+          style: styleOf(theme, link),
+          readDocument: path => readDocument(path, documentFile),
+          markdown,
           now: deps.now,
           openedAt,
           requestRender: () => tui.requestRender(),

@@ -1,0 +1,216 @@
+# Keeps this fork on petekp/inbox's releases. Nothing here merges into main: each release arrives as a pull request.
+#
+# - prepare: once a day, or when run by hand with a tag, finds the newest upstream release. It skips one that main
+#   already holds, or whose branch already has a pull request, open or closed. Otherwise it merges the release into a
+#   branch from main with ./scripts/merge-next.sh, which rebuilds the committed bundles from the merged sources. When a
+#   source file conflicts, the branch holds the release itself. It runs upstream's build with a read-only token and
+#   hands the branch on as a git bundle.
+# - publish: checks out no code. It pushes the bundle's branch to upstream-release/<tag> and opens a pull request to
+#   main.
+# - tag: after each push to main, tags main as v<plugin version>-fork.<n>, so a settings file can pin the fork to a tag
+#   that never moves.
+name: Upstream release
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream tag to merge. Empty means the newest release.
+        required: false
+
+concurrency:
+  group: upstream-release-${{ github.event_name == 'push' && 'tag' || 'sync' }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.event_name != 'push'
+    # omp/build.ts reruns the build with the Bun binary from @oven/bun-darwin-aarch64 when the running Bun differs from
+    # the pinned one, so only a darwin-arm64 runner builds the omp bundle a release pins.
+    runs-on: macos-15
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      skip: ${{ steps.release.outputs.skip }}
+      tag: ${{ steps.release.outputs.tag }}
+      branch: ${{ steps.release.outputs.branch }}
+      merged: ${{ steps.merge.outputs.merged }}
+    env:
+      UPSTREAM: petekp/inbox
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find the release to merge
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          tag=${REQUESTED_TAG:-$(gh release view --repo "$UPSTREAM" --json tagName --jq .tagName)}
+          case $tag in
+          v[0-9]*) ;;
+          *)
+            echo "Not a release tag: $tag" >&2
+            exit 1
+            ;;
+          esac
+          if printf '%s' "$tag" | grep -q '[^0-9A-Za-z._-]'; then
+            echo "Not a release tag: $tag" >&2
+            exit 1
+          fi
+          ref="refs/remotes/upstream/tags/$tag"
+          git fetch --no-tags "https://github.com/$UPSTREAM.git" "+refs/tags/$tag:$ref"
+          branch="upstream-release/$tag"
+          prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json number --jq '.[].number')
+          {
+            echo "tag=$tag"
+            echo "ref=$ref"
+            echo "branch=$branch"
+          } >>"$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$ref" HEAD; then
+            echo "main already holds $tag."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          elif [ -n "$prs" ]; then
+            echo "$branch already has a pull request."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.release.outputs.skip == 'false'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+
+      - if: steps.release.outputs.skip == 'false'
+        name: Read the Bun version omp pins
+        id: bun
+        run: echo "version=$(jq -r '.devDependencies["@oven/bun-darwin-aarch64"]' omp/package.json)" >>"$GITHUB_OUTPUT"
+
+      - if: steps.release.outputs.skip == 'false'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ steps.bun.outputs.version }}
+
+      - if: steps.release.outputs.skip == 'false'
+        name: Merge the release
+        id: merge
+        env:
+          REF: ${{ steps.release.outputs.ref }}
+          BRANCH: ${{ steps.release.outputs.branch }}
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$BRANCH"
+          if ./scripts/merge-next.sh --from "$REF" --no-check; then
+            echo "merged=true" >>"$GITHUB_OUTPUT"
+          elif [ -n "$(git diff --name-only --diff-filter=U -- . ':!codex/plugin/dist' ':!omp/dist')" ]; then
+            # A source file conflicts. The branch then holds the release as published, for a person to merge.
+            git merge --abort
+            git reset -q --hard "$REF"
+            echo "merged=false" >>"$GITHUB_OUTPUT"
+          else
+            # Any other failure, such as a network error while installing the tools, fails the run, so the next one
+            # tries again.
+            exit 1
+          fi
+          git bundle create "$RUNNER_TEMP/release.bundle" "$BRANCH"
+
+      - if: steps.release.outputs.skip == 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-bundle
+          path: ${{ runner.temp }}/release.bundle
+          retention-days: 1
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.skip == 'false'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM: petekp/inbox
+      TAG: ${{ needs.prepare.outputs.tag }}
+      BRANCH: ${{ needs.prepare.outputs.branch }}
+      MERGED: ${{ needs.prepare.outputs.merged }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-bundle
+          path: ${{ runner.temp }}
+
+      - name: Push the branch and open a pull request
+        run: |
+          set -eu
+          case $BRANCH in
+          upstream-release/v*) ;;
+          *)
+            echo "Unexpected branch: $BRANCH" >&2
+            exit 1
+            ;;
+          esac
+          git init -q release
+          cd release
+          git fetch -q --no-tags "https://github.com/$UPSTREAM.git" "refs/tags/$TAG"
+          release=$(git rev-parse FETCH_HEAD)
+          git fetch -q "$RUNNER_TEMP/release.bundle" "$BRANCH"
+          tip=$(git rev-parse FETCH_HEAD)
+          if ! git merge-base --is-ancestor "$release" "$tip"; then
+            echo "The bundle's branch does not hold $TAG." >&2
+            exit 1
+          fi
+          # The branch is the workflow's own and has no pull request yet, so a run after a failed one replaces it.
+          git push --force "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" \
+            "$tip:refs/heads/$BRANCH"
+          notes="https://github.com/$UPSTREAM/releases/tag/$TAG"
+          if [ "$MERGED" = true ]; then
+            body="Merges upstream release [$TAG]($notes) into main. \`scripts/merge-next.sh\` merged it and rebuilt the committed bundles.
+
+          Before merging, run \`./scripts/check.sh\` on this branch: it needs the claude CLI, so the workflow does not run it. Merge with a merge commit. The push to main then tags it as \`v<version>-fork.<n>\`, and the settings that pin this fork can move to that tag."
+          else
+            body="Merges upstream release [$TAG]($notes) into main. A source file conflicts with main, so this branch holds the release as published.
+
+          To finish it, run \`git fetch origin\`, \`git switch -c $BRANCH-merge origin/main\`, \`git fetch https://github.com/$UPSTREAM.git +refs/tags/$TAG:refs/remotes/upstream/tags/$TAG\` and \`./scripts/merge-next.sh --from refs/remotes/upstream/tags/$TAG\`. Resolve each file it lists, run \`./scripts/merge-next.sh --continue\`, and push the result to \`$BRANCH\`. That push is a fast-forward, since the merge has the release as a parent. Then merge this pull request with a merge commit."
+          fi
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "Merge upstream $TAG" --body "$body"
+
+  tag:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Tag main for pinning
+        run: |
+          set -eu
+          version=$(jq -r .version .claude-plugin/plugin.json)
+          head=$(git rev-parse HEAD)
+          n=1
+          while tagged=$(git rev-parse -q --verify "refs/tags/v$version-fork.$n^{commit}"); do
+            if [ "$tagged" = "$head" ]; then
+              echo "v$version-fork.$n already names $head."
+              exit 0
+            fi
+            n=$((n + 1))
+          done
+          git tag "v$version-fork.$n" "$head"
+          git push origin "refs/tags/v$version-fork.$n"
+          echo "Tagged $head as v$version-fork.$n."

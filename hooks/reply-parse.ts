@@ -1,4 +1,5 @@
 import type { Help, Item, Ledger } from '../types'
+import { parseInline } from './inline'
 import { keyWords, recommendedOption, words } from './ask-match'
 import { codeBlocks, dash } from './text'
 
@@ -36,6 +37,24 @@ export type Update = {
   /** Findings an item now asks about: an open item's id, or the place of a NEW item in `added`. */
   asked: { id: string; item: string | number }[]
   todos: string[]
+}
+
+/**
+ * The part of an update that keeps every ask as the agent recorded it, for a host where `INBOX_RECORDED_ITEMS_ONLY`
+ * is on. It drops NEW and UPDATE lines, and keeps a CLOSED line for an ask only when its outcome is the person's
+ * answer. Findings still close as before. It keeps TODO lines because they come from work the person set aside, and
+ * still adds steps to open items. A CLOSED line for a question that an UPDATE line asks again stays dropped, as
+ * `applyUpdate` drops it, so the question stays open.
+ */
+export function recordedAsksOnly(u: Update, isPersonsAnswer: (outcome: string) => boolean): Update {
+  const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
+
+  return {
+    ...u,
+    closed: u.closed.filter(c => (!/^i\d+$/.test(c.id) || isPersonsAnswer(c.outcome)) && !stillAsked.has(c.id)),
+    added: [],
+    updated: [],
+  }
 }
 
 function readHelp(
@@ -264,6 +283,9 @@ export function todoAsk(work: string): string {
 /** A step for a task: a link, a file or a command. Anything else is not usable and returns null. */
 export function stepHelp(step: string): Help | null {
   const value = step.trim()
+  const named = value.match(/^\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)$/i)
+  const href = named ? parseInline(value).find(span => span.link)?.link : undefined
+  if (named && href) return readHelp('link', href, named[1]!, [], null)
   if (/^https?:\/\//i.test(value)) return readHelp('link', value, null, [], null)
   if (/^(?:\/|~\/|\.{1,2}\/)\S*$/.test(value)) return readHelp('open', value, null, [], null)
 

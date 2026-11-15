@@ -265,7 +265,7 @@ export function paneRows(
         children: [
           <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
           <Text wrap="wrap">
-            <Text bold>{row.title}</Text>
+            <Text bold>{row.titleContent ?? row.title}</Text>
             {f?.isAfterTitle && !isStatusUnder ? (
               <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text>
             ) : null}
@@ -318,7 +318,7 @@ export function paneRows(
             {withSideAge(
               row,
               <Text wrap="wrap">
-                <Text bold>{row.title}</Text>
+                <Text bold>{row.titleContent ?? row.title}</Text>
                 {titleAfter ? (
                   <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
                 ) : null}

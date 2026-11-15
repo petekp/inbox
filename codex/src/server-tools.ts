@@ -44,6 +44,7 @@ export const TOOLS = [
         discarded: { type: 'object' },
         shownSince: { type: 'number' },
         shownRows: { type: 'object' },
+        document: { type: 'string' },
       },
     },
     _meta: {

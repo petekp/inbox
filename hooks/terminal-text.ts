@@ -70,7 +70,6 @@ export function lineCount(text: string, width: number): number {
 }
 
 export type TerminalSpan = Span & {
-  isLinkAddress?: true
   isMuted?: true
   isNeedsYou?: true
   isDone?: true
@@ -79,11 +78,24 @@ export type TerminalSpan = Span & {
 
 export function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []
-  const spans: TerminalSpan[] = parseInline(text).flatMap(span =>
-    span.link ? [span, { text: ` ${span.link}`, isLinkAddress: true as const }] : [span],
-  )
+  const spans = parseInline(text)
+  const fallback = spans.map(span => {
+    if (!span.link) return span
+    const { link, ...plain } = span
 
-  return terminalSpanLines(spans, width, limit)
+    return { ...plain, text: `${span.text} (${link})` }
+  })
+
+  const links = spans.filter(span => span.link).length
+  const budget = terminalSpanLines(fallback, width).length + links
+
+  return links > 0 && budget > limit
+    ? terminalSpanLines(
+        spans.map(({ link: _link, ...span }) => span),
+        width,
+        limit,
+      )
+    : terminalSpanLines(spans, width, limit)
 }
 
 /** `spans` wrapped at word breaks to `width` cells, cut after `limit` lines with an ellipsis. */

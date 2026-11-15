@@ -32,7 +32,7 @@ A new folder, `herdr/`, holds the look. It follows `omp/`: the decisions import 
 
 ## Feature entries
 
-The Herdr look is a look, not a host. Each host publishes for it and applies its presses, and those parts differ by host. So it gets one `FeatureId`, `herdr-look`, with an entry for each client in `hooks/clients.ts`:
+The Herdr look is a look, not a host. Each host publishes for it and applies its presses, and those parts differ by host. So it gets one `FeatureId`, `herdr-look`, listed in `hooks/clients.ts` and classified for each client in `hooks/client-support.ts`:
 
 | Client | Entry | Reason |
 | --- | --- | --- |

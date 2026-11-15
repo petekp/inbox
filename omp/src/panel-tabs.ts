@@ -125,7 +125,7 @@ export function tabBar(d: Draw): string {
   return spread(lineOf(naming, layout), ui.isHelpShown ? '' : s.dim('esc to close '), width)
 }
 
-export function footer(d: Draw, isPageScrolling: boolean): string[] {
+export function footer(d: Draw, isPageScrolling: boolean, isDetailScrolling = false): string[] {
   const { screen, ui, width, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
   const status = footerStatus(
@@ -141,7 +141,13 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
       : ui.isHelpShown
         ? [...(isPageScrolling ? ['↑↓ scroll'] : []), 'esc close help']
         : isRowTab(ui.tab)
-          ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch', '? help']
+          ? [
+              '←→ pick',
+              '↵ press',
+              ...(isDetailScrolling ? ['↑↓ scroll', 'j k move'] : ['↑↓ move']),
+              'tab switch',
+              '? help',
+            ]
           : [
               ...statusHints(screen.view.statusPage, ui.selectedId),
               ...(isPageScrolling ? ['↑↓ scroll'] : []),
@@ -182,14 +188,29 @@ export function pageWindow(body: string[], top: number, room: number, s: Style):
   ]
 }
 
-export function scrolled(body: string[], selectedAt: number[], room: number, s: Style): string[] {
+export function scrolled(
+  body: string[],
+  selectedAt: number[],
+  room: number,
+  s: Style,
+  selectedTop = 0,
+  isSelectedScrollable = false,
+): string[] {
   const [first = 0, last = 0] = selectedAt
-  let start = Math.min(Math.max(0, first - 1), body.length - room)
-  if (last > start + room - 2) start = Math.min(Math.max(first, last - room + 2), body.length - room)
+  let start = isSelectedScrollable
+    ? Math.min(first + selectedTop, last - room + 2)
+    : Math.min(Math.max(0, first - 1), body.length - room)
+  if (!isSelectedScrollable && last > start + room - 2)
+    start = Math.min(Math.max(first, last - room + 2), body.length - room)
   const end = start + room
   const clip = body.slice(start, end)
-  if (start > 0) clip[0] = s.dim(`  ↑ ${start} more lines`)
-  if (end < body.length) clip[clip.length - 1] = s.dim(`  ↓ ${body.length - end} more lines`)
+  if (isSelectedScrollable) {
+    if (start > first) clip[0] = s.dim(`  ↑ ${start - first} more lines`)
+    if (end <= last) clip[clip.length - 1] = s.dim(`  ↓ ${last - end + 1} more lines`)
+  } else {
+    if (start > 0) clip[0] = s.dim(`  ↑ ${start} more lines`)
+    if (end < body.length) clip[clip.length - 1] = s.dim(`  ↓ ${body.length - end} more lines`)
+  }
 
   return clip
 }

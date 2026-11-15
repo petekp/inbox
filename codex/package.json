@@ -11,10 +11,16 @@
     "check": "node build.mjs --check"
   },
   "devDependencies": {
+    "@types/jsdom": "^21.1.7",
     "@types/node": "24.19.0",
     "esbuild": "0.28.2",
     "happy-dom": "21.0.1",
+    "jsdom": "^29.1.1",
     "preact": "10.29.8",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "dompurify": "3.4.17",
+    "marked": "18.1.3"
   }
 }

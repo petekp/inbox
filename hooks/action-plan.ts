@@ -1,5 +1,6 @@
 import type { Item, PressKind, Finding, LastAction, Tab } from '../types'
 import { clipLabel } from './text'
+import { linkLabel } from './inline'
 import { actionId, ISSUE_LABEL } from './press-labels'
 import { stepIconKind } from './help-steps'
 import type { HelpStep } from './help-steps'
@@ -39,6 +40,7 @@ const ACTION_KEYS: Partial<Record<RowPress['action'], string>> = {
   issue: 'i',
   type: 't',
   explain: 'e',
+  'read-document': 'v',
   compare: 'p',
   discuss: 'd',
   dismiss: 'x',
@@ -75,12 +77,13 @@ function prUndos(prs: readonly DrawnPr[]): ShownUndo[] {
 }
 
 export function actionsOf(
-  row: { id: string; item: Item | null; finding: Finding | null; steps: HelpStep[] },
+  row: { id: string; item: Item | null; finding: Finding | null; steps: HelpStep[]; document?: string | null },
   last: LastAction | undefined,
   state: RowState,
   feedback: Feedback | null,
 ): ActionView[] {
   const { id, item, steps } = row
+  if (item?.sourceManaged || row.finding?.sourceManaged) return []
   const pressing = pressOutAction(last, feedback)
   const out = outAction(last, feedback)
   const action = (
@@ -117,9 +120,12 @@ export function actionsOf(
       isOut: out === pressAction,
     }
   }
-  if (state.is === 'settled') return state.canUndo ? [action({ action: 'undo', id }, ROW_COPY.undo, 'view')] : []
+  const documentAction = row.document ? [action({ action: 'read-document', id }, 'Read report', 'view')] : []
+  if (state.is === 'settled')
+    return [...(state.canUndo ? [action({ action: 'undo', id }, ROW_COPY.undo, 'view')] : []), ...documentAction]
   if (state.is === 'held')
     return [
+      ...documentAction,
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       action({ action: 'discard', id }, ROW_COPY.discard, 'view'),
     ]
@@ -128,6 +134,7 @@ export function actionsOf(
     return [
       action({ action: 'address', id }, row.finding ? fixLabel(row.finding) : 'Fix', 'handoff'),
       action({ action: 'issue', id }, ISSUE_LABEL, 'handoff'),
+      ...documentAction,
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       action({ action: 'explain', id }, 'Explain', 'talk'),
       action({ action: 'discuss', id }, 'Discuss', 'talk'),
@@ -136,6 +143,7 @@ export function actionsOf(
   if (item.kind === 'task')
     return [
       ...stepActions,
+      ...documentAction,
       action({ action: 'done', id }, 'Done', 'mark'),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       action({ action: 'explain', id }, 'Explain', 'talk'),
@@ -147,12 +155,13 @@ export function actionsOf(
 
   return [
     ...options.map((option, n) =>
-      action({ action: 'answer', id, option }, clipLabel(option, OPTION_LABEL_CHARS), 'mark', {
+      action({ action: 'answer', id, option }, clipLabel(linkLabel(option), OPTION_LABEL_CHARS), 'mark', {
         isPrimary: option === item.rec,
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1,
       }),
     ),
     ...stepActions,
+    ...documentAction,
     action({ action: 'type', id, text: '' }, 'Reply', 'mark'),
     action({ action: 'explain', id }, 'Explain', 'talk'),
     ...(showsCompare(item) ? [action({ action: 'compare', id }, 'Compare', 'talk')] : []),

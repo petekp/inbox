@@ -12,16 +12,23 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 type Entry = [client: string, feature: string, support: string]
 
-function clientsSource(features = ['catch-up', 'link-open-rule'], entries: Entry[] = []) {
+function clientsSource(features = ['catch-up', 'link-open-rule']) {
+  return `export type FeatureId = ${features.map(f => `'${f}'`).join(' | ')}\n`
+}
+
+function clientSupportSource(features = ['catch-up', 'link-open-rule'], entries: Entry[] = []) {
   const supportOf = (client: string, feature: string) =>
     entries.find(e => e[0] === client && e[1] === feature)?.[2] ?? "{ kind: 'full' }"
   const clients = ['claude-code', 'codex', 'omp'].map(
     client => `'${client}': { support: { ${features.map(f => `'${f}': ${supportOf(client, f)}`).join(', ')} } },`,
   )
 
-  return `export type FeatureId = ${features.map(f => `'${f}'`).join(' | ')}
-export const CLIENTS = { ${clients.join('\n')} }
-`
+  return `export const CLIENTS = { ${clients.join('\n')} }\n`
+}
+
+function writeClients(f: { write(path: string, text: string): void }, features?: string[], entries: Entry[] = []) {
+  f.write('hooks/clients.ts', clientsSource(features))
+  f.write('hooks/client-support.ts', clientSupportSource(features, entries))
 }
 
 function differencesSource(column: string, ids: string[]) {
@@ -51,7 +58,7 @@ function fixture(t: TestContext) {
   write('codex/tests/.keep', '')
   write('codex/package.json', '{"type":"module"}\n')
   symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')
-  write('hooks/clients.ts', clientsSource())
+  writeClients({ write }, undefined, [])
   write('docs/looks.md', '# Looks\n')
   const looks = (main: string[] = [], omp: string[] = []) => {
     write('docs/looks/differences-main.md', differencesSource('Terminal', main))
@@ -262,13 +269,10 @@ test('the structure gate rejects a source file that has no Files row in docs/loo
 
 test('the structure gate accepts a feature that is not full when each table that covers the host names it', t => {
   const f = fixture(t)
-  f.write(
-    'hooks/clients.ts',
-    clientsSource(undefined, [
-      ['codex', 'catch-up', unsupported],
-      ['omp', 'catch-up', unsupported],
-    ]),
-  )
+  writeClients(f, undefined, [
+    ['codex', 'catch-up', unsupported],
+    ['omp', 'catch-up', unsupported],
+  ])
   f.looks(['catch-up'], ['catch-up'])
   const result = f.check()
   assert.equal(result.status, 0, result.stdout + result.stderr)
@@ -276,7 +280,7 @@ test('the structure gate accepts a feature that is not full when each table that
 
 test('the structure gate rejects a feature that is not full and has no row', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['codex', 'catch-up', unsupported]]))
+  writeClients(f, undefined, [['codex', 'catch-up', unsupported]])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
   assert.ok(result.stdout.includes('`catch-up`'), result.stdout + result.stderr)
@@ -285,7 +289,7 @@ test('the structure gate rejects a feature that is not full and has no row', t =
 
 test('the structure gate rejects an omp gap that only the main table names', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['omp', 'catch-up', unsupported]]))
+  writeClients(f, undefined, [['omp', 'catch-up', unsupported]])
   f.looks(['catch-up'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
@@ -302,7 +306,7 @@ test('the structure gate rejects a row that names an unknown feature id', t => {
 
 test('the structure gate rejects an entry that is not full and gives no reason', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['codex', 'catch-up', "{ kind: 'different', reason: '' }"]]))
+  writeClients(f, undefined, [['codex', 'catch-up', "{ kind: 'different', reason: '' }"]])
   f.looks(['catch-up'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
@@ -312,7 +316,7 @@ test('the structure gate rejects an entry that is not full and gives no reason',
 for (const id of ['catchUp', 'catch_up', 'Catch-up', 'catch--up', 'catch-up-2'])
   test(`the structure gate rejects the feature id ${id}`, t => {
     const f = fixture(t)
-    f.write('hooks/clients.ts', clientsSource([id]))
+    writeClients(f, [id])
     const result = f.check()
     assert.equal(result.status, 1, result.stdout + result.stderr)
     assert.ok(result.stdout.includes(`'${id}'`), result.stdout + result.stderr)

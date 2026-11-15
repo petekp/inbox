@@ -139,6 +139,42 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   expect(await pane.find({ text: /Cache the API token/ })).toBeDefined()
 })
 
+test('a recorded report is read through its resolved path and the inbox stores its short excerpt', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  w.documentFile = {
+    path: '/reports/current.md',
+    realPath: '/archive/current.md',
+    text: '# Release plan\n\nShip to one region first.',
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  const pane = await $.ui.mount(PANE)
+
+  const result = await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'question',
+    ask: 'Which rollout should we use?',
+    options: ['One region', 'All regions'],
+    document: '/reports/current.md',
+  })
+  const saved = JSON.parse(w.stored.get('s:session-1') ?? '{}')
+  await clock.settle()
+
+  expect(result.result).toStartWith('Recorded. The user sees it in the /inbox pane.')
+  expect(saved.ledger.items[0]).toMatchObject({
+    document: '/reports/current.md',
+    documentPreview: '# Release plan Ship to one region first.',
+  })
+  expect(await pane.find({ text: /Report preview: # Release plan/ })).toBeDefined()
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  expect(await desktop.find({ text: /Report preview: # Release plan/ })).toBeDefined()
+})
+
 test('a question Claude records waits in the pane with its recommendation, a repeat is not added, one the person dismissed is not recorded again, and one they answered with List the choices can be asked again with choices', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
@@ -158,7 +194,7 @@ test('a question Claude records waits in the pane with its recommendation, a rep
     why: 'it survives restarts',
   } as const
   const r = await $.tool.call(question)
-  expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
+  expect(r.result).toStartWith('Recorded. The user sees it in the /inbox pane.')
   await clock.settle()
   expect(await pane.find({ text: /Which cache should the API use\?/ })).toBeDefined()
   expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe(

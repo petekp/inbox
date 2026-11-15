@@ -2,8 +2,8 @@ import { Icon } from './row-actions'
 import {
   closedLineAction,
   closedShown,
-  closedTotal,
   earlierLabel,
+  closedTotal,
   foldLabel,
   waitingCount,
   settledLabel,
@@ -13,7 +13,7 @@ import { emptyText, groupEmptyText } from '../../hooks/banners'
 import { isMaybeStale } from '../../hooks/band'
 import { entryId, settledIn } from '../../hooks/action-plan'
 import { FINDING_GROUPS } from '../../hooks/help'
-import type { ResultMark } from '../../hooks/rows'
+import type { ClosedHistoryPlan, ResultMark } from '../../hooks/rows'
 import type { Finding } from '../../types'
 import type { FoldGroup } from './arrivals'
 import type { TabView as View } from './core'
@@ -21,21 +21,25 @@ import { unfolded, closedAll, sending, closingFolds, drawnRows, tabState } from 
 import type { Row, Entry, Lists } from './tab-state'
 import { toggleFold } from './tab-motion'
 import { act } from './tab-rows'
-import { ResultMarkView, GroupTitle } from './tab-parts'
+import { ResultMarkView, GroupTitle, inlineHtml } from './tab-parts'
 import { Entries } from './tab-list'
 
-function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): ClosedLine[] {
+function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): ClosedHistoryPlan<ClosedLine> {
   const closed = v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks']
+  const settled = settledIn(entries)
 
-  return closedShown(closed, settledIn(entries), closedAll.has(kind)).map(d => ({
-    id: d.id,
-    how: d.how,
-    ask: d.ask,
-    outcomeLabel: d.outcomeLabel,
-    mark: d.mark,
-    at: d.at,
-    delivery: d.delivery,
-  }))
+  return {
+    rows: closedShown(closed, settled, closedAll.has(kind)).map(d => ({
+      id: d.id,
+      how: d.how,
+      ask: d.ask,
+      outcomeLabel: d.outcomeLabel,
+      mark: d.mark,
+      at: d.at,
+      delivery: d.delivery,
+    })),
+    total: closedTotal(closed, settled),
+  }
 }
 
 function ItemGroup({
@@ -53,20 +57,14 @@ function ItemGroup({
 }) {
   const title = kind === 'question' ? 'Questions' : 'Tasks'
   const rest = staying(entries)
-  const closed = itemsClosed(v, kind, entries)
+  const history = itemsClosed(v, kind, entries)
   const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
 
   return (
     <section>
       <GroupTitle title={title} count={waitingCount(rows.map(r => r.view))} />
       <Entries entries={entries} group={kind} all={all} now={now} />
-      <GroupEnd
-        group={kind}
-        empty={groupEmpty(title, rest)}
-        closed={closed}
-        total={closedTotal(v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks'], settledIn(entries))}
-        now={now}
-      />
+      <GroupEnd group={kind} empty={groupEmpty(title, rest)} history={history} now={now} />
     </section>
   )
 }
@@ -96,19 +94,18 @@ type ClosedLine = {
 function GroupEnd({
   group,
   empty,
-  closed,
-  total,
+  history,
   now,
 }: {
   group: FoldGroup
   empty: GroupEmpty | null
-  closed: ClosedLine[]
-  total: number
+  history: ClosedHistoryPlan<ClosedLine>
   now: number
 }) {
-  const earlier = earlierLabel(total, closed.length)
+  const { rows: closed, total } = history
   const isUnfolded = unfolded.has(group)
   const isListed = total > 0 && (isUnfolded || closingFolds.has(group))
+  const earlier = earlierLabel(total, closed.length)
 
   return (
     <>
@@ -144,8 +141,8 @@ function GroupEnd({
                 <div class="row">
                   <ResultMarkView mark={d.mark} />
                   <div class="content tight">
-                    <div class="muted">{d.ask}</div>
-                    <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
+                    <div class="muted">{inlineHtml(d.ask)}</div>
+                    <div class="outcome">{inlineHtml(settledLabel(d.outcomeLabel, d.delivery))}</div>
                     {action ? (
                       <button type="button" disabled={sending.has(d.id)} onClick={() => act(d.id, action.press)}>
                         {action.label}
@@ -187,7 +184,7 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
   const all = lists.byTab.needsYou
   const isNothing = lists.questions.length === 0 && lists.tasks.length === 0
   const hasClosed =
-    itemsClosed(v, 'question', lists.questions).length > 0 || itemsClosed(v, 'task', lists.tasks).length > 0
+    itemsClosed(v, 'question', lists.questions).total > 0 || itemsClosed(v, 'task', lists.tasks).total > 0
   const notHeard = notHeardText(v)
   if (isNothing && !hasClosed)
     return notHeard ? (
@@ -221,16 +218,22 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
 export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   const settled = settledIn(lists.findings)
   const closedOf = (kind: Finding['kind']) => v.findings.closed.filter(f => f.kind === kind)
-  const shown = (kind: Finding['kind']) =>
-    closedShown(closedOf(kind), settled, closedAll.has(kind)).map(f => ({
-      id: f.id,
-      how: f.how,
-      ask: f.title,
-      outcomeLabel: f.outcomeLabel,
-      mark: f.mark,
-      at: f.closedAt,
-      delivery: f.delivery,
-    }))
+  const historyOf = (kind: Finding['kind']): ClosedHistoryPlan<ClosedLine> => {
+    const closed = closedOf(kind)
+
+    return {
+      rows: closedShown(closed, settled, closedAll.has(kind)).map(f => ({
+        id: f.id,
+        how: f.how,
+        ask: f.title,
+        outcomeLabel: f.outcomeLabel,
+        mark: f.mark,
+        at: f.closedAt,
+        delivery: f.delivery,
+      })),
+      total: closedTotal(closed, settled),
+    }
+  }
   const isNothing = lists.findings.length === 0
   if (isNothing && closedTotal(v.findings.closed, settled) === 0)
     return (
@@ -249,13 +252,7 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
           <section>
             <GroupTitle title={g.title} count={waitingCount(rows.map(r => r.view))} mark={FINDING_GROUPS[g.kind]} />
             <Entries entries={g.entries} group="finding" all={lists.byTab.findings} now={now} />
-            <GroupEnd
-              group={g.kind}
-              empty={groupEmpty(g.title, rest)}
-              closed={shown(g.kind)}
-              total={closedTotal(closedOf(g.kind), settled)}
-              now={now}
-            />
+            <GroupEnd group={g.kind} empty={groupEmpty(g.title, rest)} history={historyOf(g.kind)} now={now} />
           </section>
         )
       })}

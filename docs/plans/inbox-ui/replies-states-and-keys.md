@@ -34,7 +34,7 @@ The UI names the result, not the model call or tool. `updateRecovery` in `hooks/
 
 A pending exchange is retried on its own, so it reads as waiting or failed again. With nothing pending, the host retries by catching up. Every host can: a Codex chat saved with no `transcriptPath` gets one from the next reply's Stop hook, which saves it before the update starts. A catch-up that finds the conversation unreadable sets `presence.isConversationUnreadable`. The next update tries the catch-up again, as a resumed session or a moved rollout can be readable then, and one that reads the conversation clears the flag. A second failure drops the exchange and keeps the warning until a catch-up covers it. A catch-up that applies clears the warning. An update a reload cut off leaves `failedAttempts` as it was, so it reads as waiting, not as failed again. All hosts advance applied turns after a failed update, so a handed-off row can return to the count.
 
-An expired item closes as `Expired`. The rule behind it, 12 prompts or more than 20 open, belongs to the per-turn update.
+Questions and tasks stay open until answered or explicitly closed, regardless of turn count or how many are open.
 
 ### 2.7 Empty, loading and error states
 

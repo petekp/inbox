@@ -1,5 +1,5 @@
 import { linkDialogs } from './dialogs'
-import { closedAt, pruneClosed } from './ledger-close'
+import { closedAt } from './ledger-close'
 import type { Host } from './model-text'
 import { applyPrPress, withFinishedPrsSettled } from './pr-tab'
 import { isPrPress, pressRowId } from './pr-press'
@@ -161,10 +161,7 @@ export function rowsInPlace(s: Session): Set<string> {
   return new Set([...s.heldRows, ...since])
 }
 
-/**
- * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of `rowsInPlace`.
- * A PR's view goes once `isViewKept` no longer keeps it.
- */
+/** `s` as every write saves it. Closed asks and findings stay for this session; a PR view goes once `isViewKept` no longer keeps it. */
 export function pruned<S extends Session>(s: S): S {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) =>
@@ -175,7 +172,6 @@ export function pruned<S extends Session>(s: S): S {
 
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews,
   }
 }
@@ -193,6 +189,7 @@ export function withFetchedPrs<S extends Session>(
   now: number,
   failure: PrFetchFailure | null = null,
   unread: Record<string, string> = {},
+  accountPrs: Pick<PrViews, 'accountPrs' | 'botPrSummaries'> | null = null,
 ): S {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
   const views = { ...s.prViews.views, ...fetched }
@@ -213,6 +210,10 @@ export function withFetchedPrs<S extends Session>(
       ...(isSignedOut ? { isGhSignedOut: true } : {}),
       ...(failure ? { failure } : {}),
       ...(Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}),
+      ...(accountPrs ?? {
+        ...(s.prViews.accountPrs ? { accountPrs: s.prViews.accountPrs } : {}),
+        ...(s.prViews.botPrSummaries ? { botPrSummaries: s.prViews.botPrSummaries } : {}),
+      }),
     },
   }
 }

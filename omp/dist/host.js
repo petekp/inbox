@@ -182,17 +182,67 @@ function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
 
+// ../hooks/inline.ts
+var INLINE = /`([^`\n]+)`|\*\*(?=\S)(.+?)(?<=\S)\*\*(?!\*)|~~(?=\S)(.+?)(?<=\S)~~|(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])|(?<!\w)_(?=\S)([^_\n]+?)(?<=\S)_(?!\w)|\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/gi;
+function httpsHref(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password)
+      return null;
+    const href = parsed.origin + [parsed.pathname, parsed.search, parsed.hash].join("").replace(/@/g, "%40");
+    return href.length <= 2048 ? href : null;
+  } catch {
+    return null;
+  }
+}
+function parseInline(text, outer = {}) {
+  const spans = [];
+  let at = 0;
+  for (const m of text.matchAll(INLINE)) {
+    if (m.index > at)
+      spans.push({ ...outer, text: text.slice(at, m.index) });
+    const [, code, bold, strike, star, under, label, url] = m;
+    if (code !== undefined)
+      spans.push({ ...outer, text: code, code: true });
+    else if (bold !== undefined)
+      spans.push(...parseInline(bold, { ...outer, bold: true }));
+    else if (strike !== undefined)
+      spans.push(...parseInline(strike, { ...outer, strike: true }));
+    else if (star !== undefined || under !== undefined)
+      spans.push({ ...outer, text: star ?? under ?? "", italic: true });
+    else {
+      const href = httpsHref(url ?? "");
+      spans.push(href ? { ...outer, text: label ?? "", link: href } : { ...outer, text: `${label ?? ""} (${url ?? ""})` });
+    }
+    at = m.index + m[0].length;
+  }
+  if (at < text.length)
+    spans.push({ ...outer, text: text.slice(at) });
+  return spans;
+}
+function linkLabel(text) {
+  return parseInline(text).map((span) => span.text).join("");
+}
+function inlineLinks(text) {
+  return parseInline(text).flatMap((span) => span.link ? [{ label: span.text, url: span.link }] : []);
+}
+function cutInline(text, max) {
+  const visible = linkLabel(text);
+  return visible.length > max ? visible.slice(0, max) : text.trim();
+}
+
 // ../hooks/ask-match.ts
+var CLOSED_CONTEXT_LIMIT = 12;
 function words2(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec)
     return null;
-  const named = new Set(words2(rec));
+  const named = new Set(words2(linkLabel(rec)));
   let best = null;
   for (const option of options) {
-    const w = words2(option);
+    const w = words2(linkLabel(option));
     if (w.length > words2(best ?? "").length && w.every((x) => named.has(x)))
       best = option;
   }
@@ -328,8 +378,9 @@ function matchOpen(items, a, sameBatch = new Set) {
   return items.findIndex((i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask));
 }
 function repeatsClosed(closed, a, since, closedFindings = []) {
-  const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
-  const settled = closed.filter((c) => c.at < since && c.how !== "expired");
+  const context = closed.slice(-CLOSED_CONTEXT_LIMIT);
+  const recent = context.filter((c) => c.at >= since && !isAskedForChoices(c));
+  const settled = context.filter((c) => c.at < since && c.how !== "expired");
   return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a)) || dismissedFindingOf(closedFindings, a.ask) !== undefined;
 }
 function dismissedFindingOf(closedFindings, ask) {
@@ -454,10 +505,27 @@ function clipLabel(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
 }
 function cutForEllipsis(line, fits) {
-  const parts = graphemesOf(line);
+  const parts = [];
+  let at = 0;
+  for (const match of line.matchAll(ANSI_TOKEN)) {
+    parts.push(...graphemesOf(line.slice(at, match.index)), match[0]);
+    at = match.index + match[0].length;
+  }
+  parts.push(...graphemesOf(line.slice(at)));
   while (parts.length > 0 && !fits(`${parts.join("")}\u2026`))
     parts.pop();
-  return parts.join("").replace(/[\s.,;:]+$/, "");
+  let result = parts.join("");
+  const trailingControl = new RegExp(`(?:\\x1b\\[[0-9;]*m|${OSC8.source})$`);
+  const controls = [];
+  while (true) {
+    const match = result.match(trailingControl);
+    if (!match)
+      break;
+    controls.unshift(match[0]);
+    result = result.slice(0, -match[0].length);
+  }
+  result = result.replace(/[\s.,;:]+$/, "") + controls.join("");
+  return closeOpenLink(result);
 }
 var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
 function cutAtPhrase(text, fits) {
@@ -483,6 +551,14 @@ var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}\u200C\uFF9E\u
 var GRAPHEME = new RegExp(String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`, "gu");
 function graphemesOf(text) {
   return segmenter ? Array.from(segmenter.segment(text), (s) => s.segment) : text.match(GRAPHEME) ?? [];
+}
+var OSC8 = /\x1b\]8;[^;\x07\x1b]*;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+var ANSI_TOKEN = new RegExp(`\\x1b\\[[0-9;]*m|${OSC8.source}`, "g");
+function closeOpenLink(text) {
+  let isOpen = false;
+  for (const match of text.matchAll(OSC8))
+    isOpen = !/;;(?:\x07|\x1b\\)$/.test(match[0]);
+  return isOpen ? `${text}\x1B]8;;\x1B\\` : text;
 }
 var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
 var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
@@ -970,9 +1046,84 @@ function limitResetOf(json) {
 // ../hooks/pr-fetch.ts
 var MAX_PRS = 12;
 var MAX_ORDERED_PRS = 30;
+var GH_RUNS_AT_ONCE = 8;
 var PR_SHARED_MS = 120000;
 var CLOSED_PR_REFRESH_MS = 60 * 60000;
 var LIMIT_RETRY_MS = 5 * 60000;
+var SEARCH_FIELDS = "author,isDraft,number,repository,title";
+async function fetchAccountPrs(run) {
+  const [viewer, orgs, authored] = await Promise.all([
+    run(["api", "user", "--jq", ".login"]),
+    run(["api", "user/orgs", "--paginate", "--jq", ".[].login"]),
+    run(["search", "prs", "--state", "open", "--author", "@me", "--limit", "1000", "--json", `${SEARCH_FIELDS},url`])
+  ]);
+  if (viewer.exitCode !== 0 || orgs.exitCode !== 0 || authored.exitCode !== 0)
+    return null;
+  const login = viewer.stdout.trim();
+  const prs = readSearchPrs(authored.stdout);
+  if (!login || prs === null)
+    return null;
+  const accountPrs = prs.flatMap((pr) => {
+    const author = pr.author?.login?.toLowerCase();
+    const repo = pr.repository?.nameWithOwner;
+    if (author !== login.toLowerCase() || pr.author?.type === "Bot" || pr.author?.is_bot === true)
+      return [];
+    if (!repo || !Number.isSafeInteger(pr.number) || typeof pr.title !== "string")
+      return [];
+    const ref = `${repo}#${pr.number}`;
+    return [{ ref, title: pr.title, url: `https://github.com/${repo}/pull/${pr.number}`, isDraft: pr.isDraft === true }];
+  });
+  const owners = [
+    ...new Set([
+      login,
+      ...orgs.stdout.split(/\s+/).filter(Boolean),
+      ...prs.map((pr) => pr.repository?.nameWithOwner?.split("/")[0]).filter((owner) => !!owner)
+    ])
+  ];
+  const botResults = [];
+  for (let i = 0;i < owners.length; i += GH_RUNS_AT_ONCE) {
+    botResults.push(...await Promise.all(owners.slice(i, i + GH_RUNS_AT_ONCE).map((owner) => run(["search", "prs", "--state", "open", "--owner", owner, "--limit", "1000", "--json", SEARCH_FIELDS]))));
+  }
+  if (botResults.some((result) => result.exitCode !== 0))
+    return null;
+  const bots = new Map;
+  for (const result of botResults) {
+    const ownerPrs = readSearchPrs(result.stdout);
+    if (ownerPrs === null)
+      return null;
+    for (const pr of ownerPrs) {
+      const author = pr.author;
+      const repo = pr.repository?.nameWithOwner;
+      if (!(author?.type === "Bot" || author?.is_bot === true) || !author.login || !repo || !pr.number)
+        continue;
+      const name = botName(author.login);
+      const group = bots.get(name) ?? { name, refs: new Set };
+      group.refs.add(`${repo}#${pr.number}`);
+      bots.set(name, group);
+    }
+  }
+  return {
+    accountPrs: accountPrs.sort((a, b) => a.ref.localeCompare(b.ref)),
+    botPrSummaries: [...bots.values()].map(({ name, refs }) => ({ name, count: refs.size })).sort((a, b) => a.name.localeCompare(b.name))
+  };
+}
+function readSearchPrs(json) {
+  try {
+    const data = JSON.parse(json);
+    return Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+function botName(login) {
+  if (/(^|-)renovate(?:\[bot\])?$/i.test(login))
+    return "Renovate";
+  if (/^dependabot(?:\[bot\])?$/i.test(login))
+    return "Dependabot";
+  if (/^github-actions(?:\[bot\])?$/i.test(login))
+    return "GitHub Actions";
+  return login.replace(/\[bot\]$/i, "");
+}
 var NO_PR_SHARED = { views: {}, limit: null };
 function linkedPrs(prs, refs) {
   return [...prs.filter((r) => !refs.includes(r)), ...refs];
@@ -1108,12 +1259,350 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 
 // src/host.ts
 import { existsSync } from "fs";
-import { stat as stat4 } from "fs/promises";
-import { homedir } from "os";
-import { dirname as dirname3, join as join4 } from "path";
+import { stat as stat6 } from "fs/promises";
+import { homedir as homedir2 } from "os";
+import { dirname as dirname3, join as join5 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
 var version = "0.4.0";
+
+// ../hooks/ledger-close.ts
+var MAX_CLOSED = 12;
+function closedRecord(item, closing, now) {
+  const { id, kind, ask, label } = item;
+  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
+}
+function closedFindingRecord(finding, closing, now, askedAs) {
+  return { ...finding, ...askedAs ? { askedAs } : {}, ...closing, closedAt: now };
+}
+function closeByAgent(host, ledger, id, how, now) {
+  const closing = "answer" in how ? { how: "answered", outcome: how.answer } : { how: "claude", outcome: `closed by ${host.agent}: ${how.reason}` };
+  const item = ledger.items.find((i) => i.id === id);
+  if (item?.sourceManaged)
+    return { ledger, closed: null };
+  if (item)
+    return { ledger: closeItem(ledger, id, closing, now), closed: { item } };
+  const finding = ledger.findings.find((f) => f.id === id);
+  if (finding?.sourceManaged)
+    return { ledger, closed: null };
+  if (finding)
+    return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } };
+  return { ledger, closed: null };
+}
+function closeItem(ledger, id, closing, now) {
+  if (ledger.items.some((i) => i.id === id && i.sourceManaged))
+    return ledger;
+  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
+  return reopenAskedFindings({ ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] }, records);
+}
+function closeFinding(ledger, id, closing, now, askedAs) {
+  const finding = ledger.findings.find((f) => f.id === id);
+  if (!finding)
+    return ledger;
+  return {
+    ...ledger,
+    findings: ledger.findings.filter((f) => f.id !== id),
+    closedFindings: [...ledger.closedFindings, closedFindingRecord(finding, closing, now, askedAs)]
+  };
+}
+var SHARED_TITLE_WORDS = 2;
+var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
+function leavesWorkOpen(c) {
+  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
+}
+function reopenAskedFindings(ledger, closes) {
+  return closes.filter(leavesWorkOpen).reduce((l, c) => {
+    const record = l.closedFindings.findLast((f) => f.askedAs === c.id);
+    if (!record)
+      return l;
+    const reopened = reopenFinding(l, record.id);
+    return {
+      ...reopened,
+      findings: reopened.findings.map((f) => {
+        const { askedAs: _askedAs, ...rest } = f;
+        return f.id === record.id ? rest : f;
+      })
+    };
+  }, ledger);
+}
+function prNumbers(text) {
+  return new Set([...text.matchAll(/(?:#|\bPR\s*#?|\/pull\/)(\d+)/gi)].map((m) => m[1]));
+}
+function asksAbout(item, finding, isClaimed = false) {
+  if (item.label === finding.id)
+    return true;
+  if (restates(finding.title, item.ask) || restates(finding.detail, item.ask))
+    return true;
+  if (isClaimed) {
+    const known = keyWords(finding.title);
+    if ([...keyWords(item.ask)].filter((w) => known.has(w)).length >= SHARED_TITLE_WORDS)
+      return true;
+  }
+  const itemPrs = prNumbers(`${item.label ?? ""} ${item.ask}`);
+  return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
+}
+function idNumber(id) {
+  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
+}
+function inIdOrder(open, entry) {
+  const at = open.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open, entry] : [...open.slice(0, at), entry, ...open.slice(at)];
+}
+function reopenItem(ledger, id) {
+  const item = ledger.closed.findLast((c) => c.id === id)?.item;
+  if (!item || ledger.items.some((i) => i.id === id))
+    return ledger;
+  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
+}
+function reopenFinding(ledger, id) {
+  const record = ledger.closedFindings.findLast((f) => f.id === id);
+  if (!record || ledger.findings.some((f) => f.id === id))
+    return ledger;
+  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record;
+  return {
+    ...ledger,
+    findings: inIdOrder(ledger.findings, finding),
+    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
+  };
+}
+var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
+var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
+function closedState(d) {
+  if (d.how === "dismissed")
+    return "dismissed";
+  if (d.how === "expired")
+    return "lapsed";
+  const isOvertaken = OVERTAKEN.test(d.outcome);
+  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
+}
+function closedAt(c) {
+  return "closedAt" in c ? c.closedAt : c.at;
+}
+function isLapsed(d) {
+  return closedState(d) !== "handled";
+}
+
+// ../hooks/feed.ts
+var FEED_TTL_MS = 6 * 60 * 60 * 1000;
+var FEED_POLL_MS = 30000;
+var MAX_FEED_FILE_BYTES = 256 * 1024;
+function parseFeed(text) {
+  try {
+    const feed = JSON.parse(text);
+    if (!feed || typeof feed !== "object")
+      return null;
+    const f = feed;
+    if (f.version !== 1 || !validSource(f.source) || !validTime(f.writtenAt) || !Array.isArray(f.entries) || f.warnings !== undefined && !Array.isArray(f.warnings))
+      return null;
+    if (f.entries.length > 40)
+      return null;
+    const keys = new Set;
+    const entries = [];
+    for (const value of f.entries) {
+      if (!value || typeof value !== "object")
+        return null;
+      const e = value;
+      if (typeof e.key !== "string" || e.key.length === 0 || e.key.length > 100 || keys.has(e.key) || !["working", "blocked", "done"].includes(e.state) || typeof e.title !== "string" || e.title.length === 0 || typeof e.detail !== "string" || !validTime(e.at) || e.kind !== undefined && !["work", "task"].includes(e.kind) || e.owner !== undefined && !validOwner(e.owner) || e.signalKey !== undefined && (typeof e.signalKey !== "string" || e.signalKey.length === 0 || e.signalKey.length > 100))
+        return null;
+      if (f.source === "meta-open-items" && (e.kind === undefined || e.owner === undefined))
+        return null;
+      keys.add(e.key);
+      entries.push({ ...e, title: e.title.slice(0, 120), detail: e.detail.slice(0, 600) });
+    }
+    const warningKeys = new Set;
+    const warnings = [];
+    for (const value of f.warnings ?? []) {
+      if (!value || typeof value !== "object")
+        return null;
+      const w = value;
+      if (typeof w.key !== "string" || w.key.length === 0 || w.key.length > 100 || warningKeys.has(w.key) || typeof w.title !== "string" || w.title.length === 0 || typeof w.detail !== "string" || !validTime(w.at))
+        return null;
+      warningKeys.add(w.key);
+      warnings.push({ key: w.key, title: w.title.slice(0, 120), detail: w.detail.slice(0, 600), at: w.at });
+    }
+    if (warnings.length > 40)
+      return null;
+    return { version: 1, source: f.source, writtenAt: f.writtenAt, entries, warnings };
+  } catch {
+    return null;
+  }
+}
+var validTime = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0;
+var validSource = (s) => typeof s === "string" && s.length > 0;
+var validOwner = (value) => {
+  if (!value || typeof value !== "object")
+    return false;
+  const owner = value;
+  return validSource(owner.machine) && validSource(owner.agent) && owner.machine.length <= 80 && owner.agent.length <= 80;
+};
+function applyFeed(ledger, feed, now, source = "") {
+  if (feed.source === "meta-open-items")
+    return applyMetaOpenItems(ledger, feed, now, source);
+  const keys = new Set(feed.entries.map((e) => e.key));
+  const owns = (f) => f.feedOwned === true && f.feedKey !== undefined && f.feedSource === source;
+  const staleClosed = ledger.closedFindings.some((f) => owns(f) && !keys.has(f.feedKey));
+  let next = staleClosed ? {
+    ...ledger,
+    closedFindings: ledger.closedFindings.map((f) => owns(f) && !keys.has(f.feedKey) ? { ...f, feedKey: undefined, feedSource: undefined } : f)
+  } : ledger;
+  for (const entry of feed.entries) {
+    let finding = next.findings.find((f) => owns(f) && f.feedKey === entry.key);
+    const isClosed = next.closedFindings.some((f) => owns(f) && f.feedKey === entry.key);
+    if (!finding && (entry.state === "done" || isClosed || now - entry.at >= FEED_TTL_MS))
+      continue;
+    const updated = {
+      ...finding,
+      id: finding?.id ?? `f${next.nextId}`,
+      kind: "progress",
+      title: entry.title,
+      detail: detailOf(entry),
+      path: null,
+      at: entry.at,
+      feedKey: entry.key,
+      feedSource: source,
+      feedOwned: true
+    };
+    if (!finding)
+      next = { ...next, findings: [...next.findings, updated], nextId: next.nextId + 1 };
+    else if (finding.kind !== updated.kind || finding.title !== updated.title || finding.detail !== updated.detail || finding.path !== updated.path || finding.at !== updated.at || finding.feedKey !== updated.feedKey || finding.feedSource !== updated.feedSource)
+      next = { ...next, findings: next.findings.map((f) => f.id === finding.id ? updated : f) };
+    if (entry.state === "done")
+      next = closeFinding(next, updated.id, { how: "update", outcome: `done: ${entry.detail}` }, now);
+  }
+  for (const finding of next.findings)
+    if (owns(finding) && !keys.has(finding.feedKey))
+      next = closeFinding(next, finding.id, { how: "update", outcome: "done: no longer reported" }, now);
+  return next;
+}
+function applyFeedFiles(ledger, root, files, now) {
+  const present = new Set(files.map((f) => f.path));
+  const sources = new Set([...ledger.findings, ...ledger.closedFindings, ...ledger.items].map((f) => f.feedSource).filter(Boolean));
+  let next = ledger;
+  for (const source of sources)
+    if (sourceUnder(source, root) && !present.has(source) && !next.findings.some((f) => f.feedSource === source && f.sourceManaged) && !next.items.some((i) => i.feedSource === source && i.sourceManaged))
+      next = applyFeed(next, emptyFeed, now, source);
+  for (const file of files)
+    if (file.feed)
+      next = applyFeed(next, file.feed, now, file.path);
+  const validPaths = new Set(files.filter((file) => file.feed).map((file) => file.path));
+  const carriedWarnings = (next.untrackedWork ?? []).filter((w) => !sourceUnder(w.feedSource, root) || present.has(w.feedSource) && !validPaths.has(w.feedSource));
+  const currentWarnings = files.flatMap((file) => file.feed ? (file.feed.warnings ?? []).map((w) => ({ ...w, feedSource: file.path })) : []);
+  const untrackedWork = [...carriedWarnings, ...currentWarnings];
+  if (JSON.stringify(untrackedWork) !== JSON.stringify(next.untrackedWork ?? []))
+    next = { ...next, untrackedWork };
+  for (const finding of next.findings)
+    if (finding.feedOwned === true && !finding.sourceManaged && finding.feedKey && finding.feedSource && now - finding.at >= FEED_TTL_MS)
+      next = closeFinding(next, finding.id, { how: "update", outcome: "done: feed entry expired" }, now);
+  return next;
+}
+function applyMetaOpenItems(ledger, feed, now, source) {
+  const tasks = new Map(feed.entries.filter((entry) => entry.kind === "task" && entry.state !== "done").map((entry) => [entry.key, entry]));
+  const work = new Map(feed.entries.filter((entry) => entry.kind !== "task" && entry.state !== "done").map((entry) => [entry.key, entry]));
+  let next = ledger;
+  for (const item of next.items)
+    if (item.sourceManaged && item.feedSource === source && !tasks.has(item.feedKey ?? ""))
+      next = { ...next, items: next.items.filter((i) => i.id !== item.id) };
+  for (const entry of tasks.values()) {
+    const existing = next.items.find((i) => i.sourceManaged && i.feedSource === source && i.feedKey === entry.key);
+    const updated = {
+      ...existing,
+      id: existing?.id ?? `i${next.nextId}`,
+      kind: "task",
+      label: null,
+      ask: entry.title,
+      detail: entry.detail,
+      options: [],
+      rec: null,
+      helps: [],
+      turn: 0,
+      at: entry.at,
+      from: "record",
+      sourceManaged: true,
+      feedKey: entry.key,
+      feedSource: source
+    };
+    if (!existing)
+      next = { ...next, items: [...next.items, updated], nextId: next.nextId + 1 };
+    else if (existing.ask !== updated.ask || existing.detail !== updated.detail || existing.at !== updated.at)
+      next = { ...next, items: next.items.map((i) => i.id === existing.id ? updated : i) };
+  }
+  for (const entry of work.values()) {
+    const current = next.findings.find((f) => f.sourceManaged && f.feedSource === source && f.feedKey === entry.key);
+    const updated = {
+      ...current,
+      id: current?.id ?? `f${next.nextId}`,
+      kind: "progress",
+      title: entry.title,
+      detail: detailOf(entry),
+      path: null,
+      at: entry.at,
+      feedKey: entry.key,
+      feedSource: source,
+      feedOwned: true,
+      sourceManaged: true
+    };
+    if (!current)
+      next = { ...next, findings: [...next.findings, updated], nextId: next.nextId + 1 };
+    else if (current.title !== updated.title || current.detail !== updated.detail || current.at !== updated.at)
+      next = { ...next, findings: next.findings.map((f) => f.id === current.id ? updated : f) };
+  }
+  for (const finding of next.findings)
+    if (finding.sourceManaged && finding.feedSource === source && !work.has(finding.feedKey ?? ""))
+      next = closeFinding(next, finding.id, { how: "update", outcome: "done: no longer reported" }, now);
+  return next;
+}
+var emptyFeed = { version: 1, source: "", writtenAt: 0, entries: [] };
+var sourceUnder = (source, root) => {
+  const base = root.replace(/[\\/]+$/, "");
+  return source === base || source.startsWith(`${base}/`) || source.startsWith(`${base}\\`);
+};
+var detailOf = (entry) => entry.state === "blocked" ? `Blocked: ${entry.detail}` : entry.detail;
+
+// ../hooks/feed-path.ts
+var HERDR_LOOKUP_TIMEOUT_MS = 5000;
+function agentNameOf(output) {
+  try {
+    const parsed = JSON.parse(output);
+    if (!parsed || typeof parsed !== "object")
+      return null;
+    const result = parsed.result;
+    if (!result || typeof result !== "object")
+      return null;
+    const agent = result.agent;
+    if (!agent || typeof agent !== "object")
+      return null;
+    const name = agent.name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
+}
+async function resolveInboxFeedPath(explicit, home, identity, run) {
+  if (explicit !== undefined)
+    return explicit;
+  if (!home || !identity.paneId)
+    return;
+  try {
+    const result = await run([identity.binPath || "herdr", "agent", "get", identity.paneId], {
+      cwd: home,
+      timeoutMs: HERDR_LOOKUP_TIMEOUT_MS
+    });
+    if (result.code !== 0 || agentNameOf(result.stdout) !== "meta")
+      return;
+    return `${home.replace(/[\\/]+$/, "")}/.local/state/inbox/feeds`;
+  } catch {
+    return;
+  }
+}
+function memoizedFeedPath(resolve) {
+  let result;
+  return () => result ??= resolve().catch(() => {
+    return;
+  });
+}
+function feedPathValue(path) {
+  return Promise.resolve(typeof path === "function" ? path() : path);
+}
 
 // ../hooks/press-labels.ts
 function actionId(p) {
@@ -1192,7 +1681,8 @@ var BANNER_TONES = {
   "server-builds-differ": "warning",
   "tab-update-failed": "warning",
   "herdr-mod-failed": "warning",
-  "herdr-mod-ask": "ask"
+  "herdr-mod-ask": "ask",
+  "untracked-work": "warning"
 };
 function bannerOf(kind, text) {
   const end = text.indexOf(". ");
@@ -1209,9 +1699,11 @@ function stopBanner(stop) {
     body: isResumable(stop) ? why : `${why} ${stopFix(stop)}`
   };
 }
-function tabBarBanners(host, statusError, pressNote) {
+function tabBarBanners(host, statusError, pressNote, untrackedWork = []) {
+  const warning = untrackedWork.length ? bannerOf("untracked-work", `Untracked work. ${untrackedWork.length} live signal${untrackedWork.length === 1 ? "" : "s"} have no open item: ${untrackedWork.slice(0, 8).map((w) => `${w.title} (${w.detail})`).join("; ")}${untrackedWork.length > 8 ? "; \u2026" : ""}`) : null;
   return [
     ...host,
+    ...warning ? [warning] : [],
     ...statusError ? [bannerOf("update-failed", statusError)] : [],
     ...pressNote ? [bannerOf(pressNote.isError ? "press-failed" : "press-note", pressNote.text)] : []
   ];
@@ -1496,120 +1988,6 @@ function childrenCutOff(o, at) {
   return childrenEnded(o, (c) => c.kind !== "delegate", at);
 }
 
-// ../hooks/ledger-close.ts
-var MAX_CLOSED = 12;
-function closedRecord(item, closing, now) {
-  const { id, kind, ask, label } = item;
-  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
-}
-function closedFindingRecord(finding, closing, now, askedAs) {
-  return { ...finding, ...askedAs ? { askedAs } : {}, ...closing, closedAt: now };
-}
-function closeByAgent(host, ledger, id, how, now) {
-  const closing = "answer" in how ? { how: "answered", outcome: how.answer } : { how: "claude", outcome: `closed by ${host.agent}: ${how.reason}` };
-  const item = ledger.items.find((i) => i.id === id);
-  if (item)
-    return { ledger: closeItem(ledger, id, closing, now), closed: { item } };
-  const finding = ledger.findings.find((f) => f.id === id);
-  if (finding)
-    return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } };
-  return { ledger, closed: null };
-}
-function closeItem(ledger, id, closing, now) {
-  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
-  return reopenAskedFindings({ ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] }, records);
-}
-function closeFinding(ledger, id, closing, now, askedAs) {
-  const finding = ledger.findings.find((f) => f.id === id);
-  if (!finding)
-    return ledger;
-  return {
-    ...ledger,
-    findings: ledger.findings.filter((f) => f.id !== id),
-    closedFindings: [...ledger.closedFindings, closedFindingRecord(finding, closing, now, askedAs)]
-  };
-}
-var SHARED_TITLE_WORDS = 2;
-var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
-function leavesWorkOpen(c) {
-  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
-}
-function reopenAskedFindings(ledger, closes) {
-  return closes.filter(leavesWorkOpen).reduce((l, c) => {
-    const record = l.closedFindings.findLast((f) => f.askedAs === c.id);
-    if (!record)
-      return l;
-    const reopened = reopenFinding(l, record.id);
-    return {
-      ...reopened,
-      findings: reopened.findings.map((f) => {
-        const { askedAs: _askedAs, ...rest } = f;
-        return f.id === record.id ? rest : f;
-      })
-    };
-  }, ledger);
-}
-function prNumbers(text) {
-  return new Set([...text.matchAll(/(?:#|\bPR\s*#?|\/pull\/)(\d+)/gi)].map((m) => m[1]));
-}
-function asksAbout(item, finding, isClaimed = false) {
-  if (item.label === finding.id)
-    return true;
-  if (restates(finding.title, item.ask) || restates(finding.detail, item.ask))
-    return true;
-  if (isClaimed) {
-    const known = keyWords(finding.title);
-    if ([...keyWords(item.ask)].filter((w) => known.has(w)).length >= SHARED_TITLE_WORDS)
-      return true;
-  }
-  const itemPrs = prNumbers(`${item.label ?? ""} ${item.ask}`);
-  return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
-}
-function pruneClosed(ledger, keep) {
-  const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
-  return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) };
-}
-function idNumber(id) {
-  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
-}
-function inIdOrder(open, entry) {
-  const at = open.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open, entry] : [...open.slice(0, at), entry, ...open.slice(at)];
-}
-function reopenItem(ledger, id) {
-  const item = ledger.closed.findLast((c) => c.id === id)?.item;
-  if (!item || ledger.items.some((i) => i.id === id))
-    return ledger;
-  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
-}
-function reopenFinding(ledger, id) {
-  const record = ledger.closedFindings.findLast((f) => f.id === id);
-  if (!record || ledger.findings.some((f) => f.id === id))
-    return ledger;
-  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record;
-  return {
-    ...ledger,
-    findings: inIdOrder(ledger.findings, finding),
-    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
-  };
-}
-var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
-var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
-function closedState(d) {
-  if (d.how === "dismissed")
-    return "dismissed";
-  if (d.how === "expired")
-    return "lapsed";
-  const isOvertaken = OVERTAKEN.test(d.outcome);
-  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
-}
-function closedAt(c) {
-  return "closedAt" in c ? c.closedAt : c.at;
-}
-function isLapsed(d) {
-  return closedState(d) !== "handled";
-}
-
 // ../hooks/reply-parse.ts
 var NL4 = `
 `;
@@ -1619,6 +1997,15 @@ function readKind(kind) {
 }
 var NEEDS_PERSON = /(?:^|[\s;&|])(?:login|logout|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen)(?=[\s:]|$)|\binit --interactive\b/i;
 var PERSON_ONLY_REASON = /credential|password|passphrase|secret|\btoken|\b2fa\b|\bmfa\b|\bdevice\b|phone|android|tablet|account|sign(?:ed)?[- ]?in|log(?:ged)?[- ]?in|only you|you hold|your (?:mac|machine|laptop|computer|keychain)|\bsudo\b/i;
+function recordedAsksOnly(u, isPersonsAnswer) {
+  const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
+  return {
+    ...u,
+    closed: u.closed.filter((c) => (!/^i\d+$/.test(c.id) || isPersonsAnswer(c.outcome)) && !stillAsked.has(c.id)),
+    added: [],
+    updated: []
+  };
+}
 function readHelp(kind, value, name, blocks, source) {
   const isQuoted = (text) => source === null || source.includes(text);
   const block = value.match(/^block\s+(\d+)$/i);
@@ -1802,6 +2189,10 @@ function todoAsk(work) {
 }
 function stepHelp(step) {
   const value = step.trim();
+  const named = value.match(/^\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)$/i);
+  const href = named ? parseInline(value).find((span) => span.link)?.link : undefined;
+  if (named && href)
+    return readHelp("link", href, named[1], [], null);
   if (/^https?:\/\//i.test(value))
     return readHelp("link", value, null, [], null);
   if (/^(?:\/|~\/|\.{1,2}\/)\S*$/.test(value))
@@ -1811,8 +2202,6 @@ function stepHelp(step) {
 }
 
 // ../hooks/ledger-update.ts
-var MAX_OPEN = 20;
-var STALE_AFTER = 12;
 var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
 var PUT_OFF2 = /^\s*(?:(?:the )?(?:user|person) )?(?:dismissed|declined|deferred (?:to|until|till|for)|postponed|put (?:it )?off|set aside|not now|later\b|can wait|won'?t fix|skipped)|\b(?:user|person) (?:said|says|asked|wants|chose|decided|declined|dismissed|deferred|put it off)\b/i;
 var EXPIRED = "expired, unanswered";
@@ -1842,12 +2231,18 @@ function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
 }
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
+  const feedIds = new Set(ledger.findings.filter((f) => f.feedOwned).map((f) => f.id));
+  const sourceItemIds = new Set(ledger.items.filter((i) => i.sourceManaged).map((i) => i.id));
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const isPutOffFinding = (c) => ledger.findings.some((f) => f.id === c.id) && PUT_OFF2.test(c.outcome);
-  const closing = new Map(u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome) && !isPutOffFinding(c)).map((c) => [c.id, c.outcome]));
+  const closing = new Map(u.closed.filter((c) => !feedIds.has(c.id) && !sourceItemIds.has(c.id) && !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome) && !isPutOffFinding(c)).map((c) => [c.id, c.outcome]));
   const closed = [...ledger.closed];
   const items = [];
   for (const item of ledger.items) {
+    if (item.sourceManaged) {
+      items.push(item);
+      continue;
+    }
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
     const isQuestionBackOutcome = outcome !== undefined && item.kind === "question" && isQuestionBack(outcome, item.options);
@@ -1857,12 +2252,16 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     else
       items.push(withUpdate({ ...item, helps }, u.updated));
   }
-  const recordedThisTurn = new Set([...ledger.items, ...ledger.closed.flatMap((c) => c.item ?? [])].filter((i) => i.from === "record" && i.turn === turn).map((i) => i.kind));
+  const recordedThisTurn = new Set([...ledger.items, ...ledger.closed.flatMap((c) => c.item ?? [])].filter((i) => !i.sourceManaged && i.from === "record" && i.turn === turn).map((i) => i.kind));
   let nextId = ledger.nextId;
   let added = 0;
   const addedIds = [];
   const created = new Set;
   for (const a of u.added) {
+    if (items.some((i) => i.sourceManaged && matchOpen([i], a) >= 0)) {
+      addedIds.push(null);
+      continue;
+    }
     if (repeatsClosed(ledger.closed, a, promptAt, ledger.closedFindings)) {
       addedIds.push(null);
       continue;
@@ -1896,28 +2295,24 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       options: ["Proceed", "Not yet"],
       rec: null
     };
-    const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
+    const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => !f.feedOwned && restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
     if (isKnown)
       continue;
     items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update" });
     nextId += 1;
     added += 1;
   }
-  const kept = items.filter((i) => i.from === "record" || turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN);
-  for (const i of items)
-    if (!kept.includes(i))
-      closed.push(closedRecord(i, { outcome: EXPIRED, how: "expired" }, now));
   const askedBy = new Map;
   for (const a of u.asked) {
     const id = typeof a.item === "number" ? addedIds[a.item] : a.item;
-    const asker = kept.find((i) => i.id === id);
+    const asker = items.find((i) => i.id === id);
     const finding = ledger.findings.find((f) => f.id === a.id);
-    if (asker && finding && asksAbout(asker, finding, true))
+    if (asker && finding && !finding.sourceManaged && asksAbout(asker, finding, true))
       askedBy.set(a.id, asker.id);
   }
-  for (const i of kept.filter((i) => created.has(i.id)))
+  for (const i of items.filter((i) => created.has(i.id)))
     for (const f of ledger.findings)
-      if (!askedBy.has(f.id) && asksAbout(i, f))
+      if (!f.sourceManaged && !f.feedOwned && !askedBy.has(f.id) && asksAbout(i, f))
         askedBy.set(f.id, i.id);
   const { findings, closedFindings } = ledger.findings.reduce((l, f) => {
     const asker = askedBy.get(f.id);
@@ -1928,7 +2323,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   }, ledger);
   return reopenAskedFindings({
     ...ledger,
-    items: kept,
+    items,
     closed,
     findings,
     closedFindings,
@@ -1945,14 +2340,27 @@ function withUpdate(item, updated) {
   return withRec({ ...item, options }, restatedRec(options, item.rec, change.rec));
 }
 function addFinding(ledger, finding) {
-  const same = ledger.findings.find((f) => sameAsk(f.title, finding.title)) ?? ledger.items.find((i) => restates(i.ask, finding.title));
-  if (same)
-    return { ledger, id: same.id, isAdded: false, expired: null, dismissed: null };
+  const sourceManaged = ledger.findings.find((f) => f.sourceManaged && sameAsk(f.title, finding.title)) ?? ledger.items.find((i) => i.sourceManaged && restates(i.ask, finding.title));
+  if (sourceManaged)
+    return { ledger, id: sourceManaged.id, isAdded: false, expired: null, dismissed: null };
+  const sameFinding = ledger.findings.find((f) => sameAsk(f.title, finding.title));
+  const same = sameFinding ?? ledger.items.find((i) => restates(i.ask, finding.title));
+  if (same) {
+    const findings = finding.document && sameFinding ? ledger.findings.map((f) => f.id === same.id ? { ...f, document: finding.document, documentPreview: finding.documentPreview } : f) : ledger.findings;
+    return {
+      ledger: findings === ledger.findings ? ledger : { ...ledger, findings },
+      id: same.id,
+      isAdded: false,
+      expired: null,
+      dismissed: null
+    };
+  }
   const dismissed = ledger.closedFindings.findLast((f) => f.how === "dismissed" && repeatsSubject(f.title, finding.title)) ?? ledger.closed.findLast((c) => c.how === "dismissed" && raisesOnly(c.ask, finding.title)) ?? null;
   if (dismissed)
     return { ledger, id: dismissed.id, isAdded: false, expired: null, dismissed };
   const id = `f${ledger.nextId}`;
-  const expired = ledger.findings.length >= MAX_FINDINGS ? ledger.findings[0] : null;
+  const ordinary = ledger.findings.filter((f) => !f.feedOwned);
+  const expired = ordinary.length >= MAX_FINDINGS ? ordinary[0] : null;
   const room = expired ? closeFinding(ledger, expired.id, { how: "expired", outcome: "list full" }, finding.at) : ledger;
   return {
     ledger: { ...room, findings: [...room.findings, { ...finding, id }], nextId: ledger.nextId + 1 },
@@ -1964,7 +2372,10 @@ function addFinding(ledger, finding) {
 }
 function addAgentItem(ledger, entry, now) {
   const candidate = { ...entry, label: null };
-  const recordedThisTurn = new Set(ledger.items.filter((i) => i.turn === ledger.turn).map((i) => i.id));
+  const managedMatch = ledger.items.find((i) => i.sourceManaged && matchOpen([i], candidate) >= 0);
+  if (managedMatch)
+    return { ledger, is: "source-managed", id: managedMatch.id };
+  const recordedThisTurn = new Set(ledger.items.filter((i) => !i.sourceManaged && i.turn === ledger.turn).map((i) => i.id));
   const open = matchOpen(ledger.items, candidate, recordedThisTurn);
   const openItem = ledger.items[open];
   if (openItem) {
@@ -1972,7 +2383,19 @@ function addAgentItem(ledger, entry, now) {
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
     const rec = restatedRec(openItem.options, openItem.rec, entry.rec);
     const reason = entry.recReason && rec === recommendedOption(openItem.options, entry.rec) ? entry.recReason : undefined;
-    const reported = { ...withRec(openItem, rec, reason), helps, isDesignChoice, reportedAt: now };
+    const hasNewDetail = entry.detail !== undefined && entry.detail !== openItem.detail;
+    const hasNewDocument = entry.document !== undefined && (entry.document !== openItem.document || entry.documentPreview !== undefined && entry.documentPreview !== openItem.documentPreview);
+    const reported = {
+      ...withRec(openItem, rec, reason),
+      helps,
+      isDesignChoice,
+      reportedAt: now,
+      ...hasNewDetail ? { detail: entry.detail } : {},
+      ...hasNewDocument ? {
+        document: entry.document,
+        ...entry.documentPreview !== undefined ? { documentPreview: entry.documentPreview } : {}
+      } : {}
+    };
     const items = ledger.items.map((i) => i === openItem ? reported : i);
     return {
       ledger: { ...ledger, items },
@@ -1981,23 +2404,22 @@ function addAgentItem(ledger, entry, now) {
       addedSteps: helps.length - openItem.helps.length,
       isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
       newRec: rec !== openItem.rec ? rec : null,
-      isNewReason: reason !== undefined && reason !== openItem.recReason
+      isNewReason: reason !== undefined && reason !== openItem.recReason,
+      hasNewDetail,
+      hasNewDocument
     };
   }
   const isAskable = (c) => c.how === "expired" || c.how === "claude";
-  const repeated = ledger.closed.findLast((c) => !isAskable(c) && repeatsSettled(c, candidate)) ?? dismissedFindingOf(ledger.closedFindings, entry.ask);
+  const repeated = ledger.closed.slice(-CLOSED_CONTEXT_LIMIT).findLast((c) => !isAskable(c) && repeatsSettled(c, candidate)) ?? dismissedFindingOf(ledger.closedFindings, entry.ask);
   if (repeated)
     return { ledger, is: "closed", record: repeated };
   const id = `i${ledger.nextId}`;
   const items = [...ledger.items, { ...entry, label: null, id, turn: ledger.turn, at: now, from: "record" }];
-  const kept = items.slice(-MAX_OPEN);
-  const dropped = items.filter((i) => !kept.includes(i));
-  const closed = [...ledger.closed, ...dropped.map((i) => closedRecord(i, { outcome: EXPIRED, how: "expired" }, now))];
   const asked = { ...entry, label: null };
-  const restated = ledger.findings.filter((f) => asksAbout(asked, f));
-  const base = { ...ledger, items: kept, closed, nextId: ledger.nextId + 1, batchTurn: ledger.turn };
-  const next = reopenAskedFindings(restated.reduce((l, f) => closeFinding(l, f.id, { outcome: `asked as ${id}`, how: "update" }, now, id), base), closed.slice(ledger.closed.length));
-  return { ledger: next, is: "added", id, expired: dropped[0] ?? null };
+  const restated = ledger.findings.filter((f) => !f.sourceManaged && asksAbout(asked, f));
+  const base = { ...ledger, items, nextId: ledger.nextId + 1, batchTurn: ledger.turn };
+  const next = reopenAskedFindings(restated.reduce((l, f) => closeFinding(l, f.id, { outcome: `asked as ${id}`, how: "update" }, now, id), base), []);
+  return { ledger: next, is: "added", id, expired: null };
 }
 
 // ../hooks/status-upgrade-goal.ts
@@ -2252,6 +2674,7 @@ var EMPTY = {
   closed: [],
   findings: [],
   closedFindings: [],
+  untrackedWork: [],
   prs: [],
   prOrder: null,
   nextId: 1,
@@ -2262,7 +2685,7 @@ var EMPTY = {
 function isBlankLedger(ledger) {
   const o = ledger.overview;
   const isStatusBlank = !o || o.head === null && o.subjects.length === 0 && o.goal === null;
-  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
+  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0 && (ledger.untrackedWork?.length ?? 0) === 0;
 }
 function upgradeLedger(ledger) {
   const {
@@ -2376,9 +2799,9 @@ TODO: <work>
 Write plainly. No jargon, no filler, no markdown.`;
 }
 function ledgerBlocks(ledger) {
-  const open = ledger.items.map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`).join(NL5);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL5);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).slice(-MAX_CLOSED).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
+  const open = ledger.items.filter((i) => !i.sourceManaged).map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`).join(NL5);
+  const findings = ledger.findings.filter((f) => !f.feedOwned).map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL5);
+  const closed = ledger.closed.slice(-CLOSED_CONTEXT_LIMIT).filter((d) => d.how !== "expired" && !isAskedForChoices(d)).slice(-MAX_CLOSED).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
   const dismissedFindings = ledger.closedFindings.filter((f) => f.how === "dismissed").slice(-MAX_CLOSED).map((f) => `${f.kind}: ${f.title} \u2192 ${outcomeText(f)}`);
   const decided = [...closed, ...dismissedFindings].join(NL5);
   return [
@@ -2420,8 +2843,9 @@ function screenText(host, isOpen, tab) {
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => !i.sourceManaged && i.turn === ledger.batchTurn);
 }
+var promptItems = (ledger) => ledger.items.filter((i) => !i.sourceManaged);
 function describe(item) {
   const parts = [`"${item.ask}"`];
   if (item.options.length > 0)
@@ -2497,19 +2921,20 @@ function findingLine(finding) {
 }
 var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
 function inboxText(host, ledger, isOpen) {
+  const findings = ledger.findings.filter((f) => !f.feedOwned);
   const out = [
     `inbox: what waits on the user, as of your last reply. Anything not listed here is closed. ${CLOSE_ID_RULE}`
   ];
-  if (ledger.items.length > 0) {
+  if (promptItems(ledger).length > 0) {
     out.push("Waiting on the user:");
-    for (const item of ledger.items)
+    for (const item of promptItems(ledger))
       out.push(itemLine(item));
   } else {
     out.push("Nothing is waiting on the user.");
   }
-  if (ledger.findings.length > 0) {
+  if (findings.length > 0) {
     out.push("Findings you recorded, still open:");
-    for (const f of ledger.findings)
+    for (const f of findings)
       out.push(findingLine(f));
   }
   out.push(isOpen ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
@@ -2533,7 +2958,7 @@ function promptNotes(host, ledger, prompt, told) {
   const inbox = inboxText(host, ledger, prompt.isOpen);
   const toldClosed = new Set(told.closed);
   const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
-  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
+  const isEmpty = promptItems(ledger).length === 0 && ledger.findings.every((f) => f.feedOwned);
   if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null))
     return { notes, told };
   notes.push(closed ? `${inbox}${NL5}${closed}` : inbox);
@@ -3018,7 +3443,8 @@ function goalPressed(ledger, p, record, now) {
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" },
+  progress: { title: "Progress", mark: "\u21BB", tone: "findings" }
 };
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
@@ -3079,6 +3505,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: FINDING_GROUPS.progress.mark,
+    tone: FINDING_GROUPS.progress.tone,
+    isRunning: false,
+    words: "Progress reported by the feed"
   }
 ];
 var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
@@ -3094,9 +3526,14 @@ var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "Clear the merged and closed PRs" }
 ];
+var DOCUMENT_KEYS = [
+  { keys: "v", does: "Read the selected report, if available" },
+  { keys: "b", does: "Return to the inbox from a report" }
+];
 function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
+  const hasDocumentRows = tab === "needsYou" || tab === "findings";
   const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
@@ -3109,22 +3546,37 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
         switchTabs,
         ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
         ...hasRows ? [undoKey] : [],
+        ...hasRows || selectsStatusRows ? [
+          {
+            keys: hasDocumentRows ? "j k \u2191 \u2193" : "j k",
+            does: hasDocumentRows ? "Select a row or scroll a report" : "Select the next or previous row"
+          }
+        ] : [],
+        ...hasDocumentRows ? DOCUMENT_KEYS : [],
         ...prTabKeys,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, undoKey] : [],
+        ...hasRows ? [
+          {
+            keys: "j k \u2191 \u2193",
+            does: hasDocumentRows ? "Select a row or scroll a report" : "Select the next or previous row"
+          },
+          ...hasDocumentRows ? DOCUMENT_KEYS : []
+        ] : [],
+        ...hasRows ? [undoKey] : [],
         ...prTabKeys,
         { keys: "?", does: "Open or close help" },
-        { keys: "esc", does: "Close help, or leave a reply field" }
+        { keys: "esc", does: "Close help, leave a reply field, or return from a report" }
       ];
     case "omp":
       return [
         { keys: `tab ${tabKeys}`, does: "Switch tabs" },
         ...hasRows ? [
-          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
+          { keys: "\u2191 \u2193 j k", does: hasDocumentRows ? "Move between rows or scroll a report" : "Move between rows" },
+          ...hasDocumentRows ? DOCUMENT_KEYS : [],
           { keys: "\u2190 \u2192", does: "Pick a button" },
           { keys: "\u21B5", does: "Press the picked button" },
           { keys: "t", does: "Reply to the selected row" },
@@ -3139,7 +3591,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
           { keys: "\u2191 \u2193", does: "Scroll the page" }
         ],
         { keys: "?", does: "Open or close help" },
-        { keys: "esc", does: "Close help, then the panel" }
+        { keys: "esc", does: "Close help, return from a report, then the panel" }
       ];
     case "herdr":
       return [
@@ -3991,6 +4443,11 @@ function closedLineAction(d) {
 function recLineOf(item) {
   return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
 }
+function documentPreviewLine(row) {
+  if (!row.document)
+    return null;
+  return `Report preview: ${row.documentPreview || baseName(row.document) || "Markdown document"}`;
+}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   if (!descriptions)
@@ -3999,7 +4456,7 @@ function optionDescriptionsOf(item, actions) {
     if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option))
       return [];
     const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    return [{ label: clipLabel(linkLabel(a.press.option), OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
 function rowHandle(row) {
@@ -4054,7 +4511,11 @@ function closedShown(closed, drawnSettled, isAllShown = false) {
   return isAllShown ? listed : listed.slice(0, CLOSED_SHOWN);
 }
 function closedTotal(closed, drawnSettled) {
-  return closed.filter((d) => !drawnSettled.has(d.id)).length;
+  return closedHistoryPlan(closed, drawnSettled).total;
+}
+function closedHistoryPlan(closed, drawnSettled) {
+  const rows = closed.filter((d) => !drawnSettled.has(d.id));
+  return { rows, total: rows.length };
 }
 function foldLabel(total) {
   return `${total} closed`;
@@ -4473,7 +4934,13 @@ function ghNoticeOf(gh) {
   return null;
 }
 function prsEmptyHint(place) {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+  return `Your open PRs show here, along with PRs this ${place} links and the PR for its branch.`;
+}
+function accountPrText(pr) {
+  return `${pr.ref} \xB7 ${pr.title}${pr.isDraft ? " \xB7 draft" : ""}`;
+}
+function botPrSummaryText(bot) {
+  return `${bot.name}: ${bot.count} open ${bot.count === 1 ? "PR" : "PRs"}`;
 }
 function prsEmptyText(prs, place) {
   return {
@@ -5838,7 +6305,7 @@ var RECORD_SCHEMA = {
     },
     ask: {
       type: "string",
-      description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
+      description: "For a question or task: what you need from the user, in at most 12 words, readable without your reply. Links as [label](https://\u2026); a link counts as its label."
     },
     context: {
       type: "string",
@@ -5847,7 +6314,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one. A link here shows only its label; put the page behind an option in detail or steps."
     },
     option_notes: {
       type: "array",
@@ -5865,7 +6332,7 @@ var RECORD_SCHEMA = {
     steps: {
       type: "array",
       items: { type: "string" },
-      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
+      description: "For a task: up to 3 things the user can do in one press, each written as a command, a file path or a [label](https://\u2026) link. For a question: up to 3 files or links that help the user decide, such as a page comparing the options, each file as an absolute path."
     },
     design_choice: {
       type: "boolean",
@@ -5876,12 +6343,19 @@ var RECORD_SCHEMA = {
       enum: ["issue", "opportunity"],
       description: "For a finding. issue: something wrong or risky. opportunity: something that could be better."
     },
-    title: { type: "string", description: "For a finding: what it is, in at most 12 plain words." },
+    title: {
+      type: "string",
+      description: "For a finding: what it is, in at most 12 words. Links as [label](https://\u2026); a link counts as its label."
+    },
     detail: {
       type: "string",
-      description: "For a finding: why it matters and what you would do, in one or two sentences."
+      description: "For a question or task: why you ask and what it holds up; for a question, what each option leads to. For a finding: why it matters and what you would do. Use short paragraphs. Links as [label](https://\u2026)."
     },
-    path: { type: "string", description: "For a finding: the file it is about, if one." }
+    path: { type: "string", description: "For a finding: the file it is about, if one." },
+    document: {
+      type: "string",
+      description: "For a Markdown report the user should read in the inbox: its absolute local file path."
+    }
   },
   required: ["kind"]
 };
@@ -5925,17 +6399,86 @@ var TOOL_FIELDS = {
   close: Object.keys(CLOSE_SCHEMA.properties),
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
+var V0_3_TOOL_FIELDS = {
+  record: ["kind", "ask", "options", "rec", "steps", "design_choice", "finding_kind", "title", "detail", "path"],
+  close: ["id", "answer", "reason"],
+  order_prs: ["repo", "numbers", "label", "why"]
+};
+
+// ../hooks/record-links.ts
+var FENCE2 = /```[\s\S]*?```/g;
+var URL_TEXT = /<?https?:\/\/[^\s>]+>?/g;
+var LINKED_PATH = /\/(?:pulls?|issues|merge_requests)\/(\d+)/g;
+var MAX_NAMED = 3;
+var anyCase = (word) => [...word].map((c) => `[${c.toUpperCase()}${c}]`).join("");
+var REF = new RegExp(String.raw`(?<![\w/#&])(?:(?<!-)(?:PRs?|${anyCase("pull")}\s+${anyCase("request")}[sS]?|${anyCase("issue")}[sS]?|\u30D7\u30EB\u30EA\u30AF(?:\u30A8\u30B9\u30C8)?|\u30A4\u30B7\u30E5\u30FC)\s*#?|(?:[\w.-]+\/)?[\w.-]+#|#)([1-9]\d*)(?!\w)(?!\s*(?:\u4EF6|\u672C|\u500B|\u3064|\u70B9|\u56DE|\u679A))`, "g");
+function refs(text) {
+  let normal = "";
+  const from = [];
+  const to = [];
+  let i = 0;
+  for (const ch of text) {
+    const n = ch.normalize("NFKC");
+    for (let k = 0;k < n.length; k++) {
+      from.push(i);
+      to.push(i + ch.length);
+    }
+    normal += n;
+    i += ch.length;
+  }
+  return [...normal.matchAll(REF)].map((m) => ({
+    text: text.slice(from[m.index] ?? 0, to[m.index + m[0].length - 1] ?? i).trim(),
+    n: m[1] ?? ""
+  }));
+}
+function plain(value, keepLabels) {
+  return parseInline(value.replace(FENCE2, " ")).map((span) => span.code || span.link && !keepLabels ? " " : span.text).join("").replace(URL_TEXT, " ");
+}
+function linkedIn(value) {
+  return parseInline(value.replace(FENCE2, " ")).flatMap((span) => span.link ? [...refs(span.text).map((r) => r.n), ...pathNumbers(span.link)] : []);
+}
+function pathNumbers(url) {
+  return [...url.matchAll(LINKED_PATH)].map((m) => m[1] ?? "");
+}
+function unlinkedRefs(fields, stepUrls = []) {
+  const order = ["title", "ask", "detail", "options"];
+  const linked = new Set([
+    ...order.filter((f) => f !== "options").flatMap((f) => (fields[f] ?? []).flatMap((v) => linkedIn(v))),
+    ...stepUrls.flatMap(pathNumbers)
+  ]);
+  return order.flatMap((field) => (fields[field] ?? []).flatMap((value) => refs(plain(value, field === "options")).filter((r) => !linked.has(r.n)).map((r) => ({ field, text: r.text }))));
+}
+function recordLinksAnswer(fields, stepUrls = []) {
+  const long = fields.find((f) => inlineLinks(f.text).length > 0 && linkLabel(f.text).length > f.max);
+  if (long)
+    return `Not recorded: ${long.field} is over its limit of ${long.max} characters, so cutting it would drop its links. Shorten it so its links survive; a link counts as its label.`;
+  const byField = {};
+  for (const f of fields)
+    (byField[f.field] ??= []).push(f.text);
+  const found = unlinkedRefs(byField, stepUrls);
+  return found.length > 0 ? unlinkedRefsAnswer(found) : null;
+}
+function unlinkedRefsAnswer(found) {
+  const named = found.slice(0, MAX_NAMED);
+  const fields = [...new Set(named.map((r) => r.field))].map((field) => `${field} names ${named.filter((r) => r.field === field).map((r) => `"${r.text}"`).join(" and ")}`);
+  const more = found.length > MAX_NAMED ? `, and ${found.length - MAX_NAMED} more` : "";
+  const option = found.some((r) => r.field === "options") ? " An option shows only a link's label, so link what an option names in detail or steps." : "";
+  return `Not recorded: ${fields.join(", ")}${more}, without a link. ` + "Write each PR or issue as a Markdown link at its first mention, such as [owner/repo#123](https://github.com/owner/repo/pull/123); later mentions in the same record need none. Only https links count, and a link with a title or inside italics is not read as a link." + option + ' If it is not a PR or issue, write it without "#", or put code in backticks.';
+}
 
 // ../hooks/tools.ts
 var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
+var MAX_ITEM_DETAIL = 1200;
+var LINK_DESCRIPTION = "Write links as [label](https://\u2026); the inbox shows the label, and links are clickable where the look allows. Only https links open.";
 function orderDescription(host) {
   return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
 }
 function recordDescription(host) {
-  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
+  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing. ${LINK_DESCRIPTION}
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
-- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
-- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, a PR's checks, conflicts, review threads or readiness, which ${host.prsIn} shows, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
+- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps, and fill detail with what holds the task up and what the step leads to. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
+- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, PR checks, conflicts, review threads or readiness, which ${host.prsIn} shows; anything the user already decided; todos or ideas the user mentioned; problems in your own change; progress; and anything only the user can do or decide. Handle those in your reply, or record them as a question or task.
+For any kind with a Markdown report the user should read, give its absolute local path in document. The inbox checks the file and shows a short excerpt; do not use this field for a file they should edit.
 Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`;
 }
 var CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`;
@@ -5960,28 +6503,36 @@ function cut(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 var MAX_ASK = 200;
+var MAX_FINDING_TITLE = 120;
+var MAX_FINDING_DETAIL = 600;
 var MAX_OPTION = 60;
 var MAX_OPTIONS = 8;
 var MAX_STEPS = 3;
 var MAX_REASON = 120;
-function list(value, max, each) {
-  return Array.isArray(value) ? value.map((v) => cut(v, each)).filter(Boolean).slice(0, max) : [];
+function raw(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function rawList(value) {
+  return Array.isArray(value) ? value.map(raw).filter(Boolean) : [];
+}
+function list(value, max, each, inline = false) {
+  return Array.isArray(value) ? value.map((v) => inline ? cutInline(typeof v === "string" ? v : "", each) : cut(v, each)).filter(Boolean).slice(0, max) : [];
 }
 function unchanged(ledger, result) {
   return { ledger, result, personLine: null };
 }
-function recordItem(host, ledger, input, now, fields) {
+function recordItem(host, ledger, input, now, fields = V0_3_TOOL_FIELDS) {
   if (input.kind === "finding")
     return recordFinding(host, ledger, input, now);
   if (input.kind !== "question" && input.kind !== "task")
     return unchanged(ledger, "Not recorded: kind must be question, task or finding.");
-  const ask = cut(input.ask, MAX_ASK);
+  const ask = cutInline(typeof input.ask === "string" ? input.ask.trim() : "", MAX_ASK);
   if (ask === "")
     return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`);
-  const options = input.kind === "question" ? list(input.options, MAX_OPTIONS, MAX_OPTION) : [];
+  const options = input.kind === "question" ? list(input.options, MAX_OPTIONS, MAX_OPTION, true) : [];
   if (input.kind === "question" && options.length === 0)
     return unchanged(ledger, "Not recorded: a question needs at least one option.");
-  const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
+  const recInput = input.kind === "question" ? cutInline(typeof input.rec === "string" ? input.rec : "", MAX_OPTION) : "";
   const rec = recInput === "" ? null : recommendedOption(options, recInput);
   if (recInput !== "" && rec === null)
     return unchanged(ledger, "Not recorded: rec must be one of the options.");
@@ -5991,9 +6542,38 @@ function recordItem(host, ledger, input, now, fields) {
   const helps = steps.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
   const leftOut = helps.length < steps.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
   const isDesignChoice = input.kind === "question" && input.design_choice === true;
+  const detail = cutInline(typeof input.detail === "string" ? input.detail.trim() : "", MAX_ITEM_DETAIL);
+  const linkSteps = helps.flatMap((h) => h.kind === "link" ? [h.url] : []);
+  const linkProblem = recordLinksAnswer([
+    { field: "ask", text: raw(input.ask), max: MAX_ASK },
+    { field: "detail", text: raw(input.detail), max: MAX_ITEM_DETAIL },
+    ...rawList(input.kind === "question" ? input.options : []).slice(0, MAX_OPTIONS).map((text) => ({
+      field: "options",
+      text,
+      max: MAX_OPTION
+    }))
+  ], linkSteps);
+  if (linkProblem)
+    return unchanged(ledger, linkProblem);
+  const document = cut(input.document, 4096) || undefined;
+  const documentPreview = document ? cut(input.document_preview, 180) || undefined : undefined;
+  const documentError = cut(input.document_error, 160);
+  const documentNote = documentError ? ` The Markdown report was not attached: ${documentError}` : "";
   const kind = input.kind;
-  const entry = { kind, ask, options, rec, helps, isDesignChoice, ...recReason ? { recReason } : {} };
+  const entry = {
+    kind,
+    ask,
+    options,
+    rec,
+    helps,
+    isDesignChoice,
+    ...recReason ? { recReason } : {},
+    ...detail ? { detail } : {},
+    ...document ? { document, documentPreview } : {}
+  };
   const r = addAgentItem(ledger, entry, now);
+  if (r.is === "source-managed")
+    return unchanged(ledger, "Not recorded: a matching task is managed by the active work source and was left unchanged.");
   if (r.is === "closed")
     return unchanged(ledger, "title" in r.record ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.` : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
   const body = input.kind === "question" ? questionBody(input, options) : {};
@@ -6004,34 +6584,46 @@ function recordItem(host, ledger, input, now, fields) {
     const changes = [
       ...r.addedSteps > 0 ? ["added its new steps"] : [],
       ...r.isNewlyMarked ? ["marked it as a design choice"] : [],
+      ...r.hasNewDetail ? ["replaced its detail"] : [],
+      ...r.hasNewDocument ? ["updated its Markdown report"] : [],
       ...r.newRec ? [`changed its recommendation to ${r.newRec}`] : [],
       ...r.isNewReason ? ["gave its recommendation your reason"] : [],
       ...before && after ? bodyChanges(before, after) : []
     ];
     const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
-    return unchanged(recorded, `Already open, so this record updated it${updated}.${leftOut}`);
+    return unchanged(recorded, `Already open, so this record updated it${updated}.${leftOut}${documentNote}`);
   }
   return {
     ledger: recorded,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "") + documentNote,
     personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
   };
 }
 function recordFinding(host, ledger, input, now) {
-  const title = cut(input.title, 120);
-  const detail = cut(input.detail, 600);
+  const title = cutInline(raw(input.title), MAX_FINDING_TITLE);
+  const detail = cutInline(raw(input.detail), MAX_FINDING_DETAIL);
   if (title === "" || detail === "")
     return unchanged(ledger, "Not recorded: a finding needs a title and a detail.");
+  const linkProblem = recordLinksAnswer([
+    { field: "title", text: raw(input.title), max: MAX_FINDING_TITLE },
+    { field: "detail", text: raw(input.detail), max: MAX_FINDING_DETAIL }
+  ]);
+  if (linkProblem)
+    return unchanged(ledger, linkProblem);
   const path = cut(input.path, 300);
+  const document = cut(input.document, 4096) || undefined;
+  const documentPreview = document ? cut(input.document_preview, 180) || undefined : undefined;
+  const documentError = cut(input.document_error, 160);
+  const documentNote = documentError ? ` The Markdown report was not attached: ${documentError}` : "";
   const kind = input.finding_kind === "opportunity" ? "opportunity" : "issue";
-  const r = addFinding(ledger, { kind, title, detail, path: path || null, at: now });
+  const r = addFinding(ledger, { kind, title, detail, path: path || null, document, documentPreview, at: now });
   if (r.dismissed)
-    return unchanged(ledger, `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.`);
+    return unchanged(ledger, `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.${documentNote}`);
   if (!r.isAdded)
-    return unchanged(r.ledger, "Already recorded.");
+    return unchanged(r.ledger, `Already recorded.${documentNote}`);
   return {
     ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.findingsIn}.` + (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : ""),
+    result: `Recorded. The user sees it in ${host.findingsIn}.` + (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : "") + documentNote,
     personLine: `${kind === "opportunity" ? "Opportunity" : "Issue"}: ${title}`
   };
 }
@@ -6081,6 +6673,8 @@ function recordClose(host, ledger, input, now, presses) {
   const item = ledger.items.find((i) => i.id === id);
   if (item?.kind === "question" && answer !== "" && isQuestionBack(answer, item.options))
     return unchanged(ledger, "Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.");
+  if (ledger.items.some((item) => item.id === id && item.sourceManaged) || ledger.findings.some((finding) => finding.id === id && finding.sourceManaged))
+    return unchanged(ledger, "Not closed: this row is owned by the active-items source. Update that source instead.");
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now);
   if (r.closed && "item" in r.closed)
     return {
@@ -6180,7 +6774,7 @@ function closedGroups(v, tab, isUnfolded) {
 function isRowTabRunning(v, tab, isUnfolded) {
   const rows = tab === "needsYou" ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows;
   const settled = new Set(settledRowIds(rows));
-  const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedShown(g.rows, settled) : []);
+  const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedHistoryPlan(g.rows, settled).rows : []);
   return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => d.mark.isRunning);
 }
 function isTabEmpty({
@@ -6229,6 +6823,7 @@ var ACTION_KEYS = {
   issue: "i",
   type: "t",
   explain: "e",
+  "read-document": "v",
   compare: "p",
   discuss: "d",
   dismiss: "x",
@@ -6239,6 +6834,8 @@ function latestUndo(undos) {
 }
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps } = row;
+  if (item?.sourceManaged || row.finding?.sourceManaged)
+    return [];
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
   const action = (press, label, kind, flags = {}) => {
@@ -6256,10 +6853,12 @@ function actionsOf(row, last, state, feedback) {
       isOut: out === pressAction
     };
   };
+  const documentAction = row.document ? [action({ action: "read-document", id }, "Read report", "view")] : [];
   if (state.is === "settled")
-    return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
+    return [...state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [], ...documentAction];
   if (state.is === "held")
     return [
+      ...documentAction,
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "discard", id }, ROW_COPY.discard, "view")
     ];
@@ -6268,6 +6867,7 @@ function actionsOf(row, last, state, feedback) {
     return [
       action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
       action({ action: "issue", id }, ISSUE_LABEL, "handoff"),
+      ...documentAction,
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "explain", id }, "Explain", "talk"),
       action({ action: "discuss", id }, "Discuss", "talk"),
@@ -6276,6 +6876,7 @@ function actionsOf(row, last, state, feedback) {
   if (item.kind === "task")
     return [
       ...stepActions,
+      ...documentAction,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "explain", id }, "Explain", "talk"),
@@ -6284,11 +6885,12 @@ function actionsOf(row, last, state, feedback) {
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
-    ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
+    ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(linkLabel(option), OPTION_LABEL_CHARS), "mark", {
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
     ...stepActions,
+    ...documentAction,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
     ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
@@ -6484,10 +7086,13 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const document = row.item?.document ?? row.finding?.document ?? null;
+    const actions = actionsOf({ ...row, document }, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
     const held = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
+      document,
+      documentPreview: row.item?.documentPreview ?? row.finding?.documentPreview ?? null,
       state,
       feedback,
       actions,
@@ -6505,7 +7110,7 @@ function inboxView({
       number: n ?? null,
       title: item.ask,
       at: item.at,
-      detail: null,
+      detail: item.detail ?? null,
       fileName: null,
       replyKind: item.kind === "question" ? "answer" : "reply",
       item,
@@ -6550,6 +7155,7 @@ function inboxView({
     };
   });
   return {
+    untrackedWork: ledger.untrackedWork ?? [],
     needsYou: {
       count: counted.length,
       questions: questionRows,
@@ -6661,6 +7267,8 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
+    accountPrs: (s.prViews.accountPrs ?? []).filter((pr) => !drawn.some((d) => d.pr.ref === pr.ref)),
+    botPrSummaries: s.prViews.botPrSummaries ?? [],
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
@@ -6766,11 +7374,10 @@ function pruned(s) {
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
-function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = null, unread = {}) {
+function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = null, unread = {}, accountPrs = null) {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
   const views = { ...s.prViews.views, ...fetched };
   const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, branchRef, {
@@ -6788,9 +7395,53 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
       isFetching: false,
       ...isSignedOut ? { isGhSignedOut: true } : {},
       ...failure ? { failure } : {},
-      ...Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}
+      ...Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {},
+      ...accountPrs ?? {
+        ...s.prViews.accountPrs ? { accountPrs: s.prViews.accountPrs } : {},
+        ...s.prViews.botPrSummaries ? { botPrSummaries: s.prViews.botPrSummaries } : {}
+      }
     }
   };
+}
+
+// ../hooks/document.ts
+var DOCUMENT_LIMIT = 64 * 1024;
+var ANSI = /(?:\u001B\[[0-?]*[ -/]*[@-~]|\u001B\][^\u0007\u009C]*(?:\u0007|\u001B\\|\u009C)|\u001B[PX^_][\s\S]*?(?:\u001B\\|\u009C)|\u001B[@-_]|\u009B[0-?]*[ -/]*[@-~]|\u009D[^\u0007\u009C]*(?:\u0007|\u001B\\|\u009C)|[\u0090\u0098\u009E\u009F][\s\S]*?\u009C)/g;
+var CONTROLS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+async function readDocument(path, file) {
+  try {
+    const target = await file.stat(path);
+    if (!target.isFile || !/\.md$/i.test(target.path))
+      return { error: "The document must resolve to a regular .md file." };
+    if (target.size > DOCUMENT_LIMIT)
+      return { error: "The document is larger than the 64 KiB limit." };
+    const bytes = await file.read(target.path, DOCUMENT_LIMIT);
+    if (bytes.byteLength > DOCUMENT_LIMIT)
+      return { error: "The document is larger than the 64 KiB limit." };
+    const text = new TextDecoder().decode(bytes).replace(ANSI, "").replace(/\r\n/g, `
+`).replace(CONTROLS, "");
+    return { text };
+  } catch (error) {
+    return {
+      error: error.code === "ENOENT" ? "The document file is missing." : "The document could not be read."
+    };
+  }
+}
+function documentExcerpt(text) {
+  const excerpt = text.trim().replace(/\s+/gu, " ");
+  const chars = [...excerpt];
+  return chars.length > 180 ? `${chars.slice(0, 180).join("")}\u2026` : excerpt;
+}
+async function withDocumentPreview(input, file) {
+  const path = typeof input.document === "string" ? input.document.trim() : "";
+  if (!path)
+    return input;
+  if (path.length > 4096)
+    return { ...input, document: undefined, document_error: "The document path is too long." };
+  if (!/^(?:\/|[a-z]:[\\/]|\\\\)/i.test(path))
+    return { ...input, document: undefined, document_error: "The document path must be absolute." };
+  const result = await readDocument(path, file);
+  return "text" in result ? { ...input, document: path, document_preview: documentExcerpt(result.text) } : { ...input, document: undefined, document_error: result.error };
 }
 
 // ../hooks/host-prs.ts
@@ -6849,6 +7500,7 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
   if (bin === null)
     return;
   let sawUnstartable = false;
+  const accountPrsPromise = fetchAccountPrs(host.gh.run(s, bin, () => {}));
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
     sawUnstartable = true;
   }), s.prViews, s.ledger, { findsBranchPr, isPress }, () => host.now(), shared.views);
@@ -6862,13 +7514,14 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
     if (refound !== bin)
       fetch = await fetchWith(refound);
   }
+  const accountPrs = await accountPrsPromise;
   const { views: fetched, branchRef, isGhSignedOut, failure, read, unread } = fetch;
   const at = await host.now();
   await host.gh.shared?.write((cur) => ({
     views: Object.fromEntries([...Object.entries(cur.views), ...read.map((ref) => [ref, fetched[ref]])].filter(([, view]) => at - (view.fetchedAt ?? 0) < PR_SHARED_MS)),
     limit: failure?.kind === "limit" ? failure : failure === null ? null : cur.limit
   }));
-  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread));
+  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread, accountPrs));
 }
 var ALREADY_RUNNING = /already running/i;
 async function rerunRun(host, e) {
@@ -6883,21 +7536,26 @@ async function rerunRun(host, e) {
 }
 
 // src/panel-text.ts
-var ANSI = /\x1b\[[0-9;]*m/g;
-var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
+var ANSI2 = new RegExp(`\\x1b\\[[0-9;]*m|${OSC8.source}`, "g");
+var ANSI_SPLIT = new RegExp(`(\\x1b\\[[0-9;]*m|${OSC8.source})`, "g");
+var ANSI_PART = new RegExp(`^(?:\\x1b\\[[0-9;]*m|${OSC8.source})$`);
+var visibleLength = (s) => cellWidth(s.replace(ANSI2, ""));
+function linkedText(text, link) {
+  return parseInline(text).map((s) => s.link ? link ? `\x1B[4m${link(s.link, s.text)}\x1B[24m` : s.text : s.text).join("");
+}
 function fit(s, width) {
   if (visibleLength(s) <= width)
     return s;
   let out = "";
   let n = 0;
-  for (const part of s.split(/(\x1b\[[0-9;]*m)/)) {
-    if (part.startsWith("\x1B[")) {
+  for (const part of s.split(ANSI_SPLIT)) {
+    if (ANSI_PART.test(part)) {
       out += part;
       continue;
     }
     const cells = cellWidth(part);
     if (n + cells > width - 1)
-      return `${out}${cutToCells(part, width - 1 - n)}\u2026\x1B[0m`;
+      return `${closeOpenLink(out + cutToCells(part, width - 1 - n))}\u2026\x1B[0m`;
     out += part;
     n += cells;
   }
@@ -6906,7 +7564,22 @@ function fit(s, width) {
 var MARKED_TITLE_CELLS = 12;
 function cutTitle(title, room) {
   const cells = Math.max(MARKED_TITLE_CELLS, room);
-  return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}\u2026`;
+  if (visibleLength(title) <= cells)
+    return title;
+  let out = "";
+  let used = 0;
+  for (const part of title.split(ANSI_SPLIT)) {
+    if (ANSI_PART.test(part)) {
+      out += part;
+      continue;
+    }
+    const shown = cutToCells(part, cells - 1 - used);
+    out += shown;
+    used += cellWidth(shown);
+    if (shown !== part)
+      break;
+  }
+  return `${closeOpenLink(out)}\u2026`;
 }
 function spread(left, right, width) {
   const gap = width - visibleLength(left) - visibleLength(right);
@@ -6939,6 +7612,58 @@ function indented(text, indent, width, maxLines, paint) {
   if (wrapped.length > maxLines)
     shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
+}
+function indentedLinks(text, indent, width, maxLines, paint, link) {
+  const room = Math.max(10, width - indent - 1);
+  const lines = [[]];
+  let used = 0;
+  let hasSpace = false;
+  for (const span of parseInline(text)) {
+    const value = span.link && !link ? `${span.text} (${span.link})` : span.text;
+    for (const part of value.split(/(\n|[^\S\n]+)/).filter(Boolean)) {
+      if (part === `
+`) {
+        lines.push([]);
+        used = 0;
+        hasSpace = false;
+        continue;
+      }
+      if (/^\s+$/.test(part)) {
+        hasSpace = true;
+        continue;
+      }
+      const gap = used > 0 && hasSpace ? 1 : 0;
+      const shown = cellWidth(part) > room ? `${cutToCells(part, room - 1)}\u2026` : part;
+      const url = span.link && link ? span.link : undefined;
+      if (used > 0 && used + cellWidth(shown) + gap > room) {
+        lines.push([]);
+        used = 0;
+      }
+      const current = lines.at(-1);
+      if (used > 0 && hasSpace)
+        current.push({ text: " ", ...url ? { url } : {} });
+      current.push({ text: shown, ...url ? { url } : {} });
+      used += (used > 0 && hasSpace ? 1 : 0) + cellWidth(shown);
+      hasSpace = false;
+    }
+  }
+  const shown = lines.slice(0, maxLines);
+  if (lines.length > maxLines && shown.length > 0) {
+    const last = shown.at(-1);
+    const cut = cutForEllipsis(last.map((part) => part.text).join(""), (value) => cellWidth(value) <= room);
+    last.splice(0, last.length, { text: `${cut}\u2026` });
+  }
+  return shown.map((parts) => {
+    const runs = parts.reduce((out, part) => {
+      const last = out.at(-1);
+      if (last && last.url === part.url)
+        last.text += part.text;
+      else
+        out.push({ ...part });
+      return out;
+    }, []);
+    return " ".repeat(indent) + paint(runs.map((part) => part.url && link ? `\x1B[4m${link(part.url, part.text)}\x1B[24m` : part.text).join(""));
+  });
 }
 
 // src/panel-page.ts
@@ -7422,7 +8147,9 @@ function lineOfRow(row, isAllShown) {
     title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
     age: f?.is === "done" ? f.at : row.at,
-    detail: row.detail,
+    detail: [row.detail, documentPreviewLine(row)].filter(Boolean).join(`
+
+`) || null,
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
     settled: state.is === "settled" ? {
@@ -7460,7 +8187,8 @@ function closedLines(d) {
 }
 function groupEntries(g, { unfolded, closedAll, optionsShown }) {
   const settled = settledIn(g);
-  const total = closedTotal(g.closed, settled);
+  const history = closedHistoryPlan(g.closed, settled);
+  const total = history.total;
   const out = [
     { kind: "heading", text: g.title, count: waitingCount(g.rows), ...g.mark ? { mark: g.mark } : {} }
   ];
@@ -7608,7 +8336,19 @@ function prEntries(screen, ui, now) {
   });
   const out = [];
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure };
+  const accountEntries = [
+    ...prs.accountPrs.length > 0 ? [{ kind: "note", text: "PRs opened by you", isPlain: true }] : [],
+    ...prs.accountPrs.map((pr) => ({ kind: "note", text: accountPrText(pr) })),
+    ...prs.botPrSummaries.map((bot) => ({ kind: "note", text: botPrSummaryText(bot) }))
+  ];
   if (prs.drawn.length === 0) {
+    if (accountEntries.length > 0) {
+      const ghNotice = ghNoticeOf(ghState);
+      return [
+        ...ghNotice ? [{ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) }] : [],
+        ...accountEntries
+      ];
+    }
     const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, "session");
     return [
       { kind: "note", text: empty.title, isStrong: true },
@@ -7733,6 +8473,13 @@ function prEntries(screen, ui, now) {
       out.push(...entries);
     }
   }
+  const tabButtons = prButtons(prs.clear);
+  if (tabButtons.length > 0)
+    out.push({
+      kind: "row",
+      line: { ...blankLine(CLEAR_FINISHED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true }
+    });
+  out.push(...accountEntries);
   if (prs.olderText)
     out.push({ kind: "note", text: prs.olderText });
   return out;
@@ -7836,11 +8583,20 @@ function defaultFocus(line) {
 }
 var focusOf2 = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
 function withSelection(ui, id) {
-  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null, openedAt: 0 };
+  return {
+    ...ui,
+    selectedId: id,
+    focus: null,
+    detailTop: 0,
+    detailScrollMax: 0,
+    opened: ui.opened === id ? ui.opened : null,
+    openedAt: 0
+  };
 }
 var withTab = (ui, tab, now) => ({
   ...withSelection(ui, null),
   tab,
+  document: null,
   pageTop: 0,
   pageReveal: isRowTab(tab) ? null : true,
   shownSince: tab === ui.tab ? ui.shownSince : now,
@@ -7912,6 +8668,14 @@ function handleKey(screen, ui, key, now, text) {
   const base = isPage ? ui : { ...ui, selectedId: selected?.id ?? null };
   if (base.typing !== null)
     return typingKey(base, base.typing, key, now, text);
+  const isUp = key === "up" || key === "k";
+  if (base.document) {
+    if (key === "b" || key === "escape")
+      return { ui: { ...base, document: null, pageTop: 0 } };
+    if (isUp || key === "down" || key === "j")
+      return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } };
+    return { ui: base };
+  }
   const shown = shownTabs(screen.isNextBuild === true);
   const isTabKey = key === "tab" || key === "shift+tab" || shown.some((t) => t.hotkey === key);
   if (key === "?" || base.isHelpShown && key === "escape")
@@ -7923,11 +8687,17 @@ function handleKey(screen, ui, key, now, text) {
     if (page)
       return page;
   }
-  const isUp = key === "up" || key === "k";
   if (base.isHelpShown && !isTabKey && !isUp && key !== "down" && key !== "j")
     return { ui: base };
   if ((base.isHelpShown || isPage) && (isUp || key === "down" || key === "j"))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } };
+  if (!isPage && selected?.detail && base.detailScrollMax > 0 && (key === "up" || key === "down"))
+    return {
+      ui: {
+        ...base,
+        detailTop: Math.max(0, Math.min(base.detailScrollMax, base.detailTop + (key === "up" ? -1 : 1)))
+      }
+    };
   const selectable = lines.filter(isSelectable);
   const at = selectable.findIndex((l) => l.id === selected?.id);
   if ((key === "up" || key === "k" || key === "down" || key === "j") && selectable.length > 0) {
@@ -8092,12 +8862,13 @@ function drawLine(line, isSelected, d) {
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
   const mark = markText(line.mark, now, s);
-  const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
+  const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", linkedText(line.settled.label, s.link)) : s.dim(linkedText(line.settled.label, s.link))}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(linkedText(line.feedback.text, s.link))}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const head = ` ${" ".repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ""}${leadText(line.lead, s)}`;
+  const titleText = linkedText(line.title, s.link);
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
-  const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
+  const shownTitle = line.mark ? cutTitle(titleText, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : titleText;
   const title = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isSelected ? s.bold(shownTitle) : shownTitle;
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width));
   if (line.settled || isShut(line, ui))
@@ -8105,17 +8876,17 @@ function drawLine(line, isSelected, d) {
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const contextLine = isSelected ? line.row?.contextLine : null;
   if (contextLine)
-    out.push(...indented(contextLine, indent, width, Infinity, s.dim));
+    out.push(...indentedLinks(contextLine, indent, width, Infinity, s.dim, s.link));
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
   if (holdsUp)
     out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
   const recLine = line.row?.recLine;
   if (recLine)
-    out.push(...isSelected ? indented(recLine, indent, width, 3, s.dim) : [fit(`${" ".repeat(indent)}${s.dim(recLine)}`, width)]);
+    out.push(...isSelected ? indentedLinks(recLine, indent, width, 3, s.dim, s.link) : [fit(`${" ".repeat(indent)}${s.dim(linkedText(recLine, s.link))}`, width)]);
   if (line.body && isSelected)
-    out.push(...indented(line.body, indent, width, BODY_LINES, (t) => t));
+    out.push(...indentedLinks(line.body, indent, width, BODY_LINES, (t) => t, s.link));
   if (line.detail && (isSelected || line.isDetailShown))
-    out.push(...indented(line.detail, indent, width, 4, s.dim));
+    out.push(...indentedLinks(line.detail, indent, width, isSelected && line.row?.type !== "finding" ? Infinity : 4, s.dim, s.link));
   if (!isSelected)
     return out;
   if (line.file)
@@ -8133,7 +8904,7 @@ function drawLine(line, isSelected, d) {
   }
   if (statusUnder) {
     const markCells = mark ? 2 : 0;
-    const [first, ...rest] = indented(statusUnder.text, indent + markCells, width, 4, feedbackPaint(statusUnder.tone, s));
+    const [first, ...rest] = indentedLinks(statusUnder.text, indent + markCells, width, 4, feedbackPaint(statusUnder.tone, s), s.link);
     if (first !== undefined)
       out.push(" ".repeat(indent) + mark + first.slice(indent + markCells), ...rest);
   }
@@ -8201,13 +8972,19 @@ function tabBar(d) {
   const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width);
   return spread(lineOf(naming, layout), ui.isHelpShown ? "" : s.dim("esc to close "), width);
 }
-function footer(d, isPageScrolling) {
+function footer(d, isPageScrolling, isDetailScrolling = false) {
   const { screen, ui, width, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
-  const hints = ui.typing !== null ? [`\u21B5 ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
+  const hints = ui.typing !== null ? [`\u21B5 ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? [
+    "\u2190\u2192 pick",
+    "\u21B5 press",
+    ...isDetailScrolling ? ["\u2191\u2193 scroll", "j k move"] : ["\u2191\u2193 move"],
+    "tab switch",
+    "? help"
+  ] : [
     ...statusHints(screen.view.statusPage, ui.selectedId),
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
@@ -8237,17 +9014,24 @@ function pageWindow(body, top, room, s) {
     ...below > 0 ? [moreLines("\u2193", below, s)] : []
   ];
 }
-function scrolled(body, selectedAt, room, s) {
+function scrolled(body, selectedAt, room, s, selectedTop = 0, isSelectedScrollable = false) {
   const [first = 0, last = 0] = selectedAt;
-  let start = Math.min(Math.max(0, first - 1), body.length - room);
-  if (last > start + room - 2)
+  let start = isSelectedScrollable ? Math.min(first + selectedTop, last - room + 2) : Math.min(Math.max(0, first - 1), body.length - room);
+  if (!isSelectedScrollable && last > start + room - 2)
     start = Math.min(Math.max(first, last - room + 2), body.length - room);
   const end = start + room;
   const clip = body.slice(start, end);
-  if (start > 0)
-    clip[0] = s.dim(`  \u2191 ${start} more lines`);
-  if (end < body.length)
-    clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
+  if (isSelectedScrollable) {
+    if (start > first)
+      clip[0] = s.dim(`  \u2191 ${start - first} more lines`);
+    if (end <= last)
+      clip[clip.length - 1] = s.dim(`  \u2193 ${last - end + 1} more lines`);
+  } else {
+    if (start > 0)
+      clip[0] = s.dim(`  \u2191 ${start} more lines`);
+    if (end < body.length)
+      clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
+  }
   return clip;
 }
 function statusHints(page, selectedId) {
@@ -8273,11 +9057,14 @@ var INITIAL_UI = {
   resuming: null,
   opened: null,
   pageTop: 0,
+  detailTop: 0,
+  detailScrollMax: 0,
   pageReveal: null,
   openedAt: 0,
   shownSince: 0,
   isHelpShown: false,
-  listInput: null
+  listInput: null,
+  document: null
 };
 function holdsOf(ui) {
   return {
@@ -8288,6 +9075,8 @@ function holdsOf(ui) {
   };
 }
 function isAnimating(screen, ui, now) {
+  if (ui.document)
+    return false;
   const { view } = screen;
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
   const isPressMoving = Object.values(view.lastActions).some((l) => l.result !== undefined && (l.result.state === "pending" || now - l.result.at < SETTLED_MS) || l.delivery?.state === "queued" && now - l.at < QUEUED_AFTER_MS);
@@ -8309,7 +9098,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
   const host = screen.herdrModFailure ? [bannerOf("herdr-mod-failed", screen.herdrModFailure)] : [];
-  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null);
+  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null, screen.view.untrackedWork);
   const head = [
     ...screen.isDemo ? bannerLines(bannerOf("demo", DEMO_NOTICE), width, style) : [],
     rule,
@@ -8358,21 +9147,25 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const roomBeside = (foot) => height === undefined ? Infinity : Math.max(6, height - head.length - foot.length);
   const isPage = ui.isHelpShown || !isRowTab(ui.tab);
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false));
-  const foot = footer(d, isPageTaller);
+  const selectedLines = selectedAt[1] - selectedAt[0] + 1;
+  const isDetailScrolling = !isPage && selected?.detail !== null && selected?.detail !== undefined && selectedLines > roomBeside(footer(d, false)) - 2;
+  const foot = footer(d, isPageTaller, isDetailScrolling);
   const room = roomBeside(foot);
+  const detailScrollMax = !isPage && selected?.detail !== null && selected?.detail !== undefined ? Math.max(0, selectedLines - room + 2) : 0;
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
   const [first = 0, last = 0] = pageSelectedAt ?? [];
   const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id);
   const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
-  const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);
+  const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style, Math.min(ui.detailTop, detailScrollMax), detailScrollMax > 0);
   const isStatusShown = ui.tab === "overview" && !ui.isHelpShown;
   const shownLines = isOverflowing ? pageWindowLines(body.length, pageTop, room) : { start: 0, end: body.length };
   const shownSubjects = isStatusShown ? subjectAt.filter(([, at]) => at >= shownLines.start && at < shownLines.end).map(([id]) => id) : [];
   return {
     lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)),
     pageTop,
+    detailScrollMax,
     isRevealed,
     shownSubjects
   };
@@ -8458,6 +9251,21 @@ function createPanel(deps) {
       ui = { ...ui, resuming: { stopAt: ui.resuming.stopAt, is: "refused", why } };
     await refresh();
   }
+  async function showDocument(id) {
+    if (!screen)
+      return;
+    const row = allRows(screen.view).find((candidate) => candidate.id === id);
+    if (!row?.document)
+      return;
+    const document = { title: row.title, text: null, error: null };
+    ui = { ...ui, document, pageTop: 0 };
+    deps.requestRender();
+    const result = await deps.readDocument(row.document).catch(() => ({ error: "The report could not be read." }));
+    if (ui.document !== document)
+      return;
+    ui = { ...ui, document: { ...document, ...result } };
+    deps.requestRender();
+  }
   async function press(p) {
     if (p.action === "resume")
       return resume();
@@ -8465,6 +9273,8 @@ function createPanel(deps) {
       return source.answerHerdr?.(p.isYes).then(() => refresh());
     if (p.action === "all-options")
       return;
+    if (!isPrPress(p) && p.action === "read-document")
+      return showDocument(p.id);
     const rowId = pressRowId(p);
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
     const sentDraft = !isPrPress(p) && p.action === "type" ? ui.drafts[p.id] : undefined;
@@ -8488,6 +9298,18 @@ function createPanel(deps) {
     render(width) {
       if (screen === null)
         return [` ${READING_TEXT}`];
+      if (ui.document) {
+        const body = [
+          ` ${style.bold(ui.document.title)}`,
+          style.dim("b / esc back \xB7 \u2191\u2193 j k scroll"),
+          "",
+          ...ui.document.error ? [style.tone("error", ui.document.error)] : ui.document.text === null ? [style.dim("Opening report\u2026")] : ui.document.text ? deps.markdown(ui.document.text, width) : []
+        ];
+        const room = Math.max(1, (deps.height() ?? body.length) - 1);
+        const top = Math.min(ui.pageTop, Math.max(0, body.length - room + 1));
+        ui = { ...ui, pageTop: top };
+        return pageWindow(body, top, room, style);
+      }
       const now = deps.now();
       const maxHeight = deps.height();
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
@@ -8495,7 +9317,13 @@ function createPanel(deps) {
       heldHeight = Math.max(heldHeight, drawn.lines.length);
       if (drawn.shownSubjects.length > 0)
         source.showedRows(drawn.shownSubjects);
-      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: drawn.isRevealed ? null : ui.pageReveal };
+      ui = {
+        ...ui,
+        pageTop: drawn.pageTop,
+        detailTop: Math.min(ui.detailTop, drawn.detailScrollMax),
+        detailScrollMax: drawn.detailScrollMax,
+        pageReveal: drawn.isRevealed ? null : ui.pageReveal
+      };
       return drawn.lines;
     },
     handleInput(key, text) {
@@ -9086,13 +9914,15 @@ function demoView(now, agent) {
   };
 }
 
-// ../hooks/clients.ts
+// ../hooks/client-support.ts
 var CLIENTS = {
   "claude-code": {
     support: {
       "catch-up": { kind: "full" },
       "failed-update-recovery": { kind: "full" },
       "ledger-behind-state": { kind: "full" },
+      "recorded-items-only": { kind: "full" },
+      "ask-history": { kind: "full" },
       "dialog-outcome": { kind: "full" },
       "dialog-answer": {
         kind: "different",
@@ -9103,6 +9933,11 @@ var CLIENTS = {
       "tool-output-urls": { kind: "full" },
       "pr-link-from-output": { kind: "full" },
       "pr-arrivals": { kind: "full" },
+      "account-pr-list": { kind: "full" },
+      "feed-findings": { kind: "full" },
+      "meta-active-items": { kind: "full" },
+      "meta-default-feed": { kind: "full" },
+      "untracked-work-warning": { kind: "full" },
       "prs-empty-hint": { kind: "full" },
       "gh-signed-out-notice": { kind: "full" },
       "link-open-rule": { kind: "full" },
@@ -9162,7 +9997,14 @@ var CLIENTS = {
       "status-named-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" },
       "status-idle-age": { kind: "full" },
-      "question-back-stays-open": { kind: "full" }
+      "question-back-stays-open": { kind: "full" },
+      "markdown-item-links": { kind: "full" },
+      "item-explanations": { kind: "full" },
+      "finding-links": { kind: "full" },
+      "option-links": { kind: "full" },
+      "item-document": { kind: "full" },
+      "document-preview": { kind: "full" },
+      "record-link-guard": { kind: "full" }
     }
   },
   codex: {
@@ -9176,6 +10018,8 @@ var CLIENTS = {
         kind: "different",
         reason: "Codex runs no hook when a chat is opened. A resumed chat is marked behind when its Inbox tab opens, and at the hook its next message runs if the tab stays closed."
       },
+      "recorded-items-only": { kind: "full" },
+      "ask-history": { kind: "full" },
       "dialog-outcome": {
         kind: "different",
         reason: "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded."
@@ -9192,6 +10036,14 @@ var CLIENTS = {
         reason: "Codex runs no hook for a long command's output, so the inbox reads the turn's shell commands from the rollout at Stop. A PR that `gh pr create` opened is linked when the turn ends, not when the command finishes."
       },
       "pr-arrivals": { kind: "full" },
+      "account-pr-list": { kind: "full" },
+      "feed-findings": {
+        kind: "different",
+        reason: "Codex has no idle timer, so it applies the feed at hooks and Inbox tab view requests."
+      },
+      "meta-active-items": { kind: "full" },
+      "meta-default-feed": { kind: "full" },
+      "untracked-work-warning": { kind: "full" },
       "prs-empty-hint": {
         kind: "different",
         reason: "The Codex app calls a conversation a chat, so its hint says chat where the mod says session."
@@ -9299,7 +10151,14 @@ var CLIENTS = {
       "question-back-stays-open": {
         kind: "different",
         reason: "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere."
-      }
+      },
+      "markdown-item-links": { kind: "full" },
+      "item-explanations": { kind: "full" },
+      "finding-links": { kind: "full" },
+      "option-links": { kind: "full" },
+      "item-document": { kind: "full" },
+      "document-preview": { kind: "full" },
+      "record-link-guard": { kind: "full" }
     }
   },
   omp: {
@@ -9307,6 +10166,8 @@ var CLIENTS = {
       "catch-up": { kind: "full" },
       "failed-update-recovery": { kind: "full" },
       "ledger-behind-state": { kind: "full" },
+      "recorded-items-only": { kind: "full" },
+      "ask-history": { kind: "full" },
       "dialog-outcome": { kind: "full" },
       "dialog-answer": {
         kind: "different",
@@ -9317,6 +10178,11 @@ var CLIENTS = {
       "tool-output-urls": { kind: "full" },
       "pr-link-from-output": { kind: "full" },
       "pr-arrivals": { kind: "full" },
+      "account-pr-list": { kind: "full" },
+      "feed-findings": { kind: "full" },
+      "meta-active-items": { kind: "full" },
+      "meta-default-feed": { kind: "full" },
+      "untracked-work-warning": { kind: "full" },
       "prs-empty-hint": { kind: "full" },
       "gh-signed-out-notice": { kind: "full" },
       "link-open-rule": { kind: "full" },
@@ -9388,10 +10254,31 @@ var CLIENTS = {
       "status-named-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" },
       "status-idle-age": { kind: "full" },
-      "question-back-stays-open": { kind: "full" }
+      "question-back-stays-open": { kind: "full" },
+      "markdown-item-links": {
+        kind: "different",
+        reason: "The panel uses OSC 8 links only when omp enables them for its terminal; otherwise it shows the label."
+      },
+      "item-explanations": {
+        kind: "different",
+        reason: "A selected detail that exceeds the panel scrolls with \u2191 and \u2193; j and k move between rows."
+      },
+      "finding-links": {
+        kind: "different",
+        reason: "The panel uses OSC 8 links only when omp enables them for its terminal; otherwise it shows the label."
+      },
+      "option-links": {
+        kind: "different",
+        reason: "The panel uses OSC 8 links only when omp enables them for its terminal; otherwise it shows the label."
+      },
+      "item-document": { kind: "full" },
+      "document-preview": { kind: "full" },
+      "record-link-guard": { kind: "full" }
     }
   }
 };
+
+// ../hooks/clients.ts
 function isCompareInBackground(client) {
   return CLIENTS[client].support["compare-in-background"].kind === "full";
 }
@@ -9426,13 +10313,13 @@ function demoReplied(s, sent) {
   ]));
   return { lastActions, turns };
 }
-function demoAfterPress(before, r, held) {
+function demoAfterPress(before, r) {
   const lasts = Object.fromEntries(Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
     id,
     l.result?.state === "pending" ? { ...l, result: finishedResult(l.result, [], l.result.at) } : l
   ]));
   return {
-    ledger: pruneClosed(r.ledger, held),
+    ledger: r.ledger,
     lastActions: withLasts(before.lastActions, lasts, r.drop),
     turns: isSent(r) ? { ...before.turns, turnsStarted: before.turns.turnsStarted + 1 } : before.turns
   };
@@ -10401,6 +11288,9 @@ function orderedKeys() {
   };
 }
 var CATCH_UP_CALL = { call: "ledger", reads: "catch-up" };
+function isRecordedItemsOnly(value) {
+  return value === "1" || value === "true";
+}
 async function askOverConversation(host, names, s, screen, conversation) {
   if (!conversation)
     return { kind: "unreadable" };
@@ -10430,6 +11320,7 @@ async function reconcileUpdateStatus(host) {
 }
 async function runUpdates(host) {
   let canCatchUp = host.catchUp !== undefined;
+  const kept = (u) => u && host.recordedItemsOnly ? recordedAsksOnly(u, isPersonsAnswer) : u;
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
@@ -10458,7 +11349,7 @@ async function runUpdates(host) {
                 await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
-              const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
+              const parsed = kept(reply.kind === "reply" ? parseReply(reply.text, reply.source) : null);
               const at = await host.now();
               const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at) : x;
               const after = await host.update((x) => appliedCatchUp(noted(x), s, parsed, at));
@@ -10472,7 +11363,7 @@ async function runUpdates(host) {
             const promptAt = await host.now();
             const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
             const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind);
-            const parsed = parsedReply(next.ex, asked.text);
+            const parsed = kept(parsedReply(next.ex, asked.text));
             let isApplied = false;
             const after = await host.update(async (current) => {
               const at = await host.now();
@@ -10634,7 +11525,7 @@ function demoSource(deps) {
       });
       if ("stale" in r)
         return { error: null, note: "stale", isUnconfirmed: false };
-      const after = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r, new Set(Object.keys(holds.replies)));
+      const after = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r);
       state = {
         ...state,
         ledger: after.ledger,
@@ -10712,7 +11603,7 @@ function truecolor(hex, text) {
 function truecolorFill(hex, text) {
   return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`;
 }
-function styleOf(theme) {
+function styleOf(theme, link) {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
   const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
   return {
@@ -10721,7 +11612,8 @@ function styleOf(theme) {
     inverse: theme.inverse.bind(theme),
     underline: theme.underline.bind(theme),
     tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
-    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text)
+    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
+    ...link ? { link } : {}
   };
 }
 
@@ -11172,6 +12064,7 @@ var PRESS_TARGETS = {
   step: "id",
   "remove-goal": "id",
   "restore-goal": "id",
+  "read-document": "id",
   "thread-address": "ref",
   "thread-draft": "ref",
   "thread-discuss": "ref",
@@ -11988,6 +12881,49 @@ function ompHerdrAsk(target, memory, changed) {
   };
 }
 
+// ../feed-reader.ts
+import { readdir as readdir3, readFile as readFile3, stat as stat3 } from "fs/promises";
+import { join as join3, resolve } from "path";
+var feedIo = {
+  resolve,
+  join: join3,
+  stat: stat3,
+  list: (root) => readdir3(root, { withFileTypes: true }),
+  read: (path) => readFile3(path, "utf8")
+};
+async function readFeedFiles(path, io = feedIo) {
+  if (!path)
+    return null;
+  const root = io.resolve(path);
+  const read = async (path, size) => ({
+    path,
+    feed: size > MAX_FEED_FILE_BYTES ? null : parseFeed(await io.read(path))
+  });
+  try {
+    const info = await io.stat(root);
+    if (info.isFile())
+      return { root, files: [await read(root, info.size)] };
+    if (!info.isDirectory())
+      return null;
+    const files = [];
+    for (const entry of await io.list(root)) {
+      if (!entry.isFile() || !entry.name.endsWith(".json"))
+        continue;
+      const file = io.join(root, entry.name);
+      try {
+        files.push(await read(file, (await io.stat(file)).size));
+      } catch (error) {
+        if (!missing(error))
+          files.push({ path: file, feed: null });
+      }
+    }
+    return { root, files };
+  } catch (error) {
+    return missing(error) ? { root, files: [] } : null;
+  }
+}
+var missing = (error) => !!error && typeof error === "object" && ("code" in error) && error.code === "ENOENT";
+
 // src/host-panel.ts
 function panelCalls(context, sessions, herdrAsk) {
   const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
@@ -12022,6 +12958,23 @@ function panelCalls(context, sessions, herdrAsk) {
         return;
       });
       fetchPrsWhenDue(ctx, false);
+    },
+    feedWhenDue: async (ctx) => {
+      const feedPath = await feedPathValue(deps.feedPath);
+      if (!feedPath)
+        return;
+      try {
+        const feed = await readFeedFiles(feedPath);
+        if (!feed)
+          return;
+        const id = sessionIdOf(ctx);
+        await change(id, (s) => {
+          const ledger = applyFeedFiles(s.ledger, feed.root, feed.files, deps.now());
+          return ledger === s.ledger ? s : { ...s, ledger };
+        });
+      } catch {
+        return;
+      }
     },
     showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx);
@@ -12092,8 +13045,8 @@ function panelCalls(context, sessions, herdrAsk) {
 }
 
 // src/host-sessions.ts
-import { mkdir as mkdir3, readdir as readdir3, rename as rename3, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
-import { dirname as dirname2, join as join3 } from "path";
+import { mkdir as mkdir3, readdir as readdir4, rename as rename3, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
+import { dirname as dirname2, join as join4 } from "path";
 
 // ../hooks/conversation.ts
 var NL7 = `
@@ -12130,10 +13083,10 @@ function flattenConversation(turns) {
 
 // src/commands.ts
 import { constants } from "fs";
-import { access, stat as stat3 } from "fs/promises";
+import { access, stat as stat4 } from "fs/promises";
 function openTarget2(run, target, root, home) {
   return openTarget(run, {
-    stat: (path) => stat3(path).catch(() => null),
+    stat: (path) => stat4(path).catch(() => null),
     isExecutable: (path) => access(path, constants.X_OK).then(() => true, () => false)
   }, target, root, home);
 }
@@ -12157,13 +13110,13 @@ var recordFiles = {
     await mkdir3(dirname2(path), { recursive: true });
     await writeFile3(path, text);
   },
-  list: (folder) => readdir3(folder).catch(() => []),
+  list: (folder) => readdir4(folder).catch(() => []),
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),
   removeFolder: (path) => rmdir(path)
 };
 var statusRecords = (dir, sessionId) => ({
   host: "omp",
-  folder: join3(dir, "overview-calls"),
+  folder: join4(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
@@ -12284,6 +13237,7 @@ function sessionCalls(context) {
       inOrder: (fn) => resultsOrder.run(id, fn),
       background: (results) => deps.background(results),
       ...deps.isNextBuild ? { records: statusRecords(dir, id) } : {},
+      recordedItemsOnly: isRecordedItemsOnly(deps.recordedItemsOnly),
       catchUp: (s) => askOverConversation(host, OMP, s, screenText(OMP, openPanels.has(id), panelScreenTab(id)), conversationText(ctx))
     };
   }
@@ -12564,17 +13518,62 @@ function turnHandlers(context, sessions) {
   };
 }
 
-// src/host.ts
-var INBOX_MODEL_TIMEOUT_MS = 120000;
-var BAND_KEY = "inbox-band";
-async function defaultComplete(model, context, options) {
-  const { completeSimple } = await import("@oh-my-pi/pi-ai");
-  return completeSimple(model, context, options);
+// src/host-document.ts
+import { constants as constants2 } from "fs";
+import { open, realpath, stat as stat5 } from "fs/promises";
+var BLOCKED_DOCUMENT_LINK = "inbox-blocked-document-link";
+var documentFile = {
+  stat: async (path) => {
+    const target = await realpath(path);
+    const info = await stat5(target);
+    return { path: target, isFile: info.isFile(), size: info.size };
+  },
+  read: async (path, limit) => {
+    const file = await open(path, constants2.O_RDONLY | constants2.O_NOFOLLOW);
+    try {
+      if (!(await file.stat()).isFile())
+        return new Uint8Array(limit + 1);
+      const bytes = new Uint8Array(limit + 1);
+      const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+      return bytes.subarray(0, bytesRead);
+    } finally {
+      await file.close();
+    }
+  }
+};
+function documentLinkTarget(href) {
+  return httpsHref(href) ?? BLOCKED_DOCUMENT_LINK;
 }
-async function isUsageLimitOutcome(status, message) {
-  const ai = await import("@oh-my-pi/pi-ai");
-  return ai.isUsageLimitOutcome(status, message);
+async function documentMarkdown(load) {
+  const { Markdown, getMarkdownTheme } = await load();
+  return (text, width) => {
+    const theme = {
+      ...getMarkdownTheme(),
+      link: (text) => text,
+      linkUrl: () => "",
+      underline: (text) => text,
+      resolveLink: documentLinkTarget
+    };
+    return [...new Markdown(text, 0, 0, theme).render(width)].map((line) => line.replaceAll(`\x1B]8;;${BLOCKED_DOCUMENT_LINK}\x07`, ""));
+  };
 }
+async function panelLink(load) {
+  try {
+    const { isHyperlinkEnabled, urlHyperlink } = await load();
+    return isHyperlinkEnabled() ? urlHyperlink : undefined;
+  } catch {
+    return;
+  }
+}
+
+// src/host-feed.ts
+import { homedir } from "os";
+function runtimeFeedPath(setting, paneId, run) {
+  const configured = typeof setting === "string" ? setting : process.env.INBOX_FEED;
+  return memoizedFeedPath(typeof setting === "function" ? setting : () => resolveInboxFeedPath(configured, process.env.HOME || homedir(), { paneId: paneId ?? undefined, binPath: process.env.HERDR_BIN_PATH }, run));
+}
+
+// src/host-clipboard.ts
 async function copyToClipboard(text) {
   const candidates = process.platform === "darwin" ? [["pbcopy"]] : process.platform === "win32" ? [["clip"]] : [["wl-copy"], ["xclip", "-selection", "clipboard"]];
   for (const argv of candidates) {
@@ -12588,14 +13587,46 @@ async function copyToClipboard(text) {
   }
   return `no clipboard command started (${candidates.map((c) => c[0]).join(", ")})`;
 }
+
+// src/host-model.ts
+function byNewestRevision(a, b) {
+  const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
+  const [x, y] = [parts(a), parts(b)];
+  const differing = x.findIndex((n, i) => n !== y[i]);
+  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
+}
+function inboxModel(models, resolve) {
+  const sonnets = models.filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
+  const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
+  return resolve("@inbox") ?? sonnet ?? resolve("@smol") ?? null;
+}
+
+// src/host.ts
+var INBOX_MODEL_TIMEOUT_MS = 120000;
+var BAND_KEY = "inbox-band";
+var hyperlinkTools = () => import("@oh-my-pi/pi-tui/render");
+function documentMarkdown2() {
+  return documentMarkdown(() => import("@oh-my-pi/pi-tui"));
+}
+function panelLink2(load = hyperlinkTools) {
+  return panelLink(load);
+}
+async function defaultComplete(model, context, options) {
+  const { completeSimple } = await import("@oh-my-pi/pi-ai");
+  return completeSimple(model, context, options);
+}
+async function isUsageLimitOutcome(status, message) {
+  const ai = await import("@oh-my-pi/pi-ai");
+  return ai.isUsageLimitOutcome(status, message);
+}
 var defaultDeps = {
-  stateDir: (pi) => join4(pi.pi.getAgentDir(), "inbox"),
+  stateDir: (pi) => join5(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
-  home: homedir(),
-  isNextBuild: existsSync(join4(dirname3(dirname3(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
-  comparePage: join4(dirname3(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
+  home: homedir2(),
+  isNextBuild: existsSync(join5(dirname3(dirname3(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join5(dirname3(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -12603,20 +13634,12 @@ var defaultDeps = {
   }),
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
-  herdrTarget: herdrTarget(process.env)
+  herdrTarget: herdrTarget(process.env),
+  herdrPane: process.env.HERDR_PANE_ID || null,
+  recordedItemsOnly: process.env.INBOX_RECORDED_ITEMS_ONLY,
+  feedPath: process.env.INBOX_FEED
 };
 var messageOf = (err) => err instanceof Error ? err.message : String(err);
-function byNewestRevision(a, b) {
-  const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
-  const [x, y] = [parts(a), parts(b)];
-  const differing = x.findIndex((n, i) => n !== y[i]);
-  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
-}
-function inboxModel(ctx) {
-  const sonnets = ctx.models.list().filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
-  const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
-  return ctx.models.resolve("@inbox") ?? sonnet ?? ctx.models.resolve("@smol") ?? null;
-}
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
   const run = async (args, { cwd, timeoutMs }) => {
@@ -12628,6 +13651,8 @@ function createInbox(pi, deps = defaultDeps) {
       return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
+  const getFeedPath = runtimeFeedPath(deps.feedPath, deps.herdrPane, run);
+  const runtimeDeps = { ...deps, feedPath: getFeedPath };
   const runStartWaiters = new Map;
   const sendToAgent = async (ctx, text) => {
     const id = sessionIdOf(ctx);
@@ -12654,7 +13679,7 @@ function createInbox(pi, deps = defaultDeps) {
   };
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
-      const model = inboxModel(ctx);
+      const model = inboxModel(ctx.models.list(), (name) => ctx.models.resolve(name));
       if (!model) {
         report?.({ model: "none", error: "omp offers no model for the inbox", cause: "error" });
         return null;
@@ -12700,12 +13725,12 @@ function createInbox(pi, deps = defaultDeps) {
       await pi.setActiveTools(kept);
   };
   const modelNameOf = (ctx) => {
-    const model = inboxModel(ctx);
+    const model = inboxModel(ctx.models.list(), (name) => ctx.models.resolve(name));
     return model ? model.name ?? model.id : null;
   };
   const logHerdr = herdrLog(dir);
   const context = {
-    deps,
+    deps: runtimeDeps,
     dir,
     openPanels: new Map,
     prepared: new Set,
@@ -12744,20 +13769,32 @@ function createInbox(pi, deps = defaultDeps) {
         listener();
   });
   const { inbox, liveSource } = panelCalls(context, sessions, herdrAsk);
-  pi.events.on("task:subagent:lifecycle", activity.onSubagentLifecycle);
-  pi.events.on("task:subagent:progress", activity.onSubagentProgress);
+  let stopFeedTimer = () => {};
   let isHerdrStarted = false;
-  pi.on("session_start", (_event, ctx) => {
-    if (!isHerdrStarted)
+  const startSession = async (ctx, parentFile) => {
+    stopFeedTimer();
+    if (!isHerdrStarted) {
       startOmpInHerdrApp(deps.herdrTarget, run, logHerdr).then((result) => herdrAsk.started(result)).catch(() => {
         return;
       });
-    isHerdrStarted = true;
-    return start(ctx);
+      isHerdrStarted = true;
+    }
+    await start(ctx, parentFile);
+    if (isUnattended(ctx) || !await feedPathValue(runtimeDeps.feedPath))
+      return;
+    const timer = ctx.setInterval(() => deps.background(inbox.feedWhenDue(ctx)), FEED_POLL_MS);
+    stopFeedTimer = () => ctx.clearTimer(timer);
+    await inbox.feedWhenDue(ctx);
+  };
+  pi.events.on("task:subagent:lifecycle", activity.onSubagentLifecycle);
+  pi.events.on("task:subagent:progress", activity.onSubagentProgress);
+  pi.on("session_start", (_event, ctx) => startSession(ctx));
+  pi.on("session_switch", (event, ctx) => startSession(ctx, event.reason === "fork" ? event.previousSessionFile : undefined));
+  pi.on("session_branch", (event, ctx) => startSession(ctx, event.previousSessionFile));
+  pi.on("session_shutdown", (event, ctx) => {
+    stopFeedTimer();
+    return turns.onSessionShutdown(event, ctx);
   });
-  pi.on("session_switch", (event, ctx) => start(ctx, event.reason === "fork" ? event.previousSessionFile : undefined));
-  pi.on("session_branch", (event, ctx) => start(ctx, event.previousSessionFile));
-  pi.on("session_shutdown", turns.onSessionShutdown);
   pi.on("before_agent_start", turns.onBeforeAgentStart);
   pi.on("input", turns.onInput);
   pi.on("agent_start", (event, ctx) => {
@@ -12783,8 +13820,9 @@ function createInbox(pi, deps = defaultDeps) {
         if (isUnattended(ctx))
           return { content: [{ type: "text", text: "The inbox is not shown in this session." }] };
         let answer = { result: "", personLine: null };
+        const input = name === "record" ? await withDocumentPreview(args, documentFile) : args;
         await change(sessionIdOf(ctx), (s) => {
-          const r = recorded(OMP, s, name, args, deps.now(), TOOL_FIELDS);
+          const r = recorded(OMP, s, name, input, deps.now(), TOOL_FIELDS);
           answer = r;
           return r.state;
         });
@@ -12834,6 +13872,8 @@ function createInbox(pi, deps = defaultDeps) {
   async function openPanelUi(ctx, isDemo) {
     const openedAt = deps.now();
     const { parseKey, extractPrintableText, truncateToWidth } = await import("@oh-my-pi/pi-tui");
+    const markdown = await documentMarkdown2();
+    const link = await panelLink2();
     const source = isDemo ? demoSource({
       now: deps.now,
       after: (fn, ms) => void ctx.setTimeout(fn, ms),
@@ -12850,7 +13890,9 @@ function createInbox(pi, deps = defaultDeps) {
       await ctx.ui.custom((tui, theme, _keybindings, done) => {
         const panel = createPanel({
           source,
-          style: styleOf(theme),
+          style: styleOf(theme, link),
+          readDocument: (path) => readDocument(path, documentFile),
+          markdown,
           now: deps.now,
           openedAt,
           requestRender: () => tui.requestRender(),
@@ -12876,7 +13918,7 @@ function createInbox(pi, deps = defaultDeps) {
     }
   }
   const openHerdrPanel = herdrPanelOpener();
-  const isFile = (path) => stat4(path).then((s) => s.isFile());
+  const isFile = (path) => stat6(path).then((s) => s.isFile());
   pi.registerCommand("inbox", {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
@@ -12916,5 +13958,9 @@ function host_default(pi) {
 }
 export {
   createInbox,
-  host_default as default
+  host_default as default,
+  documentLinkTarget,
+  documentMarkdown2 as documentMarkdown,
+  hyperlinkTools,
+  panelLink2 as panelLink
 };

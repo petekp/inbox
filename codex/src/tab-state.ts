@@ -1,4 +1,4 @@
-import type { JSX } from 'preact'
+import type { ComponentChildren, JSX } from 'preact'
 import { earliestOf } from '../../hooks/timing'
 import type { IconName } from './row-actions'
 import type { ActionEmphasis, RowView } from '../../hooks/rows'
@@ -14,6 +14,7 @@ import type { DrawnPrs, OpenPrBlock } from './tab-pr-steps'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
+export type DocumentView = { title: string; text: string | null; error: string | null }
 
 type Emphasis = ActionEmphasis
 
@@ -38,7 +39,8 @@ export type Row = {
   isMarkDone?: boolean
   kind?: Finding['kind']
   lead?: string
-  title: string
+  title: ComponentChildren
+  titleLabel?: string
   meta?: string
   /** The open subjects an ask holds up, as "Holds up Offline sync, Hotfix release". */
   holdsUp?: string
@@ -147,6 +149,7 @@ export const pending = new Map<
 export type Lists = DrawnLists<Row>
 class TabState {
   view: View | null = null
+  document: DocumentView | null = null
   isDemo = false
   readError: string | null = null
   serverNote: { text: string; kind: 'server-gone' | 'server-load-failed' | 'server-builds-differ' } | null = null

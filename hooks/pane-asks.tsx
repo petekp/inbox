@@ -3,6 +3,8 @@ import { bannerOf, emptyText, isResumable, READING_TEXT, stopBanner } from './ba
 import { isMaybeStale } from './band'
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { FINDING_GROUPS, HELD_MARK } from './help'
+import { linkLabel } from './inline'
+import { safeDocumentMarkdown } from './pane-document'
 import { READ_FAILED_TEXT } from './mod-sessions'
 import { sessionState } from './mod-state'
 import type { PaneBase, PaneHandlers, Row } from './pane-context'
@@ -14,6 +16,8 @@ import { ROW_COLUMNS } from './pane-sizes'
 import {
   closedShown,
   closedTotal,
+  closedHistoryPlan,
+  documentPreviewLine,
   DOT,
   replyHint,
   resumeLabel,
@@ -24,6 +28,11 @@ import {
 } from './rows'
 import { type TerminalSpan, terminalTextLines } from './terminal-text'
 import { ago } from './text'
+
+export function clippedDocumentPreview(preview: string | null, width: number, lines: number) {
+  const spans = preview ? terminalTextLines(preview, width, lines) : []
+  return { spans, bodyLines: Math.max(0, lines - spans.length) }
+}
 
 export function paneAskRows(
   {
@@ -49,27 +58,29 @@ export function paneAskRows(
     const holdsUp = holdsUpLine ? (
       <Text key="holds-up" color={pal.muted} wrap="wrap">
         <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-        {holdsUpLine}
+        {inlineText(holdsUpLine)}
       </Text>
     ) : null
     const recLine = r.recLine ? (
       <Text key="rec" color={pal.muted} wrap="wrap">
-        {r.recLine}
+        {inlineText(r.recLine)}
       </Text>
     ) : null
     const contextLine = r.contextLine ? (
       <Text key="context" color={pal.muted} wrap="wrap">
-        {r.contextLine}
+        {inlineText(r.contextLine)}
       </Text>
     ) : null
     const subtitleLines = [contextLine, holdsUp, recLine].filter(line => line !== null)
+    const preview = documentPreviewLine(r)
 
     return {
       id: r.id,
       view: r,
       handle: '',
       ...(isHandedOff ? { fold: {} } : {}),
-      title: rowTitle(r, look),
+      title: linkLabel(rowTitle(r, look)),
+      titleContent: inlineText(rowTitle(r, look)),
       titleAfter: asked,
       ...(r.at === null ? {} : { at: r.at }),
       ...(subtitleLines.length > 1
@@ -78,19 +89,56 @@ export function paneAskRows(
           ? { subtitle: subtitleLines[0] }
           : {}),
       hasSecondLine: r.replyKind === 'answer',
-      body: null,
+      body:
+        r.detail || preview ? (
+          <Box flexDirection="column" rowGap={blankLine}>
+            {r.detail ? <Text wrap="wrap">{inlineText(r.detail)}</Text> : null}
+            {preview ? (
+              <Text wrap="wrap" color={pal.muted}>
+                {preview}
+              </Text>
+            ) : null}
+          </Box>
+        ) : null,
+      clippedBody: (lines, width) => {
+        if (lines < 1 || (!r.detail && !preview)) return null
+        const { spans: previewLines, bodyLines: detailLines } = clippedDocumentPreview(preview, width, lines)
+
+        return (
+          <Box flexDirection="column" rowGap={blankLine}>
+            {r.detail && detailLines > 0 ? (
+              <Text wrap="wrap">{terminalText(terminalTextLines(r.detail, width, detailLines))}</Text>
+            ) : null}
+            {previewLines.length > 0 ? (
+              <Text wrap="wrap" color={pal.muted}>
+                {terminalText(previewLines)}
+              </Text>
+            ) : null}
+          </Box>
+        )
+      },
       keys: () => rowKeyActions(r, optionsShown.includes(r.id)).keys,
       moreKeys: () => rowKeyActions(r, optionsShown.includes(r.id)).more,
       typeHint: replyHint(r, 'Claude'),
     }
   }
-  const findingBody = (detail: string, path: string | null, fitted?: TerminalSpan[][]) => (
+  const findingBody = (
+    detail: string,
+    path: string | null,
+    preview: string | TerminalSpan[][] | null,
+    fitted?: TerminalSpan[][],
+  ) => (
     <Box flexDirection="column" rowGap={blankLine}>
       <Text wrap="wrap">{fitted ? terminalText(fitted) : inlineText(detail)}</Text>
       {path ? (
         <Text wrap="wrap">
           <Text color={pal.muted}>{ROW_COPY.relevantFile}</Text>
           <Text color="permission">{path}</Text>
+        </Text>
+      ) : null}
+      {preview ? (
+        <Text wrap="wrap" color={pal.muted}>
+          {Array.isArray(preview) ? terminalText(preview) : preview}
         </Text>
       ) : null}
     </Box>
@@ -101,18 +149,27 @@ export function paneAskRows(
     at: r.at ?? undefined,
     handle: '',
     ...(r.state.is === 'handedOff' ? { fold: {} } : {}),
-    title: r.title,
+    title: linkLabel(r.title),
+    titleContent: inlineText(r.title),
     titleAfter: `${DOT}${ago(now - (r.at ?? now))}`,
-    line: { text: r.title },
-    body: findingBody(r.detail ?? '', r.fileName),
-    clippedBody: (lines, width) =>
-      lines < 1
-        ? null
-        : findingBody(
-            r.detail ?? '',
-            lines > 1 ? r.fileName : null,
-            terminalTextLines(r.detail ?? '', width, Math.max(1, lines - (r.fileName && lines > 1 ? 1 : 0))),
-          ),
+    line: { text: linkLabel(r.title) },
+    body: findingBody(r.detail ?? '', r.fileName, documentPreviewLine(r)),
+    clippedBody: (lines, width) => {
+      if (lines < 1) return null
+      const path = r.fileName && lines > 1 ? r.fileName : null
+      const { spans: previewLines, bodyLines: detailLines } = clippedDocumentPreview(
+        lines > 2 ? documentPreviewLine(r) : null,
+        width,
+        lines - (path ? 1 : 0),
+      )
+
+      return findingBody(
+        r.detail ?? '',
+        path,
+        previewLines.length > 0 ? previewLines : null,
+        terminalTextLines(r.detail ?? '', width, detailLines),
+      )
+    },
     typeHint: replyHint(r, 'Claude'),
     keys: () => rowKeyActions(r, true).keys,
     moreKeys: () => rowKeyActions(r, true).more,
@@ -127,6 +184,8 @@ export function paneAskTabs(
     look,
     isInline,
     Box,
+    Button,
+    Markdown,
     Text,
     blankLine,
     pal,
@@ -135,7 +194,6 @@ export function paneAskTabs(
     isUnread,
     unfolded,
     closedAll,
-    Button,
     stop,
     glued,
     now,
@@ -157,6 +215,7 @@ export function paneAskTabs(
     | 'look'
     | 'isInline'
     | 'Box'
+    | 'Markdown'
     | 'Text'
     | 'blankLine'
     | 'pal'
@@ -179,8 +238,34 @@ export function paneAskTabs(
       'settledRow' | 'closedFold' | 'section' | 'groupTitle' | 'titleGap' | 'groupEmpty' | 'sections'
     > &
     Pick<PaneFrame, 'banner'>,
-  { readAgain, resume }: Pick<PaneHandlers, 'readAgain' | 'resume'>,
+  {
+    readAgain,
+    resume,
+    closeDocument,
+    document,
+  }: Pick<PaneHandlers, 'readAgain' | 'resume'> & {
+    closeDocument: () => void
+    document: { title: string; text: string | null; error: string | null } | null
+  },
 ) {
+  const documentView = () =>
+    document ? (
+      <Box flexDirection="column" flexGrow={1} rowGap={blankLine}>
+        <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+          <Text bold>{document.title}</Text>
+          <Button key="document-back" label="Back to inbox" onPress={closeDocument} />
+        </Box>
+        {document.error ? (
+          <Text color={pal.tone.error ?? pal.mark.error} wrap="wrap">
+            {document.error}
+          </Text>
+        ) : document.text === null ? (
+          <Text dimColor>Opening report…</Text>
+        ) : document.text ? (
+          <Markdown key="document-report" text={safeDocumentMarkdown(document.text, true)} />
+        ) : null}
+      </Box>
+    ) : null
   /** A tab's empty text, centred in the pane, with `below` under it. */
   const emptyState = ({ title, hint: text = '' }: { title: string; hint?: string }, below: JSX.Element[] = []) => {
     const wrap = (width: number) => {
@@ -226,6 +311,7 @@ export function paneAskTabs(
     const groups = needsYouGroups.flatMap(g => {
       const { entries } = g
       const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries), closedAll.includes(g.kind))
+      const history = closedHistoryPlan(view.needsYou.closed[g.list], settledIn(entries))
       if (isUnread) return []
       const isUnfolded = unfolded.includes(g.kind)
       const open = divided(
@@ -235,7 +321,7 @@ export function paneAskTabs(
         g.kind,
         ROW_COLUMNS.tree.handleAt,
       )
-      const tail = closedFold(g.kind, closed, closedTotal(view.needsYou.closed[g.list], settledIn(entries)), isUnfolded)
+      const tail = closedFold(g.kind, closed, history.total, isUnfolded)
 
       return [
         section([
@@ -293,6 +379,7 @@ export function paneAskTabs(
       return emptyState(emptyText('findings', 'Claude', isMaybeStale(view, isUnread)))
     const groups = lists.findingGroups.map(g => {
       const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
+      const history = closedHistoryPlan(closedOf, settled)
       const closed = closedShown(closedOf, settled, closedAll.includes(g.kind)).map(f => ({
         id: f.id,
         how: f.how,
@@ -313,14 +400,14 @@ export function paneAskTabs(
           g.kind,
           ROW_COLUMNS.tree.handleAt,
         ),
-        ...closedFold(g.kind, closed, closedTotal(closedOf, settled), unfolded.includes(g.kind)),
+        ...closedFold(g.kind, closed, history.total, unfolded.includes(g.kind)),
       ])
     })
 
     return sections(groups)
   }
 
-  return { emptyState, needsYouView, findingsView }
+  return { emptyState, needsYouView, findingsView, documentView }
 }
 
 export type PaneAskTabs = ReturnType<typeof paneAskTabs>

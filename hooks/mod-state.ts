@@ -7,6 +7,7 @@ import type { ListInput } from './timing'
 import type { HerdrAsk } from './herdr-ask'
 
 class PaneState {
+  document: { sessionId: string; title: string; text: string | null; error: string | null } | null = null
   recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
   isInlinePane = false
   isInlineTerminalPane = false
@@ -77,6 +78,8 @@ class ModState {
   isNextBuild = false
   /** Where a next build keeps its Status call records, or null on a release build. */
   statusRecordsFolder: string | null = null
+  /** Whether only Claude's `record` calls add asks, from `INBOX_RECORDED_ITEMS_ONLY` when the inbox turns on. */
+  recordedItemsOnly = false
   fetchingPrs: Promise<void> = Promise.resolve()
   /** The ask of the fetch that runs next, or null when none waits. A second ask joins it. */
   nextFetch: { findsBranchPr: boolean; isPress: boolean } | null = null

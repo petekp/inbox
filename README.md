@@ -144,6 +144,16 @@ Press an answer and it goes to the agent as your message, a few seconds later,
 so Undo can take back a wrong press. You can also type
 your own reply, or press Explain to have the agent say more before you decide.
 
+To limit this tab to what the agent records with its `record` tool, set
+`INBOX_RECORDED_ITEMS_ONLY=1` in the agent's environment. In Claude Code, put
+it under `env` in your settings. The model then adds no NEW question or task of
+its own and leaves each recorded question's options and recommendation as the
+agent wrote them. In a model update, an ask closes only when your reply contains
+your answer. TODO lines for work you set aside stay as follow-up asks when the
+reply leaves them undone, and recorded asks can still gain steps. A later
+reply's new recommendation then reaches a question only when the agent records
+the question again. It is off by default.
+
 When a question is a design choice, such as two layouts or two ways to build a
 feature, Compare has the agent try each answer against your code and make a
 page that shows them side by side, which opens from the question. The page

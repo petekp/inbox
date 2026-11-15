@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T05:38:41.582Z. 203420 characters follow.
+// Built at 2026-11-15T15:43:44.014Z. 207683 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -51,7 +51,8 @@ var BANNER_TONES = {
   "server-builds-differ": "warning",
   "tab-update-failed": "warning",
   "herdr-mod-failed": "warning",
-  "herdr-mod-ask": "ask"
+  "herdr-mod-ask": "ask",
+  "untracked-work": "warning"
 };
 function bannerOf(kind, text) {
   const end = text.indexOf(". ");
@@ -59,9 +60,11 @@ function bannerOf(kind, text) {
   const body = end < 0 ? null : text.slice(end + 2);
   return { kind, tone: BANNER_TONES[kind], lead, body };
 }
-function tabBarBanners(host, statusError, pressNote) {
+function tabBarBanners(host, statusError, pressNote, untrackedWork = []) {
+  const warning = untrackedWork.length ? bannerOf("untracked-work", `Untracked work. ${untrackedWork.length} live signal${untrackedWork.length === 1 ? "" : "s"} have no open item: ${untrackedWork.slice(0, 8).map((w) => `${w.title} (${w.detail})`).join("; ")}${untrackedWork.length > 8 ? "; …" : ""}`) : null;
   return [
     ...host,
+    ...warning ? [warning] : [],
     ...statusError ? [bannerOf("update-failed", statusError)] : [],
     ...pressNote ? [bannerOf(pressNote.isError ? "press-failed" : "press-note", pressNote.text)] : []
   ];
@@ -209,6 +212,8 @@ var GRAPHEME = new RegExp(String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^$
 function graphemesOf(text) {
   return segmenter ? Array.from(segmenter.segment(text), (s) => s.segment) : text.match(GRAPHEME) ?? [];
 }
+var OSC8 = /\x1b\]8;[^;\x07\x1b]*;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+var ANSI_TOKEN = new RegExp(`\\x1b\\[[0-9;]*m|${OSC8.source}`, "g");
 var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
 var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
 var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
@@ -254,6 +259,48 @@ function isSubjectSeen(o, s) {
 // ../hooks/children.ts
 var ENDED = new Set(["completed", "failed", "killed", "stopped"]);
 
+// ../hooks/inline.ts
+var INLINE = /`([^`\n]+)`|\*\*(?=\S)(.+?)(?<=\S)\*\*(?!\*)|~~(?=\S)(.+?)(?<=\S)~~|(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])|(?<!\w)_(?=\S)([^_\n]+?)(?<=\S)_(?!\w)|\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/gi;
+function httpsHref(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password)
+      return null;
+    const href = parsed.origin + [parsed.pathname, parsed.search, parsed.hash].join("").replace(/@/g, "%40");
+    return href.length <= 2048 ? href : null;
+  } catch {
+    return null;
+  }
+}
+function parseInline(text, outer = {}) {
+  const spans = [];
+  let at = 0;
+  for (const m of text.matchAll(INLINE)) {
+    if (m.index > at)
+      spans.push({ ...outer, text: text.slice(at, m.index) });
+    const [, code, bold, strike, star, under, label, url] = m;
+    if (code !== undefined)
+      spans.push({ ...outer, text: code, code: true });
+    else if (bold !== undefined)
+      spans.push(...parseInline(bold, { ...outer, bold: true }));
+    else if (strike !== undefined)
+      spans.push(...parseInline(strike, { ...outer, strike: true }));
+    else if (star !== undefined || under !== undefined)
+      spans.push({ ...outer, text: star ?? under ?? "", italic: true });
+    else {
+      const href = httpsHref(url ?? "");
+      spans.push(href ? { ...outer, text: label ?? "", link: href } : { ...outer, text: `${label ?? ""} (${url ?? ""})` });
+    }
+    at = m.index + m[0].length;
+  }
+  if (at < text.length)
+    spans.push({ ...outer, text: text.slice(at) });
+  return spans;
+}
+function linkLabel(text) {
+  return parseInline(text).map((span) => span.text).join("");
+}
+
 // ../hooks/ask-match.ts
 function words2(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -261,10 +308,10 @@ function words2(text) {
 function recommendedOption(options, rec) {
   if (!rec)
     return null;
-  const named = new Set(words2(rec));
+  const named = new Set(words2(linkLabel(rec)));
   let best = null;
   for (const option of options) {
-    const w = words2(option);
+    const w = words2(linkLabel(option));
     if (w.length > words2(best ?? "").length && w.every((x) => named.has(x)))
       best = option;
   }
@@ -654,6 +701,7 @@ var EMPTY = {
   closed: [],
   findings: [],
   closedFindings: [],
+  untrackedWork: [],
   prs: [],
   prOrder: null,
   nextId: 1,
@@ -723,7 +771,7 @@ var CLOSED_BY_CLAUDE = "closed by Claude";
 
 // ../hooks/inbox-text.ts
 function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => !i.sourceManaged && i.turn === ledger.batchTurn);
 }
 function numberOf(label) {
   const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
@@ -1126,7 +1174,8 @@ function stepEffects(item, step) {
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "▲", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "✦", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "✦", tone: "done" },
+  progress: { title: "Progress", mark: "↻", tone: "findings" }
 };
 var SUBJECT_MARKS = {
   working: { mark: "●", tone: null },
@@ -1187,6 +1236,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: FINDING_GROUPS.progress.mark,
+    tone: FINDING_GROUPS.progress.tone,
+    isRunning: false,
+    words: "Progress reported by the feed"
   }
 ];
 var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
@@ -1199,9 +1254,14 @@ var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "Clear the merged and closed PRs" }
 ];
+var DOCUMENT_KEYS = [
+  { keys: "v", does: "Read the selected report, if available" },
+  { keys: "b", does: "Return to the inbox from a report" }
+];
 function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
+  const hasDocumentRows = tab === "needsYou" || tab === "findings";
   const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
@@ -1214,22 +1274,37 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
         switchTabs,
         ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
         ...hasRows ? [undoKey] : [],
+        ...hasRows || selectsStatusRows ? [
+          {
+            keys: hasDocumentRows ? "j k ↑ ↓" : "j k",
+            does: hasDocumentRows ? "Select a row or scroll a report" : "Select the next or previous row"
+          }
+        ] : [],
+        ...hasDocumentRows ? DOCUMENT_KEYS : [],
         ...prTabKeys,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k ↑ ↓", does: "Select the next or previous row" }, undoKey] : [],
+        ...hasRows ? [
+          {
+            keys: "j k ↑ ↓",
+            does: hasDocumentRows ? "Select a row or scroll a report" : "Select the next or previous row"
+          },
+          ...hasDocumentRows ? DOCUMENT_KEYS : []
+        ] : [],
+        ...hasRows ? [undoKey] : [],
         ...prTabKeys,
         { keys: "?", does: "Open or close help" },
-        { keys: "esc", does: "Close help, or leave a reply field" }
+        { keys: "esc", does: "Close help, leave a reply field, or return from a report" }
       ];
     case "omp":
       return [
         { keys: `tab ${tabKeys}`, does: "Switch tabs" },
         ...hasRows ? [
-          { keys: "↑ ↓ j k", does: "Move between rows" },
+          { keys: "↑ ↓ j k", does: hasDocumentRows ? "Move between rows or scroll a report" : "Move between rows" },
+          ...hasDocumentRows ? DOCUMENT_KEYS : [],
           { keys: "← →", does: "Pick a button" },
           { keys: "↵", does: "Press the picked button" },
           { keys: "t", does: "Reply to the selected row" },
@@ -1244,7 +1319,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
           { keys: "↑ ↓", does: "Scroll the page" }
         ],
         { keys: "?", does: "Open or close help" },
-        { keys: "esc", does: "Close help, then the panel" }
+        { keys: "esc", does: "Close help, return from a report, then the panel" }
       ];
     case "herdr":
       return [
@@ -1802,7 +1877,7 @@ function optionDescriptionsOf(item, actions) {
     if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option))
       return [];
     const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    return [{ label: clipLabel(linkLabel(a.press.option), OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
 function shownOptionDescriptions(row, isShowingAll) {
@@ -1857,7 +1932,11 @@ function closedShown(closed, drawnSettled, isAllShown = false) {
   return isAllShown ? listed : listed.slice(0, CLOSED_SHOWN);
 }
 function closedTotal(closed, drawnSettled) {
-  return closed.filter((d) => !drawnSettled.has(d.id)).length;
+  return closedHistoryPlan(closed, drawnSettled).total;
+}
+function closedHistoryPlan(closed, drawnSettled) {
+  const rows = closed.filter((d) => !drawnSettled.has(d.id));
+  return { rows, total: rows.length };
 }
 function foldLabel(total) {
   return `${total} closed`;
@@ -2333,7 +2412,7 @@ function ghNoticeOf(gh) {
   return null;
 }
 function prsEmptyHint(place) {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+  return `Your open PRs show here, along with PRs this ${place} links and the PR for its branch.`;
 }
 function prsEmptyText(prs, place) {
   return {
@@ -2838,6 +2917,7 @@ var ACTION_KEYS = {
   issue: "i",
   type: "t",
   explain: "e",
+  "read-document": "v",
   compare: "p",
   discuss: "d",
   dismiss: "x",
@@ -2860,6 +2940,8 @@ function prUndos(prs) {
 }
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps } = row;
+  if (item?.sourceManaged || row.finding?.sourceManaged)
+    return [];
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
   const action = (press, label, kind, flags = {}) => {
@@ -2877,10 +2959,12 @@ function actionsOf(row, last, state, feedback) {
       isOut: out === pressAction
     };
   };
+  const documentAction = row.document ? [action({ action: "read-document", id }, "Read report", "view")] : [];
   if (state.is === "settled")
-    return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
+    return [...state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [], ...documentAction];
   if (state.is === "held")
     return [
+      ...documentAction,
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "discard", id }, ROW_COPY.discard, "view")
     ];
@@ -2889,6 +2973,7 @@ function actionsOf(row, last, state, feedback) {
     return [
       action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
       action({ action: "issue", id }, ISSUE_LABEL, "handoff"),
+      ...documentAction,
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "explain", id }, "Explain", "talk"),
       action({ action: "discuss", id }, "Discuss", "talk"),
@@ -2897,6 +2982,7 @@ function actionsOf(row, last, state, feedback) {
   if (item.kind === "task")
     return [
       ...stepActions,
+      ...documentAction,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "explain", id }, "Explain", "talk"),
@@ -2905,11 +2991,12 @@ function actionsOf(row, last, state, feedback) {
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
-    ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
+    ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(linkLabel(option), OPTION_LABEL_CHARS), "mark", {
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
     ...stepActions,
+    ...documentAction,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
     ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
@@ -3103,10 +3190,13 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const document = row.item?.document ?? row.finding?.document ?? null;
+    const actions = actionsOf({ ...row, document }, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
     const held = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
+      document,
+      documentPreview: row.item?.documentPreview ?? row.finding?.documentPreview ?? null,
       state,
       feedback,
       actions,
@@ -3124,7 +3214,7 @@ function inboxView({
       number: n ?? null,
       title: item.ask,
       at: item.at,
-      detail: null,
+      detail: item.detail ?? null,
       fileName: null,
       replyKind: item.kind === "question" ? "answer" : "reply",
       item,
@@ -3169,6 +3259,7 @@ function inboxView({
     };
   });
   return {
+    untrackedWork: ledger.untrackedWork ?? [],
     needsYou: {
       count: counted.length,
       questions: questionRows,
@@ -3271,6 +3362,8 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
+    accountPrs: (s.prViews.accountPrs ?? []).filter((pr) => !drawn.some((d) => d.pr.ref === pr.ref)),
+    botPrSummaries: s.prViews.botPrSummaries ?? [],
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),

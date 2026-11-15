@@ -64,6 +64,7 @@ export type BannerKind =
   | 'tab-update-failed'
   | 'herdr-mod-failed'
   | 'herdr-mod-ask'
+  | 'untracked-work'
 
 /**
  * Error: an action failed, the turn stopped, or the inbox cannot do its job until something changes. Warning: part of
@@ -89,6 +90,7 @@ const BANNER_TONES: Record<BannerKind, BannerTone> = {
   'tab-update-failed': 'warning',
   'herdr-mod-failed': 'warning',
   'herdr-mod-ask': 'ask',
+  'untracked-work': 'warning',
 }
 
 /** A message about the inbox's own state, or the turn's stop. Each look draws it as a tinted box, the lead in bold. */
@@ -123,9 +125,20 @@ export function tabBarBanners(
   host: BannerView[],
   statusError: string | null,
   pressNote: { text: string; isError: boolean } | null,
+  untrackedWork: { title: string; detail: string }[] = [],
 ): BannerView[] {
+  const warning = untrackedWork.length
+    ? bannerOf(
+        'untracked-work',
+        `Untracked work. ${untrackedWork.length} live signal${untrackedWork.length === 1 ? '' : 's'} have no open item: ${untrackedWork
+          .slice(0, 8)
+          .map(w => `${w.title} (${w.detail})`)
+          .join('; ')}${untrackedWork.length > 8 ? '; …' : ''}`,
+      )
+    : null
   return [
     ...host,
+    ...(warning ? [warning] : []),
     ...(statusError ? [bannerOf('update-failed', statusError)] : []),
     ...(pressNote ? [bannerOf(pressNote.isError ? 'press-failed' : 'press-note', pressNote.text)] : []),
   ]

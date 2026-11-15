@@ -156,7 +156,7 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     await until(() => !(document.getElementById('app')?.textContent?.includes('Sending…') ?? false))
   } finally {
     await host.happyDOM.close()
-    await rm(dir, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   }
 })
 

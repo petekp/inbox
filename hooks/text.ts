@@ -40,10 +40,27 @@ export function clipLabel(text: string, max: number): string {
 
 /** The longest start of `line` that `fits` with an ellipsis after it, with no space or punctuation before the ellipsis. */
 export function cutForEllipsis(line: string, fits: (withEllipsis: string) => boolean): string {
-  const parts = graphemesOf(line)
+  const parts: string[] = []
+  let at = 0
+  for (const match of line.matchAll(ANSI_TOKEN)) {
+    parts.push(...graphemesOf(line.slice(at, match.index)), match[0])
+    at = match.index + match[0].length
+  }
+  parts.push(...graphemesOf(line.slice(at)))
   while (parts.length > 0 && !fits(`${parts.join('')}…`)) parts.pop()
 
-  return parts.join('').replace(/[\s.,;:]+$/, '')
+  let result = parts.join('')
+  const trailingControl = new RegExp(`(?:\\x1b\\[[0-9;]*m|${OSC8.source})$`)
+  const controls: string[] = []
+  while (true) {
+    const match = result.match(trailingControl)
+    if (!match) break
+    controls.unshift(match[0])
+    result = result.slice(0, -match[0].length)
+  }
+  result = result.replace(/[\s.,;:]+$/, '') + controls.join('')
+
+  return closeOpenLink(result)
 }
 
 /** Where a phrase ends: after a comma or semicolon, or before "and". */
@@ -107,6 +124,15 @@ const GRAPHEME = new RegExp(
 /** The characters a reader sees in `text`, in order. */
 function graphemesOf(text: string): string[] {
   return segmenter ? Array.from(segmenter.segment(text), s => s.segment) : (text.match(GRAPHEME) ?? [])
+}
+
+export const OSC8 = /\x1b\]8;[^;\x07\x1b]*;[^\x07\x1b]*(?:\x07|\x1b\\)/g
+const ANSI_TOKEN = new RegExp(`\\x1b\\[[0-9;]*m|${OSC8.source}`, 'g')
+export function closeOpenLink(text: string): string {
+  let isOpen = false
+  for (const match of text.matchAll(OSC8)) isOpen = !/;;(?:\x07|\x1b\\)$/.test(match[0])
+
+  return isOpen ? `${text}\x1b]8;;\x1b\\` : text
 }
 const ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u
 const EMOJI = /\p{Emoji_Presentation}|\uFE0F/u

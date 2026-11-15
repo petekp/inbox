@@ -2,13 +2,16 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE, MAX_TOOL_DESCRIPTION, guidedCloseDescription } from '../hooks/model-text'
 import { answerNote, carryText, questionNumbers } from '../hooks/inbox-text'
-import { buildPrompt } from '../hooks/ledger-prompt'
+import { ledgerBlocks, buildPrompt } from '../hooks/ledger-prompt'
+import { CLOSED_CONTEXT_LIMIT } from '../hooks/ask-match'
 import { EMPTY } from '../hooks/ledger'
 import { applyUpdate } from '../hooks/ledger-update'
+import { closeItem } from '../hooks/ledger-close'
 import { parseReply, tasksRunBy } from '../hooks/reply-parse'
 import { readCommandRow, resetTime, stopKindOf } from '../hooks/claude'
 import { herdrTokens } from '../hooks/herdr'
-import { parseInline } from '../hooks/inline'
+import { cutInline, httpsHref, inlineLinks, linkLabel, parseInline } from '../hooks/inline'
+import { terminalTextLines } from '../hooks/terminal-text'
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
@@ -122,11 +125,71 @@ describe('guidedCloseDescription', () => {
   })
 })
 
+describe('record link descriptions', () => {
+  test('describes labeled links and explains how option links render', () => {
+    const record = agentTools(CLAUDE_CODE).find(t => t.name === 'record')!
+    const properties = record.inputSchema.properties as Record<string, { description: string }>
+
+    for (const key of ['ask', 'title']) {
+      expect(properties[key]!.description).toContain('Links as [label](https://…);')
+      expect(properties[key]!.description).toContain('a link counts as its label')
+    }
+    expect(properties.detail!.description).toContain('Links as [label](https://…).')
+
+    expect(properties.ask!.description).toContain('at most 12 words')
+    expect(properties.ask!.description).toContain('a link counts as its label')
+    expect(properties.title!.description).toContain('at most 12 words')
+    expect(properties.title!.description).toContain('a link counts as its label')
+    expect(properties.options!.description).toContain(
+      'A link here shows only its label; put the page behind an option in detail or steps.',
+    )
+    expect(properties.options!.description).not.toContain('[label](https://…)')
+    expect(properties.steps!.description).toContain('a [label](https://…) link')
+
+    for (const key of ['ask', 'detail', 'title', 'steps']) {
+      const description = properties[key]!.description
+      expect(description).toContain('[label](https://…)')
+      expect(description).not.toContain('clickable where the look allows')
+      expect(description).not.toContain('Only https links open')
+    }
+
+    expect(record.description).toContain(
+      'Write links as [label](https://…); the inbox shows the label, and links are clickable where the look allows. Only https links open.',
+    )
+  })
+})
+
 describe('carryText', () => {
   test('is empty for an empty ledger and lists open items otherwise', () => {
     expect(carryText(EMPTY, 'T')).toBe(null)
     const text = carryText(applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1), 'T')
     expect(text).toContain('(1) "Rename greet.mjs to hello.mjs?"')
+  })
+
+  test('model text keeps only the newest 12 closed asks', () => {
+    const opened = applyUpdate(
+      EMPTY,
+      parseReply(
+        Array.from({ length: CLOSED_CONTEXT_LIMIT + 2 }, (_, n) => `NEW: do | - | Ask ${n + 1} | - | -`).join('\n'),
+      )!,
+      1,
+      1,
+    )
+    const closed = opened.items.reduce(
+      (ledger, item, n) => closeItem(ledger, item.id, { how: 'answered', outcome: 'done' }, n + 2),
+      opened,
+    )
+    const decided = ledgerBlocks(closed)[2]!
+    const withOpen = { ...closed, items: [{ ...opened.items[0]!, id: 'i15', ask: 'A current open ask' }] }
+    const carried = carryText(withOpen, 'Start')!
+
+    expect(CLOSED_CONTEXT_LIMIT).toBe(12)
+    expect(decided.split('\n').slice(1, -1)).toHaveLength(CLOSED_CONTEXT_LIMIT)
+    expect(decided).not.toContain('Ask 1 →')
+    expect(decided).toContain('Ask 14 →')
+    expect(carried.match(/^- ".*" → /gm)).toHaveLength(CLOSED_CONTEXT_LIMIT)
+    expect(carried).not.toContain('Ask 1 →')
+    expect(carried).toContain('Ask 14" →')
   })
 })
 
@@ -238,5 +301,36 @@ describe('parseInline', () => {
     expect(parseInline('a ** b, 2 * 3 * 4, snake_case_name, [x](javascript:alert(1)) and `open')).toEqual([
       { text: 'a ** b, 2 * 3 * 4, snake_case_name, [x](javascript:alert(1)) and `open' },
     ])
+  })
+
+  test('normalizes HTTPS hrefs, encodes @ in paths and leaves overlong links as plain text', () => {
+    expect(parseInline('[GitHub](https://GITHUB.com/a@b)')).toEqual([
+      { text: 'GitHub', link: 'https://github.com/a%40b' },
+    ])
+    const longUrl = `https://example.com/${'a'.repeat(2050)}`
+    expect(httpsHref(longUrl)).toBeNull()
+    expect(parseInline(`[Long](${longUrl})`)).toEqual([{ text: `Long (${longUrl})` }])
+  })
+
+  test('uses visible labels for link titles and keeps a cut link intact', () => {
+    const link = '[PR 7171](https://github.com/anthropics/claude-code/pull/7171)'
+    expect(linkLabel(`Read ${link}`)).toBe('Read PR 7171')
+    expect(inlineLinks(link)).toEqual([
+      { label: 'PR 7171', url: 'https://github.com/anthropics/claude-code/pull/7171' },
+    ])
+    expect(cutInline(link, 7)).toBe(link)
+    expect(cutInline(link, 5)).toBe('PR 71')
+  })
+
+  test('reserves the terminal link fallback within the row line budget', () => {
+    const lines = terminalTextLines('xxxxxxx [a](https://y.io) zz', 10, 3)
+    expect(lines.length).toBeLessThanOrEqual(3)
+    expect(lines.flat().some(span => span.link)).toBe(false)
+    expect(
+      lines
+        .flat()
+        .map(span => span.text)
+        .join(''),
+    ).toContain('a')
   })
 })

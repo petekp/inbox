@@ -62,6 +62,7 @@ class World {
   sessionFiles: { pid: number; sessionId: string }[] | undefined
   endedPids: number[] = []
   isPsMissing = false
+  documentFile: { path: string; realPath: string; text: string } | null = null
 
   copied: string[] = []
   toasts: string[] = []
@@ -283,6 +284,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.sessionFiles = undefined
   w.endedPids = []
   w.isPsMissing = false
+  w.documentFile = null
   w.copied = []
   w.toasts = []
   w.theme = ''
@@ -397,6 +399,12 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     if (e.path in w.written) return { value: w.written[e.path]! }
     const file = sessionFiles().find(f => e.path === `${CONFIG_DIR}/sessions/${f.pid}.json`)
     if (file) return { value: JSON.stringify({ ...file, cwd: '/tmp/project', status: 'busy', updatedAt: 1 }) }
+    if (w.documentFile && [w.documentFile.path, w.documentFile.realPath].includes(e.path)) {
+      const bytes = new TextEncoder().encode(w.documentFile.text)
+      return e.as === 'bytes'
+        ? { value: { base64: btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')) } }
+        : { value: w.documentFile.text }
+    }
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
   })
@@ -406,9 +414,13 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
       : {
           value: {
             kind: w.folders.includes(e.path) ? ('dir' as const) : ('file' as const),
-            size: 1,
+            size:
+              w.documentFile && [w.documentFile.path, w.documentFile.realPath].includes(e.path)
+                ? new TextEncoder().encode(w.documentFile.text).byteLength
+                : 1,
             mtimeMs: 1,
             isLink: false,
+            realPath: w.documentFile?.path === e.path ? w.documentFile.realPath : e.path,
           },
         },
   )

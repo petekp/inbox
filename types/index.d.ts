@@ -166,6 +166,12 @@ export type Item = {
   ask: string
   /** Why the agent asked a question, from its record's `context`. A record of the open question replaces it. */
   context?: string
+  /** The agent's explanation of why it asked and what each option or step leads to. */
+  detail?: string
+  /** An optional Markdown report path, recorded by the agent and shown only to the user. */
+  document?: string
+  /** A short excerpt from the document, shown under the item. */
+  documentPreview?: string
   options: string[]
   /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
@@ -190,6 +196,11 @@ export type Item = {
   isDesignChoice?: boolean
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
+  /** An item mirrored from a durable external source; only that source may update or remove it. */
+  sourceManaged?: true
+  /** The external feed key and file that own this item. */
+  feedKey?: string
+  feedSource?: string
   /**
    * What picking each option does, by its label as `options` has it: from the `option_notes` of the agent's records,
    * else from a dialog question this item copies.
@@ -335,14 +346,26 @@ export type Draft = { text: string; since: number }
 
 export type Finding = {
   id: string
-  kind: 'issue' | 'opportunity'
+  kind: 'issue' | 'opportunity' | 'progress'
   title: string
   detail: string
   /** The file it is about, as Claude gave it. */
   path: string | null
+  /** An optional Markdown report path, recorded by the agent and shown only to the user. */
+  document?: string
+  /** A short excerpt from the document, shown under the finding. */
+  documentPreview?: string
   at: number
   /** The item that replaced this finding by asking about it. A finding closed as "asked as iN" reopens when that item closes with the work undone. */
   askedAs?: string
+  /** The external progress-feed entry that owns this finding. */
+  feedKey?: string
+  /** The snapshot file that owns this finding. */
+  feedSource?: string
+  /** Marks findings created by the versioned progress-feed lifecycle. */
+  feedOwned?: true
+  /** The active-items source owns this finding's lifecycle. */
+  sourceManaged?: true
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']
@@ -438,6 +461,8 @@ export type Ledger = {
   findings: Finding[]
   /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */
   closedFindings: ClosedFinding[]
+  /** Read-only warnings from live work signals that have no matching open external item. */
+  untrackedWork?: { key: string; title: string; detail: string; at: number; feedSource: string }[]
   /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
   /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. The tab also shows the PRs it ranks, which are not in `prs` unless the session linked them. */
@@ -500,6 +525,10 @@ export type PrViews = {
   views: Record<string, PrView>
   branchRef: string | null
   isFetching: boolean
+  /** Open PRs authored by the signed-in GitHub user, fetched across repository owners. */
+  accountPrs?: AccountPr[]
+  /** Bot-authored open PR counts, grouped by bot. */
+  botPrSummaries?: BotPrSummary[]
   /** The mod sets this when its last fetch found no gh to start. Codex keeps its own flag in the server. */
   isGhMissing?: boolean
   /** Set by the last fetch whose gh runs answered: whether one of them asked for a sign-in. */
@@ -509,6 +538,10 @@ export type PrViews = {
   /** Why each tracked PR that has no view could not be read, by ref, from the last fetch that tried. */
   unread?: Record<string, string>
 }
+
+export type AccountPr = { ref: string; title: string; url: string; isDraft: boolean }
+
+export type BotPrSummary = { name: string; count: number }
 
 /**
  * A cause that stopped a whole fetch, so every PR keeps its last view: GitHub's hourly limit is used up until
@@ -832,6 +865,7 @@ declare module 'claude-code' {
       title?: string
       detail?: string
       path?: string
+      document?: string
     }
     mcp__inbox__close: {
       id: string

@@ -160,7 +160,7 @@ test('an applied model answer that changes nothing still makes the session seen,
   expect(forkedFrom(emptySession(), parent).hostTasks).toEqual(parent.hostTasks)
 })
 
-test('a prune keeps the closed records of held rows and of rows closed since the showing began, a linked PR’s view, and a dismissed PR’s view only while the showing that dismissed it lasts', () => {
+test('a session write keeps every closed ask and finding and prunes only unneeded PR views', () => {
   const tasks = Array.from({ length: 14 }, (_, n) => `NEW: do | - | Task ${n} | - | -`).join('\n')
   const opened = applyUpdate(EMPTY, parseReply(tasks)!, 10, 1)
   const ids = opened.items.map(i => i.id)
@@ -168,19 +168,33 @@ test('a prune keeps the closed records of held rows and of rows closed since the
   const ledger = applyUpdate(applyUpdate(opened, closes(ids.slice(0, 2)), 20, 2), closes(ids.slice(2)), 50, 3)
   const demo = demoView(0, 'Claude')
   const [ref, linked] = Object.keys(demo.prViews.views) as [string, string]
+  const closedFindings = Array.from({ length: 14 }, (_, n) => ({
+    id: `f${n + 1}`,
+    kind: 'issue' as const,
+    title: `Problem ${n + 1}`,
+    detail: '',
+    path: null,
+    at: n + 1,
+    how: 'expired' as const,
+    outcome: 'list full',
+    closedAt: n + 1,
+  }))
   const s = {
     ...emptySession(),
-    ledger: { ...ledger, prs: [linked] },
+    ledger: { ...ledger, closedFindings, prs: [linked] },
     prViews: { ...demo.prViews, branchRef: null },
     lastActions: { [prMarkId(ref)]: { kind: 'mark' as const, action: 'pr-dismiss', text: 'Dismissed', at: 30 } },
   }
   const closedIds = (x: Session) => x.ledger.closed.map(c => c.id)
+  const closedFindingIds = (x: Session) => x.ledger.closedFindings.map(c => c.id)
 
   const shownEarly = pruned({ ...s, shownSince: 20 })
   expect(closedIds(shownEarly)).toEqual(ids)
+  expect(closedFindingIds(shownEarly)).toEqual(closedFindings.map(f => f.id))
   expect(Object.keys(shownEarly.prViews.views).sort()).toEqual([ref, linked].sort())
-  expect(closedIds(pruned({ ...s, shownSince: 50, heldRows: [ids[0]!] }))).toEqual([ids[0], ...ids.slice(2)])
+  expect(closedIds(pruned({ ...s, shownSince: 50, heldRows: [ids[0]!] }))).toEqual(ids)
   const left = pruned({ ...s, shownSince: null })
-  expect(closedIds(left)).toEqual(ids.slice(2))
+  expect(closedIds(left)).toEqual(ids)
+  expect(closedFindingIds(left)).toEqual(closedFindings.map(f => f.id))
   expect(Object.keys(left.prViews.views)).toEqual([linked])
 })
