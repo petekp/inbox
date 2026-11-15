@@ -1,7 +1,7 @@
-import { Icon, RowActions } from './row-actions'
-import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, statusKeyPlan } from '../../hooks/status-keys'
-import type { MilestoneRow } from '../../hooks/status-goal-page'
+import { Icon } from './row-actions'
+import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan } from '../../hooks/status-keys'
+import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
@@ -11,196 +11,13 @@ import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
 import type { WorkJoint } from '../../hooks/status-path'
 import type { TabView as View } from './core'
 import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
-import type { Key } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
-import { SUBJECTS_ATTRIBUTE } from './tab-shown'
-import { revealSelected, toggleFold } from './tab-motion'
-import { switchTab, open } from './tab-selection'
-import { tabRows } from './tab-rows'
-import { pulseInStep, markClassOf, MarkGlyph, EmptyState } from './tab-parts'
-import { goalHeadMotion, goalLineMotion, statusRowMotion } from './tab-status-steps'
+import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
+import { goalHeadMotion, goalLineMotion, milestoneLines, statusRowMotion } from './tab-status-steps'
 import { lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
-
-let measuring: CanvasRenderingContext2D | null | undefined
-
-/** Writes a subject's merged line into `el`, cut at a phrase to the one line `el` has room for. */
-function fitMergedLine(el: HTMLElement | null, merged: string) {
-  if (!el) return
-  measuring ??= document.createElement('canvas').getContext('2d')
-  const measure = measuring
-  if (measure) measure.font = getComputedStyle(el).font
-  el.textContent = mergedLine(merged, text => !measure || measure.measureText(text).width <= el.clientWidth)
-}
-
-/** A Status row's View press: Asks shows with the ask selected and in view. */
-function showAsk(askId: string) {
-  switchTab('needsYou')
-  const index = tabState.view ? tabRows(tabState.view, 'needsYou').findIndex(r => r.id === askId) : -1
-  open('needsYou', askId, index < 0 ? undefined : index)
-  tabState.draw()
-  revealSelected()
-}
-
-/** Opens the goal's field with `text` in it, as a fresh draft. */
-function openGoalField(text: string) {
-  drafts.set(GOAL_KEYS_ID, { text, since: tabState.view?.at ?? Date.now() })
-  tabState.typing = GOAL_KEYS_ID
-  tabState.focusTyping = true
-  tabState.draw()
-}
-
-/** A Status key as a tab key. Remove goal draws out while the goal's press is on its way. */
-function statusKey({ press, label, emphasis }: StatusKey): Key {
-  if (press.action === 'show-ask') return { label, emphasis, run: () => showAsk(press.askId) }
-  if (press.action === 'toggle-fold') return { label, emphasis, run: () => toggleStatusFold(press.foldId) }
-  if (press.action === 'type-goal') return { label, emphasis, run: () => openGoalField(press.text) }
-
-  return {
-    label,
-    emphasis,
-    ...(sending.has(GOAL_KEYS_ID) ? { isOut: true } : {}),
-    run: () => void act(GOAL_KEYS_ID, { action: press.action, id: GOAL_KEYS_ID }),
-  }
-}
-
-/** The motion key of a done fold's list, apart from the Asks groups' Closed lists. */
-const foldMotion = (id: string) => `status-${id}`
-
-function toggleStatusFold(id: string) {
-  toggleFold(id, statusUnfolded, foldMotion(id))
-}
-
-/** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
-const depthStyle = (row: StatusRow) => ({ '--depth': row.depth })
-
-function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
-  if (row.kind === 'subject') {
-    const merged = row.merged
-    const keys = statusKeyPlan(row).map(statusKey)
-
-    return (
-      <div
-        class={row.hasChildren ? 'row has-children' : 'row'}
-        style={depthStyle(row)}
-        {...{ [SUBJECTS_ATTRIBUTE]: row.id }}
-        {...lineMotion(motion)}
-      >
-        <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
-          <MarkGlyph text={row.mark} />
-        </span>
-        <div class="content tight">
-          <NameLine name={row.name} stall={row.stall} />
-          {row.text ? (
-            <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-              {row.text}
-            </div>
-          ) : null}
-          {merged ? (
-            <div
-              class="outcome muted clamp"
-              style={{ '--lines': STATUS_TEXT_LINES }}
-              ref={el => fitMergedLine(el, merged)}
-            />
-          ) : null}
-          {row.was ? (
-            <div class="outcome muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-              {WAS_PREFIX}
-              {row.was}
-            </div>
-          ) : null}
-          {keys.length > 0 ? <RowActions keys={keys} more={[]} reply={null} isBlocked={() => false} /> : null}
-        </div>
-      </div>
-    )
-  }
-  if (row.kind === 'child')
-    return (
-      <div
-        class={row.branch ? `row child branch-${row.branch}` : 'row'}
-        style={depthStyle(row)}
-        {...lineMotion(motion)}
-      >
-        <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
-          <MarkGlyph text={row.mark} />
-        </span>
-        <div class="content tight muted">
-          <NameLine name={row.name} stall={row.stall} />
-        </div>
-      </div>
-    )
-  if (row.kind === 'more')
-    return (
-      <div class={`row child branch-${row.branch}`} style={depthStyle(row)} {...lineMotion(motion)}>
-        <span class="mark" />
-        <div class="content tight muted">{row.text}</div>
-      </div>
-    )
-  if (row.kind === 'done-fold') {
-    const isUnfolded = statusUnfolded.has(row.id)
-    const fold = foldMotion(row.id)
-
-    return (
-      <>
-        <div class="row fold-row" style={depthStyle(row)} {...lineMotion(motion)}>
-          <button type="button" class="fold" data-fold={fold} onClick={() => toggleStatusFold(row.id)}>
-            <Icon name={isUnfolded ? 'down' : 'right'} />
-            {row.text}
-          </button>
-        </div>
-        {isUnfolded || closingFolds.has(fold) ? (
-          <div class="fold-rows" data-motion={`closed-${fold}`}>
-            {row.rows.map(r => (
-              <StatusLine key={r.id} row={r} />
-            ))}
-          </div>
-        ) : null}
-      </>
-    )
-  }
-  if (row.kind === 'part')
-    return (
-      <div class="row part-line" {...lineMotion(motion)}>
-        <div class="part-rule">{row.text}</div>
-      </div>
-    )
-  if (row.kind === 'counts')
-    return (
-      <div class="row" style={depthStyle(row)} {...lineMotion(motion)}>
-        <span class="mark" />
-        <div class="content tight">
-          <div>
-            {row.counts.map((c, n) => (
-              <span key={n}>
-                {n > 0 ? <span class="muted">{STALL_GAP}</span> : null}
-                <span class={markClassOf(c.tone, false)}>
-                  <MarkGlyph text={c.mark} />
-                </span>
-                <span class="muted"> {c.text}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-
-  const subjects = seenSubjectIds(row)
-
-  return (
-    <div
-      class="row"
-      style={depthStyle(row)}
-      {...(subjects.length > 0 ? { [SUBJECTS_ATTRIBUTE]: subjects.join(' ') } : {})}
-      {...lineMotion(motion)}
-    >
-      <span class={markClassOf(row.tone, false)}>
-        <MarkGlyph text={row.mark} />
-      </span>
-      <div class="content tight muted">{row.text}</div>
-    </div>
-  )
-}
+import { foldMotion, Keys, StatusLine, toggleStatusFold } from './tab-status-line'
 
 /** The goal's text field, with Save and Cancel. It stays open, its buttons out, until the server confirms the goal. */
 function GoalField() {
@@ -253,12 +70,6 @@ function GoalField() {
       </form>
     </div>
   )
-}
-
-function Keys({ keys }: { keys: StatusKey[] }) {
-  return keys.length > 0 ? (
-    <RowActions keys={keys.map(statusKey)} more={[]} reply={null} isBlocked={() => false} />
-  ) : null
 }
 
 /** The boxes of the text under `el`, one per line of each text node, without the boxes of the elements that hold it. */
@@ -439,9 +250,35 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
 }
 
 /**
+ * The line a met goal's milestones fold into, at the text column, as a done milestone folded to its name draws, and the
+ * milestones under it while the person has it unfolded. They glide open and shut as a done fold's rows do.
+ */
+function MilestonesFold({ fold, g }: { fold: NonNullable<GoalBlock['milestonesFold']>; g: GoalBlock }) {
+  const motion = foldMotion(fold.id)
+  const isUnfolded = statusUnfolded.has(fold.id)
+
+  return (
+    <>
+      <div class="milestones-fold">
+        <button type="button" class="fold milestone-fold" data-fold={motion} onClick={() => toggleStatusFold(fold.id)}>
+          {fold.text}
+          <Icon name={isUnfolded ? 'down' : 'right'} />
+        </button>
+      </div>
+      {isUnfolded || closingFolds.has(motion) ? (
+        <div class="fold-rows" data-motion={`closed-${motion}`}>
+          <MilestoneList lines={milestoneLines(g.milestones)} />
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+/**
  * The goal's section, first on every page that is not empty: its heading row, the title, a rule and the goal's buttons at
  * the right edge, then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then
- * the milestones, each with its rows on the lines under it. While the person types a
+ * the milestones, each with its rows on the lines under it. A met goal's heading hangs its ✓ in the mark column, its
+ * lines start at the text column, and its milestones fold into one line. While the person types a
  * goal, the field takes the text's place and the buttons leave the heading.
  * The buttons wrap under the rule, still at the right, when they do not fit beside the title.
  */
@@ -457,11 +294,18 @@ function GoalSection({
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
   const text = g ? <h1>{g.text}</h1> : <p class="muted">{NO_GOAL_TEXT}</p>
+  const mark = g?.mark ?? null
+  const fold = g?.milestonesFold ?? null
 
   return (
     <section>
-      <div class="goal-heading" data-motion="goal-heading">
-        <span class="goal-title">{g?.label ?? GOAL_HEADING}</span>
+      <div class={mark ? 'goal-heading marked' : 'goal-heading'} data-motion="goal-heading">
+        {mark ? (
+          <span class={`${markClassOf(mark.tone, false)} goal-mark`}>
+            <MarkGlyph text={mark.mark} />
+          </span>
+        ) : null}
+        <span class={mark?.tone ? `goal-title tone-${mark.tone}` : 'goal-title'}>{g?.label ?? GOAL_HEADING}</span>
         <span class="goal-rule" />
         {isTyping ? null : (
           <span class="goal-actions">
@@ -472,7 +316,7 @@ function GoalSection({
           </span>
         )}
       </div>
-      <div class="status-head goal" data-motion="goal-head">
+      <div class={mark ? 'status-head goal marked' : 'status-head goal'} data-motion="goal-head">
         <div class="goal-text" data-motion="goal-text">
           {isTyping ? <GoalField /> : text}
         </div>
@@ -483,6 +327,7 @@ function GoalSection({
         ))}
         <GoalError />
       </div>
+      {g && fold ? <MilestonesFold fold={fold} g={g} /> : null}
       {lines.length > 0 ? <MilestoneList lines={lines} /> : null}
     </section>
   )
@@ -511,7 +356,7 @@ export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   if (empty)
     return <EmptyState empty={empty}>{empty.under?.is === 'set-goal' ? <SetGoal {...empty.under} /> : null}</EmptyState>
   const head =
-    page.goal === null && page.head ? (
+    page.isHeadApart && page.head ? (
       <div class="status-head">
         <h1>{page.head.title}</h1>
         {page.head.description ? <p class="muted">{page.head.description}</p> : null}

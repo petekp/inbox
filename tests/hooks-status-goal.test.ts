@@ -12,11 +12,13 @@ const INFERRING = [
   'GOAL: Pilot ready to announce | done Fixes built; queued Announced',
 ].join('\n')
 
-async function statusShown($: Engine, on: On) {
+const MET = INFERRING.replace('queued Announced', 'done Announced')
+
+async function statusShown($: Engine, on: On, reply = INFERRING) {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
-  w.statusReply = INFERRING
+  w.statusReply = reply
   on('ui.focus', () => ({}))
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'get the pilot ready to announce', wait: false, origin: { kind: 'composer' } })
@@ -40,6 +42,38 @@ test('a goal the Status call writes shows at once under the Goal heading with it
   expect((await pane.find({ key: 'goal-now' }))?.text).toBe('Now: Shipping the pilot')
   expect(await pane.find({ key: 'status-head' })).toBeUndefined()
   expect(w.sent).toEqual([])
+})
+
+test('a met goal hangs a ✓ beside Goal met, folds its milestones into a line that names them, which j reaches and f or a press opens, draws the head in its own section, and desktop’s fold line takes its click', async ($, on) => {
+  const { clock, pane } = await statusShown($, on, MET)
+  const foldLabel = async () => (await pane.find({ key: 'fold-status-goal-milestones' }))?.props.label
+
+  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^✓\s*Goal met ─+/)
+  expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
+  expect(await foldLabel()).toContain('Fixes built, Announced')
+  expect(await pane.find({ key: 'goal-m1-name' })).toBeUndefined()
+  expect(await pane.find({ key: 'goal-now' })).toBeUndefined()
+  expect((await pane.find({ key: 'status-head' }))?.text).toContain('Shipping the pilot')
+  await pane.press({ key: 'fold-status-goal-milestones' })
+  await clock.settle()
+  expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
+  await pane.press({ key: 'fold-status-goal-milestones' })
+  await clock.settle()
+  expect(await pane.find({ key: 'goal-m1-name' })).toBeUndefined()
+
+  await pane.press({ key: 'next' })
+  await clock.settle()
+  await pane.press({ key: 'toggle-fold-goal-milestones-key' })
+  await clock.settle()
+  expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  expect(await desktop.find({ key: 'fold-status-goal-milestones' })).toMatchObject({ type: 'Client' })
+  await desktop.post({ isUnfolded: false }, { in: 'fold-status-goal-milestones' })
+  await clock.settle()
+  expect(await desktop.find({ key: 'goal-m1-name' })).toBeUndefined()
 })
 
 test('Remove goal leaves the Goal heading with the line that says no goal is set and offers Undo, which brings the goal back, then New, which opens an empty goal field that sets the typed goal and waits for its milestones', async ($, on) => {

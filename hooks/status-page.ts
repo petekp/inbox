@@ -6,7 +6,7 @@ import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, oldestAsk } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
-import { childRow, countsByMark, partRows } from './status-page-parts'
+import { childRow, countsByMark, namedList, partRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
@@ -103,8 +103,13 @@ export type StatusCount = { mark: string; tone: StatusTone; text: string }
 /** What the Status page shows. Every look draws it as it is. */
 export type StatusPage = GoalParts & {
   isEmpty: boolean
-  /** What the session is focused on now. The description is null until the Status call writes one. Looks draw it only while no goal is set; the goal draws its Now line in its place. */
+  /** What the session is focused on now. The description is null until the Status call writes one. */
   head: { title: string; description: string | null } | null
+  /**
+   * Whether looks draw the head in its own section after the goal's: while no goal is set, and once the goal is met,
+   * since the work no longer serves it. Otherwise the goal draws its Now line in the head's place.
+   */
+  isHeadApart: boolean
   /**
    * The list after the goal. Rows under a milestone are its `rows`. While the goal shows milestones, every other row
    * sits under Other work, so only milestones and their rows draw between the goal and Other work. Otherwise work not
@@ -128,14 +133,6 @@ export const STATUS_TEXT_LINES = 3
 const NEW_CLOSED_ROWS = 2
 /** What a named fold says before the names it holds. Each closed status gets its own fold, in this order. */
 export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
-/**
- * The most names a named fold shows; it counts the rest as "+N more". Two names of up to `NAME_KEPT` characters, the
- * prefix and the count wrap to at most `STATUS_TEXT_LINES` lines in 31 cells, the text width at the narrowest terminal
- * dock, so omp, which cuts a row's text past that many lines, shows the whole line there too.
- */
-const NAMED_FOLD_NAMES = 2
-/** What ends a named fold that holds more names than it shows. */
-export const namedFoldMore = (n: number) => `+${n} more`
 
 /** The order of subjects, from what needs the person to what is finished. */
 const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
@@ -268,10 +265,7 @@ export function statusPage(
   const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRow[] =>
     (['done', 'dropped'] as const).flatMap(status => {
       const closed = named.filter(x => x.status === status)
-      const names = closed.map(x => x.name)
-      const hidden = names.length - NAMED_FOLD_NAMES
-      const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...(hidden > 0 ? [namedFoldMore(hidden)] : [])]
-      return names.length === 0
+      return closed.length === 0
         ? []
         : [
             {
@@ -279,7 +273,7 @@ export function statusPage(
               id: `${prefix}also-${status}`,
               depth,
               ...SUBJECT_MARKS[status],
-              text: `${NAMED_FOLD_TEXT[status]}${shown.join(', ')}`,
+              text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map(x => x.name))}`,
               subjectIds: closed.map(x => x.id),
             },
           ]
@@ -382,6 +376,7 @@ export function statusPage(
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
+    isHeadApart: goal === null || goal.isMet,
     ...goalParts,
     goal,
     rows,

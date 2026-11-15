@@ -8,7 +8,7 @@ import { demoState } from '../src/demo'
 import { drawPanel } from '../src/panel'
 import type { PanelUi } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
-import { keys, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
+import { drawn, keys, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 const MIN = 60_000
 
@@ -54,6 +54,53 @@ const withGoal = () =>
     serves: { s5: 'm2' },
   })
 const lineAt = (lines: string[], s: string) => lines.findIndex(l => l.includes(s))
+const metGoal = () =>
+  screenWith({
+    goal: {
+      text: 'Pilot ready to announce',
+      setAt: NOW - 60 * MIN,
+      metAt: NOW - MIN,
+      was: null,
+      isAwaitingMilestones: false,
+      source: 'inferred',
+    },
+    milestones: (['Fixes built', 'Announced'] as const).map((name, n) => ({
+      id: `m${n + 1}`,
+      name,
+      status: 'done' as const,
+      text: '',
+      was: null,
+      changedAt: NOW - 50 * MIN,
+      closedAt: null,
+      startedAt: null,
+    })),
+    nextMilestoneId: 3,
+    serves: { s5: 'm2' },
+  })
+
+test('a met goal hangs a green ✓ beside Goal met, starts its text at the text column, folds its milestones into a line that names them, which j selects and f opens, and draws the head in its own section', () => {
+  const screen = metGoal()
+  const page = screen.view.statusPage
+  const lines = text(screen, onPage, 60).split('\n')
+  const heading = lines.find(l => l.includes('Goal met'))!
+  expect(heading).toMatch(/^ ✓ Goal met ─+/)
+  expect(drawn(screen, onPage, 60).find(l => strip(l).includes('Goal met'))).toContain(style.tone('done', '✓'))
+  const textColumn = heading.indexOf('Goal met')
+  expect(lines[lineAt(lines, 'Pilot ready to announce')]!.indexOf('Pilot')).toBe(textColumn)
+  const fold = lines[lineAt(lines, 'Fixes built, Announced ▸')]!
+  expect(fold.indexOf('Fixes')).toBe(textColumn)
+  expect(lineAt(lines, '✓ Fixes built')).toBe(-1)
+  expect(lineAt(lines, 'Now:')).toBe(-1)
+  expect(lineAt(lines, page.head!.title)).toBeGreaterThan(lineAt(lines, 'Fixes built, Announced'))
+
+  const opened = keys(screen, onPage, 'j', 'f')
+  expect(opened.selectedId).toBe('goal-milestones')
+  expect(opened.statusUnfolded).toContain('goal-milestones')
+  const shown = text(screen, opened, 60).split('\n')
+  expect(shown[lineAt(shown, 'Fixes built, Announced')]).toContain('▾')
+  expect(lineAt(shown, '✓ Fixes built')).toBeGreaterThan(lineAt(shown, 'Fixes built, Announced'))
+  expect(statusKeyRows(page, id => opened.statusUnfolded.includes(id)).map(t => t.id)[1]).toBe('goal-milestones')
+})
 
 test('Remove presses the goal by its key and selects the goal’s place, where Undo and New then show', () => {
   const removed = handleKey(withGoal(), onPage, 'r', NOW)

@@ -222,7 +222,7 @@ test('a queued milestone draws as worked on once work that serves it is working,
   })
 })
 
-test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met', () => {
+test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met with a done check, its milestones folded into a line that names them, and its head apart', () => {
   const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45)
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
 
@@ -232,12 +232,42 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     awaiting: 'Milestones after the next reply',
     milestones: [],
   })
-  expect(page(met, 55).goal).toMatchObject({ label: 'Goal met', isMet: true, awaiting: null })
+  expect(page(met, 55).goal).toMatchObject({
+    label: 'Goal met',
+    isMet: true,
+    awaiting: null,
+    now: null,
+    mark: SUBJECT_MARKS.done,
+    milestonesFold: { id: 'goal-milestones', text: 'Parsing works, Errors explained, +1 more' },
+  })
+  expect(page(met, 55).isHeadApart).toBe(true)
+  expect(page(linked(), 40).isHeadApart).toBe(false)
+  expect(page(linked(), 40).goal).toMatchObject({ mark: null, milestonesFold: null })
   expect(
     statusKeyRows(page(met, 55))
       .find(t => t.id === 'goal')
       ?.keys.map(k => k.label),
   ).toEqual(['New', 'Remove'])
+  expect(
+    statusKeyRows(page(met, 55))
+      .map(t => t.id)
+      .slice(0, 2),
+  ).toEqual(['goal', 'goal-milestones'])
+  expect(
+    statusKeyRows(page(met, 55))
+      .find(t => t.id === 'goal-milestones')
+      ?.keys.map(k => k.hotkey),
+  ).toEqual(['f'])
+  const finished = after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51)
+  const seen = page({ ...finished, lastLookAt: 52 }, 55)
+  const milestoneIds = seen.goal?.milestones.map(m => m.id) ?? []
+  expect(milestoneIds).toHaveLength(3)
+  expect(statusKeyRows(seen).filter(t => milestoneIds.includes(t.id))).toEqual([])
+  expect(
+    statusKeyRows(seen, id => id === 'goal-milestones')
+      .map(t => t.id)
+      .slice(0, 3),
+  ).toEqual(['goal', 'goal-milestones', 'm2'])
 })
 
 test('an ask linked to a milestone names it as what it holds up, and a milestone shows its was line only once it changed after the goal was set and since the last look', () => {

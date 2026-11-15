@@ -11,6 +11,7 @@ import {
   DESKTOP_FIELD_PT,
   DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
+  DESKTOP_MARK_CELLS,
   DESKTOP_REPLY_ROWS,
   fieldRows,
   REPLY_ROWS,
@@ -31,8 +32,8 @@ import type { Drawn } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import type { PaneStatusPath } from './pane-status-path'
 import type { StatusTone } from './help'
-import type { MilestoneRow } from './status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT } from './status-goal-page'
+import type { GoalBlock, MilestoneRow } from './status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from './status-goal-page'
 import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey } from './status-keys'
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
@@ -60,8 +61,10 @@ export function paneStatusGoal(
     statusMarkAt,
     statusNameLine,
     statusPageText,
+    statusTextWidth,
     desktopBlockWidth,
     markGlyph,
+    markWidth,
     keyRow,
     terminalKeyCells,
     desktopFrame,
@@ -69,8 +72,11 @@ export function paneStatusGoal(
     PaneBase,
     'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
   > &
-    Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText' | 'desktopBlockWidth'> &
-    Pick<PaneRowLines, 'markGlyph'> &
+    Pick<
+      PaneStatusLines,
+      'statusMarkAt' | 'statusNameLine' | 'statusPageText' | 'statusTextWidth' | 'desktopBlockWidth'
+    > &
+    Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow' | 'terminalKeyCells'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
@@ -117,12 +123,19 @@ export function paneStatusGoal(
   }
   /** The width of a block's text: the list's columns past the head's column, or its points on desktop. */
   const blockWidth = look === 'desktop' ? desktopBlockWidth : listColumns - statusMarkAt
-  /** Text Claude Code or desktop wraps in a block. */
-  const wrapped = (el: JSX.Element, text: string): Drawn => ({
+  /**
+   * How far a marked goal's lines sit in from the head's column: the mark column's width, so they start where a
+   * milestone's name does. Cells in both looks.
+   */
+  const markInset = look === 'desktop' ? DESKTOP_MARK_CELLS + 1 : markWidth
+  /** The width of the text under a marked goal's heading, in the text column. */
+  const insetWidth = look === 'desktop' ? statusTextWidth(0) : blockWidth - markWidth
+  /** Text Claude Code or desktop wraps in a block `width` wide. */
+  const wrapped = (el: JSX.Element, text: string, width = blockWidth): Drawn => ({
     el,
-    lines: look === 'desktop' ? desktopTextLines(text, blockWidth) : inkLines(text, blockWidth),
+    lines: look === 'desktop' ? desktopTextLines(text, width) : inkLines(text, width),
   })
-  const muted = (key: string, text: string) =>
+  const muted = (key: string, text: string, width = blockWidth) =>
     wrapped(
       <Box key={key}>
         <Text wrap="wrap" color={pal.muted}>
@@ -130,6 +143,7 @@ export function paneStatusGoal(
         </Text>
       </Box>,
       text,
+      width,
     )
   /** An open field's height follows what is typed, so its lines are not counted. */
   const uncounted = (el: JSX.Element): Drawn => ({ el, lines: null })
@@ -290,7 +304,8 @@ export function paneStatusGoal(
     })
   }
 
-  /** The cells the terminal draws `keys` in on one line, or the points desktop draws them in. */
+  /** A cell's width in the units a heading measures in: one cell in the terminal, its points on desktop. */
+  const markCellWidth = look === 'desktop' ? DESKTOP_CELL_PT : 1
   /** The cells the terminal draws `keys` in on one line, `STALL_GAP` between them, or the points desktop draws them in. */
   const keysWidth = (keys: KeyAction[]) =>
     look === 'desktop'
@@ -326,13 +341,23 @@ export function paneStatusGoal(
    * The goal's heading row: its title, a rule, then the goal's buttons at the right edge. When the buttons do not fit
    * beside the title with a short rule, the rule runs to the edge and the buttons wrap under it, still at the right.
    */
-  const goalHeading = (label: string, keys: KeyAction[]): Drawn[] => {
-    const titleWidth = look === 'desktop' ? desktopTextPt(label) : cellWidth(label)
+  const goalHeading = (label: string, keys: KeyAction[], mark: GoalBlock['mark']): Drawn[] => {
+    const markCells = mark === null ? 0 : markInset
+    const titleWidth = (look === 'desktop' ? desktopTextPt(label) : cellWidth(label)) + markCells * markCellWidth
     const minRule = look === 'desktop' ? 4 * DESKTOP_CELL_PT : 6
     const isBeside = keys.length > 0 && titleWidth + minRule + keysWidth(keys) <= blockWidth
     const row = (cells: number, withKeys: boolean): JSX.Element => (
       <Box key={withKeys ? 'goal-heading' : 'goal-heading-title'} flexDirection="row" alignItems="center">
-        <Text color={pal.muted}>{label}</Text>
+        {mark === null ? null : (
+          <Box width={markCells} flexShrink={0}>
+            {markGlyph(
+              { text: mark.mark, isRunning: false },
+              GOAL_KEYS_ID,
+              mark.tone ? pal.mark[mark.tone] : pal.muted,
+            )}
+          </Box>
+        )}
+        <Text color={mark?.tone ? pal.mark[mark.tone] : pal.muted}>{label}</Text>
         {headingRule('goal-heading-rule', cells)}
         {withKeys ? (
           <Box flexShrink={0} marginLeft={look === 'terminal' ? 1 : 0}>
@@ -377,6 +402,8 @@ export function paneStatusGoal(
    */
   const goalSection = (page: StatusPage): Drawn[] => {
     const g = page.goal
+    const mark = g?.mark ?? null
+    const width = mark === null ? blockWidth : insetWidth
     const goalText = g
       ? wrapped(
           <Box key="goal-text">
@@ -385,18 +412,47 @@ export function paneStatusGoal(
             </Text>
           </Box>,
           g.text,
+          width,
         )
       : muted('goal-none', NO_GOAL_TEXT)
     const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
-    const body = [
-      ...goalHeading(g?.label ?? GOAL_HEADING, keys),
+    const under = [
       ...(isTypingGoal ? field() : [goalText]),
-      ...(g?.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`)] : []),
-      ...(g?.now ? [muted('goal-now', g.now)] : []),
-      ...(g?.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
+      ...(g?.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`, width)] : []),
+      ...(g?.now ? [muted('goal-now', g.now, width)] : []),
+      ...(g?.awaiting ? [muted('goal-awaiting', g.awaiting, width)] : []),
+    ]
+    const body = [
+      ...goalHeading(g?.label ?? GOAL_HEADING, keys, mark),
+      ...(mark === null
+        ? under
+        : [
+            stackedIn(
+              <Box key="goal-under" flexDirection="column" paddingLeft={markInset}>
+                {under.map(p => p.el)}
+              </Box>,
+              under,
+            ),
+          ]),
     ]
 
-    return [block(`status-${GOAL_KEYS_ID}`, body, isSelected(GOAL_KEYS_ID)), ...milestoneSection(g?.milestones ?? [])]
+    return [
+      block(`status-${GOAL_KEYS_ID}`, body, isSelected(GOAL_KEYS_ID)),
+      ...milestonesFoldLine(g),
+      ...milestoneSection(shownMilestones(g, isUnfolded)),
+    ]
+  }
+  /** The line a met goal's milestones fold into, at the text column, as a done milestone folded to its name draws. */
+  const milestonesFoldLine = (g: GoalBlock | null): Drawn[] => {
+    const fold = g?.milestonesFold ?? null
+    if (fold === null) return []
+    const line = path.foldedName({ id: fold.id, foldId: fold.id, name: fold.text })
+
+    return [
+      look === 'desktop'
+        ? line
+        : statusRowLine({ key: `status-${fold.id}`, mark: null, content: [line], isSelected: isSelected(fold.id) }),
+    ]
   }
   /** New, or the field it opened, with no frame, for the empty page's centred column. */
   const setGoalBare = (setGoal: { keys: StatusKey[]; isFieldOpen: boolean }): Drawn[] =>

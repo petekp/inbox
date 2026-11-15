@@ -1,6 +1,7 @@
 import { isOpen, NAME_WORDS } from '../hooks/status-limits'
 import { isChildRunning, isChildShown } from '../hooks/status-children'
-import { NAMED_FOLD_TEXT, namedFoldMore, statusListRows } from '../hooks/status-page'
+import { NAMED_FOLD_TEXT, statusListRows } from '../hooks/status-page'
+import { namedFoldMore } from '../hooks/status-page-parts'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts, Piece } from './status-facts'

@@ -4,6 +4,23 @@ import type { StatusTone } from './help'
 import { IDLE_AFTER_MS, isOpen } from './status-limits'
 import type { StatusBranch, StatusCount, StatusRow, StatusStall } from './status-page'
 
+/**
+ * The most names a line of names shows, such as a named fold; it counts the rest as "+N more". Two names of up to
+ * `NAME_KEPT` characters, a named fold's prefix and the count wrap to at most `STATUS_TEXT_LINES` lines in 31 cells, the
+ * text width at the narrowest terminal dock, so omp, which cuts a row's text past that many lines, shows the whole line
+ * there too.
+ */
+const LISTED_NAMES = 2
+/** What ends a line of names that holds more names than it shows. */
+export const namedFoldMore = (n: number) => `+${n} more`
+
+/** The first `LISTED_NAMES` of `names`, joined by commas, then the count of the rest as "+N more". */
+export function namedList(names: readonly string[]): string {
+  const hidden = names.length - LISTED_NAMES
+
+  return [...names.slice(0, LISTED_NAMES), ...(hidden > 0 ? [namedFoldMore(hidden)] : [])].join(', ')
+}
+
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
 

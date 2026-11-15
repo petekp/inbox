@@ -1,7 +1,7 @@
 import type { StatusTone } from '../../hooks/help'
 import { goalKeyPlan, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { StatusKey } from '../../hooks/status-keys'
-import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from '../../hooks/status-goal-page'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
@@ -222,12 +222,14 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
     id: 'goal heading',
     text: g?.label ?? GOAL_HEADING,
     count: null,
-    mark: null,
+    mark: g?.mark ? { text: g.mark.mark, tone: 'met', isRunning: false } : null,
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
     isLabel: true,
   }
   const field: Block[] = goalField ? [{ kind: 'field', id: 'goal field', field: goalField }] : []
   if (g === null) return [heading, ...(goalField ? field : [headNote('goal text', NO_GOAL_TEXT, 'muted')])]
+  /** A met goal's lines start at the text column, under its heading's label. */
+  const atText = (b: Block): Block => (g.mark && b.kind === 'note' ? { ...b, isAtEdge: false } : b)
   const lines = goalField
     ? field
     : [
@@ -235,22 +237,37 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
         ...(g.was ? [headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
         ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
         ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
+      ].map(atText)
+  const fold = g.milestonesFold
+  const foldLine: Block[] = fold
+    ? [
+        {
+          kind: 'fold',
+          id: fold.id,
+          depth: 0,
+          text: fold.text,
+          isOpen: isUnfolded(fold.id),
+          change: { toggleFold: fold.id },
+          isLabelFirst: true,
+        },
       ]
-  const milestones = g.milestones.flatMap((m, n): Block[] => {
+    : []
+  const shown = shownMilestones(g, isUnfolded)
+  const milestones = shown.flatMap((m, n): Block[] => {
     const rows = milestoneRows(m, isUnfolded)
     const joints = workJoints(rows, m.line)
 
     return [
-      ...(isSpacedAbove(g.milestones, n, isUnfolded)
+      ...(isSpacedAbove(shown, n, isUnfolded)
         ? [{ kind: 'gap', id: `gap ${m.id}`, ...(n > 0 ? { isMilestoneStep: true as const } : {}) } as const]
         : []),
       ...(m.startsLater ? [{ kind: 'rule', id: 'goal later', text: LATER_TEXT } as const] : []),
-      milestoneBlock(m, g.milestones[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
+      milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
       ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded).map(b => besidePath(b, m.line, joints[k]))),
     ]
   })
 
-  return [heading, ...lines, ...milestones]
+  return [heading, ...lines, ...foldLine, ...milestones]
 }
 
 /** The Status page as the look draws it, in the shared page's order. */
@@ -272,7 +289,7 @@ export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
   }
   const description = page.head?.description
   const head =
-    page.goal === null && page.head
+    page.isHeadApart && page.head
       ? [
           headTitle('head title', page.head.title),
           ...(description ? [headNote('head text', description, 'muted')] : []),

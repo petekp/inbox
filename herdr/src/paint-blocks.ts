@@ -367,7 +367,13 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
       .pr(EDGE)
       .gap(CONTROL_GAP)
       .items_center()
-      .child(statusPartEl(b.text).text_color(t.muted))
+      .child(
+        h_flex()
+          .min_w(0)
+          .items_center()
+          .when(b.mark !== null, e => e.child(markEl(b.mark, t)))
+          .child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted)),
+      )
       .child(ruleLine(t).min_w(GROUP_GAP))
       .child(buttons)
 
@@ -433,6 +439,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
   }
   const mark = b.kind === 'fold' ? b.mark : undefined
   const chevron = b.kind === 'fold' && b.isOpen ? '▾' : '▸'
+  const isChevronAfter = mark !== undefined || (b.kind === 'fold' && b.isLabelFirst === true)
 
   return h_flex()
     .id(`fold ${b.id}`)
@@ -443,10 +450,10 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .text_color(t.muted)
     .accessibility_label(b.text)
     .when(!isInert, e => e.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx)))
-    .when(b.kind === 'fold' && mark === undefined, e => e.child(div().mr(CONTROL_GAP).child(chevron)))
+    .when(b.kind === 'fold' && !isChevronAfter, e => e.child(div().mr(CONTROL_GAP).child(chevron)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(div().min_w(0).whitespace_normal().child(b.text))
-    .when(mark !== undefined, e => e.child(div().flex_none().ml(LINE_GAP).child(chevron)))
+    .when(isChevronAfter, e => e.child(div().flex_none().ml(LINE_GAP).child(chevron)))
 }
 
 /**

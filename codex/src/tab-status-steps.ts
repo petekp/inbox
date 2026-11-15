@@ -18,11 +18,16 @@ export const statusRowMotion = (id: string) => `status-${id}`
 export const goalLineMotion = (id: string) => `goal-${id}`
 export const goalHeadMotion = (id: string) => `head-${id}`
 
-const goalLines = (page: StatusPage): GoalLine[] =>
-  (page.goal?.milestones ?? []).flatMap(m => [
+/** Milestones with the rows each draws, in draw order. */
+export const milestoneLines = (milestones: MilestoneRow[]): GoalLine[] =>
+  milestones.flatMap(m => [
     { id: m.id, milestone: m },
     ...(m.foldId === null ? m.rows : []).map(r => ({ id: r.id, row: r })),
   ])
+
+/** The goal's lines that step. A met goal's milestones sit in their fold, which glides as a whole, so none step. */
+const goalLines = (page: StatusPage): GoalLine[] =>
+  page.goal?.milestonesFold ? [] : milestoneLines(page.goal?.milestones ?? [])
 
 /** The lines under the goal's text: what it was, where it stands now, and what it waits on. */
 function goalHead(page: StatusPage): TextLine[] {

@@ -116,6 +116,36 @@ test('the Status page draws the goal’s milestones on a path: a seen done one a
   expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
 })
 
+test('a met goal draws a ✓ in the met tone beside its Goal met label, its lines at the text column, and its milestones folded into a line that names them with the chevron after, which opens to the milestones', () => {
+  const s = demoSession(NOW, AGENT)
+  const o = s.ledger.overview!
+  const met = {
+    ...o,
+    goal: { ...o.goal!, metAt: NOW },
+    milestones: o.milestones.map(m => ({ ...m, status: 'done' as const })),
+  }
+  const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
+  const view = sessionView({ ...s, ledger: { ...s.ledger, overview: met } }, NOW, SETTLED_MS, holds)
+  const screen = { ...demoScreen(), view }
+  const fold = view.statusPage.goal!.milestonesFold!
+  const shut = tabBlocks(screen, uiOn('overview'))
+  const open = tabBlocks(screen, uiOn('overview', { statusUnfolded: [fold.id] }))
+  const milestoneIds = view.statusPage.goal!.milestones.map(m => m.id)
+
+  expect(shut.find(b => b.id === 'goal heading')).toMatchObject({ text: 'Goal met', mark: { text: '✓', tone: 'met' } })
+  expect(shut.find(b => b.id === 'goal text')).toMatchObject({ isAtEdge: false })
+  expect(shut.find(b => b.id === fold.id)).toMatchObject({
+    kind: 'fold',
+    text: fold.text,
+    isLabelFirst: true,
+    isOpen: false,
+  })
+  expect(shut.some(b => milestoneIds.includes(b.id))).toBe(false)
+  expect(open.find(b => b.id === fold.id)).toMatchObject({ isOpen: true })
+  expect(open.filter(b => milestoneIds.includes(b.id)).map(b => b.id)).toEqual(milestoneIds)
+  expect(shut.some(b => b.id === 'head title')).toBe(true)
+})
+
 test('the Status page joins each parent to the rows under it: work beside the path’s line by an arm, other work by the milestone’s connector down to an elbow at its last row with nothing past it, and a subject’s children by its own connector', () => {
   const screen = demoScreen()
   const blocks = tabBlocks(screen, uiOn('overview'))
