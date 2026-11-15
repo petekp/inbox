@@ -159,7 +159,7 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   const finished = delegatesSettled(blocked, herdr('done'), 4 * 60 * MIN)
   expect(page(finished, 4 * 60 * MIN).rows).toMatchObject([
     { kind: 'subject', isRunning: false },
-    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' } },
+    { kind: 'child', mark: '✓', tone: 'done', stall: null },
   ])
   expect(isSubjectSeen(finished!, finished!.subjects[0]!)).toBe(false)
   const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS, 'all')

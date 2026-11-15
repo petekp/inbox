@@ -16,10 +16,10 @@ const STATUS_FAILED =
 export type StatusBranch = 'mid' | 'last'
 
 /**
- * The words after a row's name: "waiting" in the needs-you tone while it waits on the person, "finished" in the done
- * tone, or how long an open subject has been idle, muted, as "idle 2d".
+ * The words after a row's name: "waiting" in the needs-you tone while it waits on the person, or how long an open
+ * subject has been idle, muted, as "idle 2d".
  */
-export type StatusStall = { text: string; tone: 'needsYou' | 'done' | 'muted' }
+export type StatusStall = { text: string; tone: 'needsYou' | 'muted' }
 
 /**
  * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject

@@ -315,3 +315,21 @@ export const GOOD_RUNS: Record<string, string[]> = {
     ].join('\n'),
   ],
 }
+
+/** A second right run of a replay whose step allows two right answers, as a recorded model wrote it. */
+export const OTHER_GOOD_RUNS: Record<string, string[]> = {
+  'milestone-dropped': [
+    [
+      'SET: s5 | queued | own setting, not started',
+      'SET: s2 | queued | waits for store release',
+      'SET: s3 | queued | waits for store release',
+      'GOAL: Notes 2.5 web beta out | working Sync fixed; queued Release notes; queued Beta published',
+      'SERVES: s1 | Sync fixed',
+      'SERVES: s2 | -',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
+      'SERVES: s5 | -',
+      'SERVES: s6 | Release notes',
+    ].join('\n'),
+  ],
+}
