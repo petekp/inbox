@@ -1,7 +1,7 @@
 import { clipLabel } from '../../hooks/text'
 import { LISTED_TABS } from '../../hooks/tabs'
 import { heldReplies, SETTLED_MS, keptDiscards } from '../../hooks/timing'
-import { keptOpen } from '../../hooks/action-plan'
+import { openOnArrival } from '../../hooks/action-plan'
 import type { Holds } from '../../hooks/timing'
 import { capitalized } from '../../hooks/press-labels'
 import { newRows, openRows } from './arrivals'
@@ -31,7 +31,7 @@ export function applyView(next: View, seq: number) {
   const added = [...rows.added.needsYou, ...rows.added.findings]
   for (const id of added) entering.add(id)
   for (const { id: t } of LISTED_TABS) {
-    const id = !selection[t] && rows.added[t].length > 0 ? keptOpen(tabWaits(next, t), rows.added[t]) : null
+    const id = openOnArrival(tabWaits(next, t), selection[t]?.id ?? null, rows.added[t])
     if (id) selection[t] = { id, openedAt: 0 }
   }
   follow(next, isOpening ? openRows(next) : rows.added)

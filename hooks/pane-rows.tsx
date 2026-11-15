@@ -30,6 +30,7 @@ export function paneRows(
     elements,
     indexOf,
     at,
+    collapsed,
     Box,
     space,
     Text,
@@ -47,7 +48,6 @@ export function paneRows(
     optionsShown,
     blankLine,
     Button,
-    tab,
     settledLayout,
     columnsFor,
     gutterMark,
@@ -72,6 +72,7 @@ export function paneRows(
       PaneBase,
       | 'indexOf'
       | 'at'
+      | 'collapsed'
       | 'Box'
       | 'space'
       | 'Text'
@@ -89,7 +90,6 @@ export function paneRows(
       | 'optionsShown'
       | 'blankLine'
       | 'Button'
-      | 'tab'
       | 'settledLayout'
     > &
     Pick<
@@ -108,12 +108,15 @@ export function paneRows(
     > &
     Pick<PaneRowKeys, 'rowActions' | 'desktopRowTextPt' | 'keyLines' | 'keyRow' | 'fieldActions' | 'actionRows'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
-  { updateDrafts, sendTyped, select }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'select'>,
+  { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
 ) {
   const listRow = (row: Row, tree: TreePos) => {
     const columns = columnsFor(row)
     const index = indexOf.get(row.id) ?? -1
-    const isSelected = index === at
+    const isCursor = index === at
+    const isSelected = isCursor && !collapsed.has(row.id)
+    /** The terminal marks the cursor on a collapsed row, which j and k reach. */
+    const isCursorMarked = isCursor && look === 'terminal'
     // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
     if (!isSelected && hasClient) {
       const gutter = gutterMark(row)
@@ -251,6 +254,29 @@ export function paneRows(
     )
     // The `view-` Box is what select() scrolls into view. Drawn on the selected row alone, so the key exists only
     // once that row has redrawn expanded.
+    const desktopAfter = f?.isAfterTitle && !isStatusUnder ? unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine) : ''
+    const desktopTitle = hasClient ? (
+      <elements.Client
+        key={`select-${row.id}`}
+        module="./title-client.tsx"
+        width="100%"
+        props={{
+          title: row.title,
+          after: desktopAfter,
+          colors: {
+            muted: pal.muted,
+            hover: pal.raised,
+            hoverText: pal.raisedText ?? null,
+            pressed: pal.selection ?? pal.raised,
+          },
+        }}
+      />
+    ) : (
+      <Text wrap="wrap">
+        <Text bold>{row.title}</Text>
+        {desktopAfter ? <Text color={pal.muted}>{desktopAfter}</Text> : null}
+      </Text>
+    )
     if (look === 'desktop' && isSelected)
       return desktopFrame({
         key: `row-${row.id}`,
@@ -264,12 +290,7 @@ export function paneRows(
         gapY: (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT,
         children: [
           <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
-          <Text wrap="wrap">
-            <Text bold>{row.title}</Text>
-            {f?.isAfterTitle && !isStatusUnder ? (
-              <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text>
-            ) : null}
-          </Text>,
+          desktopTitle,
           row.subtitle ?? null,
           row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
           descriptionsBlock,
@@ -292,7 +313,7 @@ export function paneRows(
         flexDirection="row"
         alignItems="flex-start"
         overflow="hidden"
-        backgroundColor={isSelected ? pal.selection : undefined}
+        backgroundColor={isSelected || isCursorMarked ? pal.selection : undefined}
       >
         <Box width={columns.lead} flexShrink={0} />
         {row.view && look === 'terminal' ? null : (
@@ -307,7 +328,7 @@ export function paneRows(
             ) : look === 'desktop' ? (
               (gutterMark(row) ?? <Text>{row.handle}</Text>)
             ) : (
-              <Button plain key={`select-${row.id}`} onPress={() => void select(tab, row.id, index)}>
+              <Button plain key={`select-${row.id}`} onPress={() => void pressTitle(row.id)}>
                 {row.handle && !row.isHandleRunning ? <Text color={pal.muted}>{row.handle}</Text> : row.handle || ' '}
               </Button>
             )}
@@ -317,12 +338,14 @@ export function paneRows(
           <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={space.rowPad}>
             {withSideAge(
               row,
-              <Text wrap="wrap">
-                <Text bold>{row.title}</Text>
-                {titleAfter ? (
-                  <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
-                ) : null}
-              </Text>,
+              <Button plain key={`title-${row.id}`} onPress={() => void pressTitle(row.id)}>
+                <Text wrap="wrap">
+                  <Text bold>{row.title}</Text>
+                  {titleAfter ? (
+                    <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
+                  ) : null}
+                </Text>
+              </Button>,
             )}
             {row.subtitle}
             {body ? <Box marginTop={blankLine}>{body}</Box> : null}
@@ -340,7 +363,7 @@ export function paneRows(
           </Box>
         ) : (
           <Box flexShrink={1} flexGrow={1} paddingRight={1}>
-            {unselectedLine(row, () => void select(tab, row.id, index), columns.textAt)}
+            {unselectedLine(row, () => void pressTitle(row.id), columns.textAt)}
           </Box>
         )}
         {isAgeInSide && !isSelected ? (
@@ -355,7 +378,7 @@ export function paneRows(
           </Box>
         ) : null}
         {isSelected ? branch(tree, blankLine, TREE_LINE_AT, pal.selectionLine ?? pal.line) : branch(tree, 0)}
-        {isSelected && look === 'terminal' ? (
+        {isCursorMarked ? (
           <Box
             key={settledScrollKey(`view-${row.id}`, settledLayout)}
             position="absolute"
@@ -367,7 +390,7 @@ export function paneRows(
         ) : null}
         {/* What select() scrolls into view. Drawn on the selected row alone, so the key exists
           only once that row has redrawn expanded. */}
-        {isSelected ? (
+        {isSelected || isCursorMarked ? (
           <Box
             key={`view-${row.id}`}
             position="absolute"

@@ -17,14 +17,12 @@ import {
   writeTextFile,
 } from 'herdr'
 import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
-import type { Run } from '../../hooks/gh'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
-import type { PathProbe } from '../../hooks/open-targets'
 import { ROW_COPY } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
-import { SETTLED_MS, heldReplies, keptDiscards, withListInput } from '../../hooks/timing'
+import { SETTLED_MS, heldReplies, isGuarded, keptDiscards, withListInput } from '../../hooks/timing'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import type { RowWait } from '../../hooks/action-plan'
@@ -42,11 +40,14 @@ import {
   isFieldDrawn,
   keyMove,
   tabUndo,
+  withArrivals,
   withClosedSelection,
   withSelected,
   withTab,
   withoutConfirmed,
 } from './keys'
+import { withCollapses, writeCollapse } from './collapse'
+import type { Collapses } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
 import type { LinesAbove } from './held-line'
 import { NEXT_FRAME_MS, NO_TRACKS, moveRows } from './motion'
@@ -60,9 +61,9 @@ import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './pain
 import { fitEl, spacedEls } from './paint-space'
 import { EDGE, END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
-import { PRESS_LABEL } from './press-file'
-import { PressQueue, claimedPath } from './press-queue'
-import type { PressTarget, QueueIo } from './press-queue'
+import { PressQueue } from './press-queue'
+import type { PressTarget } from './press-queue'
+import { herdrIo } from './io'
 import { runHere } from './run-here'
 import { screenOf } from './screen'
 
@@ -78,43 +79,7 @@ type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; qu
 
 const toggled = <T>(list: T[], x: T): T[] => (list.includes(x) ? list.filter(y => y !== x) : [...list, x])
 
-const herdrRun: Run = (args, opts) =>
-  exec(args[0] ?? '', args.slice(1), { cwd: opts.cwd, timeout: opts.timeoutMs }).catch((e: unknown) => ({
-    code: 127,
-    stdout: '',
-    stderr: String(e),
-  }))
-
-const isTrue = (args: string[]) => herdrRun(['test', ...args], { cwd: '/', timeoutMs: 5_000 }).then(r => r.code === 0)
-
-const probe: PathProbe = {
-  async stat(path) {
-    if (!(await isTrue(['-e', path]))) return null
-    const isFile = await isTrue(['-f', path])
-    return { isFile: () => isFile }
-  },
-  isExecutable: path => isTrue(['-x', path]),
-}
-
-const queueIo: QueueIo = {
-  now: () => Date.now(),
-  random: () => Math.random(),
-  write: (path, text) =>
-    writeTextFile(path, text, null).then(
-      () => null,
-      (e: unknown) => String(e),
-    ),
-  isGone: async path => (await readTextFile(path).catch(() => null)) === null,
-  async claim(path) {
-    const moved = await herdrRun(['mv', path, claimedPath(path)], { cwd: '/', timeoutMs: 5_000 })
-    if (moved.code !== 0) return false
-    await herdrRun(['rm', '-f', claimedPath(path)], { cwd: '/', timeoutMs: 5_000 })
-    return true
-  },
-  async wake(terminal, pressId) {
-    await hc(['label', terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null)
-  },
-}
+const { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile })
 
 type Timer = { cancel(): void }
 
@@ -139,6 +104,9 @@ export default class Inbox extends View {
   discarded: Record<string, number> = {}
   listInput: ListInput | null = null
   queue = new PressQueue(queueIo)
+  collapses: Collapses = {}
+  /** When a click opened a row, so a double click does not collapse it. */
+  clickedOpenAt = 0
   tracks: Tracks = NO_TRACKS
   heights = new Heights()
   tracksOf = ''
@@ -246,6 +214,7 @@ export default class Inbox extends View {
     this.input?.state.release()
     this.input = null
     this.discarded = {}
+    this.collapses = {}
     this.heights.clear()
     this.queue = kept?.queue ?? new PressQueue(queueIo)
     if (sessionId) this.load(sessionId, cx)
@@ -374,6 +343,19 @@ export default class Inbox extends View {
     cx.notify()
   }
 
+  /** Collapses or expands row `id`. The look draws it at once, and the host saves it from the file the look writes. */
+  collapse(id: string, isCollapsed: boolean, cx: Context): void {
+    const read = this.read?.is === 'read' ? this.read : null
+    if (this.sessionId === null || read === null) return
+    const c = { isCollapsed, at: Date.now() }
+    this.collapses = { ...this.collapses, [id]: c }
+    this.ui = { ...withSelected(this.ui, id), ...(isCollapsed && { typing: null }) }
+    this.closeStaleField()
+    const to = { appHome: appHome(), sessionId: this.sessionId, terminal: read.envelope.terminal }
+    cx.spawn(() => writeCollapse(queueIo, to, id, c))
+    cx.notify()
+  }
+
   onKey(key: string, tabs: TabCell[], blocks: Block[], cx: Context): void {
     const undo = this.view ? tabUndo(this.view, this.ui.tab, this.shownSince) : null
     const move = keyMove(key, tabs, blocks, this.ui.typing, undo)
@@ -381,6 +363,7 @@ export default class Inbox extends View {
     if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
     else if (move.is === 'tab') this.ui = withTab(this.ui, move.tab)
     else if (move.is === 'select') this.ui = withSelected(this.ui, move.id)
+    else if (move.is === 'collapse') this.collapse(move.id, move.isCollapsed, cx)
     else if (move.is === 'press') return this.press(move.button, cx)
     else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
     this.listInput = withListInput(this.listInput, Date.now())
@@ -392,8 +375,10 @@ export default class Inbox extends View {
     this.track(cx)
     const t = theme() as Theme
     const now = Date.now()
+    const drawn = withCollapses(this.read, this.collapses, now)
+    this.collapses = drawn.collapses
     const screenFor = (ui: LookUi) =>
-      screenOf(this.followed, this.read, ui, {
+      screenOf(this.followed, drawn.read, ui, {
         now,
         isNextBuild: this.isNextBuild,
         holds: this.holds(now),
@@ -401,7 +386,8 @@ export default class Inbox extends View {
       })
     let screen = screenFor(this.ui)
     if (screen.is === 'inbox' && this.lastWaits.tab === this.ui.tab) {
-      const ui = withClosedSelection(this.ui, this.lastWaits.rows, screen.waits)
+      const last = this.lastWaits.rows
+      const ui = withArrivals(withClosedSelection(this.ui, last, screen.waits), last, screen.waits)
       if (ui !== this.ui) screen = screenFor((this.ui = ui))
     }
     this.lastWaits = { tab: this.ui.tab, rows: screen.is === 'inbox' ? screen.waits : [] }
@@ -414,7 +400,13 @@ export default class Inbox extends View {
     const paint: Paint = {
       t,
       press: (b, cx) => this.press(b, cx),
+      collapse: (id, isCollapsed, cx) => {
+        if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now())) return
+        if (!isCollapsed) this.clickedOpenAt = Date.now()
+        this.collapse(id, isCollapsed, cx)
+      },
       select: (id, cx) => {
+        this.clickedOpenAt = Date.now()
         this.ui = withSelected(this.ui, id)
         this.closeStaleField()
         this.listInput = withListInput(this.listInput, Date.now())

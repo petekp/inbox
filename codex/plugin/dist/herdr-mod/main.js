@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T03:51:56.749Z. 214844 characters follow.
+// Built at 2026-11-15T04:17:22.626Z. 220068 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1195,6 +1195,7 @@ function markLegend(isNextBuild) {
 }
 var HELP_COPY = { open: "Help", close: "✕ Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
 var UNDO_KEY = "u";
+var COLLAPSE_KEY = "z";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "Clear the merged and closed PRs" }
@@ -1206,6 +1207,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
+  const collapseKey = { keys: COLLAPSE_KEY, does: "Collapse or expand the selected row" };
   switch (look) {
     case "desktop":
       return [];
@@ -1213,14 +1215,14 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
       return [
         switchTabs,
         ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
-        ...hasRows ? [undoKey] : [],
+        ...hasRows ? [collapseKey, undoKey] : [],
         ...prTabKeys,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k ↑ ↓", does: "Select the next or previous row" }, undoKey] : [],
+        ...hasRows ? [{ keys: "j k ↑ ↓", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
         ...prTabKeys,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, or leave a reply field" }
@@ -1233,6 +1235,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
           { keys: "← →", does: "Pick a button" },
           { keys: "↵", does: "Press the picked button" },
           { keys: "t", does: "Reply to the selected row" },
+          collapseKey,
           undoKey,
           ...prTabKeys
         ] : [
@@ -1249,7 +1252,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
     case "herdr":
       return [
         { keys: "← →", does: "Switch tabs" },
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, undoKey] : [],
+        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
         ...prTabKeys,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];
@@ -1671,6 +1674,7 @@ function statusPage(s, now) {
 
 // ../hooks/timing.ts
 var SETTLED_MS = 5120;
+var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
 function isQueuedAt(last, now) {
@@ -1684,6 +1688,9 @@ function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state !== "queued")
     return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
+}
+function isGuarded(openedAt, now) {
+  return openedAt > 0 && now - openedAt < PRESS_GUARD_MS;
 }
 var FOLD_QUIET_MS = 1000;
 function withListInput(input, at) {
@@ -2400,6 +2407,25 @@ function threadSentIn(lastActions) {
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
 }
+function prRowWaits(prs, lastActions, collapsed = []) {
+  const isSent = threadSentIn(lastActions);
+  const isCollapsed = (id) => collapsed.includes(id);
+  return prs.flatMap((pr) => [
+    ...waitingThreads(pr).map((t) => {
+      const id = prThreadId(pr, t);
+      return { id, isWaiting: !isSent(pr, t), isCollapsed: isCollapsed(id) };
+    }),
+    ...blockingChecks(pr).map((c) => {
+      const id = prCheckId(pr, c);
+      const last = lastActions[id];
+      return {
+        id,
+        isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed",
+        isCollapsed: isCollapsed(id)
+      };
+    })
+  ]);
+}
 var PR_TONES = {
   ready: "done",
   blocked: "needsYou",
@@ -2942,8 +2968,19 @@ function drawnLists(v, isSettledDrawn, toRow) {
     byTab: { needsYou: [...rowsIn(questions), ...rowsIn(tasks)], findings: rowsIn(findings) }
   };
 }
+var opensFor = (r) => r.isWaiting && !r.isCollapsed;
 function firstWaiting(rows) {
-  return rows.find((r) => r.isWaiting)?.id ?? null;
+  return rows.find(opensFor)?.id ?? null;
+}
+function openOnArrival(rows, picked, added) {
+  if (added.length === 0)
+    return null;
+  if (picked === null)
+    return keptOpen(rows, added);
+  return drawsOpen(rows, picked) ? null : firstWaiting(rows.filter((r) => added.includes(r.id)));
+}
+function drawsOpen(rows, id) {
+  return id !== null && !rows.find((r) => r.id === id)?.isCollapsed;
 }
 function steppedIndex(at, step, count) {
   if (count === 0)
@@ -2951,11 +2988,14 @@ function steppedIndex(at, step, count) {
   const from = at < 0 ? step > 0 ? -1 : 0 : at;
   return ((from + step) % count + count) % count;
 }
+function keptOpen(rows, added) {
+  return firstWaiting(rows.filter((r) => !added.includes(r.id)));
+}
 function rowAfterClose(rows, closedId) {
   const at = rows.findIndex((r) => r.id === closedId);
   if (at < 0)
     return null;
-  return (rows.slice(at + 1).find((r) => r.isWaiting) ?? rows.slice(0, at).reverse().find((r) => r.isWaiting))?.id ?? null;
+  return (rows.slice(at + 1).find(opensFor) ?? rows.slice(0, at).reverse().find(opensFor))?.id ?? null;
 }
 function rowsIn(entries) {
   return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
@@ -3240,6 +3280,11 @@ function collapsedRows(s) {
   const news = newsByRow(s);
   return Object.entries(s.collapsed).flatMap(([id, at]) => (news.get(id) ?? Infinity) <= at ? [id] : []);
 }
+function withCollapse(s, row, isCollapsed, at) {
+  const news = newsByRow(s);
+  const kept = Object.fromEntries(Object.entries(s.collapsed).filter(([id]) => id !== row && news.has(id)));
+  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: at } : kept };
+}
 
 // ../hooks/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
@@ -3447,7 +3492,15 @@ function prBlocks(screen, d, presses, selected) {
     },
     ...rows.map((r) => {
       const isSelected = r.isSelectable && r.id === selected;
-      return { ...r, isSelected, body: isSelected ? r.body : [], buttons: isSelected ? r.buttons : [] };
+      const isCollapsed = screen.view.collapsed.includes(r.id);
+      const isOpen = isSelected && !isCollapsed;
+      return {
+        ...r,
+        isSelected,
+        ...isCollapsed && { isCollapsed },
+        body: isOpen ? r.body : [],
+        buttons: isOpen ? r.buttons : []
+      };
     })
   ];
   return [
@@ -3518,7 +3571,7 @@ function clearLine(screen) {
 }
 var ruleBetween = (ref) => ({ kind: "rule", id: `rule ${ref}`, text: null });
 function firstSelectable(blocks) {
-  return blocks.find((b) => b.kind === "row" && b.isSelectable)?.id ?? null;
+  return blocks.find((b) => b.kind === "row" && b.isSelectable && !b.isCollapsed)?.id ?? null;
 }
 function prTabBlocks(screen, selected) {
   const { view } = screen;
@@ -3806,6 +3859,8 @@ function rowBlock(row, ui, selected, screen) {
   const isAllShown = ui.optionsShown.includes(row.id);
   const text = rowFeedbackText(row, LOOK2);
   const isSelected = !isSettled && row.id === selected;
+  const isCollapsed = screen.view.collapsed.includes(row.id);
+  const isOpen = isSelected && !isCollapsed;
   const isTyping = ui.typing === row.id;
   return {
     kind: "row",
@@ -3819,9 +3874,10 @@ function rowBlock(row, ui, selected, screen) {
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
-    body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
-    field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
+    ...isCollapsed && { isCollapsed },
+    body: isOpen ? rowBody(row, isAllShown, screen.isNextBuild) : [],
+    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isOpen && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
+    field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
   };
 }
 function closedBlock(d, now) {
@@ -3908,11 +3964,15 @@ function groupsOf(view, tab, shownSince) {
     closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
   }));
 }
-var waitsOf = (groups) => groups.flatMap((g) => g.rows).map((r) => ({ id: r.id, isWaiting: isWaitingRow(r) }));
-var rowWaits = (screen, tab) => tab === "needsYou" || tab === "findings" ? waitsOf(groupsOf(screen.view, tab, screen.shownSince)) : [];
-function selectedOf(groups, selected) {
+var waitsOf = (groups, collapsed) => groups.flatMap((g) => g.rows).map((r) => ({ id: r.id, isWaiting: isWaitingRow(r), isCollapsed: collapsed.includes(r.id) }));
+function rowWaits({ view, shownSince }, tab) {
+  if (tab === "prs")
+    return prRowWaits(openPrViews(view.prs.drawn), view.lastActions, view.collapsed);
+  return tab === "overview" ? [] : waitsOf(groupsOf(view, tab, shownSince), view.collapsed);
+}
+function selectedOf(groups, selected, collapsed) {
   const isSettled = (id) => groups.some((g) => g.rows.some((r) => r.id === id && r.state.is === "settled"));
-  const waits = waitsOf(groups);
+  const waits = waitsOf(groups, collapsed);
   if (selected === null || !waits.some((r) => r.id === selected))
     return firstWaiting(waits);
   if (!isSettled(selected))
@@ -3926,7 +3986,7 @@ function rowTabBlocks(screen, ui, tab) {
     const empty = emptyText(tab, screen.agent, isMaybeStale(screen.view));
     return [{ kind: "empty", id: `empty ${tab}`, title: empty.title, hint: empty.hint, buttons: [] }];
   }
-  const selected = selectedOf(groups, ui.selected);
+  const selected = selectedOf(groups, ui.selected, screen.view.collapsed);
   return groups.flatMap((g, n) => [
     ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null }] : [],
     ...groupBlocks(g, ui, selected, screen)
@@ -4104,6 +4164,8 @@ function keyMove(key, tabs, blocks, typing, undo = null) {
     return button ? { is: "press", button } : null;
   }
   const selected = blocks.find((b) => b.kind === "row" && b.isSelected);
+  if (key === COLLAPSE_KEY && selected?.isSelectable)
+    return { is: "collapse", id: selected.id, isCollapsed: !selected.isCollapsed };
   const lines = blocks.flatMap((b) => b.kind === "line" || b.kind === "banner" ? b.buttons : []);
   const pressed = [...selected?.buttons ?? [], ...lines].find((b) => b.hotkey === key && !b.isOut);
   return pressed ? { is: "press", button: pressed } : null;
@@ -4122,6 +4184,11 @@ function withClosedSelection(ui, last, now) {
   const next = rowAfterClose(now, id);
   return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next);
 }
+function withArrivals(ui, last, now) {
+  const added = now.filter((r) => !last.some((l) => l.id === r.id)).map((r) => r.id);
+  const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added);
+  return id === null ? ui : withSelected(ui, id);
+}
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
 var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null } : ui;
@@ -4133,6 +4200,39 @@ function withoutConfirmed(drafts, confirmed, typing, pending) {
     drafts: Object.fromEntries(Object.entries(drafts).filter(([id, d]) => !isSentDraft(id, d))),
     waiting: current.filter((c) => c.rowId === typing)
   };
+}
+
+// src/press-file.ts
+var PRESS_LABEL = "inbox.press";
+var pressPath = (appHome, sessionId, pressId) => `${pressFolder(appHome, sessionId)}/${pressId}.json`;
+var newPressId = (now, random) => `${now.toString(36)}-${Math.floor(random * 36 ** 6).toString(36)}`;
+function pressFileText(id, pressedAt, press, holds, result = null) {
+  const { replies, discarded, shownSince, listInput } = holds;
+  return JSON.stringify({
+    format: HERDR_FORMAT,
+    id,
+    pressedAt,
+    press,
+    holds: { replies, discarded, shownSince, listInput },
+    ...result ? { result } : {}
+  });
+}
+
+// src/collapse.ts
+var COLLAPSE_WAIT_MS = 30000;
+var isShown = (s, row, c) => c.isCollapsed ? s.collapsed[row] === c.at : s.collapsed[row] === undefined;
+function withCollapses(read, collapses, now) {
+  if (read?.is !== "read")
+    return { read, collapses };
+  const waiting = Object.fromEntries(Object.entries(collapses).filter(([row, c]) => now - c.at < COLLAPSE_WAIT_MS && !isShown(read.session, row, c)));
+  const session = Object.entries(waiting).reduce((s, [row, c]) => withCollapse(s, row, c.isCollapsed, c.at), read.session);
+  return { read: { ...read, session }, collapses: waiting };
+}
+async function writeCollapse(io, to, row, c) {
+  const id = newPressId(c.at, io.random());
+  const file = { format: HERDR_FORMAT, id, collapse: { row, ...c } };
+  if (await io.write(pressPath(to.appHome, to.sessionId, id), JSON.stringify(file)) === null)
+    await io.wake(to.terminal, id);
 }
 
 // src/held-line.ts
@@ -4292,7 +4392,7 @@ var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [] };
 var NEXT_FRAME_MS = 16;
-var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : b.isSelected ? "open" : "closed";
+var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : b.isSelected && !b.isCollapsed ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
 var restAt = (now, fadeMs) => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS;
 function glideOf(track, isStart, last, now) {
@@ -4326,7 +4426,7 @@ function moveRows(blocks, last, now, isFirst) {
   const motion = new Map;
   const add = (block, track) => {
     const last = was.rows.get(block.id);
-    const isOpen = block.kind === "row" && block.isSelected;
+    const isOpen = block.kind === "row" && block.isSelected && !block.isCollapsed;
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const glide = glideOf(track, isStart, last?.glide ?? null, now);
@@ -4659,15 +4759,17 @@ function fieldEl(f, p, indent, isInert = false) {
 }
 function rowEl(r, p) {
   const { t } = p;
-  const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const m = p.motion.get(r.id);
+  const isLeaving = m?.state === "leaving";
+  const isOpen = r.isSelected && !r.isCollapsed;
+  const isPressable = r.isSelectable && !isLeaving;
+  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.cursor_pointer().on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isOpen, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  const m = p.motion.get(r.id);
-  const isLeaving = m?.state === "leaving";
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving));
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(line).children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;
@@ -4771,22 +4873,6 @@ function blockEl(b, p) {
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
   return div4();
-}
-
-// src/press-file.ts
-var PRESS_LABEL = "inbox.press";
-var pressPath = (appHome, sessionId, pressId) => `${pressFolder(appHome, sessionId)}/${pressId}.json`;
-var newPressId = (now, random) => `${now.toString(36)}-${Math.floor(random * 36 ** 6).toString(36)}`;
-function pressFileText(id, pressedAt, press, holds, result = null) {
-  const { replies, discarded, shownSince, listInput } = holds;
-  return JSON.stringify({
-    format: HERDR_FORMAT,
-    id,
-    pressedAt,
-    press,
-    holds: { replies, discarded, shownSince, listInput },
-    ...result ? { result } : {}
-  });
 }
 
 // src/out.ts
@@ -5034,6 +5120,42 @@ class PressQueue {
   }
 }
 
+// src/io.ts
+function herdrIo({ exec, hc, readTextFile, writeTextFile }) {
+  const herdrRun = (args, opts) => exec(args[0] ?? "", args.slice(1), { cwd: opts.cwd, timeout: opts.timeoutMs }).catch((e) => ({
+    code: 127,
+    stdout: "",
+    stderr: String(e)
+  }));
+  const isTrue = (args) => herdrRun(["test", ...args], { cwd: "/", timeoutMs: 5000 }).then((r) => r.code === 0);
+  const probe = {
+    async stat(path) {
+      if (!await isTrue(["-e", path]))
+        return null;
+      const isFile = await isTrue(["-f", path]);
+      return { isFile: () => isFile };
+    },
+    isExecutable: (path) => isTrue(["-x", path])
+  };
+  const queueIo = {
+    now: () => Date.now(),
+    random: () => Math.random(),
+    write: (path, text) => writeTextFile(path, text, null).then(() => null, (e) => String(e)),
+    isGone: async (path) => await readTextFile(path).catch(() => null) === null,
+    async claim(path) {
+      const moved = await herdrRun(["mv", path, claimedPath(path)], { cwd: "/", timeoutMs: 5000 });
+      if (moved.code !== 0)
+        return false;
+      await herdrRun(["rm", "-f", claimedPath(path)], { cwd: "/", timeoutMs: 5000 });
+      return true;
+    },
+    async wake(terminal, pressId) {
+      await hc(["label", terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null);
+    }
+  };
+  return { herdrRun, probe, queueIo };
+}
+
 // src/screen.ts
 var TRIMMED_NOTE = "This session is too large to show in full, so its older closed items are left out.";
 var message = (title, hint, isError = false) => ({
@@ -5104,37 +5226,7 @@ var AGE_TICK_MS = 60000;
 var TORN_RETRY_MS = 30;
 var TORN_RETRIES = 5;
 var toggled = (list, x) => list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
-var herdrRun = (args, opts) => exec(args[0] ?? "", args.slice(1), { cwd: opts.cwd, timeout: opts.timeoutMs }).catch((e) => ({
-  code: 127,
-  stdout: "",
-  stderr: String(e)
-}));
-var isTrue = (args) => herdrRun(["test", ...args], { cwd: "/", timeoutMs: 5000 }).then((r) => r.code === 0);
-var probe = {
-  async stat(path) {
-    if (!await isTrue(["-e", path]))
-      return null;
-    const isFile = await isTrue(["-f", path]);
-    return { isFile: () => isFile };
-  },
-  isExecutable: (path) => isTrue(["-x", path])
-};
-var queueIo = {
-  now: () => Date.now(),
-  random: () => Math.random(),
-  write: (path, text) => writeTextFile(path, text, null).then(() => null, (e) => String(e)),
-  isGone: async (path) => await readTextFile(path).catch(() => null) === null,
-  async claim(path) {
-    const moved = await herdrRun(["mv", path, claimedPath(path)], { cwd: "/", timeoutMs: 5000 });
-    if (moved.code !== 0)
-      return false;
-    await herdrRun(["rm", "-f", claimedPath(path)], { cwd: "/", timeoutMs: 5000 });
-    return true;
-  },
-  async wake(terminal, pressId) {
-    await hc(["label", terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null);
-  }
-};
+var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
 
 class Inbox extends View {
   tab = null;
@@ -5155,6 +5247,8 @@ class Inbox extends View {
   discarded = {};
   listInput = null;
   queue = new PressQueue(queueIo);
+  collapses = {};
+  clickedOpenAt = 0;
   tracks = NO_TRACKS;
   heights = new Heights;
   tracksOf = "";
@@ -5251,6 +5345,7 @@ class Inbox extends View {
     this.input?.state.release();
     this.input = null;
     this.discarded = {};
+    this.collapses = {};
     this.heights.clear();
     this.queue = kept?.queue ?? new PressQueue(queueIo);
     if (sessionId)
@@ -5366,6 +5461,18 @@ class Inbox extends View {
       this.leave(d.rowId, d.isDiscard, cx);
     cx.notify();
   }
+  collapse(id, isCollapsed, cx) {
+    const read = this.read?.is === "read" ? this.read : null;
+    if (this.sessionId === null || read === null)
+      return;
+    const c = { isCollapsed, at: Date.now() };
+    this.collapses = { ...this.collapses, [id]: c };
+    this.ui = { ...withSelected(this.ui, id), ...isCollapsed && { typing: null } };
+    this.closeStaleField();
+    const to = { appHome: appHome(), sessionId: this.sessionId, terminal: read.envelope.terminal };
+    cx.spawn(() => writeCollapse(queueIo, to, id, c));
+    cx.notify();
+  }
   onKey(key, tabs, blocks, cx) {
     const undo = this.view ? tabUndo(this.view, this.ui.tab, this.shownSince) : null;
     const move = keyMove(key, tabs, blocks, this.ui.typing, undo);
@@ -5377,6 +5484,8 @@ class Inbox extends View {
       this.ui = withTab(this.ui, move.tab);
     else if (move.is === "select")
       this.ui = withSelected(this.ui, move.id);
+    else if (move.is === "collapse")
+      this.collapse(move.id, move.isCollapsed, cx);
     else if (move.is === "press")
       return this.press(move.button, cx);
     else if (this.followed.is !== "no-terminal")
@@ -5389,7 +5498,9 @@ class Inbox extends View {
     this.track(cx);
     const t = theme();
     const now = Date.now();
-    const screenFor = (ui) => screenOf(this.followed, this.read, ui, {
+    const drawn = withCollapses(this.read, this.collapses, now);
+    this.collapses = drawn.collapses;
+    const screenFor = (ui) => screenOf(this.followed, drawn.read, ui, {
       now,
       isNextBuild: this.isNextBuild,
       holds: this.holds(now),
@@ -5397,7 +5508,8 @@ class Inbox extends View {
     });
     let screen = screenFor(this.ui);
     if (screen.is === "inbox" && this.lastWaits.tab === this.ui.tab) {
-      const ui = withClosedSelection(this.ui, this.lastWaits.rows, screen.waits);
+      const last = this.lastWaits.rows;
+      const ui = withArrivals(withClosedSelection(this.ui, last, screen.waits), last, screen.waits);
       if (ui !== this.ui)
         screen = screenFor(this.ui = ui);
     }
@@ -5411,7 +5523,15 @@ class Inbox extends View {
     const paint = {
       t,
       press: (b, cx) => this.press(b, cx),
+      collapse: (id, isCollapsed, cx) => {
+        if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now()))
+          return;
+        if (!isCollapsed)
+          this.clickedOpenAt = Date.now();
+        this.collapse(id, isCollapsed, cx);
+      },
       select: (id, cx) => {
+        this.clickedOpenAt = Date.now();
         this.ui = withSelected(this.ui, id);
         this.closeStaleField();
         this.listInput = withListInput(this.listInput, Date.now());

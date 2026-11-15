@@ -1,6 +1,6 @@
 import { render } from 'preact'
 import type { ComponentChildren } from 'preact'
-import { HELP_COPY, UNDO_KEY } from '../../hooks/help'
+import { COLLAPSE_KEY, HELP_COPY, UNDO_KEY } from '../../hooks/help'
 import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { steppedIndex } from '../../hooks/action-plan'
@@ -14,7 +14,7 @@ import { measure, animateDraw, revealSelected, applyPageVariables, wakeForMoves 
 import { switchTab, drawnTab, selectedIndex, select, rowActions } from './tab-selection'
 import { restoreState } from './tab-swap'
 import { read, poll } from './tab-read'
-import { tabRows } from './tab-rows'
+import { pressCollapseKey, tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
 import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
@@ -196,8 +196,13 @@ document.addEventListener(
       if (pressUndoKey(tabState.view, t)) e.preventDefault()
       return
     }
+    if (e.key === COLLAPSE_KEY) {
+      e.preventDefault()
+      pressCollapseKey(t, rows, at)
+      return
+    }
     const row = rows[at]
-    if (!row) return
+    if (!row || tabState.view.collapsed.includes(row.id)) return
     const { keys, more } = rowActions(row)
     const k = [...keys, ...more].find(x => x.hotkey === e.key)
     if (k) {

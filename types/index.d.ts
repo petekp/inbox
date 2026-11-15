@@ -539,6 +539,8 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   turns: Turns
+  /** The sample rows the person collapsed, as `Session.collapsed`. A copy saved before collapsing existed has none. */
+  collapsed?: Record<string, number>
 }
 
 export type Exchange = {

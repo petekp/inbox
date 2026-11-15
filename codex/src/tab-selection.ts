@@ -39,7 +39,7 @@ export function follow(v: View, added: Record<Tab, string[]>) {
 }
 
 export function tabWaits(v: View, t: Tab): RowWait[] {
-  return t === 'prs' ? prRowWaits(openPrViews(v.prs.drawn), v.lastActions) : listWaits(v)[t]
+  return t === 'prs' ? prRowWaits(openPrViews(v.prs.drawn), v.lastActions, v.collapsed) : listWaits(v)[t]
 }
 
 export function shownSettled(v: View): Set<string> {
@@ -65,6 +65,13 @@ export function selectedIndex(rows: Row[], t: Tab, v: View): number {
   const id = firstWaiting(tabWaits(v, t))
 
   return id ? rows.findIndex(r => r.id === id) : -1
+}
+
+/** The id of the row drawn open on tab `t`: the selected row, unless the person collapsed it. */
+export function openRowId(rows: Row[], t: Tab, v: View): string | undefined {
+  const id = rows[selectedIndex(rows, t, v)]?.id
+
+  return id !== undefined && !v.collapsed.includes(id) ? id : undefined
 }
 
 export function open(t: Tab, id: string, index?: number) {

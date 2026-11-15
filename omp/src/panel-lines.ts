@@ -85,6 +85,8 @@ export type Line = {
   isDetailShown: boolean
   /** A handed-off row, drawn as its one line until the person opens it. */
   isFolded: boolean
+  /** A row the person collapsed: drawn as its one line, even while selected, until they expand it. */
+  isCollapsed?: boolean
   /**
    * The PRs tab's own buttons, drawn on one line after the line's title, if any, with their press status after them,
    * or under them when it does not fit. Their keys work from any row of the tab.
@@ -308,7 +310,8 @@ export function pressFeedback(screen: PanelScreen, id: string, now: number, isMa
 export const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
 export const linesOf = (entries: Entry[]): Line[] => entries.flatMap(e => (e.kind === 'row' ? [e.line] : []))
-export const waitsOf = (lines: Line[]) => lines.map(l => ({ id: l.id, isWaiting: isSelectable(l) && l.isWaiting }))
+export const waitsOf = (lines: Line[]) =>
+  lines.map(l => ({ id: l.id, isWaiting: isSelectable(l) && l.isWaiting, isCollapsed: l.isCollapsed === true }))
 export const isSelectable = (line: Line) => line.settled === null && !line.isStatic
 /** A folded line the person has not opened: it draws one line and takes only Enter. */
 export const isShut = (line: Line, ui: Pick<PanelUi, 'opened'>) => line.isFolded && ui.opened !== line.id

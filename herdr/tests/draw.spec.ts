@@ -52,6 +52,23 @@ test('only the selected row shows buttons, and with no selection the first waiti
   expect(rows.filter(r => !r.isSelected && r.depth === 0).every(r => r.buttons.length === 0)).toBe(true)
 })
 
+test('collapsing each row in turn with z leaves none open, and the last one collapsed stays selected', () => {
+  let screen = demoScreen()
+  let ui = uiOn('needsYou')
+  const ids = rowsOf(tabBlocks(screen, ui))
+    .filter(r => r.isSelectable)
+    .map(r => r.id)
+  for (const id of ids) {
+    ui = { ...ui, selected: id }
+    expect(keyMove('z', [], tabBlocks(screen, ui), null)).toEqual({ is: 'collapse', id, isCollapsed: true })
+    screen = { ...screen, view: { ...screen.view, collapsed: [...screen.view.collapsed, id] } }
+  }
+  const rows = rowsOf(tabBlocks(screen, ui)).filter(r => r.isSelectable)
+  expect(rows.filter(r => r.body.length > 0 || r.buttons.length > 0)).toEqual([])
+  expect(rows.filter(r => r.isSelected).map(r => r.id)).toEqual([ids.at(-1)!])
+  expect(keyMove('z', [], tabBlocks(screen, ui), null)).toEqual({ is: 'collapse', id: ids.at(-1)!, isCollapsed: false })
+})
+
 test('a selected question draws why it came up first under its title, in the Why line’s tone, and a collapsed one draws none', () => {
   const screen = demoScreen()
   const question = screen.view.needsYou.questions.find(r => r.contextLine)!

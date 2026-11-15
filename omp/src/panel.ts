@@ -31,7 +31,9 @@ type ResumePress = { action: 'resume' }
 type HerdrAskPress = { action: 'herdr-ask'; isYes: boolean }
 /** Shows every option of a question whose options fold. The panel handles it, so no host sees it. */
 type OptionsPress = { action: 'all-options'; id: string }
-export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress
+/** Collapses a row, or expands it once collapsed. The panel draws it at once, and the host saves it. */
+type CollapsePress = { action: 'collapse'; id: string; isCollapsed: boolean }
+export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress | CollapsePress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {

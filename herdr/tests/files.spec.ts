@@ -14,6 +14,13 @@ test('a published session reads back with its source and its rows', () => {
   expect(read.projectFolder).toBeNull()
 })
 
+test('a session from a host that saves no collapsed rows reads with none collapsed', () => {
+  const { session, ...envelope } = JSON.parse(demoEnvelopeText())
+  const { collapsed: _collapsed, ...older } = session
+  const read = readSession(JSON.stringify({ ...envelope, session: older }))
+  expect(read.is === 'read' && read.session.collapsed).toEqual({})
+})
+
 test('a session the host trimmed to fit reads as trimmed', () => {
   const read = readSession(demoEnvelopeText({ trimmed: true }))
   expect(read.is === 'read' && read.isTrimmed).toBe(true)

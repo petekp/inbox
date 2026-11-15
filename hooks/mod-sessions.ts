@@ -49,12 +49,13 @@ export const updating = exclusiveKeys()
  */
 export function drawnSession(
   session: Session,
-  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
+  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns' | 'collapsed'>,
   isDemo: boolean,
   now: number,
 ): Session {
   const { ledger, stop, prViews, lastActions, turns } = drawn
-  const s = { ...session, ledger, stop, prViews, lastActions, presence: { ...session.presence, ...turns } }
+  const collapsed = isDemo ? (drawn.collapsed ?? {}) : session.collapsed
+  const s = { ...session, ledger, stop, prViews, lastActions, collapsed, presence: { ...session.presence, ...turns } }
 
   return isDemo ? withDemoPresence(s, now) : s
 }
