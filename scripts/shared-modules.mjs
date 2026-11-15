@@ -85,6 +85,7 @@ export const SHARED = [
   'timing',
   'rows',
   'row-motion',
+  'springs',
   'feedback',
   'banners',
   'band',

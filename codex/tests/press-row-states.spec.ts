@@ -10,7 +10,8 @@ import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { NO_HOLDS } from '../../hooks/timing'
-import { EXIT_MS, MOVE_MS, ROW_STATE_MS, stepRow } from '../../hooks/row-motion'
+import { ROW_STATE_MS, stepRow } from '../../hooks/row-motion'
+import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 
 const ROW_STATES: RowState[] = [
@@ -222,7 +223,7 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     ;[...scope.querySelectorAll<HTMLElement>('button')].find(b => b.textContent?.trim() === label)!.click()
     await settle()
   }
-  const isMoving = (e: HTMLElement) => e.getAnimations().length > 0
+  const isMoving = (e: HTMLElement) => e.getAnimations().some(a => a.playState === 'running')
   const blockEntry = (n: number, name: string) =>
     [...block(n).querySelectorAll<HTMLElement>('.entry')].find(
       e => e.querySelector('.line .text')?.textContent === `CI / ${name}`,
@@ -251,10 +252,10 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     await open('lint')
     assert.ok(entry('lint')!.querySelector('.row.selected .panel'))
     assert.ok(entry('e2e')!.querySelector('.row.closing .panel.closing'))
-    await after(MOVE_MS + 100)
+    await after(ROW_STATE_MS.closing + 100)
     assert.equal(entry('e2e')!.querySelector('.panel'), null)
     await open('e2e')
-    await after(MOVE_MS + 100)
+    await after(ROW_STATE_MS.closing + 100)
     setChecks([check('lint', 'fail'), check('e2e', 'pending'), check('e2e-mac', 'pending')])
     const result = {
       state: 'done' as const,
@@ -271,7 +272,7 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     assert.ok(entry('e2e-mac'))
     assert.ok(line())
     assert.ok(isLineGrowing())
-    await after(EXIT_MS + 100)
+    await after(ROW_STATE_MS.leaving + 100)
     assert.deepEqual(groups(), [`Failing checks${DOT}1`])
     assert.equal(entry('e2e'), null)
     assert.ok(line())
@@ -311,17 +312,18 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     assert.ok(isMoving(leaving))
     assert.ok(isSettlingOverBlock(15))
     assert.ok(isMoving(block(15)))
-    await after(MOVE_MS + 100)
+    await after(ROW_STATE_MS.closing + 100)
     assert.ok(block(15).querySelector('.settled-line'))
     assert.equal(block(15).querySelector('[inert]'), null)
     await press(block(15), 'Undo')
     assert.ok(block(15).querySelector('.pr-head'))
     assert.ok(isMoving(block(15)))
-    await after(MOVE_MS + 100)
+    await after(ROW_STATE_MS.closing + 100)
+    await after(HEIGHT_SETTLE_MS + 100)
     assert.ok(!isMoving(block(15)))
     await press(block(13), 'Dismiss')
     assert.ok(isSettlingOverBlock(13))
-    await after(MOVE_MS + 100)
+    await after(ROW_STATE_MS.closing + 100)
     assert.ok(!isSettlingOverBlock(13))
     state.prViews = {
       ...state.prViews,
@@ -330,14 +332,14 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     await after(POLL_MS + 100)
     assert.ok(block(13).querySelector('.settled-line'))
     assert.ok(isMoving(block(13)))
-    await after(EXIT_MS + 100)
+    await after(ROW_STATE_MS.leaving + 100)
     assert.equal(block(13), undefined)
     assert.ok(clearLine()!.compareDocumentPosition(block(14)) & window.Node.DOCUMENT_POSITION_FOLLOWING)
     await press(clearLine()!, 'Clear merged and closed')
     assert.ok(isSettlingOverBlock(14))
     assert.ok(clearLine()!.querySelector('[inert] .pr-actions'))
     assert.ok(isMoving(clearLine()!))
-    await after(EXIT_MS + 100)
+    await after(ROW_STATE_MS.leaving + 100)
     assert.equal(clearLine(), null)
     assert.ok(!isSettlingOverBlock(14))
     isReduced = true

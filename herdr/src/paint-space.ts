@@ -6,7 +6,7 @@ import type { Block } from './blocks'
 import type { RowMotion } from './motion'
 import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE_GAP } from './paint-theme'
 import type { Paint } from './paint-theme'
-import { HEIGHT_SPRING } from './springs'
+import { HEIGHT_SPRING } from '../../hooks/springs'
 
 /** The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space. */
 const padOf = (b: Block): number => (b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0)

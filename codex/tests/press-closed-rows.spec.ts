@@ -8,7 +8,7 @@ import { firstWaiting, keptOpen, listWaits, openOnArrival, rowAfterClose } from 
 import { QUEUED_AFTER_MS, NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
 import type { RowWait } from '../../hooks/action-plan'
 import { viewOf } from '../src/core'
-import { EXIT_MS } from '../../hooks/row-motion'
+import { ROW_STATE_MS } from '../../hooks/row-motion'
 import { drawnSettled, SETTLE_WINDOW_MS } from '../src/settle'
 import { CODEX } from '../src/texts'
 import { after, withItems } from './press-fixtures'
@@ -17,7 +17,7 @@ import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 test('the tab draws a settled row while it shows the tab the row closed in, and lists it in the Closed fold once the person switches tab', () => {
   const s = withItems()
   const dismissed = after(s, { action: 'dismiss', id: 'i1' })
-  const shown = viewOf(dismissed, 2050 + SETTLED_MS + EXIT_MS + 1, { ...NO_HOLDS, shownSince: 40 })
+  const shown = viewOf(dismissed, 2050 + SETTLED_MS + ROW_STATE_MS.leaving + 1, { ...NO_HOLDS, shownSince: 40 })
   assert.equal(shown.needsYou.questions[0]?.state.is, 'settled')
   const fold = (shownSince: number) =>
     closedShown(shown.needsYou.closed.questions, drawnSettled(shown, shownSince)).map(d => d.id)
