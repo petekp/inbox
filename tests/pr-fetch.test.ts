@@ -341,6 +341,10 @@ test('Refresh PRs at the top reads Refreshing, then why it could not refresh, in
     )
   const pending = applyPrPress(start.ledger, start.prViews, {}, { action: 'pr-refresh' }, { now: NOW, turnsStarted: 0 })
   expect('stale' in pending ? null : pending.lasts[PR_REFRESH_ID]?.result?.state).toBe('pending')
+  const out = 'stale' in pending ? start : { ...start, lastActions: { ...pending.lasts } }
+  expect(sessionView(out, NOW, 1000, NO_HOLDS).prs.refresh?.actions.map(a => [a.label, a.isOut])).toEqual([
+    [PR_REFRESH_LABEL, true],
+  ])
 
   await press(pressHost, { action: 'pr-refresh' }, false, NO_HOLDS)
   expect(refreshed()).toBe(`Could not refresh PRs: GitHub's limit resets at ${clockTime(resetAt)}`)

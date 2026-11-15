@@ -2533,7 +2533,7 @@ function prRefreshView(prs, links, presses, shownSince) {
   if (problem === null && !isPressShown) return null;
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown
   };
 }

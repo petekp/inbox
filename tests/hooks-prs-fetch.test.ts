@@ -152,6 +152,104 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await pane.find({ text: notice })).toBeUndefined()
   })
 
+  test(`the ${surface} PRs tab keeps its gh notice and Refresh PRs, drawn out, while the refresh runs a fetch that finds gh again`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    const notice = /could not find gh/
+    w.isGhMissing = true
+    let release = () => {}
+    w.ghAnswers.push({
+      match: argv => argv[0] === 'gh' && argv[1] === 'pr',
+      stdout: '',
+      fails: 'no pull requests found',
+      hold: () => new Promise<void>(resolve => (release = resolve)),
+    })
+
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
+    const pane = await $.ui.mount({ ...PANE, surface })
+    if (surface === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = tabs
+        .slice(
+          0,
+          tabs.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    expect(await pane.find({ text: notice })).toBeDefined()
+    expect(await pane.find({ key: 'refresh-prs' })).toBeDefined()
+
+    w.isGhMissing = false
+    const refreshing = pane.press({ key: 'refresh-prs' })
+    await clock.settle()
+    expect(await pane.find({ text: notice })).toBeDefined()
+    expect((await pane.find({ key: 'refresh-prs' }))?.props.dimColor).toBe(true)
+
+    release()
+    await refreshing
+    await clock.settle()
+    expect(await pane.find({ text: notice })).toBeUndefined()
+    expect(await pane.find({ text: /No PRs/ })).toBeDefined()
+  })
+
+  test(`the ${surface} PRs tab draws Refresh PRs and its press result in the notice that names why the PRs could not be read`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    let isFailing = false
+    w.ghAnswers.push(
+      { match: argv => isFailing && argv.includes('graphql'), stdout: '', fails: 'HTTP 502: Bad gateway' },
+      {
+        match: argv => argv.includes('view') && argv.includes('12'),
+        stdout: JSON.stringify({ number: 12, title: 'Linked work', url: 'https://github.com/acme/greet/pull/12' }),
+      },
+    )
+
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
+    await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({
+      answer: 'Opened https://github.com/acme/greet/pull/12.',
+      durationMs: 5,
+      isAborted: false,
+      turnId: 't1',
+      reason: 'answer',
+    })
+    const pane = await $.ui.mount({ ...PANE, surface })
+    w.paneState = { isShown: true, isFocused: true }
+    if (surface === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = tabs
+        .slice(
+          0,
+          tabs.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    expect(await pane.find({ text: /Linked work/ })).toBeDefined()
+    isFailing = true
+    await clock.advance(3 * 60_000)
+    await clock.settle()
+
+    type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
+    const within = (node: unknown): Drawn[] =>
+      typeof node === 'object' && node !== null
+        ? [node as Drawn, ...((node as Drawn).children ?? []).flatMap(within)]
+        : []
+    const notice = async () => pane.find({ key: 'banner-gh-failed' })
+    expect(within(await notice()).flatMap(n => (n.type === 'Button' ? [n.props.key] : []))).toEqual(['refresh-prs'])
+    expect(await pane.findAll({ type: 'Button', key: 'refresh-prs' })).toHaveLength(1)
+
+    await pane.press({ key: 'refresh-prs' })
+    await clock.settle()
+    expect((await notice())?.text).toContain('They show as last read.Could not refresh PRs: HTTP 502: Bad gateway')
+    expect(await pane.find({ text: /Linked work/ })).toBeDefined()
+  })
+
   test(`the ${surface} PRs tab does not say gh is missing when every gh run times out`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
@@ -282,4 +380,61 @@ test('a session whose only PRs an order ranks fetches them when a turn ends, on 
   expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
   w.storeRefusal = undefined
   expect(await fetches40(() => pane.press({ key: 'read-again' }))).toBe(true)
+})
+
+test('while the PRs tab shows, the poll fetches the PRs again between 2 and 2.5 minutes after the last fetch, though each fetch takes 3 seconds', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const startedAt: number[] = []
+  w.ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      stdout: JSON.stringify({
+        number: 12,
+        title: 'Linked work',
+        url: 'https://github.com/acme/greet/pull/12',
+        isDraft: false,
+        state: 'OPEN',
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: 'APPROVED',
+        statusCheckRollup: [],
+      }),
+      hold: async () => {
+        startedAt.push(await clock.now())
+        await clock.sleep(3000)
+      },
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  const pane = await $.ui.mount(PANE)
+  w.paneState = { isShown: true, isFocused: true }
+  await pane.press({ key: 'tab-prs' })
+  await clock.advance(3000)
+  await clock.settle()
+  const firstPoll = startedAt.length
+  for (let minute = 0; minute < 10; minute++) {
+    await clock.advance(60_000)
+    await clock.settle()
+  }
+  const gaps = startedAt.slice(firstPoll - 1).flatMap((at, n, all) => (n === 0 ? [] : [at - all[n - 1]!]))
+
+  expect(gaps.length).toBeGreaterThanOrEqual(4)
+  for (const gap of gaps) {
+    expect(gap).toBeGreaterThanOrEqual(120_000)
+    expect(gap).toBeLessThanOrEqual(150_000)
+  }
 })

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T23:25:54.503Z. 205461 characters follow.
+// Built at 2026-11-15T00:47:59.019Z. 205486 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2288,7 +2288,7 @@ function prRefreshView(prs, links, presses, shownSince) {
     return null;
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown
   };
 }

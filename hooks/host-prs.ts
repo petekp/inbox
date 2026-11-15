@@ -80,7 +80,8 @@ export function prFetchTracker(now: () => number): {
  * `isPress` says a press asked, so every tracked PR is read now, even under a limit error, whose answer says
  * whether the limit still holds. Otherwise a view another session of the host read lately stands in, and a limit
  * error any session met stops the fetch until the limit resets, with the limit shown in this session's views.
- * Returns without fetching when gh cannot start.
+ * Returns without fetching when gh cannot start. A gh found again counts as found only once the fetch reports, so the
+ * tab keeps the notice it showed while the fetch runs.
  */
 export async function fetchPrs<S extends Session>(
   host: Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'gh'>,
@@ -98,8 +99,7 @@ export async function fetchPrs<S extends Session>(
     return
   }
   const bin = await host.gh.find()
-  host.gh.noteMissing(bin === null)
-  if (bin === null) return
+  if (bin === null) return host.gh.noteMissing(true)
   let sawUnstartable = false
   const fetchWith = (path: string) =>
     fetchTracked(
@@ -116,8 +116,7 @@ export async function fetchPrs<S extends Session>(
   if (sawUnstartable) {
     host.gh.forget()
     const refound = await host.gh.find()
-    host.gh.noteMissing(refound === null)
-    if (refound === null) return
+    if (refound === null) return host.gh.noteMissing(true)
     if (refound !== bin) fetch = await fetchWith(refound)
   }
   const { views: fetched, branchRef, isGhSignedOut, failure, read, unread } = fetch
@@ -130,6 +129,7 @@ export async function fetchPrs<S extends Session>(
     ),
     limit: failure?.kind === 'limit' ? failure : failure === null ? null : cur.limit,
   }))
+  host.gh.noteMissing(false)
   await host.update(cur => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread))
 }
 

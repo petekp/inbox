@@ -96,7 +96,7 @@ export function refreshProblem(prs: PrReadState, links: PrLinks): string | null 
 /**
  * The line at the top of the PRs tab, under the notices, while a PR could not be read or Refresh PRs' press shows.
  * `text` names the PRs that could not be read, or is null when a notice above says the cause. `actions` holds
- * Refresh PRs while a PR could not be read. `showsPress` says whether the line draws the press's status: while the
+ * Refresh PRs while a PR could not be read or its press is out. `showsPress` says whether the line draws the press's status: while the
  * press is out, or since the tab was shown. The line is null once nothing is left to draw: no PR fails to read, and
  * the press's status has faded, or was a failure a later fetch made good.
  */
@@ -121,7 +121,7 @@ export function prRefreshView(
 
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown,
   }
 }

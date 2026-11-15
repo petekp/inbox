@@ -4428,7 +4428,7 @@ function prRefreshView(prs, links, presses, shownSince) {
     return null;
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown
   };
 }
@@ -6846,9 +6846,8 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
     return;
   }
   const bin = await host.gh.find();
-  host.gh.noteMissing(bin === null);
   if (bin === null)
-    return;
+    return host.gh.noteMissing(true);
   let sawUnstartable = false;
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
     sawUnstartable = true;
@@ -6857,9 +6856,8 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
   if (sawUnstartable) {
     host.gh.forget();
     const refound = await host.gh.find();
-    host.gh.noteMissing(refound === null);
     if (refound === null)
-      return;
+      return host.gh.noteMissing(true);
     if (refound !== bin)
       fetch = await fetchWith(refound);
   }
@@ -6869,6 +6867,7 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
     views: Object.fromEntries([...Object.entries(cur.views), ...read.map((ref) => [ref, fetched[ref]])].filter(([, view]) => at - (view.fetchedAt ?? 0) < PR_SHARED_MS)),
     limit: failure?.kind === "limit" ? failure : failure === null ? null : cur.limit
   }));
+  host.gh.noteMissing(false);
   await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread));
 }
 var ALREADY_RUNNING = /already running/i;
