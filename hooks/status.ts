@@ -33,12 +33,19 @@ function fields(value: string): string[] {
   return value.split('|').map(f => f.trim())
 }
 
+/** A status word as the model writes it, with spaces and underscores read as hyphens and the close forms of waits-on-other read as it. */
+function statusWord(s: string | undefined): string | undefined {
+  const word = s?.toLowerCase().replace(/[\s_]+/g, '-')
+
+  return word !== undefined && /^(waits?|waiting)-on-others?$/.test(word) ? 'waits-on-other' : word
+}
+
 function openStatus(s: string | undefined): OpenStatus | null {
-  return OPEN_STATUSES.find(o => o === s?.toLowerCase()) ?? null
+  return OPEN_STATUSES.find(o => o === statusWord(s)) ?? null
 }
 
 function anyStatus(s: string | undefined): SubjectStatus | null {
-  return STATUSES.find(o => o === s?.toLowerCase()) ?? null
+  return STATUSES.find(o => o === statusWord(s)) ?? null
 }
 
 /** A GOAL line's milestones, as `status name; status name`. A milestone with no known status is left out. */
@@ -58,7 +65,7 @@ function opOf(key: string, f: string[]): Op | null {
     return status && f[1] ? { kind: 'new', status, name: f[1], text: f[2] ?? '' } : null
   }
   if (key === 'SET') {
-    const isDone = f[1]?.toLowerCase() === 'done'
+    const isDone = statusWord(f[1]) === 'done'
     if (f[0] && isDone) return { kind: 'done', ref: f[0], text: f[2] ?? '' }
     const status = openStatus(f[1])
 
@@ -90,19 +97,38 @@ function opOf(key: string, f: string[]): Op | null {
   return null
 }
 
+/** The ref of a line that sets where a subject stands, so a later such line for the same subject replaces it. */
+function standingRef(op: Op): string | null {
+  return op.kind === 'set' || op.kind === 'done' || op.kind === 'drop' ? op.ref.toLowerCase() : null
+}
+
+/**
+ * What the answer says after it takes lines back. A NO CHANGE line cancels every line before it, and of several lines
+ * that set one subject's standing, only the last counts. A NEW and a DONE for the same name both stay, since writing
+ * both is how work that started and finished in one exchange is reported.
+ */
+function afterRetractions(ops: Op[]): Op[] {
+  const lastNone = ops.findLastIndex(o => o.kind === 'none')
+  const kept = ops.slice(lastNone + 1)
+  const lastStanding = new Map(kept.flatMap((o, n) => (standingRef(o) === null ? [] : [[standingRef(o)!, n] as const])))
+
+  return kept.filter((o, n) => standingRef(o) === null || lastStanding.get(standingRef(o)!) === n)
+}
+
 /**
  * Parses the Status call's answer. A line that is not an operation is left out, so a stray line of prose does not
- * throw away the lines around it. Null when no line is an operation.
+ * throw away the lines around it. Lines the answer takes back are left out too. Null when no line is an operation.
  */
 export function parseStatus(text: string | null): StatusAnswer | null {
-  const ops = (text ?? '').split(NL).flatMap(raw => {
+  const all = (text ?? '').split(NL).flatMap(raw => {
     const m = LINE.exec(raw.trim())
     const op = m ? opOf(m[1]!.toUpperCase().replace(' ', ''), fields(m[2] ?? '')) : null
     return op === null ? [] : [op]
   })
-  if (ops.length === 0) return null
+  if (all.length === 0) return null
+  const ops = afterRetractions(all)
 
-  return ops.every(o => o.kind === 'none') ? { kind: 'unchanged' } : { kind: 'ops', ops }
+  return ops.length === 0 ? { kind: 'unchanged' } : { kind: 'ops', ops }
 }
 
 /**

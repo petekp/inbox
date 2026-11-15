@@ -54,6 +54,15 @@ test('a Status answer is written to the ledger after later updates, only a catch
   expect(cleared(failed).overviewFailure).toBeNull()
 })
 
+test('any Status answer clears a saved failure while the conversation cannot be read, since no catch-up will', () => {
+  const base = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
+  const failed = failedStatus(base, null, 3, 900)
+  const unreadable = { ...failed, presence: { ...failed.presence, isConversationUnreadable: true } }
+
+  expect(appliedStatus(unreadable, answer, 3, 1000).overviewFailure).toBeNull()
+  expect(appliedStatus(failed, answer, 3, 1000).overviewFailure).toEqual(failed.overviewFailure)
+})
+
 test('an applied Status answer records when its call read the Status, and a failed one leaves that time', () => {
   const later = withStatus({ ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } })
 
@@ -178,6 +187,29 @@ test('a claimed Status call reads the running turn’s work with no reply and wr
   await host.update(s => turnEnded(s, 1))
   await refreshStatus(host)
   expect(prompts).toHaveLength(1)
+})
+
+test('a Status call stamps its changes when the update applies them, and reports the time before it read the session as its read time', async () => {
+  const { host } = fakeHost(async () => 'NEW: working | Offline mode | queue built')
+  await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
+  let beforeRead = 0
+  let beforeUpdate = 0
+  await refreshStatus({
+    ...host,
+    read: async () => {
+      beforeRead = await host.now()
+      return host.read()
+    },
+    update: async change => {
+      beforeUpdate = await host.now()
+      return host.update(change)
+    },
+  })
+  const o = (await host.read()).ledger.overview
+
+  expect(o?.lastCallReadAt).toBeLessThan(beforeRead)
+  expect(o?.subjects[0]?.changedAt).toBeGreaterThan(beforeUpdate)
+  expect((await host.read()).lastOverviewCallAt).toBeGreaterThan(beforeUpdate)
 })
 
 const writtenOnce = () => {

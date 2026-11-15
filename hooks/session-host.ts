@@ -9,7 +9,7 @@ import { parsedReply, applied } from './session-turns'
 import { needsCatchUp, appliedCatchUp } from './session-status'
 import type { SendOutcome } from './session-presses'
 import type { CallKind, ProcessFailure, Session, HostTask } from '../types'
-import { askAndWriteStatus } from './status-records'
+import { askAndWriteStatus, readForStatus } from './status-records'
 import { askedCall, heardCall, withCall } from './call-record'
 import type { HeardCall } from './call-record'
 import type { StatusCall, StatusRecords } from './status-records'
@@ -244,7 +244,9 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const writing: Promise<void>[] = []
   /** Runs the Status call for an applied update, once the session's earlier Status calls have finished. */
   const writeStatus = (after: S, call: StatusCall, tasks: HostTask[]) =>
-    host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, tasks, after.presence.turnsApplied))
+    host.inOrder(async () =>
+      askAndWriteStatus(host, await readForStatus(host), call, tasks, after.presence.turnsApplied),
+    )
   const followUp = (run: Promise<void>) => {
     const settled = run.catch(() => undefined)
     if (host.background) host.background(settled)

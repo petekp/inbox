@@ -112,9 +112,10 @@ export function isNumberOnly(name: string): boolean {
 /** A word that names a version, as "2.5", "0.3.0" or "v1.2". */
 const VERSION = /^v?\d+(\.\d+)+$/
 
-/** Whether `name` and `other` each name a version and share none, as "2.6 beta" and "2.5 published" do. */
+/** Whether `name` and `other` each name a version and share none, as "2.6 beta" and "2.5 published" do. "2.5" and "2.5.0" are one version. */
 export function namesOtherVersion(name: string, other: string): boolean {
-  const versions = (text: string) => [...words(text)].filter(w => VERSION.test(w)).map(w => w.replace(/^v/, ''))
+  const versions = (text: string) =>
+    [...words(text)].filter(w => VERSION.test(w)).map(w => w.replace(/^v/, '').replace(/(\.0)+$/, ''))
   const mine = versions(name)
   const theirs = new Set(versions(other))
 

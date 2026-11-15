@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T22:55:37.333Z. 241217 characters follow.
+// Built at 2026-11-15T23:08:40.176Z. 241453 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -165,7 +165,7 @@ function words(text) {
 var NUMBER_KINDS = new Set(["pr", "prs", "pull", "request", "issue", "issues", "ticket", "gh"]);
 var VERSION = /^v?\d+(\.\d+)+$/;
 function namesOtherVersion(name, other) {
-  const versions = (text) => [...words(text)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const versions = (text) => [...words(text)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
   const mine = versions(name);
   const theirs = new Set(versions(other));
   return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
@@ -634,6 +634,10 @@ function missedOf(saved, ids) {
   const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
   return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
 }
+function newestEnd(children) {
+  const ends = children.flatMap((c) => c.endedAt === null ? [] : [c.endedAt]);
+  return ends.length === 0 ? null : Math.max(...ends);
+}
 function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null)
@@ -664,7 +668,7 @@ function upgradeStatus(saved) {
     lastLookAt: time2(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
-    lastCallReadAt: time2(o.lastCallReadAt),
+    lastCallReadAt: "lastCallReadAt" in o ? time2(o.lastCallReadAt) : newestEnd(children),
     ...goal
   };
 }

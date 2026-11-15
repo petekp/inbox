@@ -159,7 +159,7 @@ function isNumberOnly(name) {
 }
 var VERSION = /^v?\d+(\.\d+)+$/;
 function namesOtherVersion(name, other) {
-  const versions = (text) => [...words(text)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const versions = (text) => [...words(text)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
   const mine = versions(name);
   const theirs = new Set(versions(other));
   return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
@@ -2287,6 +2287,10 @@ function missedOf(saved, ids) {
   const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
   return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
 }
+function newestEnd(children) {
+  const ends = children.flatMap((c) => c.endedAt === null ? [] : [c.endedAt]);
+  return ends.length === 0 ? null : Math.max(...ends);
+}
 function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null)
@@ -2317,7 +2321,7 @@ function upgradeStatus(saved) {
     lastLookAt: time2(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
-    lastCallReadAt: time2(o.lastCallReadAt),
+    lastCallReadAt: "lastCallReadAt" in o ? time2(o.lastCallReadAt) : newestEnd(children),
     ...goal
   };
 }
@@ -10180,6 +10184,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
     goalRefused: null
   };
+  const closedHere = new Set;
   const find = (ref) => {
     const key = nameKey(clipWords(ref, NAME_KEPT));
     return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
@@ -10190,7 +10195,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       const own = [...words(s.name)];
       return nameKey(s.name) === nameKey([...said].join(" ")) || own.length >= 2 && own.every((w) => said.has(w));
     };
-    return o.subjects.findLast((s) => !isOpen(s) && !isSubjectSeen(o, s) && repeats(s)) ?? null;
+    return o.subjects.findLast((s) => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && repeats(s)) ?? null;
   };
   const forgetSeenWas = (s) => {
     if (isSubjectSeen(o, s)) {
@@ -10292,6 +10297,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
         forgetSeenWas(s);
         s.closedAt = now;
         s.changedAt = now;
+        closedHere.add(s.id);
       } else if (op.kind === "drop") {
         const target = op.into ? find(op.into) : null;
         unfold(s);
@@ -10300,6 +10306,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
         s.closedAt = now;
         s.into = target && target.id !== s.id ? target.id : null;
         s.changedAt = now;
+        closedHere.add(s.id);
         if (target && s.into) {
           forgetSeenWas(target);
           target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
@@ -10342,7 +10349,7 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
   return {
     ...s,
     ledger: { ...s.ledger, overview: applied && { ...applied, lastCallReadAt: readAt } },
-    overviewFailure: isCatchUp ? null : s.overviewFailure,
+    overviewFailure: isCatchUp || s.presence.isConversationUnreadable ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter
   };
@@ -10425,11 +10432,15 @@ var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD
 function fields(value) {
   return value.split("|").map((f) => f.trim());
 }
+function statusWord(s) {
+  const word = s?.toLowerCase().replace(/[\s_]+/g, "-");
+  return word !== undefined && /^(waits?|waiting)-on-others?$/.test(word) ? "waits-on-other" : word;
+}
 function openStatus(s) {
-  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+  return OPEN_STATUSES.find((o) => o === statusWord(s)) ?? null;
 }
 function anyStatus(s) {
-  return STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+  return STATUSES.find((o) => o === statusWord(s)) ?? null;
 }
 function goalMilestones(value) {
   return (value ?? "").split(";").flatMap((part) => {
@@ -10446,7 +10457,7 @@ function opOf(key, f) {
     return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
   }
   if (key === "SET") {
-    const isDone = f[1]?.toLowerCase() === "done";
+    const isDone = statusWord(f[1]) === "done";
     if (f[0] && isDone)
       return { kind: "done", ref: f[0], text: f[2] ?? "" };
     const status = openStatus(f[1]);
@@ -10480,15 +10491,25 @@ function opOf(key, f) {
     return f[0] ? { kind: "next", ref: f[0] } : null;
   return null;
 }
+function standingRef(op) {
+  return op.kind === "set" || op.kind === "done" || op.kind === "drop" ? op.ref.toLowerCase() : null;
+}
+function afterRetractions(ops) {
+  const lastNone = ops.findLastIndex((o) => o.kind === "none");
+  const kept = ops.slice(lastNone + 1);
+  const lastStanding = new Map(kept.flatMap((o, n) => standingRef(o) === null ? [] : [[standingRef(o), n]]));
+  return kept.filter((o, n) => standingRef(o) === null || lastStanding.get(standingRef(o)) === n);
+}
 function parseStatus(text) {
-  const ops = (text ?? "").split(NL).flatMap((raw) => {
+  const all = (text ?? "").split(NL).flatMap((raw) => {
     const m = LINE.exec(raw.trim());
     const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
     return op === null ? [] : [op];
   });
-  if (ops.length === 0)
+  if (all.length === 0)
     return null;
-  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
+  const ops = afterRetractions(all);
+  return ops.length === 0 ? { kind: "unchanged" } : { kind: "ops", ops };
 }
 async function askStatus(ask) {
   const first = await ask();
@@ -10797,10 +10818,14 @@ function attemptOf({ text, report, thrown, ms }) {
     ms
   };
 }
-async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
+async function readForStatus(host) {
+  const at = await host.now();
+  return { s: await host.read(), at };
+}
+async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAfter) {
   if (!isStatusCallCurrent(s, appliedAfter))
     return;
-  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
+  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: readAt };
   const prompt = statusCallPrompt(input, call.exchange);
   const system = hostStatusSystem(host.names);
   const heards = [];
@@ -10812,12 +10837,12 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   });
   const attempts = heards.map((h) => attemptOf(h.heard));
   const answer = last.text === null ? null : parseStatus(last.text);
-  const now = await host.now();
   let before = null;
   let isWritten = false;
-  const noted = (current) => heards.reduce((x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now), current);
-  const after = await host.update((current) => {
-    const x = noted(current);
+  const noted = (current, now) => heards.reduce((x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now), current);
+  const after = await host.update(async (current) => {
+    const now = await host.now();
+    const x = noted(current, now);
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
@@ -10846,12 +10871,13 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
 }
 function refreshStatus(host) {
   return host.inOrder(async () => {
-    const s = await host.read();
+    const read = await readForStatus(host);
+    const { s } = read;
     if (!s.presence.isTurnRunning)
       return;
     const { person, trigger, activity } = s.turn;
     const call = { exchange: { kind: "mid-turn", turn: { person, trigger, activity } }, ask: host.ask };
-    await askAndWriteStatus(host, s, call, s.hostTasks, s.presence.turnsApplied);
+    await askAndWriteStatus(host, read, call, s.hostTasks, s.presence.turnsApplied);
   });
 }
 
@@ -10922,7 +10948,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeStatus = (after, call, tasks) => host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, tasks, after.presence.turnsApplied));
+  const writeStatus = (after, call, tasks) => host.inOrder(async () => askAndWriteStatus(host, await readForStatus(host), call, tasks, after.presence.turnsApplied));
   const followUp = (run) => {
     const settled = run.catch(() => {
       return;
