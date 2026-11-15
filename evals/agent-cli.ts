@@ -76,20 +76,6 @@ export function assertOnlyProbe(init: Record<string, any>) {
   if (loaded.length > 0) throw new IsolationError(`plugins loaded: ${loaded.map(p => p.name).join(', ')}`)
 }
 
-/** The shell commands of a Codex run, from its `--json` events. */
-export function codexCommands(events: Record<string, any>[]): string[] {
-  return events
-    .filter(e => e.type === 'item.completed' && e.item?.type === 'command_execution')
-    .map(e => String(e.item.command))
-}
-
-/** The commands of an omp run's `bash` calls, from its `--mode json` events. */
-export function ompCommands(events: Record<string, any>[]): string[] {
-  return events
-    .filter(e => e.type === 'tool_execution_start' && e.toolName === 'bash')
-    .map(e => String(e.args?.command ?? ''))
-}
-
 export function tomlString(s: string): string {
   return JSON.stringify(s)
 }

@@ -24,13 +24,11 @@ import type { Agent, Call, Case, Outcome } from './agent-checks'
 import {
   assertOnlyOmpProbe,
   assertOnlyProbe,
-  codexCommands,
   exec,
   guidance,
   lines,
   message,
   ompClaudeToken,
-  ompCommands,
   PROBE,
   PROBE_TOOLS,
   TIMEOUT_MS,
@@ -303,7 +301,6 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
     error: r.code === 0 ? codexResourceCall(events) : `codex exited ${r.code}: ${r.stderr.slice(0, 300)}`,
     model: null,
     raw: r.stdout,
-    commands: codexCommands(events),
   }
 }
 
@@ -395,7 +392,6 @@ async function ompIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome> {
         : null,
     model: models[0] ?? null,
     raw: r.stdout,
-    commands: ompCommands(events),
   }
 }
 

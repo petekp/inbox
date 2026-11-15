@@ -21,8 +21,6 @@ type Check =
       min?: number
       max?: number
     }
-  /** Exactly `count` shell commands the agent ran match `ran`. */
-  | { ran: string; count: number }
   | { reply: string }
   | { notReply: string }
   /** No inbox id, such as i3 or f112, in the reply. Ids are lowercase, so "F1" is not one. */
@@ -62,8 +60,6 @@ export type Outcome = {
   error: string | null
   model: string | null
   raw: string
-  /** The shell commands the agent ran, from its own output. */
-  commands?: string[]
 }
 
 /**
@@ -93,10 +89,6 @@ export function failures(o: Outcome, checks: Check[]): string[] {
     } else if ('noIds' in c) {
       const m = o.reply.match(/\b[if]\d+\b/)
       if (m) out.push(`reply has the id "${m[0]}"`)
-    } else if ('ran' in c) {
-      const ran = (o.commands ?? []).filter(cmd => has(c.ran, cmd))
-      if (ran.length !== c.count)
-        out.push(`${ran.length} commands match /${c.ran}/, want ${c.count}: ${ran.join(' ; ')}`)
     } else {
       const fits = (call: Call) =>
         call.tool === c.calls &&

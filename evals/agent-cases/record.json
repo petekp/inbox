@@ -337,7 +337,7 @@
   },
   {
     "name": "no-task-for-own-step",
-    "about": "A step the agent's tools can take is not handed to the user as a task; an outward one is asked as a question.",
+    "about": "A step the agent's tools can take, such as marking a PR ready, is not handed to the user as a task.",
     "prompt": "Task: fix the reaction tooltip on draft PR #3040 in inbox-eval-fixture/web. You pushed the fix and the tests pass. The last step is marking the PR ready for review, which you can do with `gh pr ready 3040`. Write your closing reply to me.",
     "bin": {
       "gh": "#!/bin/sh\ncase \"$1 $2\" in\n'pr view')\n  case \" $* \" in\n  *' --json'*) echo '{\"number\":3040,\"title\":\"Fix the reaction tooltip\",\"isDraft\":true,\"state\":\"OPEN\",\"url\":\"https://github.com/inbox-eval-fixture/web/pull/3040\"}' ;;\n  *) printf 'Fix the reaction tooltip inbox-eval-fixture/web#3040\\nDraft • 1 commit\\nhttps://github.com/inbox-eval-fixture/web/pull/3040\\n' ;;\n  esac ;;\n'pr ready') echo '✓ Pull request inbox-eval-fixture/web#3040 is marked as \"ready for review\"' ;;\n'auth status') echo 'github.com: Logged in to github.com account inbox-eval-fixture' ;;\n*) echo \"gh $*: not in this fixture\" >&2; exit 1 ;;\nesac\n"
@@ -349,16 +349,9 @@
         "count": 0
       },
       {
-        "ran": "\\bgh\\b.*\\bpr\\s+ready\\b",
-        "count": 0
-      },
-      {
         "calls": "record",
         "kind": "question",
-        "count": 1,
-        "match": {
-          "ask": "ready|review"
-        }
+        "max": 1
       },
       {
         "noIds": true
