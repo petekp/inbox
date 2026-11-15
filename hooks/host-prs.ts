@@ -10,6 +10,8 @@ const PRS_REFRESH_MS = 120_000
 /** How old the PRs may get while the PRs tab is not shown, where they only feed the counts. */
 export const PRS_HIDDEN_REFRESH_MS = 10 * 60_000
 const NEW_PR_FETCH_MS = 15_000
+/** How often a host asks `isPrFetchDue`. Far under `PRS_REFRESH_MS`, since that counts from when the last fetch ended, after the tick that started it. */
+export const PR_POLL_MS = 15_000
 
 /**
  * True when the PRs are due for a fetch: none was fetched yet, the last is old, or, once `NEW_PR_FETCH_MS` has passed

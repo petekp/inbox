@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 
+import { PR_POLL_MS } from '../../hooks/host-prs'
 import { COMPARE_LIMIT_MS, NO_HOLDS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/timing'
 import { createPanel } from '../src/controller'
 import type { PanelSource } from '../src/controller'
@@ -227,10 +228,10 @@ test('a Compare press with no report redraws the panel at its limit, reading No 
   expect(limit[0]!.stopped).toBe(true)
 })
 
-test('the panel checks the PRs every two minutes until it is disposed', async () => {
+test('the panel asks whether the PRs are due as often as the mod does, until it is disposed', async () => {
   const { panel, timers, calls } = open()
   await panel.start()
-  const check = live(timers, 120_000)
+  const check = live(timers, PR_POLL_MS)
   expect(check).toHaveLength(1)
   check[0]!.fn()
   expect(calls.fetches).toBe(1)

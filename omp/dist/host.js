@@ -6798,6 +6798,7 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
 var PRS_REFRESH_MS = 120000;
 var PRS_HIDDEN_REFRESH_MS = 10 * 60000;
 var NEW_PR_FETCH_MS = 15000;
+var PR_POLL_MS = 15000;
 function isPrFetchDue(s, lastFetchedAt, now, isTabShown) {
   if (lastFetchedAt === undefined)
     return true;
@@ -8394,7 +8395,6 @@ function bandLines(screen, width, now, style) {
 
 // src/controller.ts
 var ANIMATION_MS = 200;
-var PRS_CHECK_MS = 120000;
 function createPanel(deps) {
   const { source, style, timers } = deps;
   let ui = { ...INITIAL_UI, shownSince: deps.openedAt };
@@ -8515,7 +8515,7 @@ function createPanel(deps) {
     },
     async start() {
       stops.push(source.onChange(() => void refresh()));
-      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === "prs"), PRS_CHECK_MS);
+      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === "prs"), PR_POLL_MS);
       stops.push(() => timers.stop(prs));
       const delegates = timers.every(() => {
         if (ui.tab === "overview")

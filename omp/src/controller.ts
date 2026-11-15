@@ -1,4 +1,5 @@
 import { HERDR_CHECK_MS } from '../../hooks/herdr'
+import { PR_POLL_MS } from '../../hooks/host-prs'
 import { isPrPress, pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import { isPressConfirmed } from '../../hooks/press-reducer'
@@ -15,7 +16,6 @@ import { followRows } from './panel-tabs'
 import type { SeenRows } from './panel-tabs'
 
 const ANIMATION_MS = 200
-const PRS_CHECK_MS = 120_000
 
 /** What the panel needs from a session, so the live inbox and the demo can both supply it. */
 export type PanelSource = {
@@ -189,7 +189,7 @@ export function createPanel(deps: PanelDeps): Panel {
     },
     async start() {
       stops.push(source.onChange(() => void refresh()))
-      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === 'prs'), PRS_CHECK_MS)
+      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === 'prs'), PR_POLL_MS)
       stops.push(() => timers.stop(prs))
       const delegates = timers.every(() => {
         if (ui.tab === 'overview') source.checkDelegatesWhenDue()
