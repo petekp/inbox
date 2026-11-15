@@ -8,6 +8,7 @@ import { statusChanged } from '../../hooks/session-status'
 import { recorded, withHolds } from '../../hooks/session-presses'
 import type { RowNote } from '../../types'
 import type { HerdrFile } from '../../hooks/herdr-press-file'
+import { withCollapse } from '../../hooks/collapse'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import type { HooksTrust } from './hook-trust'
@@ -102,7 +103,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
     hooksTrustNow,
     currentPage,
   )
-  const { demoOf, onDemoPress } = makeDemo(deps, served)
+  const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)
   deps.followHerdrPresses?.(onHerdrFile)
 
   const isHerdrCheckDue = herdrCheckGate()
@@ -164,10 +165,23 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
       case 'inbox_tab_page':
         return { ...text('Tab page'), structuredContent: { html: stamped(await currentPage()) } }
       case 'inbox_press': {
-        const asked = args.press as { action?: unknown; isYes?: unknown }
+        const asked = args.press as { action?: unknown; isYes?: unknown; id?: unknown; isCollapsed?: unknown }
         if (asked.action === 'herdr-ask' && deps.herdrAsk) {
           const r = await deps.herdrAsk.answer(asked.isYes === true)
           return { ...text(r.failure ?? 'Done'), structuredContent: r }
+        }
+        if (asked.action === 'collapse' && typeof asked.id === 'string') {
+          const [row, isCollapsed, holds] = [asked.id, asked.isCollapsed === true, holdsOf(args)]
+          const view =
+            args.demo === true
+              ? await collapseDemo(id, row, isCollapsed, holds)
+              : await served(
+                  await codexStore(dir, id, now, deps.onWrite).update(s => withCollapse(s, row, isCollapsed, now())),
+                  id,
+                  false,
+                  holds,
+                )
+          return { ...text('Done'), structuredContent: { view, copy: null, error: null, note: null } }
         }
         const p = args.press as RowPress | PrPress
         const holds = holdsOf(args)

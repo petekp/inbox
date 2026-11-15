@@ -39,6 +39,8 @@ import type { PressKind } from '../../types'
 import { button } from './blocks'
 import type { Block, Button, Does, Field, Mark, RowBlock, Tone } from './blocks'
 import { prTabBlocks } from './draw-prs'
+import { prRowWaits } from '../../hooks/pr-rows'
+import { openPrViews } from '../../hooks/pr-views'
 import { statusBlocks } from './draw-status'
 import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 
@@ -177,6 +179,8 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
   const isAllShown = ui.optionsShown.includes(row.id)
   const text = rowFeedbackText(row, LOOK)
   const isSelected = !isSettled && row.id === selected
+  const isCollapsed = screen.view.collapsed.includes(row.id)
+  const isOpen = isSelected && !isCollapsed
   const isTyping = ui.typing === row.id
 
   return {
@@ -193,13 +197,14 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
-    body: isSelected ? rowBody(row, isAllShown) : [],
+    ...(isCollapsed && { isCollapsed }),
+    body: isOpen ? rowBody(row, isAllShown) : [],
     buttons: isSettled
       ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)]
-      : isSelected && !isTyping
+      : isOpen && !isTyping
         ? rowButtons(row, isAllShown, screen.agent)
         : [],
-    field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
+    field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
   }
 }
 
@@ -304,20 +309,25 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
   }))
 }
 
-const waitsOf = (groups: Group[]): RowWait[] =>
-  groups.flatMap(g => g.rows).map(r => ({ id: r.id, isWaiting: isWaitingRow(r) }))
+const waitsOf = (groups: Group[], collapsed: string[]): RowWait[] =>
+  groups
+    .flatMap(g => g.rows)
+    .map(r => ({ id: r.id, isWaiting: isWaitingRow(r), isCollapsed: collapsed.includes(r.id) }))
 
-/** The rows a row tab lists, in order, and whether each waits on the person. None on the PRs and Status tabs. */
-export const rowWaits = (screen: LookScreen, tab: ShownTab): RowWait[] =>
-  tab === 'needsYou' || tab === 'findings' ? waitsOf(groupsOf(screen.view, tab, screen.shownSince)) : []
+/** The rows a tab lists, in order, whether each waits on the person, and whether the person collapsed it. */
+export function rowWaits({ view, shownSince }: LookScreen, tab: ShownTab): RowWait[] {
+  if (tab === 'prs') return prRowWaits(openPrViews(view.prs.drawn), view.lastActions, view.collapsed)
+
+  return tab === 'overview' ? [] : waitsOf(groupsOf(view, tab, shownSince), view.collapsed)
+}
 
 /**
  * The row the look opens: the one the person selected while it can open. While it is settled, as when its Undo is
  * out, the row `rowAfterClose` gives. Else the first that waits.
  */
-function selectedOf(groups: Group[], selected: string | null): string | null {
+function selectedOf(groups: Group[], selected: string | null, collapsed: string[]): string | null {
   const isSettled = (id: string) => groups.some(g => g.rows.some(r => r.id === id && r.state.is === 'settled'))
-  const waits = waitsOf(groups)
+  const waits = waitsOf(groups, collapsed)
   if (selected === null || !waits.some(r => r.id === selected)) return firstWaiting(waits)
   if (!isSettled(selected)) return selected
 
@@ -331,7 +341,7 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
     const empty = emptyText(tab, screen.agent, isMaybeStale(screen.view))
     return [{ kind: 'empty', id: `empty ${tab}`, title: empty.title, hint: empty.hint, buttons: [] }]
   }
-  const selected = selectedOf(groups, ui.selected)
+  const selected = selectedOf(groups, ui.selected, screen.view.collapsed)
 
   return groups.flatMap((g, n): Block[] => [
     ...(n > 0 ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null } as const] : []),

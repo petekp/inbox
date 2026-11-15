@@ -6,7 +6,7 @@ import type { RowTarget, RowTrack } from '../../hooks/row-motion'
 import { tabState, drawnRows, undoing } from './tab-state'
 import type { Row } from './tab-state'
 import { reducedMotion } from './tab-motion'
-import { selectedIndex } from './tab-selection'
+import { openRowId } from './tab-selection'
 import { prPlan } from './tab-rows'
 import type { PrBlockPlan } from './tab-rows'
 import { prLastLine } from './tab-pr-lines'
@@ -58,7 +58,7 @@ export const PR_CLEAR_MOTION = 'pr-clear'
  */
 export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<string>): DrawnPrs {
   const { blocks, rows } = prPlan(v)
-  const openId = rows[selectedIndex(rows, 'prs', v)]?.id
+  const openId = openRowId(rows, 'prs', v)
   const listed = new Set(rows.map(r => r.id))
   const last = tabState.lastPrs
   const step = (id: string, target: RowTarget, isNew = false): RowTrack | null => {

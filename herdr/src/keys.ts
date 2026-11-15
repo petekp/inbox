@@ -1,6 +1,6 @@
-import { drawnLists, latestUndo, rowAfterClose, steppedIndex, tabUndos } from '../../hooks/action-plan'
+import { drawnLists, latestUndo, openOnArrival, rowAfterClose, steppedIndex, tabUndos } from '../../hooks/action-plan'
 import type { RowWait } from '../../hooks/action-plan'
-import { UNDO_KEY } from '../../hooks/help'
+import { COLLAPSE_KEY, UNDO_KEY } from '../../hooks/help'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session-view'
@@ -12,12 +12,13 @@ import type { LookUi, TabCell } from './draw'
 import type { SentText } from './out'
 
 /**
- * What a key does in the look: switch tabs, select a row, press a button, give focus back to the terminal, or close
- * the open text field.
+ * What a key does in the look: switch tabs, select a row, collapse or expand it, press a button, give focus back to
+ * the terminal, or close the open text field.
  */
 type KeyMove =
   | { is: 'tab'; tab: ShownTab }
   | { is: 'select'; id: string }
+  | { is: 'collapse'; id: string; isCollapsed: boolean }
   | { is: 'press'; button: Button }
   | { is: 'leave' }
   | { is: 'close' }
@@ -69,7 +70,8 @@ function stepTab(tabs: TabCell[], by: 1 | -1): ShownTab | null {
 }
 
 /**
- * The move a key makes, as the Herdr look's Help lists: ← → switch tabs, j k move between rows, u presses `undo`,
+ * The move a key makes, as the Herdr look's Help lists: ← → switch tabs, j k move between rows, z collapses or
+ * expands the selected row, u presses `undo`,
  * the Undo of the row that closed last, a selected row's hotkeys press its buttons, the tab's own keys such as g
  * press its line's buttons, and escape leaves the look. While a text field is open, `typing` names its row: the keys
  * type into it, and escape closes it.
@@ -96,6 +98,8 @@ export function keyMove(
     return button ? { is: 'press', button } : null
   }
   const selected = blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelected)
+  if (key === COLLAPSE_KEY && selected?.isSelectable)
+    return { is: 'collapse', id: selected.id, isCollapsed: !selected.isCollapsed }
   const lines = blocks.flatMap(b => (b.kind === 'line' || b.kind === 'banner' ? b.buttons : []))
   const pressed = [...(selected?.buttons ?? []), ...lines].find(b => b.hotkey === key && !b.isOut)
 
@@ -122,6 +126,17 @@ export function withClosedSelection(ui: LookUi, last: RowWait[], now: RowWait[])
   const next = rowAfterClose(now, id)
 
   return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next)
+}
+
+/**
+ * After a publish, selects the first new row that waits while the selected row is collapsed, as `openOnArrival` says.
+ * `last` and `now` are the tab's rows at the last draw and at this one.
+ */
+export function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
+  const added = now.filter(r => !last.some(l => l.id === r.id)).map(r => r.id)
+  const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added)
+
+  return id === null ? ui : withSelected(ui, id)
 }
 
 /**

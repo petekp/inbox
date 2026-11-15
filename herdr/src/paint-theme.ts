@@ -109,6 +109,8 @@ export type Paint = {
   t: Theme
   press: (b: Button, cx: Context) => void
   select: (id: string, cx: Context) => void
+  /** Collapses row `id`, or expands and selects it. */
+  collapse: (id: string, isCollapsed: boolean, cx: Context) => void
   pick: (tab: ShownTab, cx: Context) => void
   motion: ReadonlyMap<string, RowMotion>
   /** Each block's height without its space, and each row's panel's, by `panelId`, from its last measure. */

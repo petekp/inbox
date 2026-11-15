@@ -343,6 +343,8 @@ export type Finding = {
   at: number
   /** The item that replaced this finding by asking about it. A finding closed as "asked as iN" reopens when that item closes with the work undone. */
   askedAs?: string
+  /** When the question that had replaced it closed with the work undone, which reopened it. */
+  reopenedAt?: number
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']
@@ -496,6 +498,12 @@ export type PageTab = 'overview'
  */
 export type Cursor = { id: string | null; index: number; openedAt: number }
 
+/**
+ * A row's collapse: when, and the address of the row's newest entry GitHub gave no time, as it was then. A new such
+ * entry has another address, so it counts as new.
+ */
+export type RowCollapse = { at: number; untimedUrl?: string }
+
 export type PrViews = {
   views: Record<string, PrView>
   branchRef: string | null
@@ -539,6 +547,8 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   turns: Turns
+  /** The sample rows the person collapsed, as `Session.collapsed`. A copy saved before collapsing existed has none. */
+  collapsed?: Record<string, RowCollapse>
 }
 
 export type Exchange = {
@@ -707,6 +717,11 @@ export type Session = {
   lastHerdrPress?: HerdrPressOutcome
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
+  /**
+   * The rows the person collapsed, each with when, by row id. A row stays collapsed until something new arrives on it,
+   * as `hooks/collapse.ts:collapsedRows` decides.
+   */
+  collapsed: Record<string, RowCollapse>
   /**
    * When the look began showing the tab it shows, at the latest write that knew. Null while no look shows the inbox.
    * Every write keeps the closed records of the rows closed or pressed since then, which stay drawn in place.

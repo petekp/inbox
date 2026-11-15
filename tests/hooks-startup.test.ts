@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { PromptOrigin } from 'claude-code'
 import { DARK_TONES } from '../hooks/tones'
 import { w, world } from './hooks-world'
-import { BAND, PANE, SAVED_SESSION } from './hooks-helpers'
+import { BAND, PANE, SAVED_SESSION, openTitle } from './hooks-helpers'
 
 test('tools the engine refuses show an error banner on every tab, and the mod still loads the conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -130,10 +130,10 @@ test('the first inbox command loads saved rows before desktop attaches', async (
     presentation: { isFullscreen: false, columns: 80 },
   })
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+  expect((await openTitle(pane))?.title).toBe('Use Node or Python?')
   await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
   await clock.settle()
-  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+  expect((await openTitle(pane))?.title).toBe('Use Node or Python?')
 })
 
 for (const activatingEvent of ['start', 'attach'] as const) {
@@ -165,7 +165,7 @@ for (const activatingEvent of ['start', 'attach'] as const) {
     release()
     await Promise.all([activation, command, attach])
     const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+    expect((await openTitle(pane))?.title).toBe('Use Node or Python?')
     expect(
       (await $.prompt.submit({ text: 'continue', wait: false, origin: { kind: 'composer' } })).context?.join('\n'),
     ).toContain('Use Node or Python?')

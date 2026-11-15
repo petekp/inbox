@@ -106,6 +106,8 @@ export function tabLegend(): HelpKey[] {
 
 /** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
 export const UNDO_KEY = 'u'
+/** Collapses the selected row, or expands it once collapsed. */
+export const COLLAPSE_KEY = 'z'
 
 /** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prClearActions` bind from any row of the tab. */
 const PR_TAB_HELP_KEYS: HelpKey[] = [
@@ -127,6 +129,7 @@ export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): 
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
   const undoKey = { keys: UNDO_KEY, does: 'Undo the last close' }
+  const collapseKey = { keys: COLLAPSE_KEY, does: 'Collapse or expand the selected row' }
   switch (look) {
     case 'desktop':
       return []
@@ -134,14 +137,14 @@ export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): 
       return [
         switchTabs,
         ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
-        ...(hasRows ? [undoKey] : []),
+        ...(hasRows ? [collapseKey, undoKey] : []),
         ...prTabKeys,
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
       ]
     case 'codex':
       return [
         switchTabs,
-        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }, undoKey] : []),
+        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }, collapseKey, undoKey] : []),
         ...prTabKeys,
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, or leave a reply field' },
@@ -155,6 +158,7 @@ export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): 
               { keys: '← →', does: 'Pick a button' },
               { keys: '↵', does: 'Press the picked button' },
               { keys: 't', does: 'Reply to the selected row' },
+              collapseKey,
               undoKey,
               ...prTabKeys,
             ]
@@ -174,7 +178,7 @@ export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): 
     case 'herdr':
       return [
         { keys: '← →', does: 'Switch tabs' },
-        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }, undoKey] : []),
+        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }, collapseKey, undoKey] : []),
         ...prTabKeys,
         { keys: 'esc', does: "Move focus back to the agent's terminal" },
       ]

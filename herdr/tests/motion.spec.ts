@@ -9,7 +9,7 @@ import { withClosedSelection, withSelected } from '../src/keys'
 import { NEXT_FRAME_MS, NO_TRACKS, moveRows } from '../src/motion'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import { NOW, demoScreen, dismissedPr, uiOn, withDismissedAsk } from './fixtures'
-import './gpui-stand-in'
+import { allOf, openPanel } from './gpui-stand-in'
 
 const { spacesOf } = await import('../src/paint-space')
 
@@ -156,4 +156,29 @@ test('the block under moving blocks keeps its space as they glide, and the runâ€
   const last = moving.filter(s => done.has(s.block.id)).at(-1)!
   expect(spaceOf(moving, 'after').above + last.floor).toBe(spaceOf(shut, 'after').above)
   expect(spaceOf(moving, 'after').above + last.below).toBe(spaceOf(resting, 'after').above)
+})
+
+test('in the panel, opening each row of a tab and pressing z leaves no row open after each press, and the last one collapsed stays selected', async () => {
+  const { panel, paint, click, press, settle } = await openPanel()
+  const openRows = () => {
+    paint()
+    return [...panel.tracks.rows.values()].flatMap(({ block: b }) =>
+      b.kind === 'row' && b.isSelected && !b.isCollapsed ? [b.id] : [],
+    )
+  }
+  const rowNode = (id: string) => allOf(paint()).find(n => n.id === `row ${id}`)
+  const ids = allOf(paint()).flatMap(n => (n.id?.startsWith('row ') ? [n.id.slice('row '.length)] : []))
+  const collapsed: string[] = []
+  for (const id of ids) {
+    const row = rowNode(id)
+    if (!openRows().includes(id) && row?.click) click(row)
+    await settle()
+    if (!openRows().includes(id)) continue
+    press('z')
+    await settle()
+    expect(openRows()).toEqual([])
+    collapsed.push(id)
+  }
+  expect(collapsed.length).toBeGreaterThan(1)
+  expect(panel.ui.selected).toBe(collapsed.at(-1)!)
 })

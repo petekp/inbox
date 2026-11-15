@@ -15,9 +15,9 @@ import { isUndoLeft } from './settle'
 import { tabState, drafts, sending, SENDING, errors, copies, entering, undoing, drawnRows } from './tab-state'
 import type { Row, Entry, Lists } from './tab-state'
 import { reducedMotion, drawIn } from './tab-motion'
-import { drawnTab, shownSettled, selectedIndex, open, select, isOpenGuarded, rowActions } from './tab-selection'
+import { drawnTab, shownSettled, openRowId, open, isOpenGuarded, rowActions } from './tab-selection'
 import { discardReply, outPending } from './tab-press'
-import { act, listsOf } from './tab-rows'
+import { act, listsOf, pressTitle } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
 import type { DrawnPrs } from './tab-pr-steps'
 import { stepStatus } from './tab-status-steps'
@@ -36,7 +36,7 @@ export function stepLists(v: View): {
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
   const rows = isListedTab(t) ? lists.byTab[t] : []
-  const openId = isRowTab(t) ? rows[selectedIndex(rows, t, v)]?.id : undefined
+  const openId = isRowTab(t) ? openRowId(rows, t, v) : undefined
   const changed = new Set<string>()
   const kept = new Set<string>()
   const prs = t === 'prs' ? stepPrs(v, now, changed, kept) : null
@@ -169,11 +169,7 @@ export function ListRow({
     >
       {handle}
       <div class="content">
-        <button
-          type="button"
-          class="line"
-          {...(isSelected ? { tabIndex: -1, 'aria-disabled': true } : { 'aria-expanded': false })}
-        >
+        <button type="button" class="line" aria-expanded={isSelected} onClick={isSelected ? onSelect : undefined}>
           <span class="text">
             {row.lead ? (
               <>
@@ -323,7 +319,12 @@ export function Entries({ entries, group, all, now }: { entries: Entry[]; group:
         return (
           <div class="entry" key={id} data-motion={id}>
             {'row' in x ? (
-              <ListRow row={x.row} track={drawn.track} now={now} onSelect={() => select(t, all, all.indexOf(x.row))} />
+              <ListRow
+                row={x.row}
+                track={drawn.track}
+                now={now}
+                onSelect={() => pressTitle(t, all, all.indexOf(x.row))}
+              />
             ) : (
               <SettledView settled={x.settled} panel={drawn.openRow} />
             )}

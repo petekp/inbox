@@ -203,7 +203,10 @@ export function entryId(x: DrawnEntry<{ id: string }>): string {
   return 'row' in x ? x.row.id : x.settled.id
 }
 
-export type RowWait = { id: string; isWaiting: boolean }
+/** A listed row, whether it waits on the person, and whether they collapsed it, so no rule opens it for them. */
+export type RowWait = { id: string; isWaiting: boolean; isCollapsed?: boolean }
+
+const opensFor = (r: RowWait) => r.isWaiting && !r.isCollapsed
 
 export function listWaits(v: InboxView): { needsYou: RowWait[]; findings: RowWait[] } {
   const lists = drawnLists(
@@ -211,16 +214,35 @@ export function listWaits(v: InboxView): { needsYou: RowWait[]; findings: RowWai
     () => true,
     r => r,
   )
+  const collapsed = new Set(v.collapsed)
   const waits = (entries: DrawnEntry<RowView>[]) =>
     entries.map(x =>
-      'row' in x ? { id: x.row.id, isWaiting: isWaitingRow(x.row) } : { id: x.settled.id, isWaiting: false },
+      'row' in x
+        ? { id: x.row.id, isWaiting: isWaitingRow(x.row), isCollapsed: collapsed.has(x.row.id) }
+        : { id: x.settled.id, isWaiting: false },
     )
 
   return { needsYou: waits([...lists.questions, ...lists.tasks]), findings: waits(lists.findings) }
 }
 
 export function firstWaiting(rows: RowWait[]): string | null {
-  return rows.find(r => r.isWaiting)?.id ?? null
+  return rows.find(opensFor)?.id ?? null
+}
+
+/**
+ * The row to hold open once `added` arrive, or null to leave the cursor as it is. With no row picked, `picked` null,
+ * it is the row open before they came (`keptOpen`). With the picked row collapsed, it is the first new row that waits.
+ */
+export function openOnArrival(rows: RowWait[], picked: string | null, added: readonly string[]): string | null {
+  if (added.length === 0) return null
+  if (picked === null) return keptOpen(rows, added)
+
+  return drawsOpen(rows, picked) ? null : firstWaiting(rows.filter(r => added.includes(r.id)))
+}
+
+/** Whether the selected row `id` draws open: a collapsed row stays closed while it is selected. */
+function drawsOpen(rows: RowWait[], id: string | null): boolean {
+  return id !== null && !rows.find(r => r.id === id)?.isCollapsed
 }
 
 /**
@@ -242,15 +264,7 @@ export function rowAfterClose(rows: RowWait[], closedId: string): string | null 
   const at = rows.findIndex(r => r.id === closedId)
   if (at < 0) return null
 
-  return (
-    (
-      rows.slice(at + 1).find(r => r.isWaiting) ??
-      rows
-        .slice(0, at)
-        .reverse()
-        .find(r => r.isWaiting)
-    )?.id ?? null
-  )
+  return (rows.slice(at + 1).find(opensFor) ?? rows.slice(0, at).reverse().find(opensFor))?.id ?? null
 }
 
 export function rowsIn<R>(entries: DrawnEntry<R>[]): R[] {

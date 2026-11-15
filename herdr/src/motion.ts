@@ -42,7 +42,7 @@ export type RowMotion = {
 export const NEXT_FRAME_MS = 16
 
 const targetOf = (b: Block): RowTarget =>
-  b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : b.isSelected ? 'open' : 'closed'
+  b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : b.isSelected && !b.isCollapsed ? 'open' : 'closed'
 
 const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
 
@@ -100,7 +100,7 @@ export function moveRows(
   const motion = new Map<string, RowMotion>()
   const add = (block: Block, track: RowTrack) => {
     const last = was.rows.get(block.id)
-    const isOpen = block.kind === 'row' && block.isSelected
+    const isOpen = block.kind === 'row' && block.isSelected && !block.isCollapsed
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const glide = glideOf(track, isStart, last?.glide ?? null, now)
