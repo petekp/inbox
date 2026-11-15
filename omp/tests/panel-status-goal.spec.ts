@@ -61,7 +61,7 @@ test('Remove presses the goal by its key and selects the goal’s place, where U
   expect(removed.ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
 })
 
-test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text, the head as its Now line, and its milestones as a path, the next on the line under a done one folded to its name, with the work on the line after the milestone’s text, and next at the right edge of its name’s line', () => {
+test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text, the head as its Now line, and its milestones as a path, the next on the line under a done one folded to its name, with the work on the line after the milestone’s text joined to it by a connector, and next at the right edge of its name’s line', () => {
   const screen = withGoal()
   const page = screen.view.statusPage
   expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit', 'Remove'])
@@ -83,8 +83,9 @@ test('a set goal draws Edit and Remove at the right end of its Goal heading row,
   expect(['✓ Fixes built', '○ Announced', '◌ Glasses trial'].map(s => lines[lineAt(lines, s) - 1])).toEqual([
     '',
     ' ✓ Fixes built',
-    '   after deploy',
+    ' │ after deploy',
   ])
+  expect(lines[lineAt(lines, '◌ Glasses trial')]).toMatch(/^ └─ ◌ Glasses trial/)
   expect(lines[lineAt(lines, '○ Announced')]).toMatch(/ next$/)
   expect(lines[lineAt(lines, '○ Announced')]!.length).toBe(59)
   expect(lines.slice(at[0]! + 1).some(l => l.includes('Edit'))).toBe(false)

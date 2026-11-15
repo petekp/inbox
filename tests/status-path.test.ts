@@ -3,7 +3,8 @@ import { expect, test } from 'claude-code/testing'
 import { setTypedGoal } from '../hooks/status-goal-ops'
 import { statusKeyRows } from '../hooks/status-keys'
 import { statusListRows } from '../hooks/status-page'
-import { milestoneRows } from '../hooks/status-path'
+import type { StatusRow } from '../hooks/status-page'
+import { milestoneRows, workJoints } from '../hooks/status-path'
 import { goalBlocks } from '../hooks/status-prompt-goal'
 import type { SessionStatus } from '../types'
 import { after, MIN, opsOf, page, shape } from './status-helpers'
@@ -113,5 +114,23 @@ test('the answer that reads a typed goal orders its milestones as its MILESTONE 
     'Room booked',
     'Demo script',
     'Parsing works',
+  ])
+})
+
+test('a milestone’s work joins its mark column: the connector runs past each row to an elbow at its last row one step in, and where the path’s line runs on, every row one step in branches off it', () => {
+  const rows = [1, 2, 2, 1, 2].map(depth => ({ depth }) as StatusRow)
+  expect(workJoints(rows, null)).toEqual([
+    { arm: 'tee', beside: 'connector' },
+    { arm: null, beside: 'connector' },
+    { arm: null, beside: 'connector' },
+    { arm: 'elbow', beside: null },
+    { arm: null, beside: null },
+  ])
+  expect(workJoints(rows, 'to-next')).toEqual([
+    { arm: 'tee', beside: 'to-next' },
+    { arm: null, beside: 'to-next' },
+    { arm: null, beside: 'to-next' },
+    { arm: 'tee', beside: 'to-next' },
+    { arm: null, beside: 'to-next' },
   ])
 })

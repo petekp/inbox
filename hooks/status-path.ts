@@ -111,6 +111,31 @@ export function milestoneRows(
   return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded)
 }
 
+/**
+ * Where a line of a milestone's work meets the column under the milestone's mark. `arm` is the branch from the column
+ * to the row's mark on its first line: a `tee` while the column goes on below the row, an `elbow` where it ends there.
+ * `beside` is what runs in the column past the arm: the nesting connector, which ties the work to its milestone, the
+ * path's line where the path goes on through the work to the next milestone, or nothing.
+ */
+export type WorkJoint = { arm: 'tee' | 'elbow' | null; beside: 'connector' | PathLine }
+
+/**
+ * Each work row's joint with its milestone's column, in the order `milestoneRows` gives them. Rows one step in from
+ * the milestone take an arm, and rows nested deeper pass beside the column. Where the path's line goes on through the
+ * work, it is the column, so every arm is a tee. Otherwise the connector ends at the last arm, an elbow.
+ */
+export function workJoints(rows: readonly StatusRow[], line: PathLine): WorkJoint[] {
+  const top = Math.min(...rows.map(r => r.depth))
+  const last = rows.findLastIndex(r => r.depth === top)
+
+  return rows.map((r, n) => {
+    const arm = r.depth !== top ? null : line === null && n === last ? 'elbow' : 'tee'
+    if (line !== null) return { arm, beside: line }
+
+    return { arm, beside: n < last ? 'connector' : null }
+  })
+}
+
 type SpacedMilestone = {
   foldId: string | null
   rows: StatusRow[]

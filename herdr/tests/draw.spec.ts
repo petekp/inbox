@@ -116,6 +116,33 @@ test('the Status page draws the goal’s milestones on a path: a seen done one a
   expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
 })
 
+test('the Status page joins each parent to the rows under it: work beside the path’s line by an arm, other work by the milestone’s connector down to an elbow at its last row, and a subject’s children by its own connector', () => {
+  const screen = demoScreen()
+  const blocks = tabBlocks(screen, uiOn('overview'))
+  const treeOf = (id: string) => {
+    const b = blocks.find(b => b.id === id)
+    return b && 'tree' in b ? b.tree : undefined
+  }
+  expect(screen.view.statusPage.goal!.milestones.map(m => treeOf(m.id))).toEqual([
+    undefined,
+    undefined,
+    undefined,
+    [{ depth: 0, is: 'down' }],
+    [{ depth: 0, is: 'down' }],
+  ])
+  expect(['s1', 'c1', 'c4', 's3', 's2', 'c5'].map(treeOf)).toEqual([
+    [
+      { depth: 0, is: 'arm' },
+      { depth: 1, is: 'down' },
+    ],
+    [{ depth: 1, is: 'mid' }],
+    [{ depth: 1, is: 'last' }],
+    [{ depth: 0, is: 'last' }],
+    [{ depth: 0, is: 'down' }],
+    [{ depth: 0, is: 'last' }],
+  ])
+})
+
 test('each case of the followed terminal draws its own message, and a read session draws the inbox', () => {
   const read = readSession(demoEnvelopeText())
   const o = {

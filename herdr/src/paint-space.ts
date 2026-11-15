@@ -2,10 +2,10 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import type { Block, PathSide } from './blocks'
+import type { Block, PathSide, TreeStroke } from './blocks'
 import type { PathLine } from '../../hooks/status-path'
 import type { RowMotion } from './motion'
-import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE, LINE_GAP } from './paint-theme'
+import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE, LINE_GAP, NEST } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
@@ -164,11 +164,39 @@ function pathLineEl(line: PathLine, top: number, height: number | null, t: Theme
   return [line === 'to-next' ? sized.border_dashed() : sized]
 }
 
-/** The path's line beside a block, below the space `above` it and around a milestone's mark. */
-function pathEls(path: PathSide, above: number, t: Theme): Element[] {
+/** The path's line beside a block whose first line starts `top` down, around a milestone's mark. */
+function pathEls(path: PathSide, top: number, t: Theme): Element[] {
   if (path.is === 'work') return pathLineEl(path.line, 0, null, t)
 
-  return [...pathLineEl(path.above, 0, above, t), ...pathLineEl(path.below, above + parseInt(LINE), null, t)]
+  return [...pathLineEl(path.above, 0, top, t), ...pathLineEl(path.below, top + parseInt(LINE), null, t)]
+}
+
+/**
+ * The nesting connectors beside a block, each in the column under the marks of rows at its depth, the column the path's
+ * line takes at depth 0, beside a block whose first line starts `top` down. An arm starts a pixel right of its column,
+ * and a column that ends at an arm takes the arm's row, so no two strokes cover the same pixel.
+ */
+function treeEls(tree: TreeStroke[], top: number, t: Theme): Element[] {
+  const armAt = Math.round(top + parseInt(LINE) / 2)
+
+  return tree.flatMap(({ depth, is }) => {
+    const x = PATH_X + depth * NEST
+    const column = div().absolute().left(x).w(1).border_l_1().border_color(t.border)
+    const arm = div()
+      .absolute()
+      .left(x + 1)
+      .top(armAt)
+      .w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP)
+      .h(1)
+      .border_t_1()
+      .border_color(t.border)
+    if (is === 'down') return [column.top(top + parseInt(LINE)).bottom(0)]
+    if (is === 'past') return [column.top(0).bottom(0)]
+    if (is === 'arm') return [arm]
+    if (is === 'last') return [column.top(0).h(armAt + 1), arm]
+
+    return [column.top(0).bottom(0), arm]
+  })
 }
 
 /**
@@ -180,13 +208,15 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const id = s.block.id
     const m = p.motion.get(id)
     const path = 'path' in s.block ? s.block.path : undefined
+    const tree = 'tree' in s.block ? (s.block.tree ?? []) : []
+    const top = Math.round(s.above + padOf(s.block))
     const spaced = div()
       .flex_none()
       .pt(s.above)
       .pb(s.below)
-      .when(path !== undefined, e => e.relative())
+      .when(path !== undefined || tree.length > 0, e => e.relative())
       .child(fitEl(id, m, p, el(s.block), s.block.kind === 'empty'))
-      .children(path ? pathEls(path, s.above, p.t) : [])
+      .children([...(path ? pathEls(path, top, p.t) : []), ...treeEls(tree, top, p.t)])
 
     return boxEl(s, m, p, spaced)
   })

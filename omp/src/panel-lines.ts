@@ -21,7 +21,7 @@ import type { BannerView } from '../../hooks/banners'
 import type { ClosedDelivery, RowView, ResultMark } from '../../hooks/rows'
 import type { Feedback } from '../../hooks/feedback'
 import type { StatusRow } from '../../hooks/status-page'
-import type { PathLine } from '../../hooks/status-path'
+import type { WorkJoint } from '../../hooks/status-path'
 import type { HelpKey, LegendEntry } from '../../hooks/help'
 import type { PanelPress, PanelScreen, PanelUi, Tone } from './panel'
 
@@ -102,7 +102,7 @@ export type Entry =
   | { kind: 'note'; text: string; isStrong?: boolean; isPlain?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
   /** A Status row, with the goal's path line beside it while it is the work of a milestone the path runs on from. */
-  | { kind: 'page'; row: StatusRow; path?: PathLine }
+  | { kind: 'page'; row: StatusRow; joint?: WorkJoint }
   | { kind: 'goal'; part: GoalPart }
   | { kind: 'banner'; banner: BannerView }
   /** A key Help lists, its keys padded to `column`. */

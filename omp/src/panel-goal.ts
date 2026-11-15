@@ -3,8 +3,8 @@ import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusPage } from '../../hooks/status-page'
-import { isSpacedAbove, LATER_TEXT, milestoneRows } from '../../hooks/status-path'
-import type { PathLine } from '../../hooks/status-path'
+import { isSpacedAbove, LATER_TEXT, milestoneRows, workJoints } from '../../hooks/status-path'
+import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import type { Entry } from './panel-lines'
@@ -55,6 +55,7 @@ export function goalSection(page: StatusPage, typing: string | null, isUnfolded:
     goalEntry({ is: 'title', goal: g, isTyping }),
     ...milestones.flatMap((row, n) => {
       const rows = milestoneRows(row, isUnfolded)
+      const joints = workJoints(rows, row.line)
 
       return [
         ...(isSpacedAbove(milestones, n, isUnfolded)
@@ -62,18 +63,43 @@ export function goalSection(page: StatusPage, typing: string | null, isUnfolded:
           : []),
         ...(row.startsLater ? [goalEntry({ is: 'later' })] : []),
         goalEntry({ is: 'milestone', row }),
-        ...rows.map((r): Entry => ({ kind: 'page', row: r, path: row.line })),
+        ...rows.map((r, n): Entry => ({ kind: 'page', row: r, joint: joints[n] ?? { arm: null, beside: null } })),
       ]
     }),
   ]
 }
 
 /** `lines` with the path's line in the milestones' mark column, `┆` into the milestone that reads next. */
-export function withPathLine(lines: string[], line: PathLine, s: Style): string[] {
-  if (line === null) return lines
-  const glyph = s.dim(line === 'to-next' ? '┆' : '│')
+function withPathLine(lines: string[], line: PathLine, s: Style): string[] {
+  return withJoint(lines, { arm: null, beside: line }, s)
+}
 
-  return lines.map(l => l.slice(0, PAGE_MARK_AT).padEnd(PAGE_MARK_AT) + glyph + l.slice(PAGE_MARK_AT + 1))
+const ARMS = { tee: '├─', elbow: '└─' } as const
+
+/**
+ * A milestone's work row, drawn one cell narrower so it can sit a cell further in, where a subject's child sits after
+ * its arm. Its joint then draws its arm and a space before its mark.
+ */
+export function workRowLines(draw: (width: number) => string[], joint: WorkJoint, d: Draw): string[] {
+  const shifted = draw(d.width - 1).map(l => `${l.slice(0, PAGE_TEXT_AT - 1)} ${l.slice(PAGE_TEXT_AT - 1)}`)
+
+  return withJoint(shifted, joint, d.style)
+}
+
+/**
+ * Lines with a joint in the milestones' mark column: an arm on the first line, and the nesting connector, `│`, or the
+ * path's line, `│` or `┆` into next, beside the lines.
+ */
+function withJoint(lines: string[], joint: WorkJoint, s: Style): string[] {
+  const glyph = joint.beside === null ? null : joint.beside === 'to-next' ? '┆' : '│'
+  const drawn = (l: string, g: string) =>
+    l.slice(0, PAGE_MARK_AT).padEnd(PAGE_MARK_AT) + s.dim(g) + l.slice(PAGE_MARK_AT + g.length)
+
+  return lines.map((l, n) => {
+    const g = n === 0 && joint.arm !== null ? ARMS[joint.arm] : glyph
+
+    return g === null ? l : drawn(l, g)
+  })
 }
 
 /** Under the empty state: New, or the field it opened. */
@@ -104,13 +130,16 @@ const WORD_GAP = 2
 function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[] {
   const { width, now, style: s } = d
   const mark = paintMark({ ...m, isRunning: false }, now, s)
+  const hasWork = milestoneRows(m, id => d.ui.statusUnfolded.includes(id)).length > 0
+  const column: PathLine = m.line ?? (hasWork ? 'continues' : null)
   if (m.foldId !== null) {
     const chevron = d.ui.statusUnfolded.includes(m.foldId) ? '▾' : '▸'
     const [namePaint, chevronPaint] = isSelected ? [s.bold, (t: string) => s.tone('accent', t)] : [s.dim, s.dim]
-
-    return pageLine(d, PAGE_MARK_AT, mark, `${m.name} ${chevron}`, t =>
+    const [name = '', ...wrapped] = pageLine(d, PAGE_MARK_AT, mark, `${m.name} ${chevron}`, t =>
       t.endsWith(chevron) ? namePaint(t.slice(0, -chevron.length)) + chevronPaint(chevron) : namePaint(t),
     )
+
+    return [name, ...withPathLine(wrapped, column, s)]
   }
   const namePaint = (t: string) => (m.isMuted ? s.dim : (u: string) => u)(m.isChanged ? s.bold(t) : t)
   const [first = '', ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { stall: m.stall, text: m.text })
@@ -119,7 +148,7 @@ function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[]
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]
 
-  return [`${first}${word}`, ...withPathLine(after, m.line, s)]
+  return [`${first}${word}`, ...withPathLine(after, column, s)]
 }
 
 /**

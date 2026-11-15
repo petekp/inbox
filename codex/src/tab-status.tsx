@@ -7,7 +7,8 @@ import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { emptyTab } from '../../hooks/empty-tab'
-import { isSpacedAbove, LATER_TEXT } from '../../hooks/status-path'
+import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
+import type { WorkJoint } from '../../hooks/status-path'
 import type { TabView as View } from './core'
 import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
 import type { Key } from './tab-state'
@@ -294,12 +295,12 @@ function fitPathWord(word: HTMLElement | null) {
   new ResizeObserver(() => placePathWord(word, name, box)).observe(box)
 }
 
-function MilestoneLine({ m, motion }: { m: MilestoneRow; motion: string }) {
+function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion: string; isConnectorDown: boolean }) {
   const fold = m.foldId
   const nameClass = [m.isChanged ? 'changed' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
 
   return (
-    <div class="row milestone" {...lineMotion(motion)}>
+    <div class={isConnectorDown ? 'row milestone connector-down' : 'row milestone'} {...lineMotion(motion)}>
       <span class={markClassOf(m.tone, false)}>
         <MarkGlyph text={m.mark} />
       </span>
@@ -343,6 +344,19 @@ function MilestoneLine({ m, motion }: { m: MilestoneRow; motion: string }) {
   )
 }
 
+/** A work row in its joint with the column under its milestone's mark, as `workJoints` places it. */
+function JointedLine({ row, joint, motion }: { row: StatusRow; joint: WorkJoint | undefined; motion?: string }) {
+  const line = <StatusLine row={row} motion={motion} />
+  if (!joint) return line
+  const classes = [
+    'work-joint',
+    joint.arm ? `arm-${joint.arm}` : '',
+    joint.beside === 'connector' ? 'beside-connector' : '',
+  ]
+
+  return <div class={classes.filter(Boolean).join(' ')}>{line}</div>
+}
+
 /** A milestone and the rows drawn under it, as `stepStatus` steps them, with rows still leaving in their places. */
 type MilestoneGroupLines = { m: MilestoneRow; rows: StatusRow[] }
 
@@ -358,7 +372,8 @@ function milestoneGroups(lines: DrawnStatus['goal']): MilestoneGroupLines[] {
 
 /**
  * A milestone and its rows. A milestone the path's line leaves from draws the line down to the next milestone's mark.
- * A done milestone folded to its name keeps its rows in a fold, as a done fold of subjects does.
+ * One the line does not leave from draws the nesting connector down to its last work row. A done milestone folded to its
+ * name keeps its rows in a fold, as a done fold of subjects does.
  */
 function MilestoneGroup({
   group: { m, rows },
@@ -372,6 +387,8 @@ function MilestoneGroup({
   const fold = m.foldId
   const motion = fold === null ? null : foldMotion(fold)
   const isFoldShown = motion !== null && fold !== null && (statusUnfolded.has(fold) || closingFolds.has(motion))
+  const shown = motion === null ? rows : isFoldShown ? m.rows : []
+  const joints = workJoints(shown, m.line)
   const classes = [
     'milestone-group',
     isSpaced ? 'spaced' : '',
@@ -381,13 +398,13 @@ function MilestoneGroup({
 
   return (
     <div class={classes.filter(Boolean).join(' ')}>
-      <MilestoneLine m={m} motion={goalLineMotion(m.id)} />
+      <MilestoneLine m={m} motion={goalLineMotion(m.id)} isConnectorDown={shown.length > 0 && m.line === null} />
       {motion === null ? (
-        rows.map(r => <StatusLine key={r.id} row={r} motion={goalLineMotion(r.id)} />)
+        rows.map((r, n) => <JointedLine key={r.id} row={r} joint={joints[n]} motion={goalLineMotion(r.id)} />)
       ) : isFoldShown ? (
         <div class="fold-rows" data-motion={`closed-${motion}`}>
-          {m.rows.map(r => (
-            <StatusLine key={r.id} row={r} />
+          {m.rows.map((r, n) => (
+            <JointedLine key={r.id} row={r} joint={joints[n]} />
           ))}
         </div>
       ) : null}

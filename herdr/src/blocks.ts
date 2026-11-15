@@ -112,6 +112,14 @@ export const agedText = (a: Aged, now: number): string => `${a.lead}${DOT}${shor
  */
 export type PathSide = { is: 'milestone'; above: PathLine; below: PathLine } | { is: 'work'; line: PathLine }
 
+/**
+ * A stroke of a nesting connector beside a Status block, in the column under the marks of rows at `depth`. `down` runs
+ * from under the block's own mark to its end. `mid` runs the block's whole height with an arm to its mark, and `last`
+ * runs down to that arm and ends there. `past` runs the whole height with no arm. `arm` is the arm alone, where the
+ * path's line is the column.
+ */
+export type TreeStroke = { depth: number; is: 'down' | 'mid' | 'last' | 'past' | 'arm' }
+
 /** A line of the Status page: a subject, a milestone or a child, with its mark, name, stall word and lines under it. */
 export type StatusLine = {
   kind: 'status'
@@ -129,6 +137,7 @@ export type StatusLine = {
   under: string[]
   buttons: Button[]
   path?: PathSide
+  tree?: TreeStroke[]
 }
 
 /** A PR's title line and the line under it: its number and title, where it stands, and its buttons. */
@@ -204,6 +213,7 @@ export type Block =
       change: ViewChange
       mark?: Mark
       path?: PathSide
+      tree?: TreeStroke[]
     }
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
@@ -222,6 +232,7 @@ export type Block =
       isStrong: boolean
       depth: number
       path?: PathSide
+      tree?: TreeStroke[]
     }
   /** The goal's field while the person types a goal, in place of the goal's text. */
   | { kind: 'field'; id: string; field: Field }

@@ -6,13 +6,13 @@ import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { unfoldedRows } from '../../hooks/status-page-parts'
-import { LATER_TEXT, isSpacedAbove, milestoneRows } from '../../hooks/status-path'
-import type { PathLine } from '../../hooks/status-path'
+import { LATER_TEXT, isSpacedAbove, milestoneRows, workJoints } from '../../hooks/status-path'
+import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { cellWidth } from '../../hooks/text'
 import { button, emptyBlock } from './blocks'
 import { emptyTab } from '../../hooks/empty-tab'
 import type { SessionView } from '../../hooks/session-view'
-import type { Block, Button, Does, Field, Mark, PathSide, Tone } from './blocks'
+import type { Block, Button, Does, Field, Mark, PathSide, Tone, TreeStroke } from './blocks'
 
 /** The most cells a merged line holds before it cuts its names: three lines of the pane at its usual width. */
 const MERGED_CELLS = 150
@@ -59,6 +59,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         stall: row.stall,
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
+        ...(row.hasChildren ? { tree: [{ depth: row.depth, is: 'down' as const }] } : {}),
       },
     ]
   }
@@ -75,9 +76,11 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         stall: row.stall,
         under: [],
         buttons: [],
+        ...(row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}),
       },
     ]
-  if (row.kind === 'more') return [{ ...note(row.id, row.text, 'muted'), depth: row.depth }]
+  if (row.kind === 'more')
+    return [{ ...note(row.id, row.text, 'muted'), depth: row.depth, tree: [{ depth: row.depth - 1, is: row.branch }] }]
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
@@ -117,9 +120,15 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
  * A milestone on the goal's path, with the line from the milestone above into its mark and on from under it. A done
  * milestone folded to its name draws as its fold.
  */
-function milestoneBlock(m: MilestoneRow, lineAbove: PathLine, isUnfolded: (id: string) => boolean): Block {
+function milestoneBlock(
+  m: MilestoneRow,
+  lineAbove: PathLine,
+  hasWork: boolean,
+  isUnfolded: (id: string) => boolean,
+): Block {
   const mark = markOf(m.mark, m.tone, false)
   const path: PathSide = { is: 'milestone', above: lineAbove, below: m.line }
+  const tree = hasWork && m.line === null ? { tree: [{ depth: 0, is: 'down' as const }] } : {}
   if (m.foldId !== null)
     return {
       kind: 'fold',
@@ -130,6 +139,7 @@ function milestoneBlock(m: MilestoneRow, lineAbove: PathLine, isUnfolded: (id: s
       change: { toggleFold: m.foldId },
       mark,
       path,
+      ...tree,
     }
 
   return {
@@ -145,14 +155,32 @@ function milestoneBlock(m: MilestoneRow, lineAbove: PathLine, isUnfolded: (id: s
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
     path,
+    ...tree,
   }
 }
 
-/** A block of a milestone's work, with the path's line beside it while the path runs on from the milestone. */
-const besidePath = (b: Block, line: PathLine): Block =>
-  line !== null && (b.kind === 'status' || b.kind === 'fold' || b.kind === 'note')
-    ? { ...b, path: { is: 'work', line } }
-    : b
+/** Where a milestone's work joint draws in the milestones' column: its arm, and the nesting connector running past. */
+function jointStroke({ arm, beside }: WorkJoint): TreeStroke | null {
+  if (beside !== 'connector' && beside !== null) return arm === null ? null : { depth: 0, is: 'arm' }
+  if (arm === 'elbow') return { depth: 0, is: 'last' }
+
+  return { depth: 0, is: arm === 'tee' ? 'mid' : 'past' }
+}
+
+/**
+ * A block of a milestone's work, with the path's line beside it while the path runs on from the milestone, and its
+ * joint with the milestones' column.
+ */
+function besidePath(b: Block, line: PathLine, joint: WorkJoint | undefined): Block {
+  if (b.kind !== 'status' && b.kind !== 'fold' && b.kind !== 'note') return b
+  const stroke = joint ? jointStroke(joint) : null
+
+  return {
+    ...b,
+    ...(line === null ? {} : { path: { is: 'work', line } }),
+    ...(stroke ? { tree: [stroke, ...(b.tree ?? [])] } : {}),
+  }
+}
 
 const note = (id: string, text: string, tone: Tone): Extract<Block, { kind: 'note' }> => ({
   kind: 'note',
@@ -208,14 +236,19 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
         ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
         ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
       ]
-  const milestones = g.milestones.flatMap((m, n): Block[] => [
-    ...(isSpacedAbove(g.milestones, n, isUnfolded)
-      ? [{ kind: 'gap', id: `gap ${m.id}`, ...(n > 0 ? { isMilestoneStep: true as const } : {}) } as const]
-      : []),
-    ...(m.startsLater ? [{ kind: 'rule', id: 'goal later', text: LATER_TEXT } as const] : []),
-    milestoneBlock(m, g.milestones[n - 1]?.line ?? null, isUnfolded),
-    ...milestoneRows(m, isUnfolded).flatMap(r => rowBlocks(r, isUnfolded).map(b => besidePath(b, m.line))),
-  ])
+  const milestones = g.milestones.flatMap((m, n): Block[] => {
+    const rows = milestoneRows(m, isUnfolded)
+    const joints = workJoints(rows, m.line)
+
+    return [
+      ...(isSpacedAbove(g.milestones, n, isUnfolded)
+        ? [{ kind: 'gap', id: `gap ${m.id}`, ...(n > 0 ? { isMilestoneStep: true as const } : {}) } as const]
+        : []),
+      ...(m.startsLater ? [{ kind: 'rule', id: 'goal later', text: LATER_TEXT } as const] : []),
+      milestoneBlock(m, g.milestones[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
+      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded).map(b => besidePath(b, m.line, joints[k]))),
+    ]
+  })
 
   return [heading, ...lines, ...milestones]
 }

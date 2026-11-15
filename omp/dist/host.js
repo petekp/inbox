@@ -3750,6 +3750,16 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
 function milestoneRows(m, isUnfolded) {
   return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded);
 }
+function workJoints(rows, line) {
+  const top = Math.min(...rows.map((r) => r.depth));
+  const last = rows.findLastIndex((r) => r.depth === top);
+  return rows.map((r, n) => {
+    const arm = r.depth !== top ? null : line === null && n === last ? "elbow" : "tee";
+    if (line !== null)
+      return { arm, beside: line };
+    return { arm, beside: n < last ? "connector" : null };
+  });
+}
 function isSpacedAbove(milestones, n, isUnfolded) {
   const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
   const above = milestones[n - 1];
@@ -7318,20 +7328,31 @@ function goalSection(page, typing, isUnfolded) {
     goalEntry({ is: "title", goal: g, isTyping }),
     ...milestones.flatMap((row, n) => {
       const rows = milestoneRows(row, isUnfolded);
+      const joints = workJoints(rows, row.line);
       return [
         ...isSpacedAbove(milestones, n, isUnfolded) ? [goalEntry({ is: "gap", line: milestones[n - 1]?.line ?? null })] : [],
         ...row.startsLater ? [goalEntry({ is: "later" })] : [],
         goalEntry({ is: "milestone", row }),
-        ...rows.map((r) => ({ kind: "page", row: r, path: row.line }))
+        ...rows.map((r, n) => ({ kind: "page", row: r, joint: joints[n] ?? { arm: null, beside: null } }))
       ];
     })
   ];
 }
 function withPathLine(lines, line, s) {
-  if (line === null)
-    return lines;
-  const glyph = s.dim(line === "to-next" ? "\u2506" : "\u2502");
-  return lines.map((l) => l.slice(0, PAGE_MARK_AT).padEnd(PAGE_MARK_AT) + glyph + l.slice(PAGE_MARK_AT + 1));
+  return withJoint(lines, { arm: null, beside: line }, s);
+}
+var ARMS = { tee: "\u251C\u2500", elbow: "\u2514\u2500" };
+function workRowLines(draw, joint, d) {
+  const shifted = draw(d.width - 1).map((l) => `${l.slice(0, PAGE_TEXT_AT - 1)} ${l.slice(PAGE_TEXT_AT - 1)}`);
+  return withJoint(shifted, joint, d.style);
+}
+function withJoint(lines, joint, s) {
+  const glyph = joint.beside === null ? null : joint.beside === "to-next" ? "\u2506" : "\u2502";
+  const drawn = (l, g) => l.slice(0, PAGE_MARK_AT).padEnd(PAGE_MARK_AT) + s.dim(g) + l.slice(PAGE_MARK_AT + g.length);
+  return lines.map((l, n) => {
+    const g = n === 0 && joint.arm !== null ? ARMS[joint.arm] : glyph;
+    return g === null ? l : drawn(l, g);
+  });
 }
 function setGoal(setGoal) {
   return [goalEntry(setGoal.isFieldOpen ? { is: "field" } : { is: "keys", keys: setGoal.keys })];
@@ -7349,10 +7370,13 @@ var WORD_GAP = 2;
 function milestoneLines(m, d, isSelected) {
   const { width, now, style: s } = d;
   const mark = paintMark({ ...m, isRunning: false }, now, s);
+  const hasWork = milestoneRows(m, (id) => d.ui.statusUnfolded.includes(id)).length > 0;
+  const column = m.line ?? (hasWork ? "continues" : null);
   if (m.foldId !== null) {
     const chevron = d.ui.statusUnfolded.includes(m.foldId) ? "\u25BE" : "\u25B8";
     const [namePaint, chevronPaint] = isSelected ? [s.bold, (t) => s.tone("accent", t)] : [s.dim, s.dim];
-    return pageLine(d, PAGE_MARK_AT, mark, `${m.name} ${chevron}`, (t) => t.endsWith(chevron) ? namePaint(t.slice(0, -chevron.length)) + chevronPaint(chevron) : namePaint(t));
+    const [name = "", ...wrapped] = pageLine(d, PAGE_MARK_AT, mark, `${m.name} ${chevron}`, (t) => t.endsWith(chevron) ? namePaint(t.slice(0, -chevron.length)) + chevronPaint(chevron) : namePaint(t));
+    return [name, ...withPathLine(wrapped, column, s)];
   }
   const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged ? s.bold(t) : t);
   const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { stall: m.stall, text: m.text });
@@ -7360,7 +7384,7 @@ function milestoneLines(m, d, isSelected) {
   const word = m.word !== null && room >= WORD_GAP ? `${" ".repeat(room)}${s.dim(m.word)}` : "";
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
-  return [`${first}${word}`, ...withPathLine(after, m.line, s)];
+  return [`${first}${word}`, ...withPathLine(after, column, s)];
 }
 function headingLines(part, d, isSelected) {
   const { width, style: s } = d;
@@ -8607,7 +8631,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
         subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
       const isSelected = id !== null && id === pageSelected?.id;
-      body.push(...e.kind === "page" ? withPathLine(drawPageRow(e.row, d, isSelected), e.path ?? null, style) : drawGoalPart(e.part, d, isSelected));
+      body.push(...e.kind === "page" ? e.joint ? workRowLines((w) => drawPageRow(e.row, { ...d, width: w }, isSelected), e.joint, d) : drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));
       if (isSelected)
         pageSelectedAt = [start, body.length - 1];
     } else if (e.kind === "banner")

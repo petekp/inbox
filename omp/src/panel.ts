@@ -21,7 +21,7 @@ import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
 import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
-import { drawGoalPart, goalPartId, withPathLine } from './panel-goal'
+import { drawGoalPart, goalPartId, workRowLines } from './panel-goal'
 import { drawPageRow } from './panel-page'
 import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { fit, indented, spread } from './panel-text'
@@ -233,7 +233,9 @@ export function drawPanel(
       const isSelected = id !== null && id === pageSelected?.id
       body.push(
         ...(e.kind === 'page'
-          ? withPathLine(drawPageRow(e.row, d, isSelected), e.path ?? null, style)
+          ? e.joint
+            ? workRowLines(w => drawPageRow(e.row, { ...d, width: w }, isSelected), e.joint, d)
+            : drawPageRow(e.row, d, isSelected)
           : drawGoalPart(e.part, d, isSelected)),
       )
       if (isSelected) pageSelectedAt = [start, body.length - 1]

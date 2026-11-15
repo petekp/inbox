@@ -37,7 +37,7 @@ import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
-import { isSpacedAbove, LATER_TEXT, milestoneRows } from './status-path'
+import { isSpacedAbove, LATER_TEXT, milestoneRows, workJoints } from './status-path'
 import { ROW_COPY } from './rows'
 
 /** One line of the Status list, as `paneStatus` draws it, so milestones line up with subjects. */
@@ -252,8 +252,24 @@ export function paneStatusGoal(
       isSelected: isSelected(m.id),
     })
   }
-  /** A milestone, then on the next line the work that serves it, one step in. */
-  const milestoneLines = (m: MilestoneRow): Drawn[] => [milestoneLine(m), ...drawRows(milestoneRows(m, isUnfolded))]
+  /**
+   * A milestone, then on the next line the work that serves it, one step in, each row joined to the milestone's mark
+   * column by the nesting connector or by the path's line.
+   */
+  const milestoneLines = (m: MilestoneRow): Drawn[] => {
+    const rows = milestoneRows(m, isUnfolded)
+    const joints = workJoints(rows, m.line)
+    const line = milestoneLine(m)
+    const isConnectorDown = rows.length > 0 && m.line === null
+
+    return [
+      isConnectorDown ? path.connectorDown(`goal-${m.id}-down`, line) : line,
+      ...drawRows(rows).map((d, n) => {
+        const joint = joints[n]
+        return joint ? path.jointed(`goal-${rows[n]?.id}-joint`, d, joint) : d
+      }),
+    ]
+  }
   /**
    * The milestones in path order. The space under a milestone the path's line leaves from is part of its group, so the
    * line runs through it. The Later label sits above the first milestone under Later.
