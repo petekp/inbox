@@ -81,7 +81,7 @@ export function screenOf(
   followed: Followed,
   read: ReadSession | null,
   ui: LookUi,
-  o: { now: number; isNextBuild: boolean } & LookPresses,
+  o: { now: number } & LookPresses,
 ): Screen {
   const shown = messageOf(followed, read)
   if (shown !== null || read?.is !== 'read') return shown ?? message(READING_TEXT, null)
@@ -92,7 +92,6 @@ export function screenOf(
     agent: read.envelope.agent,
     now: o.now,
     shownSince: holds.shownSince ?? o.now,
-    isNextBuild: o.isNextBuild,
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs,
   }

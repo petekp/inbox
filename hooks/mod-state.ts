@@ -74,6 +74,7 @@ class ModState {
   queue: Promise<void> = Promise.resolve()
   toolsRefused = false
   version: string | null = null
+  /** Whether the installed copy holds `NEXT_BUILD_MARK`, which adds "next" to the version label and keeps Status call records. */
   isNextBuild = false
   /** Where a next build keeps its Status call records, or null on a release build. */
   statusRecordsFolder: string | null = null
