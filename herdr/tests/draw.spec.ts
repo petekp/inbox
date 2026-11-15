@@ -116,7 +116,7 @@ test('the Status page draws the goal’s milestones on a path: a seen done one a
   expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
 })
 
-test('the Status page joins each parent to the rows under it: work beside the path’s line by an arm, other work by the milestone’s connector down to an elbow at its last row, and a subject’s children by its own connector', () => {
+test('the Status page joins each parent to the rows under it: work beside the path’s line by an arm, other work by the milestone’s connector down to an elbow at its last row with nothing past it, and a subject’s children by its own connector', () => {
   const screen = demoScreen()
   const blocks = tabBlocks(screen, uiOn('overview'))
   const treeOf = (id: string) => {
@@ -140,6 +140,22 @@ test('the Status page joins each parent to the rows under it: work beside the pa
     [{ depth: 0, is: 'last' }],
     [{ depth: 0, is: 'down' }],
     [{ depth: 0, is: 'last' }],
+  ])
+  const page = screen.view.statusPage
+  const milestones = page.goal!.milestones.map(m => (m.rows.some(r => r.id === 's1') ? { ...m, line: null } : m))
+  const ended = { ...screen, view: { ...screen.view, statusPage: { ...page, goal: { ...page.goal!, milestones } } } }
+  const endedBlocks = tabBlocks(ended, uiOn('overview'))
+  const endedTreeOf = (id: string) => {
+    const b = endedBlocks.find(b => b.id === id)
+    return b && 'tree' in b ? b.tree : undefined
+  }
+  expect(['s1', 'c1', 'c4'].map(endedTreeOf)).toEqual([
+    [
+      { depth: 0, is: 'last' },
+      { depth: 1, is: 'down' },
+    ],
+    [{ depth: 1, is: 'mid' }],
+    [{ depth: 1, is: 'last' }],
   ])
 })
 

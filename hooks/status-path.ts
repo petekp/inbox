@@ -52,7 +52,8 @@ function nowWord(m: Milestone, now: number): string {
 /**
  * The milestones the goal shows, in path order. Done ones come in the order they closed. Then the ones under way, in
  * the plan's order: working ones read "now", and one that waits on someone else reads no word, since its mark says so.
- * The first queued one in the plan's order reads "next", and the rest sit under Later, then the dropped ones.
+ * The first queued one in the plan's order reads "next", and the rest sit under Later. The dropped ones follow them, with
+ * no Later label of their own when Later is empty.
  */
 export function milestonePath(shown: readonly Milestone[], now: number): PathStep[] {
   const done = shown
@@ -76,7 +77,7 @@ export function milestonePath(shown: readonly Milestone[], now: number): PathSte
     place: m.status === 'dropped' ? 'dropped' : 'later',
     word: null,
     line: null,
-    startsLater: n === 0,
+    startsLater: n === 0 && later.length > 0,
   }))
 
   return [...pathSteps, ...afterPath]

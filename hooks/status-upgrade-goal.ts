@@ -63,6 +63,7 @@ function milestoneOf(saved: unknown): Milestone | null {
   const status = STATUSES.find(x => x === m?.status)
   const changedAt = time(m?.changedAt)
   if (!m || typeof m.id !== 'string' || typeof m.name !== 'string' || !status || changedAt === null) return null
+  const madeNextAt = time(m.madeNextAt)
 
   return {
     id: m.id,
@@ -73,6 +74,7 @@ function milestoneOf(saved: unknown): Milestone | null {
     changedAt,
     closedAt: time(m.closedAt) ?? (status === 'done' || status === 'dropped' ? changedAt : null),
     startedAt: time(m.startedAt),
+    ...(madeNextAt === null ? {} : { madeNextAt }),
   }
 }
 

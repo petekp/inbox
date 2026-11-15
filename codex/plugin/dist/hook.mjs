@@ -349,6 +349,7 @@ function milestoneOf(saved) {
   const status = STATUSES.find((x) => x === m?.status);
   const changedAt = time(m?.changedAt);
   if (!m || typeof m.id !== "string" || typeof m.name !== "string" || !status || changedAt === null) return null;
+  const madeNextAt = time(m.madeNextAt);
   return {
     id: m.id,
     name: m.name,
@@ -357,7 +358,8 @@ function milestoneOf(saved) {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
-    startedAt: time(m.startedAt)
+    startedAt: time(m.startedAt),
+    ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
 function milestonesOf(saved) {
@@ -1373,7 +1375,7 @@ function milestonePath(shown, now) {
     place: m.status === "dropped" ? "dropped" : "later",
     word: null,
     line: null,
-    startsLater: n === 0
+    startsLater: n === 0 && later.length > 0
   }));
   return [...pathSteps, ...afterPath];
 }
@@ -1401,7 +1403,8 @@ function milestoneRow(step, o, items) {
     return to.some((id) => id === m.id || servingIds.has(id));
   });
   const isHeld = isOpen2 && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
+  const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
+  const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
   const direct = oldestAsk(items, o.askSubjects, m.id);
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
@@ -1434,7 +1437,7 @@ function goalPage(o, items, now) {
   const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
-  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, kept);
+  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
   return {
     goal: {
       label: isMet ? "Goal met" : GOAL_HEADING,
@@ -1483,8 +1486,10 @@ function statusPage(s, now) {
   const needed = subjects.filter((x) => !isUnneeded(x));
   const main2 = needed.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open2 = needed.filter(isOpen).sort(pageOrder);
   const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
+  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf2(x) ?? "") && canFold(x);
+  const open2 = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
   const foldable = open2.filter(canFold);
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part, isLater = false) => {

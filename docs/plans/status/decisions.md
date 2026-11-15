@@ -46,7 +46,7 @@ Status: built.
     - Reason: one form keeps the page the same shape wherever the person opens it.
 15. **The job is the four questions above.** The page shows no reason for a decision, and has no separate "next" part.
     - Reason: reasons need a line of prose under each decision, which brings back sections. ○ rows already say what comes next.
-    - The goal's milestones now say which comes next. They draw as a path on one vertical line: done milestones by name, the current one reading "now", and the one the work takes up next reading "next", where the line ends. The rest sit under "Later". The Status call orders the queued milestones with a NEXT line.
+    - The goal's milestones now say which comes next. They draw as a path on one vertical line: done milestones by name, the current one reading "now", and the one the work takes up next reading "next", where the line ends. The rest sit under "Later". The Status call orders the queued milestones with a NEXT line. A NEXT line marks the milestone it moves as changed, but is no progress toward the goal, as a DROP is none.
     - Reason: on a goal with several queued milestones, ○ alone did not say which one the work takes up next, and the plan's order often went stale.
     - This replaces the goal's count of done milestones after its text, and the milestones drawn as a list of rows.
 16. **Evals are a cheap check that a failure seen in real use does not come back.** They run at each release, within about 200 Status calls. Fixed rules check what code can measure. A model judge checks what only reading can tell. The judge is first checked against hand-written good and bad pages that the author of its instructions never sees.

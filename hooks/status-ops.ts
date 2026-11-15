@@ -182,25 +182,26 @@ export function applyOps(
     forgetSeenWas(s)
     s.changedAt = now
   }
-  const named = new Set<string>()
+  /** Each milestone the answer names, with the first of its lines that names it. */
+  const named = new Map<string, number>()
   let nextRef: string | null = null
-  const markNamed = (m: Milestone | null) => {
-    if (m) named.add(m.id)
+  const markNamed = (m: Milestone | null, line: number) => {
+    if (m) named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity))
   }
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt)
     .map((op, n) => ({ op, n }))
     .sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
-  for (const { op } of ordered) {
+  for (const { op, n } of ordered) {
     if (op.kind === 'none') continue
     if (op.kind === 'next') {
-      markNamed(findMilestone(o, op.ref))
+      markNamed(findMilestone(o, op.ref), n)
       nextRef = op.ref
       continue
     }
     if (op.kind === 'goal' || op.kind === 'retire' || op.kind === 'milestone' || op.kind === 'serves') {
       o = applyGoalOp(o, op, now, find, last ?? o)
-      if (op.kind === 'milestone') markNamed(findMilestone(o, op.name))
-      if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone))
+      if (op.kind === 'milestone') markNamed(findMilestone(o, op.name), n)
+      if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n)
     } else if (op.kind === 'head') {
       if (!isNumberOnly(op.title)) o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
     } else if (op.kind === 'link') {
@@ -210,7 +211,7 @@ export function applyOps(
       const linked = subject ?? milestone
       if (child && subject) child.subjectId = subject.id
       else if (linked && askIds.has(op.ref)) o.askSubjects[op.ref] = linksWith(o.askSubjects[op.ref] ?? [], linked.id)
-      markNamed(milestone)
+      markNamed(milestone, n)
     } else if (op.kind === 'new') {
       if (isNumberOnly(op.name)) continue
       const known = find(op.name)
@@ -236,7 +237,7 @@ export function applyOps(
       const s = find(op.ref)
       const milestone = s ? null : findMilestone(o, op.ref)
       if (milestone) moveMilestone(o, milestone, op, now)
-      markNamed(milestone)
+      markNamed(milestone, n)
       if (!s) continue
       if (op.kind === 'set') set(s, op.status, op.text)
       else if (op.kind === 'done') {
@@ -293,7 +294,7 @@ export function applyStatus(
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last
   const o = answer.kind === 'ops' ? applyOps(last, answer.ops, now, askIds, readSetAt) : read
   if (o === null) return null
-  const settled = answer.kind === 'ops' ? o : settleGoal(o, now, readSetAt, new Set())
+  const settled = answer.kind === 'ops' ? o : settleGoal(o, now, readSetAt, new Map())
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
 
   return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }

@@ -88,7 +88,8 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     return to.some(id => id === m.id || servingIds.has(id))
   })
   const isHeld = isOpen && holds.length > 0
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0)
+  const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity)
+  const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0)
   const direct = oldestAsk(items, o.askSubjects, m.id)
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
 
@@ -124,7 +125,7 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[], now: n
   const isAwaiting = g.isAwaitingMilestones || kept.length === 0
   const head = o.head
   const nowText = head ? head.description || head.title : null
-  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, kept)
+  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept)
 
   return {
     goal: {

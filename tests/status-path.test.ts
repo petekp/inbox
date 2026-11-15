@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { lastProgressAt } from '../hooks/status-goal-gate'
 import { setTypedGoal } from '../hooks/status-goal-ops'
 import { statusKeyRows } from '../hooks/status-keys'
 import { statusListRows } from '../hooks/status-page'
@@ -49,6 +50,27 @@ test('NEXT moves a queued milestone ahead of the other queued ones, so it reads 
   expect(after(replanned, 'NEXT: m2', 50).milestones).toEqual(replanned.milestones)
 })
 
+test('NEXT marks the milestone it moves changed, but counts as no progress on the goal and brings back no was line the person has seen', () => {
+  const seen = { ...after(planned(), 'WAS: m5 | after the docs', 40), lastLookAt: 45 }
+  const moved = after(seen, 'NEXT: m5', 50)
+
+  expect(page(moved, 55).goal?.milestones.find(m => m.name === 'Release notes')).toMatchObject({
+    place: 'next',
+    isChanged: true,
+    was: null,
+  })
+  expect(lastProgressAt(moved, moved.goal!)).toBe(lastProgressAt(seen, seen.goal!))
+})
+
+test('with nothing under Later, a dropped milestone follows the path with no Later label', () => {
+  const dropped = after({ ...planned(), lastLookAt: 35 }, 'DROP: m4 | not needed\nDROP: m5 | not needed', 40)
+
+  expect(path(dropped, 45)?.slice(3)).toEqual([
+    ['Docs page', 'dropped', null, null, false],
+    ['Release notes', 'dropped', null, null, false],
+  ])
+})
+
 test('a working milestone reads how long it has run once it has run an hour, in hours, then in days past two', () => {
   const word = (now: number) => page(planned(), now).goal?.milestones[1]?.word
 
@@ -63,6 +85,7 @@ test('the goal leaves out its Now line when it only names the milestone that rea
 
   expect(page(named, 45).goal?.now).toBeNull()
   expect(page(more, 45).goal?.now).toBe('Now: Explaining errors in the import dialog')
+  expect(page(setTypedGoal(named, 'Demo on Friday', 50), 55).goal?.now).toBe('Now: Explaining errors')
 })
 
 test('a done milestone the person has seen, with its work seen and finished, folds to its name with its work behind the fold', () => {
@@ -83,12 +106,20 @@ test('a done milestone the person has seen, with its work seen and finished, fol
   ).toEqual([{ action: 'toggle-fold', foldId: 'm1-done' }])
 })
 
-test('a milestone under Later shows only the work that cannot fold, and counts the rest', () => {
+test('a milestone under Later shows only the work that cannot fold, and counts the rest, which take none of the open rows the page shows', () => {
   const p = page({ ...planned(), lastLookAt: 40 }, 50)
   const docs = p.goal?.milestones.find(m => m.name === 'Docs page')
+  const tasks = ['a', 'b', 'c', 'd', 'e'].map(
+    n => `NEW: working | Task ${n} | going\nSERVES: s${n.charCodeAt(0) - 93} | m2`,
+  )
+  const busy = after(planned(), tasks.join('\n'), 40)
+  const later = after(busy, ['x', 'y', 'z'].map(n => `NEW: working | Later ${n} | going`).join('\n'), 50)
+  const linked = after(later, 'SERVES: s9 | m4\nSERVES: s10 | m4\nSERVES: s11 | m4', 60)
+  const errors = page({ ...linked, lastLookAt: 70 }, 80).goal?.milestones.find(m => m.name === 'Errors explained')
 
   expect(docs?.rows.map(r => r.kind)).toEqual(['fold'])
   expect(docs?.rows[0]).toMatchObject({ text: '2 more' })
+  expect(errors?.rows.map(r => r.kind)).toEqual(Array(6).fill('subject'))
 })
 
 test('NEXT names a milestone by id or by name, and the call reads the queued milestone that comes next, except while a typed goal waits for its milestones', () => {
@@ -108,6 +139,7 @@ test('the answer that reads a typed goal orders its milestones as its MILESTONE 
   const typed = setTypedGoal(planned(), 'Demo on Friday', 40)
   const named = 'MILESTONE: queued | Demo script | not started\nMILESTONE: done | Parsing works | parsed'
   const withNext = `${named}\nMILESTONE: queued | Room booked | not started\nNEXT: Room booked`
+  const withSet = 'MILESTONE: queued | Room booked | not started\nSET: m3 | queued | script drafted'
 
   expect(after(typed, named, 50).milestones.map(m => m.name)).toEqual(['Demo script', 'Parsing works'])
   expect(after(typed, withNext, 50).milestones.map(m => m.name)).toEqual([
@@ -115,6 +147,7 @@ test('the answer that reads a typed goal orders its milestones as its MILESTONE 
     'Demo script',
     'Parsing works',
   ])
+  expect(after(typed, withSet, 50).milestones.map(m => m.name)).toEqual(['Room booked', 'Demo script'])
 })
 
 test('a milestone’s work joins its mark column: the connector runs past each row to an elbow at its last row one step in, and where the path’s line runs on, every row one step in branches off it', () => {

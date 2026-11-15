@@ -829,6 +829,7 @@ function milestoneOf(saved) {
   const status = STATUSES.find((x) => x === m?.status);
   const changedAt = time(m?.changedAt);
   if (!m || typeof m.id !== "string" || typeof m.name !== "string" || !status || changedAt === null) return null;
+  const madeNextAt = time(m.madeNextAt);
   return {
     id: m.id,
     name: m.name,
@@ -837,7 +838,8 @@ function milestoneOf(saved) {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
-    startedAt: time(m.startedAt)
+    startedAt: time(m.startedAt),
+    ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
 function milestonesOf(saved) {
@@ -1647,8 +1649,9 @@ function withNextMilestone(o, ref, now) {
   const first = o.milestones.findIndex((x) => x.status === "queued");
   if (!m || m.status !== "queued" || o.milestones[first] === m) return o;
   const rest = o.milestones.filter((x) => x !== m);
-  const moved = { ...m, changedAt: now };
+  const moved = { ...m };
   forgetSeenWas(moved, o.lastLookAt);
+  moved.madeNextAt = now;
   return { ...o, milestones: [...rest.slice(0, first), moved, ...rest.slice(first)] };
 }
 function withRestatedGoalAsMilestones(o, ops, readSetAt) {
@@ -1737,8 +1740,7 @@ function settleGoal(saved, now, readSetAt, named) {
   const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now);
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
-  const namedOrder = [...named];
-  const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").sort((x, y) => namedOrder.indexOf(x.id) - namedOrder.indexOf(y.id)).slice(0, MILESTONES_MAX) : o.milestones;
+  const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").sort((x, y) => named.get(x.id) - named.get(y.id)).slice(0, MILESTONES_MAX) : o.milestones;
   const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
   const kept = milestones.filter((m) => m.status !== "dropped");
   const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
@@ -2037,7 +2039,7 @@ function milestonePath(shown, now) {
     place: m.status === "dropped" ? "dropped" : "later",
     word: null,
     line: null,
-    startsLater: n === 0
+    startsLater: n === 0 && later.length > 0
   }));
   return [...pathSteps, ...afterPath];
 }
@@ -2065,7 +2067,8 @@ function milestoneRow(step, o, items) {
     return to.some((id) => id === m.id || servingIds.has(id));
   });
   const isHeld = isOpen2 && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
+  const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
+  const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
   const direct = oldestAsk(items, o.askSubjects, m.id);
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
@@ -2098,7 +2101,7 @@ function goalPage(o, items, now) {
   const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
-  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, kept);
+  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
   return {
     goal: {
       label: isMet ? "Goal met" : GOAL_HEADING,
@@ -2147,8 +2150,10 @@ function statusPage(s, now) {
   const needed = subjects.filter((x) => !isUnneeded(x));
   const main2 = needed.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open2 = needed.filter(isOpen).sort(pageOrder);
   const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
+  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf2(x) ?? "") && canFold(x);
+  const open2 = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
   const foldable = open2.filter(canFold);
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part, isLater = false) => {
@@ -4037,23 +4042,23 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     forgetSeenWas2(s);
     s.changedAt = now;
   };
-  const named = /* @__PURE__ */ new Set();
+  const named = /* @__PURE__ */ new Map();
   let nextRef = null;
-  const markNamed = (m) => {
-    if (m) named.add(m.id);
+  const markNamed = (m, line) => {
+    if (m) named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity));
   };
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op } of ordered) {
+  for (const { op, n } of ordered) {
     if (op.kind === "none") continue;
     if (op.kind === "next") {
-      markNamed(findMilestone(o, op.ref));
+      markNamed(findMilestone(o, op.ref), n);
       nextRef = op.ref;
       continue;
     }
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
       o = applyGoalOp(o, op, now, find, last ?? o);
-      if (op.kind === "milestone") markNamed(findMilestone(o, op.name));
-      if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone));
+      if (op.kind === "milestone") markNamed(findMilestone(o, op.name), n);
+      if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n);
     } else if (op.kind === "head") {
       if (!isNumberOnly(op.title)) o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     } else if (op.kind === "link") {
@@ -4063,7 +4068,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       const linked = subject ?? milestone;
       if (child && subject) child.subjectId = subject.id;
       else if (linked && askIds.has(op.ref)) o.askSubjects[op.ref] = linksWith(o.askSubjects[op.ref] ?? [], linked.id);
-      markNamed(milestone);
+      markNamed(milestone, n);
     } else if (op.kind === "new") {
       if (isNumberOnly(op.name)) continue;
       const known = find(op.name);
@@ -4089,7 +4094,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       const s = find(op.ref);
       const milestone = s ? null : findMilestone(o, op.ref);
       if (milestone) moveMilestone(o, milestone, op, now);
-      markNamed(milestone);
+      markNamed(milestone, n);
       if (!s) continue;
       if (op.kind === "set") set(s, op.status, op.text);
       else if (op.kind === "done") {
@@ -4132,7 +4137,7 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last;
   const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : read;
   if (o === null) return null;
-  const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Set());
+  const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Map());
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
   return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
 }

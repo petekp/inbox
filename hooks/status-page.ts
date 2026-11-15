@@ -214,9 +214,12 @@ export function statusPage(
   const needed = subjects.filter(x => !isUnneeded(x))
   const main = needed.filter(x => !isOther(x))
   const other = subjects.filter(isOther)
-  // The open fold is chosen across all the work the goal needs, so a row's fold does not hang on where it sits.
-  const open = needed.filter(isOpen).sort(pageOrder)
   const canFold = (x: Subject) => !isHeld(x) && !isNew(x) && !hasChildRow(x)
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter(m => m.place === 'later').map(m => m.id))
+  const isFoldedUnderLater = (x: Subject) => laterIds.has(milestoneOf(x) ?? '') && canFold(x)
+  // The open fold is chosen across all the work the goal needs, so a row's fold does not hang on where it sits. A row
+  // that folds under Later anyway takes none of its rows.
+  const open = needed.filter(x => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder)
   const foldable = open.filter(canFold)
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)))
   /** A part's split. Under a Later milestone, every open row that can fold does. */

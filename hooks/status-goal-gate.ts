@@ -11,7 +11,7 @@ export function heldSubjects(o: SessionStatus): Subject[] {
 /**
  * When the goal last moved forward: when it was set, a milestone that is not dropped changed, or a subject linked to
  * such a milestone was done. Dropping work is not progress, so a goal whose last work was dropped counts from its last
- * real step.
+ * real step. Nor is a NEXT line's reorder, which leaves `changedAt` as it was.
  */
 export function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
   const kept = o.milestones.filter(m => m.status !== 'dropped')

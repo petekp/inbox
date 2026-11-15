@@ -168,8 +168,9 @@ export function withNextMilestone(o: SessionStatus, ref: string, now: number): S
   const first = o.milestones.findIndex(x => x.status === 'queued')
   if (!m || m.status !== 'queued' || o.milestones[first] === m) return o
   const rest = o.milestones.filter(x => x !== m)
-  const moved = { ...m, changedAt: now }
+  const moved = { ...m }
   forgetSeenWas(moved, o.lastLookAt)
+  moved.madeNextAt = now
 
   return { ...o, milestones: [...rest.slice(0, first), moved, ...rest.slice(first)] }
 }
@@ -307,7 +308,7 @@ function withWorkDoneMilestones(o: SessionStatus, now: number): SessionStatus {
 /**
  * The goal once an answer has applied. A typed goal carries the milestones of the goal before it until an answer from a
  * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
- * has not dropped, in the order it named them, which is its plan, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
+ * has not dropped, in the order of the lines that first name them, which is its plan, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
  * closed, as `withWorkDoneMilestones` says. The was line goes once the person has seen it,
  * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
  * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
@@ -317,18 +318,17 @@ export function settleGoal(
   saved: SessionStatus,
   now: number,
   readSetAt: number | null,
-  named: ReadonlySet<string>,
+  named: ReadonlyMap<string, number>,
 ): SessionStatus {
   const g = saved.goal
   if (g === null) return saved
   const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now)
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt
-  const namedOrder = [...named]
   const milestones = isAnswerForNewGoal
     ? o.milestones
         .filter(m => named.has(m.id) && m.status !== 'dropped')
-        .sort((x, y) => namedOrder.indexOf(x.id) - namedOrder.indexOf(y.id))
+        .sort((x, y) => named.get(x.id)! - named.get(y.id)!)
         .slice(0, MILESTONES_MAX)
     : o.milestones
   const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0)

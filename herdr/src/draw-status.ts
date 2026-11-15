@@ -161,10 +161,10 @@ function milestoneBlock(
 
 /** Where a milestone's work joint draws in the milestones' column: its arm, and the nesting connector running past. */
 function jointStroke({ arm, beside }: WorkJoint): TreeStroke | null {
-  if (beside !== 'connector' && beside !== null) return arm === null ? null : { depth: 0, is: 'arm' }
   if (arm === 'elbow') return { depth: 0, is: 'last' }
+  if (beside === 'connector') return { depth: 0, is: arm === 'tee' ? 'mid' : 'past' }
 
-  return { depth: 0, is: arm === 'tee' ? 'mid' : 'past' }
+  return arm === null ? null : { depth: 0, is: 'arm' }
 }
 
 /**
