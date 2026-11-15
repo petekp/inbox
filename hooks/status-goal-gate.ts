@@ -66,15 +66,15 @@ export function hasWorkForGoal(o: SessionStatus): boolean {
  * line revises the inferred goal the answer found when the person cut part of its outcome. It cuts a milestone that was
  * open when the answer started and that the answer did not finish, by leaving it out or naming it dropped. It names
  * again, with an open status, a milestone that holds open work, and that work moves with it. Each other open subject
- * the goal holds needs a SERVES line to - among `toOtherWork`. The revision applies only when no subject is left with
- * no place. So a rewording or an added milestone that cuts nothing is not a revision. A milestone named in other words
+ * the goal holds needs a SERVES line in `placed`, the answer's SERVES lines by subject id, to - or to a milestone the
+ * line names again with an open status. The revision applies only when no subject is left with no place. So a rewording or an added milestone that cuts nothing is not a revision. A milestone named in other words
  * counts as cut, so its work must go to Other work.
  */
 export function goalRevision(
   o: SessionStatus,
   start: SessionStatus,
   named: readonly Pick<Milestone, 'name' | 'status'>[],
-  toOtherWork: ReadonlySet<string>,
+  placed: ReadonlyMap<string, string | null>,
 ): Subject[] | null {
   const g = o.goal
   const isFound = g !== null && g.setAt === start.goal?.setAt
@@ -90,7 +90,12 @@ export function goalRevision(
   const held = heldSubjects(o).filter(isOpen)
   if (!start.milestones.some(isCut) || !held.some(isCarried)) return null
 
-  return held.filter(s => !isCarried(s) && !toOtherWork.has(s.id))
+  const isPlaced = (s: Subject) => {
+    const to = placed.get(s.id)
+    return to === null || (to !== undefined && kept.has(nameKey(to)))
+  }
+
+  return held.filter(s => !isCarried(s) && !isPlaced(s))
 }
 
 /**

@@ -197,9 +197,10 @@ test('a GOAL that cuts part of an inferred goal replaces it while its work is op
   expect(revised.serves).toEqual({ s1: cleanup.id, s2: 'none' })
   expect(after(o, cut, at).goalRefused).toEqual({ line: 'goal', why: 'work-open', unplaced: ['s2'] })
   expect(goalBlock(after(o, cut, at), at)?.split('\n')[1]).toBe(
-    "GOAL refused: it cuts part of the goal, but leaves this open work with no milestone: Widget polish. Write GOAL again with SERVES: s2 | - in the same answer, or name that work's milestone again in the same words.",
+    "GOAL refused: it leaves this open work with no open milestone: Widget polish. If the person cut that work's milestone, write GOAL again with SERVES: s2 | - in the same answer. If that work is done, write DONE for it, then GOAL again. Else keep the goal and write no GOAL.",
   )
   expect(upgradeStatus(after(o, cut, at))?.goalRefused).toEqual({ line: 'goal', why: 'work-open', unplaced: ['s2'] })
+  expect(after(o, `${cut}\nSERVES: s2 | Cleanup done`, at).serves).toEqual({ s1: cleanup.id, s2: cleanup.id })
 })
 
 test('a milestone the GOAL line names dropped is cut and holds no work, and one it names done or the answer finished is not cut', () => {
@@ -234,7 +235,13 @@ test('a GOAL that cuts nothing or names none of the open work does not replace a
   const cut = 'GOAL: Notes 2.5 on the web | working Cleanup done; queued Web release live\nSERVES: s2 | -'
 
   expect(after(o, added, at).goalRefused).toEqual({ line: 'goal', why: 'no-work' })
-  expect(after(o, renamed, at).goalRefused).toEqual({ line: 'goal', why: 'work-open', unplaced: ['s2'] })
+  expect(after(o, renamed.split('\n')[0]!, at).goalRefused).toEqual({
+    line: 'goal',
+    why: 'work-open',
+    unplaced: ['s2'],
+  })
+  const placedRename = after(o, renamed, at)
+  expect(placedRename.milestones.find(m => m.id === placedRename.serves.s2)?.name).toBe('Widgets shipped')
   expect(after(o, `${NEW_WORK}\n${added}`, at).goalRefused).toEqual({ line: 'goal', why: 'work-open' })
   expect(after(o, unrelated, at).goalRefused).toEqual({ line: 'goal', why: 'work-open' })
   expect(after(typed, `${NEW_WORK}\n${cut}`, at).goalRefused).toEqual({ line: 'goal', why: 'typed' })

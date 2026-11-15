@@ -1533,7 +1533,7 @@ function hasWorkForGoal(o) {
   const held = new Set(heldSubjects(o).map((s) => s.id));
   return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
 }
-function goalRevision(o, start, named, toOtherWork) {
+function goalRevision(o, start, named, placed) {
   const g = o.goal;
   const isFound = g !== null && g.setAt === start.goal?.setAt;
   if (!isFound || g.source !== "inferred" || g.isAwaitingMilestones || isGoalMet(o)) return null;
@@ -1545,7 +1545,11 @@ function goalRevision(o, start, named, toOtherWork) {
   const isCarried = (s) => kept.has(nameKey(byId.get(o.serves[s.id] ?? "")?.name ?? ""));
   const held = heldSubjects(o).filter(isOpen);
   if (!start.milestones.some(isCut) || !held.some(isCarried)) return null;
-  return held.filter((s) => !isCarried(s) && !toOtherWork.has(s.id));
+  const isPlaced = (s) => {
+    const to = placed.get(s.id);
+    return to === null || to !== void 0 && kept.has(nameKey(to));
+  };
+  return held.filter((s) => !isCarried(s) && !isPlaced(s));
 }
 function refusalOf(o, kind, now) {
   const g = o.goal;
@@ -1734,12 +1738,17 @@ function goalLineRefusal(o, op, revisedFrom) {
   if (isCurrent || isPrevious || isRemoved) return "restates";
   return revisedFrom !== null || hasWorkForGoal(o) ? null : "no-work";
 }
-function applyGoalOp(o, op, now, findSubject, start = o, toOtherWork = []) {
+function applyGoalOp(o, op, now, findSubject, start = o, servesLines = []) {
   if (op.kind === "goal" || op.kind === "retire") {
     const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now);
     const milestones = op.kind === "goal" ? op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status })) : [];
-    const unlinked = new Set(toOtherWork.flatMap((ref) => findSubject(ref)?.id ?? []));
-    const unplaced = op.kind === "goal" ? goalRevision(settled, start, milestones, unlinked) : null;
+    const placed = new Map(
+      servesLines.flatMap((l) => {
+        const s = findSubject(l.subject);
+        return s ? [[s.id, l.milestone]] : [];
+      })
+    );
+    const unplaced = op.kind === "goal" ? goalRevision(settled, start, milestones, placed) : null;
     const why = op.kind === "goal" && goalLineRefusal(settled, op, unplaced === null ? null : start) || (unplaced === null ? goalRefusal(settled, start, op.kind, now) : unplaced.length > 0 ? "work-open" : null);
     const ids = why === "work-open" && unplaced ? unplaced.map((s) => s.id) : [];
     if (why !== null) return { ...o, goalRefused: { line: op.kind, why, ...ids.length > 0 ? { unplaced: ids } : {} } };
@@ -4083,7 +4092,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   const markNamed = (m, line) => {
     if (m) named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity));
   };
-  const toOtherWork = ops.flatMap((op) => op.kind === "serves" && op.milestone === null ? [op.subject] : []);
+  const servesLines = ops.flatMap((op) => op.kind === "serves" ? [op] : []);
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op, n } of ordered) {
     if (op.kind === "none") continue;
@@ -4093,7 +4102,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       continue;
     }
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find, last ?? o, toOtherWork);
+      o = applyGoalOp(o, op, now, find, last ?? o, servesLines);
       if (op.kind === "milestone") markNamed(findMilestone(o, op.name), n);
       if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n);
     } else if (op.kind === "head") {
@@ -4791,7 +4800,7 @@ function refusedLine(o, now) {
       const unplaced = open2.filter((s) => r.unplaced?.includes(s.id));
       const revise = r.line === "goal" ? " When the person cut part of the goal's outcome, write GOAL for the new outcome instead: name again in the same words each milestone it keeps, and write SERVES to - for the work of each milestone it leaves out." : "";
       if (unplaced.length > 0)
-        return `it cuts part of the goal, but leaves this open work with no milestone: ${unplaced.map((s) => s.name).join(", ")}. Write GOAL again with ${unplaced.map((s) => `SERVES: ${s.id} | -`).join(" and ")} in the same answer, or name that work's milestone again in the same words.`;
+        return `it leaves this open work with no open milestone: ${unplaced.map((s) => s.name).join(", ")}. If the person cut that work's milestone, write GOAL again with ${unplaced.map((s) => `SERVES: ${s.id} | -`).join(" and ")} in the same answer. If that work is done, write DONE for it, then GOAL again. Else keep the goal and write no GOAL.`;
       return open2.length === 0 ? null : `the goal's work is still open: ${open2.map((s) => s.name).join(", ")}. In the same answer, close that work with DONE or DROP, or write SERVES to - for work the goal does not need, then write ${line} again.${revise}`;
     },
     moved: () => goalLeftFor(o, now) !== null ? null : `the work has not left the goal: it moved ${duration(now - lastProgressAt(o, g))} ago. When its outcome happened, write DONE for each open milestone instead, so it is met. Else write ${line} once this line says no work for a time.`,

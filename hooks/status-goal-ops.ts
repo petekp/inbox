@@ -275,8 +275,8 @@ function goalLineRefusal(
 
 /**
  * Applies a GOAL, RETIRE, MILESTONE or SERVES line. A GOAL line sets the goal when `goalRefusal` allows it and
- * `hasWorkForGoal` holds, or when it revises the goal as `goalRevision` says, with `toOtherWork` the subjects the
- * answer's SERVES lines send to -. A revision that leaves open work with no place is refused with that work. It also needs `MILESTONES_MIN` milestones, and restates neither the goal, in its
+ * `hasWorkForGoal` holds, or when it revises the goal as `goalRevision` says, with `servesLines` the answer's SERVES
+ * lines. A revision that leaves open work with no place is refused with that work. It also needs `MILESTONES_MIN` milestones, and restates neither the goal, in its
  * words or its milestones, nor the goal it replaced, nor a removed one. RETIRE clears the goal when `goalRefusal` allows it, so
  * never a goal the same answer set. The gate reads the milestones as the answer's subject lines close them, so a GOAL
  * may follow the DONE that finishes the goal's last work. A refused line is saved for the next call to read.
@@ -289,7 +289,7 @@ export function applyGoalOp(
   now: number,
   findSubject: (ref: string) => Subject | null,
   start: SessionStatus = o,
-  toOtherWork: readonly string[] = [],
+  servesLines: readonly Extract<Op, { kind: 'serves' }>[] = [],
 ): SessionStatus {
   if (op.kind === 'goal' || op.kind === 'retire') {
     const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now)
@@ -297,8 +297,13 @@ export function applyGoalOp(
       op.kind === 'goal'
         ? op.milestones.slice(0, MILESTONES_MAX).map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }))
         : []
-    const unlinked = new Set(toOtherWork.flatMap(ref => findSubject(ref)?.id ?? []))
-    const unplaced = op.kind === 'goal' ? goalRevision(settled, start, milestones, unlinked) : null
+    const placed = new Map(
+      servesLines.flatMap(l => {
+        const s = findSubject(l.subject)
+        return s ? [[s.id, l.milestone] as const] : []
+      }),
+    )
+    const unplaced = op.kind === 'goal' ? goalRevision(settled, start, milestones, placed) : null
     const why =
       (op.kind === 'goal' && goalLineRefusal(settled, op, unplaced === null ? null : start)) ||
       (unplaced === null ? goalRefusal(settled, start, op.kind, now) : unplaced.length > 0 ? 'work-open' : null)
