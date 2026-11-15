@@ -179,6 +179,8 @@ export const columnOf = (kids: unknown[], lineHeight: string): Painted =>
 
 export const allOf = (root: Painted): Painted[] => [root, ...root.kids.flatMap(allOf)]
 
+export const writtenFiles: { path: string; text: string }[] = []
+
 const pathBuilder: Record<string, () => unknown> = new Proxy({}, { get: () => () => pathBuilder })
 
 mock.module('gpui-kit', () => ({
@@ -208,13 +210,15 @@ mock.module('herdr', () => ({
     { pane: 'p-shell', tab: 'tab1', terminal: 't2' },
   ],
   focused: () => ({ tab: 'tab1', terminal: focusedTerminal }),
+  spaces: () => [{ active: true, tabs: [{ id: 'tab1', active: true, zoomed: false }] }],
+  window: () => ({ active: true }),
   terminals: () => [
     { address: 't1', labels: { [SESSION_LABEL]: 's1' }, program: { name: 'Claude Code', shell: false } },
     { address: 't2', labels: {}, program: { name: 'zsh', shell: true } },
   ],
   theme: () => new Proxy({}, { get: () => '#808080' }),
   readTextFile: async (path: string) => (path.endsWith('s1.json') ? demoEnvelopeText() : ''),
-  writeTextFile: async () => null,
+  writeTextFile: async (path: string, text: string) => (writtenFiles.push({ path, text }), null),
   watchFolder: () => new Promise(() => {}),
   exec: async () => ({ code: 0, stdout: '', stderr: '' }),
   hc: async () => null,
@@ -248,5 +252,9 @@ export async function openPanel() {
       ?.keyDown?.({ keystroke: key }, cx)
   }
 
-  return { panel, paint, click, press, settle }
+  const measure = (size: (node: Painted) => { width: number; height: number }) => {
+    for (const node of allOf(paint())) node.onSize?.(size(node), cx)
+  }
+
+  return { panel, paint, click, press, settle, measure }
 }

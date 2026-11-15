@@ -3,7 +3,7 @@ import { READING_TEXT } from '../../hooks/banners'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
 import type { SettledState } from '../../hooks/rows'
-import { SETTLED_MS, nextFoldAt } from '../../hooks/timing'
+import { SETTLED_MS, nextFoldAt, timedChangeAt } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import type { Block } from './blocks'
 import { chrome, rowWaits, tabBlocks, tabCells, undoPlaceEndsAt } from './draw'
@@ -34,6 +34,8 @@ type Screen =
       foldAt: number | null
       /** When a queued row next drops its spent Undo's place, so the look draws again then. See `undoPlaceEndsAt`. */
       undoPlaceEndsAt: number | null
+      /** When a press changes with the clock alone, as a PR hand-off's button ends its wait for a fetch. See `timedChangeAt`. */
+      timedChangeAt: number | null
     }
 
 const TRIMMED_NOTE = 'This session is too large to show in full, so its older closed items are left out.'
@@ -114,6 +116,7 @@ export function screenOf(
     waits: rowWaits(screen, ui.tab),
     foldAt: nextFoldAt(settled, placing),
     undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now),
+    timedChangeAt: timedChangeAt(view.lastActions, o.now),
   }
 }
 

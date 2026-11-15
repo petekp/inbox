@@ -84,3 +84,22 @@ export function readSession(text: string | null): ReadSession {
     isFetchingPrs: file.isFetchingPrs === true,
   }
 }
+
+/** A read mid-write gives torn JSON: the look reads again this soon, this many times. */
+const TORN_RETRY_MS = 30
+const TORN_RETRIES = 5
+
+/** Reads the session file at `path`, again after a torn read. A read that fails is refused with its reason. */
+export async function readSessionFile(
+  read: (path: string) => Promise<string | null>,
+  path: string,
+  sleep: (ms: number) => Promise<unknown>,
+): Promise<ReadSession> {
+  for (let n = 0; ; n++) {
+    const text = await read(path).catch((e: unknown) => e)
+    const got =
+      typeof text === 'string' || text === null ? readSession(text) : { is: 'refused' as const, reason: String(text) }
+    if (got.is !== 'torn' || n >= TORN_RETRIES) return got
+    await sleep(TORN_RETRY_MS)
+  }
+}

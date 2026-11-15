@@ -77,7 +77,9 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     const saved = await readState(dir, id).catch(() => null)
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some(c => c.endedAt === null)
     if (isCutOff)
-      await change(id, s => statusChanged(cutOffTurn(s), o => childrenCutOff(o, deps.now()))).catch(() => undefined)
+      await change(id, s => statusChanged(cutOffTurn(s, deps.now()), o => childrenCutOff(o, deps.now()))).catch(
+        () => undefined,
+      )
     prepare(ctx)
     showBand(ctx)
     deps.background(

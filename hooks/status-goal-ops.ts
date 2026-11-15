@@ -1,6 +1,7 @@
 import type { GoalRefusal, Milestone, SessionStatus, StatusGoal, Subject } from '../types'
 import type { Op } from './status'
 import { goalRefusal, goalRevision, hasWorkForGoal } from './status-goal-gate'
+import { forgetSeenWas, withWorkDoneMilestones, withWorkStartedMilestones } from './status-milestone-work'
 import {
   clipWords,
   DESCRIPTION_KEPT,
@@ -69,11 +70,6 @@ export function linkableMilestone(o: SessionStatus, ref: string): Milestone | nu
   const m = findMilestone(o, ref)
 
   return m && m.status !== 'dropped' ? m : null
-}
-
-/** A was line stays until the person has seen it. */
-function forgetSeenWas(m: Milestone, lastLookAt: number | null): void {
-  if (lastLookAt !== null && m.changedAt <= lastLookAt) m.was = null
 }
 
 /**
@@ -324,33 +320,10 @@ export function applyGoalOp(
 }
 
 /**
- * Closes each open milestone whose linked work closed: at least one subject is linked, every one is closed and one is
- * done, and one closed after the milestone last changed. A milestone the call opened again after its work closed
- * stays open until another linked subject closes.
- */
-function withWorkDoneMilestones(o: SessionStatus, now: number): SessionStatus {
-  let isChanged = false
-  const milestones = o.milestones.map(m => {
-    if (!isOpen(m)) return m
-    const linked = o.subjects.filter(s => o.serves[s.id] === m.id)
-    const isWorkDone =
-      linked.length > 0 &&
-      linked.every(s => !isOpen(s)) &&
-      linked.some(s => s.status === 'done') &&
-      linked.some(s => (s.closedAt ?? -Infinity) > m.changedAt)
-    if (!isWorkDone) return m
-    isChanged = true
-    return { ...m, status: 'done' as const, closedAt: now, changedAt: now, was: null }
-  })
-
-  return isChanged ? { ...o, milestones } : o
-}
-
-/**
  * The goal once an answer has applied. A typed goal carries the milestones of the goal before it until an answer from a
  * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
  * has not dropped, in the order of the lines that first name them, which is its plan, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
- * closed, as `withWorkDoneMilestones` says. The was line goes once the person has seen it,
+ * closed, as `withWorkDoneMilestones` says, and each queued one whose linked work is under way starts. The was line goes once the person has seen it,
  * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
  * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
  * that read an earlier goal wrote for that goal.
@@ -363,7 +336,7 @@ export function settleGoal(
 ): SessionStatus {
   const g = saved.goal
   if (g === null) return saved
-  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now)
+  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now)
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt
   const milestones = isAnswerForNewGoal

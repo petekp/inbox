@@ -11,7 +11,8 @@ import type { ViewInput } from './view'
 
 export type Feedback =
   | { is: 'done'; label: string; at: number; isHandedStep?: true; isStillWaiting?: true }
-  | { is: 'working'; label: string; at: number }
+  /** `isHandoff` is a hand-off's work, which can run for minutes, so it does not hold the tab's other rows in place. */
+  | { is: 'working'; label: string; at: number; isHandoff?: true }
   | { is: 'stillOpen'; at: number }
   | { is: 'noComparison'; at: number }
   /** The labels of a message on its way read as the row draws them, from `deliveryLabel`, as "Queued: Yes" or "Queued reply: Call it hello". */
@@ -49,6 +50,11 @@ export function pressUnderWaySince(f: Feedback | null): number | null {
   return f?.is === 'local' && f.result.state === 'pending' ? f.result.at : null
 }
 
+/** `pressUnderWaySince` for the PRs tab's hold on its settled rows. A hand-off's work can run for minutes, so it does not hold them. */
+export function prTabHoldSince(f: Feedback | null): number | null {
+  return f?.is === 'working' && f.isHandoff === true ? null : pressUnderWaySince(f)
+}
+
 export function feedbackOf(
   id: string,
   last: LastAction | undefined,
@@ -71,8 +77,15 @@ export function feedbackOf(
   const isUnreported = last.action === 'compare' && !(reportedAt !== undefined && reportedAt >= last.at)
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS
   const working = WORKING_LABELS[last.action]
-  if (last.kind === 'talk' && working && (isAwaiting || (isUnreported && !isPastLimit)))
-    return { is: 'working', label: working, at: last.at }
+  const isHandoffWorking = last.kind === 'handoff' && isPrRowId(id) && last.repliedAt === undefined
+  const isWorking = last.kind === 'talk' || isHandoffWorking
+  if (isWorking && working && (isAwaiting || (isUnreported && !isPastLimit)))
+    return {
+      is: 'working',
+      label: working,
+      at: last.at,
+      ...(last.kind === 'handoff' ? { isHandoff: true as const } : {}),
+    }
   if (pending === 'sending')
     return { is: 'sending', label: deliveryLabel('sending', last.text, last.reply), at: last.at }
   if (isUnreported) return { is: 'noComparison', at: last.at }
@@ -134,6 +147,11 @@ const WORKING_LABELS: Record<string, string> = {
   'thread-discuss': 'Discussing…',
   'thread-draft': 'Drafting a reply…',
   'pr-rank-again': 'Ranking…',
+  'pr-conflicts': 'Resolving conflicts…',
+  'pr-address-all': 'Addressing…',
+  'pr-merge': 'Merging…',
+  'thread-address': 'Addressing…',
+  'check-fix': 'Fixing…',
 }
 
 const DONE_LABELS: Record<string, (text: string) => string> = {

@@ -8,7 +8,7 @@ import type { SessionView } from '../../hooks/session-view'
 import { isDrawnInPlace } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft } from '../../types'
-import type { Block, Button, RowBlock } from './blocks'
+import type { Block, Button, RowBlock, ViewChange } from './blocks'
 import type { LookUi, TabCell } from './draw'
 import type { SentText } from './out'
 
@@ -191,4 +191,16 @@ export function withoutConfirmed(
     drafts: Object.fromEntries(Object.entries(drafts).filter(([id, d]) => !isSentDraft(id, d))),
     waiting: current.filter(c => c.rowId === typing),
   }
+}
+
+const toggled = <T>(list: T[], x: T): T[] => (list.includes(x) ? list.filter(y => y !== x) : [...list, x])
+
+/** The look's state after a button that changes only what the look shows, other than Help. */
+export function withChange(ui: LookUi, c: Exclude<ViewChange, { toggleHelp: true }>): LookUi {
+  if ('showOptions' in c) return { ...ui, optionsShown: toggled(ui.optionsShown, c.showOptions) }
+  if ('closedFold' in c) return { ...ui, unfolded: toggled(ui.unfolded, c.closedFold) }
+  if ('earlier' in c) return { ...ui, closedAll: [...ui.closedAll, c.earlier] }
+  if ('toggleFold' in c) return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) }
+
+  return withSelected({ ...ui, tab: 'needsYou' }, c.showAsk)
 }
