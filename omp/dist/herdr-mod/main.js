@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T17:37:54.759Z. 235016 characters follow.
+// Built at 2026-11-15T18:00:49.617Z. 234931 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1406,8 +1406,6 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 function childStall(c) {
-  if (c.delegateState === "finished")
-    return { text: "finished", tone: "done" };
   if (c.delegateState === "blocked")
     return { text: "waiting", tone: "needsYou" };
   return null;
