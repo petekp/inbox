@@ -708,6 +708,11 @@ export type Session = {
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**
+   * The rows the person collapsed, each with when, by row id. A row stays collapsed until something new arrives on it,
+   * as `hooks/collapse.ts:collapsedRows` decides.
+   */
+  collapsed: Record<string, number>
+  /**
    * When the look began showing the tab it shows, at the latest write that knew. Null while no look shows the inbox.
    * Every write keeps the closed records of the rows closed or pressed since then, which stay drawn in place.
    */
