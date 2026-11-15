@@ -6,6 +6,7 @@ import { fetchPrs } from '../hooks/host-prs'
 import { panePrBlocks } from '../hooks/pane-prs'
 import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
+import { NO_HOLDS } from '../hooks/timing'
 import { BLOCKED_PR } from './session-helpers'
 
 const ownedPrs = [
@@ -81,7 +82,7 @@ describe('fetchAccountPrs', () => {
       false,
     )
 
-    const view = sessionView(session, 1_000_000, 1000, false)
+    const view = sessionView(session, 1_000_000, 1000, NO_HOLDS)
     expect(view.prs.accountPrs.map(pr => pr.ref).sort()).toEqual(
       [
         'shunk031/skills#188',
@@ -114,6 +115,7 @@ describe('fetchAccountPrs', () => {
       lastActions: view.lastActions,
       prState: session.prViews,
       view,
+      prClearKeys: [],
       prTabKeys: [],
       prGroups: [],
       section: (child: JSX.Element | JSX.Element[]) => child,
@@ -170,7 +172,7 @@ describe('fetchAccountPrs', () => {
       },
     }
 
-    const prsTab = sessionView(session, 1_000_000, 1000, false).prs
+    const prsTab = sessionView(session, 1_000_000, 1000, NO_HOLDS).prs
 
     expect(prsTab.drawn.map(block => [block.pr.ref, block.pr.title])).toEqual([[ref, 'Linked PR detail']])
     expect(prsTab.accountPrs).toEqual([])

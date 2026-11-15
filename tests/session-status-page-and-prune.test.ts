@@ -16,6 +16,7 @@ import { allRows } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import { prMarkId } from '../hooks/pr-rows'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 import { answer } from './session-helpers'
 
 const ITEM: Item = {
@@ -42,7 +43,7 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
   )
   const closed = applyStatus(opened, parseStatus('DONE: s1 | built')!, 2000, asks)
   const held = { ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview: closed } }
-  const rows = sessionView(held, 3000, 1000, true, NO_HOLDS).statusPage.rows.flatMap(r =>
+  const rows = sessionView(held, 3000, 1000, NO_HOLDS).statusPage.rows.flatMap(r =>
     r.kind === 'subject' ? [[r.name, r.mark, r.tone]] : [],
   )
 
@@ -52,14 +53,46 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
     ['Part 1', '○', null],
     ['Part 0', '✓', 'done'],
   ])
-  expect(allRows(sessionView(held, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
+  expect(allRows(sessionView(held, 3000, 1000, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
     'Holds up Part 3',
   )
   const heldDone = {
     ...held,
     ledger: { ...held.ledger, overview: applyStatus(closed, parseStatus('DONE: s4 | built')!, 2500, asks) },
   }
-  expect(allRows(sessionView(heldDone, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
+  expect(allRows(sessionView(heldDone, 3000, 1000, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
+})
+
+test('one ask linked to two subjects marks both ◆, and its Asks row names each open one', () => {
+  const asks = new Set([ITEM.id])
+  const linked = applyStatus(
+    null,
+    parseStatus(
+      [
+        'NEW: working | 2.4 release | build signed',
+        'NEW: working | Hotfix release | build signed',
+        `LINK: ${ITEM.id} | 2.4 release`,
+        `LINK: ${ITEM.id} | Hotfix release`,
+      ].join('\n'),
+    )!,
+    1000,
+    asks,
+  )
+  const sessionOf = (overview: typeof linked) => ({ ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview } })
+  const view = sessionView(sessionOf(linked), 3000, 1000, NO_HOLDS)
+  const oneDone = sessionView(
+    sessionOf(applyStatus(linked, parseStatus('DONE: s1 | shipped')!, 2000, asks)),
+    3000,
+    1000,
+    NO_HOLDS,
+  )
+
+  expect(view.statusPage.rows.flatMap(r => (r.kind === 'subject' ? [[r.name, r.mark]] : []))).toEqual([
+    ['2.4 release', '◆'],
+    ['Hotfix release', '◆'],
+  ])
+  expect(allRows(view).find(r => r.id === ITEM.id)?.holdsUpLine).toBe('Holds up 2.4 release, Hotfix release')
+  expect(allRows(oneDone).find(r => r.id === ITEM.id)?.holdsUpLine).toBe('Holds up Hotfix release')
 })
 
 test('a session saved by the Progress trial build loads without its results, subagents and stated step', () => {
@@ -79,20 +112,30 @@ test('a session saved by the Progress trial build loads without its results, sub
   expect(loaded.overviewFailure).toBeNull()
 })
 
+test('a session saved before sessions kept their tool fields, or with fields that are not lists of names, loads knowing none of them, and one saved with them keeps them', () => {
+  const saved = (toolFields: unknown) => upgradeSession({ ...emptySession(), toolFields } as never).toolFields
+
+  expect(upgradeSession({}).toolFields).toBeNull()
+  expect(saved({ record: 'kind,ask', close: [], order_prs: [] })).toBeNull()
+  expect(saved({ record: [1], close: [], order_prs: [] })).toBeNull()
+  expect(saved({ record: ['kind'], close: [] })).toBeNull()
+  expect(saved(TOOL_FIELDS)).toEqual(TOOL_FIELDS)
+})
+
 test('a sample saved without a Status is replaced, and the sample session carries its own', () => {
   const old = demoView(1_000_000, 'Claude')
 
   expect(isDemoCopy(old)).toBe(true)
   expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
-  const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).statusPage
+  const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, NO_HOLDS).statusPage
   expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.goal?.milestones.map(m => m.rows.map(r => r.kind))).toEqual([
     ['subject'],
     ['subject', 'child', 'child', 'child'],
     ['subject'],
   ])
-  expect(page.rows.map(r => r.kind)).toEqual(['subject', 'child', 'child', 'look', 'subject', 'part', 'done-fold'])
+  expect(page.rows.map(r => r.kind)).toEqual(['part', 'subject', 'child', 'subject', 'done-fold'])
 })
 
 test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {

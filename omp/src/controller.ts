@@ -7,7 +7,7 @@ import type { DocumentResult } from '../../hooks/document'
 import { allRows } from '../../hooks/rows'
 import { showsRunningMark } from '../../hooks/session-view'
 import { READING_TEXT } from '../../hooks/banners'
-import { compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/timing'
+import { compareEndsAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { INITIAL_UI, drawPanel, holdsOf, isAnimating, noticeFor, tallestTabHeight } from './panel'
@@ -28,7 +28,9 @@ export type PanelSource = {
   ): Promise<{ error: string | null; note: 'stale' | null; isUnconfirmed: boolean }>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
-  fetchPrsWhenDue(): void
+  /** Answers the question before omp installs the inbox's Herdr mod. */
+  answerHerdr?(isYes: boolean): Promise<void>
+  fetchPrsWhenDue(isTabShown: boolean): void
   /** Asks Herdr about the running delegates, when a check is due. */
   checkDelegatesWhenDue(): void
   /**
@@ -36,6 +38,8 @@ export type PanelSource = {
    * panel holds in place, from when it began showing that tab.
    */
   shown(tab: ShownTab, holds: Holds): void
+  /** Tells the session which Status subject rows the panel has on screen now, for the look under way. */
+  showedRows(ids: string[]): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
   onChange(listener: () => void): () => void
 }
@@ -114,7 +118,14 @@ export function createPanel(deps: PanelDeps): Panel {
   async function refresh(pressedId?: string): Promise<void> {
     const mine = ++version
     const next = await source.screen(holdsOf(ui)).catch(() => null)
-    if (mine !== version || next === null) return
+    if (mine !== version) return
+    if (next === null) {
+      if (screen && !screen.isReadFailed) {
+        screen = { ...screen, isReadFailed: true }
+        deps.requestRender()
+      }
+      return
+    }
     screen = next
     const followed = followRows(next, ui, seen, isOpening, deps.now())
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now())
@@ -147,6 +158,8 @@ export function createPanel(deps: PanelDeps): Panel {
 
   async function press(p: PanelPress): Promise<void> {
     if (p.action === 'resume') return resume()
+    if (p.action === 'herdr-ask') return source.answerHerdr?.(p.isYes).then(() => refresh())
+    if (p.action === 'all-options') return
     if (!isPrPress(p) && p.action === 'read-document') return showDocument(p.id)
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
@@ -194,6 +207,8 @@ export function createPanel(deps: PanelDeps): Panel {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))
       heldHeight = Math.max(heldHeight, drawn.lines.length)
+      if (drawn.shownSubjects.length > 0) source.showedRows(drawn.shownSubjects)
+      // A reveal waits for a draw that has its target, as after Remove, whose Undo and New buttons come with the next screen.
       // A reveal waits for a draw that has its target, as after Set as goal, whose goal button comes with the next screen.
       ui = {
         ...ui,
@@ -207,8 +222,9 @@ export function createPanel(deps: PanelDeps): Panel {
     },
     handleInput(key, text) {
       if (screen === null) return
-      const result = handleKey(screen, ui, key, deps.now(), text)
-      ui = result.ui
+      const now = deps.now()
+      const result = handleKey(screen, ui, key, now, text)
+      ui = { ...result.ui, listInput: withListInput(ui.listInput, now) }
       source.shown(ui.tab, holdsOf(ui))
       if (result.close) deps.close()
       if (result.press) void press(result.press)
@@ -217,7 +233,7 @@ export function createPanel(deps: PanelDeps): Panel {
     },
     async start() {
       stops.push(source.onChange(() => void refresh()))
-      const prs = timers.every(() => source.fetchPrsWhenDue(), PRS_CHECK_MS)
+      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === 'prs'), PRS_CHECK_MS)
       stops.push(() => timers.stop(prs))
       const delegates = timers.every(() => {
         if (ui.tab === 'overview') source.checkDelegatesWhenDue()

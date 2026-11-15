@@ -7,15 +7,16 @@ import { notePrompt, viewOf } from '../src/core'
 import { makeServer } from '../src/server'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
-import { ANSWER, setup } from './server-fixtures'
+import { ANSWER, pollTab, setup } from './server-fixtures'
 
 test('an accepted queue survives a failed final state write as an unconfirmed press', async () => {
   const { dir } = await setup(0)
   let accepted = false
+  let at = 100
   const handle = makeServer({
     comparePage: '/plugin/dist/compare-page.html',
     dir,
-    now: () => 100,
+    now: () => at,
     exec: async args => {
       if (args[1] === 'queue') {
         accepted = true
@@ -32,12 +33,18 @@ test('an accepted queue survives a failed final state write as an unconfirmed pr
     id: 1,
     method: 'tools/call',
     params: { name: 'inbox_press', arguments: ANSWER, _meta: { thread_id: 's1' } },
-  })) as { result: { content: { text: string }[]; structuredContent: { error: string | null; delivery: string } } }
+  })) as { result: { content: { text: string }[]; structuredContent: { error: string | null } } }
+  at += SETTLE_WINDOW_MS
+  await handle({
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'tools/call',
+    params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
+  })
   const s = await readState(dir, 's1')
 
   assert.equal(accepted, true)
   assert.equal(reply.result.structuredContent.error, null)
-  assert.equal(reply.result.structuredContent.delivery, 'unconfirmed')
   assert.doesNotMatch(reply.result.content[0]!.text, /Not sent/)
   assert.equal(s.ledger.closed[0]?.id, 'i1')
   assert.equal(s.lastActions.i1?.delivery?.state, 'unconfirmed')
@@ -120,6 +127,8 @@ test('a settled Fix keeps its delivery unconfirmed after one indistinguishable a
   await call('inbox_press', { press: { action: 'address', id: 'f1' }, thread: 's1' }, { thread_id: 's1' })
   at = 200
   await call('inbox_press', { press: { action: 'address', id: 'f2' }, thread: 's1' }, { thread_id: 's1' })
+  at = 200 + SETTLE_WINDOW_MS
+  await pollTab(call)
   const queued = await readState(dir, 's1')
   assert.equal(queued.sent[0]!.text, queued.sent[1]!.text)
   const first = notePrompt(queued, queued.sent[0]!.text, 210).state
@@ -131,13 +140,16 @@ test('a settled Fix keeps its delivery unconfirmed after one indistinguishable a
 })
 
 test('an answered question keeps unconfirmed delivery in Closed after its settle window', async () => {
-  const { dir, call } = await setup(0, () => 100)
+  let at = 100
+  const { dir, call } = await setup(0, () => at)
   await updateState(dir, 's1', s => ({
     ...s,
     ledger: { ...s.ledger, items: [...s.ledger.items, { ...s.ledger.items[0]!, id: 'i2' }] },
   }))
   for (const id of ['i1', 'i2'])
     await call('inbox_press', { press: { action: 'answer', id, option: 'Yes' }, thread: 's1' }, { thread_id: 's1' })
+  at += SETTLE_WINDOW_MS
+  await pollTab(call)
   const queued = await readState(dir, 's1')
   const first = notePrompt(queued, queued.sent[0]!.text, 110).state
   const later = viewOf(first, 110 + SETTLE_WINDOW_MS + 1)

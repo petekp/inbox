@@ -6,12 +6,14 @@ import type { Holds } from '../../hooks/timing'
 import { capitalized } from '../../hooks/press-labels'
 import { newRows, openRows } from './arrivals'
 import type { TabView as View } from './core'
-import { POLL_MS, settledIds, settledSeen } from './settle'
+import { POLL_MS, settledIds, settledSeen, undoShownIds } from './settle'
 import { tabState, selection, drafts, entering } from './tab-state'
 import { later, callTool, READ_TIMEOUT_MS } from './tab-host'
 import { drawIn } from './tab-motion'
+import { listInput } from './list-input'
 import { follow, tabWaits } from './tab-selection'
 import { PAGE, swapPage } from './tab-swap'
+import { takeShownRows } from './tab-shown'
 
 export function applyView(next: View, seq: number) {
   if (tabState.isDisposed || seq < tabState.shown) return
@@ -42,7 +44,7 @@ export async function read() {
   try {
     const next = await callTool<View>(
       'inbox_view',
-      { demo: tabState.isDemo, tab: tabState.tab, ...holds() },
+      { demo: tabState.isDemo, tab: tabState.tab, ...holds(), shownRows: takeShownRows() },
       READ_TIMEOUT_MS,
     )
     if (generation !== tabState.viewGeneration || seq < tabState.shown) return
@@ -91,8 +93,13 @@ function failureText(err: unknown): string {
 }
 
 export async function poll() {
-  if (tabState.activePresses === 0) await read()
-  later(poll, POLL_MS)
+  try {
+    await read()
+  } catch (err) {
+    console.error(err)
+  } finally {
+    later(poll, POLL_MS)
+  }
 }
 
 export function replies(): Record<string, number> {
@@ -102,5 +109,11 @@ export function replies(): Record<string, number> {
 export function holds(): Holds {
   tabState.discarded = keptDiscards(tabState.discarded, tabState.shownSince)
 
-  return { replies: replies(), discarded: tabState.discarded, shownSince: tabState.shownSince }
+  return {
+    replies: replies(),
+    discarded: tabState.discarded,
+    shownSince: tabState.shownSince,
+    listInput: listInput(Date.now()),
+    undoShown: undoShownIds(tabState.seen, Date.now()),
+  }
 }

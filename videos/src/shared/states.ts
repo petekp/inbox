@@ -26,7 +26,7 @@ export type State = {
 }
 
 /** When a state's click happens, in seconds into its beat. */
-export const clickAt = (s: State) => s.at - (s.lead ?? 0)
+const clickAt = (s: State) => s.at - (s.lead ?? 0)
 
 /** The state shown `t` seconds into a beat: the last one that has started. */
 export function stateAt(states: State[], t: number): State | undefined {

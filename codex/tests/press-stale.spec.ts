@@ -52,11 +52,11 @@ test('an older same-time local completion cannot replace the newer press of the 
     saveLedger: async () => {},
   }
 
-  await runLocalEffects(host, [effect], 'i1', older)
+  await runLocalEffects(host, [effect], ['i1'], older)
   assert.deepEqual(lasts.i1?.result, newer)
 
   host.perform = async () => null
-  await runLocalEffects(host, [effect], 'i1', newer)
+  await runLocalEffects(host, [effect], ['i1'], newer)
   assert.deepEqual(lasts.i1?.result, {
     state: 'done',
     parts: [{ kind: 'open', name: 'same', isCommand: false, error: null }],
@@ -82,7 +82,7 @@ test('a rejected local effect records failure on the pressed row', async () => {
     saveLedger: async () => {},
   }
 
-  await runLocalEffects(host, [effect], 'i1', pending)
+  await runLocalEffects(host, [effect], ['i1'], pending)
   assert.deepEqual(lasts.i1?.result, {
     state: 'failed',
     parts: [{ kind: 'open', name: 'file.command', isCommand: false, error: 'spawn failed' }],
@@ -144,7 +144,14 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     initial,
     undefined,
     { id: 'i2', action: 'done' },
-    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
+    {
+      now: 20,
+      turnsStarted: 1,
+      extraSteps: [],
+      comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
+      holdMs: 1000,
+    },
   )
   assert.ok(!('stale' in first))
   const sent = markSentToAgent(first.ledger, ['i2'], 'old-attempt')
@@ -153,14 +160,28 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     refused,
     undefined,
     { id: 'i2', action: 'undo' },
-    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
+    {
+      now: 20,
+      turnsStarted: 1,
+      extraSteps: [],
+      comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
+      holdMs: 1000,
+    },
   )
   assert.ok(!('stale' in undo))
   const second = applyPress(
     undo.ledger,
     undefined,
     { id: 'i2', action: 'done' },
-    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
+    {
+      now: 20,
+      turnsStarted: 1,
+      extraSteps: [],
+      comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
+      holdMs: 1000,
+    },
   )
   assert.ok(!('stale' in second))
   const newer = markSentToAgent(second.ledger, ['i2'], 'new-attempt')

@@ -1,12 +1,12 @@
 import { inlineLinks, linkLabel, parseInline } from './inline'
 
 /** A field of a `record` call, by the name the agent gave it. */
-export type RecordField = 'title' | 'ask' | 'detail' | 'options'
+type RecordField = 'title' | 'ask' | 'detail' | 'options'
 
-export type UnlinkedRef = { field: RecordField; text: string }
+type UnlinkedRef = { field: RecordField; text: string }
 
 /** A field's text as the agent sent it, before it is cut, and the most visible characters the inbox keeps of it. */
-export type FieldText = { field: RecordField; text: string; max: number }
+type FieldText = { field: RecordField; text: string; max: number }
 
 const FENCE = /```[\s\S]*?```/g
 const URL_TEXT = /<?https?:\/\/[^\s>]+>?/g

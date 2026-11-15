@@ -1,7 +1,9 @@
 import { isPrPress } from '../../hooks/pr-press'
+import { CLEAR_FINISHED_ID } from '../../hooks/pr-rows'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
-import { firstWaiting, rowAfterClose } from '../../hooks/action-plan'
+import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
+import { UNDO_KEY } from '../../hooks/help'
 import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
@@ -10,8 +12,6 @@ import { isSelectable, isShut, linesOf, waitsOf } from './panel-lines'
 import type { Button, Line } from './panel-lines'
 import type { PanelPress, PanelScreen, PanelUi } from './panel'
 
-const wrapIndex = (i: number, n: number) => ((i % n) + n) % n
-
 export function resolveSelected(lines: Line[], selectedId: string | null): Line | null {
   const selectable = lines.filter(isSelectable)
   const current = lines.find(l => l.id === selectedId)
@@ -19,7 +19,7 @@ export function resolveSelected(lines: Line[], selectedId: string | null): Line 
   const waits = waitsOf(lines)
   const nextId = (current ? rowAfterClose(waits, current.id) : null) ?? firstWaiting(waits)
 
-  return lines.find(l => l.id === nextId) ?? selectable[0] ?? null
+  return lines.find(l => l.id === nextId) ?? selectable.find(l => l.id !== CLEAR_FINISHED_ID) ?? null
 }
 
 function defaultFocus(line: Line): number {
@@ -79,6 +79,11 @@ export function afterHandOff(screen: PanelScreen, ui: PanelUi, id: string, now: 
 function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, now: number): KeyResult {
   const { press } = button
   if (button.isOut) return { ui }
+  if (press.action === 'all-options') {
+    const index = line.buttons.findIndex(b => b.press === press)
+
+    return { ui: { ...ui, optionsShown: [...ui.optionsShown, press.id], focus: { rowId: line.id, index } } }
+  }
   if (press.action === 'resume') {
     const { stop } = screen
     const isSending = ui.resuming?.is === 'sending' && ui.resuming.stopAt === stop?.at
@@ -86,6 +91,7 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
 
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: 'sending' } }, press }
   }
+  if (press.action === 'herdr-ask') return { ui: { ...ui, focus: null }, press }
   if (!isPrPress(press) && press.action === 'type') {
     const draft = ui.drafts[line.id] ?? { text: '', since: now }
 
@@ -160,22 +166,22 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   if ((key === 'up' || key === 'k' || key === 'down' || key === 'j') && selectable.length > 0) {
     const step = key === 'up' || key === 'k' ? -1 : 1
 
-    return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)]!.id) }
+    return { ui: withSelection(base, selectable[steppedIndex(at, step, selectable.length)]!.id) }
   }
   const tabs = shown.map(t => t.id)
   const pickedTab = shown.find(t => t.hotkey === key)
   if (key === 'tab' || key === 'shift+tab') {
     const step = key === 'tab' ? 1 : -1
 
-    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]!, now) }
+    return { ui: withTab(base, tabs[steppedIndex(tabs.indexOf(base.tab), step, tabs.length)]!, now) }
   }
   if (pickedTab) return { ui: withTab(base, pickedTab.id, now) }
-  if (key === 'u') {
-    const undoable = lines.filter(l => l.settled?.undo).at(-1)
-    const press = undoable?.settled?.undo
-    if (undoable && press) return { ui: withSelection(base, undoable.id), press }
+  if (key === UNDO_KEY) {
+    const undoable = latestUndo(
+      lines.flatMap(l => (l.settled?.undo ? [{ id: l.id, press: l.settled.undo, at: l.settled.at }] : [])),
+    )
 
-    return { ui: base }
+    return undoable ? { ui: withSelection(base, undoable.id), press: undoable.press } : { ui: base }
   }
   const tabLine = lines.find(l => l.isTabButtons && l.buttons.some(b => b.key === key))
   const tabButton = tabLine?.buttons.find(b => b.key === key)
@@ -184,13 +190,15 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
     const kind = selected.fold
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter(k => k !== kind) : [...base.unfolded, kind]
 
-    return { ui: { ...base, unfolded } }
+    return { ui: { ...base, unfolded, closedAll: base.closedAll.filter(k => k !== kind) } }
   }
+  if (selected?.earlierOf && key === 'enter')
+    return { ui: { ...base, closedAll: [...base.closedAll, selected.earlierOf] } }
   if (selected && isShut(selected, base))
     return key === 'enter' ? { ui: { ...base, opened: selected.id } } : { ui: base }
   if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now)) return { ui: base }
   if (key === 'left' || key === 'right') {
-    const index = wrapIndex(focusOf(selected, base) + (key === 'left' ? -1 : 1), selected.buttons.length)
+    const index = steppedIndex(focusOf(selected, base), key === 'left' ? -1 : 1, selected.buttons.length)
 
     return { ui: { ...base, focus: { rowId: selected.id, index } } }
   }
@@ -211,13 +219,13 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
   if (!row) return null
   if (key === 'j' || key === 'k') {
     const at = rows.findIndex(r => r.id === row.id)
-    const to = rows[wrapIndex(at + (key === 'k' ? -1 : 1), rows.length)]!.id
+    const to = rows[steppedIndex(at, key === 'k' ? -1 : 1, rows.length)]!.id
 
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } }
   }
   const { keys } = row
   if (key === 'left' || key === 'right') {
-    const index = wrapIndex(pageFocus(row, ui) + (key === 'left' ? -1 : 1), keys.length)
+    const index = steppedIndex(pageFocus(row, ui), key === 'left' ? -1 : 1, keys.length)
 
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } }
   }
@@ -239,7 +247,7 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } }
   }
 
-  // The proposal goes with the press, so the goal's button, which then shows, takes the selection.
+  // The goal's buttons change with the press, so the goal's place keeps the selection: Undo after Remove.
   return {
     ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
     press: { action: press.action, id: GOAL_KEYS_ID },

@@ -129,7 +129,7 @@ export const coordinatorDayLater: Step[] = [
       pastMatch: '2\\.5',
       pieces: [{ id: 'folder', state: 'working', stands: 'moving the setting to a file' }],
     },
-    targets: ['proposal-only-when-stated', 'head-follows'],
+    targets: ['goal-only-when-clear', 'head-follows'],
   },
   {
     label:

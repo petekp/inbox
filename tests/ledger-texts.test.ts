@@ -97,6 +97,25 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('edited file-399.ts')
     expect(prompt).toContain('…[cut]')
   })
+
+  test('lists only the most recently dismissed findings in a session that dismissed many', () => {
+    const closedFindings = Array.from({ length: 40 }, (_, i) => ({
+      id: `f${i}`,
+      kind: 'issue' as const,
+      title: `Problem number ${i}`,
+      detail: '',
+      path: null,
+      at: i,
+      how: 'dismissed' as const,
+      outcome: 'dismissed',
+      closedAt: i,
+    }))
+    const ex = { person: 'go', trigger: null, activity: [], reply: 'ok', turn: 1, press: null, screen: '', tasks: [] }
+    const prompt = buildPrompt({ ...EMPTY, closedFindings }, ex)
+    expect(prompt).toContain('Problem number 39 →')
+    expect(prompt).not.toContain('Problem number 0 →')
+    expect(prompt.split('\n').filter(l => l.startsWith('issue: Problem number')).length).toBeLessThan(40)
+  })
 })
 
 describe('guidedCloseDescription', () => {
@@ -111,12 +130,16 @@ describe('record link descriptions', () => {
     const record = agentTools(CLAUDE_CODE).find(t => t.name === 'record')!
     const properties = record.inputSchema.properties as Record<string, { description: string }>
 
-    for (const key of ['ask', 'detail', 'title']) {
-      expect(properties[key]!.description).toContain('Links as [label](https://…).')
+    for (const key of ['ask', 'title']) {
+      expect(properties[key]!.description).toContain('Links as [label](https://…);')
+      expect(properties[key]!.description).toContain('a link counts as its label')
     }
+    expect(properties.detail!.description).toContain('Links as [label](https://…).')
 
-    expect(properties.ask!.description).toContain('at most 12 words; a link counts as its label')
-    expect(properties.title!.description).toContain('at most 12 words; a link counts as its label')
+    expect(properties.ask!.description).toContain('at most 12 words')
+    expect(properties.ask!.description).toContain('a link counts as its label')
+    expect(properties.title!.description).toContain('at most 12 words')
+    expect(properties.title!.description).toContain('a link counts as its label')
     expect(properties.options!.description).toContain(
       'A link here shows only its label; put the page behind an option in detail or steps.',
     )
@@ -208,7 +231,7 @@ describe("the person's own commands", () => {
 
 describe('the Herdr status line', () => {
   const statusOf = (ledger: Ledger, stop: Stop | null, dialogs: Dialog[]) =>
-    herdrTokens(ledger, stop, sessionView({ ...emptySession(), ledger }, 3, 0, false), dialogs).inbox ?? ''
+    herdrTokens(ledger, stop, sessionView({ ...emptySession(), ledger }, 3, 0), dialogs).inbox ?? ''
 
   test('names the first waiting item after the count, and what the session is focused on when nothing waits', () => {
     const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
@@ -234,6 +257,19 @@ describe('the Herdr status line', () => {
         [dialog],
       ),
     ).toBe('! Signed out: /login')
+  })
+
+  test('publishes the focus apart from what waits, for a session that runs this one as a delegate, whatever leads the status line', () => {
+    const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
+    const head = { title: 'PDF export', description: 'Lay out the PDF export' }
+    const described = { ...waiting, overview: { ...EMPTY_SESSION_STATUS, head } }
+    const stop = { kind: 'sign-in' as const, detail: 'authentication_failed', resets: null, at: 1 }
+    const focusOf = (ledger: Ledger, s: Stop | null) =>
+      herdrTokens(ledger, s, sessionView({ ...emptySession(), ledger }, 3, 0), [])['inbox-focus']
+
+    expect(focusOf(described, null)).toBe('Lay out the PDF export')
+    expect(focusOf(described, stop)).toBe('Lay out the PDF export')
+    expect(focusOf(waiting, null)).toBeNull()
   })
 
   test('tells a reached usage limit, with its reset time, from a busy server', () => {

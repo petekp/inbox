@@ -137,7 +137,7 @@ test('with recordedItemsOnly, a catch-up adds no ask and keeps a recorded ask as
   await runUpdates({
     ...host,
     recordedItemsOnly: true,
-    catchUp: async () => ({ kind: 'reply', text: ANSWER, source: REPLY, statusCall: null }),
+    catchUp: async () => ({ kind: 'reply', text: ANSWER, source: REPLY, statusCall: null, heard: null }),
   })
 
   const after = (await host.read()).ledger

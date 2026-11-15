@@ -24,7 +24,7 @@ export const retiredSonnet: Model = {
 }
 export const smol: Model = { id: 'gpt-mini', name: 'GPT Mini', provider: 'openai', identity: {} }
 
-export type World = {
+type World = {
   dir: string
   clock: number
   handlers: Map<string, Handler>
@@ -51,6 +51,7 @@ export type World = {
   hasUI: boolean
   branch: unknown[]
   activeTools: string[]
+  sendAnswer: (() => Promise<void>) | null
 }
 
 export let w: World
@@ -83,6 +84,7 @@ export function startWorld() {
     hasUI: true,
     branch: [],
     activeTools: ['read', 'bash', 'record', 'close'],
+    sendAnswer: null,
   }
 }
 
@@ -101,6 +103,8 @@ export const pi = () =>
     },
     sendUserMessage: (text: string, options: unknown) => {
       w.sent.push({ text, options })
+
+      return w.sendAnswer?.()
     },
     exec: async (command: string, args: string[]) => {
       w.execCalls.push({ command, args })
@@ -169,7 +173,9 @@ export const deps = (): HostDeps => ({
   background: work => {
     w.background.push(work.catch(() => undefined))
   },
+  after: () => undefined,
   isUsageLimit: async (_status, message) => /usage limit/i.test(message),
+  herdrTarget: null,
   herdrPane: null,
   recordedItemsOnly: undefined,
 })

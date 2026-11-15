@@ -1,5 +1,5 @@
 import { ago } from '../../hooks/text'
-import { HELP_COPY, helpKeys, markLegend } from '../../hooks/help'
+import { HELP_COPY, helpKeys, markLegend, tabLegend } from '../../hooks/help'
 import { bannerOf, tabBarBanners } from '../../hooks/banners'
 import { DOT, ROW_COPY } from '../../hooks/rows'
 import { isRowTab, shownTabs, tabBadge } from '../../hooks/tabs'
@@ -13,6 +13,7 @@ import { switchTab, drawnTab } from './tab-selection'
 import { swapPage } from './tab-swap'
 import { read } from './tab-read'
 import { pulseInStep, MarkGlyph, legendMarkClass, GroupTitle, Banner } from './tab-parts'
+import { HerdrAskBanner } from './tab-herdr-ask'
 
 /** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
 export function HelpPage({ v }: { v: View }) {
@@ -42,6 +43,17 @@ export function HelpPage({ v }: { v: View }) {
               <div class="content tight muted">{m.words}</div>
             </div>
           ))}
+        </div>
+      </section>
+      <section>
+        <GroupTitle title={HELP_COPY.tabs} count={0} />
+        <div class="help-keys">
+          {tabLegend(v.isNextBuild === true).flatMap(t => [
+            <b key={`${t.keys}-symbol`}>{t.keys}</b>,
+            <span key={`${t.keys}-name`} class="muted">
+              {t.does}
+            </span>,
+          ])}
         </div>
       </section>
     </main>
@@ -115,6 +127,7 @@ export function TabBar({ v }: { v: View }) {
           ...(tabState.serverNote ? [bannerOf(tabState.serverNote.kind, tabState.serverNote.text)] : []),
           ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
           ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
+          ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
         ],
         error,
         tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
@@ -139,6 +152,7 @@ export function TabBar({ v }: { v: View }) {
           <Banner banner={b} />
         ),
       )}
+      <HerdrAskBanner v={v} />
     </nav>
   )
 }

@@ -10,6 +10,9 @@
         "CODEX_HOME",
         "CODEX_CLI_PATH",
         "CODEX_MCP_NODE_PATH",
+        "HC_TERMINAL_ID",
+        "HC_TERMINAL_SOCKET",
+        "HERDR_APP_HOME",
         "INBOX_FEED",
         "HERDR_PANE_ID",
         "HERDR_BIN_PATH"

@@ -1,7 +1,8 @@
 import { allRows } from '../../hooks/rows'
 import { feedbackOf } from '../../hooks/feedback'
 import type { TabView as View } from './core'
-import { tabState, drafts, errors, copies } from './tab-state'
+import type { Feedback } from '../../hooks/feedback'
+import { tabState, drafts, errors, copies, sending } from './tab-state'
 import { keepPressedOpen } from './tab-selection'
 import { read, replies } from './tab-read'
 
@@ -10,6 +11,23 @@ export function isNotSent(v: View, id: string): boolean {
     allRows(v).some(r => r.id === id && r.feedback?.is === 'notSent') ||
     feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at)?.is === 'notSent'
   )
+}
+
+/** A row's saved last press, so the tab can tell when a view shows a press it has out. */
+export function lastPressKey(v: View | null, id: string): string {
+  return JSON.stringify(v?.lastActions[id] ?? null)
+}
+
+/**
+ * The status the tab draws for its Local press while the press is out: the press's pending result, until a view shows
+ * the server's record of the press, which then draws as in the other looks, such as "Starting a re-run of CI…" after
+ * "Refreshing PR #12…". Null for a message, and once a view shows the press.
+ */
+export function outPending(v: View | null, id: string): Feedback | null {
+  const out = sending.get(id)
+  if (!out?.pending) return null
+
+  return lastPressKey(v, id) === out.lastBefore ? out.pending : null
 }
 
 export async function copy(rowId: string, c: { text: string; name: string }, isLatest: () => boolean) {

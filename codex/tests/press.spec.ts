@@ -2,37 +2,128 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { withArrival } from '../../hooks/press-reducer'
-import { applyPrPress } from '../../hooks/pr-tab'
+import { applyPrPress, withFinishedPrsSettled } from '../../hooks/pr-tab'
 import { demoView } from '../../hooks/demo'
 import { recordClose, recordItem } from '../../hooks/tools'
 import { feedbackText } from '../../hooks/feedback'
 import { firstWaiting, listWaits } from '../../hooks/action-plan'
 import { QUEUED_AFTER_MS } from '../../hooks/timing'
 import { rowHandle, settledLabel, settledMark } from '../../hooks/rows'
-import { notePrompt, viewOf } from '../src/core'
+import { endTurn, notePrompt, viewOf } from '../src/core'
+import { emptyState } from '../src/state'
+import { withFetchedPrs } from '../../hooks/session-presses'
+import { withLasts } from '../../hooks/pressed'
+import type { PrView } from '../../types'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
-import { after, pressed, SHOWN, withItems } from './press-fixtures'
+import { after, pressed, released, SHOWN, withItems } from './press-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
-test('Dismiss merged dismisses every merged PR but the branch’s own, each with its own Undo, and is stale once none is left', () => {
+test('a fetch that finds tab PRs merged settles each but the branch’s own as Merged, and Undo keeps one on the tab', () => {
+  const d = demoView(100, 'Codex')
+  const refs = ['acme/visor#31', 'acme/visor#29', 'acme/visor#33']
+  const inState = (state: 'OPEN' | 'MERGED') =>
+    Object.fromEntries(refs.map(ref => [ref, { ...d.prViews.views[ref]!, state }]))
+  const before = { ...d, lastActions: {}, prViews: { ...d.prViews, views: inState('OPEN') } }
+  const r = withFinishedPrsSettled(before, inState('MERGED'), d.prViews.branchRef, { now: 200, turnsStarted: 0 })
+  assert.deepEqual(r.ledger.prs, ['acme/visor#31'])
+  assert.deepEqual(
+    Object.entries(r.lastActions).map(([id, l]) => [id, l.kind, l.action, l.text]),
+    [
+      ['pr:acme/visor#29', 'mark', 'pr-dismiss', 'Merged'],
+      ['pr:acme/visor#33', 'mark', 'pr-dismiss', 'Merged'],
+    ],
+  )
+
+  const prViews = { ...d.prViews, views: inState('MERGED') }
+  const ctx = { now: 200, turnsStarted: 0 }
+  const undone = applyPrPress(r.ledger, prViews, r.lastActions, { action: 'pr-undo', ref: 'acme/visor#29' }, ctx)
+  assert.ok(!('stale' in undone))
+  assert.deepEqual(undone.ledger.prs, ['acme/visor#31', 'acme/visor#29'])
+})
+
+const SETTLE_NOW = 200
+
+function withDemoPrs(states: Record<string, PrView['state']>, branchRef: string | null): SessionState {
+  const d = demoView(100, 'Codex')
+  const s = emptyState('s1')
+  const views = Object.fromEntries(
+    Object.entries(d.prViews.views).map(([ref, view]) => [ref, { ...view, state: states[ref] ?? view.state }]),
+  )
+
+  return { ...s, ledger: { ...s.ledger, prs: d.ledger.prs }, prViews: { ...d.prViews, branchRef, views } }
+}
+
+function fetchedAs(s: SessionState, states: Record<string, PrView['state']>, branchRef: string | null): SessionState {
+  const fetched = Object.fromEntries(
+    Object.entries(states).map(([ref, state]) => [ref, { ...s.prViews.views[ref]!, state }]),
+  )
+
+  return withFetchedPrs(s, fetched, branchRef, false, SETTLE_NOW)
+}
+
+function undone(s: SessionState, ref: string): SessionState {
+  const r = applyPrPress(
+    s.ledger,
+    s.prViews,
+    s.lastActions,
+    { action: 'pr-undo', ref },
+    { now: SETTLE_NOW, turnsStarted: 0 },
+  )
+  assert.ok(!('stale' in r))
+
+  return { ...s, ledger: r.ledger, lastActions: withLasts(s.lastActions, r.lasts, r.drop) }
+}
+
+const PR_29_URL = 'https://github.com/acme/visor/pull/29'
+const PR_31_URL = 'https://github.com/acme/visor/pull/31'
+
+test('a reply that names a PR a fetch settled as Merged leaves it off the PRs tab', () => {
+  const settled = fetchedAs(withDemoPrs({}, 'acme/visor#31'), { 'acme/visor#29': 'MERGED' }, 'acme/visor#31')
+  assert.equal(settled.lastActions['pr:acme/visor#29']?.text, 'Merged')
+
+  const replied = endTurn(settled, `${PR_29_URL} merged.`, SETTLE_NOW)
+  assert.deepEqual(replied.ledger.prs, ['acme/visor#31', 'acme/visor#33'])
+})
+
+test('once a fetch finds the branch has another PR or none, its old merged PR settles as Merged if the session linked it', () => {
+  const merged = withDemoPrs({ 'acme/visor#31': 'MERGED' }, 'acme/visor#31')
+  const r = fetchedAs(merged, {}, null)
+  assert.deepEqual(r.ledger.prs, ['acme/visor#29', 'acme/visor#33'])
+  assert.equal(r.lastActions['pr:acme/visor#31']?.text, 'Merged')
+
+  const unlinked = { ...merged, ledger: { ...merged.ledger, prs: ['acme/visor#29', 'acme/visor#33'] } }
+  assert.equal(fetchedAs(unlinked, {}, 'acme/visor#29').lastActions['pr:acme/visor#31'], undefined)
+})
+
+test('a PR the person keeps with Undo stays on the PRs tab through a reply that names it and a later fetch', () => {
+  const first = fetchedAs(withDemoPrs({}, 'acme/visor#31'), { 'acme/visor#29': 'MERGED' }, 'acme/visor#31')
+  const kept = endTurn(undone(first, 'acme/visor#29'), `${PR_29_URL} merged.`, SETTLE_NOW)
+  assert.deepEqual(fetchedAs(kept, {}, 'acme/visor#31').ledger.prs, ['acme/visor#31', 'acme/visor#33', 'acme/visor#29'])
+
+  const moved = fetchedAs(withDemoPrs({ 'acme/visor#31': 'MERGED' }, 'acme/visor#31'), {}, null)
+  const keptBranchPr = endTurn(undone(moved, 'acme/visor#31'), `${PR_31_URL} merged.`, SETTLE_NOW)
+  assert.deepEqual(fetchedAs(keptBranchPr, {}, null).ledger.prs, ['acme/visor#29', 'acme/visor#33', 'acme/visor#31'])
+})
+
+test('Clear merged and closed dismisses every merged and closed PR but the branch’s own, each with its own Undo, and is stale once none is left', () => {
   const d = demoView(100, 'Codex')
   const views = d.prViews.views
   const open = { ...views['acme/visor#33']!, ref: 'acme/visor#35', number: 35 }
-  const asMerged = (ref: string) => ({ ...views[ref]!, state: 'MERGED' as const })
   const prViews = {
     ...d.prViews,
     views: {
-      'acme/visor#31': asMerged('acme/visor#31'),
-      'acme/visor#29': asMerged('acme/visor#29'),
-      'acme/visor#33': asMerged('acme/visor#33'),
+      'acme/visor#31': { ...views['acme/visor#31']!, state: 'MERGED' as const },
+      'acme/visor#29': { ...views['acme/visor#29']!, state: 'MERGED' as const },
+      'acme/visor#33': { ...views['acme/visor#33']!, state: 'CLOSED' as const },
       [open.ref]: open,
     },
   }
   const ledger = { ...d.ledger, prs: [...d.ledger.prs, open.ref] }
   const ctx = { now: 200, turnsStarted: 0 }
 
-  const r = applyPrPress(ledger, prViews, {}, { action: 'pr-dismiss-merged' }, ctx)
+  const r = applyPrPress(ledger, prViews, {}, { action: 'pr-clear-finished' }, ctx)
   assert.ok(!('stale' in r))
   assert.deepEqual(r.ledger.prs, ['acme/visor#31', 'acme/visor#35'])
   assert.deepEqual(
@@ -44,10 +135,10 @@ test('Dismiss merged dismisses every merged PR but the branch’s own, each with
   )
   assert.deepEqual(r.effects, [])
 
-  const undone = applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-undo', ref: 'acme/visor#29' }, ctx)
+  const undone = applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-undo', ref: 'acme/visor#33' }, ctx)
   assert.ok(!('stale' in undone))
-  assert.deepEqual(undone.ledger.prs, ['acme/visor#31', 'acme/visor#35', 'acme/visor#29'])
-  assert.deepEqual(applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-dismiss-merged' }, ctx), { stale: true })
+  assert.deepEqual(undone.ledger.prs, ['acme/visor#31', 'acme/visor#35', 'acme/visor#33'])
+  assert.deepEqual(applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-clear-finished' }, ctx), { stale: true })
 })
 
 test('Fix hands a finding off and settles it as the choice made, each press with no ✓ until its message arrives, then lists it in the Closed fold though an applied turn leaves it open; File issue folds it until the reply, which leaves it Still open or closes it with the issue; Discuss keeps it open; a close moves it to Closed', () => {
@@ -59,18 +150,16 @@ test('Fix hands a finding off and settles it as the choice made, each press with
       w.ledger,
       { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
       10,
+      TOOL_FIELDS,
     ).ledger,
   }
   const r = pressed(s, { action: 'address', id: 'f3' })
   assert.ok(!('stale' in r))
-  assert.deepEqual(r.effects, [
-    {
-      kind: 'send',
-      text: 'Please address this finding you recorded:\nIssue: No lint script\nOnly tests run.',
-      by: null,
-    },
-  ])
-  const sent = after(s, { action: 'address', id: 'f3' })
+  assert.deepEqual(r.effects, [])
+  const message = r.last?.delivery?.state === 'held' ? r.last.delivery.message : ''
+  assert.equal(message, 'Please address this finding you recorded:\nIssue: No lint script\nOnly tests run.')
+  const held = after(s, { action: 'address', id: 'f3' })
+  const sent = released(held, 'f3')
   const folded = viewOf(sent, 60, SHOWN).findings
   assert.deepEqual(
     folded.rows.map(r => [r.id, r.state.is, r.feedback && feedbackText(r.feedback, 'codex')]),
@@ -86,9 +175,9 @@ test('Fix hands a finding off and settles it as the choice made, each press with
 
     return [mark.isRunning ? 'running' : mark.text, settledLabel(row.state.label, row.state.delivery)]
   }
+  assert.deepEqual(drawnAt(held, 60), ['', 'Fix'])
   assert.deepEqual(drawnAt(sent, 60), ['running', 'Fix'])
   assert.deepEqual(drawnAt(sent, 50 + QUEUED_AFTER_MS), ['running', 'Queued: Fix'])
-  const message = r.effects[0]?.kind === 'send' ? r.effects[0].text : ''
   assert.deepEqual(drawnAt({ ...sent, lastActions: withArrival(sent.lastActions, message) }, 80), ['✓', 'Fix'])
   const started = notePrompt(sent, 'Please address this finding you recorded:', 70).state
   const applied = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }
@@ -135,7 +224,10 @@ test('Fix hands a finding off and settles it as the choice made, each press with
   assert.deepEqual(stillOpen.closed, [])
   const filedAndClosed = {
     ...leftOpen,
-    ledger: recordClose(CODEX, leftOpen.ledger, { id: 'f3', reason: 'LIN-12' }, 90).ledger,
+    ledger: recordClose(CODEX, leftOpen.ledger, { id: 'f3', reason: 'LIN-12' }, 90, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).ledger,
   }
   assert.deepEqual(
     viewOf(filedAndClosed, 90 + SETTLE_WINDOW_MS).findings.closed.map(f => [f.id, f.outcome]),
@@ -147,7 +239,11 @@ test('Fix hands a finding off and settles it as the choice made, each press with
     [['f3', 'open', 'Discuss']],
   )
   assert.equal(discussed.count, 1)
-  const closedBy = { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger }
+  const closedBy = {
+    ...sent,
+    ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90, { lastActions: {}, turnStartedAt: null })
+      .ledger,
+  }
   assert.deepEqual(
     viewOf(closedBy, 100, SHOWN).findings.rows.map(r => [r.id, r.state, r.actions]),
     [
@@ -215,8 +311,18 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
   assert.deepEqual(undone.ledger.closed, [])
   assert.ok('stale' in pressed(undone, { action: 'undo', id: 'i1' }))
   const answered = after(s, { action: 'answer', id: 'i1', option: 'Fix add.js' })
-  assert.ok('stale' in pressed(answered, { action: 'undo', id: 'i1' }))
-  const closedByCodex = { ...s, ledger: recordClose(CODEX, s.ledger, { id: 'i2', reason: 'done' }, 50).ledger }
+  const takenBack = pressed(answered, { action: 'undo', id: 'i1' })
+  assert.ok(!('stale' in takenBack) && takenBack.dropLast === true)
+  assert.deepEqual(
+    takenBack.ledger.items.map(i => i.id),
+    ['i1', 'i2'],
+  )
+  assert.ok('stale' in pressed(released(answered, 'i1'), { action: 'undo', id: 'i1' }))
+  const closedByCodex = {
+    ...s,
+    ledger: recordClose(CODEX, s.ledger, { id: 'i2', reason: 'done' }, 50, { lastActions: {}, turnStartedAt: null })
+      .ledger,
+  }
   assert.ok('stale' in pressed(closedByCodex, { action: 'undo', id: 'i2' }))
   const expired = {
     ...s,
@@ -244,6 +350,7 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
       s.ledger,
       { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
       10,
+      TOOL_FIELDS,
     ).ledger,
   }
   const restored = after(after(withFinding, { action: 'dismiss', id: 'f3' }), { action: 'undo', id: 'f3' })

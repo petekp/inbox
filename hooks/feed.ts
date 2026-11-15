@@ -11,7 +11,7 @@ export type FeedEntry = {
   owner?: { machine: string; agent: string }
   signalKey?: string
 }
-export type FeedWarning = { key: string; title: string; detail: string; at: number }
+type FeedWarning = { key: string; title: string; detail: string; at: number }
 export type Feed = { version: 1; source: string; writtenAt: number; entries: FeedEntry[]; warnings?: FeedWarning[] }
 export type FeedFile = { path: string; feed: Feed | null | undefined }
 

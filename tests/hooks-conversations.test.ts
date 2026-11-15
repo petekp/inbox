@@ -39,6 +39,27 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
 })
 
+test('an answer held for Undo when /clear switches conversations sends once its conversation loads again, with no turn ending', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.stored.set('p:/tmp/project', JSON.stringify(SAVED_SESSION))
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'answer-i1-0' })
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
+  await clock.advance(SETTLED_MS)
+  expect(w.sent).toEqual([])
+
+  await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
+  await clock.settle()
+  expect(w.sent).toEqual(['Re "Use Node or Python?": Node'])
+})
+
 test('where classic.SessionStart is skipped, the first prompt after /clear, /resume and /branch loads that conversation and carries its open questions', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

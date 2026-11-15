@@ -226,7 +226,11 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const host = agent === 'codex' ? CODEX : CLAUDE_CODE
   const ask = (input: string, system: string): Promise<Answer> =>
     agent === 'codex'
-      ? askCodex(input, system).then(text => ({ text, model: null, outputTokens: null }))
+      ? askCodex(input, system, { call: 'ledger', reads: 'reply', isRetry: false }).then(text => ({
+          text,
+          model: null,
+          outputTokens: null,
+        }))
       : claude(input, system)
   const runInfo = { ...job(agent, c, n), attempts: 1, earlier: [], durationMs: 0 }
   const prompt =

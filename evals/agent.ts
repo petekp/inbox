@@ -9,6 +9,7 @@ import { CODEX } from '../codex/src/texts'
 import { OMP } from '../omp/src/texts'
 import { MODEL } from '../codex/src/update'
 import { agentTools } from '../hooks/tools'
+import { probeTools } from './probe-tools'
 import { failures } from './agent-checks'
 import type { Agent, Call, Case, Outcome } from './agent-checks'
 import {
@@ -26,6 +27,14 @@ import {
   writesOnlyUnder,
 } from './agent-cli'
 import { codexCli } from './codex-cli'
+import {
+  assertCodexOffersOnlyProbe,
+  assertCodexUsedOnlyProbe,
+  CODEX_ISOLATION_CONFIG,
+  CODEX_WEB_SEARCH_CONFIG,
+  codexEnv,
+  codexResourceCall,
+} from './codex-isolation'
 import {
   earlierRuns,
   finish,
@@ -97,7 +106,14 @@ function sandbox(c: Case, agent: Agent) {
   const log = join(dir, 'calls.jsonl')
   writeFileSync(
     state,
-    JSON.stringify({ agent, isGuided, shown: c.ledger ?? {}, ledger: c.toolLedger ?? c.ledger ?? {} }),
+    JSON.stringify({
+      agent,
+      isGuided,
+      shown: c.ledger ?? {},
+      ledger: c.toolLedger ?? c.ledger ?? {},
+      lastActions: c.lastActions ?? {},
+      tools: c.tools ?? null,
+    }),
   )
   writeFileSync(log, '')
   const serverArgs = [probeServer, '--state', state, '--log', log]
@@ -113,6 +129,23 @@ async function runClaude(c: Case): Promise<Outcome> {
     return await claudeIn(c, s)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
+  }
+}
+
+/**
+ * The whole environment of a Claude run: the sign-in's variables and nothing of the runner's own session, whose
+ * variables load its plugins, such as the real inbox, into the run. Claude reads its sign-in from the keychain of `USER`.
+ */
+function claudeEnv(): NodeJS.ProcessEnv {
+  const signIn = ['CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']
+  const kept = Object.fromEntries(signIn.flatMap(k => (process.env[k] ? [[k, process.env[k]]] : [])))
+
+  return {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    USER: process.env.USER,
+    ...kept,
+    CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH: String(MAX_TOOL_DESCRIPTION),
   }
 }
 
@@ -142,7 +175,7 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
     ],
     {
       cwd: s.work,
-      env: { ...process.env, CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH: String(MAX_TOOL_DESCRIPTION) },
+      env: claudeEnv(),
       input: message(c, CLAUDE_CODE),
     },
   )
@@ -187,7 +220,7 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
 function codexHome(s: ReturnType<typeof sandbox>): string {
   const home = join(s.dir, 'codex-home')
   mkdirSync(home)
-  // Only the sign-in: the runner's own AGENTS.md would reach the agent.
+  // Only the sign-in: the runner's own AGENTS.md, rules and installed plugins would reach the agent.
   const auth = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'auth.json')
   if (existsSync(auth)) symlinkSync(auth, join(home, 'auth.json'))
   writeFileSync(
@@ -195,11 +228,13 @@ function codexHome(s: ReturnType<typeof sandbox>): string {
     [
       `model = ${tomlString(MODEL)}`,
       `model_reasoning_effort = ${tomlString(CODEX_EFFORT)}`,
+      CODEX_WEB_SEARCH_CONFIG,
       ...(isGuided ? [`developer_instructions = ${tomlString(guidance(CODEX))}`] : []),
       `[mcp_servers.${PROBE}]`,
       `command = ${tomlString(process.execPath)}`,
       `args = ${JSON.stringify(s.serverArgs)}`,
       `default_tools_approval_mode = "approve"`,
+      ...CODEX_ISOLATION_CONFIG,
       '',
     ].join('\n'),
   )
@@ -232,9 +267,10 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
       s.work,
       message(c, CODEX),
     ],
-    { cwd: s.work, env: { ...process.env, CODEX_HOME: home } },
+    { cwd: s.work, env: codexEnv(s.dir, home) },
   )
   const events = lines(r.stdout)
+  assertCodexUsedOnlyProbe(events)
   const reply = events
     .filter(e => e.type === 'item.completed' && e.item?.type === 'agent_message')
     .map(e => e.item.text as string)
@@ -243,7 +279,7 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
   return {
     reply,
     calls: s.calls(),
-    error: r.code === 0 ? null : `codex exited ${r.code}: ${r.stderr.slice(0, 300)}`,
+    error: r.code === 0 ? codexResourceCall(events) : `codex exited ${r.code}: ${r.stderr.slice(0, 300)}`,
     model: null,
     raw: r.stdout,
   }
@@ -370,19 +406,19 @@ function job(agent: Agent, c: Case, n: number) {
   return { agent, name: c.name, run: n, requested: REQUESTED[agent] }
 }
 
-async function assertNoInboxServer() {
+const casesFor = (a: Agent) => cases.filter(c => c.agents?.includes(a) ?? true)
+
+async function assertOnlyCodexProbe() {
   if (!agents.includes('codex')) return
+  const configCase = casesFor('codex').find(c => Object.keys(c.files ?? {}).some(f => f.split('/')[0] === '.codex'))
+  if (configCase)
+    throw new IsolationError(`${configCase.name} writes a .codex folder, which the preflight does not see`)
   const probe = sandbox({ name: 'preflight', about: '', prompt: '', checks: [] }, 'codex')
-  const home = codexHome(probe)
-  const r = await exec([codexCli, 'mcp', 'list'], { cwd: probe.work, env: { ...process.env, CODEX_HOME: home } })
-  const names = r.stdout
-    .split('\n')
-    .slice(1)
-    .map(l => l.split(/\s+/)[0])
-    .filter(Boolean)
-  if (r.code !== 0 || names.join() !== PROBE)
-    throw new IsolationError(`Codex's MCP servers are not just ${PROBE}:\n${r.stdout}${r.stderr}`)
-  rmSync(probe.dir, { recursive: true, force: true })
+  try {
+    await assertCodexOffersOnlyProbe(codexCli, probe.work, codexEnv(probe.dir, codexHome(probe)))
+  } finally {
+    rmSync(probe.dir, { recursive: true, force: true })
+  }
 }
 
 /** One trivial omp run, which fails when the session offers any tool besides the probe's, or any MCP server's. */
@@ -412,6 +448,7 @@ const about = provenance(
       [CLAUDE_CODE, CODEX, OMP].flatMap(host => [
         [`guidanceText ${host.agent}`, guidanceText(host)],
         [`tools ${host.agent}`, JSON.stringify(agentTools(host))],
+        [`tools 0.3.0 ${host.agent}`, JSON.stringify(probeTools(host, '0.3.0'))],
       ]),
     ),
     'close description Claude': guidedCloseDescription(CLAUDE_CODE, ''),
@@ -424,11 +461,10 @@ const about = provenance(
 )
 const path = resultsPath(values.out, about)
 const firstRuns = earlierRuns<Result>(values.with, about, path)
-const preflight = await Promise.all([assertNoInboxServer(), assertOnlyOmpProbeSession()]).then(
+const preflight = await Promise.all([assertOnlyCodexProbe(), assertOnlyOmpProbeSession()]).then(
   () => null,
   (e: unknown) => `preflight: ${String(e)}`,
 )
-const casesFor = (a: Agent) => cases.filter(c => c.agents?.includes(a) ?? true)
 const jobs: Job<Result>[] = agents.flatMap(a =>
   casesFor(a).flatMap(c =>
     Array.from({ length: runs }, (_, n) => ({

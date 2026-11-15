@@ -23,7 +23,7 @@ export type ReplayRun = { agent: string; name: string; run: number; error: strin
 export type GradedCase = { replay: Replay; runs: ReplayRun[] }
 
 /** One test of the pass bar: a share of failures, which blocks at `blocksAt` failures or more. */
-export type LayerTest = { family: Family; name: string; failures: number; n: number; p0: number; blocksAt: number }
+type LayerTest = { family: Family; name: string; failures: number; n: number; p0: number; blocksAt: number }
 
 type Tally = 'pass' | 'fail' | null
 
@@ -39,7 +39,7 @@ export function stepName(replay: Replay, i: number): string {
 }
 
 function toleranceOf(id: string): number {
-  if (id === 'proposal-when-stated') return TOLERANCE.missedProposal
+  if (id === 'goal-when-clear') return TOLERANCE.missedGoal
 
   return JUDGE_ONLY.has(id) ? TOLERANCE.judgeCheck : TOLERANCE.modelRule
 }

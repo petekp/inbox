@@ -2,7 +2,7 @@ import { IDLE_MARK, SUBJECT_MARKS } from '../hooks/help'
 import type { SubjectStatus } from '../types'
 
 /** What really happened to a piece of work at a step, as the case's author knows it. */
-export type PieceState = 'working' | 'queued' | 'set-aside' | 'waits-on-other' | 'done' | 'dropped' | 'filed'
+type PieceState = 'working' | 'queued' | 'set-aside' | 'waits-on-other' | 'done' | 'dropped' | 'filed'
 
 /** One piece of the session's work. */
 export type Piece = {
@@ -24,10 +24,12 @@ export type Piece = {
   alsoRight?: SubjectStatus[]
   /** The id of the goal's milestone this piece serves, or `none` for work the goal does not need. */
   serves?: string
+  /** A link that is also right, as `none` for a piece that a milestone's outcome covers only loosely. */
+  servesAlso?: string
 }
 
 /** One milestone of the goal: an outcome the goal needs, by the fact's own id, not the call's. */
-export type MilestoneFact = {
+type MilestoneFact = {
   id: string
   name: string
   /** A case-insensitive pattern that this milestone's name matches, and no other milestone's. */
@@ -36,20 +38,41 @@ export type MilestoneFact = {
   alsoRight?: SubjectStatus[]
 }
 
-/** The goal the person set or accepted, and its milestones. */
-export type GoalFact = { text: string; match: string; milestones: MilestoneFact[] }
+/**
+ * The goal as the session holds it, and its milestones. `isLeft` says the work has left it: the page shows it met or
+ * shows no goal, and its milestones' states no longer matter.
+ */
+/** The note after a goal's text on what the page may show for it. */
+function goalNote(g: GoalFact): string {
+  if (g.isDropped) return ' (the person dropped its outcome: the page shows no goal)'
+  if (g.isLeft) return ' (the work has left it: the page shows it met, or shows no goal)'
 
-/** An outcome with a finish line the person stated at a step, which a proposal should match. */
-export type GoalStated = { text: string; match: string }
+  return g.mayEnd ? ' (the work has paused on it: the page may keep it, or show it met or no goal)' : ''
+}
+
+type GoalFact = {
+  text: string
+  match: string
+  milestones: MilestoneFact[]
+  /** The work has left it: the page shows it met, or shows no goal. */
+  isLeft?: true
+  /** The person dropped its outcome: the page shows no goal, met or not. Needs `isLeft`. */
+  isDropped?: true
+  /** The work has paused on it: the page may keep it, or show it met or no goal. */
+  mayEnd?: true
+}
+
+/** An outcome with a finish line that a step makes clear, from the person's words or the work, which a goal set there should match. */
+type GoalClear = { text: string; match: string }
 
 /** An open ask, and the pieces it holds up. */
-export type AskFact = { match: string; text: string; holdsUp: string[] }
+type AskFact = { match: string; text: string; holdsUp: string[] }
 
 /** Something the session mentions that is not a piece of its work. */
-export type NotWork = { kind: 'ask' | 'finding' | 'task' | 'rule'; text: string; match: string }
+type NotWork = { kind: 'ask' | 'finding' | 'task' | 'rule'; text: string; match: string }
 
 /** Running work, by its host handle: what it does, and the piece it serves. */
-export type ChildFact = { ref: string; does: string; serves: string }
+type ChildFact = { ref: string; does: string; serves: string }
 
 export type Facts = {
   /** What the session is focused on now. */
@@ -64,8 +87,8 @@ export type Facts = {
   children: ChildFact[]
   /** The goal as the session holds it. None when no goal is set. */
   goal?: GoalFact | null
-  /** What the person stated as a goal at this step. Null at a step where they stated none. */
-  goalStated?: GoalStated | null
+  /** The next goal this step makes clear. Null at a step where none is clear. */
+  goalClear?: GoalClear | null
   /** The ids of pieces and milestones whose state, place or plan changed at this step. Empty when nothing changed. */
   changed: string[]
 }
@@ -85,7 +108,7 @@ export type FactsChange = {
   goal?: GoalFact | null
   /** Milestones of the goal whose facts change: a known id updates it. */
   milestones?: (Partial<MilestoneFact> & { id: string })[]
-  goalStated?: GoalStated
+  goalClear?: GoalClear
 }
 
 const CHANGING_KEYS = ['state', 'stands', 'parts', 'was', 'merged', 'serves'] as const
@@ -131,7 +154,7 @@ export function factsAfter(before: Facts, change: FactsChange | undefined): Fact
     notWork: [...before.notWork, ...(change?.notWork ?? [])],
     children: change?.children ?? before.children,
     goal: goalAfter(before.goal, change, changed),
-    goalStated: change?.goalStated ?? null,
+    goalClear: change?.goalClear ?? null,
     changed,
   }
 }
@@ -182,12 +205,14 @@ export function factsText(f: Facts): string {
       s === 'working' ? [SUBJECT_MARKS.working.mark, IDLE_MARK.mark] : [SUBJECT_MARKS[s].mark],
     )
     const alsoRight = alsoMarks.length > 0 ? ` Its row may also show ${alsoMarks.join(' or ')}.` : ''
+    const link = (to: string) =>
+      to === 'none' ? 'the goal does not need it' : `it serves the milestone ${milestoneName(to)}`
     const serves =
       p.serves === undefined
         ? ''
-        : p.serves === 'none'
-          ? ' The goal does not need it.'
-          : ` It serves the milestone ${milestoneName(p.serves)}.`
+        : p.servesAlso === undefined
+          ? ` ${link(p.serves)[0]!.toUpperCase()}${link(p.serves).slice(1)}.`
+          : ` Either ${link(p.serves)}, or ${link(p.servesAlso)}.`
 
     return `- ${p.names[0]}${also}: ${STATE_TEXT[p.state]}. ${p.stands}.${parts}${was}${merged}${alsoRight}${serves}${isChanged}`
   }
@@ -196,7 +221,7 @@ export function factsText(f: Facts): string {
 
   const goal = f.goal
     ? [
-        `Goal: ${f.goal.text}`,
+        `Goal: ${f.goal.text}${goalNote(f.goal)}`,
         'Milestones:',
         list(
           f.goal.milestones.map(
@@ -205,7 +230,7 @@ export function factsText(f: Facts): string {
         ),
       ]
     : ['Goal: none set']
-  const stated = f.goalStated ? [`The person stated a goal at this step: ${f.goalStated.text}`] : []
+  const stated = f.goalClear ? [`This step makes the next goal clear: ${f.goalClear.text}`] : []
 
   return [
     ...goal,

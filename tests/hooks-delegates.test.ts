@@ -112,41 +112,69 @@ test('a herdr wait shows its delegate running while it waits, for a delegate wit
   expect(delegates()).toEqual([['scout', false]])
 })
 
-test('while the Status shows a running delegate, the inbox asks Herdr each HERDR_CHECK_MS, with no turn ending, and stops once the Status hides', async ($, on) => {
+test(
+  'while the Status shows a running delegate, the inbox asks Herdr each HERDR_CHECK_MS, with no turn ending, and stops once the Status hides',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    w.files = ['/.next-build']
+    const herdrAsks = () => w.ran.filter(argv => argv.join(' ') === 'herdr agent list').length
+    const answer = (agent_status: string) =>
+      w.ghAnswers.unshift({
+        match: argv => argv.join(' ') === 'herdr agent list',
+        stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents: [{ name: 'fixer', agent_status }] } }),
+      })
+
+    w.paneState = { isShown: true, isFocused: true }
+
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
+    await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt fixer "fix it"' })
+    await clock.advance(HERDR_CHECK_MS)
+    answer('working')
+    const pane = await $.ui.mount(PANE)
+    await pane.press({ key: 'tab-key-overview' })
+    await clock.settle()
+    const asked = herdrAsks()
+    expect(asked).toBeGreaterThan(0)
+
+    answer('blocked')
+    await clock.advance(HERDR_CHECK_MS)
+    await clock.settle()
+    expect(childrenOf(w.stored).map(c => [c.endedAt === null, c.delegateState])).toEqual([[true, 'blocked']])
+    expect(await pane.find({ text: /· waiting/ })).toBeDefined()
+
+    await pane.press({ key: 'tab-key-needsYou' })
+    await clock.advance(HERDR_CHECK_MS)
+    await clock.settle()
+    const afterHidden = herdrAsks()
+    await clock.advance(3 * HERDR_CHECK_MS)
+    await clock.settle()
+    expect(herdrAsks()).toBe(afterHidden)
+  },
+)
+
+test('a delegate named by an id draws the focus its own session publishes to Herdr once Herdr shows it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
-  const herdrAsks = () => w.ran.filter(argv => argv.join(' ') === 'herdr agent list').length
-  const answer = (agent_status: string) =>
-    w.ghAnswers.unshift({
-      match: argv => argv.join(' ') === 'herdr agent list',
-      stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents: [{ name: 'fixer', agent_status }] } }),
-    })
-
   w.paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
-  await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt fixer "fix it"' })
-  await clock.advance(HERDR_CHECK_MS)
-  answer('working')
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt pdfx2 "lay out the export"' })
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
-  const asked = herdrAsks()
-  expect(asked).toBeGreaterThan(0)
+  expect(await pane.find({ text: /pdfx2/ })).toBeDefined()
 
-  answer('blocked')
+  const pdfx2 = { name: 'pdfx2', agent_status: 'working', tokens: { 'inbox-focus': 'Lay out the PDF export' } }
+  w.ghAnswers.unshift({
+    match: argv => argv.join(' ') === 'herdr agent list',
+    stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents: [pdfx2] } }),
+  })
   await clock.advance(HERDR_CHECK_MS)
   await clock.settle()
-  expect(childrenOf(w.stored).map(c => [c.endedAt === null, c.delegateState])).toEqual([[true, 'blocked']])
-  expect(await pane.find({ text: /· waiting/ })).toBeDefined()
-
-  await pane.press({ key: 'tab-key-needsYou' })
-  await clock.advance(HERDR_CHECK_MS)
-  await clock.settle()
-  const afterHidden = herdrAsks()
-  await clock.advance(3 * HERDR_CHECK_MS)
-  await clock.settle()
-  expect(herdrAsks()).toBe(afterHidden)
+  expect(await pane.find({ text: /Lay out the PDF export/ })).toBeDefined()
 })

@@ -42,15 +42,22 @@ export const CLOSED_MARKS: Record<ClosedState, string> = {
   lapsed: SUBJECT_MARKS.dropped.mark,
 }
 
-/** A PR row's mark: a review thread that waits on the person, one sent to the agent, and a failing check. */
+/** A PR row's mark: a review thread that waits on the person, one sent to the agent, a failing check and a cancelled one. */
 export const PR_MARKS = {
   waiting: { text: HELD_MARK.mark, tone: 'needsYou' },
   sent: { text: SUBJECT_MARKS.done.mark, tone: 'done' },
   failing: { text: FINDING_GROUPS.issue.mark, tone: 'error' },
+  cancelled: { text: '⊘', tone: null },
 } as const
 
 /** One mark the legend explains. `isRunning` draws it as the running mark. */
 export type LegendEntry = { mark: string; tone: ToneName | null; isRunning: boolean; words: string }
+
+/**
+ * The words of the two marks that mean a thing stopped before it finished. The terminal and omp draw both as ⊘, so
+ * their Help lines start alike.
+ */
+const stoppedWords = (what: string) => `Stopped before it finished: ${what}`
 
 /** Every mark a look draws on a row or a group title, once each, with what it means wherever it appears. */
 export const MARK_LEGEND: readonly LegendEntry[] = [
@@ -70,13 +77,19 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
   { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
-  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: 'Dropped before it was done' },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords('dropped work') },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: 'Dismissed by you' },
   {
     mark: FINDING_GROUPS.issue.mark,
     tone: FINDING_GROUPS.issue.tone,
     isRunning: false,
     words: 'Something is wrong: an issue or a failing check',
+  },
+  {
+    mark: PR_MARKS.cancelled.text,
+    tone: PR_MARKS.cancelled.tone,
+    isRunning: false,
+    words: stoppedWords('a cancelled check, which needs another run'),
   },
   {
     mark: FINDING_GROUPS.opportunity.mark,
@@ -100,14 +113,22 @@ export function markLegend(isNextBuild: boolean): readonly LegendEntry[] {
   return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter(m => !STATUS_ONLY_MARKS.has(m.mark))
 }
 
-export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
+export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks', tabs: 'Tabs' } as const
 
 export type HelpKey = { keys: string; does: string }
 
-/** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prTabActions` bind from any row of the tab. */
+/** The symbol each tab draws where its name does not fit, with its name, in Help's key layout. */
+export function tabLegend(isNextBuild: boolean): HelpKey[] {
+  return shownTabs(isNextBuild).map(t => ({ keys: t.symbol, does: t.label }))
+}
+
+/** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
+export const UNDO_KEY = 'u'
+
+/** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prClearActions` bind from any row of the tab. */
 const PR_TAB_HELP_KEYS: HelpKey[] = [
   { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
-  { keys: 'm', does: 'Dismiss the merged PRs' },
+  { keys: 'm', does: 'Clear the merged and closed PRs' },
 ]
 const DOCUMENT_KEYS: HelpKey[] = [
   { keys: 'v', does: 'Read the selected report, if available' },
@@ -128,12 +149,15 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
   const selectsStatusRows = tab === 'overview' && hasStatusButtons
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
+  const undoKey = { keys: UNDO_KEY, does: 'Undo the last close' }
   switch (look) {
     case 'desktop':
       return []
     case 'terminal':
       return [
         switchTabs,
+        ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...(hasRows ? [undoKey] : []),
         ...(hasRows || selectsStatusRows
           ? [
               {
@@ -158,6 +182,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
               ...(hasDocumentRows ? DOCUMENT_KEYS : []),
             ]
           : []),
+        ...(hasRows ? [undoKey] : []),
         ...prTabKeys,
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, leave a reply field, or return from a report' },
@@ -171,8 +196,8 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
               ...(hasDocumentRows ? DOCUMENT_KEYS : []),
               { keys: '← →', does: 'Pick a button' },
               { keys: '↵', does: 'Press the picked button' },
-              { keys: 'r', does: 'Reply to the selected row' },
-              { keys: 'u', does: 'Undo the last close' },
+              { keys: 't', does: 'Reply to the selected row' },
+              undoKey,
               ...prTabKeys,
             ]
           : [
@@ -187,6 +212,13 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
             ]),
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, return from a report, then the panel' },
+      ]
+    case 'herdr':
+      return [
+        { keys: '← →', does: 'Switch tabs' },
+        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }, undoKey] : []),
+        ...prTabKeys,
+        { keys: 'esc', does: "Move focus back to the agent's terminal" },
       ]
   }
 }

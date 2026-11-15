@@ -13,7 +13,7 @@ const SETTLE = 0.3
 const RING = 0.4
 
 /** Where the pointer is at second `t`: resting at `from`, then gliding to each click in turn. */
-export function pointerAt(from: { x: number; y: number }, clicks: ClickMark[], t: number) {
+function pointerAt(from: { x: number; y: number }, clicks: ClickMark[], t: number) {
   let position = from
   let readyAt = -Infinity
   for (const c of clicks) {

@@ -43,10 +43,10 @@ export function cutForEllipsis(line: string, fits: (withEllipsis: string) => boo
   const parts: string[] = []
   let at = 0
   for (const match of line.matchAll(ANSI_TOKEN)) {
-    parts.push(...[...graphemes.segment(line.slice(at, match.index))].map(p => p.segment), match[0])
+    parts.push(...graphemesOf(line.slice(at, match.index)), match[0])
     at = match.index + match[0].length
   }
-  parts.push(...[...graphemes.segment(line.slice(at))].map(p => p.segment))
+  parts.push(...graphemesOf(line.slice(at)))
   while (parts.length > 0 && !fits(`${parts.join('')}…`)) parts.pop()
 
   let result = parts.join('')
@@ -83,7 +83,49 @@ export function clipMiddle(text: string, max: number, head: number): string {
   return `${text.slice(0, head)}${NL}…[cut]${NL}${text.slice(text.length - (max - head))}`
 }
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+const segmenter =
+  typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    : null
+
+/** The jamo Hangul is written with, in the basic and extended blocks, grouped as Unicode's grapheme rules group them. */
+const LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`
+const VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`
+const TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`
+const SYLLABLE = String.raw`[\uAC00-\uD7A3]`
+
+/** The precomposed syllables with no trailing consonant: every 28th from U+AC00, for 19 leading consonants times 21 vowels. */
+const OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(0xac00 + i * 28)).join('')}]`
+
+/**
+ * One Hangul syllable as Unicode's grapheme rules join it: leading consonants, then vowels or a precomposed syllable,
+ * then trailing consonants. Only a syllable with no trailing consonant takes more vowels.
+ */
+const HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`
+
+/** Two regional indicators, which draw one flag. A third starts the next flag. */
+const FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`
+
+/**
+ * What stays with the character before it: combining marks, emoji modifiers, the tag characters of a flag such as
+ * England's, ZWNJ, the halfwidth katakana voiced marks, and Thai and Lao SARA AM.
+ */
+const EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`
+
+/**
+ * A grapheme where `Intl.Segmenter` is missing, as in Herdr's mod runtime: a flag, a Hangul syllable or one character,
+ * with what extends it. U+200D joins the next character to it.
+ */
+const GRAPHEME = new RegExp(
+  String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
+  'gu',
+)
+
+/** The characters a reader sees in `text`, in order. */
+function graphemesOf(text: string): string[] {
+  return segmenter ? Array.from(segmenter.segment(text), s => s.segment) : (text.match(GRAPHEME) ?? [])
+}
+
 export const OSC8 = /\x1b\]8;[^;\x07\x1b]*;[^\x07\x1b]*(?:\x07|\x1b\\)/g
 const ANSI_TOKEN = new RegExp(`\\x1b\\[[0-9;]*m|${OSC8.source}`, 'g')
 export function closeOpenLink(text: string): string {
@@ -100,7 +142,7 @@ const WIDE =
 /** The cells a terminal draws `text` in: two for an emoji or a wide East Asian character, however many code points it takes. */
 export function cellWidth(text: string): number {
   let cells = 0
-  for (const { segment } of graphemes.segment(text)) cells += graphemeCells(segment)
+  for (const segment of graphemesOf(text)) cells += graphemeCells(segment)
 
   return cells
 }
@@ -109,7 +151,7 @@ export function cellWidth(text: string): number {
 export function cutToCells(text: string, cells: number): string {
   let out = ''
   let used = 0
-  for (const { segment } of graphemes.segment(text)) {
+  for (const segment of graphemesOf(text)) {
     used += graphemeCells(segment)
     if (used > cells) break
     out += segment
@@ -124,12 +166,21 @@ function graphemeCells(grapheme: string): number {
   return EMOJI.test(grapheme) || WIDE.test(grapheme) ? 2 : 1
 }
 
-export function ago(ms: number): string {
-  const min = Math.round(ms / 60000)
-  if (min < 1) return 'just now'
-  if (min < 60) return `${min}m ago`
+/** A length of time in its largest unit, as "55m", "3h" or "2d". Under a minute, "1m". */
+export function duration(ms: number): string {
+  const min = Math.max(1, Math.round(ms / 60000))
+  if (min < 60) return `${min}m`
   const h = Math.round(min / 60)
-  if (h < 48) return `${h}h ago`
+  if (h < 48) return `${h}h`
 
-  return `${Math.round(h / 24)}d ago`
+  return `${Math.round(h / 24)}d`
+}
+
+export function ago(ms: number): string {
+  return Math.round(ms / 60000) < 1 ? 'just now' : `${duration(ms)} ago`
+}
+
+/** A time of day in the person's locale, as "4:46 PM". */
+export function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }

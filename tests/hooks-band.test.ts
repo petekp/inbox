@@ -1,83 +1,91 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Run } from '../hooks/gh'
+import { HERDR_RETRY_MS, herdrReporter } from '../hooks/herdr'
+import { PRESS_POLL_MS } from '../hooks/herdr-app'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
+import { reportedLabels } from './session-script'
 import { BAND, PANE, selectRow, sidebarLines, sidebarTokens, NO_COUNTS } from './hooks-helpers'
 
-test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [], { HERDR_PANE_ID: 'p1' })
-  const reply = async (text: string, turnId: string) => {
-    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
-    await $.turn.start({ text, turnId })
-    await $.turn.complete({ answer: 'Run ./load.sh.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+test(
+  'a question’s handle is the number a typed answer reaches, and the band counts what the tab counts',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [], { HERDR_PANE_ID: 'p1' })
+    const reply = async (text: string, turnId: string) => {
+      await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+      await $.turn.start({ text, turnId })
+      await $.turn.complete({ answer: 'Run ./load.sh.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+      await clock.settle()
+    }
+
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
     await clock.settle()
-  }
+    expect(sidebarTokens()).toEqual({ inbox: null, ...NO_COUNTS })
+    await reply('add a greeting cli', 't1')
+    w.ledgerReply = [
+      'NEW: decide | 1 | Add a --loud flag? | yes / no | yes',
+      'NEW: do | - | Run the load script | - | -',
+      'HELP: new 2 | run | ./load.sh | load script',
+      'NEW: decide | 2 | Print in color? | yes / no | no',
+      'NEW: do | - | Sign in to npm | - | -',
+    ].join('\n')
+    await reply('add flags too', 't2')
 
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-  expect(sidebarTokens()).toEqual({ inbox: null, ...NO_COUNTS })
-  await reply('add a greeting cli', 't1')
-  w.ledgerReply = [
-    'NEW: decide | 1 | Add a --loud flag? | yes / no | yes',
-    'NEW: do | - | Run the load script | - | -',
-    'HELP: new 2 | run | ./load.sh | load script',
-    'NEW: decide | 2 | Print in color? | yes / no | no',
-    'NEW: do | - | Sign in to npm | - | -',
-  ].join('\n')
-  await reply('add flags too', 't2')
+    const pane = await $.ui.mount(PANE)
+    const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+    const handle = async (id: string) => {
+      const label = (await pane.find({ key: `title-${id}` }))?.props.label
+      return typeof label === 'string' ? (label.match(/^(\d+\)) /)?.[1] ?? null) : undefined
+    }
+    expect(await pane.find({ key: 'explain-i3-key' })).toBeDefined()
+    expect([await handle('i5'), await handle('i1'), await handle('i2')]).toEqual(['2)', null, null])
+    expect(await pane.find({ text: /^1\) Add a --loud flag\?/ })).toBeDefined()
+    expect(await band.find({ text: /Asks 6/ })).toBeDefined()
+    expect(await pane.find({ text: /^ 6$/ })).toBeDefined()
+    expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '6' })
 
-  const pane = await $.ui.mount(PANE)
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  const handle = async (id: string) => {
-    const label = (await pane.find({ key: `title-${id}` }))?.props.label
-    return typeof label === 'string' ? (label.match(/^(\d+\)) /)?.[1] ?? null) : undefined
-  }
-  expect(await pane.find({ key: 'explain-i3-key' })).toBeDefined()
-  expect([await handle('i5'), await handle('i1'), await handle('i2')]).toEqual(['2)', null, null])
-  expect(await pane.find({ text: /^1\) Add a --loud flag\?/ })).toBeDefined()
-  expect(await band.find({ text: /Asks 6/ })).toBeDefined()
-  expect(await pane.find({ text: /^ 6$/ })).toBeDefined()
-  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '6' })
+    const answered = await $.prompt.submit({ text: '1. yes', wait: false, origin: { kind: 'composer' } })
+    expect(answered.context?.join('\n')).toContain('1 → "Add a --loud flag?"')
+    expect(await pane.find({ text: /^1\) Add a --loud flag\?/ })).toBeUndefined()
+    expect(await pane.find({ text: /^Add a --loud flag\?/ })).toBeDefined()
 
-  const answered = await $.prompt.submit({ text: '1. yes', wait: false, origin: { kind: 'composer' } })
-  expect(answered.context?.join('\n')).toContain('1 → "Add a --loud flag?"')
-  expect(await pane.find({ text: /^1\) Add a --loud flag\?/ })).toBeUndefined()
-  expect(await pane.find({ text: /^Add a --loud flag\?/ })).toBeDefined()
+    await selectRow(pane, 'i4')
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'help-i4-0' })
+    await clock.settle()
+    expect(await band.find({ text: /Asks 5/ })).toBeDefined()
+    expect(await pane.find({ text: /^ 5$/ })).toBeDefined()
+    expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '5' })
 
-  await selectRow(pane, 'i4')
-  await clock.advance(PRESS_GUARD_MS)
-  await pane.press({ key: 'help-i4-0' })
-  await clock.settle()
-  expect(await band.find({ text: /Asks 5/ })).toBeDefined()
-  expect(await pane.find({ text: /^ 5$/ })).toBeDefined()
-  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '5' })
+    w.ledgerReply = ['NEW: do | - | Water the plants | - | -', 'NEW: decide | 1 | Ship it? | yes / no | yes'].join('\n')
+    await reply('ship it', 't3')
+    expect(await handle('i8')).toBe('1)')
+    expect(sidebarLines().at(-1)).toBe('8 · Ship it?')
+    w.ledgerReply = 'NEW: do | - | Feed the cat | - | -'
+    await reply('one more task', 't4')
+    expect(sidebarLines().at(-1)).toBe('9 · Ship it?')
+    await $.tool.call({
+      tool: 'mcp__inbox__record',
+      kind: 'finding',
+      finding_kind: 'issue',
+      title: 'README is stale',
+      detail: 'Old name.',
+    })
+    await clock.settle()
+    expect(sidebarTokens()).toEqual({
+      ...NO_COUNTS,
+      inbox: '9 · Ship it?',
+      'inbox-needs-you': '9',
+      'inbox-findings': '1',
+    })
 
-  w.ledgerReply = ['NEW: do | - | Water the plants | - | -', 'NEW: decide | 1 | Ship it? | yes / no | yes'].join('\n')
-  await reply('ship it', 't3')
-  expect(await handle('i8')).toBe('1)')
-  expect(sidebarLines().at(-1)).toBe('8 · Ship it?')
-  w.ledgerReply = 'NEW: do | - | Feed the cat | - | -'
-  await reply('one more task', 't4')
-  expect(sidebarLines().at(-1)).toBe('9 · Ship it?')
-  await $.tool.call({
-    tool: 'mcp__inbox__record',
-    kind: 'finding',
-    finding_kind: 'issue',
-    title: 'README is stale',
-    detail: 'Old name.',
-  })
-  await clock.settle()
-  expect(sidebarTokens()).toEqual({
-    ...NO_COUNTS,
-    inbox: '9 · Ship it?',
-    'inbox-needs-you': '9',
-    'inbox-findings': '1',
-  })
-
-  await $.session.end({ reason: 'other', sessionId: 'session-1' } as never)
-  await clock.settle()
-  expect(sidebarTokens()).toEqual({ inbox: null, ...NO_COUNTS })
-})
+    await $.session.end({ reason: 'other', sessionId: 'session-1' } as never)
+    await clock.settle()
+    expect(sidebarTokens()).toEqual({ inbox: null, ...NO_COUNTS })
+  },
+)
 
 test('the band is [Open inbox] and the counts with full-brightness labels, the same while working and after 15 idle minutes', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -147,4 +155,217 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
     expect(await band.find({ text: 'Heads up' })).toBeDefined()
     await band.unmount()
   }
+})
+
+test('in a Herdr app terminal, each change publishes the session and labels the terminal, and the end removes both', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  const file = '/app/inbox/sessions/session-1.json'
+  const labels = () => reportedLabels(w.ran.filter(argv => argv[0] === 'hc').at(-1) ?? [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(labels()).toMatchObject({ 'inbox.session': 'session-1', 'inbox.needs-you': '' })
+  expect(JSON.parse(w.written[file]!)).toMatchObject({
+    format: 1,
+    host: 'claude-code',
+    agent: 'Claude',
+    terminal: 't1',
+    projectFolder: '/tmp/project',
+  })
+
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await clock.settle()
+  expect(labels()).toMatchObject({ 'inbox.session': 'session-1', 'inbox.needs-you': '1', 'inbox.status': 'Ship it?' })
+  expect(JSON.parse(w.written[file]!).session.ledger.items).toHaveLength(1)
+  expect(Object.keys(w.written).filter(path => path.startsWith('/app/'))).toEqual([file])
+  expect(w.ran.some(argv => argv[0] === 'herdr')).toBe(false)
+
+  await $.session.end({ reason: 'other', sessionId: 'session-1' } as never)
+  await clock.settle()
+  expect(labels()).toMatchObject({ 'inbox.session': '', 'inbox.needs-you': '', 'inbox.status': '' })
+  expect(w.written[file]).toBeUndefined()
+})
+
+test('in a Herdr app terminal, a publish that fails leaves the terminal unlabelled with the session, and no temporary file', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  w.isMoveFailing = true
+  const labels = () => reportedLabels(w.ran.filter(argv => argv[0] === 'hc').at(-1) ?? [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await clock.settle()
+  expect(labels()).toMatchObject({ 'inbox.session': '', 'inbox.needs-you': '1' })
+  expect(Object.keys(w.written).filter(path => path.startsWith('/app/'))).toEqual([])
+})
+
+test('in a Herdr app terminal, a press file the look wrote is applied and removed, and the published session says how each press went', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  const envelope = () => JSON.parse(w.written['/app/inbox/sessions/session-1.json']!)
+  const published = () => envelope().session
+  const pressPath = '/app/inbox/presses/session-1/p1.json'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'task', ask: 'Ship it' })
+  await clock.settle()
+  const id = published().ledger.items[0].id
+  const holds = { replies: {}, discarded: {}, shownSince: null }
+  w.written[pressPath] = JSON.stringify({ format: 1, id: 'p1', pressedAt: 1, press: { action: 'done', id }, holds })
+  await clock.advance(PRESS_POLL_MS)
+  await clock.settle()
+  expect(published().ledger.items).toEqual([])
+  expect(published().ledger.closed.map((c: { id: string }) => c.id)).toEqual([id])
+  expect(w.written[pressPath]).toBeUndefined()
+  expect(envelope().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
+
+  w.written['/app/inbox/presses/session-1/p2.json'] = JSON.stringify({
+    format: 1,
+    id: 'p2',
+    pressedAt: 2,
+    press: { action: 'done', id: 'gone' },
+    holds,
+  })
+  await clock.advance(PRESS_POLL_MS)
+  await clock.settle()
+  expect(envelope().lastPress).toEqual({ id: 'p2', outcome: 'stale' })
+
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'task', ask: 'Write the notes' })
+  await clock.settle()
+  expect(envelope().lastPress).toEqual({ id: 'p2', outcome: 'stale' })
+})
+
+test('in a Herdr app terminal, a look file the look wrote counts the Status subjects it showed as seen, and saves no press', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  const envelope = () => JSON.parse(w.written['/app/inbox/sessions/session-1.json']!)
+  const lookPath = '/app/inbox/presses/session-1/l1.json'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  w.statusReply =
+    'HEAD: Offline sync | Adding offline sync\nNEW: working | Queue | built\nNEW: queued | Docs | not started'
+  await $.prompt.submit({ text: 'add offline sync', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Queue built.', durationMs: 5, isAborted: false, turnId: 't', reason: 'answer' })
+  await clock.settle()
+  const changedAt = envelope().session.ledger.overview.subjects[0].changedAt as number
+  const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
+  w.written[lookPath] = JSON.stringify({ format: 1, id: 'l1', look })
+  await clock.advance(PRESS_POLL_MS)
+  await clock.settle()
+
+  const overview = envelope().session.ledger.overview
+  expect(w.written[lookPath]).toBeUndefined()
+  expect(overview.lastLookAt).toBe(changedAt + 10_000)
+  expect(Object.keys(overview.missedInLastLook)).toEqual(['s2'])
+  expect(envelope().lastPress).toBeUndefined()
+})
+
+test('a sidebar report Herdr fails to take is sent again after each wait in HERDR_RETRY_MS, until Herdr takes it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HERDR_PANE_ID: 'p2' })
+  w.ghAnswers = [{ match: argv => argv[0] === 'herdr', stdout: '', exitCode: 1 }]
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const failed = sidebarLines().length
+  expect(failed).toBeGreaterThan(0)
+
+  await clock.advance(HERDR_RETRY_MS[0]!)
+  await clock.settle()
+  expect(sidebarLines()).toHaveLength(failed + 1)
+
+  w.ghAnswers = []
+  await clock.advance(HERDR_RETRY_MS[1]!)
+  await clock.settle()
+  expect(sidebarLines()).toHaveLength(failed + 2)
+  expect(sidebarTokens()).toEqual({ inbox: null, ...NO_COUNTS })
+
+  await clock.advance(HERDR_RETRY_MS[2]!)
+  await clock.settle()
+  expect(sidebarLines()).toHaveLength(failed + 2)
+})
+
+function reporterWorld(codeOf: (send: number) => number) {
+  const sends: string[] = []
+  const waits: { ms: number; retry: () => Promise<unknown> }[] = []
+  const waited: number[] = []
+  const run: Run = async args => {
+    sends.push(args.join(' '))
+    return { code: codeOf(sends.length), stdout: '', stderr: '' }
+  }
+  const reportToHerdr = herdrReporter()
+  let reads = 0
+  const report = () =>
+    reportToHerdr(
+      run,
+      async () => ({ target: { kind: 'pane', pane: 'p1' }, tokens: { inbox: `read ${++reads}` }, session: 's1' }),
+      (ms, retry) => {
+        waited.push(ms)
+        waits.push({ ms, retry })
+      },
+    )
+  const retry = () => waits.shift()!.retry()
+
+  return { sends, waits, waited, report, retry }
+}
+
+test('of several Herdr reports that fail during one wait, only one retry waits', async () => {
+  const herdr = reporterWorld(() => 1)
+  await herdr.report()
+  await herdr.report()
+  await herdr.report()
+  expect(herdr.sends).toHaveLength(3)
+  expect(herdr.waited).toEqual([HERDR_RETRY_MS[0]])
+})
+
+test('when every retry of a Herdr report fails, the retries stop after the last wait in HERDR_RETRY_MS', async () => {
+  const herdr = reporterWorld(() => 1)
+  await herdr.report()
+  for (let n = 0; n <= HERDR_RETRY_MS.length && herdr.waits.length > 0; n++) await herdr.retry()
+  expect(herdr.waited).toEqual(HERDR_RETRY_MS)
+  expect(herdr.sends).toHaveLength(HERDR_RETRY_MS.length + 1)
+})
+
+test('a Herdr report taken by a retry starts the waits over for the next failure', async () => {
+  const herdr = reporterWorld(send => (send === 2 ? 0 : 1))
+  await herdr.report()
+  await herdr.retry()
+  await herdr.report()
+  expect(herdr.sends).toHaveLength(3)
+  expect(herdr.waited).toEqual([HERDR_RETRY_MS[0], HERDR_RETRY_MS[0]])
+})
+
+test('while an update has failed, the band, the empty Asks tab and the sidebar line read May be out of date, until an update lands', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HERDR_PANE_ID: 'p1' })
+  on('model.fork', () => ({
+    value: {
+      isAnswered: true,
+      text: 'NONE',
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    },
+  }))
+  const reply = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text, turnId })
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  w.ledgerReply = 'The person asked for a greeting.'
+  await reply('add a greeting cli', 't1')
+
+  const pane = await $.ui.mount(PANE)
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /May be out of date/ })).toBeDefined()
+  expect(await band.find({ text: /Nothing needed/ })).toBeUndefined()
+  expect(await pane.find({ text: /May be out of date/ })).toBeDefined()
+  expect(sidebarLines().at(-1)).toBe('May be out of date')
+
+  await reply('go on', 't2')
+  expect(await band.find({ text: /May be out of date/ })).toBeUndefined()
+  expect(await pane.find({ text: /Nothing needed/ })).toBeDefined()
+  expect(await pane.find({ text: /May be out of date/ })).toBeUndefined()
+  expect(sidebarLines().at(-1)).toBe('')
 })

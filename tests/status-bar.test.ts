@@ -54,10 +54,10 @@ test('each layer blocks at the counts the eval plan computed', () => {
   const short = alphaPerTest('short', 14)
   const spread = alphaPerTest('spread', 48)
   const judge = alphaPerTest('judge', 22)
-  expect([blockAt(6, TOLERANCE.modelRule, replay), blockAt(6, TOLERANCE.missedProposal, replay)]).toEqual([5, 6])
+  expect([blockAt(6, TOLERANCE.modelRule, replay), blockAt(6, TOLERANCE.missedGoal, replay)]).toEqual([5, 6])
   expect([
     blockAt(5, TOLERANCE.modelRule, short),
-    blockAt(5, TOLERANCE.missedProposal, short),
+    blockAt(5, TOLERANCE.missedGoal, short),
     blockAt(5, TOLERANCE.judgeCheck, short),
   ]).toEqual([4, 5, 5])
   expect([88, 97, 83, 63, 45, 30, 23, 18, 9].map(n => blockAt(n, TOLERANCE.modelRule, spread))).toEqual([

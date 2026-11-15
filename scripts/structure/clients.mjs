@@ -9,13 +9,18 @@ const DIFFERENCE_TABLES = { 'claude-code': 'main', codex: 'main', omp: 'omp' }
 
 function parityRecord(root) {
   const path = 'hooks/clients.ts'
-  if (!existsSync(join(root, path))) return null
+  const supportPath = 'hooks/client-support.ts'
+  if (!existsSync(join(root, path)) || !existsSync(join(root, supportPath))) return null
   const api = new API({ cwd: root })
   try {
     const absolute = join(root, path)
-    const project = api.updateSnapshot({ openFiles: [absolute] }).getDefaultProjectForFile(absolute)
+    const supportAbsolute = join(root, supportPath)
+    const project = api.updateSnapshot({ openFiles: [absolute, supportAbsolute] }).getDefaultProjectForFile(absolute)
     const source = project?.program.getSourceFile(absolute) ?? project?.program.getSourceFile(realpathSync(absolute))
+    const supportSource =
+      project?.program.getSourceFile(supportAbsolute) ?? project?.program.getSourceFile(realpathSync(supportAbsolute))
     if (!source) throw new Error(`Cannot parse ${path}.`)
+    if (!supportSource) throw new Error(`Cannot parse ${supportPath}.`)
     const record = { features: [], clients: new Map() }
     const visit = node => {
       if (ts.isTypeAliasDeclaration(node) && node.name.text === 'FeatureId') {
@@ -40,6 +45,7 @@ function parityRecord(root) {
       node.forEachChild(visit)
     }
     visit(source)
+    visit(supportSource)
 
     return record
   } finally {
@@ -47,8 +53,18 @@ function parityRecord(root) {
   }
 }
 
-const TABLE_PARTS = { main: 'docs/looks/differences-*.md', omp: 'docs/looks/differences-omp*.md' }
-const tableOf = part => (part.startsWith('docs/looks/differences-omp') ? 'omp' : 'main')
+/** The Differences on purpose tables: the main one, omp's, and the Herdr look's, each told apart by its parts' names. */
+const TABLE_PARTS = {
+  main: 'docs/looks/differences-*.md',
+  omp: 'docs/looks/differences-omp*.md',
+  herdr: 'docs/looks/differences-herdr*.md',
+}
+const tableOf = part =>
+  part.startsWith('docs/looks/differences-omp')
+    ? 'omp'
+    : part.startsWith('docs/looks/differences-herdr')
+      ? 'herdr'
+      : 'main'
 
 function differenceRows(root, table) {
   return lookParts(root, 'differences-')
@@ -70,7 +86,7 @@ export function checkClients(root, errors) {
     if (!FEATURE_ID.test(id))
       errors.push(`hooks/clients.ts has feature id '${id}'. Use lowercase words joined by hyphens.`)
   const named = {}
-  for (const table of new Set(Object.values(DIFFERENCE_TABLES))) {
+  for (const table of Object.keys(TABLE_PARTS)) {
     const rows = differenceRows(root, table)
     named[table] = new Set(rows.map(row => row.id))
     for (const { id, part } of rows)

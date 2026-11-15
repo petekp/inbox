@@ -2,17 +2,21 @@ import type { UiPressArgument } from 'claude-code'
 import type { FoldKind } from '../types'
 import { groupEmptyText } from './banners'
 import { chevronSvg, RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
+import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
 import type { FoldProps } from './fold-client'
 import { ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
 import type { Entry, PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import { followUpPresses } from './pane-keys'
+import { UNDO_KEY } from './help'
 import type { PaneRowFrame } from './pane-row-frame'
 import { childPos, type PaneRowLines } from './pane-row-lines'
 import { type ClosedLine, settledScrollKey } from './pane-selection'
 import {
   DESKTOP_CELL_PT,
+  DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
+  DESKTOP_ROW_PT,
   DESKTOP_MARK_CELLS,
   DESKTOP_ROW_PAD,
   FRAME_INSET_PT,
@@ -21,11 +25,15 @@ import {
   UNDO_CELLS,
   UNDO_HEIGHT_PT,
 } from './pane-sizes'
+import { exactly, type Lines } from './pane-status-tops'
 import { pressRowId, type PrPress } from './pr-press'
 import type { RowPress } from './presses'
 import {
   canUndoRefused,
+  closedLineAction,
   DOT,
+  ROW_COPY,
+  earlierLabel,
   foldLabel,
   type ResultMark,
   rowTitle,
@@ -37,6 +45,7 @@ import {
   shortAgo,
 } from './rows'
 import type { TreePos } from './terminal-text'
+import { cutInline } from './inline'
 import { SETTLED_MS } from './timing'
 import type { UndoProps } from './undo-client'
 
@@ -45,6 +54,7 @@ export function paneRowParts(
     hasClient,
     elements,
     look,
+    listColumns,
     Text,
     inlineText,
     pal,
@@ -66,6 +76,7 @@ export function paneRowParts(
     Pick<
       PaneBase,
       | 'look'
+      | 'listColumns'
       | 'Text'
       | 'inlineText'
       | 'pal'
@@ -80,7 +91,7 @@ export function paneRowParts(
     > &
     Pick<PaneRowFrame, 'desktopFrame'> &
     Pick<PaneRowLines, 'treeRow' | 'ToneSvg' | 'desktopHairline' | 'markGlyph' | 'markWidth'>,
-  { updateUnfolded, runPress }: Pick<PaneHandlers, 'updateUnfolded' | 'runPress'>,
+  { updateUnfolded, updateClosedAll, runPress }: Pick<PaneHandlers, 'updateUnfolded' | 'updateClosedAll' | 'runPress'>,
 ) {
   const groupEmpty = (title: string) =>
     look === 'desktop'
@@ -126,6 +137,8 @@ export function paneRowParts(
       <Box paddingLeft={TREE_LINE_AT}>{line}</Box>
     )
   }
+  /** The blank lines the terminal draws between sections. */
+  const terminalSectionGap = isInline ? 1 : 2
   const section = (children: JSX.Element | JSX.Element[]) =>
     look === 'desktop' ? (
       <Box flexDirection="column" paddingTop={blankLine}>
@@ -134,21 +147,30 @@ export function paneRowParts(
     ) : (
       <Box flexDirection="column">{children}</Box>
     )
-  const sections = (list: JSX.Element[], space = 1) => (
-    <Box flexDirection="column" flexGrow={1} gap={look === 'desktop' ? 0 : isInline ? 1 : 2}>
+  /**
+   * Sections one under another. On desktop a hairline sits between each two, except above a section whose place in
+   * `list` is in `unruled`, which keeps only the hairline's space.
+   */
+  const sections = (list: JSX.Element[], space = 1, unruled: number[] = []) => (
+    <Box flexDirection="column" flexGrow={1} gap={look === 'desktop' ? 0 : terminalSectionGap}>
       {look === 'desktop'
-        ? list.flatMap((el, n) =>
-            n === 0
-              ? [el]
-              : [
-                  desktopHairline(`rule-${n}`, 'across', {
-                    marginTop: space,
-                    marginBottom: space - blankLine,
-                    marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
-                  }),
-                  el,
-                ],
-          )
+        ? list.flatMap((el, n) => {
+            if (n === 0) return [el]
+            const box = {
+              marginTop: space,
+              marginBottom: space - blankLine,
+              marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
+            }
+
+            return [
+              unruled.includes(n) ? (
+                <Box key={`rule-${n}`} height={DESKTOP_HAIR_LINES} {...box} />
+              ) : (
+                desktopHairline(`rule-${n}`, 'across', box)
+              ),
+              el,
+            ]
+          })
         : list}
     </Box>
   )
@@ -177,8 +199,21 @@ export function paneRowParts(
     ) : (
       label
     )
-  const refusedUndo = (d: ClosedLine) =>
-    canUndoRefused(d.delivery) ? undoButton({ id: d.id, action: 'undo' }, null) : null
+  /** A Closed line's press: the Undo of a refused notification, or Reopen on a row the person dismissed. */
+  const lineAction = (d: ClosedLine) => {
+    const action = closedLineAction(d)
+    if (!action) return null
+    if (canUndoRefused(d.delivery)) return undoButton(action.press, null)
+    return (
+      <Box key={`reopen-${d.id}`} flexDirection="row">
+        <Button
+          key={`reopen-${d.id}`}
+          label={look === 'desktop' ? action.label : ` ${action.label} `}
+          onPress={(press: { surface: UiPressArgument['surface'] }) => void runPress(action.press, press.surface)}
+        />
+      </Box>
+    )
+  }
   const closedRow = (d: ClosedLine, pos: TreePos) =>
     look === 'desktop'
       ? desktopFrame({
@@ -195,7 +230,7 @@ export function paneRowParts(
             <Text wrap="wrap" color={pal.age}>
               {inlineText(settledLabel(d.outcomeLabel, d.delivery))}
             </Text>,
-            refusedUndo(d),
+            lineAction(d),
           ],
         })
       : treeRow(
@@ -214,7 +249,7 @@ export function paneRowParts(
                   {inlineText(settledLabel(d.outcomeLabel, d.delivery))}
                 </Text>,
               )}
-              {refusedUndo(d)}
+              {lineAction(d)}
             </Box>
             <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
               <Text color={pal.age}>{shortAgo(now - d.at)}</Text>
@@ -269,7 +304,21 @@ export function paneRowParts(
         `fold-row-${key}`,
       )
     )
+  /** The lines a desktop fold row takes: its chevron's height, in the pane's scroll rows. */
+  const desktopFoldLines: Lines | null =
+    hasClient && 'Svg' in elements ? exactly((2 * ROW_PAD_PT + DESKTOP_LINE_PT) / DESKTOP_ROW_PT) : null
+  /** The button that lists the rest of a Closed fold. */
+  const earlierButton = (kind: FoldKind, label: string) => (
+    <Button
+      plain
+      dimColor
+      key={`earlier-${kind}`}
+      label={label}
+      onPress={() => void updateClosedAll(a => (a.includes(kind) ? a : [...a, kind]))}
+    />
+  )
   const closedFold = (kind: FoldKind, closed: ClosedLine[], total: number, isUnfolded: boolean) => {
+    const earlier = earlierLabel(total, closed.length)
     return closed.length === 0
       ? []
       : [
@@ -278,7 +327,11 @@ export function paneRowParts(
             kind,
             foldLabel(total),
             isUnfolded,
-            () => void updateUnfolded(u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind])),
+            () =>
+              void Promise.all([
+                updateUnfolded(u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind])),
+                updateClosedAll(a => a.filter(k => k !== kind)),
+              ]),
           ),
           ...(isUnfolded && look !== 'desktop' && !isInline
             ? [
@@ -287,13 +340,32 @@ export function paneRowParts(
                 </Box>,
               ]
             : []),
-          ...(isUnfolded ? closed.map((d, n) => closedRow(d, childPos(n, closed.length))) : []),
+          ...(isUnfolded ? closed.map((d, n) => closedRow(d, childPos(n, closed.length + (earlier ? 1 : 0)))) : []),
+          ...(isUnfolded && earlier
+            ? [
+                look === 'desktop'
+                  ? desktopFrame({
+                      key: `earlier-${kind}`,
+                      indent: DESKTOP_MARK_CELLS,
+                      isMarkHung: false,
+                      padY: space.rowPad / 2,
+                      children: earlierButton(kind, earlier),
+                    })
+                  : treeRow(
+                      childPos(closed.length, closed.length + 1),
+                      null,
+                      earlierButton(kind, earlier),
+                      `earlier-${kind}`,
+                      1,
+                    ),
+              ]
+            : []),
         ]
   }
   const svgClientElements = hasClient && 'Svg' in elements ? elements : null
   const undoButton = (undo: RowPress | PrPress, at: number | null) => {
     const key = `undo-${pressRowId(undo)}`
-    const label = ' ↺ Undo '
+    const label = ` ↺ ${UNDO_KEY}: ${ROW_COPY.undo} `
     const onPress = (press: { surface: UiPressArgument['surface'] }) => runPress(undo, press.surface)
     if (svgClientElements) {
       followUpPresses.set(key, onPress)
@@ -302,7 +374,7 @@ export function paneRowParts(
         <Box key={`${key}-${at}`} width={UNDO_CELLS} height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}>
           <svgClientElements.Svg
             source={undoSvg(leftMs / SETTLED_MS, leftMs)}
-            alt="Undo"
+            alt={ROW_COPY.undo}
             width={UNDO_CELLS * DESKTOP_CELL_PT}
             height={UNDO_HEIGHT_PT}
           />
@@ -320,12 +392,20 @@ export function paneRowParts(
     }
     if (look !== 'terminal' || at === null) return <Button key={key} label="↺ Undo" onPress={onPress} />
     const cells = [...label]
+    const keyAt = cells.indexOf(UNDO_KEY)
     const filled = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * cells.length)
 
     return (
       <Button key={key} onPress={onPress}>
-        <Text backgroundColor={pal.divider}>{cells.slice(0, filled).join('')}</Text>
-        <Text>{cells.slice(filled).join('')}</Text>
+        {cells.map((cell, n) => (
+          <Text
+            key={`${key}-${n}`}
+            {...(n < filled ? { backgroundColor: pal.divider } : {})}
+            {...(n === keyAt ? { color: pal.key } : {})}
+          >
+            {cell}
+          </Text>
+        ))}
       </Button>
     )
   }
@@ -340,7 +420,7 @@ export function paneRowParts(
     ) : null
   const settledContent = (
     what: string,
-    { label, at, delivery, closedAs }: SettledState,
+    { label, at, delivery, closedAs, reply }: SettledState,
     undo: RowPress | PrPress | null,
     mark: ResultMark | null,
   ) => (
@@ -364,13 +444,19 @@ export function paneRowParts(
           `settled-${what}`,
           pal.muted,
           <Text wrap="wrap" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
-            {inlineText(settledLabel(label, delivery))}
+            {inlineText(settledLabel(label, delivery, reply))}
           </Text>,
         )}
         {undo ? undoButton(undo, at) : null}
       </Box>
     </Box>
   )
+  /** Desktop draws a settled label in its title's wrapping Text, so a long one, such as a reply's words, is cut to one line's characters. */
+  const desktopSettledLabel = (state: SettledState) =>
+    cutInline(
+      settledLabel(state.label, state.delivery, state.reply),
+      Math.max(12, Math.floor((listColumns - 1) * DESKTOP_CLIP_CHARS_PER_CELL)),
+    )
   const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
     const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
     const mark = settledMark(state)
@@ -388,7 +474,7 @@ export function paneRowParts(
             {inlineText(r.title)}
             <Text color={pal.muted}>
               {DOT}
-              {inlineText(settledLabel(state.label, state.delivery))}
+              {inlineText(desktopSettledLabel(state))}
             </Text>
           </Text>,
         ],
@@ -405,9 +491,11 @@ export function paneRowParts(
     groupTitle,
     section,
     sections,
+    terminalSectionGap,
     titleGap,
     foldButton,
     foldRow,
+    desktopFoldLines,
     closedFold,
     undoPlace,
     settledContent,

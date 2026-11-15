@@ -67,7 +67,7 @@ export function adjustScroll(e: UiScrollInput): UiScrollInput {
   }
 }
 
-export async function showDocument(file: DocumentFile, row: RowView, redraw: () => Promise<unknown>) {
+async function showDocument(file: DocumentFile, row: RowView, redraw: () => Promise<unknown>) {
   if (!row.document) return
   const sessionId = conversation.id
   const document = { sessionId, title: row.title, text: null, error: null }

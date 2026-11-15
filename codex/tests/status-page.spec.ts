@@ -4,23 +4,27 @@ import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
 import { closeItem } from '../../hooks/ledger-close'
 import { parseStatus } from '../../hooks/status'
-import { LOOK_MIN_MS } from '../../hooks/status-children'
+import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { applyStatus } from '../../hooks/status-ops'
 import { goalPressed } from '../../hooks/goal-press'
+import { NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import type { RowPress } from '../../hooks/presses'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/tabs'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
 import { lookOnView, viewOf } from '../src/core'
+import type { SessionState } from '../src/state'
+import { noteShownRows, rowsInView, takeShownRows } from '../src/tab-shown'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit in its label line, its count after its text, its Now line and the field Edit opens draw in place', async context => {
+test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its count after its text, its Now line and the field Edit opens draw in place', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -28,8 +32,9 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
   const asked = recordItem(
     CODEX,
     EMPTY,
-    { kind: 'question', ask: 'Which label?', options: ['Tab', 'Page'] },
+    { kind: 'question', ask: 'Which label?', context: 'The new tab needs a one-word name.', options: ['Tab', 'Page'] },
     now,
+    TOOL_FIELDS,
   ).ledger
   const shownStatus = {
     ...applyStatus(
@@ -175,7 +180,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.deepEqual(
       [...root.querySelectorAll('main button')].map(b => [b.textContent, b.className]),
       [
-        ['Set a goal', 'key ghost'],
+        ['New', 'key ghost'],
         ['View question', 'key'],
       ],
     )
@@ -188,6 +193,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       state.ledger,
       { kind: 'finding', title: 'The bar wraps at 320 px', detail: 'Four tabs need two lines.' },
       Date.now(),
+      TOOL_FIELDS,
     ).ledger
     await afterPoll()
     assert.equal(shownTab(), 'Status')
@@ -208,6 +214,11 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     ;(root.querySelector('main.status-page .list .actions button') as HTMLElement).click()
     assert.equal(shownTab(), 'Asks1')
     assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
+    assert.deepEqual(
+      [...(root.querySelector('.row.selected .line')?.children ?? [])].map(c => c.className),
+      ['text', 'context-line', 'holds-up'],
+    )
+    assert.equal(root.querySelector('.row.selected .context-line')?.textContent, 'The new tab needs a one-word name.')
     key('1')
     assert.equal(shownTab(), 'Status')
 
@@ -252,41 +263,40 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
     assert.deepEqual(
       [...root.querySelectorAll('main button')].map(b => b.textContent),
-      ['Set a goal'],
+      ['New'],
     )
+    assert.equal(root.querySelector('.goal-heading .goal-title')?.textContent, 'Goal')
+    assert.equal(root.querySelector('.goal-heading .actions')?.textContent, 'New')
+    assert.equal(root.querySelector('.status-head.goal p')?.textContent, NO_GOAL_TEXT)
 
-    const proposing = applyStatus(
+    const withGoal = applyStatus(
       state.ledger.overview,
-      parseStatus('GOAL: Status tab shipped | done Page; queued Label')!,
+      parseStatus(
+        'NEW: working | Status page | drawn\nNEW: queued | Tab label | not started\nGOAL: Status tab shipped | done Page; queued Label',
+      )!,
       now,
       new Set(),
     )!
-    state.ledger = { ...state.ledger, overview: proposing }
+    state.ledger = { ...state.ledger, overview: withGoal }
     await afterPoll()
     const buttons = () => [...root.querySelectorAll('main button')].map(b => b.textContent)
-    assert.deepEqual(
-      [...root.querySelectorAll('.goal-proposed > *')].map(e => e.textContent),
-      ['✓', 'Page', '○', 'Label'],
-    )
-    assert.deepEqual(buttons(), ['Set as goal', 'Edit', 'Not now'])
 
     const click = async (label: string) => {
       ;([...root.querySelectorAll('main button')].find(b => b.textContent === label) as HTMLElement).click()
       await new Promise<void>(resolve => setImmediate(resolve))
       await new Promise<void>(resolve => setImmediate(resolve))
     }
-    await click('Set as goal')
-    assert.deepEqual(presses, [{ action: 'use-goal', id: 'goal' }])
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'GoalEdit·Remove')
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Goal · Edit', 'Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
+      ['Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
     )
     assert.equal(root.querySelector('.status-head:not(.goal)'), null)
-    assert.deepEqual(buttons(), ['Edit'])
+    assert.deepEqual(buttons(), ['Edit', 'Remove'])
     await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')
     assert.equal(root.querySelector('.status-head.goal h1'), null)
-    assert.equal(root.querySelector('.status-head.goal p')?.textContent, 'Goal')
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 done')
@@ -295,11 +305,17 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     const field = window.document.querySelector('#type-goal')!
     Object.assign(field, { value: 'Status tab in the store' })
     field.dispatchEvent(new window.Event('input', { bubbles: true }))
-    await click('Set goal')
+    await click('Save')
     assert.deepEqual(presses.at(-1), { action: 'type', id: 'goal', text: 'Status tab in the store' })
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab in the store')
-    assert.equal(root.querySelector('.status-head.goal p:last-child')?.textContent, 'Milestones after the next reply')
+    assert.equal(
+      [...root.querySelectorAll('.status-head.goal p')].at(-1)?.textContent,
+      'Milestones after the next reply',
+    )
+
+    await click('Remove')
+    assert.deepEqual(presses.at(-1), { action: 'remove-goal', id: 'goal' })
   } finally {
     for (const key of Object.keys(windowTimers)) Reflect.deleteProperty(window, key)
     await window.happyDOM.abort()
@@ -322,20 +338,66 @@ test('a look starts when the tab shows the Status, ends when it shows another ta
     ),
   }
   state.tabSeenAt = 1000
-  const open = lookOnView(state, 'overview', 2000)
+  const open = lookOnView(state, 'overview', 2000, {})
   assert.equal(open.ledger.overview?.look?.startedAt, 2000)
 
-  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS)
+  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS, {})
   assert.equal(seen.ledger.overview?.look, null)
   assert.equal(seen.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
-  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
+  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000, {})
   assert.equal(passed.ledger.overview?.look, null)
   assert.equal(passed.ledger.overview?.lastLookAt, null)
 
-  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000)
+  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000, {})
   assert.equal(closed.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
-  const never = lookOnView(state, 'needsYou', 2000)
+  const never = lookOnView(state, 'needsYou', 2000, {})
   assert.equal(never.ledger.overview?.lastLookAt, null)
+})
+
+test('a look counts as seen only the Status subjects the tab reported on screen, across its requests and when the pane closed, and not rows a later showing reported', () => {
+  const state = emptyState('look-rows')
+  state.ledger = {
+    ...EMPTY,
+    overview: applyStatus(
+      null,
+      parseStatus(
+        'NEW: working | Sync | under way\nNEW: working | Search | under way\nNEW: queued | Docs | after the code',
+      )!,
+      500,
+      new Set(),
+    ),
+  }
+  const seenOf = (s: SessionState) => {
+    const o = s.ledger.overview!
+    return o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.name)
+  }
+  const open = lookOnView({ ...state, tabSeenAt: 1000 }, 'overview', 1000, { s1: 1000 })
+  const scrolled = lookOnView({ ...open, tabSeenAt: 4000 }, 'overview', 4000, { s2: 3500 })
+  const ended = lookOnView({ ...scrolled, tabSeenAt: 7000 }, 'needsYou', 7000, {})
+  assert.deepEqual(seenOf(ended), ['Sync', 'Search'])
+  assert.deepEqual(ended.lookRows, {})
+
+  const reopened = lookOnView({ ...ended, tabSeenAt: 7000 }, 'overview', 8000, { s3: 8000 })
+  const afterClose = lookOnView({ ...reopened, tabSeenAt: 8000 + LOOK_MIN_MS }, 'overview', 90_000, { s1: 90_000 })
+  assert.deepEqual(seenOf(afterClose), ['Sync', 'Search', 'Docs'])
+  assert.deepEqual(afterClose.lookRows, { s1: 90_000 })
+})
+
+test('the tab reports as on screen the subjects of the rows whose first line is inside its window, each subject a named fold stands for among them, each with when it last was, until its next request', () => {
+  const rows = [
+    { subjects: 's1', top: -40 },
+    { subjects: 's2', top: 0 },
+    { subjects: 's5 s6 s7', top: 300 },
+    { subjects: 's3', top: 599 },
+    { subjects: 's4', top: 600 },
+  ]
+  assert.deepEqual(rowsInView(rows, 600), ['s2', 's5', 's6', 's7', 's3'])
+
+  takeShownRows()
+  noteShownRows(['s2', 's3'], 100)
+  noteShownRows(['s3', 's4'], 200)
+  assert.deepEqual(takeShownRows(), { s2: 100, s3: 200, s4: 200 })
+  assert.deepEqual(takeShownRows(), {})
 })

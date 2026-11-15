@@ -10,6 +10,8 @@ import { devBuild } from './data-dir'
 import TAB_HTML from './tab.html'
 import { run } from './run'
 import { listHooksTrust } from './hook-trust'
+import { herdrLog, herdrOnWrite } from './host'
+import { codexHerdrAsk, followCodexPresses, startCodexInHerdrApp } from './server-herdr'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import { memoizedFeedPath, resolveInboxFeedPath } from '../../hooks/feed-path'
@@ -38,12 +40,26 @@ function devPageIn(dir: string): () => Promise<string | null> {
  * needs Codex restarted, and a loader from before `isPluginFolderGone` passes only the first two. `startUpdate` starts
  * an update outside this process; a loader from before it passes none, and a tab then opens without catching its chat up.
  */
+/** Where the running handler keeps how to stop its press watcher, so a reloaded handler stops the one before it. */
+const HERDR_PRESSES = Symbol.for('inbox.herdrPresses')
+
+function followHerdrPresses(log: (text: string) => void) {
+  return (apply: Parameters<typeof followCodexPresses>[1]) => {
+    const shared = globalThis as { [HERDR_PRESSES]?: (() => void) | null }
+    shared[HERDR_PRESSES]?.()
+    shared[HERDR_PRESSES] = followCodexPresses(process.env, apply, log)
+  }
+}
+
 export function createHandler(
   dir: string,
   loadError: () => string | null = () => null,
   isPluginFolderGone: () => boolean = () => false,
   startUpdate?: (sessionId: string) => void,
 ): ReturnType<typeof makeServer> {
+  const log = herdrLog(dir)
+  const here = dirname(fileURLToPath(import.meta.url))
+  void startCodexInHerdrApp(process.env, run, join(here, 'herdr-mod'), log).catch(() => undefined)
   const feedPath = memoizedFeedPath(() =>
     resolveInboxFeedPath(
       process.env.INBOX_FEED,
@@ -71,6 +87,9 @@ export function createHandler(
     isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
     feedPath,
     comparePage: join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
+    onWrite: herdrOnWrite(process.env, run, dir, Date.now, log),
+    followHerdrPresses: followHerdrPresses(log),
+    herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
     openCatchUp: startUpdate && {
       codexHome: process.env.CODEX_HOME || join(homedir(), '.codex'),
       startUpdate,

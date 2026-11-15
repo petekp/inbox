@@ -63,10 +63,9 @@ async function answersLinkedOption($: Engine, on: On, surface: 'terminal' | 'des
   await selectRow(pane, 'i1')
   expect((await pane.find({ key: 'answer-i1-0' }))?.props.label).toContain('PR 7171')
   expect((await pane.find({ key: 'answer-i1-0' }))?.props.label).not.toContain('[PR 7171]')
-  w.submitAnswer = 'hold'
-  w.inFlight.push(pane.press({ key: 'answer-i1-0' }))
+  await pane.press({ key: 'answer-i1-0' })
   await clock.settle()
-  expect(w.held[0]?.text).toContain(option)
+  expect(w.sent).toEqual([])
   expect((await pane.findAll({ type: 'Link' })).map(link => link.props)).toContainEqual(
     expect.objectContaining({ href: 'https://github.com/anthropics/claude-code/pull/7171', label: 'PR 7171' }),
   )
@@ -91,8 +90,6 @@ async function answersLinkedOption($: Engine, on: On, surface: 'terminal' | 'des
   expect((await pane.findAll({ type: 'Link' })).map(link => link.props)).toContainEqual(
     expect.objectContaining({ href: 'https://github.com/anthropics/claude-code/pull/7171', label: 'PR 7171' }),
   )
-  w.held[0]?.release()
-  await clock.settle()
 }
 
 test('answer feedback and the Closed line render a linked option in the terminal pane', async ($, on) => {

@@ -5,6 +5,7 @@ import { INITIAL_UI, drawPanel } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
 import { drawLine } from '../src/panel-draw'
 import { blankLine } from '../src/panel-lines'
+import { indentedLinks } from '../src/panel-text'
 import { NOW, screenOf, style, strip } from './panel-harness'
 
 test('fits real omp OSC 8 links at narrow and wide panel widths', async () => {
@@ -36,7 +37,7 @@ test('selected item explanations preserve paragraphs, links, and scroll at width
     const source = screenOf()
     const row = source.view.needsYou.questions.find(item => item.state.is === 'open')!
     const detail =
-      'This blocks launch until we confirm the change.\n\nSee [release notes](https://x.io/release).\n\nThe final consequence remains visible.'
+      'Read [launch](https://x.io/release).\n\nSee [release notes](https://x.io/release).\n\nThe final consequence remains visible.'
     const screen = {
       ...source,
       view: {
@@ -50,11 +51,11 @@ test('selected item explanations preserve paragraphs, links, and scroll at width
     const ui = { ...INITIAL_UI, selectedId: row.id }
     const drawn = drawPanel(screen, ui, 42, NOW, { ...style, link: urlHyperlink }, 14)
     const lines = drawn.lines.map(strip)
+    const paragraphs = indentedLinks(detail, 2, 42, Infinity, text => text)
     expect(drawn.lines.join('\n')).toContain('\x1b]8;id=')
     expect(lines.every(line => visibleLength(line) <= 42)).toBe(true)
     expect(lines.join('\n')).toContain('↑↓ scroll')
-    const nextParagraph = lines.findIndex(line => line.includes('See release notes'))
-    expect(lines[nextParagraph - 1]?.trim()).toBe('')
+    expect(paragraphs.filter(line => line.trim() === '')).toHaveLength(2)
     expect(handleKey(screen, { ...ui, detailScrollMax: drawn.detailScrollMax }, 'down', NOW).ui.detailTop).toBe(1)
     const bottom = drawPanel(
       screen,
@@ -123,7 +124,7 @@ test('option feedback and outcomes draw real OSC 8 links', async () => {
     feedback.feedback = { text: `✓ ${option}`, tone: 'done', source: null }
     const settled = blankLine('i1')
     settled.title = 'Merge this PR?'
-    settled.settled = { label: option, tone: 'done', undo: null }
+    settled.settled = { label: option, tone: 'done', undo: null, at: NOW }
     const lines = [...drawLine(feedback, false, draw), ...drawLine(settled, false, draw)]
 
     expect(lines.join('\n').match(/\x1b\]8;id=/g)).toHaveLength(2)

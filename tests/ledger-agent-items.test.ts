@@ -6,6 +6,7 @@ import { closeByAgent, closeItem } from '../hooks/ledger-close'
 import { addAgentItem, applyUpdate } from '../hooks/ledger-update'
 import { parseReply, stepHelp } from '../hooks/reply-parse'
 import { recordClose, recordItem } from '../hooks/tools'
+import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../hooks/tool-schemas'
 import { actionsOf } from '../hooks/action-plan'
 import { pressed } from '../hooks/pressed'
 
@@ -39,6 +40,108 @@ describe('items the agent recorded', () => {
       ])
     const answered = applyUpdate(recorded(), parseReply('CLOSED: i1 | Redis')!, 2000, 1)
     expect(answered.closed.map(c => [c.id, c.outcome, c.how])).toEqual([['i1', 'Redis', 'update']])
+  })
+
+  test('a question back closes no question, from a CLOSED line or the close tool, while a named option closes it', () => {
+    const presses = { lastActions: {}, turnStartedAt: null }
+    const asked = applyUpdate(
+      { ...EMPTY, turn: 1 },
+      parseReply('NEW: decide | - | Which cache should the API use? | Redis / Memcached | -')!,
+      1000,
+      1,
+    )
+    for (const ledger of [recorded(), asked])
+      for (const outcome of ['Why not Memcached?', 'Is that the cheaper one?'])
+        expect(applyUpdate(ledger, parseReply(`CLOSED: i1 | ${outcome}`)!, 2000, 1).items.map(i => i.id)).toEqual([
+          'i1',
+        ])
+    const refused = recordClose(CLAUDE_CODE, recorded(), { id: 'i1', answer: 'Why not Memcached?' }, 2000, presses)
+    expect(refused.result).toBe(
+      'Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.',
+    )
+    expect(refused.ledger.items.map(i => i.id)).toEqual(['i1'])
+    expect(refused.personLine).toBeNull()
+    for (const answer of ['Redis?', 'Redis', 'What you recommended'])
+      expect(
+        recordClose(CLAUDE_CODE, recorded(), { id: 'i1', answer }, 2000, presses).ledger.closed.map(c => c.outcome),
+      ).toEqual([answer])
+  })
+
+  test('a recommendation keeps its reason until it moves to another option, and the answer names what a row lacks', () => {
+    const input = { kind: 'question', ask: ask.ask, options: ask.options }
+    const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000, TOOL_FIELDS)
+    expect(bare.result).toContain('It has no rec')
+    const why = recordItem(
+      CLAUDE_CODE,
+      bare.ledger,
+      { ...input, rec: 'Redis', why: 'because it survives restarts' },
+      1100,
+      TOOL_FIELDS,
+    )
+    expect(why.result).not.toContain('It has no')
+    expect(why.ledger.items[0]).toMatchObject({ rec: 'Redis', recReason: 'it survives restarts' })
+    const kept = applyUpdate(why.ledger, parseReply('UPDATE: i1 | - | Redis')!, 1200, 1)
+    expect(kept.items[0]!.recReason).toBe('it survives restarts')
+    const moved = applyUpdate(why.ledger, parseReply('UPDATE: i1 | - | Memcached')!, 1200, 1)
+    expect(moved.items[0]).toMatchObject({ rec: 'Memcached' })
+    expect(moved.items[0]!.recReason).toBeUndefined()
+    const task = recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Plug in the test phone' }, 1000, TOOL_FIELDS)
+    expect(task.result).toContain('It has no steps')
+  })
+
+  test("a question keeps why it came up and what each option does, a record of it again replaces them, and the answer names what's missing", () => {
+    const input = { kind: 'question', ask: ask.ask, options: ask.options, rec: 'Redis', why: 'it survives restarts' }
+    const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000, TOOL_FIELDS)
+    expect(bare.result).toBe(
+      'Recorded. The user sees it in the /inbox pane. It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does).',
+    )
+    const body = { context: 'The price lookups are slow', option_notes: ['Adds a server', ''] }
+    const halfNoted = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, { ...input, ...body }, 1000, TOOL_FIELDS)
+    expect(halfNoted.result).toContain(
+      'It has no note on "Memcached": record it again with option_notes (what picking each option does).',
+    )
+    const enriched = recordItem(CLAUDE_CODE, bare.ledger, { ...input, ...body }, 1100, TOOL_FIELDS)
+    expect(enriched.result).toBe(
+      'Already open, so this record updated it and gave it your context and gave its options your notes.',
+    )
+    expect(enriched.ledger.items[0]).toMatchObject({
+      context: 'The price lookups are slow',
+      optionDescriptions: { Redis: 'Adds a server' },
+    })
+    const renoted = recordItem(
+      CLAUDE_CODE,
+      enriched.ledger,
+      { ...input, options: ['memcached', 'redis'], option_notes: ['Keeps prices in memory'] },
+      1200,
+      TOOL_FIELDS,
+    )
+    expect(renoted.ledger.items[0]).toMatchObject({
+      context: 'The price lookups are slow',
+      optionDescriptions: { Redis: 'Adds a server', Memcached: 'Keeps prices in memory' },
+    })
+
+    const approval = { kind: 'question', ask: 'Approve the new settings layout?', options: ['Yes', 'No'] }
+    const unseen = recordItem(CLAUDE_CODE, EMPTY, approval, 1000, TOOL_FIELDS)
+    expect(unseen.result).toContain(
+      "The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps.",
+    )
+    const seen = recordItem(CLAUDE_CODE, EMPTY, { ...approval, steps: ['/tmp/settings.png'] }, 1000, TOOL_FIELDS)
+    expect(seen.result).not.toContain("can't approve")
+    const choice = recordItem(CLAUDE_CODE, EMPTY, input, 1000, TOOL_FIELDS)
+    expect(choice.result).not.toContain("can't approve")
+  })
+
+  test("an agent whose record tool is 0.3.0's is asked only for the fields that tool takes", () => {
+    const old = (input: Record<string, unknown>) => recordItem(CLAUDE_CODE, EMPTY, input, 1000, V0_3_TOOL_FIELDS).result
+    const question = { kind: 'question', ask: ask.ask, options: ask.options }
+    expect(old({ ...question, rec: 'Redis' })).toBe('Recorded. The user sees it in the /inbox pane.')
+    expect(old(question)).toBe(
+      'Recorded. The user sees it in the /inbox pane. It has no rec: when you can recommend an option, record it again with rec.',
+    )
+    expect(old({ kind: 'question', ask: 'Approve the new settings layout?', options: ['Yes', 'No'] })).toContain(
+      "The user can't approve what they can't see",
+    )
+    expect(old({ kind: 'task', ask: 'Plug in the test phone' })).toContain('It has no steps')
   })
 
   test('unanswered questions and tasks stay open past 12 prompts', () => {
@@ -109,10 +212,16 @@ describe('items the agent recorded', () => {
 
   test('a repeat record changes the recommendation to one of the open options and says so', () => {
     const record = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Memcached'] }
-    const first = recordItem(CLAUDE_CODE, recorded(), { ...record, rec: 'Redis' }, 2000)
-    const second = recordItem(CLAUDE_CODE, first.ledger, { ...record, rec: 'Memcached' }, 2100)
-    const unstated = recordItem(CLAUDE_CODE, second.ledger, record, 2200)
-    const elsewhere = recordItem(CLAUDE_CODE, second.ledger, { ...record, options: ['Valkey'], rec: 'Valkey' }, 2300)
+    const first = recordItem(CLAUDE_CODE, recorded(), { ...record, rec: 'Redis' }, 2000, TOOL_FIELDS)
+    const second = recordItem(CLAUDE_CODE, first.ledger, { ...record, rec: 'Memcached' }, 2100, TOOL_FIELDS)
+    const unstated = recordItem(CLAUDE_CODE, second.ledger, record, 2200, TOOL_FIELDS)
+    const elsewhere = recordItem(
+      CLAUDE_CODE,
+      second.ledger,
+      { ...record, options: ['Valkey'], rec: 'Valkey' },
+      2300,
+      TOOL_FIELDS,
+    )
     expect(
       [first, second, unstated, elsewhere].map(r => [r.ledger.items.map(i => i.rec), r.result, r.personLine]),
     ).toEqual([
@@ -143,7 +252,7 @@ describe('items the agent recorded', () => {
       result.ledger,
       undefined,
       { action: 'answer', id: item.id, option },
-      { now: 1100, turnsStarted: 1, extraSteps: [], comparePage: '' },
+      { now: 1100, turnsStarted: 1, extraSteps: [], holdMs: 0, comparePage: '', compareInBackground: false },
     )
     if ('stale' in answer) throw new Error('Expected the recorded answer to be current.')
 
@@ -152,35 +261,53 @@ describe('items the agent recorded', () => {
     expect(item.rec).toBe(option)
     expect(actions.find(action => action.press.action === 'answer')?.label).toBe('PR 7171')
     expect(answer.last?.text).toBe(option)
-    expect(answer.effects[0]?.kind === 'send' && answer.effects[0].text).toContain(option)
+    expect(answer.effects).toEqual([])
   })
 
   test('a record or close gives the person a line naming what it changed, and none when it changed nothing', () => {
     const question = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Memcached'] }
-    const first = recordItem(CLAUDE_CODE, EMPTY, question, 1000)
+    const first = recordItem(CLAUDE_CODE, EMPTY, question, 1000, TOOL_FIELDS)
     expect(first.personLine).toBe('Question: Which cache should the API use?')
-    expect(recordItem(CLAUDE_CODE, first.ledger, question, 1100).personLine).toBeNull()
-    expect(recordItem(CLAUDE_CODE, EMPTY, { kind: 'question', ask: 'Ship it?' }, 1000).personLine).toBeNull()
-    expect(recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Sign in to npm' }, 1000).personLine).toBe(
+    expect(recordItem(CLAUDE_CODE, first.ledger, question, 1100, TOOL_FIELDS).personLine).toBeNull()
+    expect(
+      recordItem(CLAUDE_CODE, EMPTY, { kind: 'question', ask: 'Ship it?' }, 1000, TOOL_FIELDS).personLine,
+    ).toBeNull()
+    expect(recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Sign in to npm' }, 1000, TOOL_FIELDS).personLine).toBe(
       'Task: Sign in to npm',
     )
 
     const finding = { kind: 'finding', title: 'Retry loop never backs off', detail: 'It hammers the API.' }
-    const found = recordItem(CLAUDE_CODE, first.ledger, finding, 1200)
+    const found = recordItem(CLAUDE_CODE, first.ledger, finding, 1200, TOOL_FIELDS)
     expect(found.personLine).toBe('Issue: Retry loop never backs off')
-    expect(recordItem(CLAUDE_CODE, found.ledger, finding, 1300).personLine).toBeNull()
+    expect(recordItem(CLAUDE_CODE, found.ledger, finding, 1300, TOOL_FIELDS).personLine).toBeNull()
     expect(
-      recordItem(CLAUDE_CODE, EMPTY, { ...finding, finding_kind: 'opportunity', title: 'Cache the token' }, 1200)
-        .personLine,
+      recordItem(
+        CLAUDE_CODE,
+        EMPTY,
+        { ...finding, finding_kind: 'opportunity', title: 'Cache the token' },
+        1200,
+        TOOL_FIELDS,
+      ).personLine,
     ).toBe('Opportunity: Cache the token')
 
-    const closed = recordClose(CLAUDE_CODE, found.ledger, { id: 'i1', answer: 'Redis' }, 1400)
+    const closed = recordClose(CLAUDE_CODE, found.ledger, { id: 'i1', answer: 'Redis' }, 1400, {
+      lastActions: {},
+      turnStartedAt: null,
+    })
     expect(closed.personLine).toBe('Closed: Which cache should the API use?')
-    expect(recordClose(CLAUDE_CODE, closed.ledger, { id: 'i1', answer: 'Redis' }, 1500).personLine).toBeNull()
+    expect(
+      recordClose(CLAUDE_CODE, closed.ledger, { id: 'i1', answer: 'Redis' }, 1500, {
+        lastActions: {},
+        turnStartedAt: null,
+      }).personLine,
+    ).toBeNull()
     const findingId = found.ledger.findings[0]!.id
-    expect(recordClose(CLAUDE_CODE, found.ledger, { id: findingId, reason: 'fixed' }, 1400).personLine).toBe(
-      'Closed: Retry loop never backs off',
-    )
+    expect(
+      recordClose(CLAUDE_CODE, found.ledger, { id: findingId, reason: 'fixed' }, 1400, {
+        lastActions: {},
+        turnStartedAt: null,
+      }).personLine,
+    ).toBe('Closed: Retry loop never backs off')
   })
 
   test('the agent can record again what it closed, but not what the person or the update closed', () => {
@@ -198,6 +325,8 @@ describe('items the agent recorded', () => {
       [{ how: 'update', outcome: 'Redis' }, 'Not recorded: the inbox closed it (Redis).'],
     ] as const
     for (const [closing, result] of refusals)
-      expect(recordItem(CLAUDE_CODE, closeItem(recorded(), 'i1', closing, 1500), ask, 2000).result).toStartWith(result)
+      expect(
+        recordItem(CLAUDE_CODE, closeItem(recorded(), 'i1', closing, 1500), ask, 2000, TOOL_FIELDS).result,
+      ).toStartWith(result)
   })
 })

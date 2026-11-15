@@ -2,9 +2,13 @@ import { EMPTY, KEPT_SESSIONS, upgradeLedger } from './ledger'
 import { TOLD_NOTHING } from './inbox-text'
 import { upgradeLastActions } from './last-actions'
 import { upgradeHostTasks } from './host-tasks'
-import type { PrViews, Session, Told, TurnDialogQuestion } from '../types'
+import { withCheckKeys } from './saved-check-keys'
+import type { PrView, PrViews, Session, Told, ToolFields, TurnDialogQuestion } from '../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
+
+const NO_FAILURE = { lastFailure: null, recoveredAt: null }
+export const NO_CALL_FAILURES: Session['callFailures'] = { ledger: NO_FAILURE, status: NO_FAILURE }
 
 export const NO_TURN: Session['turn'] = { person: null, trigger: null, activity: [], press: null }
 
@@ -18,6 +22,8 @@ export function emptySession(): Session {
       turnsApplied: 0,
       ledgerState: 'current',
       hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
@@ -33,9 +39,12 @@ export function emptySession(): Session {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    callFailures: NO_CALL_FAILURES,
     lastOverviewCallAt: null,
+    overviewTurn: 0,
     hostTasks: [],
     dialogQuestions: [],
+    toolFields: null,
   }
 }
 
@@ -80,6 +89,16 @@ export type SavedSession = Partial<
   prViews?: Partial<PrViews>
 }
 
+/** A saved session's `toolFields`: `saved` when it holds a list of field names for each inbox tool, and null otherwise. */
+function savedToolFields(saved: unknown): ToolFields | null {
+  const isNames = (v: unknown) => Array.isArray(v) && v.every(f => typeof f === 'string')
+  const fields = saved as Partial<ToolFields> | null | undefined
+
+  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs)
+    ? (fields as ToolFields)
+    : null
+}
+
 /** A saved presence without `statedStep`, which a build of the Progress tab saved and nothing reads. */
 function withoutStatedStep(presence: SavedSession['presence']): SavedSession['presence'] {
   const { statedStep: _statedStep, ...rest } = (presence ?? {}) as Partial<Session['presence']> & {
@@ -94,8 +113,13 @@ function withoutStatedStep(presence: SavedSession['presence']): SavedSession['pr
  * row and delivery fields existed changes no row when its message arrives.
  */
 export function upgradeSession(saved: SavedSession): Session {
-  const base = emptySession()
   const views = saved.prViews?.views ?? {}
+
+  return withCheckKeys(sessionFields(saved, views), views)
+}
+
+function sessionFields(saved: SavedSession, views: Record<string, PrView>): Session {
+  const base = emptySession()
 
   return {
     ledger: saved.ledger
@@ -115,6 +139,7 @@ export function upgradeSession(saved: SavedSession): Session {
       phase: x.phase ?? 'accepted',
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...(saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress }),
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {
@@ -141,8 +166,11 @@ export function upgradeSession(saved: SavedSession): Session {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map(q => ({ ...q, descriptions: q.descriptions ?? {} })),
+    toolFields: savedToolFields(saved.toolFields),
   }
 }

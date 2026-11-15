@@ -11,17 +11,33 @@ import { statusChanged } from '../../hooks/session-status'
 import { recorded, withHolds } from '../../hooks/session-presses'
 import { drawnTabOf } from '../../hooks/tabs'
 import type { RowNote } from '../../types'
+import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import type { HooksTrust } from './hook-trust'
+import { codexStore } from './host'
+import type { OnWrite } from './host'
 import { makeCatchUpOnOpen } from './server-catch-up'
 import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
-import { holdsOf, sessionOf, shownTabOf, stamped, TAB_ADDRESS, TAB_MIME, TOOLS, turnOf } from './server-tools'
+import {
+  holdsOf,
+  listedToolFields,
+  noteToolsListed,
+  sessionOf,
+  shownRowsOf,
+  shownTabOf,
+  stamped,
+  TAB_ADDRESS,
+  TAB_MIME,
+  TOOLS,
+  turnOf,
+} from './server-tools'
 import { makeHooksTrustNow } from './server-trust'
 import { pruneSessions, readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
+import type { CodexHerdrAsk } from './server-herdr'
 import { applyFeedFiles } from '../../hooks/feed'
 import { readFeedFiles } from '../../feed-reader'
 import { feedPathValue } from '../../hooks/feed-path'
@@ -78,6 +94,12 @@ export type ServerDeps = {
     codexHome: string
     startUpdate: (sessionId: string) => void
   }
+  /** Reports each state the server writes to the Herdr app terminal Codex runs in. */
+  onWrite?: OnWrite
+  /** Starts applying the presses the Herdr look writes, with `apply`. */
+  followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<void>) => void
+  /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
+  herdrAsk?: CodexHerdrAsk
 }
 
 type Message = { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
@@ -92,7 +114,10 @@ export type PressReply = {
   delivery?: 'unconfirmed'
 }
 
-export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
+export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
+  const { onWrite } = given
+  // Each report reads the newest state itself, so a tool call or press answers without waiting on `hc label`.
+  const deps = { ...given, onWrite: onWrite && (async (s: SessionState) => void onWrite(s).catch(() => undefined)) }
   const { dir, now } = deps
   const prunedFor = new Set<string>()
   /** Each chat's newest turn in its rollout, as its last view read it. */
@@ -101,13 +126,14 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const catchUpOnOpen = makeCatchUpOnOpen(deps)
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
-  const { wakeForDone, fetchPrsWhenDue, served, onPress } = makeSessionHost(
+  const { wakeAfterSettle, fetchPrsWhenDue, served, onPress, onHerdrFile } = makeSessionHost(
     deps,
     newestTurns,
     hooksTrustNow,
     currentPage,
   )
   const { demoOf, onDemoPress } = makeDemo(deps, served)
+  deps.followHerdrPresses?.(onHerdrFile)
 
   const isHerdrCheckDue = herdrCheckGate()
 
@@ -138,8 +164,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       case 'order_prs': {
         let result = ''
         const toolInput = name === 'record' ? await withDocumentPreview(args, documentFile) : args
-        await updateState(dir, id, s => {
-          const r = recorded(CODEX, s, name, toolInput, now())
+        await codexStore(dir, id, now, deps.onWrite).update(s => {
+          const r = recorded(CODEX, s, name, toolInput, now(), listedToolFields())
           result = r.result
           return heard(r.state)
         })
@@ -167,7 +193,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const holds = holdsOf(args)
         if (args.demo === true)
           return { ...text('Inbox demo'), structuredContent: await served(demoOf(id), id, true, holds) }
-        await wakeForDone(id).catch(() => undefined)
+        await wakeAfterSettle(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
         const sentTab = shownTabOf(args.tab)
         const feed = await readFeedFiles(await feedPathValue(deps.feedPath))
@@ -177,7 +203,11 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
 
           const updated = ledger === s.ledger ? s : { ...s, ledger }
 
-          return { ...withHolds(lookOnView(updated, shownTab, now()), holds), tabSeenAt: now(), shownTab }
+          return {
+            ...withHolds(lookOnView(updated, shownTab, now(), shownRowsOf(args)), holds),
+            tabSeenAt: now(),
+            shownTab,
+          }
         })
         fetchPrsWhenDue(id, s)
         checkDelegatesWhenDue(id, s)
@@ -186,6 +216,11 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       case 'inbox_tab_page':
         return { ...text('Tab page'), structuredContent: { html: stamped(await currentPage()) } }
       case 'inbox_press': {
+        const asked = args.press as { action?: unknown; isYes?: unknown }
+        if (asked.action === 'herdr-ask' && deps.herdrAsk) {
+          const r = await deps.herdrAsk.answer(asked.isYes === true)
+          return { ...text(r.failure ?? 'Done'), structuredContent: r }
+        }
         const p = args.press as RowPress | PrPress
         const holds = holdsOf(args)
         const r = await (args.demo === true
@@ -209,6 +244,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           serverInfo: { name: 'inbox', version: VERSION },
         })
       case 'tools/list':
+        noteToolsListed()
         return ok({ tools: TOOLS })
       case 'tools/call': {
         const name = String(params?.name ?? '')

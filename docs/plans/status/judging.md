@@ -44,9 +44,10 @@ A case is a starting state, then steps, with the fact list beside them.
 
 - **The starting state:** a saved ledger, with its Status, open asks and findings, and the session's presence.
 - **A step** has a time, and runs in this order:
-  - host events: a child starts, acts or ends, the person looks at the page for some seconds, or the person presses Set as goal or Not now or types a goal, through the host's own `goalPressed`;
+  - host events: a child starts, acts or ends, the person looks at the page for some seconds, or the person presses the goal's Remove or types a goal, through the host's own `goalPressed`;
   - fixture events, in a replay that skips the ledger call: an ask opens or closes;
-  - at most one call: a reply, a mid-turn call or a catch-up, each with its exchange or conversation, or a recorded call's exchange as it was.
+  - at most one call: a reply, a mid-turn call or a catch-up, each with its exchange or conversation, or a recorded call's exchange as it was;
+  - host events while the call runs, as a goal the person types then: they apply after the call reads the session and before its answer applies, so the answer applies to the session they leave.
 - **The fact list** gives, for each step, the session's focus, the goal and each milestone's real state, every piece of work with its aliases, its real state and the milestone it serves, the asks and the pieces each holds up, the running work and the piece each serves, what is not work, and any goal the person stated at that step. A step lists only what it changes, and the pieces it changes are the step's changes.
 - **Targets:** each step names the rules or judge checks it tests.
 - **A short case** is marked `isShort`. It runs 5 times per model, and each model's runs are judged apart. A replay runs 3 times per model, and both models' runs are judged together.
@@ -63,10 +64,11 @@ A next build's record of a Status call holds the call's input as data: the Statu
 
 These run after every step of every replay, on the saved Status, the page `statusPage` draws, and the fact list:
 
-- No text the model writes holds a time word or a date: the head, the goal or a proposal, a milestone, a name, where it stands, or a was line.
+- No text the model writes holds a time word or a date: the head, the goal, a milestone, a name, where it stands, or a was line.
 - A name has at most 3 words, no "…" and no question mark. So do the head's title and a milestone's name.
 - The head has a title and a one-line description, and the description does not repeat the title.
 - A text names no command, file, hash, ticket or PR number, or count of tests, files, commits, lines, calls or checks.
+- No name, where it stands, head, milestone or goal joins clipped phrases with a semicolon, as in "engine done; retries left".
 - The head holds no status word, such as "ready", "merged", "passes" or "waiting".
 - No two open subjects or milestones share every key word of a name, numbers included, or the same issue or PR number. So "2.4 release" and "2.5 release" are two pieces.
 - Every open piece in the fact list matches a row or is in the "N more" fold.
@@ -74,7 +76,7 @@ These run after every step of every replay, on the saved Status, the page `statu
 - No subject matches an ask, a finding, a task for the person or a standing rule in the fact list. No text restates an open ask or finding.
 - Each open ask is linked to every subject the fact list says it holds up, and to no other. A held subject's text names no decision, such as "needs your decision" or "your call".
 - Each running child is linked to the subject the fact list names.
-- A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. Until #149 is built, this is a known failing check for a delegate named by an id.
+- A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. The replays start their delegates with ids and show no Herdr focus, so this check stays known failing for them. The eval-trust follow-ups name the replay step it needs.
 - On a step the fact list marks as no news, no row's or milestone's last-changed time or place moves.
 - On a step the fact list marks as a change, each changed piece's last-changed time moves.
 - On a reversal step, the right subject has a was line, and on a step of plain progress no new was line appears.
@@ -85,20 +87,22 @@ These run after every step of every replay, on the saved Status, the page `statu
 The goal adds these:
 
 - The answer the host would apply, after its one re-ask, parses.
-- No proposal appears at a step where the person stated no new outcome with a finish line.
-- A step where the person stated one shows a proposal of it, unless it is already the goal.
+- No goal is set at a step that makes no next goal clear.
+- A step that makes the next goal clear, from the person's words or the work, shows that goal.
 - Each milestone in the fact list has a milestone with a mark its state allows.
-- A goal or a proposal has 2 to 5 milestones.
+- A goal has 2 to 5 milestones, none named after a subject.
 - A subject the goal needs is not under Other work, and one it does not need is not linked to a milestone.
+- A goal the fact list marks as left by the work is retired or met, not still open. One whose outcome the person dropped is retired, not shown met.
+- A goal the fact list keeps, met or not, stays on the page. One the work has paused on may stay or end.
 
 **The code holds** are checked at every step of every run, and any failure blocks:
 
-- The goal changes only on a press.
-- No proposal has the name key of the goal or of a declined goal.
+- A typed goal that is not met, with linked work still open, changes only on a press.
+- A goal set with no press restates neither the goal before it nor a goal the person removed, as `restatesGoal` judges it.
 - The goal shows met exactly while every milestone that is not dropped is done.
 - A milestone shows ◆ exactly while it is open and an open ask holds it up, itself or through a subject that serves it.
 - Under Other work, an open subject that changed since the person looked, or that an ask holds up, has its own row.
-- A subject not linked yet sits in the main list.
+- While the goal shows milestones, every subject not under one sits under Other work. While it shows none, a subject not linked yet sits above Other work.
 
 ### The judge
 
@@ -126,7 +130,7 @@ The judge calls 23 of the 24 pages right (`status-judge-2026-10-28T23-54-21.726Z
 A release run may block falsely with a chance of at most 0.05 when every rate sits at its tolerance. Each test is an exact binomial: it blocks when its failures would be that unlikely at its tolerance. The 0.05 is split across four layers, and within a layer each test gets an equal share.
 
 - **What counts.** An opportunity is one rule at one step in one run, where the step could make that rule newly fail. A rule that reads only text the model wrote has one where the step's answer wrote. A rule that reads the facts has one where the answer wrote or the facts changed. A failure counts at the step where it first appears. A failure that was already there at the last step with a call is carried, and the step is left out of that rule's count. Several failures of one rule at one step are one failure.
-- **The tolerances.** 0.10 for a rule, 0.20 for a missed proposal, and 0.15 for a judge check.
+- **The tolerances.** 0.10 for a rule, 0.20 for a missed goal, and 0.15 for a judge check.
 
 | Layer | Share | Each test |
 | --- | --- | --- |
@@ -137,9 +141,9 @@ A release run may block falsely with a chance of at most 0.05 when every rate si
 
 The report lists each test with its failures, its count, its 95% interval and the count at which it blocks. A test over its tolerance but under its blocking count is listed for reading. A code hold that fails blocks. Known failing cases are listed apart and block nothing. A target counts a failure on any piece; counting only the pieces its step changes is not built yet.
 
-**Calls that fail.** A call that ends with no answer before the host's time limit, as on a network error, failed outside the model. The runner tries that call again from the same prompt, twice, and then the run can't be graded. A call that answers past the limit fails as it would in the host. The runner stops at 200 Status calls, both models together, re-asks and retries included, and exits 2: a stopped run has no grade.
+**Calls that fail.** A call that ends with no answer before the host's time limit, as on a network error, failed outside the model. The runner tries that call again from the same prompt, twice, and then the run can't be graded. A call that answers past the limit fails as it would in the host. Each model stops at 220 Status calls, re-asks and retries included. That model's later runs then have no grade, and the other model's runs go on.
 
-**Exit status.** 0 when nothing blocks; 1 when a test or a code hold blocks; 2 when the run stopped at 200 Status calls or a case could not be graded; 3 when the run stopped because a session could reach more than the stand-in inbox.
+**Exit status.** 0 when nothing blocks; 1 when a test or a code hold blocks; 2 when a case could not be graded, as when its model reached 220 Status calls; 3 when the run stopped because a session could reach more than the stand-in inbox.
 
 ### Free checks in `check.sh`
 
@@ -152,10 +156,7 @@ These make no model calls.
 - **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Status call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. A Status answer that lands after a clear writes into the cleared session: #152. When two update processes run their Status calls newer-first, the older answer overwrites the newer one: #153.
 - **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
   - work filed for later closes with its own mark, #137;
-  - the fold names every finished piece the person has not seen, #138;
-  - a look marks as seen only the rows that were on screen, #139;
-  - one ask holds up two subjects, #140;
-  - a delegate with no published focus shows its name in words, #149.
+  - a look marks as seen only the rows that were on screen, #139.
 
   The rules for the same changes in the replays name their issue too. Until it is built, such a rule's failures are listed apart and block nothing. A replay step marks a judge check the same way: at Replay A's checkpoints, the judge's marks check waits on #137, since filed work there can only close as ✓ or ✗.
 
@@ -167,8 +168,13 @@ These make no model calls.
 | Replay B, 9 calls, both calls | 54 | 54 | 12 |
 | Replay C, 3 calls | 18 | 0 | 12 |
 | `catch-up-from-empty`, 1 call, 3 runs | 6 | 0 | 0 |
+| `milestone-dropped`, 1 call, 3 runs | 6 | 0 | 0 |
+| `catch-up-shipped`, 1 call, 3 runs | 6 | 0 | 0 |
+| `goal-awaiting-milestones`, 1 call, 3 runs | 6 | 0 | 0 |
+| `ask-holds-two`, 2 calls, 3 runs | 12 | 0 | 0 |
 | The three goal short cases, 4 calls, 5 runs, 2 models | 40 | 0 | 10 |
+| `next-release`, 3 calls, 3 runs | 18 | 0 | 0 |
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
-| **Total** | **184** | **54** | **82** |
+| **Total** | **232** | **54** | **82** |
 
-An answer that holds prose is asked once more, and a call that fails outside the model is tried again. The runner stops at 200 Status calls, so 16 calls are left for both.
+An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run makes 189 Status calls before re-asks and retries. Each model stops at 220 Status calls, so one `--agent both` run grades both models.

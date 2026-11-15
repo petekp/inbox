@@ -1,5 +1,6 @@
 import { rowsIn, settledIn } from './action-plan'
 import { bannerOf, emptyText, isResumable, READING_TEXT, stopBanner } from './banners'
+import { isMaybeStale } from './band'
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { FINDING_GROUPS, HELD_MARK } from './help'
 import { linkLabel } from './inline'
@@ -13,11 +14,13 @@ import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
 import { ROW_COLUMNS } from './pane-sizes'
 import {
-  closedHistoryPlan,
+  closedShown,
   closedTotal,
+  closedHistoryPlan,
   documentPreviewLine,
   DOT,
   replyHint,
+  resumeLabel,
   ROW_COPY,
   rowTitle,
   type RowView,
@@ -52,6 +55,23 @@ export function paneAskRows(
     const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
     const isHandedOff = r.state.is === 'handedOff'
     const holdsUpLine = holdsUpLineOf(r)
+    const holdsUp = holdsUpLine ? (
+      <Text key="holds-up" color={pal.muted} wrap="wrap">
+        <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
+        {inlineText(holdsUpLine)}
+      </Text>
+    ) : null
+    const recLine = r.recLine ? (
+      <Text key="rec" color={pal.muted} wrap="wrap">
+        {inlineText(r.recLine)}
+      </Text>
+    ) : null
+    const contextLine = r.contextLine ? (
+      <Text key="context" color={pal.muted} wrap="wrap">
+        {inlineText(r.contextLine)}
+      </Text>
+    ) : null
+    const subtitleLines = [contextLine, holdsUp, recLine].filter(line => line !== null)
     const preview = documentPreviewLine(r)
 
     return {
@@ -63,16 +83,11 @@ export function paneAskRows(
       titleContent: inlineText(rowTitle(r, look)),
       titleAfter: asked,
       ...(r.at === null ? {} : { at: r.at }),
-      ...(holdsUpLine
-        ? {
-            subtitle: (
-              <Text color={pal.muted} wrap="wrap">
-                <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-                {holdsUpLine}
-              </Text>
-            ),
-          }
-        : {}),
+      ...(subtitleLines.length > 1
+        ? { subtitle: <Box flexDirection="column">{subtitleLines}</Box> }
+        : subtitleLines.length === 1
+          ? { subtitle: subtitleLines[0] }
+          : {}),
       hasSecondLine: r.replyKind === 'answer',
       body:
         r.detail || preview ? (
@@ -163,8 +178,6 @@ export function paneAskRows(
   return { itemRow, findingRow }
 }
 
-export type PaneAskRows = ReturnType<typeof paneAskRows>
-
 export function paneAskTabs(
   {
     listColumns,
@@ -180,6 +193,7 @@ export function paneAskTabs(
     view,
     isUnread,
     unfolded,
+    closedAll,
     stop,
     glued,
     now,
@@ -209,6 +223,7 @@ export function paneAskTabs(
     | 'view'
     | 'isUnread'
     | 'unfolded'
+    | 'closedAll'
     | 'Button'
     | 'stop'
     | 'glued'
@@ -295,6 +310,7 @@ export function paneAskTabs(
   const needsYouView = () => {
     const groups = needsYouGroups.flatMap(g => {
       const { entries } = g
+      const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries), closedAll.includes(g.kind))
       const history = closedHistoryPlan(view.needsYou.closed[g.list], settledIn(entries))
       if (isUnread) return []
       const isUnfolded = unfolded.includes(g.kind)
@@ -305,7 +321,7 @@ export function paneAskTabs(
         g.kind,
         ROW_COLUMNS.tree.handleAt,
       )
-      const tail = closedFold(g.kind, history.rows, history.total, isUnfolded)
+      const tail = closedFold(g.kind, closed, history.total, isUnfolded)
 
       return [
         section([
@@ -329,7 +345,8 @@ export function paneAskTabs(
           ),
         ]
       : []
-    if (isNothing && !stop && unread.length === 0) return emptyState(emptyText('needsYou', 'Claude'))
+    if (isNothing && !stop && unread.length === 0)
+      return emptyState(emptyText('needsYou', 'Claude', isMaybeStale(view, isUnread)))
     const outside = stop
       ? [
           section(
@@ -345,7 +362,7 @@ export function paneAskTabs(
               action: isResumable(stop) ? (
                 <Button
                   key="resume"
-                  label={sessionState.resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+                  label={resumeLabel(sessionState.resuming?.is === 'sending')}
                   onPress={() => void resume()}
                 />
               ) : null,
@@ -359,12 +376,13 @@ export function paneAskTabs(
   const findingsView = () => {
     const settled = settledIn(findingEntries)
     if (findingEntries.length === 0 && closedTotal(view.findings.closed, settled) === 0)
-      return emptyState(emptyText('findings', 'Claude'))
+      return emptyState(emptyText('findings', 'Claude', isMaybeStale(view, isUnread)))
     const groups = lists.findingGroups.map(g => {
       const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
       const history = closedHistoryPlan(closedOf, settled)
-      const closed = history.rows.map(f => ({
+      const closed = closedShown(closedOf, settled, closedAll.includes(g.kind)).map(f => ({
         id: f.id,
+        how: f.how,
         ask: f.title,
         at: f.closedAt,
         outcomeLabel: f.outcomeLabel,

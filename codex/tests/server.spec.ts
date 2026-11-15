@@ -5,7 +5,7 @@ import { demoView } from '../../hooks/demo'
 import { feedbackOf } from '../../hooks/feedback'
 import { notePrompt, viewOf } from '../src/core'
 import { readState, updateState } from '../src/state'
-import { ghAnswer, prServer } from './server-fixtures'
+import { GH_VIEW, ghAnswer, prsAnswer, prServer } from './server-fixtures'
 
 test('a PR press sends its prompt through codex queue and records the press on its row', async () => {
   const { dir, calls, call } = await prServer(ghAnswer)
@@ -109,8 +109,12 @@ test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed
   })
   const { dir, call } = await prServer(args => {
     if (args[1] === 'queue') return { code: 1, stdout: '', stderr: 'no such thread' }
-    if (args[1] === 'pr' && args.includes(String(conflicting.number)))
-      return { code: 0, stdout: conflictingView, stderr: '' }
+    if (args[2] === 'graphql')
+      return {
+        code: 0,
+        stdout: prsAnswer(args, number => (number === conflicting.number ? conflictingView : GH_VIEW)),
+        stderr: '',
+      }
     return ghAnswer(args)
   })
   await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: d.ledger.prs }, prViews: d.prViews }))

@@ -40,7 +40,7 @@ export function sessionOf(o: SessionStatus, items: Item[], at: number): Session 
   }
 }
 
-export function ask(id: string, text: string): Item {
+function ask(id: string, text: string): Item {
   return {
     id,
     kind: 'question',
@@ -78,7 +78,7 @@ export function baseScene(): Scene {
       subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
     ],
     {
-      askSubjects: { i1: 's2' },
+      askSubjects: { i1: ['s2'] },
       nextChildId: 2,
       children: [
         {
@@ -130,6 +130,7 @@ export function contextOf(scene: Scene): RuleContext {
     facts: scene.facts,
     calls: scene.calls ?? [],
     isStatusFailed: scene.isStatusFailed,
+    readSetAt: scene.step.call ? (scene.before.goal?.setAt ?? null) : null,
   }
   const beforeFacts = { ...scene.facts, changed: [] }
 
@@ -156,6 +157,7 @@ function withGoal(s: Scene) {
     metAt: null,
     was: null,
     isAwaitingMilestones: false,
+    source: 'inferred',
   }
   s.after.milestones = [
     milestone('m1', 'Edits survive offline', 'working'),
@@ -174,15 +176,31 @@ function withGoal(s: Scene) {
   s.facts.pieces[1]!.serves = 'resolved'
 }
 
-function withProposal(s: Scene, names: string[]) {
-  s.after.proposedGoal = {
-    text: 'Offline sync in both stores',
-    milestones: names.map(name => ({ name, status: 'queued' as SubjectStatus })),
-    at: minutes(10),
-  }
+/** The same inferred goal before the step and after it, with its work open. */
+function withGoalBefore(s: Scene) {
+  withGoal(s)
+  s.before = { ...s.before, goal: s.after.goal, milestones: s.after.milestones, serves: s.after.serves }
 }
 
-const STATED = { text: 'Get offline sync into both stores', match: 'offline sync' }
+/** An inferred goal before the step and still after it, which the facts say the work has left. */
+function withLeftGoal(s: Scene) {
+  withGoalBefore(s)
+  s.facts.goal = { ...s.facts.goal!, milestones: [], isLeft: true }
+}
+
+/** A typed goal before the step, with its work open, and none after it. */
+function withTypedGoalBefore(s: Scene) {
+  withGoal(s)
+  s.before = {
+    ...s.before,
+    goal: { ...s.after.goal!, source: 'typed' },
+    milestones: s.after.milestones,
+    serves: s.after.serves,
+  }
+  s.after.goal = null
+}
+
+const CLEAR = { text: 'Get offline sync into both stores', match: 'offline sync' }
 
 const s1Of = (s: Scene) => s.after.subjects[0]!
 const s2Of = (s: Scene) => s.after.subjects[1]!
@@ -191,6 +209,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'no-time-words': { bad: s => (s1Of(s).text = 'synced 5m ago') },
   'short-names': { bad: s => (s1Of(s).name = 'The offline sync engine work') },
   'text-no-ids': { bad: s => (s1Of(s).text = 'retries in sync-queue.ts') },
+  'no-semicolons': { bad: s => (s1Of(s).text = 'engine done; retries left') },
   'head-no-status': { bad: s => (s.after.head = { title: 'Offline sync', description: 'Offline sync ready' }) },
   'head-follows': { bad: s => (s.after.head = { title: 'Lint error', description: 'Fixing the lint error' }) },
   'no-duplicates': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Sync engine work', 'tests', 10)) },
@@ -204,7 +223,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
   'held-text': { bad: s => (s2Of(s).text = 'needs your decision') },
-  'asks-linked': { bad: s => (s.after.askSubjects = { i1: 's1' }) },
+  'asks-linked': { bad: s => (s.after.askSubjects = { i1: ['s1'] }) },
   'ask-holds-several': { bad: s => (s.facts.asks[0]!.holdsUp = ['conflicts', 'engine']) },
   'children-linked': { bad: s => (s.after.children[0]!.subjectId = 's2') },
   'child-labels': { bad: s => (s.after.children[0]!.name = 'pdfx2') },
@@ -228,13 +247,31 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     good: s => (s.calls = [statusCall('SET: s1 | working | syncs on reconnect')]),
     bad: s => (s.calls = [statusCall('The engine now syncs on reconnect.')]),
   },
-  'proposal-only-when-stated': { bad: s => withProposal(s, ['Edits survive offline', 'Conflicts resolved']) },
-  'proposal-when-stated': {
-    good: s => {
-      s.facts.goalStated = STATED
-      withProposal(s, ['Edits survive offline', 'Conflicts resolved'])
+  'goal-kept': {
+    good: withGoalBefore,
+    bad: s => {
+      withGoalBefore(s)
+      s.after.goal = null
+      s.after.milestones = []
+      s.after.serves = {}
     },
-    bad: s => (s.facts.goalStated = STATED),
+  },
+  'goal-left': {
+    good: s => {
+      withLeftGoal(s)
+      s.after.goal = null
+      s.after.milestones = []
+      s.after.serves = {}
+    },
+    bad: withLeftGoal,
+  },
+  'goal-only-when-clear': { bad: withGoal },
+  'goal-when-clear': {
+    good: s => {
+      s.facts.goalClear = CLEAR
+      withGoal(s)
+    },
+    bad: s => (s.facts.goalClear = CLEAR),
   },
   'milestones-true': {
     good: withGoal,
@@ -243,7 +280,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.after.milestones[1]!.status = 'done'
     },
   },
-  'milestones-shape': { bad: s => withProposal(s, ['Edits survive offline']) },
+  'milestones-shape': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.milestones[1]!.name = 'Sync conflicts'
+    },
+  },
   'serves-linked': {
     good: withGoal,
     bad: s => {
@@ -251,17 +294,18 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.after.serves = { s2: 'm2' }
     },
   },
-  'goal-on-press': {
+  'typed-goal-kept': {
     good: s => {
-      withGoal(s)
-      s.step.events = [{ press: 'use-goal' }]
+      withTypedGoalBefore(s)
+      s.step.events = [{ press: 'type', text: 'Sync in the web app' }]
     },
-    bad: withGoal,
+    bad: withTypedGoalBefore,
   },
-  'proposal-not-repeated': {
+  'goal-not-repeated': {
+    good: withGoal,
     bad: s => {
-      withProposal(s, ['Edits survive offline', 'Conflicts resolved'])
-      s.after.declinedGoals = [nameKey(s.after.proposedGoal!.text)]
+      withGoal(s)
+      s.after.removedGoals = [nameKey(s.after.goal!.text)]
     },
   },
   'met-follows': {
@@ -293,7 +337,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.page = p => (p.rows = p.rows.filter(r => !(r.kind === 'subject' && r.id === 's1')))
     },
   },
-  'unlinked-in-main': {
+  'other-work-place': {
     good: s => {
       withGoal(s)
       s.after.serves.s1 = 'none'
@@ -308,12 +352,31 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
   'finished-named': {
+    good: s => {
+      s.after.subjects.push(
+        subject('s3', 'done', 'Login timeout', 'fixed', 8),
+        subject('s4', 'done', 'Crash on launch', 'fixed', 9),
+        subject('s5', 'done', 'Backup restore', 'works', 10),
+        subject('s6', 'dropped', 'Offline banner', 'not needed', 7),
+        subject('s7', 'done', 'Sync merge', 'merges', 11),
+        subject('s8', 'done', 'Search speed', 'faster', 12),
+      )
+    },
     bad: s => {
       s.after.subjects.push(
         subject('s3', 'done', 'Login timeout', 'fixed', 8),
         subject('s4', 'done', 'Crash on launch', 'fixed', 9),
         subject('s5', 'done', 'Backup restore', 'works', 10),
+        subject('s6', 'dropped', 'Offline banner', 'not needed', 7),
+        subject('s7', 'done', 'Sync merge', 'merges', 11),
+        subject('s8', 'done', 'Search speed', 'faster', 12),
       )
+      s.page = p => (p.rows = p.rows.filter(r => !(r.kind === 'fold' && r.id === 'also-dropped')))
+    },
+  },
+  'no-number-names': {
+    bad: s => {
+      s1Of(s).name = 'PR 3655'
     },
   },
 }

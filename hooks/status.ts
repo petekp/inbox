@@ -13,8 +13,10 @@ export type Op =
   | { kind: 'head'; title: string; description: string }
   /** `ref` is a running child's id or an open ask's id. `subject` may name a milestone. */
   | { kind: 'link'; ref: string; subject: string }
-  /** A goal proposed from the person's own words, with the milestones it needs. Never a change to the goal. */
+  /** A goal the call sets from the session's work, with the milestones it needs. Code applies it only when it may. */
   | { kind: 'goal'; text: string; milestones: { status: SubjectStatus; name: string }[] }
+  /** Clears an inferred goal the session's work has left, when no next goal is clear. */
+  | { kind: 'retire'; why: string }
   | { kind: 'milestone'; status: SubjectStatus; name: string; text: string }
   /** `milestone` is null for work the goal does not need. */
   | { kind: 'serves'; subject: string; milestone: string | null }
@@ -23,7 +25,7 @@ export type Op =
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
 const LINE =
-  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i
+  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i
 
 function fields(value: string): string[] {
   return value.split('|').map(f => f.trim())
@@ -37,8 +39,8 @@ function anyStatus(s: string | undefined): SubjectStatus | null {
   return STATUSES.find(o => o === s?.toLowerCase()) ?? null
 }
 
-/** A proposal's milestones, as `status name; status name`. A milestone with no known status is left out. */
-function proposedMilestones(value: string | undefined): { status: SubjectStatus; name: string }[] {
+/** A GOAL line's milestones, as `status name; status name`. A milestone with no known status is left out. */
+function goalMilestones(value: string | undefined): { status: SubjectStatus; name: string }[] {
   return (value ?? '').split(';').flatMap(part => {
     const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part)
     const status = anyStatus(m?.[1])
@@ -69,7 +71,8 @@ function opOf(key: string, f: string[]): Op | null {
   if (key === 'WAS') return f[0] && f[1] ? { kind: 'was', ref: f[0], text: f[1] } : null
   if (key === 'HEAD') return f[0] ? { kind: 'head', title: f[0], description: f[1] ?? '' } : null
   if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], subject: f[1] } : null
-  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0], milestones: proposedMilestones(f[1]) } : null
+  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0], milestones: goalMilestones(f[1]) } : null
+  if (key === 'RETIRE') return { kind: 'retire', why: f[0] ?? '' }
   if (key === 'MILESTONE') {
     const status = anyStatus(f[0])
 
@@ -85,34 +88,30 @@ function opOf(key: string, f: string[]): Op | null {
 }
 
 /**
- * Parses the Status call's answer. Null when it is empty, or when any line is not an operation: an answer that
- * holds prose has more than once corrected itself partway, and applying any of it could apply the wrong half.
+ * Parses the Status call's answer. A line that is not an operation is left out, so a stray line of prose does not
+ * throw away the lines around it. Null when no line is an operation.
  */
 export function parseStatus(text: string | null): StatusAnswer | null {
-  const ops: Op[] = []
-  for (const raw of (text ?? '').split(NL)) {
-    const line = raw.trim()
-    if (line === '') continue
-    const m = LINE.exec(line)
+  const ops = (text ?? '').split(NL).flatMap(raw => {
+    const m = LINE.exec(raw.trim())
     const op = m ? opOf(m[1]!.toUpperCase().replace(' ', ''), fields(m[2] ?? '')) : null
-    if (op === null) return null
-    ops.push(op)
-  }
+    return op === null ? [] : [op]
+  })
   if (ops.length === 0) return null
 
   return ops.every(o => o.kind === 'none') ? { kind: 'unchanged' } : { kind: 'ops', ops }
 }
 
 /**
- * Asks the Status call through `ask`, and once more when the answer holds prose, as `parseStatus` refuses it. A
- * call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
+ * Asks the Status call through `ask`, and once more when the answer holds no operation, as `parseStatus` refuses it.
+ * A call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
  * the call was asked once.
  */
 export async function askStatus<T extends { text: string | null }>(
   ask: () => Promise<T>,
 ): Promise<{ first: T; last: T }> {
   const first = await ask()
-  const holdsProse = first.text !== null && parseStatus(first.text) === null
+  const isUnreadable = first.text !== null && parseStatus(first.text) === null
 
-  return { first, last: holdsProse ? await ask() : first }
+  return { first, last: isUnreadable ? await ask() : first }
 }

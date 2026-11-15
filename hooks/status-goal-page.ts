@@ -15,8 +15,6 @@ export type MilestoneRow = {
   stall: { text: string; tone: 'needsYou' } | null
   /** The plan a change replaced, while the person has not seen it. */
   was: string | null
-  /** Whether it changed since the person last looked. */
-  isChanged: boolean
   /** The oldest open ask that holds it up, which its View button opens. */
   ask: { id: string; kind: Item['kind'] } | null
   /** The work that serves it, drawn under it one step in. `statusPage` fills it. */
@@ -25,7 +23,7 @@ export type MilestoneRow = {
 
 /** The goal and where the work stands against it. */
 export type GoalBlock = {
-  /** "Goal", or "Goal met". */
+  /** The section's heading: `GOAL_HEADING`, or "Goal met". */
   label: string
   text: string
   /** "1 of 5 done", drawn after the goal's text. Null once the goal is met and while its milestones are not written. */
@@ -40,35 +38,28 @@ export type GoalBlock = {
   milestones: MilestoneRow[]
 }
 
-/** A goal the Status call proposed from the person's words, for the person to use, edit or decline. */
-export type ProposalBlock = {
-  label: string
-  /**
-   * Whether it draws below the goal in effect, its milestones and its button, so the person reads that goal first and
-   * then what would replace it. With no goal set, it draws first.
-   */
-  isBelowGoal: boolean
-  text: string
-  milestones: { mark: string; tone: StatusTone; name: string }[]
-}
-
 /** The goal's parts of the Status page. */
 export type GoalParts = {
   goal: GoalBlock | null
-  proposal: ProposalBlock | null
+  /** Whether Undo can bring back the goal the person removed. */
+  canRestoreGoal: boolean
 }
 
-export const AWAITING_TEXT = 'Milestones after the next reply'
-const PROPOSAL_LABEL = 'Proposed goal · from your message'
-const NEW_GOAL_PROPOSAL_LABEL = 'Proposed new goal · from your message'
+const AWAITING_TEXT = 'Milestones after the next reply'
+/** The heading of the goal's section while no goal is met: the same with a goal or without one. */
+export const GOAL_HEADING = 'Goal'
+/** The dim line under the goal's heading while no goal is set. */
+export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
 
 /** The oldest open ask linked to `id`, a subject or a milestone. */
 export function oldestAsk(
   items: readonly Item[],
-  links: Readonly<Record<string, string>>,
+  links: Readonly<Record<string, readonly string[]>>,
   id: string,
 ): { id: string; kind: Item['kind'] } | null {
-  const oldest = items.filter(i => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
+  const oldest = items
+    .filter(i => links[i.id]?.includes(id))
+    .sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
 
   return oldest ? { id: oldest.id, kind: oldest.kind } : null
 }
@@ -77,8 +68,8 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
   const isOpen = m.status !== 'done' && m.status !== 'dropped'
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => (to === m.id ? [id] : [])))
   const holds = items.filter(i => {
-    const to = o.askSubjects[i.id]
-    return to === m.id || (to !== undefined && servingIds.has(to))
+    const to = o.askSubjects[i.id] ?? []
+    return to.some(id => id === m.id || servingIds.has(id))
   })
   const isHeld = isOpen && holds.length > 0
   const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0)
@@ -92,25 +83,15 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
     text: m.text || null,
     stall: isHeld ? { text: 'waiting', tone: 'needsYou' } : null,
     was: isChanged ? m.was : null,
-    isChanged,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
     rows: [],
   }
 }
 
-/** The goal block with its Now line, and the proposal, from the saved Status and the open asks. */
+/** The goal block with its Now line, from the saved Status and the open asks. */
 export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalParts {
   const g = o?.goal ?? null
-  const isBelowGoal = g !== null
-  const proposal: ProposalBlock | null = o?.proposedGoal
-    ? {
-        label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
-        isBelowGoal,
-        text: o.proposedGoal.text,
-        milestones: o.proposedGoal.milestones.map(m => ({ ...SUBJECT_MARKS[m.status], name: m.name })),
-      }
-    : null
-  if (o === null || g === null) return { goal: null, proposal }
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null }
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt)
   const kept = o.milestones.filter(m => m.status !== 'dropped')
   const shown = o.milestones.filter(
@@ -123,7 +104,7 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
 
   return {
     goal: {
-      label: isMet ? 'Goal met' : 'Goal',
+      label: isMet ? 'Goal met' : GOAL_HEADING,
       text: g.text,
       count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
@@ -132,6 +113,6 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map(m => milestoneRow(m, o, items)),
     },
-    proposal,
+    canRestoreGoal: false,
   }
 }

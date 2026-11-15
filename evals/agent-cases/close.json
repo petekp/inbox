@@ -173,6 +173,42 @@
     ]
   },
   {
+    "name": "question-back-stays-open",
+    "about": "The user replies to an open question with a question of their own, so the agent answers it in its reply and closes nothing.",
+    "ledger": {
+      "nextId": 4,
+      "turn": 2,
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": "In-memory",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "About this question you asked me: Why not Redis? Doesn't an in-memory cache empty on every restart?\n\"Which cache should the product API use?\"\nOptions: Redis / In-memory",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 0,
+        "result": "^Closed"
+      },
+      {
+        "reply": "restart|redis"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
     "name": "close-no-self-answer",
     "about": "When the user does not answer an open question, the agent does not close it with an answer of its own.",
     "ledger": {
@@ -375,5 +411,24 @@
         "noIds": true
       }
     ]
+  },
+  {
+    "name": "put-off-finding-stays-open",
+    "about": "A finding the user puts off is not closed: a finding closes only when a change fixed it.",
+    "ledger": {
+      "nextId": 3,
+      "findings": [
+        {
+          "id": "f2",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "Not now on the parser tests finding, we'll get to it after the release. Write me a one-line release note for v1: it adds the greet command.",
+    "checks": [{ "calls": "close", "count": 0 }, { "noIds": true }]
   }
 ]

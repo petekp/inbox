@@ -8,7 +8,7 @@ import type { MusicCue } from './Music'
 import { END_CARD_LEAD, frames } from './video'
 
 /** A beat placed in its video: what it is, its number and id, and when it starts and how long it runs, in seconds. */
-export type PlacedBeat = { kind: string; id: string; number: number; start: number; length: number }
+type PlacedBeat = { kind: string; id: string; number: number; start: number; length: number }
 
 /**
  * A video's frame: its background, its music, and each beat drawn by `children` from the beat's start. The end card

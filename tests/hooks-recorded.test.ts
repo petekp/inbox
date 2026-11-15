@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { w, world } from './hooks-world'
-import { BAND, PANE, leaveAndReturn } from './hooks-helpers'
+import { BAND, PANE, SAVED_SESSION } from './hooks-helpers'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 
 test('the guidance reaches Claude in the close tool’s description and nowhere else, and every inbox tool loads with the session', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
@@ -17,7 +18,71 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   expect([close, record, order].map(d => d.isDeferred)).toEqual([false, false, false])
 })
 
-test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made until the person leaves the tab, then moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
+test("Claude is asked for a question's context, notes and reason in a new conversation and after it resumes, and not in a conversation an earlier build saved", async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let turns = 0
+  on('session.turns', () => ({ value: turns }))
+  w.stored.set('s:session-2', JSON.stringify(SAVED_SESSION))
+  const recordAsk = async (ask: string) =>
+    (
+      await $.tool.call({
+        tool: 'mcp__inbox__record',
+        kind: 'question',
+        ask,
+        options: ['Redis', 'Memcached'],
+        rec: 'Redis',
+      })
+    ).result
+  const recorded = 'Recorded. The user sees it in the /inbox pane.'
+  const fullAsk = `${recorded} It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does). It has no why: record it again with why, so the user sees your reason.`
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  expect(await recordAsk('Which cache should the API use?')).toBe(fullAsk)
+  await clock.settle()
+  turns = 3
+  await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-2' })
+  expect(await recordAsk('Which queue should jobs use?')).toBe(recorded)
+  await clock.settle()
+  await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
+  expect(await recordAsk('Which log store should we use?')).toBe(fullAsk)
+})
+
+test("a conversation /resume opens with no saved inbox state is asked only for what 0.3.0's record takes, one /clear begins is asked for everything while the turn count still names the last conversation, and a fork asks as its parent's saved record says", async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('session.turns', () => ({ value: 3 }))
+  const recordAsk = async (ask: string) =>
+    (
+      await $.tool.call({
+        tool: 'mcp__inbox__record',
+        kind: 'question',
+        ask,
+        options: ['Redis', 'Memcached'],
+        rec: 'Redis',
+      })
+    ).result
+  const recorded = 'Recorded. The user sees it in the /inbox pane.'
+  const fullAsk = `${recorded} It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does). It has no why: record it again with why, so the user sees your reason.`
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
+  expect(await recordAsk('Which cache should the API use?')).toBe(fullAsk)
+  await clock.settle()
+  await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-3' })
+  expect(await recordAsk('Which queue should jobs use?')).toBe(recorded)
+  await clock.settle()
+  w.stored.set('s:session-3', JSON.stringify({ ...SAVED_SESSION, toolFields: TOOL_FIELDS }))
+  await $.session.end({ reason: 'resume', sessionId: 'session-3', resume: { id: 'session-3' } })
+  await $.classic.SessionStart({ source: 'fork', session_id: 'session-4' })
+  expect(await recordAsk('Which log store should we use?')).toBe(fullAsk)
+})
+
+test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made until its Undo ends, then moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -41,17 +106,16 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Finds 1/ })).toBeDefined()
 
+  const sentBefore = w.sent.length
   await pane.press({ key: 'address-f1' })
-  expect(w.sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   await clock.settle()
+  expect(w.sent).toHaveLength(sentBefore)
   expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
   expect(await pane.find({ text: /^Fix$/ })).toBeDefined()
   expect(await pane.find({ key: 'undo-f1' })).toBeDefined()
   expect(await band.find({ text: /Finds 1/ })).toBeUndefined()
   await clock.advance(9000)
-  expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-f1' })).toBeUndefined()
-  await leaveAndReturn(pane, clock, 'findings')
+  expect(w.sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   expect(await pane.find({ key: 'settled-f1' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
 
@@ -98,7 +162,7 @@ test('a recorded report is read through its resolved path and the inbox stores i
   const saved = JSON.parse(w.stored.get('s:session-1') ?? '{}')
   await clock.settle()
 
-  expect(result.result).toBe('Recorded. The user sees it in the /inbox pane.')
+  expect(result.result).toStartWith('Recorded. The user sees it in the /inbox pane.')
   expect(saved.ledger.items[0]).toMatchObject({
     document: '/reports/current.md',
     documentPreview: '# Release plan Ship to one region first.',
@@ -123,11 +187,14 @@ test('a question Claude records waits in the pane with its recommendation, a rep
     tool: 'mcp__inbox__record',
     kind: 'question',
     ask: 'Which cache should the API use?',
+    context: 'The price lookups are slow, and a cache is the next step',
     options: ['Redis', 'In-memory'],
+    option_notes: ['Adds a Redis server to each stack', 'Keeps prices in each process'],
     rec: 'Redis',
+    why: 'it survives restarts',
   } as const
   const r = await $.tool.call(question)
-  expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
+  expect(r.result).toStartWith('Recorded. The user sees it in the /inbox pane.')
   await clock.settle()
   expect(await pane.find({ text: /Which cache should the API use\?/ })).toBeDefined()
   expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe(
@@ -155,9 +222,18 @@ test('a question Claude records waits in the pane with its recommendation, a rep
   const placement = { tool: 'mcp__inbox__record', kind: 'question', ask: 'Where should the job run?' } as const
   await $.tool.call({ ...placement, options: ['List the choices'] })
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i3', answer: 'List the choices' })
-  expect((await $.tool.call({ ...placement, options: ['Nightly', 'Hourly'], rec: 'Nightly' })).result).toBe(
-    'Recorded. The user sees it in the /inbox pane.',
-  )
+  expect(
+    (
+      await $.tool.call({
+        ...placement,
+        context: 'The cleanup job needs a schedule before it ships',
+        options: ['Nightly', 'Hourly'],
+        option_notes: ['Runs once at 2 a.m.', 'Runs at the top of each hour'],
+        rec: 'Nightly',
+        why: 'traffic is low at night',
+      })
+    ).result,
+  ).toBe('Recorded. The user sees it in the /inbox pane.')
 })
 
 test("the result under a record or close call reads the person's line, nothing when the call changed nothing, and the agent's text in the ctrl+o transcript", async ($, on) => {

@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { Item } from '../types'
+import type { Closed, Item } from '../types'
 import { w, world } from './hooks-world'
 import { PANE, selectRow } from './hooks-helpers'
 
@@ -26,108 +26,310 @@ test('a question the desktop app’s box shows reaches the update, even when the
   )
 })
 
-test('a dialog reaches the model with its questions, whether answered or dismissed, and a dismissed one’s copy, added by the update or recorded by Claude, shows its option descriptions', async ($, on) => {
+test(
+  'a dialog reaches the model with its questions, whether answered or dismissed, and a dismissed one’s copy, added by the update or recorded by Claude, shows its option descriptions under the notes Claude recorded',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    const prompts: string[] = []
+    world($, on, prompts)
+    const ask = (...questions: { question: string; options: { label: string; description?: string }[] }[]) =>
+      $.tool.call({ tool: 'AskUserQuestion', questions } as never)
+    const turn = async (turnId: string, dialog: () => Promise<unknown>, ending: 'answer' | 'aborted' = 'answer') => {
+      await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+      await $.turn.start({ text: 'go on', turnId })
+      await dialog()
+      const answer = ending === 'answer' ? 'Done.' : ''
+      await $.turn.complete({ answer, durationMs: 5, isAborted: ending === 'aborted', turnId, reason: ending })
+      await clock.settle()
+    }
+    const push = { question: 'Push the fix now?', options: [{ label: 'Push now (Recommended)' }, { label: 'Wait' }] }
+
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    w.dialogAnswer = { result: {}, text: 'User has answered: Push now' }
+    await turn('t1', () => ask(push))
+    expect(prompts.at(-1)).toContain('Push the fix now?')
+    expect(prompts.at(-1)).toContain('User has answered: Push now')
+
+    w.dialogAnswer = {
+      isError: true,
+      result: 'User declined to answer questions',
+      text: 'User declined to answer questions',
+    }
+    await turn('t2', () => ask(push), 'aborted')
+    expect(prompts.length).toBe(2)
+    expect(prompts.at(-1)).toContain('Push the fix now?')
+    expect(prompts.at(-1)).toContain('the user dismissed it without answering')
+    expect(prompts.at(-1)).not.toContain('User declined')
+
+    w.dialogAnswer = { result: {}, text: 'Both answered' }
+    await turn('t3', () => ask(push, { question: 'Which branch?', options: [{ label: 'main' }, { label: 'next' }] }))
+    expect(prompts.at(-1)).toContain('Which branch?')
+
+    const itemAsking = (ask: string) =>
+      (JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[] } }).ledger.items.find(i => i.ask === ask)
+    w.dialogAnswer = {
+      isError: true,
+      result: 'User declined to answer questions',
+      text: 'User declined to answer questions',
+    }
+    w.ledgerReply = 'NEW: decide | - | Deploy to staging? | Deploy / Hold | -'
+    const deploy = {
+      question: 'Deploy to staging now?',
+      options: [
+        { label: 'Deploy', description: 'Runs the staging pipeline' },
+        { label: 'Hold', description: 'Waits for the review' },
+      ],
+    }
+    await turn('t4', () => ask(deploy), 'aborted')
+    expect(prompts.at(-1)).not.toContain('Runs the staging pipeline')
+    const deployItem = itemAsking('Deploy to staging?')
+    expect(deployItem?.optionDescriptions).toEqual({
+      Deploy: 'Runs the staging pipeline',
+      Hold: 'Waits for the review',
+    })
+    const pane = await $.ui.mount(PANE)
+    await selectRow(pane, `${deployItem?.id}`)
+    await clock.settle()
+    const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
+    expect(texts).toContain('Deploy: Runs the staging pipeline')
+    expect(texts).toContain('Hold: Waits for the review')
+
+    w.ledgerReply = 'NEW: decide | - | Clear stored data? | Yes / No | -'
+    const yesNo = (yes: string, no: string) => [
+      { label: 'Yes', description: yes },
+      { label: 'No', description: no },
+    ]
+    await turn(
+      't5',
+      () =>
+        ask(
+          { question: 'Delete the cache?', options: yesNo('Removes cached builds', 'Keeps them') },
+          { question: 'Rebuild the index?', options: yesNo('Takes ten minutes', 'Uses the old index') },
+        ),
+      'aborted',
+    )
+    expect(itemAsking('Clear stored data?')?.optionDescriptions).toBeUndefined()
+
+    w.ledgerReply = 'NONE'
+    const port = {
+      question: 'Which port should the server use?',
+      options: [
+        { label: '3000', description: 'The default the docs use' },
+        { label: '8080', description: 'Free on the staging box' },
+      ],
+    }
+    await turn(
+      't6',
+      async () => {
+        await ask(port)
+        await $.tool.call({
+          tool: 'mcp__inbox__record',
+          kind: 'question',
+          ask: 'Which port should the server use?',
+          options: ['3000', '8080'],
+          option_notes: ['Matches the README'],
+        } as never)
+      },
+      'aborted',
+    )
+    expect(itemAsking('Which port should the server use?')?.optionDescriptions).toEqual({
+      3000: 'Matches the README',
+      8080: 'Free on the staging box',
+    })
+  },
+)
+
+test('a dialog the person answers closes the question that copies it with their answer, whether Claude recorded it before or after the dialog', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  const prompts: string[] = []
-  world($, on, prompts)
-  const ask = (...questions: { question: string; options: { label: string; description?: string }[] }[]) =>
-    $.tool.call({ tool: 'AskUserQuestion', questions } as never)
-  const turn = async (turnId: string, dialog: () => Promise<unknown>, ending: 'answer' | 'aborted' = 'answer') => {
+  world($, on, [])
+  const stored = () => JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[]; closed: Closed[] } }
+  const push = { question: 'Push the fix now?', options: [{ label: 'Push now (Recommended)' }, { label: 'Wait' }] }
+  const record = (ask: string, options: string[]) =>
+    $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask, options } as never)
+  const turn = async (turnId: string, body: () => Promise<unknown>) => {
     await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
     await $.turn.start({ text: 'go on', turnId })
-    await dialog()
-    const answer = ending === 'answer' ? 'Done.' : ''
-    await $.turn.complete({ answer, durationMs: 5, isAborted: ending === 'aborted', turnId, reason: ending })
+    await body()
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
     await clock.settle()
   }
-  const push = { question: 'Push the fix now?', options: [{ label: 'Push now (Recommended)' }, { label: 'Wait' }] }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   w.dialogAnswer = { result: {}, text: 'User has answered: Push now' }
-  await turn('t1', () => ask(push))
-  expect(prompts.at(-1)).toContain('Push the fix now?')
-  expect(prompts.at(-1)).toContain('User has answered: Push now')
-
-  w.dialogAnswer = {
-    isError: true,
-    result: 'User declined to answer questions',
-    text: 'User declined to answer questions',
-  }
-  await turn('t2', () => ask(push), 'aborted')
-  expect(prompts.length).toBe(2)
-  expect(prompts.at(-1)).toContain('Push the fix now?')
-  expect(prompts.at(-1)).toContain('the user dismissed it without answering')
-  expect(prompts.at(-1)).not.toContain('User declined')
-
-  w.dialogAnswer = { result: {}, text: 'Both answered' }
-  await turn('t3', () => ask(push, { question: 'Which branch?', options: [{ label: 'main' }, { label: 'next' }] }))
-  expect(prompts.at(-1)).toContain('Which branch?')
-
-  const itemAsking = (ask: string) =>
-    (JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[] } }).ledger.items.find(i => i.ask === ask)
-  w.dialogAnswer = {
-    isError: true,
-    result: 'User declined to answer questions',
-    text: 'User declined to answer questions',
-  }
-  w.ledgerReply = 'NEW: decide | - | Deploy to staging? | Deploy / Hold | -'
-  const deploy = {
-    question: 'Deploy to staging now?',
-    options: [
-      { label: 'Deploy', description: 'Runs the staging pipeline' },
-      { label: 'Hold', description: 'Waits for the review' },
-    ],
-  }
-  await turn('t4', () => ask(deploy), 'aborted')
-  expect(prompts.at(-1)).not.toContain('Runs the staging pipeline')
-  const deployItem = itemAsking('Deploy to staging?')
-  expect(deployItem?.optionDescriptions).toEqual({ Deploy: 'Runs the staging pipeline', Hold: 'Waits for the review' })
-  const pane = await $.ui.mount(PANE)
-  await selectRow(pane, `${deployItem?.id}`)
-  await clock.settle()
-  const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
-  expect(texts).toContain('Deploy: Runs the staging pipeline')
-  expect(texts).toContain('Hold: Waits for the review')
-
-  w.ledgerReply = 'NEW: decide | - | Clear stored data? | Yes / No | -'
-  const yesNo = (yes: string, no: string) => [
-    { label: 'Yes', description: yes },
-    { label: 'No', description: no },
-  ]
-  await turn(
-    't5',
-    () =>
-      ask(
-        { question: 'Delete the cache?', options: yesNo('Removes cached builds', 'Keeps them') },
-        { question: 'Rebuild the index?', options: yesNo('Takes ten minutes', 'Uses the old index') },
-      ),
-    'aborted',
-  )
-  expect(itemAsking('Clear stored data?')?.optionDescriptions).toBeUndefined()
-
-  w.ledgerReply = 'NONE'
-  const port = {
-    question: 'Which port should the server use?',
-    options: [
-      { label: '3000', description: 'The default the docs use' },
-      { label: '8080', description: 'Free on the staging box' },
-    ],
-  }
-  await turn(
-    't6',
-    async () => {
-      await ask(port)
-      await $.tool.call({
-        tool: 'mcp__inbox__record',
-        kind: 'question',
-        ask: 'Which port should the server use?',
-        options: ['3000', '8080'],
-      } as never)
-    },
-    'aborted',
-  )
-  expect(itemAsking('Which port should the server use?')?.optionDescriptions).toEqual({
-    3000: 'The default the docs use',
-    8080: 'Free on the staging box',
+  await turn('t1', async () => {
+    await record('Push the fix now?', ['Push now', 'Wait'])
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [push] } as never)
   })
+  expect(stored().ledger.items).toEqual([])
+  expect(stored().ledger.closed.at(-1)).toMatchObject({
+    ask: 'Push the fix now?',
+    how: 'answered',
+    outcome: 'Push now',
+  })
+
+  w.dialogAnswer = { result: {}, text: 'User has answered: a branch of my own' }
+  const branch = { question: 'Which branch?', options: [{ label: 'main' }, { label: 'next' }] }
+  await turn('t2', async () => {
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [branch] } as never)
+    const r = await record('Which branch?', ['main', 'next'])
+    expect(r.result).toBe(
+      'Not shown as open: the user already answered this in your dialog (a branch of my own), so it closed with that answer.',
+    )
+  })
+  expect(stored().ledger.items).toEqual([])
+  expect(stored().ledger.closed.at(-1)).toMatchObject({
+    ask: 'Which branch?',
+    how: 'answered',
+    outcome: 'a branch of my own',
+  })
+
+  w.dialogAnswer = { result: {}, text: 'User has answered: Yes' }
+  await turn('t3', async () => {
+    await record('Delete the cache?', ['Yes', 'No'])
+    await $.tool.call({
+      tool: 'AskUserQuestion',
+      questions: [{ question: 'Rebuild the index?', options: [{ label: 'Yes' }, { label: 'No' }] }],
+    } as never)
+  })
+  expect(stored().ledger.items.map(i => i.ask)).toEqual(['Delete the cache?'])
+})
+
+test('a dialog’s answer text closes each copy with that question’s own answer, a typed one as typed', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.ledgerReply = 'not a ledger'
+  const stored = () => JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[]; closed: Closed[] } }
+  const ask = (...questions: { question: string; options: string[] }[]) =>
+    $.tool.call({
+      tool: 'AskUserQuestion',
+      questions: questions.map(q => ({ question: q.question, options: q.options.map(label => ({ label })) })),
+    } as never)
+  const record = (ask: string, options: string[]) =>
+    $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask, options } as never)
+  const answered = (pairs: string) =>
+    `User has answered your questions: ${pairs}. You can now continue with the user's answers in mind.`
+  const turn = async (turnId: string, text: string, body: () => Promise<unknown>) => {
+    w.dialogAnswer = { result: {}, text }
+    await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text: 'go on', turnId })
+    await body()
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  const outcomes = () => stored().ledger.closed.map(c => [c.ask, c.outcome])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await turn('t1', answered('"Use Node or Python?"="Node"'), async () => {
+    await record('Use Node or Python?', ['Node', 'Python'])
+    await ask({ question: 'Use Node or Python?', options: ['Node', 'Python'] })
+  })
+  await turn('t1b', answered('"Run the migration?"="Yes"'), async () => {
+    await record('Run the migration?', ['Yes', 'No'])
+    await ask({ question: 'Run the migration?', options: ['Yes', 'No'] })
+  })
+  await turn('t2', answered('"Delete the cache?"="Only the old entries"'), async () => {
+    await record('Delete the cache?', ['Yes', 'No'])
+    await ask({ question: 'Delete the cache?', options: ['Yes', 'No'] })
+  })
+  await turn('t3', answered('"Which name?"="the "blue" one"'), async () => {
+    await record('Which name?', ['red', 'green'])
+    await ask({ question: 'Which name?', options: ['red', 'green'] })
+  })
+  await turn('t4', answered('"Which branch?"="next", "Push it now?"="No"'), async () => {
+    await record('Which branch?', ['main', 'next'])
+    await record('Push it now?', ['Yes', 'No'])
+    await ask(
+      { question: 'Which branch?', options: ['main', 'next'] },
+      { question: 'Push it now?', options: ['Yes', 'No'] },
+    )
+  })
+
+  expect(stored().ledger.items).toEqual([])
+  expect(outcomes()).toEqual([
+    ['Use Node or Python?', 'Node'],
+    ['Run the migration?', 'Yes'],
+    ['Delete the cache?', 'Only the old entries'],
+    ['Which name?', 'the "blue" one'],
+    ['Which branch?', 'next'],
+    ['Push it now?', 'No'],
+  ])
+})
+
+test('a dialog’s answer closes each copy with its own answer in every form Claude Code gives, and leaves a question it did not answer open', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const prompts: string[] = []
+  world($, on, prompts)
+  w.ledgerReply = 'NONE'
+  const stored = () => JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[]; closed: Closed[] } }
+  const ask = (...questions: { question: string; options: string[] }[]) =>
+    $.tool.call({
+      tool: 'AskUserQuestion',
+      questions: questions.map(q => ({ question: q.question, options: q.options.map(label => ({ label })) })),
+    } as never)
+  const record = (ask: string, options: string[]) =>
+    $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask, options } as never)
+  const turn = async (turnId: string, text: string, ...questions: { question: string; options: string[] }[]) => {
+    w.dialogAnswer = { result: {}, text }
+    await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text: 'go on', turnId })
+    for (const q of questions) await record(q.question, q.options)
+    await ask(...questions)
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  const careful =
+    'Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.'
+  const chosen = (pairs: string) =>
+    `Your questions have been answered: ${pairs}. You can now continue with these answers in mind.`
+  const typed = (pairs: string) => `The user answered: ${pairs}. ${careful}`
+  const yesNo = (question: string) => ({ question, options: ['Yes', 'No'] })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await turn('t1', chosen('"Use Node or Python?"="Node"'), {
+    question: 'Use Node or Python?',
+    options: ['Node', 'Python'],
+  })
+  await turn('t2', typed('"Delete the cache?"="Only the old entries"'), yesNo('Delete the cache?'))
+  await turn(
+    't3',
+    typed('"Which branch?"="next" notes: only after CI, "Which layout?"="Grid" selected preview:\n<div>grid</div>'),
+    { question: 'Which branch?', options: ['main', 'next'] },
+    { question: 'Which layout?', options: ['Grid', 'List'] },
+  )
+  await turn('t4', chosen('"Run the migration?"="Yes"'), yesNo('Rebuild the index?'), yesNo('Run the migration?'))
+  await turn('t5', typed('"Rename the table?"=(no option selected) notes: not sure yet'), yesNo('Rename the table?'))
+  await turn('t6', 'The user did not answer the questions.', yesNo('Drop the old column?'))
+  await turn(
+    't7',
+    'The user asked for more questions before you proceed. So far they answered: "Ship it today?"="Yes". They also wrote: "ask about tests". Call AskUserQuestion again with follow-up questions that build on these answers (do not repeat these); do not start the task yet.',
+    yesNo('Ship it today?'),
+  )
+  await turn('t8', 'The user responded: only the staging one', yesNo('Restart the server?'))
+  await turn(
+    't9',
+    `User has answered your questions: "Pick a region?"="eu" user notes: closest to us, "Pick a size?"="small". You can now continue with the user's answers in mind.`,
+    { question: 'Pick a size?', options: ['small', 'large'] },
+    { question: 'Pick a region?', options: ['eu', 'us'] },
+  )
+  await turn('t10', 'Something else happened, not now', yesNo('Clear the logs?'))
+
+  expect(stored().ledger.closed.map(c => [c.ask, c.outcome])).toEqual([
+    ['Use Node or Python?', 'Node'],
+    ['Delete the cache?', 'Only the old entries'],
+    ['Which branch?', 'next'],
+    ['Which layout?', 'Grid'],
+    ['Run the migration?', 'Yes'],
+    ['Ship it today?', 'Yes'],
+    ['Restart the server?', 'only the staging one'],
+    ['Pick a size?', 'small'],
+    ['Pick a region?', 'eu'],
+  ])
+  expect(stored().ledger.items.map(i => i.ask)).toEqual([
+    'Rebuild the index?',
+    'Rename the table?',
+    'Drop the old column?',
+    'Clear the logs?',
+  ])
+  expect(prompts.find(p => p.includes('"Drop the old column?"'))).toContain('the user dismissed it without answering')
 })

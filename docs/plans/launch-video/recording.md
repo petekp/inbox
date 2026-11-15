@@ -55,7 +55,7 @@ Record each app separately and line the three up in Remotion. `drive.py launch s
 
 The animatic is the `launch` video in `videos/`, the Remotion project that holds the inbox's videos, with its own `package.json`. [videos/README.md](../../../videos/README.md) describes the project and the parts every video shares. Remotion renders React components to video frame by frame. Pete bought a Company License for publishing the video.
 
-- **The timeline** is `videos/src/launch/timeline.ts`. It holds each beat's caption, start and length, and each state's time, click and still. It imports `SETTLED_MS` from `hooks/view.ts` and `EXIT_MS` from `codex/src/rows.ts`, so a settled row holds for its real time.
+- **The timeline** is `videos/src/launch/timeline.ts`. It holds each beat's caption, start and length, and each state's time, click and still. It imports `SETTLED_MS` from `hooks/view.ts` and `EXIT_MS` from `hooks/row-motion.ts`, so a settled row holds for its real time.
 - **The drawn thread** is `videos/src/launch/thread.ts`, for its lines and when each appears, and `videos/src/launch/ThreadView.tsx`, which draws it. Its text is written for the video. Its questions, idea and unmentioned insight are the ones the real session brings to the inbox in beats 7 to 9.
 - **The pointer** is `videos/src/shared/Pointer.tsx`.
 - **Two cuts.** `launch` is the video. `launch-captions-off` is the same with no captions, to check that the pictures carry the story.

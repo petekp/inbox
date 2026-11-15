@@ -24,11 +24,10 @@ Adding offline sync to the notes app
   works on web
   ├ ◆ Lay out the PDF export · waiting
   └ ✓ Check the print styles · finished
-✓ Sync engine
-  syncs on reconnect
-── Last seen ─────────────────────────
 ◌ 2.4 release
   in store review
+✓ Sync engine
+  syncs on reconnect
 ▸ 2 more done
 ```
 
@@ -121,9 +120,9 @@ A few words on what works, what is left or what it waits on, in the work's own t
 
 #### 7. Running work shows under the piece it serves, in plain words
 
-A delegate, subagent, background command or workflow run shows under the subject it works on while it runs. It says in a few plain words what it does. A delegate shows the focus its own session's Status publishes, and other running work shows the description it was started with. A delegate says when it waits at a question or has finished. Other running work shows no word, since its moving mark says it runs.
+A delegate, subagent or workflow run shows under the subject it works on while it runs. It says in a few plain words what it does. A delegate shows the focus its own session's Status publishes, and other running work shows the description it was started with. A delegate says when it waits at a question or has finished. Other running work shows no word, since its moving mark says it runs.
 
-Until decision 21 is built, a delegate shows its Herdr name, and a delegate whose name is an id fails this property. That is a known failing case for #149.
+A delegate whose session publishes no focus, such as one that does not run the inbox, shows its Herdr name in words. A name with nothing to split at, such as `pdfx2`, stays as it is and fails this property.
 
 - **Good:** `● Export button` with `└ ● Lay out the PDF export` under it.
 - **Good:** the same delegate, at an approval prompt, reads `◆ Lay out the PDF export · waiting`.
@@ -152,22 +151,22 @@ The Status shows the work. Asks and Finds show the person's to-dos. A row held u
 
 ### What moved since I last looked?
 
-#### 10. Every real change shows above the Seen line, on its piece of work
+#### 10. Every real change since the last look shows on its piece of work
 
-Back after a break, the person learns from the rows above the Seen line what finished, started, stalled or changed course, without reading the conversation. Each change sits on the row of the piece it changed. Every piece that finished since the person last saw it is named. A row counts as seen only once it was on screen.
+Back after a break, the person learns from the page what finished, started, stalled or changed course since the last look, without reading the conversation. Each change sits on the row of the piece it changed. Every piece that finished since the person last saw it is named. A row counts as seen only once it was on screen.
 
 - **Good:** the sample page above. The conflicts work and the sync engine changed since the look, and the export did not.
-- **Bad:** 2.4 shipped, but `2.4 release` still sits below the Seen line with its old text.
+- **Bad:** 2.4 shipped, but `2.4 release` still reads `in store review`.
 - **Bad:** six pieces finished while the person was away. The page names two and folds the release into "▸ 4 more done".
 - **Bad:** forty pieces finished. The person saw the first six rows and left, and the page now treats all forty as seen.
 
 #### 11. Nothing moves that did not change
 
-A reply that changed nothing about the work leaves every row and the Seen line where they were. So a row above the line always means a change. A choice the person makes is a change.
+A reply that changed nothing about the work leaves every row where it was. So a row that changed since the last look always means a change. A choice the person makes is a change.
 
 - **Good:** the agent explains how export picks a file name, and nothing is decided. The page stays as it was.
-- **Good:** the person picks "Save as PDF" as the export button's label. The export row says so, and moves above the Seen line.
-- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, and moves above the Seen line.
+- **Good:** the person picks "Save as PDF" as the export button's label. The export row says so, and counts as changed since the last look.
+- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, and counts as changed since the last look.
 
 #### 12. A change of plan says what it replaced
 
@@ -181,11 +180,12 @@ When the session drops one approach for another, the person sees both until they
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The page shows no times, so none goes stale. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only time a row shows is how long an open subject has been idle, past a day, which code writes, so none goes stale. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
 - **Good:** `◌ 2.4 release: in store review`, while the build waits for review.
 - **Good:** "Last Status update failed. Changes from that reply may be missing."
 - **Bad:** the agent finished the conflicts work two hours into a three-hour turn, and the row still reads ●, since no update ran during the turn.
-- **Bad:** `● Export button: works on web  2h`. No row shows a time.
+- **Good:** `○ Dark mode · idle 3d`, set aside three days ago.
+- **Bad:** `● Export button: works on web  2h`. A row shows no time but how long it has been idle, and only past a day.
 - **Bad:** `2.4 release: goes out tomorrow`, read two days later.

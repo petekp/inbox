@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { recordClose, recordItem } from '../../hooks/tools'
 import { shortAgo } from '../../hooks/rows'
+import { NO_HOLDS } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
@@ -19,7 +20,10 @@ test('the Codex Closed fold lists every record newest first at a narrow viewport
   for (const [index, record] of records.entries()) {
     const added = recordItem(CODEX, ledger, { kind: 'question', ask: record.ask, options: ['Yes', 'No'] }, record.at)
     const id = added.ledger.items.at(-1)!.id
-    ledger = recordClose(CODEX, added.ledger, { id, answer: `Answer ${index + 1}` }, record.at).ledger
+    ledger = recordClose(CODEX, added.ledger, { id, answer: `Answer ${index + 1}` }, record.at, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).ledger
   }
   state.ledger = ledger
   const viewport = Object.getOwnPropertyDescriptor(window, 'innerWidth')
@@ -47,6 +51,7 @@ test('the Codex Closed fold lists every record newest first at a narrow viewport
     Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
   const tabView = (holds?: Partial<Holds>): TabView => ({
     ...viewOf(state, Date.now(), {
+      ...NO_HOLDS,
       replies: holds?.replies ?? {},
       discarded: holds?.discarded ?? {},
       shownSince: holds?.shownSince ?? null,
@@ -80,12 +85,16 @@ test('the Codex Closed fold lists every record newest first at a narrow viewport
   }
 
   try {
-    const { unfolded } = await import('../src/tab-state')
+    const { closedAll, unfolded } = await import('../src/tab-state')
+    closedAll.clear()
     unfolded.clear()
     await import('../src/tab')
     await until(() => root.querySelector('[data-fold="question"]') !== null)
     assert.equal(root.querySelector('.closed-list'), null)
     root.querySelector<HTMLButtonElement>('[data-fold="question"]')!.click()
+    await until(() => root.querySelectorAll('.closed-list > .entry').length === 3)
+    assert.ok(root.querySelector('.earlier'))
+    root.querySelector<HTMLButtonElement>('.earlier')!.click()
     await until(() => root.querySelectorAll('.closed-list > .entry').length === records.length)
     const rows = [...root.querySelectorAll<HTMLElement>('.closed-list > .entry')]
     assert.deepEqual(
@@ -102,6 +111,8 @@ test('the Codex Closed fold lists every record newest first at a narrow viewport
     root.querySelector<HTMLButtonElement>('[data-fold="question"]')!.click()
     await until(() => root.querySelector('.closed-list') === null)
     root.querySelector<HTMLButtonElement>('[data-fold="question"]')!.click()
+    await until(() => root.querySelectorAll('.closed-list > .entry').length === 3)
+    root.querySelector<HTMLButtonElement>('.earlier')!.click()
     await pause(POLL_MS + 50)
     assert.equal(root.querySelectorAll('.closed-list > .entry').length, records.length)
   } finally {

@@ -53,15 +53,13 @@ export const shape = (rows: StatusRow[]) =>
       ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''}${r.stall ? ` · ${r.stall.text}` : ''}${r.hasChildren ? ' ┐' : ''}`
       : r.kind === 'child'
         ? `${r.branch ? ARMS[r.branch] : ''}${r.mark} ${r.name}${r.stall ? ` · ${r.stall.text}` : ''}`
-        : r.kind === 'look'
-          ? `-- ${r.text}`
-          : r.kind === 'more'
-            ? `${ARMS[r.branch]}${r.text}`
-            : r.kind === 'part'
-              ? `== ${r.text}`
-              : r.kind === 'counts'
-                ? r.counts.map(c => `${c.mark} ${c.text}`).join(' · ')
-                : r.kind === 'done-fold'
-                  ? `▸ ${r.text}`
-                  : `${r.mark} ${r.text}`,
+        : r.kind === 'more'
+          ? `${ARMS[r.branch]}${r.text}`
+          : r.kind === 'part'
+            ? `== ${r.text}`
+            : r.kind === 'counts'
+              ? r.counts.map(c => `${c.mark} ${c.text}`).join(' · ')
+              : r.kind === 'done-fold'
+                ? `▸ ${r.text}`
+                : `${r.mark} ${r.text}`,
   )

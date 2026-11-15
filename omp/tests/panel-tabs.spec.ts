@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { addFinding } from '../../hooks/ledger-update'
-import { foldLabel, settledLabel, shortAgo } from '../../hooks/rows'
+import { CLOSED_SHOWN, earlierLabel, foldLabel, settledLabel, shortAgo } from '../../hooks/rows'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { sessionView } from '../../hooks/session-view'
@@ -24,8 +24,30 @@ test('the selected tab draws inverse and the others draw their counts', () => {
 })
 
 test('an empty Asks tab explains itself', () => {
-  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS, true) }
+  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS) }
   expect(text(empty, INITIAL_UI)).toContain('Nothing needed')
+})
+
+test('Enter on a Closed line shows the newest closed rows, Enter on the earlier line lists the rest, a dismissed one offers Reopen, and Enter on the fold folds them', () => {
+  const screen = screenOf()
+  const settled = new Set(screen.view.needsYou.questions.filter(r => r.state.is === 'settled').map(r => r.id))
+  const closed = screen.view.needsYou.closed.questions.filter(d => !settled.has(d.id))
+  expect(closed.length).toBeGreaterThan(CLOSED_SHOWN)
+  const unfolded = keys(screen, { ...INITIAL_UI, selectedId: 'fold question' }, 'enter')
+  const shown = text(screen, unfolded)
+  expect(shown).toContain(`▾  ${foldLabel(closed.length)}`)
+  for (const d of closed.slice(0, CLOSED_SHOWN)) expect(shown).toContain(d.ask)
+  expect(shown).not.toContain(closed[CLOSED_SHOWN]!.ask)
+  expect(shown).toContain(earlierLabel(closed.length, CLOSED_SHOWN)!)
+  const dismissed = closed.slice(0, CLOSED_SHOWN).find(d => d.how === 'dismissed')!
+  const onDismissed = keys(screen, unfolded, 'down')
+  expect(onDismissed.selectedId).toBe(`closed ${dismissed.id}`)
+  expect(handleKey(screen, onDismissed, 'enter', NOW).press).toEqual({ id: dismissed.id, action: 'undo' })
+  expect(text(screen, onDismissed)).toContain('Reopen')
+  const all = keys(screen, { ...unfolded, selectedId: 'earlier question' }, 'enter')
+  for (const d of closed) expect(text(screen, all)).toContain(d.ask)
+  expect(text(screen, all)).not.toContain(earlierLabel(closed.length, CLOSED_SHOWN)!)
+  expect(text(screen, keys(screen, unfolded, 'enter'))).not.toContain(closed[0]!.ask)
 })
 
 test('Closed lists every record and the group fold folds it back; j/k and arrows scroll the narrow panel', () => {
@@ -38,6 +60,8 @@ test('Closed lists every record and the group fold folds it back; j/k and arrows
       ...base.view,
       needsYou: {
         ...base.view.needsYou,
+        questions: [],
+        tasks: [],
         closed: { ...base.view.needsYou.closed, questions: closed },
       },
     },
@@ -46,16 +70,19 @@ test('Closed lists every record and the group fold folds it back; j/k and arrows
   const unfolded = keys(screen, { ...INITIAL_UI, selectedId: 'fold question' }, 'enter')
   const shown = text(screen, unfolded)
   expect(shown).toContain(`▾  ${foldLabel(closed.length)}`)
-  for (const d of closed) {
+  for (const d of closed.slice(0, CLOSED_SHOWN)) {
     expect(shown).toContain(d.ask)
     expect(shown).toContain(settledLabel(d.outcomeLabel, d.delivery))
     expect(shown).toContain(shortAgo(NOW - d.at))
   }
-  const narrow = text(screen, unfolded, width)
+  const earlier = keys(screen, { ...unfolded, selectedId: 'earlier question' }, 'enter')
+  const all = text(screen, earlier)
+  for (const d of closed) expect(all).toContain(d.ask)
+  const narrow = text(screen, earlier, width)
   for (const d of closed) expect(narrow).toContain(d.ask.slice(0, 10))
 
-  const firstByJ = keys(screen, unfolded, 'j')
-  const firstByDown = keys(screen, unfolded, 'down')
+  const firstByJ = keys(screen, earlier, 'j')
+  const firstByDown = keys(screen, earlier, 'down')
   expect(firstByJ.selectedId).toBe(`closed ${closed[0]!.id}`)
   expect(firstByJ.selectedId).toBe(firstByDown.selectedId)
   const lastByJ = keys(screen, firstByJ, ...Array.from({ length: closed.length - 1 }, () => 'j'))
@@ -71,9 +98,9 @@ test('Closed lists every record and the group fold folds it back; j/k and arrows
 
   const folded = keys(screen, { ...lastByJ, selectedId: 'fold question' }, 'enter')
   expect(folded.unfolded).not.toContain('question')
-  expect(text(screen, folded, width)).not.toContain(closed.at(-1)!.ask.slice(0, 10))
+  expect(text(screen, folded, width)).not.toContain(closed[0]!.ask.slice(0, 10))
   const reopened = keys(screen, { ...folded, selectedId: 'fold question' }, 'enter')
-  expect(text(screen, reopened, width)).toContain(closed.at(-1)!.ask.slice(0, 10))
+  expect(text(screen, reopened, width)).toContain(closed[0]!.ask.slice(0, 10))
 })
 
 test('a finding closed as list full appears in the Finds Closed fold', () => {
@@ -83,7 +110,7 @@ test('a finding closed as list full appears in the Finds Closed fold', () => {
     (value, n) => addFinding(value, { ...finding, title: `Problem ${n + 1}`, at: n + 1 }).ledger,
     state.ledger,
   )
-  const view = sessionView({ ...state, ledger }, NOW, SETTLED_MS, true, NO_HOLDS)
+  const view = sessionView({ ...state, ledger }, NOW, SETTLED_MS, NO_HOLDS)
   const screen = screenOf({ view })
   const ui: PanelUi = { ...INITIAL_UI, tab: 'findings', unfolded: ['issue'], selectedId: 'fold issue' }
   const shown = text(screen, ui)
@@ -97,7 +124,7 @@ test('a closed row whose Done message was refused offers Undo, which presses und
   const task = s.ledger.closed.find(d => d.kind === 'task' && d.how === 'done')!
   const refused = { ...task, doneNotification: { id: 'n1', error: 'queue refused' } }
   const ledger = { ...s.ledger, closed: s.ledger.closed.map(d => (d.id === task.id ? refused : d)) }
-  const screen = screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, true, NO_HOLDS) })
+  const screen = screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, NO_HOLDS) })
   const ui: PanelUi = { ...INITIAL_UI, unfolded: ['task'], selectedId: `closed ${task.id}` }
   expect(text(screen, ui)).toContain('Not sent: queue refused')
   expect(handleKey(screen, ui, 'enter', NOW).press).toEqual({ id: task.id, action: 'undo' })
@@ -107,7 +134,7 @@ const findingsOnly = () => {
   const s = demoState(NOW)
 
   return screenOf({
-    view: sessionView({ ...s, ledger: { ...s.ledger, items: [], closed: [] } }, NOW, SETTLED_MS, true, NO_HOLDS),
+    view: sessionView({ ...s, ledger: { ...s.ledger, items: [], closed: [] } }, NOW, SETTLED_MS, NO_HOLDS),
   })
 }
 
@@ -116,16 +143,16 @@ test('a panel that opens on an empty Asks moves to the first tab with open rows'
 })
 
 test('rows that arrive while Asks shows only its empty text move the panel to their tab', () => {
-  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const opened = followRows(empty, INITIAL_UI, {}, true, NOW)
   expect(opened.ui.tab).toBe('needsYou')
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui.tab).toBe('findings')
 })
 
 test('a PR that arrives while Asks shows only its empty text moves the panel to PRs', () => {
-  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const opened = followRows(empty, INITIAL_UI, {}, true, NOW)
-  const withPr = screenOf({ view: sessionView(demoState(NOW), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const withPr = screenOf({ view: sessionView(demoState(NOW), NOW, SETTLED_MS, NO_HOLDS) })
   const prsOnly = {
     ...withPr,
     view: { ...withPr.view, needsYou: empty.view.needsYou, findings: empty.view.findings },
@@ -141,7 +168,7 @@ test('a new row above the default selection leaves the selection on its row', ()
   const question = s.ledger.items.find(i => i.id === firstQuestion(before).id)!
   const items = [{ ...question, id: 'new-question', ask: 'A new question?' }, ...s.ledger.items]
   const after = screenOf({
-    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, true, NO_HOLDS),
+    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, NO_HOLDS),
   })
   expect(handleKey(after, INITIAL_UI, 'noop', NOW).ui.selectedId).toBe('new-question')
   expect(followRows(after, INITIAL_UI, seen, false, NOW).ui.selectedId).toBe(selectedBefore)
@@ -153,7 +180,7 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
     .trimEnd()
 
 test('rows that arrive while the Status page shows leave the panel on the page', () => {
-  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const opened = followRows(empty, onPage, {}, true, NOW)
   expect(opened.ui).toEqual(onPage)
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
@@ -162,7 +189,7 @@ test('rows that arrive while the Status page shows leave the panel on the page',
 for (const isNextBuild of [false, true])
   test(`on a ${isNextBuild ? 'next' : 'release'} build, a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count`, () => {
     const tabs = shownTabs(isNextBuild)
-    const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS), isNextBuild })
+    const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS), isNextBuild })
     for (const screen of [screenOf({ isNextBuild }), zeros])
       for (const shown of tabs) {
         const ui = { ...INITIAL_UI, tab: shown.id }

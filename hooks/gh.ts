@@ -2,12 +2,13 @@ import type { GhRun } from './pr-fetch'
 
 /**
  * Runs a command and never throws: a command still running at `timeoutMs` ends with code -2, and one that cannot
- * start, is killed or overflows its output ends with code -1.
+ * start, is killed or overflows its output ends with code -1. A runner that can tell also gives the `signal` that
+ * ended the command, and the `errorCode` of a command that could not start or overflowed, such as `ENOENT`.
  */
 export type Run = (
   args: string[],
   opts: { cwd: string; timeoutMs: number; env?: Record<string, string> },
-) => Promise<{ code: number; stdout: string; stderr: string }>
+) => Promise<{ code: number; stdout: string; stderr: string; signal?: string; errorCode?: string }>
 
 const CANDIDATES = ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']
 

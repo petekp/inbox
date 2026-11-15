@@ -16,7 +16,7 @@ import type { Action, KeyAction } from './pane-keys'
 import type { settledLayoutId } from './pane-selection'
 import type { RowPress } from './presses'
 import type { PrPress } from './pr-press'
-import type { threadSentIn } from './pr-rows'
+import type { prBlockRows, threadSentIn } from './pr-rows'
 import type { ModLook, NEEDS_YOU_GROUPS, RowView } from './rows'
 import type { SessionView } from './session-view'
 import type { ShownTab, shownTabs } from './tabs'
@@ -89,6 +89,8 @@ export type PaneBase = {
   typing: string | null
   drafts: Record<string, Draft>
   unfolded: FoldKind[]
+  /** The Closed folds whose earlier lines the person opened. */
+  closedAll: FoldKind[]
   statusUnfolded: string[]
   foldHover: string | null
   isHelpShown: boolean
@@ -108,9 +110,10 @@ export type PaneBase = {
   lists: DrawnLists<Row>
   needsYouGroups: ((typeof NEEDS_YOU_GROUPS)[number] & { entries: DrawnEntry<Row>[]; rows: Row[] })[]
   findingEntries: DrawnEntry<Row>[]
-  prGroups: (SessionView['prs']['drawn'][number] & { checks: Row[]; threads: Row[]; rows: Row[] })[]
-  prTabKeys: KeyAction[]
+  prGroups: (SessionView['prs']['drawn'][number] & ReturnType<typeof prBlockRows<Row>>)[]
   prOrderKeys: KeyAction[]
+  prRefreshKeys: KeyAction[]
+  prClearKeys: KeyAction[]
   badgeOf: (id: ShownTab) => string | null
   tabTone: (id: ShownTab) => string | undefined
   tabText: (id: ShownTab, name: string) => string
@@ -148,4 +151,5 @@ export type PaneHandlers = {
   updateHelpShown: (fn: (isShown: boolean) => boolean) => Promise<unknown>
   updateUnfolded: (fn: (unfolded: FoldKind[]) => FoldKind[]) => Promise<unknown>
   updateStatusUnfolded: (fn: (unfolded: string[]) => string[]) => Promise<unknown>
+  updateClosedAll: (fn: (closedAll: FoldKind[]) => FoldKind[]) => Promise<unknown>
 }

@@ -1,10 +1,12 @@
-import type { Item, PressKind, Finding, LastAction } from '../types'
+import type { Item, PressKind, Finding, LastAction, Tab } from '../types'
 import { clipLabel } from './text'
 import { linkLabel } from './inline'
 import { actionId, ISSUE_LABEL } from './press-labels'
 import { stepIconKind } from './help-steps'
 import type { HelpStep } from './help-steps'
 import type { RowPress } from './presses'
+import type { PrPress } from './pr-press'
+import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
 import { ROW_COPY, OPTIONS_FOLD_AT, OPTION_LABEL_CHARS, isWaitingRow } from './rows'
 import type { RowState, ActionView, RowView, SettledState } from './rows'
@@ -43,6 +45,35 @@ const ACTION_KEYS: Partial<Record<RowPress['action'], string>> = {
   discuss: 'd',
   dismiss: 'x',
   discard: 'x',
+}
+
+export type ShownUndo = { press: RowPress | PrPress; at: number }
+
+/** The Undo the undo key presses: the one of the shown tab's Undos whose row closed last. */
+export function latestUndo<U extends { at: number }>(undos: readonly U[]): U | null {
+  return undos.reduce<U | null>((latest, u) => (latest === null || u.at >= latest.at ? u : latest), null)
+}
+
+/** The Undos a row tab draws: one on each settled row or PR that still offers it. */
+export function tabUndos(tab: Tab, lists: DrawnLists<unknown>, prs: readonly DrawnPr[]): ShownUndo[] {
+  return tab === 'prs'
+    ? prUndos(prs)
+    : listUndos(tab === 'needsYou' ? [...lists.questions, ...lists.tasks] : lists.findings)
+}
+
+function listUndos(entries: readonly DrawnEntry<unknown>[]): ShownUndo[] {
+  return entries.flatMap(x => {
+    const undo = 'settled' in x ? x.settled.actions.find(a => a.press.action === 'undo') : undefined
+    return undo && 'settled' in x ? [{ press: undo.press, at: x.state.at }] : []
+  })
+}
+
+function prUndos(prs: readonly DrawnPr[]): ShownUndo[] {
+  return prs.flatMap(d =>
+    d.state.is === 'settled' && d.state.canUndo
+      ? [{ press: { action: 'pr-undo', ref: d.pr.ref }, at: d.state.at }]
+      : [],
+  )
 }
 
 export function actionsOf(
@@ -91,7 +122,7 @@ export function actionsOf(
   }
   const documentAction = row.document ? [action({ action: 'read-document', id }, 'Read report', 'view')] : []
   if (state.is === 'settled')
-    return [...(state.canUndo ? [action({ action: 'undo', id }, 'Undo', 'view')] : []), ...documentAction]
+    return [...(state.canUndo ? [action({ action: 'undo', id }, ROW_COPY.undo, 'view')] : []), ...documentAction]
   if (state.is === 'held')
     return [
       ...documentAction,
@@ -199,6 +230,17 @@ export function listWaits(v: InboxView): { needsYou: RowWait[]; findings: RowWai
 
 export function firstWaiting(rows: RowWait[]): string | null {
   return rows.find(r => r.isWaiting)?.id ?? null
+}
+
+/**
+ * The index `step` places from `at` in a list of `count`, wrapping past either end. With nothing selected, as `at` -1,
+ * a step forward selects the first and a step back the last. -1 for an empty list.
+ */
+export function steppedIndex(at: number, step: number, count: number): number {
+  if (count === 0) return -1
+  const from = at < 0 ? (step > 0 ? -1 : 0) : at
+
+  return (((from + step) % count) + count) % count
 }
 
 export function keptOpen(rows: RowWait[], added: readonly string[]): string | null {

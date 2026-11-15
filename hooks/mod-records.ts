@@ -1,7 +1,6 @@
 import type { ToolResultOf } from 'claude-code'
 import type { Child } from '../types'
 import { activityGate } from './children'
-import { herdrCheckGate, herdrReporter } from './herdr'
 import { clipLabel } from './text'
 import { baseName } from './open-targets'
 
@@ -46,7 +45,6 @@ export const spawnedBy = new Map<string, string>()
 export const workflowTasks = new Map<string, string>()
 /** Each background `herdr agent wait`'s task id and tool_use_id to the delegate it waits on. */
 export const delegateWaits = new Map<string, string>()
-export const reportToHerdr = herdrReporter()
 
 export function callKey(tool: string, input: Record<string, unknown>): string {
   const main = ['command', 'file_path', 'notebook_path', 'url', 'pattern', 'query', 'skill', 'description'].find(
@@ -93,8 +91,6 @@ export function permissionText(tool: string, input: Record<string, unknown>): st
   }
 }
 
-export const isHerdrCheckDue = herdrCheckGate()
-
 /** A tool's structured result, or undefined when the call answered with text alone. */
 export function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResultOf<Name> | undefined {
   return typeof result === 'object' && result !== null ? (result as ToolResultOf<Name>) : undefined
@@ -108,21 +104,15 @@ export function endedAgentOf(result: unknown): string | undefined {
   return agent && 'agentId' in agent && !isRunningOn ? agent.agentId : undefined
 }
 
-/** The child a finished Monitor or Workflow call started: its background task, or its workflow run. */
-export function startedTaskOf(
-  tool: 'Monitor' | 'Workflow',
+/** The workflow run a finished Workflow call started. */
+export function startedWorkflowOf(
   result: unknown,
   description: string | undefined,
 ): Pick<Child, 'ref' | 'kind' | 'name'> | null {
-  const workflow = tool === 'Workflow' ? toolRecord('Workflow', result) : undefined
-  const taskId = workflow?.taskId ?? (tool === 'Monitor' ? toolRecord('Monitor', result)?.taskId : undefined)
-  if (!taskId) return null
+  const workflow = toolRecord('Workflow', result)
+  if (!workflow?.taskId) return null
 
-  return {
-    ref: taskId,
-    kind: workflow ? 'workflow' : 'background',
-    name: workflow?.workflowName ?? description ?? tool,
-  }
+  return { ref: workflow.taskId, kind: 'workflow', name: workflow.workflowName ?? description ?? 'Workflow' }
 }
 
 /** The child an agent's work belongs to: the subagent itself, or the workflow or subagent that spawned it. */

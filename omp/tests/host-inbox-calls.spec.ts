@@ -245,6 +245,29 @@ test('a turn the person ended by dismissing an ask dialog reaches the inbox mode
   )
 })
 
+test("a turn the person ended by cancelling an HTML form ask reaches the inbox model with the form's question", async () => {
+  createInbox(pi(), deps())
+  await prompt('Pick a license')
+  const html =
+    '<form><p>MIT or Apache?</p><label><input type="radio" name="license" value="mit"> MIT</label><label><input type="radio" name="license" value="apache"> Apache</label></form>'
+  const cancelled = [{ type: 'text', text: 'Ask tool was cancelled by the user' }]
+  await call('tool_result', { toolName: 'ask', input: { html }, content: cancelled, isError: true })
+  await call('agent_end', {
+    type: 'agent_end',
+    messages: [
+      { role: 'assistant', content: [{ type: 'toolCall' }], stopReason: 'toolUse' },
+      { role: 'toolResult', toolName: 'ask', content: cancelled, isError: true },
+      { role: 'assistant', content: [], stopReason: 'aborted' },
+    ],
+  })
+  await settle()
+  expect(state().dialogQuestions.map((q: { question: string }) => q.question)).toEqual(['MIT or Apache?'])
+  expect(w.completions).toHaveLength(1)
+  expect(w.completions[0]!.prompt).toContain(
+    '"MIT or Apache?" (options: MIT / Apache); the user dismissed it without answering',
+  )
+})
+
 test('a failing inbox model marks the update failed, and the next turn retries the exchange', async () => {
   createInbox(pi(), deps())
   w.reply = new Error('offline')

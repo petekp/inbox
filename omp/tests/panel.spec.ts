@@ -2,16 +2,19 @@ import { expect, test } from 'bun:test'
 
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { prMarkId, threadSentIn } from '../../hooks/pr-rows'
-import { failingChecks, waitingThreads } from '../../hooks/prs'
-import { SETTLED_MS } from '../../hooks/timing'
+import { blockingChecks } from '../../hooks/pr-checks'
+import { waitingThreads } from '../../hooks/prs'
+import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { rowKeyPlan } from '../../hooks/action-plan'
+import { answeringOf, herdrAskOf } from '../../hooks/herdr-ask'
 import type { RowView } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelUi } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
+import { HERDR_ASK_ID } from '../src/panel-lines'
 import {
   buttonLine,
   buttonLines,
@@ -62,7 +65,7 @@ test('a feed finding draws in the Progress group', () => {
       },
     ],
   }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true) })
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
   const lines = text(screen, { ...INITIAL_UI, tab: 'findings' })
   expect(lines).toContain('Progress')
   expect(lines).toContain('Implement the progress feed')
@@ -82,7 +85,7 @@ test('the panel draws untracked live work as a warning banner', () => {
       },
     ],
   }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true) })
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
   const lines = text(screen, INITIAL_UI)
   expect(lines).toContain('Untracked work')
   expect(lines).toContain('meta-worker')
@@ -211,6 +214,22 @@ for (const isNextBuild of [false, true])
     expect(keys(screen, INITIAL_UI, String(tabs.length + 1)).tab).toBe(INITIAL_UI.tab)
   })
 
+test('a question’s context draws whole and dim, first under its title, on its selected row only', () => {
+  const screen = screenOf()
+  const row = firstQuestion(screen)
+  const other = screen.view.needsYou.questions.find(r => r.state.is === 'open' && r.id !== row.id)!
+  const context = row.contextLine!
+  const flat = (ui: PanelUi) => text(screen, ui, 50).replace(/\s+/g, ' ')
+  const shown = flat(onRow(row))
+  const at = shown.indexOf(context)
+
+  expect(at).toBeGreaterThan(shown.indexOf('Dismiss a glance'))
+  expect(at).toBeLessThan(shown.indexOf(`Why ${row.item!.rec}`))
+  const firstWords = context.split(' ').slice(0, 3).join(' ')
+  expect(drawn(screen, onRow(row), 50).find(l => strip(l).trim().startsWith(firstWords))).toContain(`${ESC}2m`)
+  expect(flat(onRow(other))).not.toContain(firstWords)
+})
+
 for (const isNextBuild of [false, true])
   test(`on a ${isNextBuild ? 'next' : 'release'} build, an Asks row ${isNextBuild ? 'names' : 'leaves out'} the open subject it holds up`, () => {
     const shown = text(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: 'needsYou' })
@@ -248,20 +267,20 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     at: NOW,
     delivery: { state: 'failed', reason: 'omp is busy' },
   }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true) })
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS) })
   const { lastActions, turns, prs } = screen.view
   const { pr } = prs.drawn[0]!
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now: NOW }
   const block = prBlockActions(pr, isSent, prs.branchRef, presses)
-  expect(block.slice(0, 2).map(a => a.label)).toEqual(['Refresh PRs', 'Try again'])
-  expect(text(screen, { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(ref) })).toContain(
-    'Last refresh failed: HTTP 502',
-  )
+  expect(block.slice(0, 2).map(a => a.label)).toEqual(['Try again', 'Resolve conflicts'])
+  const lines = text(screen, { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(ref) }).split('\n')
+  expect(lines.findIndex(l => l.includes('Refresh PRs'))).toBeLessThan(lines.findIndex(l => l.includes(pr.title)))
+  expect(lines.join('\n')).toContain('Last refresh failed: HTTP 502')
   const plans = [
     block,
     ...waitingThreads(pr).map(t => threadActions(pr, t, presses)),
-    ...failingChecks(pr).map(c => checkActions(pr, c, presses)),
+    ...blockingChecks(pr).map(c => checkActions(pr, c, presses)),
   ]
   expect(plans.length).toBeGreaterThan(3)
   let ui: PanelUi = { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(pr.ref) }
@@ -276,4 +295,41 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     }
     ui = keys(screen, ui, 'down')
   }
+})
+
+test('a row keeps its age at a narrow width and beside a long outcome, and its title and status shorten instead', () => {
+  const ui: PanelUi = { ...INITIAL_UI, unfolded: ['question', 'task', 'issue', 'opportunity'] }
+  const ages = (width: number) =>
+    (['needsYou', 'findings'] as const).flatMap(
+      tab => text(screenOf(), { ...ui, tab }, width).match(/\d+[mh] ago|just now/g) ?? [],
+    )
+  const wide = ages(200)
+
+  expect(wide.length).toBeGreaterThan(10)
+  expect(ages(90)).toEqual(wide)
+  expect(ages(48)).toEqual(wide)
+  for (const line of text(screenOf(), { ...ui, tab: 'needsYou' }, 48).split('\n'))
+    expect(strip(line).length).toBeLessThanOrEqual(48)
+})
+
+test('the Herdr install question sits above the Asks rows, and its buttons answer it once', () => {
+  const asking = herdrAskOf('/app', undefined, null)
+  const screen = screenOf({ herdrAsk: asking })
+  const onAsk: PanelUi = { ...INITIAL_UI, selectedId: HERDR_ASK_ID }
+  const lines = text(screen, INITIAL_UI).split('\n')
+  const askAt = lines.findIndex(l => l.includes("Install the inbox's Herdr mod?"))
+
+  expect(askAt).toBeGreaterThan(-1)
+  expect(askAt).toBeLessThan(lines.findIndex(l => l.includes(firstQuestion(screen).title)))
+  const install = handleKey(screen, onAsk, 'enter', NOW)
+  expect(install.press).toEqual({ action: 'herdr-ask', isYes: true })
+  expect(install.ui.focus).toBe(null)
+  expect(handleKey(screen, keys(screen, onAsk, 'right'), 'enter', NOW).press).toEqual({
+    action: 'herdr-ask',
+    isYes: false,
+  })
+
+  const saving = screenOf({ herdrAsk: answeringOf(asking, false) })
+  expect(text(saving, onAsk)).toContain('Saving the answer…')
+  expect(handleKey(saving, onAsk, 'enter', NOW).press?.action).not.toBe('herdr-ask')
 })

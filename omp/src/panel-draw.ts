@@ -4,7 +4,7 @@ import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
-import { HELD_MARK } from '../../hooks/help'
+import { HELD_MARK, UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
@@ -29,13 +29,15 @@ export function boxed(inner: string[], tone: BannerTone, width: number, s: Style
   ]
 }
 
-const LEAD_TONES: Record<BannerTone, Tone | null> = { error: 'error', warning: 'needsYou', notice: null }
+/** The most lines a selected review thread's comment takes. */
+const BODY_LINES = 8
+
+const LEAD_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'needsYou', notice: 'key', ask: 'key' }
 
 /** A banner's lines: its lead in bold, in the tone's color, then its body, wrapped inside the box. */
 export function bannerLines(b: BannerView, width: number, s: Style): string[] {
   const text = b.body ? `${b.lead} ${b.body}` : b.lead
-  const leadTone = LEAD_TONES[b.tone]
-  const lead = (w: string) => (leadTone ? s.tone(leadTone, s.bold(w)) : s.bold(w))
+  const lead = (w: string) => s.tone(LEAD_TONES[b.tone], s.bold(w))
   let leadWords = b.lead.split(/\s+/).length
   const lines = wrapText(text, width - 4).map(line =>
     line
@@ -68,26 +70,35 @@ function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: 
 }
 
 /** Buttons laid out in lines from `indent`, the one at `focused` drawn focused. -1 focuses none. */
-export function faceLines(buttons: ButtonFace[], focused: number, indent: number, width: number, s: Style): string[] {
+export function faceLines(
+  buttons: ButtonFace[],
+  focused: number,
+  indent: number,
+  width: number,
+  s: Style,
+  between = '',
+): string[] {
   const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)))
   const sizes = cells.map(visibleLength)
   const firstFollowUp = buttons.findIndex(b => b.isFollowUp)
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
-    gap: 0,
+    gap: visibleLength(between),
     separator: 0,
   })
 
-  return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(''))
+  return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(between))
+}
+
+/** `text` in a lead's tone. */
+export function leadPaint(lead: Lead, text: string, s: Style): string {
+  return lead.tone === 'dim' ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text
 }
 
 /** A lead and the space after it, or nothing for a line with no lead. */
 function leadText(lead: Lead | null, s: Style): string {
-  if (lead === null) return ''
-  const padded = lead.text.padEnd(2)
-
-  return `${lead.tone ? s.tone(lead.tone, padded) : padded} `
+  return lead === null ? '' : `${leadPaint(lead, lead.text.padEnd(2), s)} `
 }
 
 /** A result mark and the space after it. */
@@ -136,7 +147,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : null
   const mark = markText(line.mark, now, s)
   const after = line.settled
-    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', linkedText(line.settled.label, s.link)) : s.dim(linkedText(line.settled.label, s.link))}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
+    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', linkedText(line.settled.label, s.link)) : s.dim(linkedText(line.settled.label, s.link))}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ''}`
     : line.feedback && !statusUnder
       ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(linkedText(line.feedback.text, s.link))}`
       : ''
@@ -144,17 +155,34 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
   const head = ` ${' '.repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ''}${leadText(line.lead, s)}`
   const titleText = linkedText(line.title, s.link)
-  const shownTitle = line.mark
-    ? cutTitle(titleText, width - visibleLength(head) - visibleLength(status) - visibleLength(after))
-    : titleText
-  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
-  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width))
+  const besideAge = age ? width - visibleLength(`  ${age} `) : width
+  const shownTitle = line.mark
+    ? cutTitle(titleText, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after))
+    : titleText
+  const title = line.isDim
+    ? s.dim(shownTitle)
+    : line.titleTone
+      ? s.tone(line.titleTone, s.bold(shownTitle))
+      : isSelected
+        ? s.bold(shownTitle)
+        : shownTitle
+  out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
+  const contextLine = isSelected ? line.row?.contextLine : null
+  if (contextLine) out.push(...indentedLinks(contextLine, indent, width, Infinity, s.dim, s.link))
   // A next build draws the Status, so only it names the subject an ask holds up.
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
   if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
+  const recLine = line.row?.recLine
+  if (recLine)
+    out.push(
+      ...(isSelected
+        ? indentedLinks(recLine, indent, width, 3, s.dim, s.link)
+        : [fit(`${' '.repeat(indent)}${s.dim(linkedText(recLine, s.link))}`, width)]),
+    )
+  if (line.body && isSelected) out.push(...indentedLinks(line.body, indent, width, BODY_LINES, t => t, s.link))
   if (line.detail && (isSelected || line.isDetailShown))
     out.push(
       ...indentedLinks(

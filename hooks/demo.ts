@@ -12,10 +12,13 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
-  const hasStatus = typeof (d.ledger as { overview?: unknown } | null)?.overview === 'object'
+  const status = (d.ledger as { overview?: { askSubjects?: unknown } } | null)?.overview
+  const hasStatus = typeof status === 'object'
+  const hasLinkLists = Object.values(status?.askSubjects ?? {}).every(Array.isArray)
 
   return (
     hasStatus &&
+    hasLinkLists &&
     ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
   )
 }
@@ -102,17 +105,6 @@ export function demoView(now: number, agent: string): DemoCopy {
             delegateState: null,
           },
           {
-            id: 'c2',
-            ref: 'demo-log',
-            kind: 'background',
-            name: 'Watch the pairing log',
-            subjectId: 's2',
-            startedAt: now - 50 * MIN,
-            endedAt: null,
-            lastActivityAt: null,
-            delegateState: null,
-          },
-          {
             id: 'c3',
             ref: 'demo-tuning',
             kind: 'delegate',
@@ -120,7 +112,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             subjectId: 's1',
             startedAt: now - 9 * MIN,
             endedAt: null,
-            lastActivityAt: null,
+            lastActivityAt: now - 9 * MIN,
             delegateState: 'blocked',
           },
           {
@@ -146,10 +138,11 @@ export function demoView(now: number, agent: string): DemoCopy {
             delegateState: null,
           },
         ],
-        askSubjects: { d11: 's3', d14: 's2', d17: 's2' },
+        askSubjects: { d11: ['s3'], d14: ['s2'], d17: ['s2'] },
         nextId: 8,
         nextChildId: 6,
         lastLookAt: now - 30 * MIN,
+        missedInLastLook: {},
         look: null,
         goal: {
           text: 'Pinch ships in the beta',
@@ -157,9 +150,10 @@ export function demoView(now: number, agent: string): DemoCopy {
           metAt: null,
           was: null,
           isAwaitingMilestones: false,
+          source: 'inferred',
         },
-        proposedGoal: null,
-        declinedGoals: [],
+        removedGoals: [],
+        goalRemoved: null,
         milestones: [
           {
             id: 'm1',
@@ -191,6 +185,7 @@ export function demoView(now: number, agent: string): DemoCopy {
         ],
         nextMilestoneId: 4,
         serves: { s1: 'm2', s3: 'm3', s4: 'm1', s6: 'none', s7: 'none' },
+        goalRefused: null,
       },
       items: [
         {
@@ -199,8 +194,10 @@ export function demoView(now: number, agent: string): DemoCopy {
           label: '1',
           from: 'update',
           ask: 'Dismiss a glance with a pinch, or a flick of the wrist?',
+          context: 'A glance stays up until it times out, and testers asked for a way to clear it sooner.',
           options: ['Pinch', 'Flick'],
           rec: 'Pinch',
+          recReason: 'a flick fires by accident while walking',
           isDesignChoice: true,
           helps: [],
           turn: 14,
@@ -450,6 +447,14 @@ export function demoView(now: number, agent: string): DemoCopy {
               workflow: 'CI',
               startedAt: now - 16 * MIN,
               finishedAt: now - 15 * MIN - 19_000,
+            },
+            {
+              name: 'device matrix',
+              bucket: 'cancelled',
+              url: `${REPO}/actions/runs/4/job/40`,
+              workflow: 'E2E',
+              startedAt: now - 16 * MIN,
+              finishedAt: now - 9 * MIN,
             },
             { name: 'gesture e2e', bucket: 'pending', url: null, workflow: 'CI', startedAt: now - 2 * MIN },
           ],

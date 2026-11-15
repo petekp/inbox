@@ -1,11 +1,11 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { FoldProps } from '../hooks/fold-client'
-import { LOOK_MIN_MS } from '../hooks/status-children'
+import { isSubjectSeen, LOOK_MIN_MS } from '../hooks/status-children'
 import { statusPage } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('on a next build, a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, j and k wrap past its last and first rows, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -41,10 +41,13 @@ test('on a next build, a look starts when the Status page shows, the page shows 
     (await pane.findAll({ type: 'Button' }))
       .map(b => b.key ?? '')
       .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
-  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('v: View question')
   expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
   await pane.press({ key: 'next' })
+  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
+  await pane.press({ key: 'previous' })
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   await pane.press({ key: 'no-row-d-key' })
   await $.tool.call({
     tool: 'mcp__inbox__record',
@@ -55,7 +58,7 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   })
   await clock.settle()
   expect(await pane.find({ key: 'status-head' })).toBeDefined()
-  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
 
   await pane.press({ key: 'show-ask-s1-key' })
   await clock.settle()
@@ -71,11 +74,11 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   await clock.settle()
   expect((await pane.find({ key: 'status-s1' }))?.text).not.toContain('◆')
   expect(await pane.find({ key: 'show-ask-s1' })).toBeUndefined()
-  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key'])
-  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('s: Set a goal')
+  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
+  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
 })
 
-test('on a next build, a look at the Status that ends while a Status call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {
+test('on a next build, a look at the Status that ends while a Status call is out keeps its time, and the answer that lands after it stays unseen', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -113,8 +116,11 @@ test('on a next build, a look at the Status that ends while a Status call is out
   await clock.settle()
 
   expect(session!.ledger.overview).toMatchObject({ lastLookAt: seenAt, look: null })
-  const rows = statusPage(session!, clock.now()).rows
-  expect(rows.map(r => (r.kind === 'subject' ? r.name : r.kind))).toEqual(['Command', 'look', 'Plan'])
+  const o = session!.ledger.overview!
+  expect(o.subjects.map(x => [x.name, isSubjectSeen(o, x)])).toEqual([
+    ['Plan', true],
+    ['Command', false],
+  ])
 })
 
 test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {
@@ -150,7 +156,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
   ])
   const saved = [...w.stored].find(([k]) => k.startsWith('s:'))
   expect(saved && JSON.parse(saved[1]).ledger.overview.look).toBeNull()
-  expect(saved && JSON.parse(saved[1]).ledger.overview.askSubjects).toEqual({ i1: 's1' })
+  expect(saved && JSON.parse(saved[1]).ledger.overview.askSubjects).toEqual({ i1: ['s1'] })
   expect(page.value).toBe('overview')
   expect(prompts.at(-1)).toContain('is open beside the conversation, on its Asks tab, listing every open item.')
 

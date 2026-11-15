@@ -22,7 +22,7 @@ export function uncertainRecord(text: string): Session['sent'][number] {
   }
 }
 
-export function isUntracked(record: Session['sent'][number]): boolean {
+function isUntracked(record: Session['sent'][number]): boolean {
   return record.phase === 'uncertain' && record.deliveryId === null
 }
 

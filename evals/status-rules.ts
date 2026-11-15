@@ -1,5 +1,5 @@
 import { isOpen, NAME_WORDS } from '../hooks/status-limits'
-import { statusListRows } from '../hooks/status-page'
+import { NAMED_FOLD_TEXT, namedFoldMore, statusListRows } from '../hooks/status-page'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts } from './status-facts'
@@ -103,6 +103,20 @@ const FIXED_RULES: Rule[] = [
       return [...shownOf(o), ...milestonesOf(o)]
         .filter(s => ID_PATTERNS.some(re => re.test(s.text)))
         .map(s => `id in the text: "${s.name}: ${s.text}"`)
+    },
+  },
+  {
+    id: 'no-semicolons',
+    reads: 'answer',
+    property: 6,
+    text: 'No name, where it stands, head, milestone or goal joins clipped phrases with a semicolon.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const head = o?.head ? [o.head.title, o.head.description] : []
+      const goals = [o?.goal?.text ?? '']
+      const pieces = [...shownOf(o), ...milestonesOf(o)].flatMap(s => [s.name, s.text])
+
+      return [...head, ...goals, ...pieces].filter(t => t.includes(';')).map(t => `semicolon: "${t}"`)
     },
   },
   {
@@ -236,20 +250,20 @@ const FIXED_RULES: Rule[] = [
     id: 'asks-linked',
     reads: 'facts',
     property: 8,
-    text: 'Each open ask is linked to a subject it holds up, and an ask that holds up nothing is linked to none.',
+    text: 'Each open ask is linked only to subjects it holds up, and an ask that holds up nothing is linked to none.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       return result.facts.asks.flatMap(a => {
         const item = result.session.ledger.items.find(i => new RegExp(a.match, 'i').test(i.ask))
         if (!item) return [`no open ask like /${a.match}/`]
-        const linked = shownOf(o).find(s => s.id === o?.askSubjects[item.id])
+        const ids = o?.askSubjects[item.id] ?? []
+        const linked = shownOf(o).filter(s => ids.includes(s.id))
         const pieces = result.facts.pieces.filter(p => a.holdsUp.includes(p.id))
-        if (pieces.length === 0)
-          return linked ? [`"${item.ask}" holds up nothing, and is linked to ${label(linked)}`] : []
-        if (!linked) return [`"${item.ask}" is linked to no subject`]
-        return pieces.some(p => new RegExp(p.match, 'i').test(linked.name))
-          ? []
-          : [`"${item.ask}" is linked to ${label(linked)}, not ${pieces.map(p => p.names[0]).join(' or ')}`]
+        if (pieces.length === 0) return linked.map(s => `"${item.ask}" holds up nothing, and is linked to ${label(s)}`)
+        if (linked.length === 0) return [`"${item.ask}" is linked to no subject`]
+        return linked
+          .filter(s => !pieces.some(p => new RegExp(p.match, 'i').test(s.name)))
+          .map(s => `"${item.ask}" is linked to ${label(s)}, not ${pieces.map(p => p.names[0]).join(' or ')}`)
       })
     },
   },
@@ -258,14 +272,13 @@ const FIXED_RULES: Rule[] = [
     reads: 'facts',
     property: 8,
     text: 'An ask that holds up several pieces marks each of them.',
-    until: '#140',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       return result.facts.asks
         .filter(a => a.holdsUp.length > 1)
         .flatMap(a => {
           const item = result.session.ledger.items.find(i => new RegExp(a.match, 'i').test(i.ask))
-          const linked = item ? [o?.askSubjects[item.id]].flat() : []
+          const linked = item ? (o?.askSubjects[item.id] ?? []) : []
           return result.facts.pieces
             .filter(p => a.holdsUp.includes(p.id))
             .filter(p => !subjectsFor(p, o).some(s => linked.includes(s.id)))
@@ -318,9 +331,7 @@ const FIXED_RULES: Rule[] = [
           return old.changedAt === x.changedAt ? [] : [`moved "${x.name}"`]
         })
       }
-      const goalMoved =
-        (o?.goal?.text ?? null) !== (before.overview?.goal?.text ?? null) ||
-        (o?.proposedGoal?.text ?? null) !== (before.overview?.proposedGoal?.text ?? null)
+      const goalMoved = (o?.goal?.text ?? null) !== (before.overview?.goal?.text ?? null)
       return [
         ...moved(shownOf(o), shownOf(before.overview)),
         ...moved(milestonesOf(o), milestonesOf(before.overview)),
@@ -332,12 +343,16 @@ const FIXED_RULES: Rule[] = [
     id: 'changes-move',
     reads: 'facts',
     property: 10,
-    text: "On a step that changed work, each changed piece's last-changed time moves.",
+    text: "On a step that changed work, each changed piece's last-changed time moves. A new link alone moves nothing.",
     failures: ({ step, result }) => {
       if (!step.call) return []
+      const isLinkOnly = (id: string) => {
+        const change = step.facts?.pieces?.find(p => p.id === id)
+        return change !== undefined && Object.keys(change).every(k => k === 'id' || k === 'serves')
+      }
       return result.facts.changed.flatMap(id => {
         const piece = result.facts.pieces.find(p => p.id === id)
-        if (piece === undefined) return []
+        if (piece === undefined || isLinkOnly(id)) return []
         const subjects = subjectsFor(piece, result.session.ledger.overview)
         return subjects.some(s => s.changedAt === result.now) ? [] : [`${piece.names[0]} changed, and no row moved`]
       })
@@ -426,15 +441,39 @@ const FIXED_RULES: Rule[] = [
     id: 'finished-named',
     reads: 'facts',
     property: 10,
-    text: 'Every piece that finished since the last look is drawn as a row.',
-    until: '#138',
+    text: 'Every piece that finished or was dropped since the last look is drawn as a row, or named or counted in the "Also done" or "Also dropped" line.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const look = o?.lastLookAt ?? null
-      const drawn = new Set(statusListRows(result.page).flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
-      return shownOf(o)
-        .filter(s => !isOpen(s) && s.status === 'done' && (look === null || s.changedAt > look) && !drawn.has(s.id))
-        .map(s => `finished, unseen and folded: ${label(s)}`)
+      const rows = statusListRows(result.page)
+      const drawn = new Set(rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+      /** The names every line for `status` shows, and how many more those lines count, across the parts of the list. */
+      const lineOf = (status: 'done' | 'dropped') => {
+        const lines = rows.flatMap(r =>
+          r.kind === 'fold' && new RegExp(`^(.+-)?also-${status}$`).test(r.id)
+            ? [r.text.slice(NAMED_FOLD_TEXT[status].length).split(', ')]
+            : [],
+        )
+        const hiddenOf = (parts: string[]) => Number(parts.at(-1)?.match(/^\+(\d+) more$/)?.[1] ?? 0)
+        return {
+          names: new Set(lines.flatMap(parts => (hiddenOf(parts) > 0 ? parts.slice(0, -1) : parts))),
+          hidden: lines.reduce((n, parts) => n + hiddenOf(parts), 0),
+        }
+      }
+      const lines = { done: lineOf('done'), dropped: lineOf('dropped') }
+      const missing = shownOf(o)
+        .flatMap(s => (s.status === 'done' || s.status === 'dropped' ? [{ ...s, status: s.status }] : []))
+        .filter(s => look === null || s.changedAt > look)
+        .filter(s => !drawn.has(s.id) && !lines[s.status].names.has(s.name))
+      return (['done', 'dropped'] as const).flatMap(status => {
+        const left = missing.filter(s => s.status === status)
+        const counted = lines[status].hidden
+        return left.length === counted
+          ? []
+          : [
+              `${left.length} ${status === 'done' ? 'finished' : 'dropped'} unseen pieces neither drawn nor named, and the line counts ${namedFoldMore(counted)}: ${left.map(label).join(', ')}`,
+            ]
+      })
     },
   },
 ]

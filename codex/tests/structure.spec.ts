@@ -12,16 +12,23 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 type Entry = [client: string, feature: string, support: string]
 
-function clientsSource(features = ['catch-up', 'link-open-rule'], entries: Entry[] = []) {
+function clientsSource(features = ['catch-up', 'link-open-rule']) {
+  return `export type FeatureId = ${features.map(f => `'${f}'`).join(' | ')}\n`
+}
+
+function clientSupportSource(features = ['catch-up', 'link-open-rule'], entries: Entry[] = []) {
   const supportOf = (client: string, feature: string) =>
     entries.find(e => e[0] === client && e[1] === feature)?.[2] ?? "{ kind: 'full' }"
   const clients = ['claude-code', 'codex', 'omp'].map(
     client => `'${client}': { support: { ${features.map(f => `'${f}': ${supportOf(client, f)}`).join(', ')} } },`,
   )
 
-  return `export type FeatureId = ${features.map(f => `'${f}'`).join(' | ')}
-export const CLIENTS = { ${clients.join('\n')} }
-`
+  return `export const CLIENTS = { ${clients.join('\n')} }\n`
+}
+
+function writeClients(f: { write(path: string, text: string): void }, features?: string[], entries: Entry[] = []) {
+  f.write('hooks/clients.ts', clientsSource(features))
+  f.write('hooks/client-support.ts', clientSupportSource(features, entries))
 }
 
 function differencesSource(column: string, ids: string[]) {
@@ -51,7 +58,7 @@ function fixture(t: TestContext) {
   write('codex/tests/.keep', '')
   write('codex/package.json', '{"type":"module"}\n')
   symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')
-  write('hooks/clients.ts', clientsSource())
+  writeClients({ write }, undefined, [])
   write('docs/looks.md', '# Looks\n')
   const looks = (main: string[] = [], omp: string[] = []) => {
     write('docs/looks/differences-main.md', differencesSource('Terminal', main))
@@ -262,13 +269,10 @@ test('the structure gate rejects a source file that has no Files row in docs/loo
 
 test('the structure gate accepts a feature that is not full when each table that covers the host names it', t => {
   const f = fixture(t)
-  f.write(
-    'hooks/clients.ts',
-    clientsSource(undefined, [
-      ['codex', 'catch-up', unsupported],
-      ['omp', 'catch-up', unsupported],
-    ]),
-  )
+  writeClients(f, undefined, [
+    ['codex', 'catch-up', unsupported],
+    ['omp', 'catch-up', unsupported],
+  ])
   f.looks(['catch-up'], ['catch-up'])
   const result = f.check()
   assert.equal(result.status, 0, result.stdout + result.stderr)
@@ -276,7 +280,7 @@ test('the structure gate accepts a feature that is not full when each table that
 
 test('the structure gate rejects a feature that is not full and has no row', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['codex', 'catch-up', unsupported]]))
+  writeClients(f, undefined, [['codex', 'catch-up', unsupported]])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
   assert.ok(result.stdout.includes('`catch-up`'), result.stdout + result.stderr)
@@ -285,7 +289,7 @@ test('the structure gate rejects a feature that is not full and has no row', t =
 
 test('the structure gate rejects an omp gap that only the main table names', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['omp', 'catch-up', unsupported]]))
+  writeClients(f, undefined, [['omp', 'catch-up', unsupported]])
   f.looks(['catch-up'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
@@ -302,7 +306,7 @@ test('the structure gate rejects a row that names an unknown feature id', t => {
 
 test('the structure gate rejects an entry that is not full and gives no reason', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['codex', 'catch-up', "{ kind: 'different', reason: '' }"]]))
+  writeClients(f, undefined, [['codex', 'catch-up', "{ kind: 'different', reason: '' }"]])
   f.looks(['catch-up'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
@@ -312,7 +316,7 @@ test('the structure gate rejects an entry that is not full and gives no reason',
 for (const id of ['catchUp', 'catch_up', 'Catch-up', 'catch--up', 'catch-up-2'])
   test(`the structure gate rejects the feature id ${id}`, t => {
     const f = fixture(t)
-    f.write('hooks/clients.ts', clientsSource([id]))
+    writeClients(f, [id])
     const result = f.check()
     assert.equal(result.status, 1, result.stdout + result.stderr)
     assert.ok(result.stdout.includes(`'${id}'`), result.stdout + result.stderr)
@@ -451,3 +455,64 @@ for (const { name, text, at, code } of refusedHooksModules)
     assert.equal(result.status, 1, result.stdout + result.stderr)
     assert.ok(result.stdout.includes(`hooks/register.tsx:${line} ${code}`), result.stdout + result.stderr)
   })
+
+function exportsFixture(t: TestContext, files: Record<string, string>) {
+  const root = tempDir()
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  cpSync(join(ROOT, 'scripts'), join(root, 'scripts'), { recursive: true })
+  mkdirSync(join(root, 'codex'))
+  symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')
+  for (const [path, text] of Object.entries({ 'hooks/hooks.json': '{ "modules": ["./register.tsx"] }', ...files })) {
+    mkdirSync(dirname(join(root, path)), { recursive: true })
+    writeFileSync(join(root, path), text)
+  }
+  const result = spawnSync(process.execPath, [join(root, 'scripts/check-exports.mjs')], { cwd: root, encoding: 'utf8' })
+  const unused = [...result.stdout.matchAll(/x (\S+) exports (\S+),/g)].map(m => `${m[1]} ${m[2]}`)
+
+  return { status: result.status, unused, output: result.stdout + result.stderr }
+}
+
+test('the exports gate counts every kind of import, so a used export never fails it', t => {
+  const result = exportsFixture(t, {
+    'hooks/register.tsx': `import { named as renamed, type Shape } from './lib.ts'
+import fallback from './lib'
+import * as all from './spread.js'
+export { forwarded } from './lib.ts'
+type Later = import('./lib').Typed
+const later = import('./dynamic')
+const view = <Client module="./row-client.tsx" />
+export const register = [renamed, fallback, all, later, view] as unknown as Shape | Later
+`,
+    'hooks/lib.ts': `export const named = 1
+export type Shape = number
+export interface Typed {}
+export const forwarded = 2
+export default 3
+`,
+    'hooks/spread.ts': 'export const anything = 4\n',
+    'hooks/dynamic.ts': 'export const loaded = 5\n',
+    'hooks/row-client.tsx': 'export default function Row() {}\n',
+  })
+
+  assert.deepEqual(result.unused, [], result.output)
+  assert.equal(result.status, 0, result.output)
+})
+
+test('the exports gate fails on an export nothing imports, even in a file another export of which is an entry point', t => {
+  const result = exportsFixture(t, {
+    'hooks/register.tsx': "import { used } from './lib'\nexport const register = used\n",
+    'hooks/lib.ts':
+      'export const used = 1\nexport function leftover() {}\nexport const { a, b: [c] } = { a: 1, b: [2] }\n',
+    'omp/src/host.ts': 'export default function () {}\nexport const extra = 1\n',
+    'videos/src/videos.ts': 'export const TIMELINES = {}\nexport type Video = string\n',
+  })
+
+  assert.deepEqual(result.unused, [
+    'hooks/lib.ts leftover',
+    'hooks/lib.ts a',
+    'hooks/lib.ts c',
+    'omp/src/host.ts extra',
+    'videos/src/videos.ts Video',
+  ])
+  assert.equal(result.status, 1, result.output)
+})

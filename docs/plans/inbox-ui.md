@@ -13,8 +13,8 @@ The facts behind it are in [docs/reference/](../reference/README.md), checked on
 - **Item**: a question the agent asked, or a task only the person can do.
 - **Row**: one entry in a list. A row is an item, a finding, a PR, a PR check or a review thread.
 - **Need you**: the rows the Asks tab counts. Section 2.1 defines it.
-- **Per-turn update**: a model call after each reply that adds and closes items. It adds the items the agent did not record with its `record` tool. The Status call that follows writes the session's headline and status.
-- **Headline and status**: the Status call's one-line summary of the session: what it is for, and what the agent is doing now.
+- **Per-turn update**: a model call after each reply that adds and closes items. It adds the items the agent did not record with its `record` tool. The Status call that follows writes the session's Status: its head and subjects.
+- **Head**: the top of the Status. A title of a few words for what the session is focused on now, and one line on what it is doing about it.
 - **Mod**: the Claude Code plugin in `hooks/` that draws the band and pane.
 - **Band**: the mod's lines above the prompt.
 - **Pane**: the mod's `/inbox` view.

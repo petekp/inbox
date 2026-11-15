@@ -3,7 +3,7 @@
 // The text is written for the video. Its questions, idea and unmentioned insight are the ones the real session in
 // beats 7 to 10 brings to the inbox.
 
-export type LineKind = 'user' | 'say' | 'tool' | 'out' | 'add' | 'del' | 'think' | 'blank'
+type LineKind = 'user' | 'say' | 'tool' | 'out' | 'add' | 'del' | 'think' | 'blank'
 
 /**
  * What the video marks on a line: a question to you, a side note, a promising idea, or something the agent noticed and
@@ -11,12 +11,12 @@ export type LineKind = 'user' | 'say' | 'tool' | 'out' | 'add' | 'del' | 'think'
  */
 export type Mark = 'question' | 'note' | 'idea' | 'unsaid'
 
-export type Line = { kind: LineKind; text: string; mark?: Mark }
+type Line = { kind: LineKind; text: string; mark?: Mark }
 
 const line = (kind: LineKind, text = '', mark?: Mark): Line => ({ kind, text, ...(mark ? { mark } : {}) })
 const blank = line('blank')
 
-export const FIRST_PROMPT = 'Add pinch-to-dismiss to glances.'
+const FIRST_PROMPT = 'Add pinch-to-dismiss to glances.'
 
 const OPENING: Line[] = [
   line('user', FIRST_PROMPT),
@@ -149,7 +149,7 @@ const FLOOD: Line[] = [
 ]
 
 /** Your reply typed point by point in beat 5. */
-export const NUMBERED_REPLY = [
+const NUMBERED_REPLY = [
   '1. Keep them pinned',
   '2. Remove the alias now',
   '3. Buzz the wristband, gently',

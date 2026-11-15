@@ -2,6 +2,8 @@ import type { Engine, MockClock } from 'claude-code/testing'
 import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { prNodeOf, prsAnswerOf, queriedPrs } from './gh-answers'
+import type { PrAnswer, ThreadsJson, ViewJson } from './gh-answers'
 
 export const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
 NEW: decide | 2 | Name the command greet? | - | yes`
@@ -16,6 +18,11 @@ class World {
   sent: string[] = []
 
   ran: string[][] = []
+  ranIn: { argv: string[]; cwd: string | undefined }[] = []
+
+  root = '/tmp/project'
+  folders: string[] = []
+  branches: Record<string, string> = {}
 
   submitAnswer:
     'enter' | 'hold' | { drop: string; beforeDrop?: () => Promise<void> } | { rewrite: string; hold?: boolean } =
@@ -49,6 +56,12 @@ class World {
   surfaces: RenderSurface[] = []
 
   files: string[] = []
+  written: Record<string, string> = {}
+  isMoveFailing = false
+
+  sessionFiles: { pid: number; sessionId: string }[] | undefined
+  endedPids: number[] = []
+  isPsMissing = false
   documentFile: { path: string; realPath: string; text: string } | null = null
 
   copied: string[] = []
@@ -64,21 +77,38 @@ class World {
   storeSetHold: ((key: string, value: unknown) => Promise<void>) | undefined
   storeSetRefusal: string | undefined
   storeSetLockHeld = 0
+  storeLockedKey: string | undefined
+  isStoreLocked = false
+  storeLimit: number | undefined
   logged: string[] = []
   toolRefusal: string | undefined
   commandRefusal: string | undefined
   panesOpened: string[] = []
   paneOpens: PaneOpenArgs[] = []
   paneState: { isShown: boolean; isFocused: boolean } | null = null
+  missingFiles: string[] = []
 }
 
 export const w = new World()
 
-function gh(argv: readonly string[]) {
-  const hit = w.ghAnswers.find(a => a.match(argv))
-  if (!hit && argv[0] === 'open')
-    return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+const CONFIG_DIR = '/tmp/claude-config'
 
+const sessionFiles = () => w.sessionFiles ?? [{ pid: 100, sessionId: w.sessionId }]
+
+function psAnswer(argv: readonly string[]) {
+  const live = (argv[2] ?? '').split(',').filter(pid => !w.endedPids.includes(Number(pid)))
+  return {
+    exitCode: live.length > 0 ? 0 : 1,
+    stdout: live.map(pid => `  ${pid}\n`).join(''),
+    stderr: '',
+    isStdoutTruncated: false,
+    isStderrTruncated: false,
+  }
+}
+
+type GhAnswer = World['ghAnswers'][number]
+
+function answerOf(hit: GhAnswer | undefined) {
   return {
     exitCode: hit?.exitCode ?? (hit && !hit.fails ? 0 : 1),
     stdout: hit && !hit.fails ? hit.stdout : '',
@@ -86,6 +116,97 @@ function gh(argv: readonly string[]) {
     isStdoutTruncated: false,
     isStderrTruncated: false,
   }
+}
+
+const isPrsQuery = (argv: readonly string[]) =>
+  argv[1] === 'api' && argv[2] === 'graphql' && /^query=query \{ viewer/.test(argv[4] ?? '')
+
+/** Whether a graphql answer is in the old one-PR threads form, which the PRs query's answer is then built from. */
+function isThreadsAnswer(hit: GhAnswer): boolean {
+  try {
+    return (
+      hit.fails === undefined &&
+      'pullRequest' in (JSON.parse(hit.stdout) as { data: { repository: object } }).data.repository
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The PRs query's answer, built from the answers a test gives for each PR in the old form: `gh pr view` by number,
+ * and the one-PR threads query. A PR with no view answer is one GitHub does not find, and one whose view fails
+ * carries that failure. Each view's `hold` waits as it did for its own run.
+ */
+async function prsQueryAnswer(argv: readonly string[]) {
+  const query = (argv[4] ?? '').slice('query='.length)
+  const prs = queriedPrs(query)
+  const answers = new Map<string, PrAnswer>()
+  let viewer: string | undefined
+  for (const { repo, number } of prs) {
+    const [owner, name] = repo.split('/')
+    const viewHit = w.ghAnswers.find(a => a.match(['gh', 'pr', 'view', number, '-R', repo, '--json', 'url']))
+    await viewHit?.hold?.()
+    const threadsArgv = [
+      'gh',
+      'api',
+      'graphql',
+      '-f',
+      'query=threads',
+      '-F',
+      `owner=${owner}`,
+      '-F',
+      `repo=${name}`,
+      '-F',
+      `number=${number}`,
+    ]
+    const threadsHit = w.ghAnswers.find(a => a.match(threadsArgv))
+    const threads =
+      threadsHit && !threadsHit.fails
+        ? (
+            JSON.parse(threadsHit.stdout) as {
+              data: { viewer?: { login: string }; repository: { pullRequest: ThreadsJson } }
+            }
+          ).data
+        : null
+    viewer ??= threads?.viewer?.login
+    const key = `${repo}#${number}`
+    if (!viewHit) answers.set(key, null)
+    else if (viewHit.fails !== undefined) answers.set(key, { error: viewHit.fails })
+    else
+      answers.set(key, {
+        node: prNodeOf(JSON.parse(viewHit.stdout) as ViewJson, threads?.repository.pullRequest ?? {}),
+      })
+  }
+
+  return {
+    exitCode: [...answers.values()].every(a => a && 'node' in a) ? 0 : 1,
+    stdout: prsAnswerOf(query, (number, repo) => answers.get(`${repo}#${number}`) ?? null, viewer),
+    stderr: '',
+    isStdoutTruncated: false,
+    isStderrTruncated: false,
+  }
+}
+
+async function gh(argv: readonly string[]) {
+  const hit = w.ghAnswers.find(a => a.match(argv))
+  if (isPrsQuery(argv) && (!hit || isThreadsAnswer(hit))) return prsQueryAnswer(argv)
+  await hit?.hold?.()
+  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc'))
+    return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+
+  return answerOf(hit)
+}
+
+function fileCommand(argv: readonly string[]) {
+  const paths = argv.slice(argv.indexOf('--') + 1)
+  const [from = '', to = ''] = paths
+  if (argv[0] === 'mv' && w.isMoveFailing)
+    return { exitCode: 1, stdout: '', stderr: 'mv: rename failed', isStdoutTruncated: false, isStderrTruncated: false }
+  if (argv[0] === 'mv') w.written[to] = w.written[from] ?? ''
+  for (const path of argv[0] === 'mv' ? [from] : paths) delete w.written[path]
+
+  return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 }
 
 async function runBeforeAct() {
@@ -107,6 +228,10 @@ async function storePrompt($: Engine, prompt: { text: string; origin: PromptOrig
 async function storeHeld($: Engine, prompt: (typeof w.held)[number]) {
   await storePrompt($, prompt)
   prompt.release()
+}
+
+export function storedLength(stored: Map<string, string> = w.stored): number {
+  return `{${[...stored].map(([key, json]) => `${JSON.stringify(key)}:${json}`).join(',')}}`.length
 }
 
 export async function arrive($: Engine) {
@@ -131,6 +256,10 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.held = []
   w.inFlight = []
   w.ran = []
+  w.ranIn = []
+  w.root = '/tmp/project'
+  w.folders = ['/tmp/project']
+  w.branches = {}
   w.toolVerdict = 'allow'
   w.raisesPostHooks = false
   w.toolHold = null
@@ -150,6 +279,11 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.sessionId = 'session-1'
   w.surfaces = []
   w.files = []
+  w.written = {}
+  w.isMoveFailing = false
+  w.sessionFiles = undefined
+  w.endedPids = []
+  w.isPsMissing = false
   w.documentFile = null
   w.copied = []
   w.toasts = []
@@ -161,12 +295,16 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.storeSetHold = undefined
   w.storeSetRefusal = undefined
   w.storeSetLockHeld = 0
+  w.storeLockedKey = undefined
+  w.isStoreLocked = false
+  w.storeLimit = undefined
   w.logged = []
   w.toolRefusal = undefined
   w.commandRefusal = undefined
   w.panesOpened = []
   w.paneOpens = []
   w.paneState = null
+  w.missingFiles = []
   on('store.get', async (_$, e) => {
     if (e.key.startsWith('s:')) await w.storeHold?.()
     if (w.storeRefusal && e.key.startsWith('s:')) return { deny: w.storeRefusal }
@@ -176,14 +314,21 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('store.set', async (_$, e) => {
     await w.storeSetHold?.(e.key, e.value)
     if (w.storeSetRefusal && e.key.startsWith('s:')) return { deny: w.storeSetRefusal }
+    if (w.isStoreLocked || e.key === w.storeLockedKey) return { deny: 'Lock file is already being held' }
     if (w.storeSetLockHeld > 0 && e.key.startsWith('s:')) {
       w.storeSetLockHeld--
       return { deny: 'Lock file is already being held' }
     }
+    const length = storedLength(new Map(w.stored).set(e.key, JSON.stringify(e.value)))
+    if (w.storeLimit !== undefined && length > w.storeLimit)
+      return {
+        deny: `inbox@inline: $.store.set: the store would be ${length} characters, over the ${w.storeLimit} limit`,
+      }
     w.stored.set(e.key, JSON.stringify(e.value))
     return { value: undefined }
   })
   on('store.delete', (_$, e) => {
+    if (w.isStoreLocked) return { deny: 'Lock file is already being held' }
     w.stored.delete(e.key)
     return { value: undefined }
   })
@@ -210,8 +355,8 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('session.attach', (_$, e) => ({ clientId: e.clientId }))
   on('session.id', () => ({ value: w.sessionId }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
-  on('session.root', () => ({ value: '/tmp/project' }))
-  on('env.get', (_$, e) => ({ value: vars[e.name] }))
+  on('session.root', () => ({ value: w.root }))
+  on('env.get', (_$, e) => ({ value: e.name in vars || e.name !== 'CLAUDE_CONFIG_DIR' ? vars[e.name] : CONFIG_DIR }))
   on('command.register', (_$, e) => (w.commandRefusal ? { deny: w.commandRefusal } : { value: { command: e.name } }))
   on('tool.register', (_$, e) =>
     w.toolRefusal ? { deny: w.toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } },
@@ -233,8 +378,27 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     w.copied.push(e.text)
     return { value: { isCopied: true as const } }
   })
-  on('fs.exists', (_$, e) => ({ value: w.files.some(f => e.path.endsWith(f)) }))
+  on('fs.exists', (_$, e) => ({ value: w.folders.includes(e.path) || w.files.some(f => e.path.endsWith(f)) }))
+  on('fs.list', (_$, e) => {
+    const written = Object.keys(w.written).filter(path => path.startsWith(`${e.path}/`))
+    if (written.length > 0)
+      return {
+        value: written.map(path => ({
+          name: path.slice(e.path.length + 1),
+          kind: 'file' as const,
+          size: 1,
+          mtimeMs: 1,
+          isLink: false,
+        })),
+      }
+    if (e.path !== `${CONFIG_DIR}/sessions`) return { deny: `ENOENT: ${e.path}` }
+    const entry = (name: string) => ({ name, kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false })
+    return { value: sessionFiles().flatMap(f => [entry(`${f.pid}.json`), entry(`${f.pid}.key`)]) }
+  })
   on('fs.read', (_$, e) => {
+    if (e.path in w.written) return { value: w.written[e.path]! }
+    const file = sessionFiles().find(f => e.path === `${CONFIG_DIR}/sessions/${f.pid}.json`)
+    if (file) return { value: JSON.stringify({ ...file, cwd: '/tmp/project', status: 'busy', updatedAt: 1 }) }
     if (w.documentFile && [w.documentFile.path, w.documentFile.realPath].includes(e.path)) {
       const bytes = new TextEncoder().encode(w.documentFile.text)
       return e.as === 'bytes'
@@ -244,27 +408,45 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
   })
-  on('fs.stat', (_$, e) => ({
-    value: {
-      kind: 'file' as const,
-      size:
-        w.documentFile && [w.documentFile.path, w.documentFile.realPath].includes(e.path)
-          ? new TextEncoder().encode(w.documentFile.text).byteLength
-          : 1,
-      mtimeMs: 1,
-      isLink: false,
-      realPath: w.documentFile?.path === e.path ? w.documentFile.realPath : e.path,
-    },
-  }))
+  on('fs.stat', (_$, e) =>
+    w.missingFiles.includes(e.path)
+      ? { deny: 'ENOENT' }
+      : {
+          value: {
+            kind: w.folders.includes(e.path) ? ('dir' as const) : ('file' as const),
+            size:
+              w.documentFile && [w.documentFile.path, w.documentFile.realPath].includes(e.path)
+                ? new TextEncoder().encode(w.documentFile.text).byteLength
+                : 1,
+            mtimeMs: 1,
+            isLink: false,
+            realPath: w.documentFile?.path === e.path ? w.documentFile.realPath : e.path,
+          },
+        },
+  )
+  on('fs.write', (_$, e) => {
+    w.written[e.path] = e.text
+    return { value: undefined }
+  })
   on('process.run', async (_$, e) => {
+    if (e.argv[0] === 'ps') return w.isPsMissing ? { deny: 'spawn ps ENOENT' } : { value: psAnswer(e.argv) }
     w.ran.push([...e.argv])
+    const cwd = e.init?.cwd
+    w.ranIn.push({ argv: [...e.argv], cwd })
+    if (cwd !== undefined && cwd !== '/' && !w.folders.includes(cwd))
+      return { deny: `posix_spawn '${e.argv[0]}' ENOENT` }
+    const branch = cwd === undefined ? undefined : w.branches[cwd]
+    if (e.argv.join(' ') === 'git branch --show-current' && branch !== undefined)
+      return {
+        value: { exitCode: 0, stdout: `${branch}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+      }
+    if (e.argv[0] === 'mv' || e.argv[0] === 'rm') return { value: fileCommand(e.argv) }
     if (w.isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
     if (w.slowGhClock && e.argv[0] === 'gh') {
       await w.slowGhClock.sleep(GH_TIMEOUT_MS)
       return { deny: 'killed at the timeout' }
     }
-    await w.ghAnswers.find(a => a.match(e.argv))?.hold?.()
-    return { value: gh(e.argv) }
+    return { value: await gh(e.argv) }
   })
   on('model.complete', async (_$, e) => {
     const isStatusCall =
@@ -344,11 +526,11 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('agent.spawn', () => ({ model: 'sonnet', agentId: w.spawnedAgentId }))
   on('agent.list', () => ({ value: w.listedAgents as never }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
-  on('ui.press', async (_$, e, next) => {
+  on('ui.press', { plugin: 'inbox' }, async (_$, e, next) => {
     await runBeforeAct()
     return next(e)
   })
-  on('ui.input', async (_$, e, next) => {
+  on('ui.input', { plugin: 'inbox' }, async (_$, e, next) => {
     if (e.kind === 'submit') await runBeforeAct()
     return next(e)
   })

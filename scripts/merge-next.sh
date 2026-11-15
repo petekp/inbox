@@ -1,7 +1,7 @@
 #!/bin/sh
 # Merges origin/next into the current branch and rebuilds the committed bundles from the merged sources, so nobody
 # resolves a bundle by hand. The bundles are the files Git tracks in the folders the builds write: codex/plugin/dist
-# (codex/build.mjs) and omp/dist (omp/build.ts). The Codex tab page is one long line of
+# (codex/build.mjs), omp/dist (omp/build.ts) and herdr/mod/inbox (herdr/build.ts). The Codex tab page is one long line of
 # codex/plugin/dist/server-handler.mjs, so two branches that change what the tab draws conflict on that line.
 #
 # - Nothing to merge: says so and exits 0, without rebuilding or checking.
@@ -25,7 +25,7 @@
 set -eu
 
 DIR=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
-BUNDLE_DIRS='codex/plugin/dist omp/dist'
+BUNDLE_DIRS='codex/plugin/dist omp/dist herdr/mod/inbox'
 SCRIPT=./scripts/merge-next.sh
 from=origin/next
 resume=0
@@ -91,9 +91,15 @@ rebuild() {
         echo "Installing the omp extension's tools: $reason"
         bun install --cwd "$DIR/omp" --frozen-lockfile --ignore-scripts || return 1
     fi
+    reason=$(install_reason herdr herdr/bun.lock)
+    if [ -n "$reason" ]; then
+        echo "Installing the Herdr look's tools: $reason"
+        bun install --cwd "$DIR/herdr" --frozen-lockfile --ignore-scripts || return 1
+    fi
     echo "Rebuilding the bundles"
     npm --prefix "$DIR/codex" run --silent build || return 1
     npm --prefix "$DIR/omp" run --silent build || return 1
+    npm --prefix "$DIR/herdr" run --silent build || return 1
 }
 
 branch=$(git symbolic-ref -q --short HEAD) || fail "HEAD is not on a branch. Check out the PR branch first."

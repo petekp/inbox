@@ -5,6 +5,7 @@ import { CLAUDE_CODE } from '../hooks/model-text'
 import { recordLinksAnswer, unlinkedRefs, unlinkedRefsAnswer } from '../hooks/record-links'
 import { emptySession } from '../hooks/session-files'
 import { recorded } from '../hooks/session-presses'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
 import { recordItem } from '../hooks/tools'
 
 const flagged = (detail: string) => unlinkedRefs({ detail: [detail] }).map(r => r.text)
@@ -148,7 +149,7 @@ describe('record', () => {
       { ...question, ask: 'Merge [PR 12](https://github.com/acme/app/pull/12)?' },
       1000,
     )
-    expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
+    expect(r.result).toStartWith('Recorded. The user sees it in the /inbox pane.')
   })
 
   const link = '[PR 12](https://github.com/acme/app/pull/12)'
@@ -169,7 +170,7 @@ describe('record', () => {
 
   test('still cuts a field over its limit that holds no link', () => {
     const r = recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Sign in', detail: 'x'.repeat(1250) }, 1000)
-    expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
+    expect(r.result).toStartWith('Recorded. The user sees it in the /inbox pane.')
     expect(r.ledger.items[0]?.detail).toHaveLength(1200)
   })
 
@@ -181,12 +182,12 @@ describe('record', () => {
   test('ignores an option past the eighth, which the record drops anyway', () => {
     const options = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'Wait for #12']
     const r = recordItem(CLAUDE_CODE, EMPTY, { kind: 'question', ask: 'Pick one?', options }, 1000)
-    expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
+    expect(r.result).toStartWith('Recorded. The user sees it in the /inbox pane.')
     expect(r.ledger.items[0]?.options).toHaveLength(8)
   })
 
   test("every host's call path refuses it", () => {
-    const r = recorded(CLAUDE_CODE, emptySession(), 'record', question, 1000)
+    const r = recorded(CLAUDE_CODE, emptySession(), 'record', question, 1000, TOOL_FIELDS)
     expect(r.result).toStartWith('Not recorded: ask names "PR 12"')
     expect(r.state.ledger.items).toEqual([])
   })

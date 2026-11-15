@@ -121,10 +121,10 @@ export const longTurn: Replay = {
           { id: 'rank', state: 'done', stands: 'pinned first, then by last edit' },
           { id: 'typo', state: 'working', stands: 'short typos match' },
         ],
-        goalStated: { text: 'Search under 100 ms on big libraries, shipped in 3.1', match: '100 ms|3\\.1' },
+        goalClear: { text: 'Search under 100 ms on big libraries, shipped in 3.1', match: '100 ms|3\\.1' },
       },
       checkpoint: true,
-      targets: ['proposal-when-stated', 'marks-true', 'changes-move'],
+      targets: ['goal-when-clear', 'milestones-shape', 'marks-true', 'changes-move'],
     },
   ],
 }

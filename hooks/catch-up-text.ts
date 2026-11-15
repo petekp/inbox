@@ -66,6 +66,8 @@ export const RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i
 /**
  * The questions of a dialog tool's input. Claude's AskUserQuestion and omp's ask give `question` and options with a
  * `label` and an optional `description`. Codex's `request_user_input_async` gives `title` and plain option strings.
+ * Claude marks the recommended option with a "(Recommended)" suffix on its label. omp gives its 0-based index as
+ * `recommended`, and the option at that index gets the same suffix.
  */
 export function dialogQuestions(raw: unknown): DialogQuestion[] {
   if (!Array.isArray(raw)) return []
@@ -74,12 +76,14 @@ export function dialogQuestions(raw: unknown): DialogQuestion[] {
     const fields = (q ?? {}) as Record<string, unknown>
     const text = [fields.question, fields.title].find((v): v is string => typeof v === 'string' && v.trim() !== '')
     if (!text) return []
-    const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o: unknown) => {
+    const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o: unknown, i: number) => {
       const option = typeof o === 'string' ? { label: o } : ((o ?? {}) as { label?: unknown; description?: unknown })
-      const label = typeof option.label === 'string' ? option.label.trim() : ''
+      const plain = typeof option.label === 'string' ? option.label.trim() : ''
+      const isMarked = i === fields.recommended && !RECOMMENDED_SUFFIX.test(plain)
+      const label = isMarked ? `${plain} (Recommended)` : plain
       const description = typeof option.description === 'string' ? option.description.trim() : ''
 
-      return label === '' ? [] : [{ label, description }]
+      return plain === '' ? [] : [{ label, description }]
     })
 
     return [

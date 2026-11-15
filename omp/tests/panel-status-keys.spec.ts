@@ -16,13 +16,13 @@ const goallessScreen = () => {
   const s = demoState(NOW)
   const overview = { ...s.ledger.overview!, goal: null, milestones: [], serves: {} }
 
-  return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, true, NO_HOLDS) })
+  return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, NO_HOLDS) })
 }
 const unheldScreen = () => {
   const s = demoState(NOW)
   const ledger = { ...s.ledger, overview: { ...s.ledger.overview!, askSubjects: {} } }
 
-  return screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, true, NO_HOLDS) })
+  return screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
 test('on a Status page taller than the panel, each ↑↓ press shows one more or one fewer line, up to its last line', () => {
@@ -106,7 +106,7 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
   const s = demoState(NOW)
   const items = s.ledger.items.filter(i => i.id !== 'd11')
   const screen = screenOf({
-    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, true, NO_HOLDS),
+    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, NO_HOLDS),
   })
   const onS3 = { ...onPage, selectedId: 's3' }
   const lines = text(screen, onS3).split('\n')
@@ -119,14 +119,15 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
 
 test('on a Status page taller than the panel, j and k scroll the newly selected row into view', () => {
   const screen = goallessScreen()
-  const height = 14
+  const height = 13
   const drawnFor = (ui: PanelUi) => drawPanel(screen, ui, 80, NOW, style, height)
   const isFocusShown = (ui: PanelUi) =>
     drawnFor(ui)
       .lines.map(strip)
       .some(l => l.includes('↵ View'))
-  expect(isFocusShown(onPage)).toBe(true)
-  const onS3 = keys(screen, onPage, 'j')
+  const opened = { ...onPage, pageTop: drawnFor({ ...onPage, pageReveal: true }).pageTop }
+  expect(isFocusShown(opened)).toBe(true)
+  const onS3 = keys(screen, opened, 'j')
   expect(isFocusShown({ ...onS3, pageReveal: null })).toBe(false)
   expect(isFocusShown(onS3)).toBe(true)
   const scrolled = { ...onS3, pageTop: drawnFor(onS3).pageTop, pageReveal: null }

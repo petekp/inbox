@@ -15,8 +15,6 @@ import type {
   Draft,
   FoldKind,
   Ledger,
-  OldPresence,
-  PrViews,
   LastAction,
   SessionStatus,
   PageTab,
@@ -38,13 +36,13 @@ import {
   startTurn,
   turnEnded,
   turnStarted,
-  placed,
   cutOffTurn,
   withNewPrRefs,
   type SentBy,
 } from './session-turns'
 import { emptySession, upgradeSession, type SavedSession } from './session-files'
-import { pressOn, recorded, pruned, type SendOutcome } from './session-presses'
+import { pressOn, pruned, type SendOutcome } from './session-presses'
+import { isCompareInBackground } from './clients'
 import { sessionView, showsRunningMark, type SessionView } from './session-view'
 import {
   childrenCutOff,
@@ -61,21 +59,25 @@ import {
   taskNotice,
   waitsOnDelegate,
 } from './children'
-import { isRecordedItemsOnly, runUpdates } from './session-host'
+import { CATCH_UP_CALL, runUpdates } from './session-host'
+import { heardCall } from './call-record'
+import { isRecordedItemsOnly } from './session-host'
 import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
+import { tabPrs } from './pr-fetch'
+import type { FetchAsk } from './pr-fetch'
+import { prSharedStore } from './mod-pr-shared'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
-import { startPress, wakeForDone as wakeSessionForDone } from './host-press'
+import { startPress, wakeAfterSettle as wakeSessionAfterSettle } from './host-press'
 import type { Ask, CatchUpReply, SessionHost } from './session-host'
 import { callReport, MODEL } from './inbox-model'
-import { SESSION_VERSION } from './session-version'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
-import { noteDialog } from './dialogs'
+import { noteAnsweredDialog, noteDialog } from './dialogs'
 import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
-import { openPrViews } from './pr-views'
-import { prMarkId, threadSentIn } from './pr-rows'
-import { failingChecks, prRefs, prNeedsYou, waitingThreads } from './prs'
-import { EMPTY, KEPT_SESSIONS, isBlankLedger } from './ledger'
+import { openPrViews, prUndoBlockAfter } from './pr-views'
+import { prBlockRows, threadSentIn } from './pr-rows'
+import { prNeedsYou } from './prs'
+import { EMPTY, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
 import { FEED_POLL_MS, startModFeed } from './mod-feed'
 import { tasksRunBy } from './reply-parse'
@@ -94,24 +96,46 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
-import type { Run } from './gh'
-import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
+import { ghIn } from './gh'
+import { isGhUnstartable, pathProbe, placeChange, runOf, sessionFolder, type CommandCalls } from './mod-commands'
+import { delegatesInHerdr } from './herdr'
+import type { HerdrFile } from './herdr-press-file'
+import { applyHerdrFile } from './herdr-app'
+import {
+  followDelegates as followHerdrDelegates,
+  listenForHerdrPresses,
+  startInHerdr,
+  askHerdrModAgain,
+  openInHerdr,
+  publishToHerdr,
+  type HerdrCalls,
+} from './mod-herdr'
 import { ago, cellWidth, turnReply } from './text'
 import { COMPARE_PAGE_FILE } from './press-messages'
 import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
 import { isPressConfirmed, type Effect } from './press-reducer'
-import { openTarget, type PathProbe } from './open-targets'
+import { openTarget } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
-import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
+import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
-import { drawnLists, rowKeyPlan, rowsIn, firstWaiting, keptOpen, rowAfterClose, type PlannedKey } from './action-plan'
+import { bandCounts, isMaybeStale, noCountsText } from './band'
+import {
+  drawnLists,
+  rowKeyPlan,
+  rowsIn,
+  firstWaiting,
+  keptOpen,
+  rowAfterClose,
+  steppedIndex,
+  tabUndos,
+  latestUndo,
+  type PlannedKey,
+} from './action-plan'
 import {
   isRowTab,
   isShownTab,
-  LISTED_TABS,
   screenTabOf,
   shownTabs,
   drawnTabOf,
@@ -128,10 +152,12 @@ import {
   compareEndsAt,
   SETTLED_MS,
   keptDiscards,
+  nextFoldAt,
+  withListInput,
   type Holds,
 } from './timing'
-import { helpKeys } from './help'
-import { agentTools } from './tools'
+import { helpKeys, UNDO_KEY } from './help'
+import { agentTools, NOT_SAVED } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
 import {
@@ -145,10 +171,17 @@ import {
   prRowIds,
 } from './arrivals'
 import { parseInline } from './inline'
-import { DESKTOP_ROW_PAD, DESKTOP_WIDE_AT, INLINE_RAIL_AT, RAIL_GUTTER, TAB_PAD } from './pane-sizes'
+import {
+  DESKTOP_OFFSET_ROUNDING,
+  DESKTOP_ROW_PAD,
+  DESKTOP_WIDE_AT,
+  INLINE_RAIL_AT,
+  RAIL_GUTTER,
+  TAB_PAD,
+} from './pane-sizes'
 import { lookOf, paletteFor } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
-import { type TerminalSpan } from './terminal-text'
+import { glued, type TerminalSpan, unbroken } from './terminal-text'
 import {
   lastUndoEnd,
   NO_CURSOR,
@@ -178,6 +211,8 @@ import {
   openedField,
   openFields,
   paneHasKeys,
+  closeKeysWithoutRow,
+  undoKey,
 } from './pane-keys'
 import {
   arrived,
@@ -186,9 +221,9 @@ import {
   noteStored,
   settleRewrite,
   stored,
-  uncertainRecord,
   withLostSendsUncertain,
 } from './mod-delivery'
+import { NO_OLD_PRESENCE, NO_OLD_PR_VIEWS, sessionFromOldFields } from './mod-old-fields'
 import {
   askedCalls,
   callKey,
@@ -198,19 +233,18 @@ import {
   endedCallRan,
   HOST_TASK_TOOLS,
   isActivityWorthSaving,
-  isHerdrCheckDue,
   MAX_PERSON_LINES,
   noteRanCall,
   permissionText,
-  reportToHerdr,
   spawnedBy,
-  startedTaskOf,
+  startedWorkflowOf,
   toolRecord,
   workflowTasks,
 } from './mod-records'
 import {
   AWAY_MS,
-  CAN_CATCH_UP,
+  answerToolCall,
+  broughtBack,
   type Changed,
   conversation,
   currentOwner,
@@ -218,25 +252,24 @@ import {
   DESKTOP_APP_ENTRYPOINTS,
   drawnSession,
   isCurrent,
-  isLockHeld,
-  LOCK_RETRY_WAITS_MS,
   MAX_TRIES,
   type ModSession,
   NO_SESSION,
   type Owner,
   PR_POLL_MS,
   PRESENT,
-  prunedSaves,
   resultsOrder,
   type SavedRecord,
-  savedRevisions,
-  savesBySession,
-  sessionKey,
-  track,
   updating,
+  withLoadedToolFields,
+  type LoadedBy,
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
+import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
+import { desktopSpaceLines } from './pane-status-tops'
+import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import { runningSessions } from './running-sessions'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
 import { paneRowLines } from './pane-row-lines'
@@ -290,6 +323,8 @@ const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
 const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
+/** The Closed folds whose earlier lines the person opened. */
+const CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
 const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as string | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 /** Switching tabs or closing the pane closes Help. */
@@ -336,6 +371,7 @@ async function noteActivity($: EngineInterface, line: string) {
   if (isClaimed)
     void refreshStatus({
       ...hostOf($, owner),
+      names: CLAUDE_CODE,
       inOrder: fn => resultsOrder.run(owner.id, fn),
       records: recordsOf($, owner),
     })
@@ -346,16 +382,46 @@ async function syncTheme($: EngineInterface) {
   await update($, THEME, () => (typeof theme === 'string' ? theme : ''))
 }
 
-function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
-  return reportToHerdr(processRun($), async () => {
-    const pane = await $.env.get('HERDR_PANE_ID')
-    if (!pane) return null
-    if (isEnding) return { pane, tokens: CLEARED_TOKENS }
-    const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
-    const view = sessionView(session, now, SETTLED_MS, CAN_CATCH_UP)
+function herdrCalls($: EngineInterface): HerdrCalls {
+  return {
+    run: processRun($),
+    env: () =>
+      Promise.all([
+        $.env.get('HERDR_PANE_ID'),
+        $.env.get('HC_TERMINAL_ID'),
+        $.env.get('HERDR_APP_HOME'),
+        $.env.get('HOME'),
+      ]),
+    write: (path, text) => $.fs.write(path, text),
+    read: path => $.fs.read(path),
+    list: folder => $.fs.list(folder),
+    stat: path => $.fs.stat(path),
+    spawn: argv => $.process.spawn({ argv }),
+    now: () => $.clock.now(),
+    after: (ms, fn) => void $.clock.after(ms, fn),
+    every: (ms, fn) => $.clock.every(ms, fn),
+    log: text => void $.ui.log(text, { to: 'debug' }),
+    pluginRoot: $.plugin.root,
+  }
+}
 
-    return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
+function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
+  return publishToHerdr(herdrCalls($), isEnding ? conversation.id : null, async () => {
+    const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
+
+    const root = (await sessionFolder(commandCalls($))) ?? ''
+
+    return { id: conversation.id, root, session, dialogs, isUnread: unreadable === conversation.id }
   })
+}
+
+/** Applies a Herdr look's press. False when it is for another conversation. */
+async function herdrPress($: EngineInterface, id: string, f: HerdrFile): Promise<boolean> {
+  if (id !== conversation.id) return false
+  if ((await applyHerdrFile(hostOf($, currentOwner(), 'terminal'), f)).wakesAfterSettle)
+    later($, SETTLED_MS, () => wakeAfterSettle($))
+
+  return true
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {
@@ -450,22 +516,8 @@ async function clearingDialog<T>($: EngineInterface, key: string, run: () => Pro
 // function that takes `$`, the session's storage and the SessionHost included, lives in this file.
 
 const OLD_LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
-const OLD_PRESENCE = atom(
-  { plugin: 'inbox', key: 'presence' } as const,
-  {
-    lastActiveAt: 0,
-    isAway: false,
-    isUpdating: false,
-    ledgerState: 'current',
-    turnsStarted: 0,
-    turnsApplied: 0,
-    minute: 0,
-  } as OldPresence,
-)
-const OLD_PR_VIEWS = atom(
-  { plugin: 'inbox', key: 'prViews' } as const,
-  { views: {}, branchRef: null, isFetching: false } as PrViews,
-)
+const OLD_PRESENCE = atom({ plugin: 'inbox', key: 'presence' } as const, NO_OLD_PRESENCE)
+const OLD_PR_VIEWS = atom({ plugin: 'inbox', key: 'prViews' } as const, NO_OLD_PR_VIEWS)
 const OLD_STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const OLD_LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
 const OLD_SENT = atom({ plugin: 'inbox', key: 'sent' } as const, [] as SentPrompt[])
@@ -474,7 +526,7 @@ const OLD_UNTRACKED_SENT = atom(
   [] as { sessionId: string; text: string }[],
 )
 
-/** Merges legacy fields; uncertain sends cannot credit later presses. */
+/** Merges legacy fields from an older build; uncertain sends cannot credit later presses. */
 async function fromOldFields($: EngineInterface): Promise<Session> {
   const [id, ledger, presence, prViews, stop, lastActions, sent, untracked] = await Promise.all([
     $.session.id(),
@@ -492,26 +544,7 @@ async function fromOldFields($: EngineInterface): Promise<Session> {
     minute: presence.minute,
   }))
 
-  return upgradeSession({
-    ledger,
-    presence: {
-      isUpdating: presence.isUpdating,
-      ledgerState: presence.ledgerState,
-      // Presence from before the turn counts existed cannot say whether the last turn's update landed, so that
-      // load catches up once.
-      turnsStarted: presence.turnsStarted ?? 1,
-      turnsApplied: presence.turnsApplied ?? 0,
-    },
-    prViews,
-    stop,
-    lastActions,
-    sent: [
-      ...(sent ?? [])
-        .filter(p => p.sessionId === id)
-        .map(p => ({ text: p.text, press: null, at: p.pressedAt ?? 0, pressedAt: p.pressedAt, deliveryId: p.id })),
-      ...(untracked ?? []).filter(u => u.sessionId === id).map(u => uncertainRecord(u.text)),
-    ],
-  })
+  return sessionFromOldFields(id, { ledger, presence, prViews, stop, lastActions, sent, untracked })
 }
 
 /** Brings the drawn session to the current shape. */
@@ -526,10 +559,7 @@ async function upgradeDrawn($: EngineInterface): Promise<ModSession> {
   })
 }
 
-/**
- * Replaces the drawn session outside the write loop, as a conversation switch or load does. A change that returns
- * the session it was given writes nothing.
- */
+/** Replaces drawn state outside the write loop; unchanged state is not written. */
 async function replaceDrawn($: EngineInterface, change: (s: ModSession) => Session): Promise<ModSession> {
   const cur = await read($, SESSION)
   if (change(cur) === cur) return cur
@@ -537,11 +567,7 @@ async function replaceDrawn($: EngineInterface, change: (s: ModSession) => Sessi
   return update($, SESSION, s => ({ ...change(s), revision: s.revision + 1 }))
 }
 
-/**
- * Updates a drawn session, retrying when another write lands; after the pane moves on, updates saved state. No-op
- * changes write nothing. Each write saves held rows and the pane's showing, then prunes with `pruned`. Writes affecting
- * more than the running turn are saved.
- */
+/** Updates drawn state with retries, or saved state after the pane moves on. Writes save holds and the pane's showing. */
 async function changeSession(
   $: EngineInterface,
   owner: Owner,
@@ -549,7 +575,7 @@ async function changeSession(
   held: Set<string>,
 ): Promise<Changed> {
   for (let tries = 0; tries < MAX_TRIES; tries++) {
-    if (!isCurrent(owner)) return changeSaved($, owner.id, change)
+    if (!isCurrent(owner)) return changeSaved(saveEngine($), owner.id, change)
     const drawn = await read($, SESSION)
     // A hot reload can leave a session an earlier build wrote. The fetch that is running still runs.
     const upgraded = upgradeSession(drawn)
@@ -572,131 +598,34 @@ async function changeSession(
     })
     const written = landed as ModSession | null
     if (!written) continue
-    if (!isTurnOnly && (await read($, UNREADABLE)) !== owner.id) await save($, owner, written)
+    if (!isTurnOnly && (await read($, UNREADABLE)) !== owner.id) await save(saveEngine($), owner, written)
     return { before, after: written, isDrawn: isCurrent(owner) }
   }
   throw new Error('The session kept changing under this write.')
 }
 
-/**
- * Changes a conversation's saved session, after its pending saves, and prunes it with `pruned`. The pane draws another
- * conversation, so this one holds no rows and has no showing. A session the store cannot read stays as it is.
- */
-async function changeSaved(
-  $: EngineInterface,
-  id: string,
-  change: (s: Session) => Session | Promise<Session>,
-): Promise<Changed> {
-  sessionState.savedWrites++
-  // The read, the change and the write run in the save queue, so two changes to one saved session cannot both
-  // start from the same read.
-  // A retry reads again, so it cannot write over a save another process made meanwhile.
-  const changed = sessionState.saving.then(() =>
-    whileLockHeld($, async (): Promise<Changed> => {
-      const saved = await readSaved($, id)
-      if (!saved?.session) return { before: emptySession(), after: emptySession(), isDrawn: false }
-      const before = upgradeSession(saved.session)
-      const result = await change(before)
-      if (result === before) return { before, after: before, isDrawn: false }
-      const after = pruned({ ...result, heldRows: [], shownSince: null })
-      await $.store.set(sessionKey(id), { version: SESSION_VERSION, savedAt: saved.session.savedAt, ...after })
-
-      return { before, after, isDrawn: false }
-    }).catch((error: unknown): Changed => {
-      if (!isLockHeld(error)) throw error
-      logSaveFailure($, id, error)
-      return { before: emptySession(), after: emptySession(), isDrawn: false }
-    }),
-  )
-  const write = changed.then(() => undefined)
-  sessionState.saving = write.catch(() => undefined)
-  track(id, write)
-
-  return changed
-}
-
-/** Runs `write`, and again after each wait in `LOCK_RETRY_WAITS_MS` while the store's lock is held. */
-async function whileLockHeld<T>($: EngineInterface, write: () => Promise<T>): Promise<T> {
-  for (const ms of LOCK_RETRY_WAITS_MS) {
-    try {
-      return await write()
-    } catch (error) {
-      if (!isLockHeld(error)) throw error
-      await $.clock.sleep(ms)
-    }
+/** The store, clock, debug log and running-conversation calls that `hooks/mod-saves.ts` makes. */
+function saveEngine($: EngineInterface): SaveEngine {
+  return {
+    store: {
+      get: key => $.store.get(key),
+      set: (key, value) => $.store.set(key, value),
+      delete: key => $.store.delete(key),
+      keys: () => $.store.keys(),
+    },
+    sleep: ms => $.clock.sleep(ms),
+    now: () => $.clock.now(),
+    after: (ms, fn) => $.clock.after(ms, fn),
+    log: text => $.ui.log(text, { to: 'debug' }),
+    runningSessions: () =>
+      runningSessions({
+        configFolder: () => configFolder($),
+        sessionId: () => $.session.id(),
+        list: folder => $.fs.list(folder),
+        read: path => $.fs.read(path),
+        run: (argv, init) => $.process.run(argv, init),
+      }).catch(() => null),
   }
-  return write()
-}
-
-function logSaveFailure($: EngineInterface, id: string, error: unknown) {
-  $.ui.log(`inbox: saving session ${id} failed: ${error instanceof Error ? error.message : String(error)}`, {
-    to: 'debug',
-  })
-}
-
-/**
- * Saves a conversation's session, once every earlier save has landed. A save older than one already resolved is
- * skipped. The first save of each conversation also deletes the oldest saved sessions beyond the newest `KEPT_SESSIONS`.
- */
-function save($: EngineInterface, owner: Owner, s: ModSession): Promise<void> {
-  const key = sessionKey(owner.id)
-  const generation = `${owner.id}:${owner.generation}`
-  savedRevisions.set(generation, Math.max(savedRevisions.get(generation) ?? 0, s.revision))
-  const { revision: _revision, ...session } = s
-  const setAndPrune = Promise.all([sessionState.saving, $.clock.now()]).then(async ([, savedAt]) => {
-    if (s.revision < (savedRevisions.get(generation) ?? 0)) return
-    await whileLockHeld($, () => $.store.set(key, { version: SESSION_VERSION, savedAt, ...session }))
-    if (prunedSaves.has(generation)) return
-    const keys = await $.store.keys()
-    const sessions = keys.filter(k => k.startsWith('s:'))
-    const ages = await Promise.all(
-      sessions.map(async candidate => {
-        try {
-          const saved = (await $.store.get(candidate)) as SavedRecord | undefined
-          return saved && Number.isFinite(saved.savedAt) && saved.ledger && typeof saved.ledger === 'object'
-            ? { key: candidate, savedAt: saved.savedAt }
-            : null
-        } catch {
-          return null
-        }
-      }),
-    )
-    const stale = ages
-      .filter((entry): entry is { key: string; savedAt: number } => entry !== null && entry.key !== key)
-      .sort((a, b) => a.savedAt - b.savedAt || a.key.localeCompare(b.key))
-      .slice(0, Math.max(0, sessions.length - KEPT_SESSIONS))
-      .map(entry => entry.key)
-    // `p:` keys held the last-session offer, which earlier builds saved per folder.
-    await Promise.all(
-      [...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => whileLockHeld($, () => $.store.delete(old))),
-    )
-    prunedSaves.add(generation)
-  })
-  const write = setAndPrune.catch((error: unknown) => {
-    // The session stays drawn, and the conversation's next save writes it whole.
-    if (!isLockHeld(error)) throw error
-    logSaveFailure($, owner.id, error)
-  })
-  sessionState.saving = write.catch(() => undefined)
-  track(owner.id, write)
-
-  return write
-}
-
-/** A conversation's saved session, or `{ session: undefined }` when none is saved. Null when the store cannot read it. */
-async function readSaved($: EngineInterface, id: string): Promise<{ session: SavedRecord | undefined } | null> {
-  try {
-    return { session: (await $.store.get(sessionKey(id))) as SavedRecord | undefined }
-  } catch {
-    return null
-  }
-}
-
-/** A conversation's saved session, once its pending saves have landed. */
-async function readSettled($: EngineInterface, id: string) {
-  await savesBySession.get(id)?.catch(() => undefined)
-
-  return readSaved($, id)
 }
 
 /** Calls the inbox model, reports the call, and returns the answer. */
@@ -705,7 +634,7 @@ async function askInboxModel(
   prompt: string,
   system: string,
   timeoutMs: number,
-  report: Parameters<Ask>[2],
+  report: Parameters<Ask>[3],
 ): Promise<string | null> {
   const r = await $.model.complete({
     model: MODEL,
@@ -724,15 +653,21 @@ function recordFiles($: EngineInterface): RecordFiles {
   return {
     write: (path, text) => $.fs.write(path, text),
     list: async folder => (await $.fs.list(folder).catch(() => [])).map(entry => entry.name),
-    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths])),
-    removeFolder: async path => void (await $.process.run(['rmdir', '--', path])),
+    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths], { cwd: '/' })),
+    removeFolder: async path => void (await $.process.run(['rmdir', '--', path], { cwd: '/' })),
   }
+}
+
+/** Claude Code's configuration folder: `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+async function configFolder($: EngineInterface): Promise<string | null> {
+  const home = await $.env.get('HOME')
+
+  return (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
 }
 
 /** The folder a next build keeps its Status call records in, under Claude Code's configuration folder. */
 async function recordsFolder($: EngineInterface): Promise<string | null> {
-  const home = await $.env.get('HOME')
-  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
+  const config = await configFolder($)
 
   return config ? `${config}/plugins/data/inbox/overview-calls` : null
 }
@@ -741,15 +676,18 @@ function statusRecords($: EngineInterface, folder: string, owner: Owner): Status
   return { host: 'claude-code', folder, session: owner.id, files: recordFiles($) }
 }
 
-function pathProbe($: EngineInterface): PathProbe {
+function commandCalls($: EngineInterface): CommandCalls {
   return {
-    stat: async path => {
-      if (!(await $.fs.exists(path))) return null
-      const stat = await $.fs.stat(path)
-      return { isFile: () => stat.kind === 'file' }
-    },
-    isExecutable: async path => (await $.process.run(['test', '-x', path])).exitCode === 0,
+    root: () => $.session.root(),
+    exists: path => $.fs.exists(path),
+    stat: path => $.fs.stat(path),
+    run: (argv, init) => $.process.run(argv, init),
+    now: () => $.clock.now(),
   }
+}
+
+function processRun($: EngineInterface) {
+  return runOf(commandCalls($))
 }
 
 async function perform(
@@ -759,44 +697,14 @@ async function perform(
 ): Promise<string | null> {
   try {
     if (effect.kind === 'open') {
-      const home = (await $.env.get('HOME')) ?? ''
-      return await openTarget(processRun($), pathProbe($), effect.target, conversation.root, home)
+      const [home, folder] = await Promise.all([$.env.get('HOME'), sessionFolder(commandCalls($))])
+      return await openTarget(processRun($), pathProbe(commandCalls($)), effect.target, folder ?? '', home ?? '')
     }
     const r = await $.ui.copy({ text: effect.text, surface })
     return r.isCopied ? null : COPY_FAILURES[r.reason]
   } catch (err) {
     return err instanceof Error ? err.message : String(err)
   }
-}
-
-/**
- * `$.process.run` as the shared `Run`. It rejects when the command cannot start, and also when it is still running at
- * the timeout, with no code to tell them apart. A rejection that comes `timeoutMs` or more after the call is the
- * timeout's; one that comes sooner is a command that could not start.
- */
-function processRun($: EngineInterface): Run {
-  return async (args, { cwd, timeoutMs, env }) => {
-    const startedAt = await $.clock.now()
-    try {
-      const r = await $.process.run(args, { cwd, timeoutMs, env })
-
-      return { code: r.exitCode, stdout: r.stdout, stderr: r.stderr }
-    } catch (err) {
-      const isTimedOut = (await $.clock.now()) - startedAt >= timeoutMs
-
-      return {
-        code: isTimedOut ? TIMED_OUT_CODE : UNSTARTABLE_CODE,
-        stdout: '',
-        stderr: err instanceof Error ? err.message : String(err),
-      }
-    }
-  }
-}
-
-async function isGhUnstartable($: EngineInterface): Promise<boolean> {
-  const r = await processRun($)(['gh', '--version'], { cwd: conversation.root, timeoutMs: GH_TIMEOUT_MS })
-
-  return r.code === UNSTARTABLE_CODE
 }
 
 /**
@@ -859,29 +767,32 @@ function sessionHost(
     now: () => $.clock.now(),
     read: async () => {
       if (isCurrent(owner)) return upgradeSession(await read($, SESSION))
-      const saved = await readSettled($, owner.id)
+      const saved = await readSettled(saveEngine($), owner.id)
       return saved?.session ? upgradeSession(saved.session) : emptySession()
     },
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
-    ask: (prompt, system, report) => askInboxModel($, prompt, system, 45_000, report),
+    ask: (prompt, system, _kind, report) => askInboxModel($, prompt, system, 45_000, report),
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
     refreshPrs: opts.refreshPrs,
     gh: {
+      shared: prSharedStore(saveEngine($)),
       find: async () => {
-        if (ghFound === undefined) ghFound = (await isGhUnstartable($)) ? null : 'gh'
+        if (ghFound === undefined) ghFound = (await isGhUnstartable(commandCalls($))) ? null : 'gh'
         return ghFound
       },
       forget: () => {
         ghFound = undefined
       },
-      run: (_s, _bin, onUnstartable) => ghIn(processRun($), 'gh', conversation.root, onUnstartable),
+      run: (_s, _bin, onUnstartable) => async args =>
+        ghIn(processRun($), 'gh', (await sessionFolder(commandCalls($))) ?? '', onUnstartable)(args),
       noteMissing: opts.onGhMissing,
     },
     settleWindowMs: opts.settleWindowMs,
     comparePage: comparePagePath($),
+    compareInBackground: isCompareInBackground('claude-code'),
     newId: () => crypto.randomUUID(),
   }
 }
@@ -986,7 +897,8 @@ async function redrawAfterReload($: EngineInterface) {
 function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): StatusCall {
   return {
     exchange: { kind: 'catch-up', conversation: transcript },
-    ask: async (prompt, system, report) => (isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null),
+    ask: async (prompt, system, _kind, report) =>
+      isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null,
   }
 }
 
@@ -995,7 +907,7 @@ function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): St
  * is nothing to fork.
  */
 async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpReply> {
-  if (!isCurrent(owner)) return { kind: 'failed' }
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   const [{ ledger }, shown, transcript] = await Promise.all([
     read($, SESSION),
     screen($),
@@ -1003,18 +915,37 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   ])
   // The Status call reads the transcript.
   const statusCall = transcript ? catchUpStatus($, owner, transcript) : null
+  const forkedAt = await $.clock.now()
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
-  if (!isCurrent(owner)) return { kind: 'failed' }
-  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, statusCall }
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
-  if (forked.reason !== 'nothing-to-fork') return { kind: 'failed' }
-  if (!transcript) return { kind: 'unreadable' }
-  const prompt = transcriptCatchUpPrompt(ledger, shown, transcript)
-  const text = await askInboxModel($, prompt, systemText(CLAUDE_CODE), 90_000, undefined)
-  if (!isCurrent(owner)) return { kind: 'failed' }
+  if (!forked.isAnswered && forked.reason === 'nothing-to-fork')
+    return transcriptReply($, owner, ledger, shown, transcript)
+  const text = forked.isAnswered ? forked.text : null
+  const heard = { text, report: callReport(forked), thrown: null, ms: (await $.clock.now()) - forkedAt }
 
-  return text === null ? { kind: 'failed' } : { kind: 'reply', text, source: transcript, statusCall }
+  return text === null ? { kind: 'failed', heard } : { kind: 'reply', text, source: null, statusCall, heard }
+}
+
+/** The model's answer to a catch-up over the transcript, for a conversation with nothing to fork. */
+async function transcriptReply(
+  $: EngineInterface,
+  owner: Owner,
+  ledger: Ledger,
+  shown: string,
+  transcript: string | null,
+): Promise<CatchUpReply> {
+  if (!transcript) return { kind: 'unreadable' }
+  const statusCall = catchUpStatus($, owner, transcript)
+  const prompt = transcriptCatchUpPrompt(ledger, shown, transcript)
+  const ask: Ask = (p, system, _kind, report) => askInboxModel($, p, system, 90_000, report)
+  const heard = await heardCall(ask, prompt, systemText(CLAUDE_CODE), CATCH_UP_CALL, () => $.clock.now())
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
+
+  return heard.text === null
+    ? { kind: 'failed', heard }
+    : { kind: 'reply', text: heard.text, source: transcript, statusCall, heard }
 }
 
 /**
@@ -1065,7 +996,7 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
       void commit($, owner, s =>
         s.prViews.isGhMissing === isGhMissing ? s : { ...s, prViews: { ...s.prViews, isGhMissing } },
       ).catch(() => undefined),
-    refreshPrs: () => fetchPrs($, true),
+    refreshPrs: () => fetchPrs($, true, true),
   })
 }
 
@@ -1151,10 +1082,11 @@ async function runTool(
   toolUseId: string | undefined,
 ): Promise<string> {
   const now = await $.clock.now()
+  const owner = currentOwner()
   const toolInput = tool === 'record' ? await withDocumentPreview(input, documentFile($)) : input
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
-  await commit($, currentOwner(), s => {
-    const r = recorded(CLAUDE_CODE, s, tool, toolInput, now)
+  await commit($, owner, s => {
+    const r = answerToolCall(s, tool, toolInput, now)
     answer = r
     return r.state
   })
@@ -1163,8 +1095,9 @@ async function runTool(
     await update($, PERSON_LINES, lines =>
       Object.fromEntries([...Object.entries(lines), [toolUseId, personLine]].slice(-MAX_PERSON_LINES)),
     )
+  const isChangeUnsaved = personLine !== null && isLastSaveRefused(owner.id)
 
-  return answer.result
+  return isChangeUnsaved ? `${answer.result} ${NOT_SAVED}` : answer.result
 }
 
 /**
@@ -1183,6 +1116,7 @@ function openPane($: EngineInterface, isFieldOpen = false) {
     .then(async () => {
       await syncShown($, { isOpen: true })
       await syncLook($, true)
+      await wakeForHeldSends($)
     })
     .catch(() => undefined)
 
@@ -1194,35 +1128,24 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
   const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
-  await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
+  const shown = isShown ? {} : takeShownRows()
+  await commit($, currentOwner(), s => withLook(s, isShown, now, shown)).catch(() => undefined)
   followDelegates($, isShown)
 }
 
 /** Tracks Status delegates. */
 function followDelegates($: EngineInterface, isShown: boolean) {
-  if (!isShown) {
-    paneState.herdrCheckTimer?.cancel()
-    paneState.herdrCheckTimer = null
-    return
-  }
-  void checkDelegates($).catch(() => undefined)
-  paneState.herdrCheckTimer ??= $.clock.every(HERDR_CHECK_MS, () => {
-    void (async () => {
-      const isStillShown = (await readPage($)) === 'overview' && (await isPaneShown($))
-      if (isStillShown && !(await read($, DEMO))) return checkDelegates($)
-      paneState.herdrCheckTimer?.cancel()
-      paneState.herdrCheckTimer = null
-    })().catch(() => undefined)
+  followHerdrDelegates(isShown, paneState, herdrCalls($).every, () => {
+    const owner = currentOwner()
+    return {
+      run: processRun($),
+      now: () => $.clock.now(),
+      ownerId: owner.id,
+      overview: async () => upgradeSession(await read($, SESSION)).ledger.overview,
+      isStatusShown: async () => (await readPage($)) === 'overview' && (await isPaneShown($)) && !(await read($, DEMO)),
+      settle: (agents, at) => commit($, owner, s => statusChanged(s, o => delegatesSettled(o, agents, at))),
+    }
   })
-}
-
-async function checkDelegates($: EngineInterface) {
-  const owner = currentOwner()
-  if (!isHerdrCheckDue(owner.id, await $.clock.now())) return
-  const states = await read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, processRun($)))
-  if (!states) return
-  const at = await $.clock.now()
-  await commit($, owner, s => statusChanged(s, o => delegatesSettled(o, states, at)))
 }
 
 /** Tracks each tab show so settled rows stay visible until the person leaves. */
@@ -1261,7 +1184,27 @@ async function readHolds($: EngineInterface): Promise<Holds> {
     readShownSince($),
   ])
 
-  return { replies: heldReplies(typing, drafts), discarded, shownSince }
+  return { replies: heldReplies(typing, drafts), discarded, shownSince, listInput: paneState.listInput }
+}
+
+/** Notes a press, key, click or pointer move on the pane, so a row due to fold waits until the person stops. */
+async function noteListInput($: EngineInterface) {
+  paneState.listInput = withListInput(paneState.listInput, await $.clock.now())
+}
+
+/** Redraws when the next settled row or PR the view draws can fold. */
+function redrawAtNextFold($: EngineInterface, view: SessionView, lastTypedMessageAt: number | null, now: number) {
+  const settled = [...allRows(view), ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
+  const placing = { lastTypedMessageAt, listInput: paneState.listInput, now, settleWindowMs: SETTLED_MS }
+  const at = nextFoldAt(settled, placing)
+  const pending = paneState.foldRedrawAt
+  const isSooner = at !== null && at > now && (pending === null || pending <= now || at < pending)
+  if (!isSooner) return
+  paneState.foldRedrawAt = at
+  later($, at - now, async () => {
+    paneState.foldRedrawAt = null
+    await redraw($)
+  })
 }
 
 /** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
@@ -1283,14 +1226,20 @@ async function openTopRow($: EngineInterface) {
   else await select($, tab, top, ids.indexOf(top))
 }
 
-async function showInbox($: EngineInterface) {
+async function showInbox($: EngineInterface, opening: ReturnType<typeof openInHerdr>) {
+  const herdr = await opening
+  if (herdr?.isShown) return herdr.text
   await openPane($)
   await followNewRows($, true)
   await openTopRow($)
+
+  return herdr?.text
 }
 
-async function openInbox($: EngineInterface) {
-  // Opened before any other await. After one, the engine no longer counts the press as
+async function openInbox($: EngineInterface, isDemo: boolean) {
+  const opening = isDemo ? null : openInHerdr(herdrCalls($))
+  if (opening instanceof Promise && (await opening).isShown) return
+  // Opened before any other await unless the Herdr look is opening. After one, the engine no longer counts the press as
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
   const { view } = await drawnState($)
@@ -1528,9 +1477,6 @@ async function selectClicked($: EngineInterface, id: string) {
   const prViews = openPrViews(view.prs.drawn)
   const index = tabRowIds(view, prViews)[tab].indexOf(id)
   if (index < 0 || isGuarded(selection[tab].openedAt, now)) return
-  // The Client leaves the drawing as its row opens, so the focus repair moves the focus to the row's first action.
-  paneState.focusedKey = `select-${id}`
-  paneState.focusHint = null
   await select($, tab, id, index)
 }
 
@@ -1539,8 +1485,6 @@ async function showAsk($: EngineInterface, askId: string) {
   const { view } = await drawnState($)
   const prViews = openPrViews(view.prs.drawn)
   const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
-  paneState.focusedKey = `select-${askId}`
-  paneState.focusHint = null
   await select($, 'needsYou', askId, index, false)
   await showTab($, 'needsYou')
   await scrollToRow($, askId)
@@ -1699,55 +1643,71 @@ function markFetching($: EngineInterface, isFetching: boolean) {
  * Fetches the session's PRs, one fetch at a time. A fetch asked for while one runs follows it, and finds the
  * branch's PR when any of the asks wanted it.
  */
-function fetchPrs($: EngineInterface, findsBranchPr: boolean): Promise<void> {
-  if (mod.nextFetchFindsBranchPr !== null) {
-    mod.nextFetchFindsBranchPr ||= findsBranchPr
+function fetchPrs($: EngineInterface, findsBranchPr: boolean, isPress = false): Promise<void> {
+  const waiting = mod.nextFetch
+  if (waiting) {
+    waiting.findsBranchPr ||= findsBranchPr
+    waiting.isPress ||= isPress
     return mod.fetchingPrs
   }
-  mod.nextFetchFindsBranchPr = findsBranchPr
+  mod.nextFetch = { findsBranchPr, isPress }
   mod.fetchingPrs = mod.fetchingPrs
     .then(() => {
-      const finds = mod.nextFetchFindsBranchPr ?? false
-      mod.nextFetchFindsBranchPr = null
-      return fetchPrsNow($, finds)
+      const ask = mod.nextFetch ?? { findsBranchPr: false, isPress: false }
+      mod.nextFetch = null
+      return fetchPrsNow($, ask)
     })
     .catch(() => undefined)
 
   return mod.fetchingPrs
 }
 
-async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
+async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   const owner = currentOwner()
   await markFetching($, true)
   try {
-    await fetchSessionPrs(hostOf($, owner), findsBranchPr)
+    await fetchSessionPrs(hostOf($, owner), ask.findsBranchPr, ask.isPress)
   } finally {
     mod.prFetchEndedAt = await $.clock.now()
     // Fetches run one at a time across conversations, so the drawn session reads whether one still runs.
-    await markFetching($, mod.nextFetchFindsBranchPr !== null)
+    await markFetching($, mod.nextFetch !== null)
   }
   void followNewRows($).catch(() => undefined)
 }
 
 async function pollPrs($: EngineInterface) {
-  const [away, { ledger, prViews }, findsBranchPr] = await Promise.all([
+  const [away, session, isTabShown, now] = await Promise.all([
     read($, AWAY),
     read($, SESSION),
     isPrsTabShown($),
+    $.clock.now(),
   ])
-  if (away.isAway || (!findsBranchPr && ledger.prs.length === 0 && prViews.branchRef === null)) return
-  await fetchPrs($, findsBranchPr)
+  const { ledger, prViews } = session
+  if (away.isAway || (!isTabShown && tabPrs(ledger).length === 0 && prViews.branchRef === null)) return
+  if (!isPrFetchDue(session, mod.prFetchEndedAt, now, isTabShown)) return
+  await fetchPrs($, isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
-/** Tells Claude about rows closed with Done once their settle window has passed, unless a turn runs. */
-async function wakeForDone($: EngineInterface) {
-  await wakeSessionForDone(hostOf($, currentOwner()))
+/** Sends the answers and Fixes held for Undo, and tells Claude about rows closed with Done, once their settle window has passed. */
+async function wakeAfterSettle($: EngineInterface) {
+  await wakeSessionAfterSettle(hostOf($, currentOwner()))
+}
+
+/**
+ * Sends the held messages that are due, and wakes again when the next one falls due. A load or a pane opening calls
+ * it, since the timer a press started does not survive a reload.
+ */
+async function wakeForHeldSends($: EngineInterface) {
+  await wakeAfterSettle($)
+  const [{ lastActions }, now] = await Promise.all([read($, SESSION), $.clock.now()])
+  const dueTimes = Object.values(lastActions).flatMap(a => (a.delivery?.state === 'held' ? [a.delivery.until] : []))
+  if (dueTimes.length > 0) later($, Math.max(0, Math.min(...dueTimes) - now), () => wakeAfterSettle($))
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
   const mayStayOnRow = isPrPress(p)
-    ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action)
+    ? ['pr-open', 'pr-refresh', 'thread-open', 'log', 'check-rerun'].includes(p.action)
     : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
@@ -1803,13 +1763,13 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const canRevealUndo = undoKey !== null && undoRevision === paneState.undoScrollRevision
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
-  if (!isPrPress(p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
   if (!isPrPress(p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
   if (!isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
   // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
   if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
   const outcome = await started.finish()
+  if (outcome.wakesAfterSettle) later($, SETTLED_MS, () => wakeAfterSettle($))
   if (effects.some(effect => effect.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
   if (!isPressConfirmed(outcome)) await keepReply()
   if (!outcome.isRowFailed) return
@@ -1829,12 +1789,8 @@ async function undoKeyAfterPress(
   if (surface !== 'terminal' || !paneState.isInlineTerminalPane) return null
   const { view } = await drawnState($)
   if (isPrPress(p)) {
-    if (p.action === 'pr-dismiss-merged') {
-      const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
-      return nearest ? `undo-${prMarkId(nearest.pr.ref)}` : null
-    }
-    if (p.action !== 'pr-dismiss') return null
-    return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
+    const block = prUndoBlockAfter(view.prs.drawn, p)
+    return block ? `undo-${block}` : null
   }
   const row = allRows(view).find(r => r.id === p.id)
   return row?.state.is === 'settled' && row.actions.some(a => a.press.action === 'undo')
@@ -1919,7 +1875,7 @@ async function runDemoPress(
       p,
       now,
       { settleWindowMs: SETTLED_MS, holds },
-      { comparePage: comparePagePath($) },
+      { comparePage: comparePagePath($), compareInBackground: isCompareInBackground('claude-code') },
     )
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
@@ -2063,14 +2019,8 @@ async function drawnState(
 
   const isUnread = demo === null && unreadable === conversation.id
 
-  const view = sessionView(
-    drawnSession(session, drawn, demo !== null, now),
-    now,
-    SETTLED_MS,
-    CAN_CATCH_UP,
-    holds,
-    drawn.notes,
-  )
+  const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, SETTLED_MS, holds, drawn.notes)
+  redrawAtNextFold($, view, presence.lastTypedMessageAt, now)
 
   return {
     ...drawn,
@@ -2109,10 +2059,7 @@ async function registerInboxCommand($: EngineInterface) {
   return $.command.register({ name: 'inbox', description, immediate: true }).catch(() => undefined)
 }
 
-/**
- * Whether the desktop app started this process. Claude Code sets `CLAUDE_CODE_CHILD_SESSION` for every command it
- * runs and the app leaves it out, so a `claude -p` run from a desktop session inherits the entrypoint but not this.
- */
+/** Detects Claude Desktop, whose process has an entrypoint but no child-session variable. */
 async function isStartedByDesktopApp($: EngineInterface) {
   const [entrypoint, childSession] = await Promise.all([
     $.env.get('CLAUDE_CODE_ENTRYPOINT'),
@@ -2183,32 +2130,44 @@ async function initializeInbox($: EngineInterface) {
     }),
     ...(feed ? [$.clock.every(FEED_POLL_MS, () => void feed())] : []),
   ]
-  await loadConversation($, await $.session.id())
+  await loadConversation($, await $.session.id(), 'mod-start')
+  void startInHerdr(herdrCalls($), () => redrawPane($))
+  mod.stopHerdrPresses?.()
+  mod.stopHerdrPresses = await listenForHerdrPresses(
+    herdrCalls($),
+    () => conversation.id,
+    (id, f) => herdrPress($, id, f),
+  )
+  // After loadConversation, which brings saved state up to date. A band or pane drawn while the mod was off read no
+  // state, so no state write draws it again.
+  $.ui.invalidate('ui.render')
   void feed?.()
   await redrawAfterReload($)
 }
 
-/**
- * Loads the conversation `id` the session runs: at the start, and after
- * /clear, /resume or /branch, which switch conversations under a new session
- * id without a session.start.
- */
-function loadConversation($: EngineInterface, id: string, forkedFrom?: string): Promise<void> {
+/** Loads the conversation id at start and after /clear, /resume or /branch. */
+function loadConversation($: EngineInterface, id: string, by: LoadedBy, forkedFrom?: string): Promise<void> {
   const revision = ++sessionState.loadRevision
-  return prepareConversation($, id, revision, forkedFrom)
+  return prepareConversation($, id, revision, by, forkedFrom)
 }
 
-async function prepareConversation($: EngineInterface, id: string, revision: number, forkedFrom?: string) {
+async function prepareConversation(
+  $: EngineInterface,
+  id: string,
+  revision: number,
+  by: LoadedBy,
+  forkedFrom?: string,
+) {
   const writesAtRead = sessionState.savedWrites
-  const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled($, id)])
+  const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled(saveEngine($), id)])
   if (revision !== sessionState.loadRevision) return
   const applying = sessionState.applyingConversation.then(async () => {
     if (revision !== sessionState.loadRevision) return
     // A write to a saved session after the read above, such as a refused Done message, is read again.
-    const latest = writesAtRead === sessionState.savedWrites ? saved : await readSettled($, id)
+    const latest = writesAtRead === sessionState.savedWrites ? saved : await readSettled(saveEngine($), id)
     // A fork continues its parent's inbox, so a new id with no saved state starts from the parent's.
-    const parent = latest?.session || !forkedFrom ? null : await readSettled($, forkedFrom)
-    await applyConversation($, id, revision, sessionRoot, latest, parent?.session)
+    const parent = latest?.session || !forkedFrom ? null : await readSettled(saveEngine($), forkedFrom)
+    await applyConversation($, id, revision, by, sessionRoot, latest, parent?.session)
   })
   sessionState.applyingConversation = applying.catch(() => undefined)
   return applying
@@ -2238,16 +2197,26 @@ async function noteAgentWork($: EngineInterface, agentId: string) {
 }
 
 async function notePlace($: EngineInterface) {
-  const root = conversation.root
-  if (!root) return
-  const branch = await branchIn(processRun($), root)
-  await commit($, currentOwner(), s => placed(s, root, branch)).catch(() => undefined)
+  const change = await placeNow($)
+  if (change) await commit($, currentOwner(), change).catch(() => undefined)
+}
+
+/** The change that saves where the session runs now. Null when that folder is not known. */
+async function placeNow($: EngineInterface): Promise<((s: Session) => Session) | null> {
+  const folder = await sessionFolder(commandCalls($))
+  if (!folder) return null
+  const left = conversation.root
+  conversation.root = folder
+  const saved = (await read($, SESSION)).place?.folder ?? null
+
+  return placeChange(commandCalls($), saved, left, folder)
 }
 
 async function applyConversation(
   $: EngineInterface,
   id: string,
   revision: number,
+  by: LoadedBy,
   sessionRoot: string,
   saved: { session: SavedRecord | undefined } | null,
   parent?: SavedRecord,
@@ -2268,7 +2237,10 @@ async function applyConversation(
   const loadedAt = await $.clock.now()
   // The pane now shows another conversation, so it starts a new showing.
   await syncShown($, { since: loadedAt })
-  await replaceDrawn($, s => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
+  const turns = await $.session.turns().catch(() => null)
+  const cutOff = (s: Session) => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt))
+  // Before notePlace's save, so this conversation is never saved with the previous one's tool fields.
+  await replaceDrawn($, s => withLoadedToolFields(cutOff(s), by, saved?.session, parent, turns))
   if (revision !== sessionState.loadRevision) return
   void notePlace($)
   const isFresh = isBlankLedger(current)
@@ -2278,24 +2250,20 @@ async function applyConversation(
     )) === id
   if (!isLoading()) return
   if (saved !== null) await bringBack($, parent ?? saved.session, isLoading, parent !== undefined)
-  if (!isLoading()) return
   const { ledger, presence } = await read($, SESSION)
   const isEmpty = isBlankLedger(ledger)
   const needsCatchUp =
     presence.ledgerState !== 'current' ||
     presence.turnsStarted > presence.turnsApplied ||
-    (!isUnread && isEmpty && (await $.session.turns().catch(() => 0)) > 0)
+    (!isUnread && isEmpty && (turns ?? 0) > 0)
   if (!isLoading()) return
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
-  if (ledger.prs.length > 0) void fetchPrs($, false)
+  void wakeForHeldSends($).catch(() => undefined)
+  if (tabPrs(ledger).length > 0) void fetchPrs($, false)
 }
 
-/**
- * Brings back a saved session into a conversation that has not run yet. A fork takes only its parent's ledger.
- * A message the saved session still waited on may never arrive now, so it reads unconfirmed, and its sent record is
- * dropped. A kept record would take the arrival of the same message sent again.
- */
+/** Restores a saved session before it runs. A fork takes its parent's ledger; pending sends become unconfirmed. */
 async function bringBack(
   $: EngineInterface,
   saved: SavedRecord | undefined,
@@ -2309,24 +2277,8 @@ async function bringBack(
     isBrought = false
     if (!isLoading() || !isBlankLedger(s.ledger)) return s
     isBrought = true
-    if (isFork) return forkedFrom(s, loaded)
-    const lastActions = Object.fromEntries(
-      Object.entries(loaded.lastActions).map(([id, a]) => [
-        id,
-        a.delivery?.state === 'queued' ? { ...a, delivery: { ...a.delivery, state: 'unconfirmed' as const } } : a,
-      ]),
-    )
-    // The stop and the turn belong to the process that saved them. Whether a turn runs now is this process's.
-    const { isTurnRunning } = s.presence
 
-    return cutOffUpdate({
-      ...loaded,
-      lastActions,
-      sent: [],
-      stop: null,
-      turn: emptySession().turn,
-      presence: { ...loaded.presence, isTurnRunning },
-    })
+    return isFork ? forkedFrom(s, loaded) : broughtBack(s, loaded)
   })
   if (isBrought && !isFork)
     await update($, AWAY, a => (isLoading() ? { ...a, lastActiveAt: saved.savedAt, isAway: true } : a))
@@ -2352,6 +2304,7 @@ async function forgetRowState($: EngineInterface) {
     update($, TYPING, () => null),
     update($, UNFOLDED, () => []),
     update($, STATUS_UNFOLDED, () => []),
+    update($, CLOSED_ALL, () => []),
     update($, OPTIONS_SHOWN, () => []),
     update($, DRAFTS, () => ({})),
     update($, DISCARDED, () => ({})),
@@ -2369,7 +2322,7 @@ async function readAgain($: EngineInterface) {
     return
   }
   await redrawPane($)
-  const saved = await readSaved($, id)
+  const saved = await readSaved(saveEngine($), id)
   if (conversation.id !== id) return
   sessionState.isReadingAgain = false
   if (saved !== null) {
@@ -2382,7 +2335,7 @@ async function readAgain($: EngineInterface) {
     if ((hasRun && saved.session) || (isBlankLedger(ledger) && (await $.session.turns().catch(() => 0)) > 0))
       await catchUpNow($)
     void publishStatus($)
-    if (ledger.prs.length > 0) void fetchPrs($, false)
+    if (tabPrs(ledger).length > 0) void fetchPrs($, false)
     void followNewRows($).catch(() => undefined)
   }
   await redrawPane($)
@@ -2417,7 +2370,19 @@ export const register: Register = on => {
     // from the event. A start with --resume also raises this, for the conversation
     // session.start already loaded.
     if (mod.isOn && e.session_id !== conversation.id)
-      await loadConversation($, e.session_id, e.source === 'fork' ? conversation.id : undefined)
+      await loadConversation($, e.session_id, e.source, e.source === 'fork' ? conversation.id : undefined)
+
+    return r
+  })
+
+  // The Claude app starts a new session in a spare folder and runs SessionStart only once it moves it to the project.
+  on('classic.SessionStart', { source: 'startup' }, async ($, e, next) => {
+    const r = await next(e)
+    const seen = conversation.root
+    if (mod.isOn && seen !== '' && (await sessionFolder(commandCalls($))) !== seen) {
+      void notePlace($)
+      void isPrsTabShown($).then(isShown => fetchPrs($, isShown))
+    }
 
     return r
   })
@@ -2468,9 +2433,10 @@ export const register: Register = on => {
     // session has changed conversations. A reload that classic.SessionStart already did leaves the ids equal.
     const sessionId = await $.session.id()
     if (sessionId !== conversation.id) {
-      const parent = sessionState.endReason === 'resume' ? conversation.id : undefined
+      const reason = sessionState.endReason
       sessionState.endReason = null
-      await loadConversation($, sessionId, parent || undefined)
+      const parent = reason === 'resume' ? conversation.id : undefined
+      await loadConversation($, sessionId, reason === 'clear' ? 'clear' : 'resume', parent || undefined)
     }
     const origin = e.origin
     // send() already recorded this mod's own prompts.
@@ -2594,10 +2560,7 @@ export const register: Register = on => {
       const waitsOn = steps.filter(step => step.isWaitForEnd).map(step => step.name)
       if (taskId && isDelegateCommand) {
         for (const name of waitsOn) for (const id of [taskId, e.tool_use_id]) if (id) delegateWaits.set(id, name)
-      } else if (taskId) {
-        const child = { ref: taskId, kind: 'background', name: e.description || e.command } as const
-        await noteChild($, (o, at) => childStarted(o, child, at, { reportsActivity: false }))
-      } else if (waitsOn.length > 0) {
+      } else if (!taskId && waitsOn.length > 0) {
         await noteChild($, (o, at) => delegateWaitsEnded(o, e.command, at))
       }
 
@@ -2610,11 +2573,11 @@ export const register: Register = on => {
 
       return ran
     }
-    if (e.tool === 'Monitor' || e.tool === 'Workflow') {
+    if (e.tool === 'Workflow') {
       const ran = await run()
-      const child = startedTaskOf(e.tool, ran.result, e.description)
+      const child = startedWorkflowOf(ran.result, e.description)
       if (child) {
-        if (child.kind === 'workflow' && e.tool_use_id) workflowTasks.set(e.tool_use_id, child.ref)
+        if (e.tool_use_id) workflowTasks.set(e.tool_use_id, child.ref)
         await noteChild($, (o, at) => childStarted(o, child, at))
       }
 
@@ -2630,9 +2593,12 @@ export const register: Register = on => {
       const wasDismissed = outcome.kind === 'dismissed'
       if (wasDismissed) sessionState.isDialogDismissed = true
       const line = dialogActivity(asked, outcome)
+      const endedAt = await $.clock.now()
       await commit($, currentOwner(), s => {
         const noted = noteTurnActivity(s, line)
-        return wasDismissed ? noteDialog(noted, null, asked) : noted
+        if (wasDismissed) return noteDialog(noted, null, asked)
+
+        return outcome.kind === 'answered' ? noteAnsweredDialog(noted, asked, outcome.answer, endedAt) : noted
       }).catch(() => undefined)
 
       return ran
@@ -2716,12 +2682,11 @@ export const register: Register = on => {
     await closeDialogs($, null)
     if (!mod.isOn) return r
     const endedAt = await $.clock.now()
-    const root = conversation.root
     const run = processRun($)
-    const [listed, inHerdr, branch] = await Promise.all([
+    const [listed, inHerdr, place] = await Promise.all([
       $.agent.list().catch(() => null),
       read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, run)),
-      root ? branchIn(run, root) : null,
+      placeNow($),
     ])
     const running =
       listed && new Set(listed.filter(a => a.status === 'running' || a.status === 'pending').map(a => a.id))
@@ -2731,10 +2696,10 @@ export const register: Register = on => {
       const withDelegates = inHerdr
         ? statusChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt))
         : withSubagents
-      return root ? placed(withDelegates, root, branch) : withDelegates
+      return place ? place(withDelegates) : withDelegates
     })
     if (e.reason === 'error' && !sessionState.hasStopFromError) await setStopFromLastReply($)
-    void wakeForDone($).catch(() => undefined)
+    void wakeAfterSettle($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
     const reply = turnReply([turnReply(sessionState.stepTexts, e.answer), sessionState.turnBox ?? ''])
     const isAnswered = e.reason === 'answer' && reply !== ''
@@ -2752,10 +2717,11 @@ export const register: Register = on => {
     await commit($, currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
     updateLedger($)
     const after = await read($, SESSION)
-    const linksNewPr = prRefs(reply).some(ref => !before.ledger.prs.includes(ref))
-    const tracksPrs = after.ledger.prs.length > 0 || after.prViews.branchRef !== null
-    if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now)))
-      void fetchPrs($, await isPrsTabShown($))
+    const linksNewPr = after.ledger.prs.some(ref => !before.ledger.prs.includes(ref))
+    const tracksPrs = tabPrs(after.ledger).length > 0 || after.prViews.branchRef !== null
+    const isTabShown = await isPrsTabShown($)
+    if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now, isTabShown)))
+      void fetchPrs($, isTabShown)
 
     return r
   })
@@ -2800,21 +2766,23 @@ export const register: Register = on => {
     await ensureOn($)
     const isShown = (await read($, DEMO)) !== null
     const args = e.args.trim().split(/\s+/).join(' ')
+    if (args === 'herdr') return { text: await askHerdrModAgain(herdrCalls($), () => showInbox($, null)) }
     if (args === 'demo' || args === 'demo recording') await setDemo($, !isShown, args === 'demo recording')
     else if ((await read($, TAB)) === 'prs') await findPrs($)
     const [isDemo, isDemoRecording] = await Promise.all([read($, DEMO).then(d => d !== null), read($, DEMO_RECORDING)])
-    await showInbox($)
+    const note = await showInbox($, args || isDemo ? null : openInHerdr(herdrCalls($)))
 
     return {
       text: !isDemo
-        ? 'Opened the inbox.'
+        ? (note ?? 'Opened the inbox.')
         : isDemoRecording
           ? 'Showing sample entries without their notices, for a recording. Run /inbox demo to go back.'
           : 'Showing sample entries in the inbox. Run /inbox demo again to go back.',
     }
   })
 
-  on('ui.press', async (_$, e, next) => {
+  on('ui.press', async ($, e, next) => {
+    if (e.requestId === PANE) await noteListInput($)
     if (e.requestId === PANE && e.surface === 'terminal') {
       if (e.element.startsWith('fold-') || e.element === 'hide-demo') cancelUndoScroll()
       else suspendUndoReveal()
@@ -2826,15 +2794,26 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('ui.scroll', { requestId: PANE }, async (_$, e, next) => {
-    if (e.origin.kind === 'person') cancelUndoScroll()
+  on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
+    if (e.origin.kind === 'person') {
+      cancelUndoScroll()
+      await noteListInput($)
+    }
     return next(adjustScroll(e))
   })
 
   on('ui.message', async ($, e, next) => {
     const r = await next(e)
     if (e.requestId !== PANE) return r
-    const data = e.data as { tab?: unknown; isUnfolded?: unknown; hover?: unknown; key?: unknown } | null
+    await noteListInput($)
+    const data = e.data as {
+      tab?: unknown
+      isUnfolded?: unknown
+      hover?: unknown
+      key?: unknown
+      isPointer?: unknown
+    } | null
+    if (data?.isPointer === true) return r
     const shown = isShownTab(data?.tab) ? data.tab : null
     const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
     if (e.element === 'tabs' && shown) await showTab($, shown)
@@ -2847,7 +2826,7 @@ export const register: Register = on => {
         surface: e.surface,
       })
     else if (e.element.startsWith('links-') && followUp && typeof data?.key === 'string') {
-      // The Client is not a focusable key, so the next drawing moves the focus, to the hint first.
+      // The Client is not a focusable key, so the next drawing moves the focus to the hint, when it is drawn.
       paneState.focusedKey = e.element
       paneState.focusHint = focusHintFor(data.key)
       followUp({
@@ -2910,16 +2889,19 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!mod.isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, stop, view, showsDemoNotices, now }, theme] = await Promise.all([drawnState($), read($, THEME)])
-    if (!stop && isBlankLedger(ledger)) return next(e)
+    const [{ ledger, stop, view, isDemo, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
+      drawnState($),
+      read($, THEME),
+    ])
+    if (!stop && isBlankLedger(ledger) && !isMaybeStale(view, isUnread)) return next(e)
     // Every mod shares the band, and a tree without the drawing from next(e)
     // hides what the mods after this one draw there.
     const theirs = await next(e)
     const pal = paletteFor(theme, lookOf(e.surface))
-    const counts = LISTED_TABS.filter(t => view[t.id].count > 0).map(t => (
+    const counts = bandCounts(view).map(c => (
       <Text>
-        <Text>{t.label} </Text>
-        <Text color={pal.tone[t.id] ?? pal.mark[t.id]}>{view[t.id].count}</Text>
+        <Text>{c.label} </Text>
+        <Text color={pal.tone[c.id] ?? pal.mark[c.id]}>{c.count}</Text>
       </Text>
     ))
 
@@ -2933,12 +2915,12 @@ export const register: Register = on => {
             {counts.length > 0 ? (
               counts.flatMap((p, n) => (n === 0 ? [p] : [<Text dimColor>{DOT}</Text>, p]))
             ) : (
-              <Text dimColor>Nothing needed</Text>
+              <Text dimColor>{noCountsText(view, isUnread)}</Text>
             )}
           </Text>
         </Box>
         {showsDemoNotices ? <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} /> : null}
-        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
+        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($, isDemo)} />
       </Box>
     )
     if (!stop)
@@ -2968,7 +2950,7 @@ export const register: Register = on => {
         {canResume ? (
           <Button
             key="resume"
-            label={sessionState.resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+            label={resumeLabel(sessionState.resuming?.is === 'sending')}
             onPress={() => void resume($)}
           />
         ) : null}
@@ -3007,20 +2989,6 @@ export const register: Register = on => {
     const isNarrowDesktop = look === 'desktop' && e.props.bodyColumns < DESKTOP_WIDE_AT
     const isAgeInSide = look === 'terminal'
     const isAgeDropped = isNarrowDesktop || isAgeInSide
-    const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-    // The Codex tab wraps a suffix too long for one line between words, so this does too. A glued suffix wider than a
-    // line together with the title's last word, which DOT's leading figure space holds to it, is broken mid-word.
-    const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
-      const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
-      if (fits(lastWord + after)) return glued(after)
-      const dot = after.startsWith(DOT) ? DOT : ''
-      const rest = after.slice(dot.length)
-      const firstBreak = rest.indexOf(' ')
-
-      return (
-        dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
-      )
-    }
     const isInline = e.props.placement === 'inline'
     paneState.isInlinePane = isInline
     if (e.surface === 'terminal') {
@@ -3033,7 +3001,7 @@ export const register: Register = on => {
         ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
-      { prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
+      { prViews: prState, lastActions, notes, turns, stop, view, isDemo, showsDemoNotices, isUnread, now },
       savedTab,
       savedPage,
       selection,
@@ -3047,6 +3015,7 @@ export const register: Register = on => {
       termProgram,
       statusSelection,
       statusUnfolded,
+      closedAll,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -3062,6 +3031,7 @@ export const register: Register = on => {
       $.env.get('TERM_PROGRAM'),
       read($, STATUS_SELECTION),
       read($, STATUS_UNFOLDED),
+      read($, CLOSED_ALL),
       // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
       look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
@@ -3171,6 +3141,7 @@ export const register: Register = on => {
       updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
       updateUnfolded: fn => update($, UNFOLDED, fn),
       updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
+      updateClosedAll: fn => update($, CLOSED_ALL, fn),
       runPress: (p, surface) => runPress($, p, surface),
       readAgain: () => readAgain($),
       resume: () => resume($),
@@ -3196,15 +3167,16 @@ export const register: Register = on => {
     )
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
-    const prGroups = (isListShown ? shownPrs : [])
-      .map(d => ({
-        ...d,
-        checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
-        threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
-      }))
-      .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
-    const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
+    const prGroups = (isListShown ? shownPrs : []).map(d => ({
+      ...d,
+      ...prBlockRows(d.pr, d.state.is === 'settled', {
+        thread: t => threadRow(d.pr, t),
+        check: c => checkRow(d.pr, c),
+      }),
+    }))
     const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
+    const prRefreshKeys = (view.prs.refresh?.actions ?? []).map(a => prKeyAction(a, 'prs'))
+    const prClearKeys = view.prs.clear.map(a => prKeyAction(a, 'prs'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -3236,9 +3208,9 @@ export const register: Register = on => {
       desktopRowTextPt,
       desktopLabel,
       keyRow,
-      textKey,
       keyBindings,
       keyLines,
+      terminalKeyCells,
       actionRows,
       rowActions,
       fieldActions,
@@ -3349,7 +3321,7 @@ export const register: Register = on => {
     const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
-    const { banner, tabs, rail, statusBlock, footer } = paneFrame(
+    const { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines } = paneFrame(
       {
         ...client,
         e,
@@ -3385,9 +3357,11 @@ export const register: Register = on => {
       groupTitle,
       section,
       sections,
+      terminalSectionGap,
       titleGap,
       foldButton,
       foldRow,
+      desktopFoldLines,
       closedFold,
       undoPlace,
       settledContent,
@@ -3396,6 +3370,7 @@ export const register: Register = on => {
       {
         ...client,
         look,
+        listColumns,
         Text,
         inlineText,
         pal,
@@ -3430,6 +3405,7 @@ export const register: Register = on => {
         view,
         isUnread,
         unfolded,
+        closedAll,
         Button,
         stop,
         glued,
@@ -3470,7 +3446,8 @@ export const register: Register = on => {
       Button,
       view,
       prOrderKeys,
-      prTabKeys,
+      prRefreshKeys,
+      prClearKeys,
       prGroups,
       section,
       undoPlace,
@@ -3503,7 +3480,7 @@ export const register: Register = on => {
       branch,
       desktopHairline,
     })
-    const { statusRowLine, statusKeys, statusView } = paneStatus(
+    const { statusRowLine, statusKeys, statusView, statusTops } = paneStatus(
       {
         e,
         listColumns,
@@ -3520,16 +3497,18 @@ export const register: Register = on => {
         drafts,
         now,
         markWidth,
-        desktopHairline,
         markGlyph,
         desktopFrame,
         keyRow,
-        textKey,
+        keyLines,
+        terminalKeyCells,
         emptyState,
         sections,
+        terminalSectionGap,
         section,
         foldRow,
         foldButton,
+        desktopFoldLines,
         statusUnfolded,
       },
       handlers,
@@ -3553,13 +3532,13 @@ export const register: Register = on => {
     })
 
     const move = (step: number) => {
-      const to = Math.min(Math.max(at + step, 0), ids.length - 1)
+      const to = steppedIndex(at, step, ids.length)
       void select($, tab, ids[to] ?? '', to)
     }
     const canMove = !isStatusShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
     const moveStatus = (step: number) => {
       const from = statusPressRows.findIndex(r => r.id === statusKeyRow?.id)
-      const to = statusPressRows[Math.min(Math.max(from + step, 0), statusPressRows.length - 1)]
+      const to = statusPressRows[steppedIndex(from, step, statusPressRows.length)]
       if (to) void selectStatusRow($, to.id)
     }
     const moveBy = (by: number) =>
@@ -3582,30 +3561,46 @@ export const register: Register = on => {
     const selectedRow = isStatusShown || isHelpShown || document ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
-    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].flatMap(hotkey =>
-      statusRowKeys.some(k => k.hotkey === hotkey)
-        ? []
-        : [
-            {
-              key: `no-row-${hotkey}`,
-              label: 'Close',
-              hotkey,
-              kind: 'view',
-              onPress: () => undefined,
-            },
-          ],
-    )
     const rowKeys = [
       ...statusRowKeys,
       ...(document
         ? [reader.back()]
         : selectedActions
           ? [...selectedActions.keys, ...selectedActions.more]
-          : closeKeysWithoutRow),
-      ...(tab === 'prs' && !isHelpShown && !document ? [...prOrderKeys, ...prTabKeys] : []),
+          : closeKeysWithoutRow(statusRowKeys)),
+      ...(tab === 'prs' && !isHelpShown && !document ? [...prOrderKeys, ...prClearKeys] : []),
+      // The goal's Undo takes the undo key on the Status, where no list row closes.
+      ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)
+        ? []
+        : [
+            undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) =>
+              runPress($, p, surface),
+            ),
+          ]),
     ]
 
-    // Only Button hotkeys reach this pane; a hidden Button binds each key.
+    // A pane takes a key
+    // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
+    // are Buttons in a hidden Box.
+    const isLookCounted = isStatusShown && !isHelpShown && !isDemo
+    if (isLookCounted) {
+      // The lines above the Status: the tabs, unless the rail draws them beside it, and the space under them, which
+      // desktop counts in half lines.
+      const terminalTabLines = hasRail ? 0 : isTabRowFit ? (isInline ? 1 : 3) : null
+      const tabLines = look === 'desktop' ? (hasRail ? null : desktopTabLines) : terminalTabLines
+      const isChromeKnown = tabLines !== null && !statusBlock && !showsDemoNotices
+      const spaceLines = hasRail ? 0 : look === 'desktop' ? desktopSpaceLines(blankLine) : blankLine
+      const top = isChromeKnown ? tabLines + spaceLines : null
+      const rounding = look === 'desktop' ? DESKTOP_OFFSET_ROUNDING : 0
+      const pageTop = top === null ? null : { least: top - rounding, most: top + rounding }
+      noteStatusDrawn({
+        pageTop,
+        tops: statusTops(),
+        scroll: e.props.scroll,
+        now,
+        isUnplacedShown: look === 'terminal',
+      })
+    }
     const tabView = document
       ? documentView()
       : isHelpShown
@@ -3662,7 +3657,7 @@ export const register: Register = on => {
         : paneState.focusHint
       const opensField = hint?.startsWith('type-') && keys.has(hint)
       if (!keys.has(paneState.focusedKey) || opensField) {
-        const focusKey = [hint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
+        const focusKey = hint && keys.has(hint) ? hint : null
         paneState.focusedKey = focusKey
         paneState.focusHint = null
         // After this hook returns, since a focus asked from inside a drawing's own hook cannot wait on it.

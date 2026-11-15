@@ -10,15 +10,15 @@ Every press is one of five kinds. The kind decides what the screen shows at once
 
 | Kind | What it does | What shows at once |
 |---|---|---|
-| **Talk** | Sends a message asking the agent to talk or draft. The row's work is not given away. | The row stays open and in the count. Its top line reads `Explaining…` or `Discussing…` until the reply, then `✓ Explained · 1m ago` or `✓ Discussed · 1m ago`. Delivery feedback below can replace that text. The press adds no line. The button reads "Explain again" or "Discuss again". |
+| **Talk** | Sends a message asking the agent to talk or draft. The row's work is not given away. | The row stays open and in the count. Its top line reads `Explaining…` or `Discussing…`, beside a running mark, until the reply, then `✓ Explained · 1m ago` or `✓ Discussed · 1m ago`. Delivery feedback below can replace that text. The press adds no line. The button reads "Explain again" or "Discuss again". |
 | **Hand-off** | Sends a message that gives the work to the agent. | The row closes to its one line, its handle a ✓, and leaves the count. Its age reads the press, as `Run load script · 1m ago`. Unconfirmed delivery replaces the feedback and removes the ✓. The next row that waits opens. It stays closed after the agent's reply, and the re-entry rule below says when it counts again. A PR block, which is always open, records `✓ Asked to resolve conflicts` on the block. |
 | **Local** | Opens or copies on the person's machine. | A note on the row at once: `Opening settings.json…` or `Copying npm test…`. The result replaces it: `✓ Opened settings.json`, or in red, `Could not open settings.json: it was moved`. |
-| **Mark** | Changes state, and sends nothing while it can be undone. | The row settles in place with the Mark's own label, `✓ Done` or `✓ Dismissed`, and an [Undo] button, then leaves after 5.12 s. The next row that waits opens. |
+| **Mark** | Changes state, and sends nothing while it can be undone. An answer is a Mark too: its message waits out the Undo window, then sends. | The row settles in place with the Mark's own label, `✓ Done` or `✓ Dismissed`, and an [Undo] button, then leaves after 5.12 s. An answer's mark stays blank until its message arrives. The next row that waits opens. |
 | **View** | Changes only what is on screen, or reloads it. | The change itself: a view opens or closes, a row unfolds, a tab switches, a status reads `Refreshing PRs…`. |
 
 The View kind covers [Open inbox], the tab buttons, [All 7 options], the Closed fold, Show demo and Hide demo, Undo and Retry. [Try again] repeats a failed press, so it takes that press's kind.
 
-**A finding's Fix** is a Hand-off that settles the row in place as `✓ Fix` or `✓ Do it`, with Undo. The finding then moves to its Closed fold. It stays open in the ledger until the agent closes it. **A finding's Discuss** is a Talk, so the finding stays open after it. A finding's Reply is a Hand-off that folds the row, and the re-entry rule below applies.
+**A finding's Fix** is a Hand-off that settles the row in place as `Fix` or `Do it`, with Undo. Its message waits out the Undo window, so Undo takes the Fix back and nothing is sent. The ✓ shows once the message arrives. The finding then moves to its Closed fold. It stays open in the ledger until the agent closes it. **A finding's Discuss** is a Talk, so the finding stays open after it. A finding's Reply is a Hand-off that folds the row, and the re-entry rule below applies.
 
 **Done on a task** can tell the agent after its Undo ends. When the agent is idle and waits on the task, one message goes out once the row leaves: `Done: <ask>`. Done presses on several tasks in a row go as one message.
 

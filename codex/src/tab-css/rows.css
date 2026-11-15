@@ -100,6 +100,12 @@
 .line .after {
   color: var(--muted);
 }
+/* A collapsed row's status takes one line, cut with an ellipsis, as its meta and Why lines do. */
+.row.collapsed .line .after {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .row.collapsed .line .after:not(.tone-error) {
   color: var(--age);
 }
@@ -137,7 +143,8 @@
 .row.collapsed:not(:hover) .line .meta {
   color: var(--age);
 }
-.line .holds-up {
+.line .holds-up,
+.line .rec-line {
   display: block;
   color: var(--muted);
   font-weight: 400;
@@ -145,7 +152,25 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row.selected .line .meta {
+.row.selected .line .meta,
+.row.closing .line .meta {
+  display: none;
+}
+.row.selected .line .rec-line {
+  white-space: normal;
+}
+/* Drawn while the row is open and while it closes, so collapse() measures the closed line without it. */
+.line .context-line {
+  display: none;
+  color: var(--muted);
+  font-weight: 400;
+}
+.row.selected .line .context-line,
+.row.closing .line .context-line {
+  display: block;
+}
+.row.closing .closed-only,
+.row.collapsed:not(.closing) .open-only {
   display: none;
 }
 .quote {

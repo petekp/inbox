@@ -1,9 +1,10 @@
 import { linkDialogs } from './dialogs'
+import { closedAt } from './ledger-close'
 import type { Host } from './model-text'
-import { applyPrPress } from './pr-tab'
+import { applyPrPress, withFinishedPrsSettled } from './pr-tab'
 import { isPrPress, pressRowId } from './pr-press'
 import { isViewKept } from './pr-views'
-import { itemPrSteps } from './pr-fetch'
+import { itemPrSteps, tabPrs } from './pr-fetch'
 import { withOrderStatuses } from './pr-order'
 import type { Applied, PrPress } from './pr-press'
 import { actionId } from './press-labels'
@@ -13,10 +14,11 @@ import type { RowPress } from './presses'
 import { toolAnswer } from './tools'
 import type { AgentTool, ToolAnswer } from './tools'
 import { allRows } from './rows'
+import { isShownSince } from './timing'
 import { outAction, pressFeedbackIn } from './feedback'
 import type { Holds } from './timing'
 import type { RowState } from './rows'
-import type { PrViews, Session } from '../types'
+import type { PrFetchFailure, PrViews, Session, ToolFields } from '../types'
 import { sessionView } from './session-view'
 
 export type Pressed = Exclude<Applied, { stale: true }>
@@ -30,7 +32,7 @@ type DrawnWith = { settleWindowMs: number; holds: Holds }
  */
 function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number, drawn: DrawnWith): boolean {
   const rowId = pressRowId(p)
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds)
+  const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds)
   const row = allRows(view).find(r => r.id === rowId)
   const last = view.lastActions[rowId]
   const state: RowState = row?.state ?? { is: 'open' }
@@ -53,16 +55,18 @@ export function pressOn(
   const item = s.ledger.items.find(i => i.id === p.id)
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    holdMs: drawn.settleWindowMs,
+    extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
+    compareInBackground: texts.compareInBackground,
   })
   if ('stale' in r) return r
 
   return {
     ledger: r.ledger,
     lasts: r.last ? { [p.id]: r.last } : {},
-    drop: [],
+    drop: r.dropLast ? [p.id] : [],
     effects: r.effects,
     ...(r.reopenedId ? { reopenedId: r.reopenedId } : {}),
   }
@@ -116,7 +120,8 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
 
 /**
  * Applies a call of one of `agentTools` from the agent to the ledger. `result` is the tool's answer, and `personLine` the
- * line the person sees under the call, as `hooks/tools.ts:ToolAnswer` says.
+ * line the person sees under the call, as `hooks/tools.ts:ToolAnswer` says. `fields` are the input fields of the tools
+ * the agent has, as its host knows them.
  */
 export function recorded<S extends Session>(
   host: Host,
@@ -124,16 +129,36 @@ export function recorded<S extends Session>(
   tool: AgentTool,
   args: Record<string, unknown>,
   now: number,
+  fields: ToolFields,
 ): { state: S } & Omit<ToolAnswer, 'ledger'> {
-  const r = toolAnswer(host, s.ledger, tool, args, now)
+  const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt }
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields)
   const ledger = withOrderStatuses(r.ledger, s.prViews.views)
+  const state = linkDialogs({ ...s, ledger }, now)
+  const answered = ledger.items.find(i => !state.ledger.items.some(o => o.id === i.id))
+  if (!answered) return { state, result: r.result, personLine: r.personLine }
+  const outcome = state.ledger.closed.findLast(c => c.id === answered.id)?.outcome ?? ''
 
-  return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine }
+  return {
+    state,
+    result: `Not shown as open: the user already answered this in your dialog (${outcome}), so it closed with that answer.`,
+    personLine: `Closed: ${answered.ask}`,
+  }
 }
 
 /** `s` with the rows a look holds in place and the start of its showing, which `pruned` keeps the records of. */
 export function withHolds<S extends Session>(s: S, holds: Holds): S {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince }
+}
+
+/** The rows a look still draws in place: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. */
+export function rowsInPlace(s: Session): Set<string> {
+  const since = [
+    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
+    ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
+  ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
+
+  return new Set([...s.heldRows, ...since])
 }
 
 /** `s` as every write saves it. Closed asks and findings stay for this session; a PR view goes once `isViewKept` no longer keeps it. */
@@ -161,19 +186,30 @@ export function withFetchedPrs<S extends Session>(
   fetched: PrViews['views'],
   branchRef: string | null,
   isGhSignedOut: boolean | null,
+  now: number,
+  failure: PrFetchFailure | null = null,
+  unread: Record<string, string> = {},
   accountPrs: Pick<PrViews, 'accountPrs' | 'botPrSummaries'> | null = null,
 ): S {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
   const views = { ...s.prViews.views, ...fetched }
+  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, branchRef, {
+    now,
+    turnsStarted: s.presence.turnsStarted,
+  })
+  const stillUnread = Object.fromEntries(Object.entries(unread).filter(([ref]) => !(ref in views)))
 
   return {
     ...s,
-    ledger: withOrderStatuses(s.ledger, views),
+    lastActions,
+    ledger: withOrderStatuses(ledger, views),
     prViews: {
       views,
       branchRef,
       isFetching: false,
       ...(isSignedOut ? { isGhSignedOut: true } : {}),
+      ...(failure ? { failure } : {}),
+      ...(Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}),
       ...(accountPrs ?? {
         ...(s.prViews.accountPrs ? { accountPrs: s.prViews.accountPrs } : {}),
         ...(s.prViews.botPrSummaries ? { botPrSummaries: s.prViews.botPrSummaries } : {}),

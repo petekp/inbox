@@ -5,6 +5,7 @@ import { JSDOM } from 'jsdom'
 import { Window } from 'happy-dom'
 import { emptyState } from '../src/state'
 import { viewOf } from '../src/core'
+import { NO_HOLDS } from '../../hooks/timing'
 import { task } from './row-actions-fixtures'
 import TAB_HTML from '../src/tab.html'
 
@@ -32,7 +33,7 @@ test('the Codex row press opens a sanitized reader, and both back controls retur
   let rowPresses = 0
   const openedLinks: string[] = []
   const view = {
-    ...viewOf(state, Date.now(), { replies: {}, discarded: {}, shownSince: null }),
+    ...viewOf(state, Date.now(), NO_HOLDS),
     thread: 'document-reader',
     devPage: 'document-reader-page',
     serverBuild: SERVER_BUILD,

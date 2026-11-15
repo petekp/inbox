@@ -33,7 +33,7 @@ export const subjectsFor = (p: Pick<Piece, 'match'>, o: SessionStatus | null) =>
 
 export const label = (s: Subject) => `"${s.name}: ${s.text}"`
 
-export const SMALL_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'into', 'its'])
+const SMALL_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'into', 'its'])
 
 /** The words that tell two names apart: words of three letters or more but a few small ones, and every word with a number. */
 export function keyWords(text: string): Set<string> {
@@ -43,7 +43,7 @@ export function keyWords(text: string): Set<string> {
 }
 
 export const WORD = /[\p{L}\p{N}]+/gu
-export const restateWords = (text: string) => new Set((text.toLowerCase().match(WORD) ?? []).filter(w => w.length > 3))
+const restateWords = (text: string) => new Set((text.toLowerCase().match(WORD) ?? []).filter(w => w.length > 3))
 
 /** Whether `text` has most of the key words of `other`, as a restatement does. */
 export function restatesText(text: string, other: string): boolean {
@@ -61,15 +61,12 @@ export function headWords(o: SessionStatus | null): string {
 export const milestonesOf = (o: SessionStatus | null): Milestone[] =>
   o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []
 
-/** Every milestone name the page shows: the goal's, then the proposal's. */
-export const milestoneNames = (o: SessionStatus | null): string[] => [
-  ...milestonesOf(o).map(m => m.name),
-  ...(o?.proposedGoal?.milestones.map(m => m.name) ?? []),
-]
+/** Every milestone name the page shows. */
+export const milestoneNames = (o: SessionStatus | null): string[] => milestonesOf(o).map(m => m.name)
 
 export function modelTexts(o: SessionStatus | null): string[] {
   const head = o?.head ? [o.head.title, o.head.description] : []
-  const goal = [o?.goal?.text ?? '', o?.proposedGoal?.text ?? '', ...milestoneNames(o)]
+  const goal = [o?.goal?.text ?? '', ...milestoneNames(o)]
   const milestones = milestonesOf(o).flatMap(m => [m.text, m.was ?? ''])
 
   return [...head, ...goal, ...milestones, ...shownOf(o).flatMap(s => [s.name, s.text, s.was ?? ''])].filter(Boolean)

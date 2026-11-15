@@ -2,6 +2,8 @@ import { bannerOf, type BannerView, tabBarBanners, versionLabel } from './banner
 import { feedbackText } from './feedback'
 import { HELP_COPY } from './help'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from './layout'
+import { HERDR_ASK_BUTTONS, herdrAskBanner } from './herdr-ask'
+import { pressHerdrAsk } from './mod-herdr'
 import { TOOLS_REFUSED_TEXT } from './mod-records'
 import { mod } from './mod-state'
 import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
@@ -106,7 +108,8 @@ export function paneFrame(
   const leadColor: Record<BannerTone, string | undefined> = {
     error: pal.tone.error ?? pal.mark.error,
     warning: pal.tone.needsYou ?? pal.mark.needsYou,
-    notice: undefined,
+    notice: pal.key,
+    ask: pal.key,
   }
   /**
    * A banner as a rounded box. The terminal paints a Box's fill inside its border, so a docked banner's fill sits
@@ -152,40 +155,65 @@ export function paneFrame(
             {more.after ?? null}
             {b.body && !more.isBodyBelow ? ` ${b.body}` : ''}
           </Text>
-          {b.body && more.isBodyBelow ? <Text wrap="wrap">{b.body}</Text> : null}
+          {b.body && more.isBodyBelow ? (
+            <Text wrap="wrap" {...(b.tone === 'ask' ? { color: pal.muted } : {})}>
+              {b.body}
+            </Text>
+          ) : null}
           {more.extra ?? null}
         </Box>
         {more.action ? <Box flexShrink={0}>{more.action}</Box> : null}
       </Box>
     )
   }
+  /** The install question's buttons, on their own line under its text, while it asks. */
+  const herdrAskButtons = () =>
+    mod.herdrAsk?.is === 'asking' ? (
+      <Box
+        flexDirection="row"
+        columnGap={1}
+        marginTop={look === 'desktop' ? (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT : 0}
+      >
+        {HERDR_ASK_BUTTONS.map(a => (
+          <Button key={a.id} label={a.label} onPress={() => void pressHerdrAsk(a.isYes)} />
+        ))}
+      </Box>
+    ) : null
   const statusLines = tabBarBanners(
-    mod.toolsRefused ? [bannerOf('tools-refused', TOOLS_REFUSED_TEXT)] : [],
+    [
+      ...(mod.toolsRefused ? [bannerOf('tools-refused', TOOLS_REFUSED_TEXT)] : []),
+      ...(mod.herdrModFailure ? [bannerOf('herdr-mod-failed', mod.herdrModFailure)] : []),
+      ...[herdrAskBanner(mod.herdrAsk)].filter(b => b !== null),
+    ],
     shownStatus.error,
     lineNote
       ? { text: feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look), isError: false }
       : null,
     view.untrackedWork,
-  ).map(b => banner(b))
+  ).map(b => (b.kind === 'herdr-mod-ask' ? banner(b, { isBodyBelow: true, extra: herdrAskButtons() }) : banner(b)))
   const namesWidth = (naming: TabNaming) =>
     tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
-  const framedTabs = fitTabs(
-    FRAMED_TAB_LAYOUTS,
-    (naming, r) =>
-      namesWidth(naming) + 2 * r.pad.length * tabList.length + r.gap * (tabList.length - 1) <=
-      e.props.bodyColumns - 1 - r.right,
-  )
+  const fitsFramed = (naming: TabNaming, r: (typeof FRAMED_TAB_LAYOUTS)[number]) =>
+    namesWidth(naming) + 2 * r.pad.length * tabList.length + r.gap * (tabList.length - 1) <=
+    e.props.bodyColumns - 1 - r.right
+  const framedTabs = fitTabs(FRAMED_TAB_LAYOUTS, fitsFramed)
   const { pad } = framedTabs.layout
-  const inlineTabs = fitTabs(
-    INLINE_TAB_GAPS,
-    (naming, gap) => namesWidth(naming) + gap * (tabList.length - 1) <= e.props.bodyColumns - 3,
-  )
+  const fitsInline = (naming: TabNaming, gap: number) =>
+    namesWidth(naming) + gap * (tabList.length - 1) <= e.props.bodyColumns - 3
+  const inlineTabs = fitTabs(INLINE_TAB_GAPS, fitsInline)
+  /** Whether the terminal's tabs fit on one row, so the lines above a tab's page are known. */
+  const isTabRowFit = isInline
+    ? fitsInline(inlineTabs.naming, inlineTabs.layout)
+    : fitsFramed(framedTabs.naming, framedTabs.layout)
   const tabNaming = isInline ? inlineTabs.naming : look === 'desktop' ? tabSizes.naming : framedTabs.naming
   const hasTabLine = !isInline && look !== 'desktop'
   const tabLine = pal.tab ?? pal.divider
   // Terminal.app draws block characters from its font, which leaves a seam between a half block and the filled
   // line beside it. There a tab is its filled name line alone.
   const hasHalfLines = termProgram !== 'Apple_Terminal'
+  /** The lines the tabs' Client takes, which draws the tabs on desktop; null when the tabs are Buttons. */
+  const desktopTabLines =
+    hasClient && tabProps ? TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length : null
   const tabs = (
     <Box
       paddingLeft={isInline ? 2 : 1}
@@ -206,12 +234,7 @@ export function paneFrame(
         columnGap={isInline ? inlineTabs.layout : look === 'desktop' ? 2 : framedTabs.layout.gap}
       >
         {hasClient && tabProps ? (
-          <elements.Client
-            key="tabs"
-            module="./tabs-client.tsx"
-            height={TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length}
-            props={tabProps}
-          />
+          <elements.Client key="tabs" module="./tabs-client.tsx" height={desktopTabLines ?? 0} props={tabProps} />
         ) : null}
         {tabProps
           ? null
@@ -228,7 +251,9 @@ export function paneFrame(
                         {label}
                       </Text>
                     ) : (
-                      <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab(id)} />
+                      <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab(id)}>
+                        <Text color={pal.muted}>{label}</Text>
+                      </Button>
                     )}
                     {badge === null ? null : shownTab === id ? (
                       <Text bold color={tabTone(id)}>
@@ -302,7 +327,9 @@ export function paneFrame(
                   </Button>
                   <Box flexDirection="row" backgroundColor={pal.tab}>
                     {pad ? <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} /> : null}
-                    <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
+                    <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show}>
+                      <Text color={pal.muted}>{label}</Text>
+                    </Button>
                     {badge !== null ? (
                       <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
                         <Text color={tabTone(id)}> {badge}</Text>
@@ -355,7 +382,9 @@ export function paneFrame(
         return (
           <Box key={`rail-${id}`} flexDirection="row">
             <Button plain key={`tab-${id}-before`} label={TAB_PAD} hover={raise} onPress={show} />
-            <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
+            <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show}>
+              <Text color={pal.muted}>{label}</Text>
+            </Button>
             {badge !== null ? (
               <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
                 <Text color={tabTone(id)}> {badge}</Text>
@@ -396,7 +425,7 @@ export function paneFrame(
     </Box>
   )
 
-  return { banner, tabs, rail, statusBlock, footer }
+  return { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines }
 }
 
 export type PaneFrame = ReturnType<typeof paneFrame>

@@ -4,9 +4,17 @@ import { h, render } from 'preact'
 import { JSDOM } from 'jsdom'
 import { Window } from 'happy-dom'
 
+const browser = new Window()
+const activateBrowser = () =>
+  Object.assign(globalThis, {
+    window: browser,
+    document: browser.document,
+    parent: browser.parent,
+    matchMedia: () => ({ matches: false }),
+  })
+
 test('Codex Markdown links render as anchors with labels, open through the host, and fall back to the URL on denial', async () => {
-  const browser = new Window()
-  Object.assign(globalThis, { window: browser, document: browser.document, parent: browser.parent })
+  activateBrowser()
   const messages: { id: number; method: string; params: unknown }[] = []
   let isDenied = false
   browser.parent.postMessage = message => {
@@ -39,13 +47,7 @@ test('Codex Markdown links render as anchors with labels, open through the host,
 })
 
 test('a Codex linked title stays outside the row selector and its accessible label omits the URL', async () => {
-  const browser = new Window()
-  Object.assign(globalThis, {
-    window: browser,
-    document: browser.document,
-    parent: browser.parent,
-    matchMedia: () => ({ matches: false }),
-  })
+  activateBrowser()
   browser.parent.postMessage = message => {
     const sent = message as { id: number }
     browser.dispatchEvent(new browser.MessageEvent('message', { data: { jsonrpc: '2.0', id: sent.id, result: {} } }))
@@ -82,8 +84,7 @@ test('a Codex linked title stays outside the row selector and its accessible lab
 })
 
 test('Codex shows a question explanation with paragraph breaks and linked labels', async () => {
-  const browser = new Window()
-  Object.assign(globalThis, { window: browser, document: browser.document, parent: browser.parent })
+  activateBrowser()
   const { demoState } = await import('../src/demo')
   const { viewOf } = await import('../src/core')
   const { listsOf } = await import('../src/tab-rows')
@@ -102,8 +103,7 @@ test('Codex shows a question explanation with paragraph breaks and linked labels
 })
 
 test('Codex renders finding titles and details as links', async () => {
-  const browser = new Window()
-  Object.assign(globalThis, { window: browser, document: browser.document, parent: browser.parent })
+  activateBrowser()
   const { demoState } = await import('../src/demo')
   const { viewOf } = await import('../src/core')
   const { listsOf } = await import('../src/tab-rows')
@@ -130,8 +130,7 @@ test('Codex renders finding titles and details as links', async () => {
 })
 
 test('Codex shows option feedback with a label and links its settled outcome', async () => {
-  const browser = new Window()
-  Object.assign(globalThis, { window: browser, document: browser.document, parent: browser.parent })
+  activateBrowser()
   const { ListRow } = await import('../src/tab-list')
   const { NeedsYou } = await import('../src/tab-groups')
   const { demoState } = await import('../src/demo')
@@ -160,7 +159,11 @@ test('Codex shows option feedback with a label and links its settled outcome', a
   )
   assert.match(root.querySelector('.line')?.textContent ?? '', /PR 7171/)
   assert.doesNotMatch(root.querySelector('.line')?.textContent ?? '', /\[PR 7171\]/)
-  assert.equal(root.querySelector('.line a'), null)
+  assert.equal(root.querySelector('.line a')?.textContent, 'PR 7171')
+  assert.equal(
+    root.querySelector('.line a')?.getAttribute('href'),
+    'https://github.com/anthropics/claude-code/pull/7171',
+  )
   render(null, root)
   render(
     h(ListRow, {
@@ -217,8 +220,7 @@ test('Codex shows option feedback with a label and links its settled outcome', a
 })
 
 test('Codex shows the recorded Markdown excerpt under its item', async () => {
-  const browser = new Window()
-  Object.assign(globalThis, { window: browser, document: browser.document, parent: browser.parent })
+  activateBrowser()
   const { demoState } = await import('../src/demo')
   const { viewOf } = await import('../src/core')
   const { listsOf } = await import('../src/tab-rows')

@@ -6,24 +6,32 @@ import type { SessionView } from '../../hooks/session-view'
 import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
-import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies } from '../../hooks/timing'
-import { LISTED_TABS, shownTabs, isRowTab } from '../../hooks/tabs'
+import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt } from '../../hooks/timing'
+import type { ListInput } from '../../hooks/timing'
+import { shownTabs, isRowTab } from '../../hooks/tabs'
+import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
-import { GOAL_KEYS_ID, statusSelected } from '../../hooks/status-keys'
+import { statusSelected } from '../../hooks/status-keys'
+import { seenSubjectIds } from '../../hooks/status-page'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
-import { bannerLines, boxed, drawLine, paintMark } from './panel-draw'
+import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
-import { STOP_ID, linesOf } from './panel-lines'
+import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
+import type { HerdrAsk } from '../../hooks/herdr-ask'
 import { drawGoalPart, goalPartId } from './panel-goal'
-import { drawPageRow, pageRule } from './panel-page'
-import { footer, pageWindow, scrolled, tabBar } from './panel-tabs'
+import { drawPageRow } from './panel-page'
+import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { fit, indented, spread } from './panel-text'
 
 type ResumePress = { action: 'resume' }
-export type PanelPress = RowPress | PrPress | ResumePress
+/** An answer to the question before omp installs the inbox's Herdr mod. */
+type HerdrAskPress = { action: 'herdr-ask'; isYes: boolean }
+/** Shows every option of a question whose options fold. The panel handles it, so no host sees it. */
+type OptionsPress = { action: 'all-options'; id: string }
+export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {
@@ -37,9 +45,15 @@ export type PanelScreen = {
   version: string
   isNextBuild?: boolean
   isDemo?: boolean
+  /** The last read of the session failed, so the screen is the one before it. */
+  isReadFailed?: boolean
+  /** Why this omp could not install or update the inbox's Herdr mod, or null. */
+  herdrModFailure?: string | null
+  /** The question before omp installs the inbox's Herdr mod, while it shows. */
+  herdrAsk?: HerdrAsk | null
 }
 
-export type Tone = ToneName | 'accent' | 'sep'
+export type Tone = ToneName | 'key' | 'accent' | 'sep'
 
 /** The terminal styles the panel draws with. The host maps them onto the active omp theme. */
 export type Style = {
@@ -68,6 +82,10 @@ export type PanelUi = {
   notice: { text: string; at: number; isError: boolean } | null
   /** The groups whose closed rows show. Each starts folded. */
   unfolded: FoldKind[]
+  /** The groups whose earlier Closed lines the person opened. Folding the group closes them again. */
+  closedAll: FoldKind[]
+  /** The questions whose folded options the person opened. */
+  optionsShown: string[]
   /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
   statusUnfolded: string[]
   /** A Resume press for the stop that began at `stopAt`. */
@@ -91,6 +109,8 @@ export type PanelUi = {
   shownSince: number
   /** Whether Help shows in place of the tab's lines. It scrolls with `pageTop`, and switching tabs closes it. */
   isHelpShown: boolean
+  /** The person's latest run of keys, which keeps a row due to fold in place until they stop. */
+  listInput: ListInput | null
   /** A report opened from a row; kept only while this panel is open. */
   document: { title: string; text: string | null; error: string | null } | null
 }
@@ -104,6 +124,8 @@ export const INITIAL_UI: PanelUi = {
   discarded: {},
   notice: null,
   unfolded: [],
+  closedAll: [],
+  optionsShown: [],
   statusUnfolded: [],
   resuming: null,
   opened: null,
@@ -114,15 +136,21 @@ export const INITIAL_UI: PanelUi = {
   openedAt: 0,
   shownSince: 0,
   isHelpShown: false,
+  listInput: null,
   document: null,
 }
 
-export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince'>): Holds {
-  return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded, shownSince: ui.shownSince }
+export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince' | 'listInput'>): Holds {
+  return {
+    replies: heldReplies(ui.typing, ui.drafts),
+    discarded: ui.discarded,
+    shownSince: ui.shownSince,
+    listInput: ui.listInput,
+  }
 }
 
 /**
- * True while the view changes with the clock alone: a settled row's Undo counting down, a local press's result
+ * True while the view changes with the clock alone: a settled row's Undo counting down or its fold coming due, a local press's result
  * showing, a send waiting to read as queued, or a notice. Changes the host saves arrive as events instead.
  */
 export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): boolean {
@@ -135,13 +163,11 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
       (l.delivery?.state === 'queued' && now - l.at < QUEUED_AFTER_MS),
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
+  const settled = [...rows, ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
+  const placing = { lastTypedMessageAt: null, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS }
+  const isFoldComing = nextFoldAt(settled, placing) !== null
 
-  return (
-    rows.some(r => r.state.is === 'settled' && r.state.canUndo) ||
-    view.prs.drawn.some(p => p.state.is === 'settled' && p.state.canUndo) ||
-    isPressMoving ||
-    isNoticeShown
-  )
+  return isFoldComing || isPressMoving || isNoticeShown
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
@@ -175,7 +201,7 @@ export function drawPanel(
   style: Style,
   height?: number,
   minHeight = 0,
-): { lines: string[]; pageTop: number; detailScrollMax: number; isRevealed: boolean } {
+): { lines: string[]; pageTop: number; detailScrollMax: number; isRevealed: boolean; shownSubjects: string[] } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
@@ -187,7 +213,8 @@ export function drawPanel(
     screen.view.statusPage.error,
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
-  const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null, screen.view.untrackedWork)
+  const host = screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []
+  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null, screen.view.untrackedWork)
   const head = [
     ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
     rule,
@@ -200,16 +227,16 @@ export function drawPanel(
   const pageSelected =
     isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
-  let goalTitleAt: number | null = null
+  /** The line each subject a Status row stands for starts on. */
+  const subjectAt: [string, number][] = []
   for (const e of entries) {
     if (e.kind === 'heading')
       body.push(
-        ` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
+        ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
     else if (e.kind === 'page' || e.kind === 'goal') {
-      if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))
       const start = body.length
-      if (e.kind === 'goal' && e.part.is === 'title') goalTitleAt = start
+      if (e.kind === 'page') subjectAt.push(...seenSubjectIds(e.row).map(id => [id, start] as [string, number]))
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
       const isSelected = id !== null && id === pageSelected?.id
       body.push(...(e.kind === 'page' ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected)))
@@ -241,16 +268,11 @@ export function drawPanel(
     else {
       const isSelected = e.line.id === selected?.id
       const start = body.length
-      // The stop stays a row Resume can focus, drawn as a banner.
-      if (e.line.id === STOP_ID && screen.stop)
-        body.push(
-          ...boxed(
-            drawLine(e.line, isSelected, { ...d, width: width - 4 }),
-            stopBanner(screen.stop).tone,
-            width,
-            style,
-          ),
-        )
+      // The stop and the install question stay rows their buttons can focus, drawn as banners.
+      const bannerTone =
+        e.line.id === HERDR_ASK_ID ? 'ask' : e.line.id === STOP_ID && screen.stop ? stopBanner(screen.stop).tone : null
+      if (bannerTone)
+        body.push(...boxed(drawLine(e.line, isSelected, { ...d, width: width - 4 }), bannerTone, width, style))
       else body.push(...drawLine(e.line, isSelected, d))
       if (isSelected) selectedAt = [start, body.length - 1]
     }
@@ -272,10 +294,7 @@ export function drawPanel(
   const blanks = (shown: string[]) =>
     Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
   const isOverflowing = body.length > room
-  const [keysAt = 0, last = 0] = pageSelectedAt ?? []
-  // The goal's button reveals the goal's text above it too, when both fit.
-  const goalTextAt = pageSelected?.id === GOAL_KEYS_ID ? goalTitleAt : null
-  const first = goalTextAt !== null && last - goalTextAt + 3 <= room ? goalTextAt : keysAt
+  const [first = 0, last = 0] = pageSelectedAt ?? []
   // In view between the ↑ line above and the ↓ line below, which `pageWindow` draws while the page runs past them.
   const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id)
   const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop
@@ -286,11 +305,18 @@ export function drawPanel(
       ? pageWindow(body, pageTop, room, style)
       : scrolled(body, selectedAt, room, style, Math.min(ui.detailTop, detailScrollMax), detailScrollMax > 0)
 
+  const isStatusShown = ui.tab === 'overview' && !ui.isHelpShown
+  const shownLines = isOverflowing ? pageWindowLines(body.length, pageTop, room) : { start: 0, end: body.length }
+  const shownSubjects = isStatusShown
+    ? subjectAt.filter(([, at]) => at >= shownLines.start && at < shownLines.end).map(([id]) => id)
+    : []
+
   return {
     lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)),
     pageTop,
     detailScrollMax,
     isRevealed,
+    shownSubjects,
   }
 }
 
@@ -310,13 +336,10 @@ export function tallestTabHeight(
   return Math.max(...heights)
 }
 
-/** The band above the prompt: the two counts, and under them why the last turn stopped. */
+/** The band above the prompt: the counts, and under them why the last turn stopped. */
 export function bandLines(screen: PanelScreen, width: number, now: number, style: Style): string[] {
-  const { needsYou, findings } = screen.view
-  const counts = LISTED_TABS.map(t => ({ t, count: t.id === 'needsYou' ? needsYou.count : findings.count }))
-    .filter(x => x.count > 0)
-    .map(x => `${x.t.label} ${style.tone(x.t.id, String(x.count))}`)
-  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim('Nothing needed')}`
+  const counts = bandCounts(screen.view).map(c => `${c.label} ${style.tone(c.id, String(c.count))}`)
+  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim(noCountsText(screen.view, screen.isReadFailed))}`
   const countLine = spread(left, style.dim('/inbox to open '), width)
   const { stop } = screen
   if (!stop) return [countLine]

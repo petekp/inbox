@@ -1,11 +1,12 @@
 import { actionLines } from './action-plan'
-import { DESKTOP_BUTTON_EXTRA_PT, desktopTextPt } from './desktop-metrics'
+import { desktopButtonPt, desktopTextPt } from './desktop-metrics'
 import type { LinksProps } from './links-client'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { followUpPresses, type KeyAction } from './pane-keys'
 import {
   DESKTOP_CELL_PT,
   DESKTOP_LINK_GAP_CELLS,
+  DESKTOP_LINK_SLACK_CELLS,
   DESKTOP_MARK_CELLS,
   DESKTOP_SIDE_CELLS,
   FRAME_INSET_PT,
@@ -41,8 +42,7 @@ export function paneRowKeys(
 ) {
   const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
     actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
-  const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS - 1
-  // A desktop text column after `markCells`, less a cell, since the measured column ran up to 10 pt narrower than this.
+  const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS
   const desktopColumnPt = (markCells: number) => desktopTextColumns(markCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
   const desktopRowTextPt = desktopColumnPt(DESKTOP_MARK_CELLS)
   const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
@@ -50,7 +50,7 @@ export function paneRowKeys(
   // A native Button cuts a label wider than its row.
   const fittedDesktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
     const icon = a.icon ? `${a.icon} ` : ''
-    const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt
+    const fits = (label: string) => desktopButtonPt(icon + label, a.variant === 'primary') <= desktopRowTextPt
 
     return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
   }
@@ -87,32 +87,6 @@ export function paneRowKeys(
         </Box>
       )
     }
-  /**
-   * A key drawn in a line of muted text, as the goal's Edit is in "Goal · Edit". The terminal draws its label muted and
-   * names its hotkey while it has one. Desktop draws a plain native Button, since a Client's click would keep the keys
-   * from the field it opens.
-   */
-  const textKey = (rowId: string, { hotkey, key, label, onPress }: KeyAction) =>
-    look === 'desktop' ? (
-      <Button key={key} plain dimColor label={label} onPress={press => unlessGuarded(rowId, press, onPress)} />
-    ) : (
-      <Button
-        key={key}
-        plain
-        {...(isOpenGuarded ? { dimColor: true } : {})}
-        hover={{ color: pal.muted, inverse: true }}
-        onPress={press => unlessGuarded(rowId, press, onPress)}
-      >
-        {hotkey ? (
-          <Text color={pal.key} dimColor={isOpenGuarded} hover={{ color: pal.muted, inverse: true }}>
-            {hotkey}
-          </Text>
-        ) : null}
-        <Text color={pal.muted} hover={{ color: pal.muted, inverse: true }}>
-          {hotkey ? `: ${label}` : label}
-        </Text>
-      </Button>
-    )
   // Emptied here, after the drawing's reads, so a click that lands while they run still finds the last presses.
   followUpPresses.clear()
   const followUpLinks = (rowId: string, more: KeyAction[]) => {
@@ -124,7 +98,7 @@ export function paneRowKeys(
         return {
           key: a.key,
           label,
-          width: desktopTextPt(label) / DESKTOP_CELL_PT,
+          width: desktopTextPt(label) / DESKTOP_CELL_PT + DESKTOP_LINK_SLACK_CELLS,
           ...(a.isOut ? { isOut: true } : {}),
         }
       }),
@@ -225,9 +199,9 @@ export function paneRowKeys(
     desktopRowTextPt,
     desktopLabel,
     keyRow,
-    textKey,
     keyBindings,
     keyLines,
+    terminalKeyCells,
     actionRows,
     rowActions,
     fieldActions,

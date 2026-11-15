@@ -22,7 +22,7 @@ function helpLabel(help: Help): string {
 
 export type HelpStep = { label: string; step: Help[] }
 
-export function steps(helps: Help[]): HelpStep[] {
+function steps(helps: Help[]): HelpStep[] {
   const copy = helps.find(h => h.kind === 'copy')
   const open = helps.find(h => h.kind === 'open')
   if (!copy || !open || copy.kind !== 'copy' || open.kind !== 'open')

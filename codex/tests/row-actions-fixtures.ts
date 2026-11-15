@@ -34,12 +34,13 @@ export function task() {
     turns: { turnsStarted: 1, turnsApplied: 1 },
     extraSteps: {},
     settleWindowMs: 5120,
-    status: { isUpdating: false, error: null },
+    status: { isUpdating: false, isRetrying: false, error: null },
     now: 10,
     replies: {},
     discarded: {},
     shownSince: null,
     lastTypedMessageAt: null,
+    listInput: null,
   })
   return { ledger, row: view.needsYou.tasks[0]! }
 }

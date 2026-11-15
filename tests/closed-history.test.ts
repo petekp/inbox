@@ -34,7 +34,7 @@ test('a finding closed as list full stays in the shared history plan', () => {
     (ledger, n) => addFinding(ledger, { ...finding, title: `Problem ${n + 1}`, at: n + 1 }).ledger,
     EMPTY,
   )
-  const view = sessionView({ ...emptySession(), ledger: full }, 100, 1000, true, NO_HOLDS)
+  const view = sessionView({ ...emptySession(), ledger: full }, 100, 1000, NO_HOLDS)
   const history = closedHistoryPlan(view.findings.closed, new Set())
 
   expect(history.rows.map(f => [f.title, f.outcome])).toContainEqual(['Problem 1', 'list full'])

@@ -2,7 +2,7 @@ import type { Run } from './gh'
 
 export type FeedPathSetting = string | (() => Promise<string | undefined>)
 
-export type HerdrFeedIdentity = {
+type HerdrFeedIdentity = {
   paneId?: string
   binPath?: string
 }

@@ -12,7 +12,7 @@ import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
 import { runUpdates as runBothCalls } from '../src/update'
 import { makeServer } from '../src/server'
-import { ledgerOnly, tempDir } from './helpers'
+import { ledgerOnly, movedRollout, rolloutAt, tempDir } from './helpers'
 import { ex } from './update-fixtures'
 
 const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
@@ -71,7 +71,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
   const prompts: string[] = []
   const answers = ['NEW: decide | - | Deploy now? | Yes / No | Yes', null]
   const ask = async (p: string) => (prompts.push(p), answers.shift() ?? null)
-  assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isUpdating: false, error: null })
+  assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isUpdating: false, isRetrying: false, error: null })
   await runUpdates(dir, 's1', ask, () => 5)
 
   const kept = await readState(dir, 's1')
@@ -90,6 +90,8 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     turnsApplied: 1,
     ledgerState: 'failed',
     hasDroppedReply: false,
+    failedAttempts: 1,
+    isConversationUnreadable: false,
     isUpdating: false,
     isTurnRunning: false,
     turnStartedAt: null,
@@ -97,7 +99,10 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     lastTypedMessageAt: null,
   })
   assert.equal(viewOf(kept, 5).status.isUpdating, false)
-  assert.match(viewOf(kept, 5).status.error ?? '', /Last update failed.*retries after your next message/)
+  assert.match(
+    viewOf(kept, 5).status.error ?? '',
+    /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
+  )
   assert.equal(
     viewOf({ ...kept, pending: [...kept.pending, { ex: ex(3, 'More work.'), turnsStarted: 3 }] }, 5).status.isUpdating,
     false,
@@ -107,7 +112,11 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     dir,
     's1',
     async prompt => {
-      assert.deepEqual(viewOf(await readState(dir, 's1'), 6).status, { isUpdating: true, error: null })
+      assert.deepEqual(viewOf(await readState(dir, 's1'), 6).status, {
+        isUpdating: true,
+        isRetrying: true,
+        error: null,
+      })
       return ask(prompt)
     },
     () => 6,
@@ -120,6 +129,8 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     turnsApplied: 2,
     ledgerState: 'failed',
     hasDroppedReply: true,
+    failedAttempts: 2,
+    isConversationUnreadable: true,
     isUpdating: false,
     isTurnRunning: false,
     turnStartedAt: null,
@@ -127,8 +138,40 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     lastTypedMessageAt: null,
   })
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
-  assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)
-  assert.doesNotMatch(viewOf(dropped, 6).status.error ?? '', /retry/)
+  assert.match(
+    viewOf(dropped, 6).status.error ?? '',
+    /^The inbox couldn't read this conversation\..*tries again after the next reply\.$/,
+  )
+})
+
+test('a failed ledger catches up over a rollout Codex moved into archived_sessions, and saves where it is now', async () => {
+  const dir = tempDir()
+  const home = tempDir()
+  const saved = rolloutAt(home, 's1')
+  const archived = movedRollout(saved, home, 'archived_sessions')
+  await updateState(dir, 's1', s => ({
+    ...s,
+    root: '/repo',
+    transcriptPath: saved,
+    presence: { ...s.presence, ledgerState: 'failed' },
+  }))
+  const prompts: string[] = []
+
+  await runUpdates(
+    dir,
+    's1',
+    async p => (prompts.push(p), 'NEW: decide | - | Allow edits? | Yes / No | Yes'),
+    () => 5,
+  )
+  const caught = await readState(dir, 's1')
+  assert.equal(prompts.length, 1)
+  assert.match(prompts[0] ?? '', /Person: List the files here and say what each does/)
+  assert.equal(caught.transcriptPath, archived)
+  assert.equal(caught.presence.ledgerState, 'current')
+  assert.deepEqual(
+    caught.ledger.items.map(i => i.ask),
+    ['Allow edits?'],
+  )
 })
 
 test('an Explain exchange keeps its question open while applying the rest of the model update', async () => {
@@ -224,7 +267,10 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   await exited
   const stopped = await poll()
   assert.equal(stopped.status.isUpdating, false)
-  assert.match(stopped.status.error ?? '', /Last update failed.*retries after your next message/)
+  assert.match(
+    stopped.status.error ?? '',
+    /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
+  )
   const state = await readState(dir, 's1')
   assert.equal(state.presence.isUpdating, false)
   assert.equal(state.pending.length, 1)
@@ -254,5 +300,5 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   assert.equal(calls, 2)
   assert.deepEqual((await readState(dir, 's1')).pending, [])
   await updateState(dir, 's1', s => ({ ...s, presence: { ...s.presence, isUpdating: true, ledgerState: 'current' } }))
-  assert.deepEqual((await poll()).status, { isUpdating: false, error: null })
+  assert.deepEqual((await poll()).status, { isUpdating: false, isRetrying: false, error: null })
 })

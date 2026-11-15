@@ -1,7 +1,7 @@
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
-import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS } from './rows'
-import type { RowState } from './rows'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT, SECTION_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
+import type { RowState } from '../../hooks/row-motion'
 import { tabState, sending, entering, closingFolds, drawnRows, root, animations } from './tab-state'
 import { later, cancelTimer } from './tab-host'
 
@@ -134,7 +134,8 @@ function drawnFrame(el: HTMLElement, height: () => number): Frame {
 }
 
 function collapse(el: HTMLElement, from: Frame) {
-  const panel = el.querySelector<HTMLElement>('.panel.closing')
+  // What the entry drew open and still draws, inert, while its height shrinks over it: a row's panel or a PR block.
+  const panel = el.querySelector<HTMLElement>('.closing[inert]')
   // A closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
   const row = el.querySelector<HTMLElement>('.row.closing')
   row?.classList.remove('closing')
@@ -186,7 +187,7 @@ export function revealSelected() {
 export function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
   document.documentElement.style.setProperty('--status-row-pad', `${STATUS_ROW_PAD_PT}px`)
-  document.documentElement.style.setProperty('--look-gap', `${LOOK_GAP_PT}px`)
+  document.documentElement.style.setProperty('--section-gap', `${SECTION_GAP_PT}px`)
   document.documentElement.style.setProperty('--banner-pad-y', `${BANNER_PAD_Y_PT}px`)
   document.documentElement.style.setProperty('--banner-gap', `${BANNER_GAP_PT}px`)
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)

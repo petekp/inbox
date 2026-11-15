@@ -36,6 +36,8 @@ test('a reply becomes open items, and "1. yes" carries the question', async ($, 
 
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'answer-i1-0' })
+  expect(w.sent).toEqual([])
+  await clock.advance(SETTLED_MS)
   expect(w.sent).toEqual(['Re "Use Node or Python?": Node'])
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   await $.turn.complete({ answer: 'Using Node.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
@@ -85,6 +87,7 @@ test('a question with 7 options shows 4 until [All 7 options], draws its steps a
   expect(await hotkey('help-i1-2')).toBeUndefined()
   expect((await pane.find({ key: 'help-i1-2' }))?.props.label).toBe('Run c script')
   await pane.press({ key: 'answer-i1-6' })
+  await clock.advance(SETTLED_MS)
   expect(w.sent).toEqual(['Re "Which color?": Violet'])
 })
 

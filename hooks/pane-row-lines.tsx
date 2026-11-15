@@ -28,7 +28,7 @@ import {
 } from './pane-sizes'
 import type { RowProps } from './row-client'
 import { DOT, type ResultMark, rowResultMark, type RowView, shortAgo } from './rows'
-import { LEADING_DOT, type TreePos, treeText } from './terminal-text'
+import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './terminal-text'
 import { ago, clipLabel } from './text'
 import { linkLabel } from './inline'
 import { resultGlyph, runningMark } from './timing'
@@ -273,6 +273,11 @@ export function paneRowLines({
             </Text>
           </Box>
         ) : null}
+        {row.view?.recLine ? (
+          <Box paddingLeft={line.before?.length ?? 0}>
+            <Text color={pal.muted}>{clipLabel(row.view.recLine, Math.max(12, width))}</Text>
+          </Box>
+        ) : null}
       </Box>
     )
   }
@@ -296,6 +301,8 @@ export function paneRowLines({
     )
   const toned = (row: Row) => {
     if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
+    const isMutedHandle = !!row.handle && !row.handleTone && !row.isHandleRunning
+    if (isMutedHandle) return markGlyph({ text: row.handle, isRunning: false }, `handle-${row.id}`, pal.muted)
     if (ToneSvg === null || !row.handle || !row.handleTone) return null
     return svgCell(toneSvg(row.handleTone, row.handle), row.handle)
   }
@@ -304,21 +311,25 @@ export function paneRowLines({
     const at = f && hasAge(f) ? f.at : row.at
     return at === undefined ? '' : shortAgo(now - at)
   }
-  const rowClientProps = (row: Row): RowProps => {
+  const rowClientProps = (row: Row, textColumnPt: number): RowProps => {
     const f = feedbackLabel(row.id, row)
-    const text = row.line?.text ?? row.title
+    const before = row.line?.before ?? ''
+    const text = (row.line?.text ?? row.title).trim()
+    const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, row.hasSecondLine ? 4 : 2, {
+      isCutAtWord: true,
+    })
 
     return {
       markCells: DESKTOP_MARK_CELLS,
       sideCells: DESKTOP_SIDE_CELLS,
-      before: row.line?.before ?? '',
-      title: linkLabel(text.trim()),
+      before,
+      title: linkLabel(titleSpans.map(s => s.text).join('')),
       after: linkLabel(f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim()),
       note: holdsUpLineOf(row.view) ?? '',
       noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
+      recNote: row.view?.recLine ?? '',
       side: sideAge(row),
       padY: DESKTOP_ROW_PAD,
-      maxLines: row.hasSecondLine ? 4 : 2,
       charsPerCell: DESKTOP_CLIP_CHARS_PER_CELL,
       fallbackColumns: e.props.bodyColumns - 2,
       colors: {

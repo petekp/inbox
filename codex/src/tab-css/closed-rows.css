@@ -72,8 +72,15 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* One line, cut with an ellipsis: a reply's words follow the title, or take a line of their own when they do not fit beside it. */
 .settled .outcome-label {
   color: var(--muted);
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 /* The pill keeps the line's height, so the row does not grow. */
 .key.undo {
@@ -123,4 +130,14 @@
   to {
     transform: scaleX(0);
   }
+}
+/* "Show 4 earlier" lists the rest of a Closed fold. Its whole line takes the click. */
+button.earlier {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: var(--muted);
+}
+button.earlier:hover {
+  color: var(--text);
 }

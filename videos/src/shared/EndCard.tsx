@@ -12,7 +12,7 @@ import { useFonts } from './fonts'
 export type RowLines = { from: number; to: number; ys: number[] }[]
 
 /** What an end card shows, and how it starts. */
-export type EndCardProps = {
+type EndCardProps = {
   /** The word typed at the middle, lowercase. */
   word: string
   /** The address under the word. */

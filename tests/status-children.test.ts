@@ -3,33 +3,37 @@ import { expect, test } from 'claude-code/testing'
 import {
   childActive,
   childEnded,
+  isSubjectSeen,
   lookEnded,
+  lookReported,
   lookStarted,
   LOOK_MIN_MS,
   runningText,
   subjectsText,
   withChild,
 } from '../hooks/status-children'
-import { delegatesSettled, delegatesStarted } from '../hooks/children'
-import type { HerdrStatus } from '../hooks/herdr'
-import { CHILD_ROWS } from '../hooks/status-page'
+import { delegatesSettled, delegatesStarted, nameInWords } from '../hooks/children'
+import { delegatesInHerdr } from '../hooks/herdr'
+import type { HerdrAgent, HerdrStatus } from '../hooks/herdr'
+import type { Run } from '../hooks/gh'
+import { CHILD_ROWS } from '../hooks/status-page-parts'
 import type { SessionStatus } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
-test('the call reads open subjects with ids, finished ones by name, and running children with their links', () => {
+test('the call reads open subjects with ids and how long ago each changed, finished ones by name, and running children with their links', () => {
   const o = withChild(
     after(null, 'NEW: working | Offline mode | queue built\nNEW: queued | Docs | not started', 100),
-    { ref: 't1', kind: 'background', name: 'npm test', startedAt: 150, endedAt: null, lastActivityAt: 150 },
+    { ref: 't1', kind: 'subagent', name: 'npm test', startedAt: 150, endedAt: null, lastActivityAt: 150 },
     150,
   )
   const closed = after(o, 'DONE: s2 | written', 200)
 
-  expect(subjectsText(closed)).toEqual({
-    open: 's1 | working | Offline mode | queue built',
+  expect(subjectsText(closed, 100 + 26 * 60 * MIN)).toEqual({
+    open: 's1 | working | Offline mode | queue built | 26h ago',
     finished: 's2 | done | Docs',
   })
-  expect(subjectsText(null).open).toBe('(none yet)')
-  expect(runningText(closed, 300)).toBe('c1 | background | npm test | -')
+  expect(subjectsText(null, 0).open).toBe('(none yet)')
+  expect(runningText(closed, 300)).toBe('c1 | subagent | npm test | -')
   expect(runningText(childEnded(closed, 't1', 250), 300)).toBe('')
 })
 
@@ -90,7 +94,7 @@ test('running children sit under their subject, at most three, each tied to it a
     after(null, 'NEW: working | Offline mode | queue built', 10 * MIN),
     {
       ref: 'q',
-      kind: 'background',
+      kind: 'delegate',
       name: 'Tail the log',
       startedAt: 0,
       endedAt: null,
@@ -121,7 +125,7 @@ test('a working subject with a child at work draws the running mark, and one wit
   expect(rows.filter(r => r.kind === 'subject').map(r => r.isRunning)).toEqual([false, true])
 })
 
-test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, its subject moved above the Seen line, and one Herdr no longer lists leaves', () => {
+test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, its subject unseen, and one Herdr no longer lists leaves', () => {
   let o: SessionStatus | null = {
     ...after(null, 'NEW: working | Export | layout next', 10 * MIN),
     lastLookAt: 20 * MIN,
@@ -130,9 +134,9 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   o = delegatesStarted(o, 'herdr agent start spare --cmd claude', 30 * MIN)
   o = after(o, 'LINK: c1 | s1\nLINK: c2 | s1', 30 * MIN)
   const herdr = (pdf: HerdrStatus) =>
-    new Map<string, HerdrStatus>([
-      ['pdf', pdf],
-      ['spare', 'idle'],
+    new Map<string, HerdrAgent>([
+      ['pdf', { status: pdf, focus: null }],
+      ['spare', { status: 'idle', focus: null }],
     ])
   const rows = (x: SessionStatus | null, now: number) => shape(page(x, now).rows)
 
@@ -155,16 +159,16 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   const finished = delegatesSettled(blocked, herdr('done'), 4 * 60 * MIN)
   expect(page(finished, 4 * 60 * MIN).rows).toMatchObject([
     { kind: 'subject', isRunning: false },
-    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' }, isLast: false },
-    { kind: 'look', isLast: true },
+    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' } },
   ])
-  const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS)
+  expect(isSubjectSeen(finished!, finished!.subjects[0]!)).toBe(false)
+  const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS, 'all')
   expect(rows(looked, 6 * 60 * MIN)).toEqual(['◐ Export: layout next'])
   const gone = delegatesSettled(blocked, new Map(), 4 * 60 * MIN)
   expect(rows(gone, 4 * 60 * MIN)).toEqual(['◐ Export: layout next'])
 })
 
-test('a rule sets each item on the page apart: a subject and the rows under it are one item, and the look line takes none beside it', () => {
+test('the page lists running work linked to no subject first, then each subject with the rows under it', () => {
   const now = 100 * MIN
   let o = after(after(null, 'NEW: working | Fade-out | glances fade', 0), 'DONE: s1 | glances fade', 5 * MIN)
   o = after(o, 'NEW: queued | Docs | outline ready', 10 * MIN)
@@ -179,23 +183,22 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   o = after(o, 'LINK: c1 | s3\nLINK: c2 | s3', 80 * MIN, new Set(['i1']))
   const rows = page({ ...o, lastLookAt: 50 * MIN }, now, {}, [askItem('i1')]).rows
 
-  expect(rows.map(r => `${r.isRuledAbove ? '── ' : ''}${shape([r])[0]}`)).toEqual([
+  expect(shape(rows)).toEqual([
     '● Review loose',
-    '── ◆ Sync: needs a pick · waiting',
-    '── ● Offline mode: queue built ┐',
+    '◆ Sync: needs a pick · waiting',
+    '● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
-    '-- Last seen',
     '○ Docs: outline ready',
-    '── ▸ 1 done',
+    '▸ 1 done',
   ])
 })
 
-test('a child whose host reports no activity moves and shows no words for as long as it runs', () => {
+test('a child saved with no activity time moves and shows no words for as long as it runs', () => {
   const now = 100 * MIN
   const o = withChild(
     null,
-    { ref: 'bg', kind: 'background', name: 'npm test', startedAt: 40 * MIN, endedAt: null, lastActivityAt: null },
+    { ref: 'bg', kind: 'delegate', name: 'npm test', startedAt: 40 * MIN, endedAt: null, lastActivityAt: null },
     now,
   )
 
@@ -241,10 +244,9 @@ test('a subject an ask holds up or that changed since the last look never folds,
   const draw = (o: SessionStatus) => shape(page(o, 20 * MIN, {}, asks.map(askItem)).rows)
 
   expect(draw(changedOne)).toEqual([
-    '○ Part 8: started over',
-    '-- Last seen',
     '◆ Part 7: step 7 · waiting',
     ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
+    '○ Part 8: started over',
     '○ 3 more',
   ])
   expect(draw(heldSeven)).toEqual([...[6, 5, 4, 3, 2, 1, 0].map(n => `◆ Part ${n}: step ${n} · waiting`), '○ 2 more'])
@@ -284,4 +286,116 @@ test('a subject with a child row under it never folds, so its child stays under 
   ])
   expect(draw(sevenWithChildren).filter(r => r.startsWith('└'))).toHaveLength(7)
   expect(draw(sevenWithChildren).at(-1)).toBe('○ 2 more')
+})
+
+test('a running child of a done subject in the done fold shows once, at the top of the list', () => {
+  const now = 100 * MIN
+  const done = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | drafted', 10 * MIN)
+  const seen = lookEnded(
+    lookStarted(after(done, 'DONE: s1 | works offline', 20 * MIN), 30 * MIN),
+    30 * MIN + LOOK_MIN_MS,
+    'all',
+  )
+  const child = { ref: 't1', kind: 'subagent' as const, name: 'Review', startedAt: 40 * MIN, endedAt: null }
+  const o = after(withChild(seen, { ...child, lastActivityAt: now - MIN }, now), 'LINK: c1 | s1', 50 * MIN)
+  const rows = page(o, now).rows
+  const drawn = rows.flatMap(r => (r.kind === 'done-fold' ? r.rows : [r]))
+
+  expect(rows.some(r => r.kind === 'done-fold')).toBe(true)
+  expect(drawn.filter(r => r.kind === 'child').map(r => r.depth)).toEqual([0])
+})
+
+test('a child row says what its work does: a delegate shows the focus its session publishes to Herdr, else its name in words, and a subagent its description', () => {
+  let o = delegatesStarted(null, 'herdr agent start pdfx2 --cmd claude', 0)
+  o = delegatesStarted(o, 'herdr agent start release-notes --cmd claude', 0)
+  o = withChild(
+    o,
+    {
+      ref: 't1',
+      kind: 'subagent',
+      name: 'Review the sync engine diff',
+      startedAt: 0,
+      endedAt: null,
+      lastActivityAt: 0,
+    },
+    0,
+  )
+  const delegateRow = {
+    ref: 'herdr:release-notes',
+    kind: 'delegate' as const,
+    name: '',
+    startedAt: 0,
+    endedAt: null,
+    lastActivityAt: 0,
+  }
+  const names = (x: SessionStatus | null) => page(x, 4 * MIN).rows.flatMap(r => (r.kind === 'child' ? [r.name] : []))
+
+  expect(names(o)).toEqual(['pdfx2', 'release notes', 'Review the sync engine diff'])
+  expect(['syncEngineFix', 'PDF_export', 'macOS-port', 'iOSApp', '--'].map(nameInWords)).toEqual([
+    'sync Engine Fix',
+    'PDF export',
+    'macOS port',
+    'iOSApp',
+    '--',
+  ])
+  const agents = new Map<string, HerdrAgent>([
+    ['pdfx2', { status: 'working', focus: 'Lay out the PDF export' }],
+    ['release-notes', { status: 'unknown', focus: null }],
+  ])
+  const named = delegatesSettled(o, agents, MIN)
+  expect(names(named)).toEqual(['Lay out the PDF export', 'release notes', 'Review the sync engine diff'])
+  const saved = childEnded(withChild(null, { ...delegateRow, name: 'release-notes' }, 0), 'herdr:release-notes', MIN)
+  expect(names(delegatesStarted(saved, 'herdr agent prompt release-notes "go on"', 2 * MIN))).toEqual(['release notes'])
+  const ended = childEnded(named, 'herdr:pdfx2', 2 * MIN)
+  expect(names(delegatesStarted(ended, 'herdr agent prompt pdfx2 "go on"', 3 * MIN))).toContain(
+    'Lay out the PDF export',
+  )
+})
+
+const LONG_FOCUS = `Lay out ${'the PDF export '.repeat(8)}`.trim()
+const MALFORMED_FOCUS: [string, unknown, string][] = [
+  ['a number', 5, 'pdfx2'],
+  ['blank', '   ', 'pdfx2'],
+  ['over 80 characters', LONG_FOCUS, `${LONG_FOCUS.slice(0, 79)}…`],
+  ['on several lines', 'Lay out the PDF export\nthen review it', 'Lay out the PDF export'],
+]
+
+for (const [kind, focus, drawn] of MALFORMED_FOCUS)
+  test(`a delegate whose published focus is ${kind} draws "${drawn.slice(0, 24)}"`, async () => {
+    const o = delegatesStarted(null, 'herdr agent prompt pdfx2 "go on"', 0)
+    const agents = [{ name: 'pdfx2', agent_status: 'working', tokens: { 'inbox-focus': focus } }]
+    const run: Run = async () => ({ code: 0, stdout: JSON.stringify({ result: { agents } }), stderr: '' })
+    const read = await delegatesInHerdr(o, run)
+    const named = delegatesSettled(o, read!, MIN)
+
+    expect(page(named, MIN).rows.flatMap(r => (r.kind === 'child' ? [r.name] : []))).toEqual([drawn])
+  })
+
+const TWO = () => after(null, 'NEW: working | Offline mode | queue built\nNEW: queued | Docs | not started', 10 * MIN)!
+const seenIds = (o: SessionStatus) => o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.id)
+
+test('a reported look counts as seen the subjects it showed after they changed, and keeps the look this host has open', () => {
+  const open = lookStarted(TWO(), 15 * MIN)!
+  const reported = lookReported(open, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 20 * MIN, s2: 5 * MIN } })!
+
+  expect(seenIds(reported)).toEqual(['s1'])
+  expect(reported.lastLookAt).toBe(21 * MIN)
+  expect(reported.look).toEqual({ startedAt: 15 * MIN })
+})
+
+test('a reported look shorter than five seconds counts nothing', () => {
+  const short = { startedAt: 20 * MIN, endedAt: 20 * MIN + LOOK_MIN_MS - 1, shown: { s1: 20 * MIN } }
+
+  expect(seenIds(lookReported(TWO(), short)!)).toEqual([])
+  expect(lookReported(TWO(), { ...short, endedAt: 20 * MIN + LOOK_MIN_MS })!.lastLookAt).toBe(20 * MIN + LOOK_MIN_MS)
+})
+
+test('a reported look that ended before the last look counts the subjects it showed, and leaves the last look when it was', () => {
+  const missed = lookEnded(lookStarted(TWO(), 30 * MIN), 31 * MIN, {})!
+  const late = lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 20 * MIN } })!
+
+  expect(seenIds(missed)).toEqual([])
+  expect(seenIds(late)).toEqual(['s1'])
+  expect(late.lastLookAt).toBe(31 * MIN)
+  expect(lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 5 * MIN } })).toBe(missed)
 })

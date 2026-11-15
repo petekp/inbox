@@ -9,5 +9,5 @@ export function callReport(r: ModelCompleteResult): CallReport {
   if (r.isAnswered) return { model: MODEL }
   const error = r.reason === 'api-error' ? `api-error ${r.status ?? 'with no response'}: ${r.error}` : r.reason
 
-  return { model: MODEL, error }
+  return { model: MODEL, error, cause: r.reason === 'empty-reply' ? 'no-reply' : 'error' }
 }

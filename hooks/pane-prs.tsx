@@ -16,7 +16,6 @@ import {
   checkRowText,
   accountPrText,
   botPrSummaryText,
-  DISMISS_MERGED_ID,
   ghNoticeOf,
   PR_GROUP_TITLES,
   PR_QUOTE_CHARS,
@@ -26,13 +25,16 @@ import {
   prRefreshFailedText,
   prsEmptyText,
   prThreadId,
+  PR_REFRESH_ID,
   RANK_AGAIN_ID,
+  CLEAR_FINISHED_ID,
   splitFollowUps,
   threadRowText,
+  isBlockPressShown,
 } from './pr-rows'
 import { checkActions, prBlockActions, threadActions } from './pr-tab'
 import { type DrawnPr, isDismissed } from './pr-views'
-import { commentLine, commentParts, readableComment, readiness, threadWhere } from './prs'
+import { checkKey, commentLine, commentParts, readableComment, readiness, threadWhere } from './prs'
 import { DOT, settledLabel, settledMark, type SettledState } from './rows'
 import { lineCount, terminalTextLines } from './terminal-text'
 import { clipLabel } from './text'
@@ -73,9 +75,10 @@ export function panePrRows(
     }
   }
   const checkRow = (pr: PrView, c: PrCheck): Row => {
-    const { mark, lead, title, meta } = checkRowText(c)
+    const { mark, lead, title, meta, fold } = checkRowText(pr, c)
     return {
       id: prCheckId(pr, c),
+      ...(fold ? { fold } : {}),
       handle: mark.text,
       handleTone: mark.tone ?? undefined,
       isMarkDone: mark.isDone,
@@ -84,7 +87,7 @@ export function panePrRows(
       line: { ...(lead ? { before: `${lead} / ` } : {}), text: title, after: meta },
       subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
       body: null,
-      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
+      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${checkKey(c)}`)),
     }
   }
   const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -156,7 +159,7 @@ export function panePrRows(
   return { prKeyAction, checkRow, threadRow }
 }
 
-export type PanePrRows = ReturnType<typeof panePrRows>
+type PanePrRows = ReturnType<typeof panePrRows>
 
 export function panePrBlocks({
   look,
@@ -172,7 +175,8 @@ export function panePrBlocks({
   Button,
   view,
   prOrderKeys,
-  prTabKeys,
+  prRefreshKeys,
+  prClearKeys,
   prGroups,
   section,
   undoPlace,
@@ -205,7 +209,8 @@ export function panePrBlocks({
   | 'Button'
   | 'view'
   | 'prOrderKeys'
-  | 'prTabKeys'
+  | 'prRefreshKeys'
+  | 'prClearKeys'
   | 'prGroups'
 > &
   Pick<PaneRowParts, 'section' | 'undoPlace' | 'settledContent' | 'groupTitle' | 'titleGap' | 'sections'> &
@@ -232,7 +237,7 @@ export function panePrBlocks({
           children: [
             <Text wrap="wrap">
               {what}
-              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
+              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery, state.reply)}`}</Text>
             </Text>,
           ],
         }),
@@ -257,12 +262,13 @@ export function panePrBlocks({
             key,
           ),
         ]
-  const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; threads: Row[] }) => {
+  const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; cancelled: Row[]; threads: Row[] }) => {
     if (b.state.is === 'settled') return settledPrBlock(b.pr, b.state)
-    const { pr, checks, threads } = b
-    const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
+    const { pr, checks, cancelled, threads } = b
+    const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent, 'Claude')
     const tone = PR_TONES[status]
-    const prLast = isDismissed(lastActions, pr.ref) ? null : lastActionText(prMarkId(pr.ref))
+    const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
+    const prLast = isPrLastShown ? lastActionText(prMarkId(pr.ref)) : null
     const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses).map(a => prKeyAction(a, pr.ref))
 
     const titleLine = (
@@ -319,15 +325,20 @@ export function panePrBlocks({
     return section([
       ...(look === 'desktop'
         ? [
-            desktopFrame({ key: `pr-title-${pr.ref}`, padY: 0, children: titleLine }),
-            desktopFrame({ key: `pr-status-${pr.ref}`, padY: 0, children: statusBlock }),
+            desktopFrame({ key: `pr-title-${pr.ref}`, padY: 0, hasSide: false, children: titleLine }),
+            desktopFrame({ key: `pr-status-${pr.ref}`, padY: 0, hasSide: false, children: statusBlock }),
           ]
         : [<Box paddingLeft={1}>{titleLine}</Box>, <Box paddingLeft={1}>{statusBlock}</Box>]),
       ...prRowGroup(PR_GROUP_TITLES.threads, threads, `${pr.ref}-threads`),
       ...prRowGroup(PR_GROUP_TITLES.checks, checks, `${pr.ref}-checks`),
+      ...prRowGroup(PR_GROUP_TITLES.cancelled, cancelled, `${pr.ref}-cancelled`),
     ])
   }
-  const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
+  const ghState = {
+    isGhMissing: Boolean(prState.isGhMissing),
+    isGhSignedOut: Boolean(prState.isGhSignedOut),
+    failure: prState.failure ?? null,
+  }
   const ghNotice = ghNoticeOf(ghState)
   const prTabLine = (key: string, content: JSX.Element) => [
     section(
@@ -388,20 +399,45 @@ export function panePrBlocks({
 
     return prTabLine('pr-order', lines)
   }
-  const prTabButtons = () =>
-    prTabKeys.length === 0 ? [] : prTabLine('pr-tab-actions', keyRow(DISMISS_MERGED_ID, prTabKeys))
+  /** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
+  const prRefreshLines = () => {
+    const refresh = view.prs.refresh
+    if (!refresh) return []
+    const pressed = refresh.showsPress ? lastActionText(PR_REFRESH_ID) : null
+    const lines = (
+      <Box flexDirection="column">
+        <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
+          {refresh.text ? <Text wrap="wrap">{refresh.text}</Text> : null}
+          {prRefreshKeys.length > 0 ? keyRow(PR_REFRESH_ID, prRefreshKeys) : null}
+        </Box>
+        {pressed ? (
+          <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
+            {pressed.text}
+          </Text>
+        ) : null}
+      </Box>
+    )
+
+    return prTabLine('pr-refresh', lines)
+  }
+  const prClearLines = () =>
+    prClearKeys.length === 0 ? [] : prTabLine('pr-clear', keyRow(CLEAR_FINISHED_ID, prClearKeys))
   const prsView = () =>
     prGroups.length === 0 && view.prs.accountPrs.length === 0 && view.prs.botPrSummaries.length === 0 ? (
       <Box flexDirection="column" flexGrow={1}>
-        {emptyState(prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'))}
+        {emptyState(
+          prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'),
+          view.prs.refresh ? prRefreshLines() : [],
+        )}
       </Box>
     ) : (
       sections(
         [
           ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
+          ...prRefreshLines(),
+          ...prClearLines(),
           ...prOrderLines(),
           ...prGroups.map(prBlock),
-          ...prTabButtons(),
           ...accountPrLines(),
           ...olderPrs(),
         ],

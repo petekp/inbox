@@ -1,5 +1,6 @@
 import { HELD_MARK } from '../hooks/help'
-import { isOpen, nameKey } from '../hooks/status-limits'
+import { restatesGoal } from '../hooks/status-goal-ops'
+import { isNumberOnly, isOpen } from '../hooks/status-limits'
 import { statusListRows } from '../hooks/status-page'
 import type { StatusPage } from '../hooks/status-page'
 import type { Rule } from './status-rules'
@@ -12,38 +13,68 @@ const hold = (r: Pick<Rule, 'id' | 'property' | 'text' | 'failures'>): Rule => (
   isHold: true,
 })
 
-/** The ids of the subject rows the page draws under Other work. */
-function otherWorkIds(page: StatusPage): string[] {
+/** The ids of the subject rows the page draws after the goal, above Other work and under it. */
+function listIds(page: StatusPage): { main: string[]; other: string[] } {
   const start = page.rows.findIndex(r => r.kind === 'part')
-  if (start < 0) return []
+  const ids = (rows: StatusPage['rows']) => rows.flatMap(r => (r.kind === 'subject' ? [r.id] : []))
 
-  return page.rows.slice(start).flatMap(r => (r.kind === 'subject' ? [r.id] : []))
+  return start < 0
+    ? { main: ids(page.rows), other: [] }
+    : { main: ids(page.rows.slice(0, start)), other: ids(page.rows.slice(start)) }
 }
 
-/** The holds the code keeps for the goal, checked at every step of every run. Any failure blocks. */
+/**
+ * Whether a subject belongs under Other work: the goal does not need it, or the goal shows milestones and it serves
+ * none of them.
+ */
+function isOtherWork(serves: Record<string, string>, page: StatusPage, id: string): boolean {
+  const shown = new Set((page.goal?.milestones ?? []).map(m => m.id))
+  const to = serves[id]
+
+  return to === 'none' || (shown.size > 0 && (to === undefined || !shown.has(to)))
+}
+
+/** The holds the code keeps, checked at every step of every run. Any failure blocks. */
 export const HOLD_RULES: Rule[] = [
   hold({
-    id: 'goal-on-press',
-    property: 14,
-    text: 'The goal changes only on a press.',
-    failures: ({ step, result, before }) => {
-      const was = before.overview?.goal?.text ?? null
-      const now = result.session.ledger.overview?.goal?.text ?? null
-      const isPressed = (step.events ?? []).some(e => 'press' in e)
-      return was !== now && !isPressed ? [`the goal went from "${was}" to "${now}" with no press`] : []
+    id: 'no-number-names',
+    property: 6,
+    text: 'No open subject and no head is named only by a PR or issue number.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const names = [...(o?.subjects ?? []).filter(isOpen).map(s => s.name), ...(o?.head ? [o.head.title] : [])]
+      return names.filter(isNumberOnly).map(name => `named by a number: "${name}"`)
     },
   }),
   hold({
-    id: 'proposal-not-repeated',
+    id: 'typed-goal-kept',
     property: 14,
-    text: 'No proposal has the name key of the goal or of a goal the person declined.',
-    failures: ({ result }) => {
+    text: 'A typed goal that is not met, with linked work still open, changes only on a press.',
+    failures: ({ step, result, before }) => {
+      const o = before.overview
+      const g = o?.goal
+      if (!o || !g || g.source !== 'typed' || g.metAt !== null) return []
+      const isWorkOpen = o.subjects.some(s => isOpen(s) && o.milestones.some(m => m.id === o.serves[s.id]))
+      const now = result.session.ledger.overview?.goal?.text ?? null
+      const isPressed = (step.events ?? []).some(e => 'press' in e)
+      return isWorkOpen && now !== g.text && !isPressed
+        ? [`the typed goal "${g.text}" went to "${now}" with no press`]
+        : []
+    },
+  }),
+  hold({
+    id: 'goal-not-repeated',
+    property: 14,
+    text: 'A goal set with no press restates neither the goal before it nor a goal the person removed.',
+    failures: ({ step, result, before }) => {
+      const was = before.overview?.goal ?? null
       const o = result.session.ledger.overview
-      const p = o?.proposedGoal
-      if (!o || !p) return []
-      const key = nameKey(p.text)
-      const isGoal = o.goal !== null && nameKey(o.goal.text) === key
-      return isGoal || o.declinedGoals.includes(key) ? [`proposed "${p.text}" again`] : []
+      const g = o?.goal
+      const isPressed = (step.events ?? []).some(e => 'press' in e)
+      if (!o || !g || isPressed || g.setAt === was?.setAt) return []
+      const isGoal = was !== null && restatesGoal(g.text, was.text)
+      const isRemoved = o.removedGoals.some(key => restatesGoal(g.text, key))
+      return isGoal || isRemoved ? [`set "${g.text}" again`] : []
     },
   }),
   hold({
@@ -76,8 +107,8 @@ export const HOLD_RULES: Rule[] = [
         const isHeld =
           isOpen(m) &&
           result.session.ledger.items.some(i => {
-            const to = o.askSubjects[i.id]
-            return to === m.id || (to !== undefined && serving.includes(to))
+            const to = o.askSubjects[i.id] ?? []
+            return to.some(id => id === m.id || serving.includes(id))
           })
         const isDrawnHeld = row.mark === HELD_MARK.mark
         if (isDrawnHeld === isHeld) return []
@@ -97,20 +128,27 @@ export const HOLD_RULES: Rule[] = [
       const isNews = (changedAt: number, id: string) =>
         o.lastLookAt === null || changedAt > o.lastLookAt || held.has(id)
       return o.subjects
-        .filter(x => x.into === null && o.serves[x.id] === 'none' && isOpen(x) && isNews(x.changedAt, x.id))
+        .filter(
+          x => x.into === null && isOtherWork(o.serves, result.page, x.id) && isOpen(x) && isNews(x.changedAt, x.id),
+        )
         .filter(x => !drawn.has(x.id))
         .map(x => `"${x.name}" folded under Other work with news`)
     },
   }),
   hold({
-    id: 'unlinked-in-main',
+    id: 'other-work-place',
     property: 16,
-    text: 'A subject not linked to a milestone yet sits in the main list, not under Other work.',
+    text: 'While the goal shows milestones, every subject not under one sits under Other work. While it shows none, a subject not linked yet sits above Other work.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
-      return otherWorkIds(result.page)
-        .filter(id => o?.serves[id] !== 'none')
-        .map(id => `"${o?.subjects.find(x => x.id === id)?.name ?? id}" is under Other work without a link there`)
+      if (!o?.goal) return []
+      const name = (id: string) => `"${o.subjects.find(x => x.id === id)?.name ?? id}"`
+      const isOther = (id: string) => isOtherWork(o.serves, result.page, id)
+      const { main, other } = listIds(result.page)
+      return [
+        ...other.filter(id => !isOther(id)).map(id => `${name(id)} is under Other work, and the goal needs it`),
+        ...main.filter(isOther).map(id => `${name(id)} sits above Other work, and belongs under it`),
+      ]
     },
   }),
 ]

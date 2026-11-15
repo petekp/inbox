@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { applyPress } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { shortAgo } from '../../hooks/rows'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/timing'
+import { FOLD_QUIET_MS, PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import { recordClose, recordItem } from '../../hooks/tools'
 import { CODEX } from '../src/texts'
@@ -12,8 +12,9 @@ import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { buttons, named, task, window } from './row-actions-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
-test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, and keeps a done row in place past its Undo until the person switches tab or types a message', async () => {
+test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, keeps a done row in place past its Undo while the pointer is on the list, folds it once the pointer leaves, and folds a done row at once on a tab switch', async () => {
   const state = emptyState('renderer')
   state.ledger = task().ledger
   state.heard.startAt = 1
@@ -22,6 +23,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
   Object.defineProperty(window, '__inboxPage', { value: 'renderer-page', configurable: true })
   const media = window.matchMedia('(prefers-reduced-motion: reduce)')
   Object.defineProperty(media, 'matches', { value: true })
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
   const globals = {
     parent: window.parent,
     navigator: window.navigator,
@@ -47,6 +49,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       replies: holds?.replies ?? {},
       discarded: holds?.discarded ?? {},
       shownSince: holds?.shownSince ?? null,
+      listInput: holds?.listInput ?? null,
     }),
     thread: state.sessionId,
     devPage: 'renderer-page',
@@ -73,6 +76,8 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         turnsStarted: 1,
         extraSteps: [],
         comparePage: '/plugin/dist/compare-page.html',
+        compareInBackground: false,
+        holdMs: 1000,
       })
       assert.ok(!('stale' in applied))
       state.ledger = applied.ledger
@@ -156,7 +161,10 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     const held = root.querySelector('input')!
     assert.equal(held.value, 'Still blocked')
     const unconfirmedAt = state.lastActions.i1!.at
-    state.ledger = recordClose(CODEX, state.ledger, { id: 'i1', reason: 'the build passed' }, unconfirmedAt + 1).ledger
+    state.ledger = recordClose(CODEX, state.ledger, { id: 'i1', reason: 'the build passed' }, unconfirmedAt + 1, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).ledger
     await pause(POLL_MS + 100)
     assert.ok(root.querySelector('input') === held, 'the reply field was replaced')
     assert.equal(held.value, 'Still blocked')
@@ -176,7 +184,13 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     assert.doesNotMatch(root.textContent ?? '', /the build passed/)
     assert.equal(presses.length, 3)
 
-    state.ledger = recordItem(CODEX, state.ledger, { kind: 'task', ask: 'Tag the release' }, Date.now()).ledger
+    state.ledger = recordItem(
+      CODEX,
+      state.ledger,
+      { kind: 'task', ask: 'Tag the release' },
+      Date.now(),
+      TOOL_FIELDS,
+    ).ledger
     await pause(POLL_MS + 100)
     root.querySelector<HTMLElement>('.row .line')!.click()
     await pause(PRESS_GUARD_MS + 50)
@@ -187,47 +201,65 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         b => b.querySelector('.tab-word')?.textContent === label,
       )!
     const realNow = Date.now
+    root.querySelector('.list')!.dispatchEvent(new window.Event('pointerover', { bubbles: true }) as unknown as Event)
     Date.now = () => realNow() + SETTLED_MS
     try {
       await pause(POLL_MS + 100)
-      assert.match(root.querySelector('.row.settled')?.textContent ?? '', /Tag the release/)
+      assert.match(
+        root.querySelector('.row.settled')?.textContent ?? '',
+        /Tag the release/,
+        'a row under the pointer folded',
+      )
       assert.ok(root.querySelector('.key.undo:not(.spent)') === null, 'Undo is still offered')
-      assert.ok(root.querySelector('.row.settled .key.undo.spent'))
+      document.documentElement.dispatchEvent(new window.Event('pointerleave') as unknown as Event)
+      await pause(FOLD_QUIET_MS + 400)
+      assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
+      assert.match(root.textContent ?? '', /2 closed/)
+
+      state.ledger = recordItem(
+        CODEX,
+        state.ledger,
+        { kind: 'task', ask: 'Publish the notes' },
+        Date.now(),
+        TOOL_FIELDS,
+      ).ledger
+      await pause(POLL_MS + 100)
+      root.querySelector<HTMLElement>('.row .line')!.click()
+      await pause(PRESS_GUARD_MS + 50)
+      named(root, 'Done').click()
+      await until(() => root.querySelector('.row.settled') !== null)
       tabNamed('Finds').click()
       tabNamed('Asks').click()
-      assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
+      assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn after a tab switch')
       await pause(POLL_MS + 100)
-      assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
+      assert.ok(root.querySelector('.row.settled') === null, 'a settled row is drawn again after a tab switch')
+      assert.match(root.textContent ?? '', /3 closed/)
 
-      state.ledger = recordItem(CODEX, state.ledger, { kind: 'task', ask: 'Publish the notes' }, Date.now()).ledger
-      const notes = state.ledger.items.find(i => i.ask === 'Publish the notes')!.id
-      const doneElsewhere = applyPress(
+      state.ledger = recordItem(
+        CODEX,
         state.ledger,
-        undefined,
-        { action: 'done', id: notes },
-        {
-          now: Date.now(),
-          turnsStarted: 1,
-          extraSteps: [],
-          comparePage: '/plugin/dist/compare-page.html',
-        },
-      )
-      assert.ok(!('stale' in doneElsewhere))
-      state.ledger = doneElsewhere.ledger
-      if (doneElsewhere.last) state.lastActions[notes] = doneElsewhere.last
+        { kind: 'task', ask: 'Publish the timeline' },
+        Date.now(),
+        TOOL_FIELDS,
+      ).ledger
+      await pause(POLL_MS + 100)
+      root.querySelector<HTMLElement>('.row .line')!.click()
+      await pause(PRESS_GUARD_MS + 50)
+      named(root, 'Done').click()
+      await until(() => root.querySelector('.row.settled') !== null)
+      root.querySelector('.list')!.dispatchEvent(new window.Event('pointerover', { bubbles: true }) as unknown as Event)
       Date.now = () => realNow() + 2 * SETTLED_MS + 4 * POLL_MS
       await pause(POLL_MS + 100)
-      const notesRow = [...root.querySelectorAll('.row.settled')].find(r =>
-        /Publish the notes/.test(r.textContent ?? ''),
+      const timelineRow = [...root.querySelectorAll('.row.settled')].find(r =>
+        /Publish the timeline/.test(r.textContent ?? ''),
       )
-      assert.ok(notesRow)
-      assert.ok(notesRow.querySelector('.key.undo:not(.spent)') === null, 'Undo is still offered')
-      assert.ok(notesRow.querySelector('.key.undo.spent'))
-
-      state.presence = { ...state.presence, lastTypedMessageAt: Date.now() }
-      await pause(POLL_MS + 100)
-      assert.doesNotMatch(root.querySelector('.row.settled')?.textContent ?? '', /Publish the notes/)
-      assert.match(root.textContent ?? '', /3 closed/)
+      assert.ok(timelineRow)
+      assert.ok(timelineRow.querySelector('.key.undo:not(.spent)') === null, 'Undo is still offered')
+      assert.ok(timelineRow.querySelector('.key.undo.spent'))
+      document.documentElement.dispatchEvent(new window.Event('pointerleave') as unknown as Event)
+      await pause(FOLD_QUIET_MS + 100)
+      assert.doesNotMatch(root.querySelector('.row.settled')?.textContent ?? '', /Publish the timeline/)
+      assert.match(root.textContent ?? '', /4 closed/)
 
       const closedAt = Date.now() - 60_000
       const answerItem = recordItem(
@@ -237,7 +269,10 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         closedAt,
       )
       const answerId = answerItem.ledger.items.at(-1)!.id
-      const answered = recordClose(CODEX, answerItem.ledger, { id: answerId, answer: 'Deno' }, closedAt)
+      const answered = recordClose(CODEX, answerItem.ledger, { id: answerId, answer: 'Deno' }, closedAt, {
+        lastActions: {},
+        turnStartedAt: null,
+      })
       const explainItem = recordItem(
         CODEX,
         answered.ledger,
@@ -245,12 +280,10 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         closedAt,
       )
       const explainId = explainItem.ledger.items.at(-1)!.id
-      state.ledger = recordClose(
-        CODEX,
-        explainItem.ledger,
-        { id: explainId, reason: 'explained in chat' },
-        closedAt,
-      ).ledger
+      state.ledger = recordClose(CODEX, explainItem.ledger, { id: explainId, reason: 'explained in chat' }, closedAt, {
+        lastActions: {},
+        turnStartedAt: null,
+      }).ledger
       await pause(POLL_MS + 100)
       root.querySelector<HTMLButtonElement>('[data-fold=\"question\"]')!.click()
       await pause(POLL_MS + 100)

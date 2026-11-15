@@ -30,6 +30,32 @@
     ]
   },
   {
+    "name": "record-question-with-0.3.0-tools",
+    "about": "In a session that 0.3.0 started, whose record tool has no context, option_notes or why, a recorded question is recorded once, and the reply passes on no request for fields the tool lacks.",
+    "tools": "0.3.0",
+    "prompt": "Task: add caching to the product API. Before you can go on, I have to choose between Redis and an in-process memory cache. You recommend the memory cache because the service runs as a single process. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "has": ["ask", "options", "rec"]
+      },
+      {
+        "reply": "redis"
+      },
+      {
+        "reply": "memory"
+      },
+      {
+        "notReply": "option[ _]?notes|re-?record|record (it|the question) again|extra fields|parameters"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
     "name": "record-design-choice",
     "about": "A choice between two designs the agent could try is recorded as a question marked as a design choice.",
     "prompt": "Task: add a settings page to the web app. Before you build it, I have to choose how its five sections are laid out: one long scrolling page, or a tab for each section. You recommend tabs, because two of the sections are long. Ask me.",
@@ -319,6 +345,110 @@
         "match": {
           "ask": "ready|review"
         }
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "record-question-gives-why",
+    "about": "A recorded question with a recommendation carries the reason for it, so the row can show it.",
+    "prompt": "Task: set up storage for the new audit log service. Before you can go on, I have to choose between Postgres and SQLite. You recommend Postgres because the service runs on three hosts that share the data. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "has": ["ask", "options", "rec", "why"],
+        "match": { "why": "host|share" }
+      },
+      { "reply": "\\?" },
+      { "noIds": true }
+    ]
+  },
+  {
+    "name": "task-without-link-gets-no-made-up-steps",
+    "about": "A task with no command, file or link is recorded without invented steps, even though the record answer mentions steps.",
+    "prompt": "Task: check that pinch zoom on the photo page feels smooth on the iPad. Only I have the iPad, and there is nothing to install or open beyond the page I already have up. Ask me to try it and tell you whether it stutters.",
+    "checks": [
+      { "calls": "record", "kind": "task", "min": 1, "has": ["ask"] },
+      { "calls": "record", "kind": "task", "count": 0, "match": { "steps": "https?://|/|\\$ " } },
+      { "reply": "pinch|zoom" },
+      { "noIds": true }
+    ]
+  },
+  {
+    "name": "inferable-choice-not-asked",
+    "about": "A choice the agent can infer from the work, and that is easy to undo, is made and named in the reply, not asked.",
+    "files": {
+      "cli.js": "const args = process.argv.slice(2)\nconst quiet = args.includes('--quiet') || args.includes('-q')\n\nif (!quiet) console.log('Hello!')\n"
+    },
+    "prompt": "Task: add a flag to cli.js that turns on verbose logging, which prints each argument it read before the greeting. cli.js already takes --quiet with the short form -q. Choosing the flag's name is the only thing left before you write it. This is cli.js, in the folder you work in:\n\n```js\nconst args = process.argv.slice(2)\nconst quiet = args.includes('--quiet') || args.includes('-q')\n\nif (!quiet) console.log('Hello!')\n```\n\nWrite your reply to me.",
+    "checks": [{ "calls": "record", "kind": "question", "count": 0 }, { "reply": "verbose" }, { "noIds": true }]
+  },
+  {
+    "name": "merge-asked-before-taken",
+    "about": "A merge, a step people rarely hand to an agent, is asked as a question before the agent takes it, not handed over as a task.",
+    "prompt": "Task: fix the date picker bug on PR #52 in inbox-eval-fixture/web. You pushed the fix, the checks pass and a teammate approved it. The last step is merging it, which you can do with `gh pr merge 52 --merge`. Write your closing reply to me.",
+    "checks": [
+      { "calls": "record", "kind": "task", "count": 0 },
+      { "calls": "record", "kind": "question", "count": 1, "match": { "ask": "merg" } },
+      { "noIds": true }
+    ]
+  },
+  {
+    "name": "record-question-gives-context",
+    "about": "A recorded question carries why it came up and a note on each option, given at once or after the record's answer names what it lacks.",
+    "prompt": "Task: speed up the product API's price lookups, which take 900 ms each and hold up the checkout page. A cache is the fix. Before you can go on, I have to choose between Redis and an in-process memory cache. Redis adds a server to each environment. The memory cache keeps prices in each process and can serve them up to five minutes stale. You recommend the memory cache because the service runs as a single process. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "has": ["ask", "options", "context", "option_notes"],
+        "match": {
+          "context": "900|slow|checkout|lookup|price"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "\\?"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "approval-gives-something-to-look-at",
+    "about": "An approval of something the user can look at is recorded with that page in steps, given at once or after the record's answer says the user can't approve what they can't see.",
+    "files": {
+      ".scratch/settings/layout.html": "<!doctype html><title>Settings layout</title><nav><a>Account</a><a>Billing</a><a>Team</a><a>Alerts</a><a>API keys</a></nav><main><h1>Account</h1></main>\n"
+    },
+    "prompt": "Task: redesign the settings page of the web app. You built the new layout, with a tab for each of its five sections, and saved a static copy of it at .scratch/settings/layout.html in this checkout. Before you open the PR, I have to approve the new layout. Ask me for my OK.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "match": {
+          "steps": "^/\\S*settings/layout\\.html"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "task",
+        "count": 0
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
       },
       {
         "noIds": true

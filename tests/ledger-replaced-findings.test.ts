@@ -14,7 +14,14 @@ describe('a finding replaced by a question', () => {
     path: null,
     at: 1,
   })
-  const ctx = { now: 9, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/hooks/compare-page.html' }
+  const ctx = {
+    now: 9,
+    turnsStarted: 1,
+    holdMs: 1000,
+    extraSteps: [],
+    comparePage: '/plugin/hooks/compare-page.html',
+    compareInBackground: true,
+  }
   const asked = () => {
     const open = addFinding(EMPTY, finding('Dismissed findings come back when recorded again')).ledger
     const reply =
@@ -116,11 +123,19 @@ describe('a finding replaced by a question', () => {
     expect(upgradeLedger(fixed).closedFindings[0]?.askedAs).toBeUndefined()
   })
 
-  test('Fix on a finding closes the question that asks about it', () => {
+  test('Fix on a finding closes the question that asks about it, and Undo while the Fix is held reopens that question', () => {
     const linked = reopenFinding(asked(), 'f1')
     const r = applyPress(linked, undefined, { action: 'address', id: 'f1' }, ctx)
     if ('stale' in r) throw new Error('stale')
-    expect([r.ledger.items, r.ledger.closed.map(c => c.id), r.effects.map(e => e.kind)]).toEqual([[], ['i2'], ['send']])
+    expect([r.ledger.items, r.ledger.closed.map(c => c.id), r.last?.delivery?.state]).toEqual([[], ['i2'], 'held'])
+    const undone = applyPress(r.ledger, r.last ?? undefined, { action: 'undo', id: 'f1' }, ctx)
+    if ('stale' in undone) throw new Error('stale')
+    expect([undone.ledger.items.map(i => i.id), undone.ledger.closed, undone.dropLast, undone.effects]).toEqual([
+      ['i2'],
+      [],
+      true,
+      [],
+    ])
   })
 })
 
@@ -148,21 +163,21 @@ describe('upgradeLedger', () => {
     expect(upgradeLedger({ ...base, updates: 4 } as never).updates).toBe(4)
   })
 
-  test('a ledger saved before PR orders loads with no order, one saved before reasons loads with no reason and no statuses, and a newer order keeps both', () => {
+  test('a ledger saved before PR orders loads with no order, one saved before reasons loads with no reason and no statuses, one saved before dismissals counts each ranked PR it no longer links as dismissed, and a newer order keeps all three', () => {
     const { prOrder: _prOrder, ...old } = EMPTY
-    const order = { refs: ['acme/greet#12'], label: 'Merge order', by: 'Claude', at: 5 }
+    const order = { refs: ['acme/greet#12', 'acme/greet#14'], label: 'Merge order', by: 'Claude', at: 5 }
+    const prs = ['acme/greet#12']
     expect(upgradeLedger(old as never).prOrder).toBeNull()
-    expect(upgradeLedger({ ...EMPTY, prOrder: order } as never).prOrder).toEqual({
-      ...order,
-      why: null,
-      statuses: null,
-    })
+    const upgraded = upgradeLedger({ ...EMPTY, prs, prOrder: order } as never)
+    expect(upgraded.prOrder).toEqual({ ...order, why: null, statuses: null, dismissed: ['acme/greet#14'] })
+    expect(upgraded.prs).toEqual(prs)
     const newer = {
       ...order,
       why: '#12 is green.',
       statuses: { 'acme/greet#12': { status: 'ready' as const, threads: [], failing: [] } },
+      dismissed: [],
     }
-    expect(upgradeLedger({ ...EMPTY, prOrder: newer }).prOrder).toEqual(newer)
+    expect(upgradeLedger({ ...EMPTY, prs, prOrder: newer }).prOrder).toEqual(newer)
   })
 
   test('converts a ledger saved with `decided` and the kinds decide and do', () => {

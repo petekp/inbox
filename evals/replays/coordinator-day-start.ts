@@ -26,7 +26,7 @@ export const coordinatorDayStart: Replay['start'] = {
         subject('s10', 'done', 'Backup restore', 'restores attachments', -60),
       ],
       children: [delegate('c1', 'sm4', 's1', -90), delegate('c2', 'release-notes', 's2', -50)],
-      askSubjects: { i1: 's2' },
+      askSubjects: { i1: ['s2'] },
       lastLookAt: minutes(-120),
       goal: goal('Notes 2.4 in the store', -200),
       milestones: [

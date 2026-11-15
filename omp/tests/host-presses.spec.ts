@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
+import { isSubjectSeen } from '../../hooks/status-children'
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
 import {
@@ -33,6 +36,7 @@ test('only what the person submits in the editor counts as a typed message, not 
   const { inbox, id } = await withQuestion()
   const typedAt = () => state().presence.lastTypedMessageAt
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   await prompt(w.sent[0]!.text)
   await call('input', { type: 'input', text: 'from a client', source: 'rpc' })
   await call('input', { type: 'input', text: 'from an extension', source: 'extension' })
@@ -45,7 +49,13 @@ test('only what the person submits in the editor counts as a typed message, not 
   expect(typedAt()).toBeGreaterThan(first!)
 })
 
-test('an answer press sends one follow-up while a turn runs, and the arriving prompt matches it', async () => {
+async function afterSettle() {
+  w.clock += 5000
+  w.timers.at(-1)!.fn()
+  await settle()
+}
+
+test('an answer press sends one follow-up once Undo ends, and the arriving prompt matches it', async () => {
   const { inbox, id } = await withQuestion()
   const outcome = await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
   expect(outcome).toEqual({
@@ -54,8 +64,10 @@ test('an answer press sends one follow-up while a turn runs, and the arriving pr
     note: null,
     isUnconfirmed: false,
     isRowFailed: false,
-    wakesForDone: false,
+    wakesAfterSettle: true,
   })
+  expect(w.sent).toEqual([])
+  await afterSettle()
   expect(w.sent).toEqual([{ text: 'Re "Use Node or Python?": Node', options: { deliverAs: 'followUp' } }])
   expect(state().sent.map((x: { phase: string }) => x.phase)).toEqual(['accepted'])
 
@@ -69,6 +81,7 @@ test('an answer press sends one follow-up while a turn runs, and the arriving pr
 test('a follow-up that starts inside a running turn matches its press once', async () => {
   const { inbox, id } = await withQuestion()
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   const started = {
     type: 'message_start',
     message: { role: 'user', content: [{ type: 'text', text: w.sent[0]!.text }] },
@@ -93,6 +106,7 @@ test('a press queued during a turn gets its own update, after one for the reply 
   await call('agent_start', { type: 'agent_start' })
   await call('message_end', { type: 'message_end', message: assistantMessage(opened) })
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   const pressed = w.sent[0]!.text
   await prompt(pressed)
   await call('message_start', { type: 'message_start', message: userMessage(pressed) })
@@ -127,6 +141,7 @@ test('two presses that start before any new reply share one turn and its reply',
   await call('agent_start', { type: 'agent_start' })
   await call('message_end', { type: 'message_end', message: assistantMessage('Test added.') })
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   await inbox.press(makeCtx(), { action: 'explain', id: task }, NO_HOLDS)
   const answered = w.sent[0]!.text
   const explained = w.sent[1]!.text
@@ -173,7 +188,31 @@ test('a press while the agent is idle sends the message with no delivery option'
   const { inbox, id } = await withQuestion()
   w.isIdle = true
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   expect(w.sent[0]!.options).toBeUndefined()
+})
+
+test("a press omp drops before a run starts is not counted as sent, and its row shows omp's reason", async () => {
+  const { inbox, id } = await withQuestion()
+  w.sendAnswer = () => Promise.reject(new Error('Session cost cap of $5.00 reached'))
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
+  expect(w.sent).toHaveLength(1)
+  expect(state().sent).toEqual([])
+  expect(JSON.stringify(state().lastActions)).toContain('Session cost cap of $5.00 reached')
+})
+
+test('a press sent while the agent is idle counts as sent once its run starts, before the run ends', async () => {
+  const { inbox, id } = await withQuestion()
+  w.isIdle = true
+  w.sendAnswer = () => new Promise(() => {})
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  w.clock += 5000
+  w.timers.at(-1)!.fn()
+  for (let waited = 0; w.sent.length === 0 && waited < 200; waited += 1) await new Promise(r => setTimeout(r, 5))
+  await call('agent_start', { type: 'agent_start' })
+  await settle()
+  expect(state().sent.map((x: { phase: string }) => x.phase)).toEqual(['accepted'])
 })
 
 test('a press for a row that is gone reports it stale and sends nothing', async () => {
@@ -183,8 +222,8 @@ test('a press for a row that is gone reports it stale and sends nothing', async 
   expect(w.sent).toEqual([])
 })
 
-async function withSteps() {
-  const inbox = createInbox(pi(), deps())
+async function withSteps(given = deps()) {
+  const inbox = createInbox(pi(), given)
   await record({ kind: 'task', ask: 'Run it and read the page', steps: ['npm start', 'https://example.com/x'] })
   const screen = await inbox.screen(makeCtx())
   const row = screen.view.needsYou.tasks[0]!
@@ -221,19 +260,97 @@ test('an open that fails leaves the reason on the row', async () => {
   expect(JSON.stringify(last?.result)).toContain('no browser')
 })
 
-test('a proposed goal’s Set as goal and a typed goal set the saved goal, Not now declines a proposal, and none sends a message', async () => {
+test('in a Herdr app terminal, a press the look ran itself records its result and opens nothing', async () => {
+  const appHome = join(w.dir, 'herdr-app')
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
+  const { inbox, stepPress } = await withSteps({ ...deps(), herdrTarget: target })
+  await call('session_start', { type: 'session_start' })
+  const sessionFile = join(appHome, 'inbox/sessions/s1.json')
+  for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
+  expect(existsSync(sessionFile)).toBe(true)
+  const folder = join(appHome, 'inbox/presses/s1')
+  mkdirSync(folder, { recursive: true })
+  const press = {
+    format: 1,
+    id: 'p1',
+    pressedAt: 1,
+    press: stepPress(1),
+    holds: NO_HOLDS,
+    result: { error: 'no browser' },
+  }
+  writeFileSync(join(folder, 'p1.json'), JSON.stringify(press))
+
+  for (let waited = 0; existsSync(join(folder, 'p1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await settle()
+
+  expect(existsSync(join(folder, 'p1.json'))).toBe(false)
+  expect(w.execCalls.filter(c => c.command === 'open')).toEqual([])
+  const screen = await inbox.screen(makeCtx())
+  expect(JSON.stringify(screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]?.result)).toContain('no browser')
+  const published = () => JSON.parse(readFileSync(sessionFile, 'utf8'))
+  expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
+
+  await record({ kind: 'task', ask: 'Write the notes' })
+  await settle()
+  expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
+})
+
+test('in a Herdr app terminal, a look file the look wrote counts the Status subjects it showed as seen, and saves no press', async () => {
+  const appHome = join(w.dir, 'herdr-app')
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
+  createInbox(pi(), { ...deps(), herdrTarget: target })
+  await call('session_start', { type: 'session_start' })
+  const sessionFile = join(appHome, 'inbox/sessions/s1.json')
+  for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
+  w.statusReply =
+    'HEAD: Offline sync | Adding offline sync\nNEW: working | Queue | built\nNEW: queued | Docs | not started'
+  await prompt('add offline sync')
+  await endAgent('Queue built.')
+  await settle()
+  const changedAt = state().ledger.overview.subjects[0].changedAt as number
+  const folder = join(appHome, 'inbox/presses/s1')
+  mkdirSync(folder, { recursive: true })
+  const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
+  writeFileSync(join(folder, 'l1.json'), JSON.stringify({ format: 1, id: 'l1', look }))
+
+  for (let waited = 0; existsSync(join(folder, 'l1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await settle()
+
+  const overview = state().ledger.overview
+  expect(
+    overview.subjects
+      .filter((s: { id: string; changedAt: number }) => isSubjectSeen(overview, s))
+      .map((s: { id: string }) => s.id),
+  ).toEqual(['s1'])
+  expect(state().lastHerdrPress).toBeUndefined()
+})
+
+test('a goal the Status call writes is set at once, Remove goal clears it, a typed goal sets the saved goal, and none sends a message', async () => {
   const inbox = createInbox(pi(), deps())
-  w.statusReply = 'HEAD: Pilot | Shipping the pilot\nGOAL: Pilot ready to announce | done Fixes built; queued Announced'
+  w.statusReply = [
+    'HEAD: Pilot | Shipping the pilot',
+    'NEW: working | Fixes | built',
+    'NEW: queued | Announcement | not started',
+    'GOAL: Pilot ready to announce | done Fixes built; queued Announced',
+  ].join('\n')
   await prompt('get the pilot ready to announce')
   await endAgent('Fixes built.')
   await settle()
-  expect(state().ledger.overview.proposedGoal?.text).toBe('Pilot ready to announce')
-
-  await inbox.press(makeCtx(), { action: 'use-goal', id: 'goal' }, NO_HOLDS)
-  expect(state().ledger.overview).toMatchObject({ goal: { text: 'Pilot ready to announce' }, proposedGoal: null })
+  expect(state().ledger.overview.goal).toMatchObject({ text: 'Pilot ready to announce', source: 'inferred' })
   expect(state().ledger.overview.milestones.map((m: { name: string }) => m.name)).toEqual(['Fixes built', 'Announced'])
 
+  await inbox.press(makeCtx(), { action: 'remove-goal', id: 'goal' }, NO_HOLDS)
+  expect(state().ledger.overview).toMatchObject({ goal: null, removedGoals: ['announce pilot ready'] })
+
   await inbox.press(makeCtx(), { action: 'type', id: 'goal', text: 'Pilot live for every team' }, NO_HOLDS)
-  expect(state().ledger.overview.goal).toMatchObject({ text: 'Pilot live for every team', isAwaitingMilestones: true })
+  expect(state().ledger.overview.goal).toMatchObject({ text: 'Pilot live for every team', source: 'typed' })
   expect(w.sent).toEqual([])
+})
+
+test('a Compare press in omp lets the agent hand the comparison to a background subagent', async () => {
+  const { inbox, id } = await withQuestion()
+  await inbox.press(makeCtx(), { action: 'compare', id }, NO_HOLDS)
+
+  expect(w.sent.at(-1)!.text).toContain('If you can run a subagent in the background, hand it this work')
+  expect(w.sent.at(-1)!.text).not.toContain('reply with the result before this turn ends')
 })

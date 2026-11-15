@@ -189,6 +189,16 @@ test('a refused inbox command registration leaves normal desktop startup and sav
   ).toContain('Use Node or Python?')
 })
 
+test('a resumed conversation draws its band as soon as the mod turns on, before the first prompt', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.stored.set('s:session-1', JSON.stringify(SAVED_SESSION))
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  expect(await band.find({ text: /Asks 1/ })).toBeDefined()
+})
+
 for (const isAttachedFirst of [true, false]) {
   test(`the desktop app turns the mod on when it attaches ${isAttachedFirst ? 'before' : 'after'} the start`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })

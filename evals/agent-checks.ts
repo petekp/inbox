@@ -1,5 +1,6 @@
 import type { AgentTool } from '../hooks/tools'
-import type { Ledger } from '../types'
+import type { LastAction, Ledger } from '../types'
+import type { CaseTools } from './probe-tools'
 
 export type Agent = 'claude' | 'codex' | 'omp'
 
@@ -32,6 +33,8 @@ export type Case = {
   ledger?: Partial<Ledger>
   /** The inbox the tools answer from, when it differs from what the agent was shown. */
   toolLedger?: Partial<Ledger>
+  /** The person's latest press on each row, by row id, as the tools see it. */
+  lastActions?: Record<string, LastAction>
   /** Files to put in the folder the agent runs in, by path within it. */
   files?: Record<string, string>
   prompt: string
@@ -39,6 +42,8 @@ export type Case = {
   min?: Partial<Record<Agent, number>>
   /** The agents that run the case, when not all of them do. */
   agents?: Agent[]
+  /** The inbox tools the agent has, when not this build's, as `evals/probe-tools.ts:probeTools` gives them. */
+  tools?: CaseTools
 }
 
 export type Call = { tool: string; args: Record<string, unknown>; result: string }

@@ -5,7 +5,7 @@ import { readKind } from './reply-parse'
 const STATUS_PREFIX = 'status-'
 
 /** A fold a press or a desktop click names: an Asks group's Closed fold, or a Status done fold by its id. */
-export type FoldRef = { kind: FoldKind } | { statusId: string }
+type FoldRef = { kind: FoldKind } | { statusId: string }
 
 /** The key a fold's line draws under and its hover is saved by: an Asks fold's kind, or a Status fold's id after `status-`. */
 export function foldKey(fold: FoldRef): string {

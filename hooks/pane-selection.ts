@@ -113,7 +113,7 @@ export function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, strin
   return { ...listed, prs: prRowWaits(prViews, {}).map(r => r.id) }
 }
 
-export type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at'> & {
+export type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how'> & {
   outcomeLabel: string
   delivery: Parameters<typeof settledLabel>[1]
   mark: ResultMark

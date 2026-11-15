@@ -14,15 +14,16 @@ Status: built.
 - The `/inbox` pane. It docks beside the transcript in a fullscreen terminal from 110 columns, and is otherwise a framed region above the prompt.
 - The Herdr sidebar line. It is the only place that names an open permission prompt or AskUserQuestion dialog.
 
-**The band.** One line: the counts for Asks and Finds, with [Open inbox] at the right end. Each count reads as its tab does: the tab's name, muted, then the count in the tab's color. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
+**The band.** One line: the counts for Asks, Finds and PRs, with [Open inbox] at the right end. The PRs count is the PRs that wait on the person, as on the PRs tab. Each count reads as its tab does: the tab's name, muted, then the count in the tab's color. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
 
 ```
-Asks 2 · Finds 1                                        [Open inbox]
-Nothing needs you                                       [Open inbox]
+Asks 2 · Finds 1 · PRs 1                                [Open inbox]
+Nothing needed                                          [Open inbox]
+May be out of date                                      [Open inbox]
 Demo: Asks 7 · Finds 4                      [Hide demo] [Open inbox]
 ```
 
-A count of zero drops out. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
+A count of zero drops out. With no counts, the line reads "Nothing needed", or "May be out of date" while an update has failed or is being retried, or the inbox could not be read. The Asks and Finds empty states take the same title then. A failed Status update does not change the band: the band counts asks, findings and PRs, and the Status page shows its own warning. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
 
 A stop draws a second line under the counts, so [Open inbox] does not move. It starts with "Stopped 1m ago:" in red. An API error adds [Resume], which reads "Resuming…" under the same key while it sends.
 

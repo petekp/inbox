@@ -4,7 +4,7 @@ import { applyExchangeUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
 import { buildPrompt, systemText } from '../hooks/ledger-prompt'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { hostStatusSystem } from '../hooks/status-prompt'
 import { screenText } from '../hooks/inbox-text'
 import type { StatusCallInput } from '../hooks/status-prompt'
 import { askStatus, parseStatus } from '../hooks/status'
@@ -13,6 +13,7 @@ import { emptySession } from '../hooks/session-files'
 import { appliedStatus, failedStatus } from '../hooks/session-status'
 import { statusCallPrompt } from '../hooks/status-records'
 import type { StatusExchange, StatusRecord } from '../hooks/status-records'
+import type { CallKind } from '../hooks/session-host'
 import { statusPage } from '../hooks/status-page'
 import { goalPressed } from '../hooks/goal-press'
 import { GOAL_KEYS_ID } from '../hooks/status-keys'
@@ -26,8 +27,8 @@ import type { JudgeCheckId } from './status-judge'
 import { pageText } from './status-page-text'
 
 /** Something a host reports between calls, which the replay runs through the host's own reducers. */
-export type HostEvent =
-  | { child: 'start'; ref: string; kind: ChildKind; name: string; reportsActivity?: boolean }
+type HostEvent =
+  | { child: 'start'; ref: string; kind: ChildKind; name: string }
   | { child: 'act'; ref: string }
   | { child: 'end'; ref: string }
   /** The person shows the Status tab for this many seconds. */
@@ -35,13 +36,14 @@ export type HostEvent =
   /** An ask opens or closes, in a replay that runs no ledger call. */
   | { askOpens: { id: string; ask: string; kind?: Item['kind']; options?: string[] } }
   | { askCloses: string }
-  /** The person presses Set as goal or Not now on the proposal, or types a goal, through the host's own press. */
-  | { press: 'use-goal' | 'decline-goal' }
+  /** The person presses Remove goal, or types a goal, through the host's own press. */
+  | { press: 'remove-goal' }
   | { press: 'type'; text: string }
 
 /** The Status call a step runs, and what it reads. */
-export type StepCall =
-  | { kind: 'reply'; person: string | null; activity: string[]; reply: string; tasks?: HostTask[] }
+type StepCall =
+  /** `answer` stands in for the model's, for a code path no model writes on cue, such as an answer with stray prose. */
+  | { kind: 'reply'; person: string | null; activity: string[]; reply: string; tasks?: HostTask[]; answer?: string }
   /** A call during a turn that started `turnStartedAt` minutes into the replay. */
   | { kind: 'mid-turn'; person: string | null; activity: string[]; turnStartedAt: number; tasks?: HostTask[] }
   | { kind: 'catch-up'; conversation: string }
@@ -56,6 +58,8 @@ export type Step = {
   time?: number
   /** Host events, run at `at` before the call. */
   events?: HostEvent[]
+  /** Host events, run at `at` after the Status call reads the session and before its answer applies. */
+  eventsDuringCall?: HostEvent[]
   call?: StepCall
   facts?: FactsChange
   /** The judge reads the page after this step. */
@@ -82,21 +86,21 @@ export type Agent = 'claude' | 'codex'
 export type CallAnswer = { text: string | null; model?: string | null; outputTokens?: number | null }
 
 /** One model call with `system` as its system text. `kind` says which of the inbox model's calls it is. */
-export type ModelCall = (prompt: string, system: string, kind: CallLog['kind']) => Promise<CallAnswer>
+export type ModelCall = (prompt: string, system: string, kind: CallKind) => Promise<CallAnswer>
 
 /** A host's limits on an inbox model call. An answer past them is dropped, as the host drops it. */
-export type Limits = { ms: number; outputTokens: number | null }
+type Limits = { ms: number; outputTokens: number | null }
 
 export const LIMITS: Record<Agent, Limits> = {
   claude: { ms: 45_000, outputTokens: 1600 },
   codex: { ms: 120_000, outputTokens: null },
 }
 
-export type ReplayDeps = {
+type ReplayDeps = {
   agent: Agent
   ask: ModelCall
   clock?: () => number
-  /** The Status call's system text in place of `STATUS_SYSTEM`, as for a copy without one of the goal's rules. */
+  /** The Status call's system text in place of the agent's host's, as for a copy without one of the goal's rules. */
   system?: string
 }
 
@@ -122,10 +126,12 @@ export type StepResult = {
   calls: CallLog[]
   /** The Status call wrote nothing at this step. */
   isStatusFailed: boolean
+  /** When the goal the step's Status call read was set, or null when it read none or the step ran no call. */
+  readSetAt: number | null
 }
 
 /** When every replay starts. A fixed time, so a replay's prompts are the same from run to run. */
-export const REPLAY_START = Date.UTC(2026, 9, 1, 9, 0)
+const REPLAY_START = Date.UTC(2026, 9, 1, 9, 0)
 
 export const minutes = (m: number) => REPLAY_START + m * 60_000
 
@@ -148,15 +154,15 @@ function withEvent(s: Session, e: HostEvent, now: number): Session {
   const o = s.ledger.overview
   const withStatus = (overview: Ledger['overview']) => ({ ...s, ledger: { ...s.ledger, overview } })
   if ('child' in e) {
-    if (e.child === 'start') return withStatus(childStarted(o, e, now, { reportsActivity: e.reportsActivity ?? true }))
+    if (e.child === 'start') return withStatus(childStarted(o, e, now))
     return withStatus(e.child === 'act' ? childWorked(o, e.ref, now) : childEnded(o, e.ref, now))
   }
-  if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000))
+  if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000, 'all'))
   if ('press' in e) {
     const press: RowPress =
       e.press === 'type' ? { action: 'type', id: GOAL_KEYS_ID, text: e.text } : { action: e.press, id: GOAL_KEYS_ID }
     const r = goalPressed(s.ledger, press, kind => ({ kind, action: GOAL_KEYS_ID, text: e.press, at: now }), now)
-    // A press on a proposal the model did not write finds nothing, as in the product; the step's rules report the miss.
+    // A Remove goal press with no goal set finds nothing, as in the product; the step's rules report the miss.
     return 'stale' in r ? s : { ...s, ledger: r.ledger }
   }
   if ('askOpens' in e)
@@ -167,7 +173,7 @@ function withEvent(s: Session, e: HostEvent, now: number): Session {
 
 async function timed(
   deps: ReplayDeps,
-  kind: CallLog['kind'],
+  kind: CallKind,
   prompt: string,
   system: string,
 ): Promise<CallAnswer & { log: CallLog }> {
@@ -184,24 +190,41 @@ async function timed(
         ? `wrote ${tokens} tokens, past the host's ${limits.outputTokens}`
         : null
   const text = overLimit === null ? answer.text : null
-  const log = { kind, answers: [answer.text], model: answer.model ?? null, ms, outputTokens: tokens, overLimit }
+  const log = {
+    kind: kind.call,
+    answers: [answer.text],
+    model: answer.model ?? null,
+    ms,
+    outputTokens: tokens,
+    overLimit,
+  }
 
   return { ...answer, text, log }
 }
 
-/** Runs the Status call on `read`, and applies its answer or saves that it wrote nothing, as a host does. */
+/**
+ * Runs the Status call on `read`, and applies its answer or saves that it wrote nothing, as a host does. `during` is
+ * what changed the session while the call ran: the answer applies to the session it left.
+ */
 async function statusCall(
   deps: ReplayDeps,
   s: Session,
   read: StatusExchange,
   tasks: HostTask[],
   now: number,
-): Promise<{ session: Session; log: CallLog; isFailed: boolean }> {
+  during: (s: Session) => Session,
+): Promise<{ session: Session; log: CallLog; isFailed: boolean; readSetAt: number | null }> {
   const input: StatusCallInput = { last: s.ledger.overview, asks: s.ledger.items, tasks, now }
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
   const { last } = await askStatus(async () => {
-    const answer = await timed(deps, 'status', prompt, deps.system ?? STATUS_SYSTEM)
+    const kind = { call: 'status', reads: read.kind, isRetry: logs.length > 0 } as const
+    const answer = await timed(
+      deps,
+      kind,
+      prompt,
+      deps.system ?? hostStatusSystem(deps.agent === 'codex' ? CODEX : CLAUDE_CODE),
+    )
     logs.push(answer.log)
     return answer
   })
@@ -212,12 +235,14 @@ async function statusCall(
   }
   const answer = last.text === null ? null : parseStatus(last.text)
   const turns = s.presence.turnsApplied
+  const current = during(s)
+  const readSetAt = input.last?.goal?.setAt ?? null
   const session =
     answer === null
-      ? failedStatus(s, last.text, turns, now)
-      : appliedStatus(s, answer, turns, now, input.last?.goal?.setAt ?? null)
+      ? failedStatus(current, last.text, turns, now)
+      : appliedStatus(current, answer, turns, now, readSetAt)
 
-  return { session, log, isFailed: answer === null }
+  return { session, log, isFailed: answer === null, readSetAt }
 }
 
 function exchangeOf(call: Extract<StepCall, { kind: 'reply' }>, agent: Agent, turn: number): Exchange {
@@ -258,8 +283,10 @@ async function runStep(
 ): Promise<StepResult> {
   const now = step.time ?? minutes(step.at)
   let session = (step.events ?? []).reduce((x, e) => withEvent(x, e, now), s)
+  const during = (x: Session) => (step.eventsDuringCall ?? []).reduce((y, e) => withEvent(y, e, now), x)
   const calls: CallLog[] = []
   let isStatusFailed = false
+  let readSetAt: number | null = null
   const call = step.call
   if (call?.kind === 'reply') {
     const turn = session.ledger.turn + 1
@@ -267,7 +294,8 @@ async function runStep(
     let isLedgerApplied = true
     if (replay.hasLedgerCalls) {
       const host = deps.agent === 'codex' ? CODEX : CLAUDE_CODE
-      const ledgerAnswer = await timed(deps, 'ledger', buildPrompt(session.ledger, ex), systemText(host))
+      const kind = { call: 'ledger', reads: 'reply', isRetry: false } as const
+      const ledgerAnswer = await timed(deps, kind, buildPrompt(session.ledger, ex), systemText(host))
       calls.push(ledgerAnswer.log)
       const parsed =
         ledgerAnswer.text === null ? null : parseReply(ledgerAnswer.text, `${ex.reply}\n${ex.activity.join('\n')}`)
@@ -279,8 +307,11 @@ async function runStep(
       presence: { ...session.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt: now },
     }
     if (isLedgerApplied) {
-      const r = await statusCall(deps, session, { kind: 'reply', exchange: ex }, ex.tasks, now)
-      ;({ session, isFailed: isStatusFailed } = r)
+      const fixed = call.answer
+      const statusDeps =
+        fixed === undefined ? deps : { ...deps, ask: async () => ({ text: fixed, model: 'fixed answer' }) }
+      const r = await statusCall(statusDeps, session, { kind: 'reply', exchange: ex }, ex.tasks, now, during)
+      ;({ session, isFailed: isStatusFailed, readSetAt } = r)
       calls.push(r.log)
     }
   } else if (call?.kind === 'mid-turn') {
@@ -289,22 +320,22 @@ async function runStep(
       presence: { ...session.presence, isTurnRunning: true, turnStartedAt: minutes(call.turnStartedAt) },
     }
     const turn = { person: call.person, trigger: null, activity: call.activity }
-    const r = await statusCall(deps, session, { kind: 'mid-turn', turn }, call.tasks ?? [], now)
-    ;({ session, isFailed: isStatusFailed } = r)
+    const r = await statusCall(deps, session, { kind: 'mid-turn', turn }, call.tasks ?? [], now, during)
+    ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   } else if (call?.kind === 'catch-up') {
     session = {
       ...session,
       presence: { ...session.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt: now },
     }
-    const r = await statusCall(deps, session, { kind: 'catch-up', conversation: call.conversation }, [], now)
-    ;({ session, isFailed: isStatusFailed } = r)
+    const r = await statusCall(deps, session, { kind: 'catch-up', conversation: call.conversation }, [], now, during)
+    ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   } else if (call?.kind === 'recorded') {
     const isTurnRunning = call.read.kind === 'mid-turn'
     session = { ...session, presence: { ...session.presence, isTurnRunning, lastReplyAt: isTurnRunning ? null : now } }
-    const r = await statusCall(deps, session, call.read, call.tasks, now)
-    ;({ session, isFailed: isStatusFailed } = r)
+    const r = await statusCall(deps, session, call.read, call.tasks, now, during)
+    ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   }
   const page = statusPage(session, now)
@@ -319,6 +350,7 @@ async function runStep(
     facts: factsAfter(facts, step.facts),
     calls,
     isStatusFailed,
+    readSetAt,
   }
 }
 
