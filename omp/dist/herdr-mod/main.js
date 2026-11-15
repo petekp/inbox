@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T17:37:54.759Z. 235016 characters follow.
+// Built at 2026-11-15T20:04:38.080Z. 235048 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -5120,7 +5120,7 @@ function headingEl(b, p, isInert) {
   const buttons = h_flex2().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
     return h_flex2().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(statusPartEl(b.text).text_color(t.muted)).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
-  return h_flex2().pl(EDGE).pr(EDGE).items_center().child(markEl(b.mark, t)).child(div4().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div4().text_color(t.muted).child(`${SEP}${b.count}`))).child(div4().flex_1()).child(buttons);
+  return h_flex2().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div4().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div4().text_color(t.muted).child(`${SEP}${b.count}`))).child(div4().flex_1()).child(buttons);
 }
 function emptyEl(b, p, isInert) {
   const { t } = p;
