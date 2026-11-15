@@ -208,6 +208,8 @@ mock.module('herdr', () => ({
     { pane: 'p-shell', tab: 'tab1', terminal: 't2' },
   ],
   focused: () => ({ tab: 'tab1', terminal: focusedTerminal }),
+  spaces: () => [{ active: true, tabs: [{ id: 'tab1', active: true, zoomed: false }] }],
+  window: () => ({ active: true }),
   terminals: () => [
     { address: 't1', labels: { [SESSION_LABEL]: 's1' }, program: { name: 'Claude Code', shell: false } },
     { address: 't2', labels: {}, program: { name: 'zsh', shell: true } },
