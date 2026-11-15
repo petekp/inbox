@@ -1,5 +1,6 @@
+import { isOpen } from '../hooks/status-limits'
 import type { Milestone, SessionStatus, Subject } from '../types'
-import type { Piece } from './status-facts'
+import type { Facts, Piece } from './status-facts'
 
 /** A word that names a time, which code writes and the model never does. */
 export const TIME_WORDS =
@@ -60,6 +61,31 @@ export function headWords(o: SessionStatus | null): string {
 /** The goal's milestones, once a goal is set and has them. */
 export const milestonesOf = (o: SessionStatus | null): Milestone[] =>
   o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []
+
+/**
+ * The page's milestones that stand for one of the facts' milestones: those its pattern names, else those that hold the
+ * subject of a piece that serves it. The model plans its own milestones, so it may name or group the outcomes its own way.
+ */
+export function milestonesFor(m: { id: string; match: string }, facts: Pick<Facts, 'pieces'>, o: SessionStatus | null) {
+  const named = milestonesOf(o).filter(x => new RegExp(m.match, 'i').test(x.name))
+  if (named.length > 0 || !o) return named
+  const serving = facts.pieces.filter(p => p.serves === m.id || p.servesAlso === m.id)
+  const held = new Set(serving.flatMap(p => subjectsFor(p, o)).map(s => o.serves[s.id]))
+
+  return milestonesOf(o).filter(x => held.has(x.id))
+}
+
+/**
+ * The open milestones a piece with no open subject is drawn as, when it is the whole of the milestone it serves: the
+ * only piece that serves it.
+ */
+export function milestonesAsPiece(p: Piece, facts: Pick<Facts, 'pieces' | 'goal'>, o: SessionStatus | null) {
+  const m = facts.goal?.milestones.find(x => x.id === p.serves)
+  const isWhole = facts.pieces.every(x => x.id === p.id || (x.serves !== p.serves && x.servesAlso !== p.serves))
+  if (!m || !isWhole || subjectsFor(p, o).some(isOpen)) return []
+
+  return milestonesFor(m, facts, o).filter(isOpen)
+}
 
 /** Every milestone name the page shows. */
 export const milestoneNames = (o: SessionStatus | null): string[] => milestonesOf(o).map(m => m.name)

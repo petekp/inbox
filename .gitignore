@@ -1,5 +1,8 @@
 # The tool and type folders have no trailing slash, so a symbolic link in their place is ignored too.
 
+# Installed tools in any folder
+node_modules
+
 # Types the engine writes beside a loaded mod
 .claude-plugin/types
 
@@ -10,15 +13,10 @@
 # Throwaway scripts that import the mod's code, so they live inside the repo
 .scratch/
 
-# The Codex plugin's tools and test bundles; its plugin/dist bundles are committed
-codex/node_modules
+# The Codex plugin's test bundles; its plugin/dist bundles are committed
 codex/test-dist/
 
-# The omp extension's tools
-omp/node_modules
-
-# The Herdr look's tools, and the Herdr app's own type files that herdr/herdr-types.ts copies in
-herdr/node_modules
+# The Herdr app's own type files that herdr/herdr-types.ts copies in
 herdr/.herdr-types/
 # `herdr-app check` writes the app's types and an editor config into the mod folder it checks
 herdr/mod/inbox/gpui-kit.d.ts
@@ -30,8 +28,7 @@ codex/.dev/
 # Eval results, written on every run
 evals/results/
 
-# The video project's tools, renders, takes and cut clips, which its scripts make again
-videos/node_modules/
+# The video project's renders, takes and cut clips, which its scripts make again
 videos/out/
 videos/takes
 videos/public/*/takes

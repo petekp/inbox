@@ -2,7 +2,7 @@ import { alphaPerTest, blockAt, interval, TOLERANCE } from './status-bar'
 import type { Family } from './status-bar'
 import { tally } from './status-grade'
 import { JUDGE_CHECKS } from './status-judge'
-import type { JudgeCheckId, JudgeVerdict } from './status-judge'
+import type { JudgeVerdict } from './status-judge'
 import type { Agent, Replay, StepResult } from './status-replay'
 import { RULES } from './status-rules'
 import type { RuleResult } from './status-rules'
@@ -73,13 +73,14 @@ export function unjudgedTargets(cases: GradedCase[], isJudged: boolean): string[
   )
 }
 
-/** What a judge check waits on at a step, from the step's `judgeUntil`, or undefined when it waits on nothing. */
-const judgeUntilAt = (replay: Replay, i: number, id: string) => replay.steps[i]?.judgeUntil?.[id as JudgeCheckId]
+/** What a rule or judge check waits on at a step, from the step's `until`, or undefined when it waits on nothing. */
+const untilAt = (replay: Replay, i: number, id: string) => replay.steps[i]?.until?.[id]
 
 /**
  * Every test of the four layers. A replay step's target pools both models' runs; a short case's is judged per model.
  * The spread layer pools each rule over a model's whole run, and the judge layer each check over its checkpoints.
- * Rules that wait on a change not built yet, judge checks at a step that waits on one, and code holds, are in no layer.
+ * Rules that wait on a change not built yet, and code holds, are in no layer. A target at a step that waits on a change
+ * is in no target layer, and a judge check there is in no judge layer. A rule there still counts in its spread.
  */
 export function layerTests(cases: GradedCase[], agents: Agent[], isJudged: boolean): LayerTest[] {
   const isWaiting = (id: string) => RULES.find(r => r.id === id)?.until !== undefined
@@ -87,7 +88,7 @@ export function layerTests(cases: GradedCase[], agents: Agent[], isJudged: boole
   for (const { replay, runs } of cases)
     for (const [i, step] of replay.steps.entries())
       for (const t of step.targets ?? []) {
-        if (isWaiting(t) || judgeUntilAt(replay, i, t) || (JUDGE_ONLY.has(t) && !isJudged)) continue
+        if (isWaiting(t) || untilAt(replay, i, t) || (JUDGE_ONLY.has(t) && !isJudged)) continue
         const name = `${replay.name} ${stepName(replay, i)} ${t}`
         const groups = replay.isShort ? agents.map(a => runs.filter(r => r.agent === a)) : [runs]
         for (const [g, group] of groups.entries())
@@ -116,9 +117,7 @@ export function layerTests(cases: GradedCase[], agents: Agent[], isJudged: boole
         tallies: cases.flatMap(({ replay, runs }) =>
           runs
             .filter(r => r.agent === agent)
-            .flatMap(r =>
-              r.steps.map((_, i) => (judgeUntilAt(replay, i, check.id) ? null : judgeTally(r, i, check.id))),
-            ),
+            .flatMap(r => r.steps.map((_, i) => (untilAt(replay, i, check.id) ? null : judgeTally(r, i, check.id)))),
         ),
       })
   }
@@ -157,24 +156,48 @@ export function holdFailures(cases: GradedCase[]): string[] {
   )
 }
 
-/** The rules and step judge checks that wait on a change not built yet and failed somewhere, with what they wait on. */
+/**
+ * The rules, and the rules and judge checks at a step, that wait on a change not built yet and failed somewhere, with
+ * what they wait on.
+ */
 export function knownFailing(cases: GradedCase[]): string[] {
   const rules = cases.flatMap(c =>
     c.runs.flatMap(r =>
       r.steps.flatMap(s => s.rules.filter(x => x.until && x.failures.length).map(x => `${x.rule}, until ${x.until}`)),
     ),
   )
-  const checks = cases.flatMap(({ replay, runs }) =>
+  const atSteps = cases.flatMap(({ replay, runs }) =>
     runs.flatMap(r =>
-      r.steps.flatMap((s, i) =>
-        (s.judge?.verdicts ?? [])
-          .filter(v => v.verdict === 'fail' && judgeUntilAt(replay, i, v.check))
-          .map(v => `${v.check}, until ${judgeUntilAt(replay, i, v.check)}`),
-      ),
+      r.steps.flatMap((s, i) => {
+        const failed = [
+          ...s.rules.filter(x => x.failures.length > 0).map(x => x.rule),
+          ...(s.judge?.verdicts ?? []).filter(v => v.verdict === 'fail').map(v => v.check),
+        ]
+        return failed
+          .filter(id => untilAt(replay, i, id))
+          .map(id => `${id} at ${replay.name} ${stepName(replay, i)}, until ${untilAt(replay, i, id)}`)
+      }),
     ),
   )
 
-  return [...new Set([...rules, ...checks])]
+  return [...new Set([...rules, ...atSteps])]
+}
+
+/**
+ * Each target a step's `until` names that some run graded and no run failed, so the change it waits on may have landed.
+ * One clean batch can be luck, so it blocks nothing.
+ */
+export function passingUntils(cases: GradedCase[]): string[] {
+  return cases.flatMap(({ replay, runs }) =>
+    replay.steps.flatMap((step, i) =>
+      Object.keys(step.until ?? {})
+        .filter(id => {
+          const tallies = runs.map(r => tallyOf(r, i, id)).filter(t => t !== null)
+          return tallies.length > 0 && !tallies.includes('fail')
+        })
+        .map(id => `${id} at ${replay.name} ${stepName(replay, i)}`),
+    ),
+  )
 }
 
 /** How many of each model's Status calls the host had to ask again for a readable answer. Counted toward no bar. */

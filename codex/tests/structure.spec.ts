@@ -460,6 +460,7 @@ for (const { name, text, at, code } of refusedHooksModules)
 function exportsFixture(t: TestContext, files: Record<string, string>) {
   const root = tempDir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q'], { cwd: root })
   cpSync(join(ROOT, 'scripts'), join(root, 'scripts'), { recursive: true })
   mkdirSync(join(root, 'codex'))
   symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')

@@ -14,7 +14,7 @@ export const midTurnActivity: Replay = {
       ...searchAt12,
       checkpoint: true,
       targets: ['where-it-stands', 'text-no-ids'],
-      judgeUntil: { 'where-it-stands': 'the mid-turn wording follow-up' },
+      until: { 'where-it-stands': 'the mid-turn wording follow-up' },
     },
   ],
 }

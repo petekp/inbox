@@ -11,7 +11,7 @@ import { gradeReplay } from './status-grade'
 import { runReplay } from './status-replay'
 import type { Agent, CallLog, ModelCall } from './status-replay'
 import { REPLAYS } from './status-replays'
-import { holdFailures, isBlocking, knownFailing, layerLines, layerTests } from './status-report'
+import { holdFailures, isBlocking, knownFailing, layerLines, layerTests, passingUntils } from './status-report'
 import type { GradedCase, ReplayRun } from './status-report'
 
 type RecordedRun = { agent: Agent; name: string; run: number; steps: { calls: CallLog[] }[] }
@@ -75,4 +75,6 @@ console.log(`code holds: ${holds.length === 0 ? 'none failed' : `${holds.length}
 for (const h of holds) console.log(`  x ${h}`)
 const known = knownFailing(cases)
 if (known.length > 0) console.log(`known failing: ${known.join('; ')}`)
+const passing = passingUntils(cases)
+if (passing.length > 0) console.log(`passed in every run, so its until may be stale: ${passing.join('; ')}`)
 console.log(tests.some(isBlocking) || holds.length > 0 ? 'blocked' : 'passes')
