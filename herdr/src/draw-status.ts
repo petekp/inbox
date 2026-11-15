@@ -6,11 +6,13 @@ import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { unfoldedRows } from '../../hooks/status-page-parts'
+import { LATER_TEXT, isSpacedAbove, milestoneRows, workJoints } from '../../hooks/status-path'
+import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { cellWidth } from '../../hooks/text'
 import { button, emptyBlock } from './blocks'
 import { emptyTab } from '../../hooks/empty-tab'
 import type { SessionView } from '../../hooks/session-view'
-import type { Block, Button, Does, Field, Mark, Tone } from './blocks'
+import type { Block, Button, Does, Field, Mark, PathSide, Tone, TreeStroke } from './blocks'
 
 /** The most cells a merged line holds before it cuts its names: three lines of the pane at its usual width. */
 const MERGED_CELLS = 150
@@ -57,6 +59,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         stall: row.stall,
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
+        ...(row.hasChildren ? { tree: [{ depth: row.depth, is: 'down' as const }] } : {}),
       },
     ]
   }
@@ -73,9 +76,11 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         stall: row.stall,
         under: [],
         buttons: [],
+        ...(row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}),
       },
     ]
-  if (row.kind === 'more') return [{ ...note(row.id, row.text, 'muted'), depth: row.depth }]
+  if (row.kind === 'more')
+    return [{ ...note(row.id, row.text, 'muted'), depth: row.depth, tree: [{ depth: row.depth - 1, is: row.branch }] }]
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
@@ -111,18 +116,69 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
   ]
 }
 
-function milestoneBlock(m: MilestoneRow): Block {
+/**
+ * A milestone on the goal's path, with the line from the milestone above into its mark and on from under it. A done
+ * milestone folded to its name draws as its fold.
+ */
+function milestoneBlock(
+  m: MilestoneRow,
+  lineAbove: PathLine,
+  hasWork: boolean,
+  isUnfolded: (id: string) => boolean,
+): Block {
+  const mark = markOf(m.mark, m.tone, false)
+  const path: PathSide = { is: 'milestone', above: lineAbove, below: m.line }
+  const tree = hasWork && m.line === null ? { tree: [{ depth: 0, is: 'down' as const }] } : {}
+  if (m.foldId !== null)
+    return {
+      kind: 'fold',
+      id: m.id,
+      depth: 0,
+      text: m.name,
+      isOpen: isUnfolded(m.foldId),
+      change: { toggleFold: m.foldId },
+      mark,
+      path,
+      ...tree,
+    }
+
   return {
     kind: 'status',
     id: m.id,
     depth: 0,
-    mark: markOf(m.mark, m.tone, false),
+    mark,
     name: m.name,
-    isBold: false,
-    isMuted: false,
+    isBold: m.isChanged,
+    isMuted: m.isMuted,
     stall: m.stall,
+    ...(m.word === null ? {} : { word: m.word }),
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
+    path,
+    ...tree,
+  }
+}
+
+/** Where a milestone's work joint draws in the milestones' column: its arm, and the nesting connector running past. */
+function jointStroke({ arm, beside }: WorkJoint): TreeStroke | null {
+  if (arm === 'elbow') return { depth: 0, is: 'last' }
+  if (beside === 'connector') return { depth: 0, is: arm === 'tee' ? 'mid' : 'past' }
+
+  return arm === null ? null : { depth: 0, is: 'arm' }
+}
+
+/**
+ * A block of a milestone's work, with the path's line beside it while the path runs on from the milestone, and its
+ * joint with the milestones' column.
+ */
+function besidePath(b: Block, line: PathLine, joint: WorkJoint | undefined): Block {
+  if (b.kind !== 'status' && b.kind !== 'fold' && b.kind !== 'note') return b
+  const stroke = joint ? jointStroke(joint) : null
+
+  return {
+    ...b,
+    ...(line === null ? {} : { path: { is: 'work', line } }),
+    ...(stroke ? { tree: [stroke, ...(b.tree ?? [])] } : {}),
   }
 }
 
@@ -130,7 +186,6 @@ const note = (id: string, text: string, tone: Tone): Extract<Block, { kind: 'not
   kind: 'note',
   id,
   text,
-  count: null,
   tone,
   isHead: false,
   isAtEdge: false,
@@ -145,10 +200,9 @@ const headNote = (id: string, text: string, tone: Tone): Block => ({
   isAtEdge: true,
 })
 
-/** The head's title: the goal, or what the session is for, with the goal's count after it. */
-const headTitle = (id: string, text: string, count: string | null): Block => ({
+/** The head's title: the goal, or what the session is for. */
+const headTitle = (id: string, text: string): Block => ({
   ...note(id, text, null),
-  count,
   isHead: true,
   isAtEdge: true,
   isStrong: true,
@@ -157,7 +211,10 @@ const headTitle = (id: string, text: string, count: string | null): Block => ({
 /** What the Status page draws besides the shared page: the done folds the person opened, and the goal's open field. */
 type StatusUi = { isUnfolded: (id: string) => boolean; goalField: Field | null }
 
-/** The goal's section: its heading with the goal's buttons, its text and the lines under it, then each milestone and its work. */
+/**
+ * The goal's section: its heading with the goal's buttons, its text and the lines under it, then each milestone on the
+ * path and its work, with the Later rule before the first milestone that waits under it.
+ */
 function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Block[] {
   const g = page.goal
   const heading: Block = {
@@ -174,16 +231,24 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
   const lines = goalField
     ? field
     : [
-        headTitle('goal text', g.text, g.count === null ? null : `${STALL_GAP}${g.count}`),
+        headTitle('goal text', g.text),
         ...(g.was ? [headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
         ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
         ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
       ]
-  const milestones = g.milestones.flatMap((m): Block[] => [
-    { kind: 'gap', id: `gap ${m.id}` },
-    milestoneBlock(m),
-    ...unfoldedRows(m.rows, isUnfolded).flatMap(r => rowBlocks(r, isUnfolded)),
-  ])
+  const milestones = g.milestones.flatMap((m, n): Block[] => {
+    const rows = milestoneRows(m, isUnfolded)
+    const joints = workJoints(rows, m.line)
+
+    return [
+      ...(isSpacedAbove(g.milestones, n, isUnfolded)
+        ? [{ kind: 'gap', id: `gap ${m.id}`, ...(n > 0 ? { isMilestoneStep: true as const } : {}) } as const]
+        : []),
+      ...(m.startsLater ? [{ kind: 'rule', id: 'goal later', text: LATER_TEXT } as const] : []),
+      milestoneBlock(m, g.milestones[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
+      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded).map(b => besidePath(b, m.line, joints[k]))),
+    ]
+  })
 
   return [heading, ...lines, ...milestones]
 }
@@ -209,7 +274,7 @@ export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
   const head =
     page.goal === null && page.head
       ? [
-          headTitle('head title', page.head.title, null),
+          headTitle('head title', page.head.title),
           ...(description ? [headNote('head text', description, 'muted')] : []),
         ]
       : []

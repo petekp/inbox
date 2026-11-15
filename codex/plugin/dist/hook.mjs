@@ -118,6 +118,9 @@ function stem(word) {
   const base = cut.length > 3 && cut.endsWith("e") ? cut.slice(0, -1) : cut;
   return base.replace(/([b-df-hj-np-tv-z])\1$/, "$1");
 }
+function stems(text2) {
+  return new Set([...words(text2)].map(stem));
+}
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
@@ -346,6 +349,7 @@ function milestoneOf(saved) {
   const status = STATUSES.find((x) => x === m?.status);
   const changedAt = time(m?.changedAt);
   if (!m || typeof m.id !== "string" || typeof m.name !== "string" || !status || changedAt === null) return null;
+  const madeNextAt = time(m.madeNextAt);
   return {
     id: m.id,
     name: m.name,
@@ -353,7 +357,9 @@ function milestoneOf(saved) {
     text: typeof m.text === "string" ? m.text : "",
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null)
+    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
+    startedAt: time(m.startedAt),
+    ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
 function milestonesOf(saved) {
@@ -1247,62 +1253,6 @@ function isSubjectSeen(o, s) {
   return seenAt !== null && s.changedAt <= seenAt;
 }
 
-// ../hooks/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
-var GOAL_HEADING = "Goal";
-function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
-}
-function milestoneRow(m, o, items) {
-  const isOpen2 = m.status !== "done" && m.status !== "dropped";
-  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
-  const holds = items.filter((i) => {
-    const to = o.askSubjects[i.id] ?? [];
-    return to.some((id) => id === m.id || servingIds.has(id));
-  });
-  const isHeld = isOpen2 && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return {
-    id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
-    name: m.name,
-    text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
-    was: isChanged ? m.was : null,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
-    rows: []
-  };
-}
-function goalPage(o, items) {
-  const g = o?.goal ?? null;
-  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
-  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  const shown = o.milestones.filter(
-    (m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt
-  );
-  const done = kept.filter((m) => m.status === "done").length;
-  const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
-  const head = o.head;
-  return {
-    goal: {
-      label: isMet ? "Goal met" : GOAL_HEADING,
-      text: g.text,
-      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
-      isMet,
-      was: isWasShown ? g.was : null,
-      now: head ? `Now: ${head.description || head.title}` : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
-    },
-    canRestoreGoal: false
-  };
-}
-
 // ../hooks/status-page-parts.ts
 var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
@@ -1391,6 +1341,117 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   return rows;
 }
 
+// ../hooks/status-path.ts
+var NOW_WORD = "now";
+var NEXT_WORD = "next";
+var UNDER_WAY_TIME_AFTER_MS = 60 * 6e4;
+var HOUR_MS = 60 * 6e4;
+var DAY_HOURS = 24;
+var HOURS_SHOWN = 48;
+function underWayTime(ms) {
+  const hours = Math.floor(ms / HOUR_MS);
+  return hours < HOURS_SHOWN ? `${hours}h` : `${Math.floor(hours / DAY_HOURS)}d`;
+}
+function nowWord(m, now) {
+  const ran = m.startedAt === null ? 0 : now - m.startedAt;
+  return ran >= UNDER_WAY_TIME_AFTER_MS ? `${NOW_WORD} \xB7 ${underWayTime(ran)}` : NOW_WORD;
+}
+function milestonePath(shown, now) {
+  const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
+  const underWay = shown.filter((m) => m.status === "working" || m.status === "waits-on-other");
+  const [next, ...later] = shown.filter((m) => m.status === "queued");
+  const dropped = shown.filter((m) => m.status === "dropped");
+  const onPath = [...done, ...underWay, ...next ? [next] : []];
+  const lineBelow = (n) => n >= onPath.length - 1 ? null : onPath[n + 1] === next ? "to-next" : "continues";
+  const pathSteps = onPath.map((m, n) => ({
+    milestone: m,
+    place: m === next ? "next" : m.status === "done" ? "done" : "now",
+    word: m === next ? NEXT_WORD : m.status === "working" ? nowWord(m, now) : null,
+    line: lineBelow(n),
+    startsLater: false
+  }));
+  const afterPath = [...later, ...dropped].map((m, n) => ({
+    milestone: m,
+    place: m.status === "dropped" ? "dropped" : "later",
+    word: null,
+    line: null,
+    startsLater: n === 0 && later.length > 0
+  }));
+  return [...pathSteps, ...afterPath];
+}
+function namesOnlyMilestoneUnderWay(nowText, milestones) {
+  const said = stems(nowText);
+  return said.size > 0 && milestones.filter((m) => m.status === "working").some((m) => {
+    const row = stems(`${m.name} ${m.text}`);
+    return [...said].every((w) => row.has(w));
+  });
+}
+
+// ../hooks/status-goal-page.ts
+var AWAITING_TEXT = "Milestones after the next reply";
+var GOAL_HEADING = "Goal";
+function oldestAsk(items, links, id) {
+  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+}
+function milestoneRow(step, o, items) {
+  const m = step.milestone;
+  const isOpen2 = m.status !== "done" && m.status !== "dropped";
+  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
+  const holds = items.filter((i) => {
+    const to = o.askSubjects[i.id] ?? [];
+    return to.some((id) => id === m.id || servingIds.has(id));
+  });
+  const isHeld = isOpen2 && holds.length > 0;
+  const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
+  const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
+  const direct = oldestAsk(items, o.askSubjects, m.id);
+  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return {
+    id: m.id,
+    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    name: m.name,
+    place: step.place,
+    word: step.word,
+    line: step.line,
+    startsLater: step.startsLater,
+    isChanged,
+    isMuted: step.place === "later" || step.place === "dropped",
+    foldId: null,
+    text: m.text || null,
+    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
+    was: isChanged ? m.was : null,
+    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
+    rows: []
+  };
+}
+function goalPage(o, items, now) {
+  const g = o?.goal ?? null;
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
+  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const shown = o.milestones.filter(
+    (m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt
+  );
+  const isMet = g.metAt !== null;
+  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
+  const head = o.head;
+  const nowText = head ? head.description || head.title : null;
+  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
+  return {
+    goal: {
+      label: isMet ? "Goal met" : GOAL_HEADING,
+      text: g.text,
+      isMet,
+      was: isWasShown ? g.was : null,
+      now: nowText !== null && !isNowSaid ? `Now: ${nowText}` : null,
+      awaiting: isAwaiting ? AWAITING_TEXT : null,
+      milestones: g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items))
+    },
+    canRestoreGoal: false
+  };
+}
+
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
@@ -1409,7 +1470,7 @@ function statusPage(s, now) {
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items);
+  const goalParts = goalPage(o, s.ledger.items, now);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : void 0;
   const milestoneOf2 = (x) => {
@@ -1425,22 +1486,31 @@ function statusPage(s, now) {
   const needed = subjects.filter((x) => !isUnneeded(x));
   const main2 = needed.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open2 = needed.filter(isOpen).sort(pageOrder);
-  const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
+  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf2(x) ?? "") && canFold(x);
+  const open2 = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
+  const foldable = open2.filter(canFold);
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
-  const split = (part) => {
+  const split = (part, isLater = false) => {
     const unseenClosed = unseenClosedOf(part);
     const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
+    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
     return {
-      shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
+      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
       newClosed,
       named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter((x) => folded.includes(x)),
+      foldedOpen: part.filter(isFoldedOpen),
       foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
     };
   };
   const top = split(main2.filter((x) => milestoneOf2(x) === null));
-  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main2.filter((x) => milestoneOf2(x) === m.id)));
+  const underMilestones = (goalParts.goal?.milestones ?? []).map(
+    (m) => split(
+      main2.filter((x) => milestoneOf2(x) === m.id),
+      m.place === "later"
+    )
+  );
   const otherUnseenClosed = unseenClosedOf(other);
   const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
   const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
@@ -1524,12 +1594,21 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
-  const milestoneRows = (id, p) => [...looseRows(id, 1), ...foldedPart(`${id}-`, p, 1)];
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]) }))
+  const withRows = (m, p) => {
+    const rows2 = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
+    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const isAllSeen = p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen;
+    return isShrunk ? {
+      ...m,
+      text: null,
+      isMuted: true,
+      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
+      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
+    } : { ...m, rows: rows2 };
   };
+  const g = goalParts.goal;
+  const goal = g && { ...g, milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n])) };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,

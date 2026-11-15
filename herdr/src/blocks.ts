@@ -7,6 +7,7 @@ import type { RowPress } from '../../hooks/presses'
 import { DOT, shortAgo } from '../../hooks/rows'
 import type { ActionEmphasis } from '../../hooks/rows'
 import type { StatusStall } from '../../hooks/status-page'
+import type { PathLine } from '../../hooks/status-path'
 import type { EmptyTab, EmptyText } from '../../hooks/empty-tab'
 import type { ShownTab } from '../../hooks/tabs'
 
@@ -107,6 +108,21 @@ export const isOpenRow = (r: RowBlock): boolean => r.isSelected && !r.isCollapse
 /** A status that ends with its age: its words, then how long ago its time was. */
 export const agedText = (a: Aged, now: number): string => `${a.lead}${DOT}${shortAgo(now - a.at)}`
 
+/**
+ * The goal's path beside a Status block, in the milestones' mark column. Beside a milestone, `above` runs through the
+ * space above it into its mark, and `below` from under its mark to its end. Beside a milestone's work, `line` runs its
+ * whole height.
+ */
+export type PathSide = { is: 'milestone'; above: PathLine; below: PathLine } | { is: 'work'; line: PathLine }
+
+/**
+ * A stroke of a nesting connector beside a Status block, in the column under the marks of rows at `depth`. `down` runs
+ * from under the block's own mark to its end. `mid` runs the block's whole height with an arm to its mark, and `last`
+ * runs down to that arm and ends there. `past` runs the whole height with no arm. `arm` is the arm alone, where the
+ * path's line is the column.
+ */
+export type TreeStroke = { depth: number; is: 'down' | 'mid' | 'last' | 'past' | 'arm' }
+
 /** A line of the Status page: a subject, a milestone or a child, with its mark, name, stall word and lines under it. */
 export type StatusLine = {
   kind: 'status'
@@ -115,12 +131,16 @@ export type StatusLine = {
   mark: Mark | null
   name: string
   isBold: boolean
-  /** A child or a plain line, whose name draws quiet, under the subject it belongs to. */
+  /** A child or a plain line, or a milestone that waits or was dropped, whose name draws quiet. */
   isMuted: boolean
   stall: { text: string; tone: StatusStall['tone'] } | null
+  /** A milestone's "now" or "next", muted at the right of its name's line where the name and it fit on one line. */
+  word?: string
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */
   under: string[]
   buttons: Button[]
+  path?: PathSide
+  tree?: TreeStroke[]
 }
 
 /** A PR's title line and the line under it: its number and title, where it stands, and its buttons. */
@@ -183,31 +203,46 @@ export type Block =
   | StatusLine
   | PrBlock
   | LineBlock
-  /** A Closed fold or a Status done fold, which the person opens and shuts. */
-  | { kind: 'fold'; id: string; depth: number; text: string; isOpen: boolean; change: ViewChange }
+  /**
+   * A Closed fold or a Status done fold, which the person opens and shuts. A done milestone folded to its name draws
+   * its `mark` in the mark column and the chevron after its name.
+   */
+  | {
+      kind: 'fold'
+      id: string
+      depth: number
+      text: string
+      isOpen: boolean
+      change: ViewChange
+      mark?: Mark
+      path?: PathSide
+      tree?: TreeStroke[]
+    }
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
   /**
    * A line of text. `isHead` keeps it close to the head's other lines, as the Status page's head does. `isAtEdge` starts it
    * at the panel's edge, not where rows' text starts. `isStrong` draws it
-   * as the head's title: the goal, or what the session is for. `count` follows the text, quiet, as the goal's does.
+   * as the head's title: the goal, or what the session is for.
    */
   | {
       kind: 'note'
       id: string
       text: string
-      count: string | null
       tone: Tone
       isHead: boolean
       isAtEdge: boolean
       isStrong: boolean
       depth: number
+      path?: PathSide
+      tree?: TreeStroke[]
     }
   /** The goal's field while the person types a goal, in place of the goal's text. */
   | { kind: 'field'; id: string; field: Field }
   /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
   | { kind: 'rule'; id: string; text: string | null }
-  | { kind: 'gap'; id: string }
+  /** A section's space above the block after it, or with `isMilestoneStep` the smaller space between two milestones. */
+  | { kind: 'gap'; id: string; isMilestoneStep?: true }
   /** A muted line at the edge that names the blocks under it, as Other PRs. */
   | { kind: 'caption'; id: string; text: string }
   /** A message in the list, as the PRs tab's GitHub notice, with the buttons that act on its problem at its end. */

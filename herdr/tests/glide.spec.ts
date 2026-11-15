@@ -1,11 +1,14 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
 import type { Block } from '../src/blocks'
+import { demoSession } from '../../hooks/demo'
+import { sessionView } from '../../hooks/session-view'
+import { SETTLED_MS } from '../../hooks/timing'
 
 const { framesOf, jumpsOf } = await import('./frames')
 const { LINE_HEIGHT } = await import('../src/paint-theme')
 const { tabBlocks } = await import('../src/draw')
-const { demoScreen, uiOn } = await import('./fixtures')
+const { AGENT, NOW, demoScreen, uiOn } = await import('./fixtures')
 
 const ALL = ['d11', 'd12', 'd13', 'd15']
 
@@ -161,4 +164,58 @@ test('an opening row wraps its title from its first frame, and a close that turn
       [200, asks(ALL, 'd11')],
     ]),
   ).toMatchObject({ jumps: [], isWrappedAtFirst: true, isCutOnlyAtRest: true, isCutAtEnd: false })
+})
+
+type Overview = NonNullable<ReturnType<typeof demoSession>['ledger']['overview']>
+type Milestone = Overview['milestones'][number]
+
+function statusOf(change: (o: Overview) => Overview = o => o, unfolded: string[] = []): Block[] {
+  const s = demoSession(NOW, AGENT)
+  const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
+  const ledger = { ...s.ledger, overview: change(s.ledger.overview!) }
+  const view = sessionView({ ...s, ledger }, NOW, SETTLED_MS, holds)
+
+  return tabBlocks({ ...demoScreen(), view }, uiOn('overview', { statusUnfolded: unfolded }))
+}
+
+const withMilestones =
+  (f: (m: Milestone) => Milestone) =>
+  (o: Overview): Overview => ({ ...o, milestones: o.milestones.map(f) })
+
+function glideOf(from: Block[], to: Block[]) {
+  const { jumps, gaps } = framesOf([
+    [0, from],
+    [0, to],
+  ])
+
+  return { jumps, gaps }
+}
+
+test('on the Status page, a done milestone’s fold opening and closing, a work row arriving under a milestone and the next milestone becoming now glide on their springs, with every tree column and the path’s line joined across each gliding space', () => {
+  const fold = demoScreen().view.statusPage.goal!.milestones.find(m => m.foldId !== null)!.foldId!
+  const arrives = (o: Overview): Overview => ({
+    ...o,
+    subjects: [...o.subjects, { ...o.subjects[0]!, id: 's9', name: 'Pinch sensor' }],
+    serves: { ...o.serves, s9: 'm2' },
+  })
+  const toNow = withMilestones(m =>
+    m.id === 'm2'
+      ? { ...m, status: 'done', closedAt: NOW }
+      : m.id === 'm3'
+        ? { ...m, status: 'working', startedAt: NOW }
+        : m,
+  )
+  const moves: [string, Block[], Block[]][] = [
+    ['the fold opens', statusOf(), statusOf(undefined, [fold])],
+    ['the fold closes', statusOf(undefined, [fold]), statusOf()],
+    ['a work row arrives', statusOf(), statusOf(arrives)],
+    ['the next milestone becomes now', statusOf(), statusOf(toNow)],
+    ['the milestone now goes back to next', statusOf(toNow), statusOf()],
+  ]
+  for (const [name, from, to] of moves) expect({ name, ...glideOf(from, to) }).toEqual({ name, jumps: [], gaps: [] })
+})
+
+test.failing('a dropped milestone moves below the path without the rows between its old and new place jumping', () => {
+  const dropped = withMilestones(m => (m.id === 'm3' ? { ...m, status: 'dropped', closedAt: NOW } : m))
+  expect(glideOf(statusOf(), statusOf(dropped))).toEqual({ jumps: [], gaps: [] })
 })

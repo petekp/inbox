@@ -93,6 +93,72 @@ test('the Status page draws the goal’s and each row’s buttons in their plans
   }
 })
 
+test('the Status page draws the goal’s milestones on a path: a seen done one as its fold, the line from each to the next and beside its work, dashed into the one that reads next, each word, and Later above the ones that wait', () => {
+  const screen = demoScreen()
+  const blocks = tabBlocks(screen, uiOn('overview'))
+  const drawn = screen.view.statusPage.goal!.milestones.map(m => blocks.find(b => b.id === m.id)!)
+  expect(drawn.map(b => b.kind)).toEqual(['fold', 'status', 'status', 'status', 'status'])
+  expect(drawn.map(b => ('path' in b ? b.path : null))).toEqual([
+    { is: 'milestone', above: null, below: 'continues' },
+    { is: 'milestone', above: 'continues', below: 'continues' },
+    { is: 'milestone', above: 'continues', below: 'to-next' },
+    { is: 'milestone', above: 'to-next', below: null },
+    { is: 'milestone', above: null, below: null },
+  ])
+  expect(drawn.map(b => (b.kind === 'status' ? b.word : null))).toEqual([
+    null,
+    undefined,
+    'now · 1h',
+    'next',
+    undefined,
+  ])
+  expect(blocks.find(b => b.id === 's1')).toMatchObject({ path: { is: 'work', line: 'to-next' } })
+  expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
+})
+
+test('the Status page joins each parent to the rows under it: work beside the path’s line by an arm, other work by the milestone’s connector down to an elbow at its last row with nothing past it, and a subject’s children by its own connector', () => {
+  const screen = demoScreen()
+  const blocks = tabBlocks(screen, uiOn('overview'))
+  const treeOf = (id: string) => {
+    const b = blocks.find(b => b.id === id)
+    return b && 'tree' in b ? b.tree : undefined
+  }
+  expect(screen.view.statusPage.goal!.milestones.map(m => treeOf(m.id))).toEqual([
+    undefined,
+    undefined,
+    undefined,
+    [{ depth: 0, is: 'down' }],
+    [{ depth: 0, is: 'down' }],
+  ])
+  expect(['s1', 'c1', 'c4', 's3', 's2', 'c5'].map(treeOf)).toEqual([
+    [
+      { depth: 0, is: 'arm' },
+      { depth: 1, is: 'down' },
+    ],
+    [{ depth: 1, is: 'mid' }],
+    [{ depth: 1, is: 'last' }],
+    [{ depth: 0, is: 'last' }],
+    [{ depth: 0, is: 'down' }],
+    [{ depth: 0, is: 'last' }],
+  ])
+  const page = screen.view.statusPage
+  const milestones = page.goal!.milestones.map(m => (m.rows.some(r => r.id === 's1') ? { ...m, line: null } : m))
+  const ended = { ...screen, view: { ...screen.view, statusPage: { ...page, goal: { ...page.goal!, milestones } } } }
+  const endedBlocks = tabBlocks(ended, uiOn('overview'))
+  const endedTreeOf = (id: string) => {
+    const b = endedBlocks.find(b => b.id === id)
+    return b && 'tree' in b ? b.tree : undefined
+  }
+  expect(['s1', 'c1', 'c4'].map(endedTreeOf)).toEqual([
+    [
+      { depth: 0, is: 'last' },
+      { depth: 1, is: 'down' },
+    ],
+    [{ depth: 1, is: 'mid' }],
+    [{ depth: 1, is: 'last' }],
+  ])
+})
+
 test('each case of the followed terminal draws its own message, and a read session draws the inbox', () => {
   const read = readSession(demoEnvelopeText())
   const o = {

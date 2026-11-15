@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T06:58:13.410Z. 224270 characters follow.
+// Built at 2026-11-15T07:11:50.590Z. 234939 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -178,6 +178,9 @@ function stem(word) {
   const cut = word.slice(0, word.length - suffix.length);
   const base = cut.length > 3 && cut.endsWith("e") ? cut.slice(0, -1) : cut;
   return base.replace(/([b-df-hj-np-tv-z])\1$/, "$1");
+}
+function stems(text) {
+  return new Set([...words(text)].map(stem));
 }
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
@@ -453,6 +456,7 @@ function milestoneOf(saved) {
   const changedAt = time(m?.changedAt);
   if (!m || typeof m.id !== "string" || typeof m.name !== "string" || !status || changedAt === null)
     return null;
+  const madeNextAt = time(m.madeNextAt);
   return {
     id: m.id,
     name: m.name,
@@ -460,7 +464,9 @@ function milestoneOf(saved) {
     text: typeof m.text === "string" ? m.text : "",
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null)
+    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
+    startedAt: time(m.startedAt),
+    ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
 function milestonesOf(saved) {
@@ -1273,18 +1279,19 @@ function viewAsk(ask) {
 }
 function statusKeyPlan(row) {
   if (row.kind === "done-fold")
-    return [
-      {
-        press: { action: "toggle-fold", foldId: row.id },
-        label: row.text,
-        hotkey: "f",
-        kind: "view",
-        emphasis: "quiet"
-      }
-    ];
+    return [toggleFold(row.id, row.text)];
   return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
 }
+var toggleFold = (foldId, label) => ({
+  press: { action: "toggle-fold", foldId },
+  label,
+  hotkey: "f",
+  kind: "view",
+  emphasis: "quiet"
+});
 function milestoneKeyPlan(m) {
+  if (m.foldId !== null)
+    return [toggleFold(m.foldId, m.name)];
   return m.ask === null ? [] : [viewAsk(m.ask)];
 }
 var REMOVE_GOAL = {
@@ -1369,62 +1376,6 @@ function noteText() {
 }
 function isPressConfirmed(outcome) {
   return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
-}
-
-// ../hooks/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
-var GOAL_HEADING = "Goal";
-var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
-}
-function milestoneRow(m, o, items) {
-  const isOpen = m.status !== "done" && m.status !== "dropped";
-  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
-  const holds = items.filter((i) => {
-    const to = o.askSubjects[i.id] ?? [];
-    return to.some((id) => id === m.id || servingIds.has(id));
-  });
-  const isHeld = isOpen && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return {
-    id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
-    name: m.name,
-    text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
-    was: isChanged ? m.was : null,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
-    rows: []
-  };
-}
-function goalPage(o, items) {
-  const g = o?.goal ?? null;
-  if (o === null || g === null)
-    return { goal: null, canRestoreGoal: o?.goalRemoved != null };
-  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
-  const done = kept.filter((m) => m.status === "done").length;
-  const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
-  const head = o.head;
-  return {
-    goal: {
-      label: isMet ? "Goal met" : GOAL_HEADING,
-      text: g.text,
-      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
-      isMet,
-      was: isWasShown ? g.was : null,
-      now: head ? `Now: ${head.description || head.title}` : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
-    },
-    canRestoreGoal: false
-  };
 }
 
 // ../hooks/status-page-parts.ts
@@ -1521,6 +1472,137 @@ function unfoldedRows(rows, isUnfolded) {
   return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
 }
 
+// ../hooks/status-path.ts
+var NOW_WORD = "now";
+var NEXT_WORD = "next";
+var LATER_TEXT = "Later";
+var UNDER_WAY_TIME_AFTER_MS = 60 * 60000;
+var HOUR_MS = 60 * 60000;
+var DAY_HOURS = 24;
+var HOURS_SHOWN = 48;
+function underWayTime(ms) {
+  const hours = Math.floor(ms / HOUR_MS);
+  return hours < HOURS_SHOWN ? `${hours}h` : `${Math.floor(hours / DAY_HOURS)}d`;
+}
+function nowWord(m, now) {
+  const ran = m.startedAt === null ? 0 : now - m.startedAt;
+  return ran >= UNDER_WAY_TIME_AFTER_MS ? `${NOW_WORD} · ${underWayTime(ran)}` : NOW_WORD;
+}
+function milestonePath(shown, now) {
+  const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
+  const underWay = shown.filter((m) => m.status === "working" || m.status === "waits-on-other");
+  const [next, ...later] = shown.filter((m) => m.status === "queued");
+  const dropped = shown.filter((m) => m.status === "dropped");
+  const onPath = [...done, ...underWay, ...next ? [next] : []];
+  const lineBelow = (n) => n >= onPath.length - 1 ? null : onPath[n + 1] === next ? "to-next" : "continues";
+  const pathSteps = onPath.map((m, n) => ({
+    milestone: m,
+    place: m === next ? "next" : m.status === "done" ? "done" : "now",
+    word: m === next ? NEXT_WORD : m.status === "working" ? nowWord(m, now) : null,
+    line: lineBelow(n),
+    startsLater: false
+  }));
+  const afterPath = [...later, ...dropped].map((m, n) => ({
+    milestone: m,
+    place: m.status === "dropped" ? "dropped" : "later",
+    word: null,
+    line: null,
+    startsLater: n === 0 && later.length > 0
+  }));
+  return [...pathSteps, ...afterPath];
+}
+function namesOnlyMilestoneUnderWay(nowText, milestones) {
+  const said = stems(nowText);
+  return said.size > 0 && milestones.filter((m) => m.status === "working").some((m) => {
+    const row = stems(`${m.name} ${m.text}`);
+    return [...said].every((w) => row.has(w));
+  });
+}
+function milestoneRows(m, isUnfolded) {
+  return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded);
+}
+function workJoints(rows, line) {
+  const top = Math.min(...rows.map((r) => r.depth));
+  const last = rows.findLastIndex((r) => r.depth === top);
+  return rows.map((r, n) => {
+    const arm = r.depth !== top ? null : line === null && n === last ? "elbow" : "tee";
+    if (line !== null)
+      return { arm, beside: line };
+    return { arm, beside: n < last ? "connector" : null };
+  });
+}
+function isSpacedAbove(milestones, n, isUnfolded) {
+  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
+  const above = milestones[n - 1];
+  const m = milestones[n];
+  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
+}
+
+// ../hooks/status-goal-page.ts
+var AWAITING_TEXT = "Milestones after the next reply";
+var GOAL_HEADING = "Goal";
+var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
+function oldestAsk(items, links, id) {
+  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+}
+function milestoneRow(step, o, items) {
+  const m = step.milestone;
+  const isOpen = m.status !== "done" && m.status !== "dropped";
+  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
+  const holds = items.filter((i) => {
+    const to = o.askSubjects[i.id] ?? [];
+    return to.some((id) => id === m.id || servingIds.has(id));
+  });
+  const isHeld = isOpen && holds.length > 0;
+  const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
+  const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
+  const direct = oldestAsk(items, o.askSubjects, m.id);
+  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return {
+    id: m.id,
+    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    name: m.name,
+    place: step.place,
+    word: step.word,
+    line: step.line,
+    startsLater: step.startsLater,
+    isChanged,
+    isMuted: step.place === "later" || step.place === "dropped",
+    foldId: null,
+    text: m.text || null,
+    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
+    was: isChanged ? m.was : null,
+    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
+    rows: []
+  };
+}
+function goalPage(o, items, now) {
+  const g = o?.goal ?? null;
+  if (o === null || g === null)
+    return { goal: null, canRestoreGoal: o?.goalRemoved != null };
+  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
+  const isMet = g.metAt !== null;
+  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
+  const head = o.head;
+  const nowText = head ? head.description || head.title : null;
+  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
+  return {
+    goal: {
+      label: isMet ? "Goal met" : GOAL_HEADING,
+      text: g.text,
+      isMet,
+      was: isWasShown ? g.was : null,
+      now: nowText !== null && !isNowSaid ? `Now: ${nowText}` : null,
+      awaiting: isAwaiting ? AWAITING_TEXT : null,
+      milestones: g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items))
+    },
+    canRestoreGoal: false
+  };
+}
+
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
@@ -1545,7 +1627,7 @@ function statusPage(s, now) {
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items);
+  const goalParts = goalPage(o, s.ledger.items, now);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
   const milestoneOf = (x) => {
@@ -1561,22 +1643,26 @@ function statusPage(s, now) {
   const needed = subjects.filter((x) => !isUnneeded(x));
   const main = needed.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open = needed.filter(isOpen).sort(pageOrder);
-  const foldable = open.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
+  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
+  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
+  const foldable = open.filter(canFold);
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
-  const split = (part) => {
+  const split = (part, isLater = false) => {
     const unseenClosed = unseenClosedOf(part);
     const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
+    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
     return {
-      shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
+      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
       newClosed,
       named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter((x) => folded.includes(x)),
+      foldedOpen: part.filter(isFoldedOpen),
       foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
     };
   };
   const top = split(main.filter((x) => milestoneOf(x) === null));
-  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id)));
+  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
   const otherUnseenClosed = unseenClosedOf(other);
   const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
   const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
@@ -1651,12 +1737,21 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
-  const milestoneRows = (id, p) => [...looseRows(id, 1), ...foldedPart(`${id}-`, p, 1)];
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]) }))
+  const withRows = (m, p) => {
+    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
+    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const isAllSeen = p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen;
+    return isShrunk ? {
+      ...m,
+      text: null,
+      isMuted: true,
+      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
+      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
+    } : { ...m, rows };
   };
+  const g = goalParts.goal;
+  const goal = g && { ...g, milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n])) };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
@@ -3563,7 +3658,6 @@ var note = (id, text, tone) => ({
   kind: "note",
   id,
   text,
-  count: null,
   tone,
   isHead: true,
   isAtEdge: false,
@@ -3686,7 +3780,8 @@ function rowBlocks(row, isUnfolded) {
         isMuted: false,
         stall: row.stall,
         under,
-        buttons: keyButtons(row.id, statusKeyPlan(row))
+        buttons: keyButtons(row.id, statusKeyPlan(row)),
+        ...row.hasChildren ? { tree: [{ depth: row.depth, is: "down" }] } : {}
       }
     ];
   }
@@ -3702,11 +3797,12 @@ function rowBlocks(row, isUnfolded) {
         isMuted: true,
         stall: row.stall,
         under: [],
-        buttons: []
+        buttons: [],
+        ...row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}
       }
     ];
   if (row.kind === "more")
-    return [{ ...note2(row.id, row.text, "muted"), depth: row.depth }];
+    return [{ ...note2(row.id, row.text, "muted"), depth: row.depth, tree: [{ depth: row.depth - 1, is: row.branch }] }];
   if (row.kind === "part")
     return [
       { kind: "gap", id: `gap ${row.id}` },
@@ -3740,25 +3836,59 @@ function rowBlocks(row, isUnfolded) {
     }
   ];
 }
-function milestoneBlock(m) {
+function milestoneBlock(m, lineAbove, hasWork, isUnfolded) {
+  const mark = markOf2(m.mark, m.tone, false);
+  const path = { is: "milestone", above: lineAbove, below: m.line };
+  const tree = hasWork && m.line === null ? { tree: [{ depth: 0, is: "down" }] } : {};
+  if (m.foldId !== null)
+    return {
+      kind: "fold",
+      id: m.id,
+      depth: 0,
+      text: m.name,
+      isOpen: isUnfolded(m.foldId),
+      change: { toggleFold: m.foldId },
+      mark,
+      path,
+      ...tree
+    };
   return {
     kind: "status",
     id: m.id,
     depth: 0,
-    mark: markOf2(m.mark, m.tone, false),
+    mark,
     name: m.name,
-    isBold: false,
-    isMuted: false,
+    isBold: m.isChanged,
+    isMuted: m.isMuted,
     stall: m.stall,
+    ...m.word === null ? {} : { word: m.word },
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
-    buttons: keyButtons(m.id, milestoneKeyPlan(m))
+    buttons: keyButtons(m.id, milestoneKeyPlan(m)),
+    path,
+    ...tree
+  };
+}
+function jointStroke({ arm, beside }) {
+  if (arm === "elbow")
+    return { depth: 0, is: "last" };
+  if (beside === "connector")
+    return { depth: 0, is: arm === "tee" ? "mid" : "past" };
+  return arm === null ? null : { depth: 0, is: "arm" };
+}
+function besidePath(b, line, joint) {
+  if (b.kind !== "status" && b.kind !== "fold" && b.kind !== "note")
+    return b;
+  const stroke = joint ? jointStroke(joint) : null;
+  return {
+    ...b,
+    ...line === null ? {} : { path: { is: "work", line } },
+    ...stroke ? { tree: [stroke, ...b.tree ?? []] } : {}
   };
 }
 var note2 = (id, text, tone) => ({
   kind: "note",
   id,
   text,
-  count: null,
   tone,
   isHead: false,
   isAtEdge: false,
@@ -3770,9 +3900,8 @@ var headNote = (id, text, tone) => ({
   isHead: true,
   isAtEdge: true
 });
-var headTitle = (id, text, count) => ({
+var headTitle = (id, text) => ({
   ...note2(id, text, null),
-  count,
   isHead: true,
   isAtEdge: true,
   isStrong: true
@@ -3792,16 +3921,21 @@ function goalBlocks(page, { isUnfolded, goalField }) {
   if (g === null)
     return [heading, ...goalField ? field : [headNote("goal text", NO_GOAL_TEXT, "muted")]];
   const lines = goalField ? field : [
-    headTitle("goal text", g.text, g.count === null ? null : `${STALL_GAP}${g.count}`),
+    headTitle("goal text", g.text),
     ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
     ...g.now ? [headNote("goal now", g.now, "muted")] : [],
     ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
   ];
-  const milestones = g.milestones.flatMap((m) => [
-    { kind: "gap", id: `gap ${m.id}` },
-    milestoneBlock(m),
-    ...unfoldedRows(m.rows, isUnfolded).flatMap((r) => rowBlocks(r, isUnfolded))
-  ]);
+  const milestones = g.milestones.flatMap((m, n) => {
+    const rows = milestoneRows(m, isUnfolded);
+    const joints = workJoints(rows, m.line);
+    return [
+      ...isSpacedAbove(g.milestones, n, isUnfolded) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
+      ...m.startsLater ? [{ kind: "rule", id: "goal later", text: LATER_TEXT }] : [],
+      milestoneBlock(m, g.milestones[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
+      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded).map((b) => besidePath(b, m.line, joints[k])))
+    ];
+  });
   return [heading, ...lines, ...milestones];
 }
 function statusBlocks(view, ui) {
@@ -3821,7 +3955,7 @@ function statusBlocks(view, ui) {
   }
   const description = page.head?.description;
   const head = page.goal === null && page.head ? [
-    headTitle("head title", page.head.title, null),
+    headTitle("head title", page.head.title),
     ...description ? [headNote("head text", description, "muted")] : []
   ] : [];
   const top = [...goalBlocks(page, ui), ...head.length > 0 ? [{ kind: "gap", id: "gap head" }, ...head] : []];
@@ -3973,7 +4107,6 @@ function groupBlocks(g, ui, selected, screen) {
       kind: "note",
       id: `empty ${g.kind}`,
       text: groupEmptyText(g.title),
-      count: null,
       tone: "muted",
       isHead: false,
       isAtEdge: false,
@@ -4599,6 +4732,13 @@ var TONE_COLORS = {
 };
 var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
+function opaqueOver(c, under) {
+  if (c.length !== 9)
+    return c;
+  const share = parseInt(c.slice(7, 9), 16) / 255;
+  const channel = (at) => Math.round(parseInt(c.slice(at, at + 2), 16) * share + parseInt(under.slice(at, at + 2), 16) * (1 - share));
+  return `#${[1, 3, 5].map((at) => channel(at).toString(16).padStart(2, "0")).join("")}`;
+}
 var TEXT = 13;
 var LINE_HEIGHT = 20;
 var LINE = `${LINE_HEIGHT}px`;
@@ -4643,7 +4783,10 @@ function itemGap(prev, b) {
     return ITEM_GAP;
   return INSET;
 }
+var isMilestone = (b) => ("path" in b) && b.path?.is === "milestone";
 function gapBetween(prev, b) {
+  if (isMilestone(prev))
+    return isMilestone(b) ? CONTROL_GAP : INSET;
   const isLabelled = prev.kind === "heading" || prev.kind === "caption" || prev.kind === "rule" && prev.text !== null;
   if (isLabelled)
     return HEAD_GAP;
@@ -4661,10 +4804,10 @@ function gapBetween(prev, b) {
     return EDGE;
   return itemGap(prev, b);
 }
-function aboveOf(prev, b, isSection) {
+function aboveOf(prev, b, section) {
   if (prev === null)
     return 0;
-  const gap = isSection ? GROUP_GAP : gapBetween(prev, b);
+  const gap = section ?? gapBetween(prev, b);
   return Math.max(0, gap - padOf(prev) - padOf(b));
 }
 var panelId = (id) => `panel ${id}`;
@@ -4673,19 +4816,19 @@ var restId = (id) => `rest ${id}`;
 function spacesOf(blocks, isShut) {
   const out = [];
   let prev = null;
-  let isSection = false;
+  let section = null;
   for (const b of blocks) {
     if (b.kind === "gap") {
-      isSection = prev !== null;
+      section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : GROUP_GAP;
       continue;
     }
     if (isShut(b)) {
       out.push({ block: b, above: 0 });
       continue;
     }
-    out.push({ block: b, above: aboveOf(prev, b, isSection) });
+    out.push({ block: b, above: aboveOf(prev, b, section) });
     prev = b;
-    isSection = false;
+    section = null;
   }
   return out;
 }
@@ -4713,7 +4856,7 @@ function fitHeight(b, m, p) {
   const rest = p.heights.get(restId(id));
   return title === undefined || rest === undefined ? undefined : 2 * ROW_PAD_PT + title + rest - panel;
 }
-function contentEl(b, m, p, el) {
+function contentEl(b, m, p, el, strokes) {
   const id = b.id;
   const isRow = b.kind === "row";
   const isAtOnce = isRow ? p.isAtOnce(titleId(id)) || p.isAtOnce(restId(id)) : p.isAtOnce(id);
@@ -4721,22 +4864,87 @@ function contentEl(b, m, p, el) {
   const atRest = isAtOnce || b.kind === "empty" ? undefined : measured;
   const open = isAtOnce ? undefined : measured ?? 0;
   const height = m?.box === "shut" ? 0 : m?.box === "open" ? open : atRest;
-  return springBox(`fit ${id}`, height).child(isRow ? el : sizeEl(id, p, el));
+  return springBox(`fit ${id}`, height).when(strokes.length > 0, (e) => e.relative()).child(isRow ? el : sizeEl(id, p, el)).children(strokes);
 }
-function spaceEl(s, p) {
+function spaceEl(s, p, columns) {
   const id = `space ${s.block.id}`;
-  const box = springHeight(div().id(id).flex_none());
+  const box = springHeight(div().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
+var lineColor = (t) => opaqueOver(t.border, t.background);
+var PATH_X = EDGE + 4;
+function pathLineEl(line, top, height, t) {
+  if (line === null)
+    return [];
+  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const sized = height === null ? el.bottom(0) : el.h(height);
+  return [line === "to-next" ? sized.border_dashed() : sized];
+}
+var columnEl = (depth, top, height, t) => {
+  const el = div().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
+  return height === null ? el.bottom(0) : el.h(height);
+};
+var pathColumn = (line) => line === null ? [] : [{ depth: 0, isDashed: line === "to-next" }];
+function runsIn(b) {
+  const path = "path" in b ? b.path : undefined;
+  const tree = "tree" in b ? b.tree ?? [] : [];
+  const line = path === undefined ? null : path.is === "work" ? path.line : path.above;
+  const columns = tree.filter((s) => s.is === "past" || s.is === "mid" || s.is === "last");
+  return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
+}
+function runsOn(b) {
+  const path = "path" in b ? b.path : undefined;
+  const tree = "tree" in b ? b.tree ?? [] : [];
+  const line = path === undefined ? null : path.is === "work" ? path.line : path.below;
+  const columns = tree.filter((s) => s.is === "down" || s.is === "past" || s.is === "mid");
+  return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
+}
+function passingOf(blocks, isShut) {
+  const isNeighbor = (b) => b.kind !== "gap" && !isShut(b);
+  return blocks.map((b, i) => {
+    const above = blocks.slice(0, i).findLast(isNeighbor);
+    const below = blocks.slice(i + 1).find(isNeighbor);
+    if (!above || !below)
+      return [];
+    const own = new Set(runsOn(b).map((c) => c.depth));
+    const into = new Set(runsIn(below).map((c) => c.depth));
+    return runsOn(above).filter((c) => !own.has(c.depth) && into.has(c.depth));
+  });
+}
+var wholeColumnEl = (c, t) => c.isDashed ? pathLineEl("to-next", 0, null, t)[0] : columnEl(c.depth, 0, null, t);
+function contentStrokeEls(b, t, fade) {
+  const path = "path" in b ? b.path : undefined;
+  const tree = "tree" in b ? b.tree ?? [] : [];
+  const top = Math.round(padOf(b));
+  const armAt = Math.round(top + LINE_HEIGHT / 2);
+  const pathEls = (side) => side.is === "work" ? pathLineEl(side.line, 0, null, t) : [...pathLineEl(side.above, 0, top, t), ...pathLineEl(side.below, top + LINE_HEIGHT, null, t)];
+  const treeEls = tree.flatMap(({ depth, is }) => {
+    const arm = fade(div().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t)));
+    if (is === "down")
+      return [columnEl(depth, top + LINE_HEIGHT, null, t)];
+    if (is === "past")
+      return [columnEl(depth, 0, null, t)];
+    if (is === "arm")
+      return [arm];
+    if (is === "last")
+      return [columnEl(depth, 0, armAt + 1, t), arm];
+    return [columnEl(depth, 0, null, t), arm];
+  });
+  return [...path ? pathEls(path) : [], ...treeEls];
+}
 function spacedEls(blocks, p, el) {
-  return spacesOf(blocks, (b) => p.motion.get(b.id)?.box === "shut").map((s) => {
+  const isShut = (b) => p.motion.get(b.id)?.box === "shut";
+  const spaces = spacesOf(blocks, isShut);
+  const passing = passingOf(spaces.map((s) => s.block), isShut);
+  return spaces.map((s, i) => {
     const b = s.block;
+    const passes = passing[i] ?? [];
+    const comesIn = runsIn(b);
+    const intoSpace = [...comesIn, ...passes.filter((c) => !comesIn.some((o) => o.depth === c.depth))];
     const m = p.motion.get(b.id);
-    const box = v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p)).child(contentEl(b, m, p, el(b)));
-    if (!m?.box)
-      return box;
-    const isOpen = m.box === "open" && fitHeight(b, m, p) !== undefined;
-    return box.opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
+    const isOpen = m?.box === "open" && fitHeight(b, m, p) !== undefined;
+    const fade = (e) => m?.box ? e.opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" }) : e;
+    return v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, fade(el(b)), [...contentStrokeEls(b, p.t, fade), ...passes.map((c) => wholeColumnEl(c, p.t))]));
   });
 }
 
@@ -4887,11 +5095,13 @@ function panelEl(r, m, p, isLeaving) {
   ];
 }
 var statusPartEl = (text) => div4().min_w(0).max_w_full().whitespace_normal().child(text);
+var wordEl = (s, word, t) => h_flex2().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name).invisible().when(s.isBold, (e) => e.font_semibold())).child(div4().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
 function statusEl(s, p, isInert) {
   const { t } = p;
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(name).children(stall))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)];
+  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 function prEl(b, p, isInert) {
   const { t } = p;
@@ -4930,7 +5140,9 @@ function foldEl(b, p, isInert) {
     hotkey: null,
     does: { is: "view", change: b.change }
   };
-  return h_flex2().id(`fold ${b.id}`).pl(TEXT_X + b.depth * NEST).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold", (e) => e.child(div4().mr(CONTROL_GAP).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div4().min_w(0).whitespace_normal().child(b.text));
+  const mark = b.kind === "fold" ? b.mark : undefined;
+  const chevron = b.kind === "fold" && b.isOpen ? "▾" : "▸";
+  return h_flex2().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold" && mark === undefined, (e) => e.child(div4().mr(CONTROL_GAP).child(chevron))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div4().min_w(0).whitespace_normal().child(b.text)).when(mark !== undefined, (e) => e.child(div4().flex_none().ml(LINE_GAP).child(chevron)));
 }
 function ruleEl(b, t) {
   if (b.text === null)
@@ -4939,8 +5151,7 @@ function ruleEl(b, t) {
 }
 function noteEl(b, t) {
   const text = div4().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  const count = b.count === null ? [] : [div4().whitespace_nowrap().text_color(t.muted).child(b.count)];
-  return h_flex2().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
+  return h_flex2().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text);
 }
 function blockEl(b, p) {
   const { t } = p;

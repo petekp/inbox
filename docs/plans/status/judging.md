@@ -90,6 +90,7 @@ The goal adds these:
 - No goal is set at a step that makes no next goal clear.
 - A step that makes the next goal clear, from the person's words or the work, shows that goal.
 - Each milestone in the fact list has a milestone with a mark its state allows.
+- Where the fact list says which queued milestone the plan takes up next, that milestone reads next.
 - A goal has 2 to 5 milestones, none named after a subject.
 - A subject the goal needs is not under Other work, and one it does not need is not linked to a milestone.
 - A goal the fact list marks as left by the work is retired or met, not still open. One whose outcome the person dropped is retired, not shown met.

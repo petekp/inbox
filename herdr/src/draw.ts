@@ -266,7 +266,6 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
       kind: 'note',
       id: `empty ${g.kind}`,
       text: groupEmptyText(g.title),
-      count: null,
       tone: 'muted',
       isHead: false,
       isAtEdge: false,

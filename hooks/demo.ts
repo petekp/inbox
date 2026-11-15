@@ -156,6 +156,16 @@ export function demoView(now: number, agent: string): DemoCopy {
         goalRemoved: null,
         milestones: [
           {
+            id: 'm4',
+            name: 'Glances found by gaze',
+            status: 'done',
+            text: '',
+            was: null,
+            changedAt: now - 5 * 60 * MIN,
+            closedAt: now - 5 * 60 * MIN,
+            startedAt: null,
+          },
+          {
             id: 'm1',
             name: 'Glances fade out',
             status: 'done',
@@ -163,6 +173,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             was: null,
             changedAt: now - 40 * MIN,
             closedAt: now - 40 * MIN,
+            startedAt: null,
           },
           {
             id: 'm2',
@@ -172,6 +183,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             was: null,
             changedAt: now - 35 * MIN,
             closedAt: null,
+            startedAt: now - 95 * MIN,
           },
           {
             id: 'm3',
@@ -181,10 +193,21 @@ export function demoView(now: number, agent: string): DemoCopy {
             was: null,
             changedAt: now - 5 * MIN,
             closedAt: null,
+            startedAt: null,
+          },
+          {
+            id: 'm5',
+            name: 'Beta build sent',
+            status: 'queued',
+            text: 'after the glasses trial',
+            was: null,
+            changedAt: now - 60 * MIN,
+            closedAt: null,
+            startedAt: null,
           },
         ],
-        nextMilestoneId: 4,
-        serves: { s1: 'm2', s3: 'm3', s4: 'm1', s6: 'none', s7: 'none' },
+        nextMilestoneId: 6,
+        serves: { s1: 'm2', s3: 'm3', s4: 'm1', s5: 'm5', s6: 'm4', s7: 'none' },
         goalRefused: null,
       },
       items: [

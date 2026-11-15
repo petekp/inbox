@@ -29,7 +29,16 @@ const withGoal = () =>
       source: 'inferred',
     },
     milestones: [
-      { id: 'm1', name: 'Fixes built', status: 'done', text: '', was: null, changedAt: NOW - 50 * MIN, closedAt: null },
+      {
+        id: 'm1',
+        name: 'Fixes built',
+        status: 'done',
+        text: '',
+        was: null,
+        changedAt: NOW - 50 * MIN,
+        closedAt: null,
+        startedAt: null,
+      },
       {
         id: 'm2',
         name: 'Announced',
@@ -38,6 +47,7 @@ const withGoal = () =>
         was: null,
         changedAt: NOW - MIN,
         closedAt: null,
+        startedAt: null,
       },
     ],
     nextMilestoneId: 3,
@@ -51,7 +61,7 @@ test('Remove presses the goal by its key and selects the goal’s place, where U
   expect(removed.ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
 })
 
-test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text with its count, the head as its Now line, and its milestones, each after a blank line, with a blank line before the work under it', () => {
+test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text, the head as its Now line, and its milestones as a path, the next on the line under a done one folded to its name, with the work on the line after the milestone’s text joined to it by a connector, and next at the right edge of its name’s line', () => {
   const screen = withGoal()
   const page = screen.view.statusPage
   expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit', 'Remove'])
@@ -61,7 +71,7 @@ test('a set goal draws Edit and Remove at the right end of its Goal heading row,
   expect(heading.length).toBe(59)
   const order = [
     'Goal ─',
-    'Pilot ready to announce · 1 of 2 done',
+    'Pilot ready to announce',
     `Now: ${page.head!.description}`,
     '✓ Fixes built',
     '○ Announced',
@@ -72,9 +82,12 @@ test('a set goal draws Edit and Remove at the right end of its Goal heading row,
   expect(at).toEqual([...at].sort((a, b) => a - b))
   expect(['✓ Fixes built', '○ Announced', '◌ Glasses trial'].map(s => lines[lineAt(lines, s) - 1])).toEqual([
     '',
-    '',
-    '',
+    ' ✓ Fixes built',
+    ' │ after deploy',
   ])
+  expect(lines[lineAt(lines, '◌ Glasses trial')]).toMatch(/^ └─ ◌ Glasses trial/)
+  expect(lines[lineAt(lines, '○ Announced')]).toMatch(/ next$/)
+  expect(lines[lineAt(lines, '○ Announced')]!.length).toBe(59)
   expect(lines.slice(at[0]! + 1).some(l => l.includes('Edit'))).toBe(false)
   expect(lineAt(lines, page.head!.title)).toBe(-1)
 })

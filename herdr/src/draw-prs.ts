@@ -230,7 +230,6 @@ const note = (id: string, text: string, tone: Tone): Block => ({
   kind: 'note',
   id,
   text,
-  count: null,
   tone,
   isHead: true,
   isAtEdge: false,

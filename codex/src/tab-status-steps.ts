@@ -5,7 +5,7 @@ import { tabState } from './tab-state'
 import { stepLines } from './tab-line-steps'
 import type { TextLine } from './tab-line-steps'
 
-/** A line of the goal's list: a milestone, or a row under one. */
+/** A line of the goal's list: a milestone, or a row under one. A done milestone folded to its name keeps its rows in its fold. */
 type GoalLine = { id: string; milestone: MilestoneRow } | { id: string; row: StatusRow }
 
 /**
@@ -19,7 +19,10 @@ export const goalLineMotion = (id: string) => `goal-${id}`
 export const goalHeadMotion = (id: string) => `head-${id}`
 
 const goalLines = (page: StatusPage): GoalLine[] =>
-  (page.goal?.milestones ?? []).flatMap(m => [{ id: m.id, milestone: m }, ...m.rows.map(r => ({ id: r.id, row: r }))])
+  (page.goal?.milestones ?? []).flatMap(m => [
+    { id: m.id, milestone: m },
+    ...(m.foldId === null ? m.rows : []).map(r => ({ id: r.id, row: r })),
+  ])
 
 /** The lines under the goal's text: what it was, where it stands now, and what it waits on. */
 function goalHead(page: StatusPage): TextLine[] {

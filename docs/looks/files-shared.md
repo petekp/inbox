@@ -41,6 +41,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
 | `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: GOAL and RETIRE lines, MILESTONE and SERVES lines, milestones moved by id and closed when their work closes, met, Remove goal and its Undo, and a typed goal. |
 | `hooks/status-goal-gate.ts` | Shared module. When code takes a GOAL or RETIRE line, and why it refuses one: the work the goal still holds, when it last moved forward, how long the work has left it, and whether there is work for a new goal. |
+| `hooks/status-path.ts` | Shared module. The goal's milestones as a path: their order, the line below each, the "now", "now · 3h" and "next" words, where Later starts, the rows a folded done milestone draws, which milestones get space above, and when the head's Now line only names the milestone under way. |
 | `hooks/status-goal-page.ts` | Shared module. The goal's parts of the Status page: the goal block with its Now line and its milestone rows, the section's heading, and the line drawn while no goal is set. |
 | `hooks/status-keys.ts` | Shared module. The Status page's buttons: View on a held subject or milestone, the goal's buttons, the order j and k move through them, and which one is selected. |
 | `hooks/goal-press.ts` | Shared module. Remove, its Undo and a typed goal as presses on the id `goal`, for `pressed`. |

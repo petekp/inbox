@@ -7,6 +7,8 @@ import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { emptyTab } from '../../hooks/empty-tab'
+import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
+import type { WorkJoint } from '../../hooks/status-path'
 import type { TabView as View } from './core'
 import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
 import type { Key } from './tab-state'
@@ -259,14 +261,72 @@ function Keys({ keys }: { keys: StatusKey[] }) {
   ) : null
 }
 
-function MilestoneLine({ m, motion }: { m: MilestoneRow; motion: string }) {
+/** The boxes of the text under `el`, one per line of each text node, without the boxes of the elements that hold it. */
+function textRects(el: Element): DOMRect[] {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  const rects: DOMRect[] = []
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const range = document.createRange()
+    range.selectNodeContents(n)
+    rects.push(...range.getClientRects())
+  }
+
+  return rects
+}
+
+function placePathWord(word: HTMLElement, name: Element, box: Element) {
+  const rects = textRects(name)
+  const firstTop = Math.min(...rects.map(r => r.top))
+  const firstRight = Math.max(...rects.filter(r => Math.abs(r.top - firstTop) < 2).map(r => r.right))
+  word.hidden = false
+  word.hidden = firstRight + PATH_WORD_GAP_PX + word.offsetWidth > box.getBoundingClientRect().right
+}
+const PATH_WORD_GAP_PX = 12
+const fittedWords = new WeakSet<HTMLElement>()
+
+/** Shows a milestone's word only where it fits at the right of its name's first line, again whenever the name's box resizes. */
+function fitPathWord(word: HTMLElement | null) {
+  const name = word?.previousElementSibling
+  const box = word?.parentElement
+  if (!word || !name || !box) return
+  placePathWord(word, name, box)
+  if (fittedWords.has(word)) return
+  fittedWords.add(word)
+  new ResizeObserver(() => placePathWord(word, name, box)).observe(box)
+}
+
+function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion: string; isConnectorDown: boolean }) {
+  const fold = m.foldId
+  const nameClass = [m.isChanged ? 'changed' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
+
   return (
-    <div class="row milestone" {...lineMotion(motion)}>
+    <div class={isConnectorDown ? 'row milestone connector-down' : 'row milestone'} {...lineMotion(motion)}>
       <span class={markClassOf(m.tone, false)}>
         <MarkGlyph text={m.mark} />
       </span>
       <div class="content tight">
-        <NameLine name={m.name} stall={m.stall} />
+        {fold === null ? (
+          <div class="milestone-name">
+            <div class={nameClass}>
+              <NameLine name={m.name} stall={m.stall} />
+            </div>
+            {m.word ? (
+              <span class="path-word muted" ref={fitPathWord}>
+                {m.word}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <button
+            type="button"
+            class="fold milestone-fold"
+            data-fold={foldMotion(fold)}
+            onClick={() => toggleStatusFold(fold)}
+          >
+            {m.name}
+            <Icon name={statusUnfolded.has(fold) ? 'down' : 'right'} />
+          </button>
+        )}
         {m.text ? (
           <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
             {m.text}
@@ -278,8 +338,102 @@ function MilestoneLine({ m, motion }: { m: MilestoneRow; motion: string }) {
             {m.was}
           </div>
         ) : null}
-        <Keys keys={milestoneKeyPlan(m)} />
+        {fold === null ? <Keys keys={milestoneKeyPlan(m)} /> : null}
       </div>
+    </div>
+  )
+}
+
+/** A work row in its joint with the column under its milestone's mark, as `workJoints` places it. */
+function JointedLine({ row, joint, motion }: { row: StatusRow; joint: WorkJoint | undefined; motion?: string }) {
+  const line = <StatusLine row={row} motion={motion} />
+  if (!joint) return line
+  const classes = [
+    'work-joint',
+    joint.arm ? `arm-${joint.arm}` : '',
+    joint.beside === 'connector' ? 'beside-connector' : '',
+  ]
+
+  return <div class={classes.filter(Boolean).join(' ')}>{line}</div>
+}
+
+/** A milestone and the rows drawn under it, as `stepStatus` steps them, with rows still leaving in their places. */
+type MilestoneGroupLines = { m: MilestoneRow; rows: StatusRow[] }
+
+function milestoneGroups(lines: DrawnStatus['goal']): MilestoneGroupLines[] {
+  const groups: MilestoneGroupLines[] = []
+  for (const l of lines) {
+    if ('milestone' in l) groups.push({ m: l.milestone, rows: [] })
+    else groups.at(-1)?.rows.push(l.row)
+  }
+
+  return groups
+}
+
+/**
+ * A milestone and its rows. A milestone the path's line leaves from draws the line down to the next milestone's mark.
+ * One the line does not leave from draws the nesting connector down to its last work row. A done milestone folded to its
+ * name keeps its rows in a fold, as a done fold of subjects does.
+ */
+function MilestoneGroup({
+  group: { m, rows },
+  isSpaced,
+  isGapUnder,
+}: {
+  group: MilestoneGroupLines
+  isSpaced: boolean
+  isGapUnder: boolean
+}) {
+  const fold = m.foldId
+  const motion = fold === null ? null : foldMotion(fold)
+  const isFoldShown = motion !== null && fold !== null && (statusUnfolded.has(fold) || closingFolds.has(motion))
+  const shown = motion === null ? rows : isFoldShown ? m.rows : []
+  const joints = workJoints(shown, m.line)
+  const classes = [
+    'milestone-group',
+    isSpaced ? 'spaced' : '',
+    m.line ? `path-${m.line}` : '',
+    m.line && isGapUnder ? 'gap-under' : '',
+  ]
+
+  return (
+    <div class={classes.filter(Boolean).join(' ')}>
+      <MilestoneLine m={m} motion={goalLineMotion(m.id)} isConnectorDown={shown.length > 0 && m.line === null} />
+      {motion === null ? (
+        rows.map((r, n) => <JointedLine key={r.id} row={r} joint={joints[n]} motion={goalLineMotion(r.id)} />)
+      ) : isFoldShown ? (
+        <div class="fold-rows" data-motion={`closed-${motion}`}>
+          {m.rows.map((r, n) => (
+            <JointedLine key={r.id} row={r} joint={joints[n]} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
+  const isUnfolded = (id: string) => statusUnfolded.has(id)
+  const groups = milestoneGroups(lines)
+  const milestones = groups.map(g => g.m)
+
+  return (
+    <div class="list">
+      {groups.flatMap((group, n) => [
+        ...(group.m.startsLater
+          ? [
+              <div key="later" class="row part-line">
+                <div class="part-rule">{LATER_TEXT}</div>
+              </div>,
+            ]
+          : []),
+        <MilestoneGroup
+          key={group.m.id}
+          group={group}
+          isSpaced={n > 0 && !group.m.startsLater && isSpacedAbove(milestones, n, isUnfolded)}
+          isGapUnder={isSpacedAbove(milestones, n + 1, isUnfolded) && n + 1 < milestones.length}
+        />,
+      ])}
     </div>
   )
 }
@@ -287,7 +441,7 @@ function MilestoneLine({ m, motion }: { m: MilestoneRow; motion: string }) {
 /**
  * The goal's section, first on every page that is not empty: its heading row, the title, a rule and the goal's buttons at
  * the right edge, then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then
- * the milestones, each after a blank line's space and with that space between it and its rows. While the person types a
+ * the milestones, each with its rows on the lines under it. While the person types a
  * goal, the field takes the text's place and the buttons leave the heading.
  * The buttons wrap under the rule, still at the right, when they do not fit beside the title.
  */
@@ -302,19 +456,7 @@ function GoalSection({
 }) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
-  const text = g ? (
-    <h1>
-      {g.text}
-      {g.count ? (
-        <span class="muted count">
-          {STALL_GAP}
-          {g.count}
-        </span>
-      ) : null}
-    </h1>
-  ) : (
-    <p class="muted">{NO_GOAL_TEXT}</p>
-  )
+  const text = g ? <h1>{g.text}</h1> : <p class="muted">{NO_GOAL_TEXT}</p>
 
   return (
     <section>
@@ -341,17 +483,7 @@ function GoalSection({
         ))}
         <GoalError />
       </div>
-      {lines.length > 0 ? (
-        <div class="list">
-          {lines.map(l =>
-            'milestone' in l ? (
-              <MilestoneLine key={l.id} m={l.milestone} motion={goalLineMotion(l.id)} />
-            ) : (
-              <StatusLine key={l.id} row={l.row} motion={goalLineMotion(l.id)} />
-            ),
-          )}
-        </div>
-      ) : null}
+      {lines.length > 0 ? <MilestoneList lines={lines} /> : null}
     </section>
   )
 }

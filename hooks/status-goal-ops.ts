@@ -89,6 +89,7 @@ export function moveMilestone(
   if (op.kind === 'set') {
     const isReworded = m.status === op.status && hasSameWords(m.text, op.text)
     if (isReworded) return
+    if (op.status === 'working' && m.status !== 'working') m.startedAt = now
     m.status = op.status
     m.text = clipWords(op.text, TEXT_KEPT)
     m.closedAt = null
@@ -152,9 +153,26 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
     was: null,
     changedAt: now,
     closedAt: op.status === 'done' || op.status === 'dropped' ? now : null,
+    startedAt: op.status === 'working' ? now : null,
   }
 
   return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] }
+}
+
+/**
+ * The goal with the queued milestone `ref` names moved ahead of every other queued one, so the page reads it as next. A
+ * NEXT that names no queued milestone, or the one already next, changes nothing.
+ */
+export function withNextMilestone(o: SessionStatus, ref: string, now: number): SessionStatus {
+  const m = o.goal ? findMilestone(o, ref) : null
+  const first = o.milestones.findIndex(x => x.status === 'queued')
+  if (!m || m.status !== 'queued' || o.milestones[first] === m) return o
+  const rest = o.milestones.filter(x => x !== m)
+  const moved = { ...m }
+  forgetSeenWas(moved, o.lastLookAt)
+  moved.madeNextAt = now
+
+  return { ...o, milestones: [...rest.slice(0, first), moved, ...rest.slice(first)] }
 }
 
 /**
@@ -188,6 +206,7 @@ function inferredGoal(
     was: null,
     changedAt: now,
     closedAt: isOpen(m) ? null : now,
+    startedAt: m.status === 'working' ? now : null,
   }))
   const goal: StatusGoal = {
     text,
@@ -289,7 +308,7 @@ function withWorkDoneMilestones(o: SessionStatus, now: number): SessionStatus {
 /**
  * The goal once an answer has applied. A typed goal carries the milestones of the goal before it until an answer from a
  * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
- * has not dropped, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
+ * has not dropped, in the order of the lines that first name them, which is its plan, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
  * closed, as `withWorkDoneMilestones` says. The was line goes once the person has seen it,
  * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
  * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
@@ -299,7 +318,7 @@ export function settleGoal(
   saved: SessionStatus,
   now: number,
   readSetAt: number | null,
-  named: ReadonlySet<string>,
+  named: ReadonlyMap<string, number>,
 ): SessionStatus {
   const g = saved.goal
   if (g === null) return saved
@@ -307,7 +326,10 @@ export function settleGoal(
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt
   const milestones = isAnswerForNewGoal
-    ? o.milestones.filter(m => named.has(m.id) && m.status !== 'dropped').slice(0, MILESTONES_MAX)
+    ? o.milestones
+        .filter(m => named.has(m.id) && m.status !== 'dropped')
+        .sort((x, y) => named.get(x.id)! - named.get(y.id)!)
+        .slice(0, MILESTONES_MAX)
     : o.milestones
   const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0)
   const kept = milestones.filter(m => m.status !== 'dropped')

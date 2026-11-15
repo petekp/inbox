@@ -18,6 +18,7 @@ import {
 } from './pane-sizes'
 import { emptyTab } from './empty-tab'
 import { paneStatusGoal } from './pane-status-goal'
+import { paneStatusPath } from './pane-status-path'
 import {
   desktopButtonLines,
   desktopCountsLines,
@@ -317,7 +318,18 @@ export function paneStatus(
       desktopFrame,
     },
     handlers,
-    { statusRowLine, statusRows: rows => statusRows(rows), keysRow, statusKeys },
+    {
+      statusRowLine,
+      drawRows: rows => rows.map(statusRow),
+      keysRow,
+      statusKeys,
+      statusPartLine,
+      isUnfolded,
+      path: paneStatusPath(
+        { look, Box, Text, pal, statusMarkAt, statusFrameEdge, statusTextWidth, foldRow, foldButton, desktopFoldLines },
+        { isUnfolded, toggleFold },
+      ),
+    },
   )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)

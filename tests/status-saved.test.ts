@@ -226,9 +226,16 @@ test('a saved goal keeps its milestones, loads as typed while it waits for them,
   })
   expect(Object.keys(saved ?? {})).not.toContain('proposedGoal')
   expect(saved?.removedGoals).toEqual(Array.from({ length: 10 }, (_, n) => `${n + 2} goal`))
-  expect(saved?.milestones).toEqual([milestone])
+  expect(saved?.milestones).toEqual([{ ...milestone, startedAt: null }])
   expect(saved?.nextMilestoneId).toBe(2)
   expect(saved?.serves).toEqual({ s1: 'm1' })
+})
+
+test('a milestone an earlier build saved loads with no start time, and one saved with a start time keeps it', () => {
+  const m = { id: 'm1', name: 'Import works', status: 'working', text: '', was: null, changedAt: 1, closedAt: null }
+  const saved = upgradeStatus({ ...EMPTY_SESSION_STATUS, milestones: [m, { ...m, id: 'm2', startedAt: 3 }] })
+
+  expect(saved?.milestones.map(x => x.startedAt)).toEqual([null, 3])
 })
 
 test('a goal with no text or time is no goal', () => {
