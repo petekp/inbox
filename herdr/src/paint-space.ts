@@ -2,9 +2,10 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import type { Block } from './blocks'
+import { isOpenRow } from './blocks'
+import type { Block, RowBlock } from './blocks'
 import type { RowMotion } from './motion'
-import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE_GAP } from './paint-theme'
+import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE_GAP, LINE_HEIGHT } from './paint-theme'
 import type { Paint } from './paint-theme'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
@@ -105,13 +106,32 @@ export const sizeEl = (key: string, p: Paint, el: Element): Element =>
     .child(el)
 
 /**
- * Content in a box at its measured height, as the tab bar, the banners above the list or a row's title. When the
- * content changes height, as a banner goes or a title wraps, the box keeps its old height for the draw that measures
- * the new one, then springs to it. In a draw that takes heights at once, and always for content whose height follows
- * the pane's, the box takes its content's height.
+ * Content in a box at its measured height, as the tab bar or the banners above the list. When the content changes
+ * height, as a banner goes, the box keeps its old height for the draw that measures the new one, then springs to it. In
+ * a draw that takes heights at once, and always for content whose height follows the pane's, the box takes its
+ * content's height.
  */
 export function fitEl(key: string, p: Paint, el: Element, isPaneSized = false): Element {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key)
+
+  return springBox(`fit ${key}`, height).child(sizeEl(key, p, el))
+}
+
+/**
+ * The height a row's title box moves to: one line unless the row is open, else the title's measured height, which is
+ * undefined until its first measure.
+ */
+const titleHeightOf = (r: RowBlock, p: Paint): number | undefined =>
+  isOpenRow(r) ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
+
+/**
+ * A row's title in a box whose height springs to `titleHeightOf`. The box clips, so a title that keeps its wrap while
+ * the row closes loses the lines under its first as the box glides to one line. An open row's title box takes its
+ * content's height in a draw that takes heights at once.
+ */
+export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
+  const key = titleId(r.id)
+  const height = isOpenRow(r) && p.isAtOnce(key) ? undefined : titleHeightOf(r, p)
 
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el))
 }
@@ -129,7 +149,7 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
 
     return measured === undefined ? undefined : measured - panel
   }
-  const title = p.heights.get(titleId(id))
+  const title = titleHeightOf(b, p)
   const rest = p.heights.get(restId(id))
 
   return title === undefined || rest === undefined ? undefined : 2 * ROW_PAD_PT + title + rest - panel

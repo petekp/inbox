@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T06:22:54.765Z. 223207 characters follow.
+// Built at 2026-11-15T06:33:36.461Z. 223867 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -3391,6 +3391,7 @@ function emptyTab(view, look) {
 
 // src/blocks.ts
 var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
+var isOpenRow = (r) => r.isSelected && !r.isCollapsed;
 var agedText = (a, now) => `${a.lead}${DOT}${shortAgo(now - a.at)}`;
 function emptyBlock(tab, empty, parts = null) {
   return { kind: "empty", id: `empty ${tab}`, empty: { title: empty.title, hint: empty.hint }, under: parts };
@@ -4452,7 +4453,7 @@ function rest(track, form, target, now) {
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [] };
 var NEXT_FRAME_MS = 16;
-var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : b.isSelected && !b.isCollapsed ? "open" : "closed";
+var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
 var restAt = (now, fadeMs) => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS;
 function glideOf(track, isStart, last, now) {
@@ -4486,11 +4487,13 @@ function moveRows(blocks, last, now, isFirst) {
   const motion = new Map;
   const add = (block, track) => {
     const last = was.rows.get(block.id);
-    const isOpen = block.kind === "row" && block.isSelected && !block.isCollapsed;
+    const isOpen = block.kind === "row" && isOpenRow(block);
+    const wasOpen = last?.block.kind === "row" && isOpenRow(last.block);
+    const wrapEndsAt = isOpen ? null : wasOpen ? restAt(now, 0) : last?.wrapEndsAt ?? null;
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const glide = glideOf(track, isStart, last?.glide ?? null, now);
-    rows.set(block.id, { track, block, opened, glide });
+    rows.set(block.id, { track, block, opened, glide, wrapEndsAt });
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
     motion.set(block.id, {
@@ -4500,7 +4503,8 @@ function moveRows(blocks, last, now, isFirst) {
       fadeMs: glide?.fadeMs ?? 0,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
       closing,
-      isPanelLeftOut: closing !== null && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row"
+      isPanelLeftOut: closing !== null && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
+      isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt
     });
   };
   for (const b of blocks) {
@@ -4523,7 +4527,8 @@ function moveRows(blocks, last, now, isFirst) {
   });
   const ends = [...rows.values()].flatMap((t) => [
     ...isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : [],
-    ...t.glide ? [t.glide.endsAt] : []
+    ...t.glide ? [t.glide.endsAt] : [],
+    ...t.wrapEndsAt !== null ? [t.wrapEndsAt] : []
   ]).filter((at) => at > now);
   return {
     blocks: shown,
@@ -4592,7 +4597,8 @@ var TONE_COLORS = {
 var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 var TEXT = 13;
-var LINE = "20px";
+var LINE_HEIGHT = 20;
+var LINE = `${LINE_HEIGHT}px`;
 var SMALL_TEXT = 12;
 var HEAD_TEXT = 15;
 var HEAD_LINE = "24px";
@@ -4687,6 +4693,12 @@ function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
 }
+var titleHeightOf = (r, p) => isOpenRow(r) ? p.heights.get(titleId(r.id)) : LINE_HEIGHT;
+function titleEl(r, p, el) {
+  const key = titleId(r.id);
+  const height = isOpenRow(r) && p.isAtOnce(key) ? undefined : titleHeightOf(r, p);
+  return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
+}
 function fitHeight(b, m, p) {
   const id = b.id;
   const panel = m?.isPanelLeftOut ? p.heights.get(panelId(id)) ?? 0 : 0;
@@ -4694,7 +4706,7 @@ function fitHeight(b, m, p) {
     const measured = p.heights.get(id);
     return measured === undefined ? undefined : measured - panel;
   }
-  const title = p.heights.get(titleId(id));
+  const title = titleHeightOf(b, p);
   const rest = p.heights.get(restId(id));
   return title === undefined || rest === undefined ? undefined : 2 * ROW_PAD_PT + title + rest - panel;
 }
@@ -4834,15 +4846,16 @@ function rowEl(r, p) {
   const { t } = p;
   const m = p.motion.get(r.id);
   const isLeaving = m?.state === "leaving";
-  const isOpen = r.isSelected && !r.isCollapsed;
+  const isOpen = isOpenRow(r);
+  const isWrapped = isOpen || m?.isWrapHeld === true;
   const isPressable = r.isSelectable && !isLeaving;
-  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.cursor_pointer().on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isOpen, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.cursor_pointer().on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(fitEl(titleId(r.id), p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving))));
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving))));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;

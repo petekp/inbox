@@ -18,8 +18,10 @@ const WRAP_AT = 40
 type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
 export type Jump = { at: number; id: string; by: number }
+export type TitleForm = { at: number; id: string; isCut: boolean; box: number; isBoxResting: boolean }
 
-const linesOf = (n: Painted): number => (!n.style.isTruncated && (n.text ?? '').length > WRAP_AT ? 2 : 1)
+const linesOf = (n: Painted): number =>
+  n.style.isTruncated ? 1 : Math.max(1, Math.ceil((n.text ?? '').length / WRAP_AT))
 
 function layout(root: Painted, shown: (id: string) => number | undefined) {
   const boxes = new Map<string, Box>()
@@ -72,6 +74,12 @@ class Springs {
     for (const id of [...this.states.keys()]) if (!seen.has(id)) this.states.delete(id)
   }
 
+  isResting(id: string): boolean {
+    const s = this.states.get(id)
+
+    return s === undefined || s.target === undefined || (Math.abs(s.x - s.target) < 0.5 && Math.abs(s.v) < 0.5)
+  }
+
   shown(): Map<string, number> {
     return new Map([...this.states].flatMap(([id, s]) => (Number.isNaN(s.x) ? [] : [[id, s.x] as const])))
   }
@@ -94,6 +102,7 @@ export class Frames {
   private lastShown = new Map<string, number>()
   private last: Map<string, Box> | null = null
   jumps: Jump[] = []
+  titles: TitleForm[] = []
 
   draw(blocks: Block[], now: number) {
     const isFirst = this.last === null
@@ -137,6 +146,14 @@ export class Frames {
         if (by >= 0.5) this.jumps.push({ at: now, id, by })
       }
     }
+    for (const { node } of sized) {
+      const id = node.id?.match(/^title (.+)$/)?.[1]
+      const text = node.kids[1]
+      if (id === undefined || !text) continue
+      const box = `fit title ${id}`
+      const isCut = text.style.isTruncated === true
+      this.titles.push({ at: now, id, isCut, box: shown.get(box) ?? NaN, isBoxResting: this.springs.isResting(box) })
+    }
     for (const { node, height } of sized) node.onSize?.({ width: PANE_WIDTH, height }, null)
     this.lastShown = shown
     this.springs.step(FRAME_MS)
@@ -144,15 +161,20 @@ export class Frames {
   }
 }
 
-export function jumpsOf(steps: [number, Block[]][], ms = 1500): Jump[] {
+export function framesOf(steps: [number, Block[]][], ms = 1500): { jumps: Jump[]; titles: TitleForm[] } {
   const frames = new Frames()
   const [first] = steps
-  if (!first) return []
+  if (!first) return { jumps: [], titles: [] }
   const start = 1_000_000
   for (let at = -500; at < ms; at += FRAME_MS) {
     const step = steps.findLast(([from]) => at >= from) ?? first
     frames.draw(step[1], start + at)
   }
 
-  return frames.jumps.map(j => ({ ...j, at: j.at - start }))
+  return {
+    jumps: frames.jumps.map(j => ({ ...j, at: j.at - start })),
+    titles: frames.titles.map(t => ({ ...t, at: t.at - start })),
+  }
 }
+
+export const jumpsOf = (steps: [number, Block[]][], ms = 1500): Jump[] => framesOf(steps, ms).jumps
