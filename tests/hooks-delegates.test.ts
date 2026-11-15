@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import { HERDR_CHECK_MS } from '../hooks/herdr'
 import { w, world } from './hooks-world'
 import { PANE, childrenOf, notice } from './hooks-helpers'
+import { page, shape } from './status-helpers'
 
 test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, keeps its id when prompted again, and at a turn’s end takes the state Herdr shows: blocked keeps it running, and ready ends it, finished once it had worked', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -184,6 +185,7 @@ test('in a Herdr app terminal, a turn’s end shows the hc terminals that are ch
     { address: 't1', name: 'fixer', parent: 't9', status: 'working' },
     { address: 't2', name: 'notes', parent: 't9' },
   ]
+  w.statusReply = 'NEW: working | Export | layout next\nLINK: c1 | s1'
   w.ghAnswers.push({
     match: argv => argv.join(' ') === 'hc ls --json',
     stdout: JSON.stringify({ terminals }),
@@ -195,4 +197,8 @@ test('in a Herdr app terminal, a turn’s end shows the hc terminals that are ch
   await clock.settle()
 
   expect(childrenOf(w.stored).map(c => [c.kind, c.name, c.endedAt === null])).toEqual([['delegate', 'fixer', true]])
+  expect(w.statusPrompts[0]).toContain('c1 | delegate | fixer | -')
+  expect(
+    shape(page(JSON.parse([...w.stored].find(([k]) => k.startsWith('s:'))![1]).ledger.overview, 1_000_000 + 1000).rows),
+  ).toEqual(['● Export: layout next ┐', '└ ● fixer'])
 })
