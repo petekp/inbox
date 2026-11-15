@@ -1900,6 +1900,9 @@ function prRefreshActions(row) {
 function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
 }
+function prCheckId(pr, check) {
+  return checkRowId(pr.ref, checkKey(check));
+}
 function threadRowId(ref, thread) {
   return `${ref} thread ${thread}`;
 }
@@ -1979,6 +1982,7 @@ function emptySession() {
     sent: [],
     lastActions: {},
     heldRows: [],
+    collapsed: {},
     shownSince: null,
     prViews: NO_PRS,
     stop: null,
@@ -2033,6 +2037,7 @@ function sessionFields(saved, views) {
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
+    collapsed: saved.collapsed ?? {},
     shownSince: saved.shownSince ?? null,
     prViews: {
       ...NO_PRS,
@@ -2550,7 +2555,8 @@ function inboxView({
   shownSince,
   lastTypedMessageAt,
   listInput,
-  undoShown
+  undoShown,
+  collapsed = []
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
@@ -2739,7 +2745,8 @@ function inboxView({
         ...fixesSent
       ].sort((a, b) => b.closedAt - a.closedAt)
     },
-    status
+    status,
+    collapsed
   };
 }
 function heldLabel(c) {
@@ -2755,6 +2762,33 @@ var FAILED_UPDATE_TEXT = {
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
   return { isUpdating, isRetrying: recovery === "retrying", error };
+}
+
+// ../hooks/collapse.ts
+var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
+function newsByRow({ ledger, prViews, lastActions }) {
+  const pressed2 = (id) => lastActions[id]?.at;
+  const prs = Object.values(prViews.views);
+  return new Map([
+    ...ledger.items.map((i) => [i.id, latest(i.reportedAt, pressed2(i.id))]),
+    ...ledger.findings.map((f) => [f.id, latest(pressed2(f.id))]),
+    ...prs.flatMap(
+      (pr) => waitingThreads(pr).map((t) => {
+        const id = prThreadId(pr, t);
+        return [id, latest(t.reply?.at, pressed2(id))];
+      })
+    ),
+    ...prs.flatMap(
+      (pr) => blockingChecks(pr).map((c) => {
+        const id = prCheckId(pr, c);
+        return [id, latest(c.finishedAt, pressed2(id))];
+      })
+    )
+  ]);
+}
+function collapsedRows(s) {
+  const news = newsByRow(s);
+  return Object.entries(s.collapsed).flatMap(([id, at]) => (news.get(id) ?? Infinity) <= at ? [id] : []);
 }
 
 // ../hooks/session-view.ts
@@ -2787,7 +2821,8 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
-    lastTypedMessageAt: s.presence.lastTypedMessageAt
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    collapsed: collapsedRows(s)
   });
   return {
     ...inbox,
