@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { actionLines } from '../hooks/action-plan'
+import { actionLines, drawnLists, tabUndos } from '../hooks/action-plan'
+import { demoSession } from '../hooks/demo'
+import { sessionView } from '../hooks/session-view'
 import { deliveryLabel, settledLabel } from '../hooks/rows'
 import { FOLD_QUIET_MS, SETTLED_MS, isSettledInPlace, nextFoldAt, withListInput } from '../hooks/timing'
 import type { ListInput, Placing } from '../hooks/timing'
@@ -127,4 +129,51 @@ test('a settled row reads its reply’s words with its message’s step, and a r
   expect(settledLabel('Yes', 'held')).toBe('Yes')
   expect(settledLabel('Yes', 'unconfirmed')).toBe('Not confirmed: Yes')
   expect(settledLabel('Yes', { error: 'a hook refused it', canUndo: true })).toBe('Yes · Not sent: a hook refused it')
+})
+
+const dismissedAt = (at: number, now: number, undoOut: string[]) => {
+  const s = demoSession(now, 'Claude')
+  const closed = s.ledger.closed.map(c =>
+    c.id === 'd8'
+      ? {
+          ...c,
+          at,
+          how: 'dismissed' as const,
+          outcome: 'dismissed',
+          item: { ...s.ledger.items[0]!, id: c.id, ask: c.ask },
+        }
+      : c,
+  )
+  const holds = {
+    replies: {},
+    discarded: {},
+    shownSince: at - 1000,
+    listInput: { since: at, last: now - 100 },
+    undoOut,
+  }
+
+  return sessionView({ ...s, ledger: { ...s.ledger, closed } }, now, SETTLED_MS, holds)
+}
+const undoActionOf = (view: ReturnType<typeof sessionView>) =>
+  [...view.needsYou.questions, ...view.needsYou.tasks]
+    .find(r => r.id === 'd8')
+    ?.actions.find(a => a.press.action === 'undo')
+
+test('a settled row keeps its Undo, drawn out, after Undo ends while its Undo press is out, and loses it when the press ends', () => {
+  const at = AT
+  expect(undoActionOf(dismissedAt(at, at + 500, []))).toMatchObject({ isOut: false })
+  const ended = at + SETTLED_MS + 500
+  expect(undoActionOf(dismissedAt(at, ended, []))).toBeUndefined()
+  expect(undoActionOf(dismissedAt(at, ended, ['d8']))).toMatchObject({ isOut: true })
+  expect(undoActionOf(dismissedAt(at, ended, []))).toBeUndefined()
+})
+
+test('the Undo the u key presses is the plan’s, so it follows a kept Undo', () => {
+  const view = dismissedAt(AT, AT + SETTLED_MS + 500, ['d8'])
+  const lists = drawnLists(
+    view,
+    () => true,
+    r => r,
+  )
+  expect(tabUndos('needsYou', lists, [])).toEqual([{ press: { action: 'undo', id: 'd8' }, at: AT }])
 })

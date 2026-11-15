@@ -1,7 +1,6 @@
 .banner,
 .empty,
-main,
-form {
+main {
   transition: opacity var(--quick);
   @starting-style {
     opacity: 0;

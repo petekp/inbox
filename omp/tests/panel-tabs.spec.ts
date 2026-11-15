@@ -153,3 +153,24 @@ test('the tab line counts each symbol as two cells, so it fits the panel and kee
       if (bar.includes('esc')) expect(bar.trimEnd()).toEndWith('esc to close')
     }
 })
+
+test('a dismissed row keeps its Undo after Undo ends while its Undo press is out, and drops it once the press ends', () => {
+  const s = demoState(NOW)
+  const at = NOW - SETTLED_MS - 500
+  const closed = s.ledger.closed.map(c =>
+    c.id === 'd8'
+      ? {
+          ...c,
+          at,
+          how: 'dismissed' as const,
+          outcome: 'dismissed',
+          item: { ...s.ledger.items[0]!, id: c.id, ask: c.ask },
+        }
+      : c,
+  )
+  const holds = { ...NO_HOLDS, shownSince: at - 1000, listInput: { since: at, last: NOW - 100 } }
+  const viewWith = (undoOut: string[]) =>
+    screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, closed } }, NOW, SETTLED_MS, { ...holds, undoOut }) })
+  expect(text(viewWith(['d8']), INITIAL_UI)).toMatch(/u Undo/)
+  expect(text(viewWith([]), INITIAL_UI)).not.toMatch(/u Undo/)
+})

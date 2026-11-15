@@ -137,7 +137,7 @@ function prTabOf(
   s: Session,
   lastActions: Record<string, LastAction>,
   now: number,
-  { shownSince, listInput, undoShown }: Holds,
+  { shownSince, listInput, undoShown, undoOut }: Holds,
   settleWindowMs: number,
 ): PrTab {
   const pressOutSince = earliestOf(
@@ -152,6 +152,7 @@ function prTabOf(
     now,
     settleWindowMs,
     undoShown,
+    undoOut,
     pressOutSince,
   })
   const isSent = threadSentIn(lastActions)

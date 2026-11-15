@@ -84,11 +84,7 @@ section.other-prs + section::before {
 .pr-entry-content {
   padding: 10px 0;
 }
-/*
- * A settling block's settled line has a row's padding, so the block it drew open keeps its place under it. That
- * block fades while the height shrinks, since the settled block's padding would still show its top.
- */
+/* A settling block's settled line has a row's padding, so the body it drew open fades while the height shrinks over it. */
 .pr-was-open {
-  margin-top: calc(-2 * var(--row-pad));
-  animation: fade-out var(--move) forwards;
+  animation: fade-out var(--fade) forwards;
 }
