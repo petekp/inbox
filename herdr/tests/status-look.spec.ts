@@ -1,5 +1,5 @@
 import './gpui-stand-in'
-import { expect, setSystemTime, test } from 'bun:test'
+import { afterEach, expect, setSystemTime, test } from 'bun:test'
 import { pressFolder } from '../../hooks/herdr'
 import { pressFile } from '../../hooks/herdr-press-file'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
@@ -13,6 +13,8 @@ const { tabBlocks } = await import('../src/draw')
 const { NOW, demoScreen, uiOn } = await import('./fixtures')
 
 const BLOCK_HEIGHT = 40
+
+afterEach(() => setSystemTime())
 
 function demoPlaced(room: number) {
   const screen = demoScreen()
@@ -237,5 +239,4 @@ test('the Inbox view reports the Status rows it measured and drew when the perso
   await shownFor(8_000)
   await panel.close()
   expect(looks()).toHaveLength(2)
-  setSystemTime()
 })
