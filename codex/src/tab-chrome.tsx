@@ -14,6 +14,8 @@ import { swapPage } from './tab-swap'
 import { read } from './tab-read'
 import { pulseInStep, MarkGlyph, legendMarkClass, GroupTitle, Banner } from './tab-parts'
 import { HerdrAskBanner } from './tab-herdr-ask'
+import { bannerMotion, lineMotion } from './tab-line-steps'
+import type { BannerLine } from './tab-line-steps'
 
 /** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
 export function HelpPage() {
@@ -69,6 +71,22 @@ const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, string> = {
 
 const LATE_READ_MS = 60_000
 
+/** The banners under the tab bar, each keyed by its kind. */
+export function tabBanners(v: View): BannerLine[] {
+  return tabBarBanners(
+    [
+      ...(tabState.serverNote ? [bannerOf(tabState.serverNote.kind, tabState.serverNote.text)] : []),
+      ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
+      ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
+      ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
+    ],
+    footerOf(v).error,
+    tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
+      ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
+      : null,
+  ).map(banner => ({ id: banner.kind, banner }))
+}
+
 function footerOf(v: View) {
   return footerStatus(
     drawnTab(),
@@ -96,7 +114,6 @@ export function Status({ v }: { v: View }) {
 export function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
   const badgeOf = (id: ShownTab) => tabBadge(id, counts)
-  const { error } = footerOf(v)
   const shown = drawnTab()
 
   return (
@@ -107,6 +124,7 @@ export function TabBar({ v }: { v: View }) {
             type="button"
             class={`tab ${shown === t.id ? 'shown' : ''}`}
             title={t.label}
+            data-tab={t.id}
             onClick={() => {
               switchTab(t.id)
               tabState.draw()
@@ -122,36 +140,29 @@ export function TabBar({ v }: { v: View }) {
           </button>
         ))}
       </div>
-      {tabBarBanners(
-        [
-          ...(tabState.serverNote ? [bannerOf(tabState.serverNote.kind, tabState.serverNote.text)] : []),
-          ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
-          ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
-          ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
-        ],
-        error,
-        tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
-          ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
-          : null,
-      ).map(b =>
-        b.kind === 'server-builds-differ' ? (
-          <Banner banner={b} label="Reload" press={() => location.reload()} />
-        ) : b.kind === 'tab-update-failed' ? (
-          <Banner
-            banner={b}
-            label={ROW_COPY.retry}
-            press={() => {
-              const page = tabState.updateError?.page
-              tabState.updateError = null
-              tabState.draw()
-              if (page) void swapPage(page)
-            }}
-          />
-        ) : (
-          <Banner banner={b} />
-        ),
-      )}
-      <HerdrAskBanner v={v} />
+      <div class="banner-stack" data-motion="banners">
+        {(tabState.lastBanners ?? []).map(({ id, banner: b }) => (
+          <div key={id} {...lineMotion(bannerMotion(id))}>
+            {b.kind === 'server-builds-differ' ? (
+              <Banner banner={b} label="Reload" press={() => location.reload()} />
+            ) : b.kind === 'tab-update-failed' ? (
+              <Banner
+                banner={b}
+                label={ROW_COPY.retry}
+                press={() => {
+                  const page = tabState.updateError?.page
+                  tabState.updateError = null
+                  tabState.draw()
+                  if (page) void swapPage(page)
+                }}
+              />
+            ) : (
+              <Banner banner={b} />
+            )}
+          </div>
+        ))}
+        <HerdrAskBanner v={v} />
+      </div>
     </nav>
   )
 }

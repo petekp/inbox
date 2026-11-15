@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T05:45:32.868Z. 228227 characters follow.
+// Built at 2026-11-15T05:55:24.177Z. 228337 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2687,10 +2687,10 @@ function isDismissed(lastActions, ref) {
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
 }
-function settledPrState(mark, now, settleWindowMs) {
+function settledPrState(mark, now, settleWindowMs, isUndoOut) {
   const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
   const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
-  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
+  return { ...state, canUndo: isUndoOut || isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
 }
 function drawnPrs(prState, links, lastActions, placing) {
   const { now, settleWindowMs } = placing;
@@ -2701,7 +2701,7 @@ function drawnPrs(prState, links, lastActions, placing) {
     const mark = dismissal(lastActions, pr.ref);
     if (mark === null)
       return [];
-    const state = settledPrState(mark, now, settleWindowMs);
+    const state = settledPrState(mark, now, settleWindowMs, (placing.undoOut ?? []).includes(prMarkId(pr.ref)));
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
   return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
@@ -2948,7 +2948,7 @@ function listUndos(entries) {
 function prUndos(prs) {
   return prs.flatMap((d) => d.state.is === "settled" && d.state.canUndo ? [{ press: { action: "pr-undo", ref: d.pr.ref }, at: d.state.at }] : []);
 }
-function actionsOf(row, last, state, feedback) {
+function actionsOf(row, last, state, feedback, isUndoOut = false) {
   const { id, item, steps } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
@@ -2964,11 +2964,11 @@ function actionsOf(row, last, state, feedback) {
       isFolded: flags.isFolded ?? false,
       isFollowUp: FOLLOW_UPS.has(press.action),
       ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
-      isOut: out === pressAction
+      isOut: out === pressAction || press.action === "undo" && isUndoOut
     };
   };
   if (state.is === "settled")
-    return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
+    return state.canUndo || state.offersUndo && isUndoOut ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
   if (state.is === "held")
     return [
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
@@ -3121,6 +3121,7 @@ function inboxView({
   lastTypedMessageAt,
   listInput,
   undoShown,
+  undoOut = [],
   collapsed = []
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
@@ -3208,7 +3209,7 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt), undoOut.includes(row.id));
     const held = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
@@ -3397,7 +3398,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     statusPage: statusPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {
+function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
   const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null));
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
@@ -3406,6 +3407,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
     now,
     settleWindowMs,
     undoShown,
+    undoOut,
     pressOutSince
   });
   const isSent = threadSentIn(lastActions);
@@ -4434,21 +4436,60 @@ function holdLinesAbove(blocks, held, now) {
   return { blocks: shown, held: next };
 }
 
+// ../hooks/springs.ts
+var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
+var LONGEST_MOVE_PX = 2000;
+var FRAME_MS = 16;
+var STEP_MS = 1;
+function springStep(s, target, ms, spring = HEIGHT_SPRING) {
+  const w = 2 * Math.PI / spring.response;
+  let { x, v } = s;
+  for (let t = 0;t < ms; t += STEP_MS) {
+    const dt = Math.min(STEP_MS, ms - t);
+    v += (-w * w * (x - target) - 2 * spring.damping * w * v) * dt;
+    x += v * dt;
+  }
+  return { x, v };
+}
+var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
+function springFrames(from, target, spring = HEIGHT_SPRING) {
+  const frames = [from.x];
+  let s = from;
+  while (!isAtRest(s, target, spring) && (frames.length - 1) * FRAME_MS < 1e4) {
+    s = springStep(s, target, FRAME_MS, spring);
+    frames.push(s.x);
+  }
+  frames[frames.length - 1] = target;
+  return frames;
+}
+var msToRest = (from, target, spring) => (springFrames(from, target, spring).length - 1) * FRAME_MS;
+function settleMs(spring) {
+  const fromRest = msToRest({ x: 0, v: 0 }, LONGEST_MOVE_PX, spring);
+  let longest = fromRest;
+  let s = { x: 0, v: 0 };
+  for (let ms = FRAME_MS;ms < fromRest; ms += FRAME_MS) {
+    s = springStep(s, LONGEST_MOVE_PX, FRAME_MS, spring);
+    longest = Math.max(longest, msToRest(s, 0, spring));
+  }
+  return longest;
+}
+var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
+
 // ../hooks/row-motion.ts
-var ENTER_MS = 300;
-var MOVE_MS = 200;
-var EXIT_MS = 200;
-var ROW_STATE_MS = {
-  entering: ENTER_MS,
-  opening: MOVE_MS,
-  closing: MOVE_MS,
-  settling: MOVE_MS,
-  leaving: EXIT_MS,
+var ENTER_FADE_MS = 300;
+var FADE_MS = 200;
+var ROW_FADE_MS = {
+  entering: ENTER_FADE_MS,
+  opening: FADE_MS,
+  closing: FADE_MS,
+  settling: FADE_MS,
+  leaving: FADE_MS,
   closed: 0,
   open: 0,
   settled: 0,
   undoing: 0
 };
+var ROW_STATE_MS = Object.fromEntries(Object.entries(ROW_FADE_MS).map(([state, fadeMs]) => [state, fadeMs > 0 ? Math.max(fadeMs, HEIGHT_SETTLE_MS) : 0]));
 function isMoving(state) {
   return ROW_STATE_MS[state] > 0;
 }
@@ -4501,43 +4542,6 @@ function rest(track, form, target, now) {
   return track?.state === state ? track : { state, since: now, hasPanel: state === "open" };
 }
 
-// src/springs.ts
-var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
-var LONGEST_MOVE_PX = 2000;
-var FRAME_MS = 16;
-var STEP_MS = 1;
-function springStep(s, target, ms, spring) {
-  const w = 2 * Math.PI / spring.response;
-  let { x, v } = s;
-  for (let t = 0;t < ms; t += STEP_MS) {
-    const dt = Math.min(STEP_MS, ms - t);
-    v += (-w * w * (x - target) - 2 * spring.damping * w * v) * dt;
-    x += v * dt;
-  }
-  return { x, v };
-}
-var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
-function msToRest(from, target, spring) {
-  let s = from;
-  let ms = 0;
-  while (!isAtRest(s, target, spring) && ms < 1e4) {
-    s = springStep(s, target, FRAME_MS, spring);
-    ms += FRAME_MS;
-  }
-  return ms;
-}
-function settleMs(spring) {
-  const fromRest = msToRest({ x: 0, v: 0 }, LONGEST_MOVE_PX, spring);
-  let longest = fromRest;
-  let s = { x: 0, v: 0 };
-  for (let ms = FRAME_MS;ms < fromRest; ms += FRAME_MS) {
-    s = springStep(s, LONGEST_MOVE_PX, FRAME_MS, spring);
-    longest = Math.max(longest, msToRest(s, 0, spring));
-  }
-  return longest;
-}
-var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
-
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [] };
 var NEXT_FRAME_MS = 16;
@@ -4553,7 +4557,7 @@ function glideOf(track, isStart, last, now) {
       return { ...last, box: to };
     if (isLive)
       return { box: to, fadeMs: last.fadeMs, endsAt: restAt(now, last.fadeMs) };
-    const fadeMs = ROW_STATE_MS[state];
+    const fadeMs = ROW_FADE_MS[state];
     return { box: to === "open" ? "shut" : "open", fadeMs, endsAt: restAt(now, fadeMs) };
   }
   if (!isLive || last.box !== "open")
@@ -4956,7 +4960,7 @@ function panelEl(r, m, p, isLeaving) {
     return [];
   const key = panelId(r.id);
   const opacity = m?.panel ?? null;
-  const glide = { duration: ROW_STATE_MS[m?.state ?? "open"], easing: "ease-out" };
+  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], easing: "ease-out" };
   return [
     v_flex3().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];
@@ -5124,17 +5128,6 @@ function nextOutCheckAt(outs, now) {
   return later.length ? Math.min(...later) : null;
 }
 var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
-function withUndoOut(rowId, buttons, out) {
-  if (out?.action !== "undo")
-    return buttons;
-  const id = `${rowId} undo`;
-  const kept = buttons.find((b) => b.id === id);
-  if (kept && !kept.isHidden)
-    return buttons;
-  const { isHidden: _, ...spent } = kept ?? button(id, out.label, "quiet");
-  const drawn = { ...spent, label: out.label, isOut: true };
-  return kept ? buttons.map((b) => b === kept ? drawn : b) : [...buttons, drawn];
-}
 function drawOuts(blocks, outs, lines, now) {
   const byRow = new Map(outs.map((o) => [o.rowId, o]));
   const outRows = new Set(byRow.keys());
@@ -5150,9 +5143,7 @@ function drawOuts(blocks, outs, lines, now) {
   return blocks.map((b) => {
     if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
       const line = lineOf(b.id);
-      const isSettledRow = b.kind === "row" && b.settled !== null;
-      const buttons = isSettledRow ? withUndoOut(b.id, b.buttons, byRow.get(b.id)) : b.buttons;
-      return { ...b, buttons: withOutButtons(buttons, outRows), ...line ? { feedback: line } : {} };
+      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
     }
     if (b.kind === "empty" && b.under) {
       const line = lineOf(b.under.id);
@@ -5462,7 +5453,8 @@ class Inbox extends View {
       replies: heldReplies(this.ui.typing, this.drafts),
       discarded: this.discarded,
       shownSince: this.shownSince,
-      listInput: this.listInput && withListInput(this.listInput, now)
+      listInput: this.listInput && withListInput(this.listInput, now),
+      undoOut: this.queue.outs.filter((o) => o.action === "undo" || o.action === "pr-undo").map((o) => o.rowId)
     };
   }
   load(sessionId, cx) {

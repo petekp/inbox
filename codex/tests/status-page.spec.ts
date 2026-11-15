@@ -21,6 +21,12 @@ import { POLL_MS } from '../src/settle'
 import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 const window = new Window()
+const animate = window.HTMLElement.prototype.animate
+window.HTMLElement.prototype.animate = function (...args: Parameters<typeof animate>) {
+  const animation = animate.apply(this, args)
+  animation.finished.catch(() => {})
+  return animation
+}
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 

@@ -79,6 +79,7 @@ export function actionsOf(
   last: LastAction | undefined,
   state: RowState,
   feedback: Feedback | null,
+  isUndoOut = false,
 ): ActionView[] {
   const { id, item, steps } = row
   const pressing = pressOutAction(last, feedback)
@@ -114,10 +115,13 @@ export function actionsOf(
       isFolded: flags.isFolded ?? false,
       isFollowUp: FOLLOW_UPS.has(press.action),
       ...(ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {}),
-      isOut: out === pressAction,
+      isOut: out === pressAction || (press.action === 'undo' && isUndoOut),
     }
   }
-  if (state.is === 'settled') return state.canUndo ? [action({ action: 'undo', id }, ROW_COPY.undo, 'view')] : []
+  if (state.is === 'settled')
+    return state.canUndo || (state.offersUndo && isUndoOut)
+      ? [action({ action: 'undo', id }, ROW_COPY.undo, 'view')]
+      : []
   if (state.is === 'held')
     return [
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),

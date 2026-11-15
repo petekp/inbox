@@ -1,7 +1,7 @@
 // The launch video's beats, from the shot list in docs/plans/launch-video.md: each beat's length, its caption,
 // and what the screen shows from which second.
 
-import { EXIT_MS } from '../../../hooks/row-motion'
+import { ROW_STATE_MS } from '../../../hooks/row-motion'
 import { SETTLED_MS } from '../../../hooks/timing'
 import type { RowLines } from '../shared/EndCard'
 import type { CameraMove, Point, Rect } from '../shared/geometry'
@@ -14,7 +14,7 @@ import type { CaptionSpan, Cut, VideoSpec } from '../shared/video'
 /** How long a closed row stays in place, and Undo drains, in all three apps, in seconds. */
 const SETTLE = SETTLED_MS / 1000
 /** How long a settled row then takes to leave in Codex, in seconds. */
-const CODEX_EXIT = EXIT_MS / 1000
+const CODEX_EXIT = ROW_STATE_MS.leaving / 1000
 
 /** `launch-captions-off` is `launch` with no captions, to check that the pictures carry the story. */
 export const VARIANTS = ['launch', 'launch-captions-off'] as const

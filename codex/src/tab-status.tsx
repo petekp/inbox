@@ -18,6 +18,9 @@ import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
 import { pulseInStep, markClassOf, MarkGlyph, EmptyState } from './tab-parts'
+import { goalHeadMotion, goalLineMotion, statusRowMotion } from './tab-status-steps'
+import { lineMotion } from './tab-line-steps'
+import type { DrawnStatus } from './tab-status-steps'
 
 let measuring: CanvasRenderingContext2D | null | undefined
 
@@ -71,7 +74,7 @@ function toggleStatusFold(id: string) {
 /** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
 const depthStyle = (row: StatusRow) => ({ '--depth': row.depth })
 
-function StatusLine({ row }: { row: StatusRow }) {
+function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
   if (row.kind === 'subject') {
     const merged = row.merged
     const keys = statusKeyPlan(row).map(statusKey)
@@ -81,6 +84,7 @@ function StatusLine({ row }: { row: StatusRow }) {
         class={row.hasChildren ? 'row has-children' : 'row'}
         style={depthStyle(row)}
         {...{ [SUBJECTS_ATTRIBUTE]: row.id }}
+        {...lineMotion(motion)}
       >
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
@@ -112,7 +116,11 @@ function StatusLine({ row }: { row: StatusRow }) {
   }
   if (row.kind === 'child')
     return (
-      <div class={row.branch ? `row child branch-${row.branch}` : 'row'} style={depthStyle(row)}>
+      <div
+        class={row.branch ? `row child branch-${row.branch}` : 'row'}
+        style={depthStyle(row)}
+        {...lineMotion(motion)}
+      >
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
         </span>
@@ -123,25 +131,25 @@ function StatusLine({ row }: { row: StatusRow }) {
     )
   if (row.kind === 'more')
     return (
-      <div class={`row child branch-${row.branch}`} style={depthStyle(row)}>
+      <div class={`row child branch-${row.branch}`} style={depthStyle(row)} {...lineMotion(motion)}>
         <span class="mark" />
         <div class="content tight muted">{row.text}</div>
       </div>
     )
   if (row.kind === 'done-fold') {
     const isUnfolded = statusUnfolded.has(row.id)
-    const motion = foldMotion(row.id)
+    const fold = foldMotion(row.id)
 
     return (
       <>
-        <div class="row fold-row" style={depthStyle(row)}>
-          <button type="button" class="fold" data-fold={motion} onClick={() => toggleStatusFold(row.id)}>
+        <div class="row fold-row" style={depthStyle(row)} {...lineMotion(motion)}>
+          <button type="button" class="fold" data-fold={fold} onClick={() => toggleStatusFold(row.id)}>
             <Icon name={isUnfolded ? 'down' : 'right'} />
             {row.text}
           </button>
         </div>
-        {isUnfolded || closingFolds.has(motion) ? (
-          <div class="fold-rows" data-motion={`closed-${motion}`}>
+        {isUnfolded || closingFolds.has(fold) ? (
+          <div class="fold-rows" data-motion={`closed-${fold}`}>
             {row.rows.map(r => (
               <StatusLine key={r.id} row={r} />
             ))}
@@ -152,13 +160,13 @@ function StatusLine({ row }: { row: StatusRow }) {
   }
   if (row.kind === 'part')
     return (
-      <div class="row part-line">
+      <div class="row part-line" {...lineMotion(motion)}>
         <div class="part-rule">{row.text}</div>
       </div>
     )
   if (row.kind === 'counts')
     return (
-      <div class="row" style={depthStyle(row)}>
+      <div class="row" style={depthStyle(row)} {...lineMotion(motion)}>
         <span class="mark" />
         <div class="content tight">
           <div>
@@ -183,6 +191,7 @@ function StatusLine({ row }: { row: StatusRow }) {
       class="row"
       style={depthStyle(row)}
       {...(subjects.length > 0 ? { [SUBJECTS_ATTRIBUTE]: subjects.join(' ') } : {})}
+      {...lineMotion(motion)}
     >
       <span class={markClassOf(row.tone, false)}>
         <MarkGlyph text={row.mark} />
@@ -251,7 +260,6 @@ function Keys({ keys }: { keys: StatusKey[] }) {
   ) : null
 }
 
-/** Hides a milestone's word when it does not fit at the right of its name's first line. */
 /** The boxes of the text under `el`, one per line of each text node, without the boxes of the elements that hold it. */
 function textRects(el: Element): DOMRect[] {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
@@ -286,12 +294,12 @@ function fitPathWord(word: HTMLElement | null) {
   new ResizeObserver(() => placePathWord(word, name, box)).observe(box)
 }
 
-function MilestoneLine({ m }: { m: MilestoneRow }) {
+function MilestoneLine({ m, motion }: { m: MilestoneRow; motion: string }) {
   const fold = m.foldId
   const nameClass = [m.isChanged ? 'changed' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
 
   return (
-    <div class="row milestone">
+    <div class="row milestone" {...lineMotion(motion)}>
       <span class={markClassOf(m.tone, false)}>
         <MarkGlyph text={m.mark} />
       </span>
@@ -335,11 +343,32 @@ function MilestoneLine({ m }: { m: MilestoneRow }) {
   )
 }
 
+/** A milestone and the rows drawn under it, as `stepStatus` steps them, with rows still leaving in their places. */
+type MilestoneGroupLines = { m: MilestoneRow; rows: StatusRow[] }
+
+function milestoneGroups(lines: DrawnStatus['goal']): MilestoneGroupLines[] {
+  const groups: MilestoneGroupLines[] = []
+  for (const l of lines) {
+    if ('milestone' in l) groups.push({ m: l.milestone, rows: [] })
+    else groups.at(-1)?.rows.push(l.row)
+  }
+
+  return groups
+}
+
 /**
- * A milestone and its rows, keyed by its part of the page, so one that moves between the path and Later leaves one and
- * enters the other. A milestone the path's line leaves from draws the line down to the next milestone's mark.
+ * A milestone and its rows. A milestone the path's line leaves from draws the line down to the next milestone's mark.
+ * A done milestone folded to its name keeps its rows in a fold, as a done fold of subjects does.
  */
-function MilestoneGroup({ m, isSpaced, isGapUnder }: { m: MilestoneRow; isSpaced: boolean; isGapUnder: boolean }) {
+function MilestoneGroup({
+  group: { m, rows },
+  isSpaced,
+  isGapUnder,
+}: {
+  group: MilestoneGroupLines
+  isSpaced: boolean
+  isGapUnder: boolean
+}) {
   const fold = m.foldId
   const motion = fold === null ? null : foldMotion(fold)
   const isFoldShown = motion !== null && fold !== null && (statusUnfolded.has(fold) || closingFolds.has(motion))
@@ -352,9 +381,9 @@ function MilestoneGroup({ m, isSpaced, isGapUnder }: { m: MilestoneRow; isSpaced
 
   return (
     <div class={classes.filter(Boolean).join(' ')}>
-      <MilestoneLine m={m} />
+      <MilestoneLine m={m} motion={goalLineMotion(m.id)} />
       {motion === null ? (
-        m.rows.map(r => <StatusLine key={r.id} row={r} />)
+        rows.map(r => <StatusLine key={r.id} row={r} motion={goalLineMotion(r.id)} />)
       ) : isFoldShown ? (
         <div class="fold-rows" data-motion={`closed-${motion}`}>
           {m.rows.map(r => (
@@ -366,13 +395,15 @@ function MilestoneGroup({ m, isSpaced, isGapUnder }: { m: MilestoneRow; isSpaced
   )
 }
 
-function MilestoneList({ milestones }: { milestones: MilestoneRow[] }) {
+function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
   const isUnfolded = (id: string) => statusUnfolded.has(id)
+  const groups = milestoneGroups(lines)
+  const milestones = groups.map(g => g.m)
 
   return (
     <div class="list">
-      {milestones.flatMap((m, n) => [
-        ...(m.startsLater
+      {groups.flatMap((group, n) => [
+        ...(group.m.startsLater
           ? [
               <div key="later" class="row part-line">
                 <div class="part-rule">{LATER_TEXT}</div>
@@ -380,9 +411,9 @@ function MilestoneList({ milestones }: { milestones: MilestoneRow[] }) {
             ]
           : []),
         <MilestoneGroup
-          key={m.id}
-          m={m}
-          isSpaced={n > 0 && !m.startsLater && isSpacedAbove(milestones, n, isUnfolded)}
+          key={group.m.id}
+          group={group}
+          isSpaced={n > 0 && !group.m.startsLater && isSpacedAbove(milestones, n, isUnfolded)}
           isGapUnder={isSpacedAbove(milestones, n + 1, isUnfolded) && n + 1 < milestones.length}
         />,
       ])}
@@ -397,14 +428,22 @@ function MilestoneList({ milestones }: { milestones: MilestoneRow[] }) {
  * goal, the field takes the text's place and the buttons leave the heading.
  * The buttons wrap under the rule, still at the right, when they do not fit beside the title.
  */
-function GoalSection({ page }: { page: StatusPage }) {
+function GoalSection({
+  page,
+  head,
+  lines,
+}: {
+  page: StatusPage
+  head: DrawnStatus['head']
+  lines: DrawnStatus['goal']
+}) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
   const text = g ? <h1>{g.text}</h1> : <p class="muted">{NO_GOAL_TEXT}</p>
 
   return (
     <section>
-      <div class="goal-heading">
+      <div class="goal-heading" data-motion="goal-heading">
         <span class="goal-title">{g?.label ?? GOAL_HEADING}</span>
         <span class="goal-rule" />
         {isTyping ? null : (
@@ -416,19 +455,18 @@ function GoalSection({ page }: { page: StatusPage }) {
           </span>
         )}
       </div>
-      <div class="status-head goal">
-        {isTyping ? <GoalField /> : text}
-        {g?.was ? (
-          <p class="muted">
-            {WAS_PREFIX}
-            {g.was}
+      <div class="status-head goal" data-motion="goal-head">
+        <div class="goal-text" data-motion="goal-text">
+          {isTyping ? <GoalField /> : text}
+        </div>
+        {head.map(l => (
+          <p key={l.id} class="muted" {...lineMotion(goalHeadMotion(l.id))}>
+            {l.text}
           </p>
-        ) : null}
-        {g?.now ? <p class="muted">{g.now}</p> : null}
-        {g?.awaiting ? <p class="muted">{g.awaiting}</p> : null}
+        ))}
         <GoalError />
       </div>
-      {g && g.milestones.length > 0 ? <MilestoneList milestones={g.milestones} /> : null}
+      {lines.length > 0 ? <MilestoneList lines={lines} /> : null}
     </section>
   )
 }
@@ -450,7 +488,7 @@ function GoalError() {
   return error ? <p class="tone-error">{error}</p> : null
 }
 
-export function StatusTab({ v }: { v: View }) {
+export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   const page = v.statusPage
   const empty = emptyTab(v, { tab: 'overview', isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID })
   if (empty)
@@ -468,13 +506,13 @@ export function StatusTab({ v }: { v: View }) {
 
   return (
     <main class="status-page">
-      <GoalSection page={page} />
+      <GoalSection page={page} head={drawn.head} lines={drawn.goal} />
       {head ? <section>{head}</section> : null}
-      {page.rows.length > 0 ? (
+      {drawn.rows.length > 0 ? (
         <section class={isUnruledAfterGoal ? 'unruled' : undefined}>
           <div class="list">
-            {page.rows.map(r => (
-              <StatusLine key={r.id} row={r} />
+            {drawn.rows.map(r => (
+              <StatusLine key={r.id} row={r} motion={statusRowMotion(r.id)} />
             ))}
           </div>
         </section>

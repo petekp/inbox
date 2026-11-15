@@ -122,6 +122,10 @@
 .status-head .actions {
   margin-top: 6px;
 }
+/* Keeps the field's top margin inside, so clipping the box while it glides does not move the field. */
+.status-head .goal-text {
+  display: flow-root;
+}
 /* A blank line's space between the goal's buttons and its milestones, above a milestone that `isSpacedAbove` spaces,
    and between a milestone and the rows under it, as the terminal and omp leave. */
 .status-head.goal + .list,

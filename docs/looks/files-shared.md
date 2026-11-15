@@ -7,7 +7,8 @@ Part of [the look map](../looks.md#files).
 | `hooks/view.ts` | Shared module. `inboxView` builds the inbox view: the Asks order and count, each row's state, feedback and actions, and the closed rows. `footerStatus` is the status line under the inbox. |
 | `hooks/timing.ts` | Shared module. The timing constants: how long a row stays settled, the press guard, when a send reads Queued, and the running mark's frames. Which rows a look draws in place, and which replies and discards it holds. |
 | `hooks/rows.ts` | Shared module. The `Look`, `RowView` and `RowState` types. Row handles, titles, reply hints and action labels, a closed row's state, outcome label and mark, and the labels of the closed folds. |
-| `hooks/row-motion.ts` | Shared module. The motion state machine for rows. |
+| `hooks/row-motion.ts` | Shared module. The motion state machine for rows, how long each moving state lasts, and each state's fade length. |
+| `hooks/springs.ts` | Shared module. The spring every box's height moves on, its frames for a look that plays them, and how long a height move can take to come to rest. |
 | `hooks/feedback.ts` | Shared module. A press's feedback on its row: `feedbackOf`, its text in each look, the working and done labels, and whether the press is still out. |
 | `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the text an empty Asks tab shares with the band. |
 | `hooks/empty-tab.ts` | Shared module. `emptyTab` decides when each tab is empty and returns its title, hint and what goes under them. The empty tabs' texts. |
