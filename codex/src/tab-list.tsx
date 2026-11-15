@@ -1,5 +1,4 @@
 import { RowActions } from './row-actions'
-import { HELD_MARK } from '../../hooks/help'
 import { settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
@@ -28,6 +27,11 @@ import type { DrawnStatus } from './tab-status-steps'
 import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
+
+/** Rows whose panel is closing, and rows whose close just ended, whose Holds up line then fades in over the settled height. */
+const rowsClosing = new Set<string>()
+const rowsJustClosed = new Set<string>()
+const JUST_CLOSED_MS = 600
 
 export function stepLists(v: View): {
   lists: Lists
@@ -153,12 +157,25 @@ export function ListRow({
 }) {
   const isClosing = track.hasPanel && (track.state === 'closing' || track.state === 'leaving')
   const isSelected = track.hasPanel && !isClosing
+  if (isClosing) rowsClosing.add(row.id)
+  else if (rowsClosing.delete(row.id)) {
+    rowsJustClosed.add(row.id)
+    setTimeout(() => rowsJustClosed.delete(row.id), JUST_CLOSED_MS)
+  }
+  const isJustClosed = !isSelected && rowsJustClosed.has(row.id)
+  const isTreeHung = row.hasTree && (isSelected || isClosing)
   const handle = (
     <span
-      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}`}
-      ref={row.isHandleRunning ? pulseInStep : undefined}
+      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}${isTreeHung ? ' has-tree' : ''}`}
+      ref={row.isHandleRunning && !isTreeHung ? pulseInStep : undefined}
     >
-      <MarkGlyph text={row.handle} />
+      {isTreeHung ? (
+        <span class="glyph" ref={row.isHandleRunning ? pulseInStep : undefined}>
+          <MarkGlyph text={row.handle} />
+        </span>
+      ) : (
+        <MarkGlyph text={row.handle} />
+      )}
     </span>
   )
 
@@ -192,7 +209,7 @@ export function ListRow({
 
   return (
     <div
-      class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}`}
+      class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}${isJustClosed ? ' just-closed' : ''}`}
       onClick={isSelected ? undefined : onSelect}
     >
       {handle}
@@ -209,13 +226,7 @@ export function ListRow({
           {row.meta ? <span class="meta">{row.meta}</span> : null}
           {after(drawn, closed ? ' open-only' : '')}
           {closed ? after(closed, ' closed-only') : null}
-          {row.context ? <span class="context-line">{row.context}</span> : null}
-          {row.holdsUp ? (
-            <span class="holds-up">
-              <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
-            </span>
-          ) : null}
-          {row.recLine ? <span class="rec-line">{row.recLine}</span> : null}
+          {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>

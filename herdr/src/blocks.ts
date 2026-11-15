@@ -90,7 +90,11 @@ export type RowBlock = {
   /** The person collapsed it, so it draws closed while selected. */
   isCollapsed?: true
   /** What the selected row shows under its line, in order, each line with the mark that leads it, if any. */
-  body: { text: string; tone: Tone; mark?: Mark }[]
+  /**
+   * The row's lines under its title. `tree` places a line on the tree that hangs from the title's mark: `trunk` passes
+   * it, `tee` joins a branch to the trunk, and `last` ends the trunk at the last branch.
+   */
+  body: { text: string; tone: Tone; tree?: 'trunk' | 'tee' | 'last' }[]
   buttons: Button[]
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null

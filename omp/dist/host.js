@@ -4283,19 +4283,31 @@ function closedLineAction(d) {
     return { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } };
   return d.how === "dismissed" ? { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } } : null;
 }
-function recLineOf(item) {
-  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
-}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
-  if (!descriptions)
-    return [];
   return actions.flatMap((a) => {
-    if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option))
+    if (a.press.action !== "answer")
       return [];
-    const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
+    const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
+    if (description === null && reason === null)
+      return [];
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
   });
+}
+function optionBody(o) {
+  if (o.description === null)
+    return null;
+  if (o.reason === null)
+    return o.description;
+  return `${o.description}${/[.!?]$/.test(o.description) ? "" : "."} ${recommendedLine(o.reason)}`;
+}
+function optionReasonLine(o) {
+  return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null;
+}
+var recommendedLine = (reason) => `Recommended: ${reason}`;
+function shownOptionDescriptions(row, isShowingAll) {
+  return row.optionDescriptions.filter((o) => isShowingAll || !o.isFolded);
 }
 function rowHandle(row) {
   return row.number === null ? "\u2022" : `${row.number})`;
@@ -4335,6 +4347,7 @@ function rowResultMark(row) {
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
+var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
 }
@@ -6824,7 +6837,6 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null,
       contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
@@ -7271,50 +7283,6 @@ async function rerunRun(host, e) {
 `)[0] || `gh exited with ${r.exitCode}`;
 }
 
-// ../hooks/empty-tab.ts
-var EMPTY_TITLES = {
-  needsYou: NOTHING_NEEDED_TEXT,
-  findings: "No findings yet",
-  prs: "No PRs",
-  prsFetching: "Checking for PRs\u2026"
-};
-var EMPTY_STATUS_TEXT = {
-  title: screenTabOf("overview").label,
-  hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-};
-function prsEmptyHint(place) {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
-}
-function emptyTab(view, look) {
-  if (look.tab === "overview") {
-    const page = view.statusPage;
-    if (!page.isEmpty)
-      return null;
-    return {
-      ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
-    };
-  }
-  if (look.tab === "prs") {
-    if (look.drawn > 0)
-      return null;
-    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure };
-    const { refresh } = view.prs;
-    return {
-      title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
-      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
-      under: refresh ? { is: "pr-refresh", refresh } : null
-    };
-  }
-  if (look.drawn > 0 || look.hasBlocker)
-    return null;
-  if (look.tab === "needsYou" && look.hostText)
-    return { ...look.hostText, under: null };
-  const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
-  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab];
-  return { title, hint, under: null };
-}
-
 // src/panel-text.ts
 var ANSI = /\x1b\[[0-9;]*m/g;
 var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
@@ -7372,6 +7340,85 @@ function indented(text, indent, width, maxLines, paint) {
   if (wrapped.length > maxLines)
     shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
+}
+
+// src/panel-ask-tree.ts
+var TRUNK = "\u2502  ";
+var TEE = "\u251C\u2500 ";
+var LAST = "\u2514\u2500 ";
+var NONE = "   ";
+function askTreeLines(line, pad, width, s, isAllShown = false) {
+  const row = line.row;
+  if (!row || row.state.is !== "open")
+    return [];
+  const margin = " ".repeat(3 + pad);
+  const room = Math.max(10, width - margin.length - TRUNK.length - 1);
+  const branches = shownOptionDescriptions(row, isAllShown).map((o) => {
+    const body = optionBody(o);
+    return { label: o.label, text: body === null ? o.label : `${o.label}: ${body}`, reason: optionReasonLine(o) };
+  });
+  const holdsUp = row.holdsUpLine;
+  const hasTree = branches.length > 0 || holdsUp !== null;
+  const draw = (arm, text, rest, label = "") => wrapText(text, room).map((l, i) => {
+    const arms = s.dim(margin + (i === 0 ? arm : rest));
+    return i === 0 && label && l.startsWith(label) ? arms + label + s.dim(l.slice(label.length)) : arms + s.dim(l);
+  });
+  const out = [];
+  if (row.contextLine)
+    out.push(...draw(hasTree ? TRUNK : NONE, row.contextLine, hasTree ? TRUNK : NONE));
+  const all = [...branches, ...holdsUp ? [{ label: "", text: holdsUp, reason: null }] : []];
+  all.forEach((b, n) => {
+    const isLast = n === all.length - 1;
+    const rest = isLast ? NONE : TRUNK;
+    out.push(...draw(isLast ? LAST : TEE, b.text, rest, b.label));
+    if (b.reason)
+      out.push(...draw(rest, b.reason, rest));
+  });
+  return out;
+}
+
+// ../hooks/empty-tab.ts
+var EMPTY_TITLES = {
+  needsYou: NOTHING_NEEDED_TEXT,
+  findings: "No findings yet",
+  prs: "No PRs",
+  prsFetching: "Checking for PRs\u2026"
+};
+var EMPTY_STATUS_TEXT = {
+  title: screenTabOf("overview").label,
+  hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+};
+function prsEmptyHint(place) {
+  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+}
+function emptyTab(view, look) {
+  if (look.tab === "overview") {
+    const page = view.statusPage;
+    if (!page.isEmpty)
+      return null;
+    return {
+      ...EMPTY_STATUS_TEXT,
+      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
+    };
+  }
+  if (look.tab === "prs") {
+    if (look.drawn > 0)
+      return null;
+    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure };
+    const { refresh } = view.prs;
+    return {
+      title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
+      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
+      under: refresh ? { is: "pr-refresh", refresh } : null
+    };
+  }
+  if (look.drawn > 0 || look.hasBlocker)
+    return null;
+  if (look.tab === "needsYou" && look.hostText)
+    return { ...look.hostText, under: null };
+  const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
+  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab];
+  return { title, hint, under: null };
 }
 
 // src/panel-page.ts
@@ -7894,7 +7941,7 @@ function lineOfRow(row, isAllShown) {
   const undo = row.actions.find((a) => a.press.action === "undo");
   return {
     ...blankLine(row.id),
-    lead: null,
+    lead: row.type === "finding" ? null : row.state.is === "open" ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null } : { text: "", tone: null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
@@ -8598,15 +8645,12 @@ function drawLine(line, isSelected, d) {
   if (line.settled || isShut(line, ui))
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
-  const contextLine = isOpen ? line.row?.contextLine : null;
-  if (contextLine)
-    out.push(...indented(contextLine, indent, width, Infinity, s.dim));
   const holdsUp = line.row?.holdsUpLine;
-  if (holdsUp)
-    out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
-  const recLine = line.row?.recLine;
-  if (recLine)
-    out.push(...isOpen ? indented(recLine, indent, width, 3, s.dim) : [fit(`${" ".repeat(indent)}${s.dim(recLine)}`, width)]);
+  const tree = isOpen ? askTreeLines(line, pad, width, s, ui.optionsShown.includes(line.id)) : [];
+  if (tree.length > 0)
+    out.push(...tree);
+  else if (holdsUp)
+    out.push(fit(`${" ".repeat(indent)}${s.dim(holdsUp)}`, width));
   if (line.body && isOpen)
     out.push(...indented(line.body, indent, width, BODY_LINES, (t) => t));
   if (line.detail && (isOpen || line.isDetailShown))
@@ -8615,8 +8659,6 @@ function drawLine(line, isSelected, d) {
     return out;
   if (line.file)
     out.push(" ".repeat(indent) + s.tone("accent", line.file));
-  for (const o of line.row?.optionDescriptions ?? [])
-    out.push(fit(" ".repeat(indent) + o.label + s.dim(`: ${o.description}`), width));
   if (line.buttons.length > 0 && ui.typing !== line.id)
     out.push(...buttonLines(line, ui, indent - 1, width, s));
   if (ui.typing === line.id) {
@@ -9222,6 +9264,10 @@ function demoView(now, agent) {
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
           context: "A glance stays up until it times out, and testers asked for a way to clear it sooner.",
           options: ["Pinch", "Flick"],
+          optionDescriptions: {
+            Pinch: "Touch thumb and finger together to clear the glance.",
+            Flick: "Flick the wrist outward to clear it."
+          },
           rec: "Pinch",
           recReason: "a flick fires by accident while walking",
           isDesignChoice: true,
@@ -9664,7 +9710,7 @@ var CLIENTS = {
       "child-names": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
-      "asks-rec-reason-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
@@ -9784,7 +9830,7 @@ var CLIENTS = {
       "child-names": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
-      "asks-rec-reason-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": {
@@ -9892,7 +9938,7 @@ var CLIENTS = {
       "child-names": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
-      "asks-rec-reason-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },

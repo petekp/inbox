@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T23:20:24.814Z. 243377 characters follow.
+// Built at 2026-11-15T23:53:19.215Z. 245104 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1939,20 +1939,29 @@ function closedLineAction(d) {
     return { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } };
   return d.how === "dismissed" ? { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } } : null;
 }
-function recLineOf(item) {
-  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
-}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
-  if (!descriptions)
-    return [];
   return actions.flatMap((a) => {
-    if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option))
+    if (a.press.action !== "answer")
       return [];
-    const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
+    const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
+    if (description === null && reason === null)
+      return [];
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
   });
 }
+function optionBody(o) {
+  if (o.description === null)
+    return null;
+  if (o.reason === null)
+    return o.description;
+  return `${o.description}${/[.!?]$/.test(o.description) ? "" : "."} ${recommendedLine(o.reason)}`;
+}
+function optionReasonLine(o) {
+  return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null;
+}
+var recommendedLine = (reason) => `Recommended: ${reason}`;
 function shownOptionDescriptions(row, isShowingAll) {
   return row.optionDescriptions.filter((o) => isShowingAll || !o.isFolded);
 }
@@ -1996,6 +2005,10 @@ function rowResultMark(row) {
   if (f.is === "sending" || f.is === "queued")
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
+}
+var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+function rowMark(row) {
+  return rowResultMark(row) ?? (row.state.is === "open" && row.type !== "finding" ? ASK_MARK : null);
 }
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
@@ -3314,7 +3327,6 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null,
       contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
@@ -4067,7 +4079,6 @@ var freshUi = (tab) => ({
   statusUnfolded: [],
   typing: null
 });
-var HOLDS_UP_MARK = { text: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false };
 var toneOfFeedback = (f) => isFailure(f) ? "error" : f.is === "done" || f.is === "local" && f.result.state === "done" ? "done" : "muted";
 var markOf3 = (m) => m ? { text: m.text, tone: m.tone ?? "muted", isRunning: m.isRunning } : null;
 function rowDoes(row, press, kind, agent) {
@@ -4121,15 +4132,28 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   };
 }
 function rowBody(row, isAllShown) {
+  const options = shownOptionDescriptions(row, isAllShown).map((o) => {
+    const body = optionBody(o);
+    const reason = optionReasonLine(o);
+    return [
+      { text: body === null ? o.label : `${o.label}: ${body}`, tone: null },
+      ...reason ? [{ text: reason, tone: "muted" }] : []
+    ];
+  });
+  const branches = [...options, ...row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: "muted" }]] : []];
+  const lastBranch = branches.length - 1;
+  const hasTree = branches.length > 0;
+  const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
   const lines = [
-    { text: row.contextLine, tone: "muted" },
-    { text: row.detail, tone: null },
-    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: "muted" },
-    ...shownOptionDescriptions(row, isAllShown).map((o) => ({ text: `${o.label}: ${o.description}`, tone: null })),
-    { text: row.recLine, tone: "muted" },
-    { text: row.holdsUpLine, tone: "muted", mark: HOLDS_UP_MARK }
+    { text: row.contextLine ?? "", tone: "muted", ...hasTree ? { tree: "trunk" } : {} },
+    { text: row.detail ?? "", tone: null },
+    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
+    ...branches.flatMap((lines, branch) => lines.map((l, line) => {
+      const placed = tree(branch, line);
+      return { ...l, ...placed ? { tree: placed } : {} };
+    }))
   ];
-  return lines.flatMap((l) => l.text ? [{ ...l, text: l.text }] : []);
+  return lines.filter((l) => l.text);
 }
 function rowBlock(row, ui, selected, screen) {
   const { state, feedback: f } = row;
@@ -4144,7 +4168,7 @@ function rowBlock(row, ui, selected, screen) {
     kind: "row",
     id: row.id,
     depth: 0,
-    mark: markOf3(rowResultMark(row)),
+    mark: markOf3(rowMark(row)),
     title: rowTitle(row, LOOK2),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
@@ -5164,7 +5188,16 @@ var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex2().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
 var markEl = (m, t) => div4().w(MARK_W).flex_none().text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div4().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
-var bodyLineEl = (l, t) => l.mark ? h_flex2().pt(LINE_GAP).items_start().child(markEl(l.mark, t)).child(div4().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
+var trunkEl = (top, height, t) => {
+  const el = div4().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t));
+  return height === null ? el.bottom(0) : el.h(height);
+};
+var bodyLineEl = (l, t) => {
+  const armAt = LINE_GAP + LINE_HEIGHT / 2;
+  const arm = div4().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t));
+  const strokes = l.tree === "trunk" ? [trunkEl(0, null, t)] : l.tree === "tee" ? [trunkEl(0, null, t), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t), arm] : [];
+  return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes);
+};
 function fieldEl(f, p, indent, isInert = false) {
   const { t } = p;
   const state = p.input(f.rowId);
@@ -5180,13 +5213,17 @@ function rowEl(r, p) {
   const isOpen = isOpenRow(r);
   const isWrapped = isOpen || m?.isWrapHeld === true;
   const isPressable = r.isSelectable && !isLeaving;
-  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const hasTree = (m?.closing ?? r).body.some((l) => l.tree !== undefined);
+  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving))));
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
+    const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t);
+    return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
+  })).children(panelEl(r, m, p, isLeaving))));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;

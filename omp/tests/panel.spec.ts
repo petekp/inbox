@@ -156,14 +156,25 @@ test('a question’s context draws whole and dim, first under its title, on its 
   const row = firstQuestion(screen)
   const other = screen.view.needsYou.questions.find(r => r.state.is === 'open' && r.id !== row.id)!
   const context = row.contextLine!
-  const flat = (ui: PanelUi) => text(screen, ui, 50).replace(/\s+/g, ' ')
+  const flat = (ui: PanelUi) =>
+    text(screen, ui, 50)
+      .replace(/[│├└]─?/g, '')
+      .replace(/\s+/g, ' ')
   const shown = flat(onRow(row))
   const at = shown.indexOf(context)
 
   expect(at).toBeGreaterThan(shown.indexOf('Dismiss a glance'))
-  expect(at).toBeLessThan(shown.indexOf(`Why ${row.item!.rec}`))
   const firstWords = context.split(' ').slice(0, 3).join(' ')
-  expect(drawn(screen, onRow(row), 50).find(l => strip(l).trim().startsWith(firstWords))).toContain(`${ESC}2m`)
+  const raw = text(screen, onRow(row), 50)
+  expect(raw.indexOf(firstWords)).toBeLessThan(raw.indexOf('├─'))
+  expect(
+    drawn(screen, onRow(row), 50).find(l =>
+      strip(l)
+        .replace(/[│├└─]/g, '')
+        .trim()
+        .startsWith(firstWords),
+    ),
+  ).toContain(`${ESC}2m`)
   expect(flat(onRow(other))).not.toContain(firstWords)
 })
 
