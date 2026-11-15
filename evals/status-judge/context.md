@@ -52,7 +52,7 @@ The marks on subject rows, and the states each one fits:
 - `◌`: waits on something outside the session, such as another team, a vendor or a build.
 - `✓`: delivered.
 - `✗`: dropped.
-- Filed for later has no mark of its own. Filed work closes as `✓`, and where it stands says it is filed. `✗` also fits it. An open mark does not.
+- Filed for later has no mark of its own. Filed work closes as `✓`, and where it stands says it is filed. Neither `✗` nor an open mark fits it.
 - `◆`: an open piece that an open ask holds up. It replaces the piece's own mark while the ask is open, whatever the piece's state.
 
 ## What code checks instead

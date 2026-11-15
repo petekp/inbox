@@ -382,3 +382,103 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
 }
+
+function milestoneOnly(s: Scene) {
+  withGoal(s)
+  s.after.subjects.pop()
+  delete s.after.serves.s2
+  s.after.askSubjects = { i1: ['m2'] }
+}
+
+function oneMilestoneForBoth(s: Scene, survive: 'working' | 'done', status: SubjectStatus) {
+  withGoal(s)
+  s.after.milestones = [{ ...s.after.milestones[0]!, name: 'Offline sync built', status }]
+  s.after.serves = { s1: 'm1', s2: 'm1' }
+  s.facts.goal!.milestones[0]!.state = survive
+}
+
+function renamedMilestone(s: Scene, status: SubjectStatus) {
+  withGoal(s)
+  s.after.milestones[0] = { ...s.after.milestones[0]!, name: 'Offline editing works', status }
+}
+
+function milestoneChanged(s: Scene, at: number) {
+  milestoneOnly(s)
+  s.facts.changed = ['conflicts']
+  s.after.milestones[1]!.changedAt = minutes(at)
+}
+
+function linkedToMilestones(s: Scene, holdsUp: string[], ids: string[]) {
+  withGoal(s)
+  s.facts.asks[0]!.holdsUp = holdsUp
+  s.after.askSubjects = ids.length > 0 ? { i1: ids } : {}
+}
+
+export const PATH_SCENES: { rule: string; path: string; good: (s: Scene) => void; bad: (s: Scene) => void }[] = [
+  {
+    rule: 'open-pieces-kept',
+    path: 'a queued piece that is the only one serving its milestone',
+    good: milestoneOnly,
+    bad: s => {
+      milestoneOnly(s)
+      s.facts.pieces[0]!.servesAlso = 'resolved'
+    },
+  },
+  {
+    rule: 'open-pieces-kept',
+    path: 'a queued piece whose milestone is closed',
+    good: milestoneOnly,
+    bad: s => {
+      milestoneOnly(s)
+      s.after.milestones[1]!.status = 'done'
+    },
+  },
+  {
+    rule: 'asks-linked',
+    path: 'a link to the milestone a held piece is the whole of',
+    good: milestoneOnly,
+    bad: s => {
+      milestoneOnly(s)
+      s.after.askSubjects = { i1: ['m1'] }
+    },
+  },
+  {
+    rule: 'asks-linked',
+    path: 'a link to a milestone a held piece also serves',
+    good: s => {
+      linkedToMilestones(s, ['conflicts'], ['s2', 'm1'])
+      s.facts.pieces[1]!.servesAlso = 'survive'
+    },
+    bad: s => linkedToMilestones(s, ['conflicts'], ['s2', 'm1']),
+  },
+  {
+    rule: 'asks-linked',
+    path: 'an ask that holds up nothing',
+    good: s => linkedToMilestones(s, [], []),
+    bad: s => linkedToMilestones(s, [], ['m1']),
+  },
+  {
+    rule: 'milestones-true',
+    path: 'a milestone named its own way, found by the subject it holds',
+    good: s => renamedMilestone(s, 'working'),
+    bad: s => renamedMilestone(s, 'queued'),
+  },
+  {
+    rule: 'milestones-true',
+    path: 'one milestone for a working and a queued milestone',
+    good: s => oneMilestoneForBoth(s, 'working', 'working'),
+    bad: s => oneMilestoneForBoth(s, 'working', 'queued'),
+  },
+  {
+    rule: 'milestones-true',
+    path: 'one milestone for a done and a queued milestone',
+    good: s => oneMilestoneForBoth(s, 'done', 'queued'),
+    bad: s => oneMilestoneForBoth(s, 'done', 'done'),
+  },
+  {
+    rule: 'changes-move',
+    path: 'a changed piece drawn as its milestone',
+    good: s => milestoneChanged(s, 10),
+    bad: s => milestoneChanged(s, 0),
+  },
+]

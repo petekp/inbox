@@ -183,6 +183,23 @@ export function knownFailing(cases: GradedCase[]): string[] {
   return [...new Set([...rules, ...atSteps])]
 }
 
+/**
+ * Each target a step's `until` names that some run graded and no run failed, so the change it waits on may have landed.
+ * One clean batch can be luck, so it blocks nothing.
+ */
+export function passingUntils(cases: GradedCase[]): string[] {
+  return cases.flatMap(({ replay, runs }) =>
+    replay.steps.flatMap((step, i) =>
+      Object.keys(step.until ?? {})
+        .filter(id => {
+          const tallies = runs.map(r => tallyOf(r, i, id)).filter(t => t !== null)
+          return tallies.length > 0 && !tallies.includes('fail')
+        })
+        .map(id => `${id} at ${replay.name} ${stepName(replay, i)}`),
+    ),
+  )
+}
+
 /** How many of each model's Status calls the host had to ask again for a readable answer. Counted toward no bar. */
 export function reasks(cases: GradedCase[], agent: Agent): { reasked: number; calls: number } {
   const calls = cases.flatMap(c =>

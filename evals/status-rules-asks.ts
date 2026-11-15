@@ -40,10 +40,16 @@ export const ASK_RULES: Rule[] = [
         const heldMilestones = pieces
           .flatMap(p => milestonesAsPiece(p, result.facts, o))
           .filter(m => ids.includes(m.id))
-        if (pieces.length === 0) return linked.map(s => `"${item.ask}" holds up nothing, and is linked to ${label(s)}`)
+        if (pieces.length === 0)
+          return [
+            ...linked.map(s => `"${item.ask}" holds up nothing, and is linked to ${label(s)}`),
+            ...milestonesOf(o)
+              .filter(m => ids.includes(m.id))
+              .map(m => `"${item.ask}" holds up nothing, and is linked to the milestone "${m.name}"`),
+          ]
         const servedIds = new Set(
           (result.facts.goal?.milestones ?? [])
-            .filter(m => pieces.some(p => p.serves === m.id))
+            .filter(m => pieces.some(p => p.serves === m.id || p.servesAlso === m.id))
             .flatMap(m => milestonesFor(m, result.facts, o))
             .map(m => m.id),
         )

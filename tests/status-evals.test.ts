@@ -12,7 +12,7 @@ import type { ModelCall, Replay } from '../evals/status-replay'
 import { REPLAYS } from '../evals/status-replays'
 import { blockingFailures, gradeReplay, gradeStep, tally } from '../evals/status-grade'
 import { RULES } from '../evals/status-rules'
-import { subject, statusOf, sessionOf, baseScene, contextOf, SCENES } from './status-evals-scenes'
+import { subject, statusOf, sessionOf, baseScene, contextOf, PATH_SCENES, SCENES } from './status-evals-scenes'
 import { GOOD_RUNS } from './status-evals-runs'
 import type { Scene } from './status-evals-scenes'
 
@@ -27,6 +27,13 @@ test('every fixed rule passes a good page and fails a bad one', () => {
   for (const [rule, scene] of Object.entries(SCENES)) {
     expect({ rule, failures: failuresOf(rule, scene.good) }).toEqual({ rule, failures: [] })
     expect({ rule, fails: failuresOf(rule, scene.bad).length > 0 }).toEqual({ rule, fails: true })
+  }
+})
+
+test('each rule passes and fails a page on the paths beside its main one', () => {
+  for (const { rule, path, good, bad } of PATH_SCENES) {
+    expect({ rule, path, failures: failuresOf(rule, good) }).toEqual({ rule, path, failures: [] })
+    expect({ rule, path, fails: failuresOf(rule, bad).length > 0 }).toEqual({ rule, path, fails: true })
   }
 })
 

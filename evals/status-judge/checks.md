@@ -102,7 +102,7 @@ The check fails when any of these is on the page:
 
 - A mark that does not fit its piece's state.
 - An open mark on a row for a piece the facts say is closed, under one of the piece's names or the name its row had on the previous page.
-- An open mark on filed work.
+- An open mark or `✗` on filed work.
 - `◆` on a piece that no open ask holds up.
 - Open pieces that are missing, as step 2 finds.
 
@@ -116,6 +116,7 @@ Examples:
 - Fail: `● 3.0 release: live, billing bug next`, when the facts say the release is delivered.
 - Pass: `✓ Passkeys: filed for later`. Filed work closes as delivered, and its words say it is filed.
 - Fail: `○ Passkeys: filed for later`. Filed work is closed.
+- Fail: `✗ Passkeys: filed for later`. Filed work closes as delivered, not dropped.
 - Fail: `◆ Recovery codes`, when no open ask holds up recovery codes.
 - Fail: the facts list nine open pieces. The page shows six open rows and no `○ N more` fold.
 
