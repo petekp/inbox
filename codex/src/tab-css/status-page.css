@@ -44,7 +44,7 @@
   --mark-middle: 5.5px;
   --arm-gap: 2px;
   --tree-x: calc(var(--mark-x) + var(--mark-middle));
-  --tree-line: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --tree-line: color-mix(in srgb, var(--text) 20%, var(--bg));
 }
 .status-page .row.has-children,
 .status-page .row.branch-mid,
