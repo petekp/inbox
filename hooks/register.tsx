@@ -182,7 +182,7 @@ import {
   settledScrollKey,
   type Showing,
   type Shown,
-  newRows,
+  rowRecorder,
   forgetRows,
   tabRowIds,
   tabWaits,
@@ -1572,6 +1572,7 @@ async function jumpTo($: EngineInterface, tab: Tab) {
  * that can add a row calls this.
  */
 async function followNewRows($: EngineInterface, isOpening = false) {
+  const record = rowRecorder()
   const [drawn, tab, page, unfolded, isShown] = await Promise.all([
     drawnState($),
     read($, TAB),
@@ -1580,8 +1581,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     isPaneShown($),
   ])
   const { prViews: prState, stop, isDemo, isUnread, view } = drawn
-  if (isOpening) forgetRows()
-  const added = newRows({ isDemo, view, isPrsFetching: prState.isFetching }, isShown)
+  const added = record({ isDemo, view, isPrsFetching: prState.isFetching, isOpening }, isShown)
   if (!isShown) return
   if (Object.values(added).flat().length > 0) void redraw($).catch(() => undefined)
   let opened: Tab[] = []
@@ -1591,13 +1591,12 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     return arrived.selection
   })
   if (paneState.isInlinePane && opened.includes(tab)) void scrollToOpenRow($, tab)
-  const settled = new Set(settledRowIds(allRows(view)))
   const isEmpty =
     tab === 'prs'
       ? isPrsTabEmpty(view.prs.drawn.length, prState.isFetching)
       : isTabEmpty({
           rows: tab === 'needsYou' ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows,
-          settled,
+          settled: new Set(settledRowIds(allRows(view))),
           closed: closedGroups(view, tab, kind => unfolded.includes(kind)),
           hasBlocker: tab === 'needsYou' && (!!stop || isUnread),
         })

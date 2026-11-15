@@ -41,7 +41,8 @@ export function stepLists(v: View): {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
-  if (document.visibilityState === 'visible' && !tabState.isHelpShown) tabState.newRows = showNewRows(tabState.newRows, t, now)
+  if (document.visibilityState === 'visible' && !tabState.isHelpShown)
+    tabState.newRows = showNewRows(tabState.newRows, t, now)
   const rows = isListedTab(t) ? lists.byTab[t] : []
   const openId = isRowTab(t) ? openRowId(rows, t, v) : undefined
   const changed = new Set<string>()

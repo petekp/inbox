@@ -9,6 +9,8 @@ import type { HerdrAsk } from './herdr-ask'
 class PaneState {
   recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
   newRows: NewRows = new Map()
+  /** Counts each time the row record starts over, so a record begun before that records nothing. */
+  rowRecordCount = 0
   isInlinePane = false
   isInlineTerminalPane = false
   terminalInlineSize: string | null = null
