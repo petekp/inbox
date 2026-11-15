@@ -1368,7 +1368,7 @@ function isSubjectSeen(o, s) {
   const seenAt = subjectSeenAt(o, s.id);
   return seenAt !== null && s.changedAt <= seenAt;
 }
-function lookEnded(o, at, shown) {
+function lookEnded(o, at, shown, seenUpTo = at) {
   if (o === null || o.look === null)
     return o;
   const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS;
@@ -1376,24 +1376,25 @@ function lookEnded(o, at, shown) {
     return { ...o, look: null };
   const isShown = (s) => shown === "all" || (shown[s.id] ?? -Infinity) >= s.changedAt;
   const missed = o.subjects.filter((s) => s.into === null && !isShown(s)).map((s) => [s.id, subjectSeenAt(o, s.id)]);
-  return { ...o, lastLookAt: at, missedInLastLook: Object.fromEntries(missed), look: null };
+  return { ...o, lastLookAt: seenUpTo, missedInLastLook: Object.fromEntries(missed), look: null };
 }
 function lookReported(o, look) {
   if (o === null)
     return o;
   const { startedAt, endedAt, shown } = look;
-  const isLate = o.lastLookAt !== null && endedAt <= o.lastLookAt;
+  const seenUpTo = Math.min(endedAt, look.drawnWrittenAt);
+  const isLate = o.lastLookAt !== null && seenUpTo <= o.lastLookAt;
   if (!isLate) {
-    const ended = lookEnded({ ...o, look: { startedAt } }, endedAt, shown);
+    const ended = lookEnded({ ...o, look: { startedAt } }, endedAt, shown, seenUpTo);
     return ended && { ...ended, look: o.look };
   }
   if (endedAt - startedAt < LOOK_MIN_MS)
     return o;
   const isShown = (s) => (shown[s.id] ?? -Infinity) >= s.changedAt;
-  const raised = o.subjects.filter((s) => (s.id in o.missedInLastLook) && (o.missedInLastLook[s.id] ?? -Infinity) < endedAt && isShown(s));
+  const raised = o.subjects.filter((s) => (s.id in o.missedInLastLook) && (o.missedInLastLook[s.id] ?? -Infinity) < seenUpTo && isShown(s));
   if (raised.length === 0)
     return o;
-  return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map((s) => [s.id, endedAt])) } };
+  return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map((s) => [s.id, seenUpTo])) } };
 }
 
 // ../hooks/children.ts
@@ -12010,6 +12011,8 @@ function lookProblem(look) {
     return "look without its times";
   if (look.endedAt < look.startedAt)
     return "look ends before it starts";
+  if (!isTime(look.drawnWrittenAt))
+    return "look without when its Status was written";
   return isTimes(look.shown) ? null : "look without shown rows";
 }
 function pressFile(text) {

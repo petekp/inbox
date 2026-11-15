@@ -56,6 +56,7 @@ omp draws the terminal's text and handles, with its own keys and a panel it owns
 The Herdr look is a Herdr app mod that draws the session a host publishes. This table compares it with the Codex tab. The structure check reads the parts whose file names start with `differences-herdr` as this table.
 
 - [The Herdr look](looks/differences-herdr.md)
+- [The Herdr look's Status page](looks/differences-herdr-status.md)
 
 ## Adding a host
 

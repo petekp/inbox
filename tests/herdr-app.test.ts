@@ -119,7 +119,7 @@ describe('pressDrainer', () => {
 
   test('a look file is applied among the presses by when it ended, and one that ends before it starts is refused', async () => {
     const lookText = (id: string, startedAt: number, endedAt: number) =>
-      JSON.stringify({ format: 1, id, look: { startedAt, endedAt, shown: { s1: startedAt } } })
+      JSON.stringify({ format: 1, id, look: { startedAt, endedAt, shown: { s1: startedAt }, drawnWrittenAt: endedAt } })
     const files = {
       [`${dir}/a.json`]: pressText('late', 20),
       [`${dir}/b.json`]: lookText('look', 5, 15),
