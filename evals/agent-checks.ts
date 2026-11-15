@@ -21,6 +21,8 @@ type Check =
       min?: number
       max?: number
     }
+  /** Exactly `count` shell commands the agent ran match `ran`. */
+  | { ran: string; count: number }
   | { reply: string }
   | { notReply: string }
   /** No inbox id, such as i3 or f112, in the reply. Ids are lowercase, so "F1" is not one. */
@@ -37,6 +39,8 @@ export type Case = {
   lastActions?: Record<string, LastAction>
   /** Files to put in the folder the agent runs in, by path within it. */
   files?: Record<string, string>
+  /** Scripts for an agent with a shell, by command name, in a folder at the front of its `PATH`. */
+  bin?: Record<string, string>
   prompt: string
   checks: Check[]
   min?: Partial<Record<Agent, number>>
@@ -52,7 +56,30 @@ export type Call = { tool: string; args: Record<string, unknown>; result: string
  * `error`: why the run could not be graded. `model`: the model that answered, as the agent reported it. `raw`: the
  * agent's own output, kept in the results as the evidence for each verdict.
  */
-export type Outcome = { reply: string; calls: Call[]; error: string | null; model: string | null; raw: string }
+export type Outcome = {
+  reply: string
+  calls: Call[]
+  error: string | null
+  model: string | null
+  raw: string
+  /** The shell commands the agent ran, from its own output. */
+  commands?: string[]
+}
+
+/**
+ * The item a call is about. Recording the same kind and ask again updates that item, so those calls count once. Any
+ * other call stands alone.
+ */
+function itemKey(call: Call, n: number): string {
+  const ask =
+    call.tool === 'record'
+      ? String(call.args.ask ?? call.args.title ?? '')
+          .trim()
+          .toLowerCase()
+      : ''
+
+  return ask === '' ? `#${n}` : `${String(call.args.kind)}\n${ask}`
+}
 
 export function failures(o: Outcome, checks: Check[]): string[] {
   const has = (pattern: string, text: string) => new RegExp(pattern, 'i').test(text)
@@ -66,25 +93,28 @@ export function failures(o: Outcome, checks: Check[]): string[] {
     } else if ('noIds' in c) {
       const m = o.reply.match(/\b[if]\d+\b/)
       if (m) out.push(`reply has the id "${m[0]}"`)
+    } else if ('ran' in c) {
+      const ran = (o.commands ?? []).filter(cmd => has(c.ran, cmd))
+      if (ran.length !== c.count)
+        out.push(`${ran.length} commands match /${c.ran}/, want ${c.count}: ${ran.join(' ; ')}`)
     } else {
-      const mine = o.calls.filter(
-        call =>
-          call.tool === c.calls &&
-          (!c.kind || has(`^(?:${c.kind})$`, String(call.args.kind ?? ''))) &&
-          Object.entries(c.match ?? {}).every(([k, p]) => has(p, String(call.args[k] ?? ''))) &&
-          (!c.result || has(c.result, call.result)) &&
-          (c.has ?? []).every(k => {
-            const v = call.args[k]
-            return Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim() !== ''
-          }),
-      )
+      const fits = (call: Call) =>
+        call.tool === c.calls &&
+        (!c.kind || has(`^(?:${c.kind})$`, String(call.args.kind ?? ''))) &&
+        Object.entries(c.match ?? {}).every(([k, p]) => has(p, String(call.args[k] ?? ''))) &&
+        (!c.result || has(c.result, call.result)) &&
+        (c.has ?? []).every(k => {
+          const v = call.args[k]
+          return Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim() !== ''
+        })
+      const mine = new Set(o.calls.flatMap((call, n) => (fits(call) ? [itemKey(call, n)] : [])))
       const label = `${c.calls}${c.kind ? ` ${c.kind}` : ''}${c.match ? ` ${JSON.stringify(c.match)}` : ''}${c.has ? ` with ${c.has.join(', ')}` : ''}${c.result ? ` answered /${c.result}/` : ''}`
       const exact = c.count
       const min = exact ?? c.min ?? (c.max === undefined ? 1 : 0)
       const max = exact ?? c.max ?? Infinity
-      if (mine.length < min || mine.length > max)
+      if (mine.size < min || mine.size > max)
         out.push(
-          `${mine.length} ${label} calls, want ${exact ?? `${min}${max === Infinity ? '+' : `-${max}`}`}; calls: ${
+          `${mine.size} ${label} ${c.calls === 'record' ? 'items' : 'calls'}, want ${exact ?? `${min}${max === Infinity ? '+' : `-${max}`}`}; calls: ${
             o.calls.map(x => `${x.tool}(${JSON.stringify(x.args)}) → ${x.result}`).join(' ') || 'none'
           }`,
         )

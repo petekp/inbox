@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
-import { EMPTY } from '../hooks/ledger'
+import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { CLAUDE_CODE, guidanceText } from '../hooks/model-text'
 import { statusCarryText, closedText, inboxText } from '../hooks/inbox-text'
 import type { Host } from '../hooks/model-text'
@@ -30,7 +30,7 @@ export function guidance(host: Host): string {
 
 export function message(c: Case, host: Host): string {
   if (!c.ledger) return c.prompt
-  const ledger = { ...EMPTY, ...c.ledger } as Ledger
+  const ledger = upgradeLedger({ ...EMPTY, ...c.ledger } as Ledger)
   const carry = host === CLAUDE_CODE ? statusCarryText(ledger) : null
   const notes = [carry, inboxText(host, ledger, false), closedText(ledger.closed)].filter(Boolean)
 
@@ -74,6 +74,20 @@ export function assertOnlyProbe(init: Record<string, any>) {
   const plugins: { name: string; path: string }[] = init.plugins ?? []
   const loaded = plugins.filter(p => p.path !== 'builtin')
   if (loaded.length > 0) throw new IsolationError(`plugins loaded: ${loaded.map(p => p.name).join(', ')}`)
+}
+
+/** The shell commands of a Codex run, from its `--json` events. */
+export function codexCommands(events: Record<string, any>[]): string[] {
+  return events
+    .filter(e => e.type === 'item.completed' && e.item?.type === 'command_execution')
+    .map(e => String(e.item.command))
+}
+
+/** The commands of an omp run's `bash` calls, from its `--mode json` events. */
+export function ompCommands(events: Record<string, any>[]): string[] {
+  return events
+    .filter(e => e.type === 'tool_execution_start' && e.toolName === 'bash')
+    .map(e => String(e.args?.command ?? ''))
 }
 
 export function tomlString(s: string): string {
