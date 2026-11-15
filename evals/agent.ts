@@ -1,6 +1,15 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
@@ -93,7 +102,10 @@ const CLAUDE_MODEL = values['claude-model']
 const OMP_RUN_MODEL = values['omp-model']
 const OMP_RUN_MODEL_ID = OMP_RUN_MODEL.split('/').at(-1)
 
-/** A fresh folder for one run: the stand-in server's state and log, and an empty working folder. */
+/**
+ * A fresh folder for one run: the stand-in server's state and log, the working folder with the case's files, and the
+ * `PATH` for an agent's shell, with the case's scripts first.
+ */
 function sandbox(c: Case, agent: Agent) {
   const dir = mkdtempSync(join(tmpdir(), 'inbox-agent-eval-'))
   const work = join(dir, 'work')
@@ -102,6 +114,13 @@ function sandbox(c: Case, agent: Agent) {
     mkdirSync(dirname(join(work, path)), { recursive: true })
     writeFileSync(join(work, path), text)
   }
+  const bin = join(dir, 'bin')
+  for (const [name, script] of Object.entries(c.bin ?? {})) {
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(join(bin, name), script)
+    chmodSync(join(bin, name), 0o755)
+  }
+  const path = c.bin ? [bin, process.env.PATH].filter(Boolean).join(delimiter) : process.env.PATH
   const state = join(dir, 'state.json')
   const log = join(dir, 'calls.jsonl')
   writeFileSync(
@@ -120,7 +139,7 @@ function sandbox(c: Case, agent: Agent) {
   const calls = (): Call[] =>
     lines(readFileSync(log, 'utf8')).map(l => ({ tool: l.tool, args: l.args, result: l.result }))
 
-  return { dir, work, state, log, serverArgs, calls }
+  return { dir, work, path, state, log, serverArgs, calls }
 }
 
 async function runClaude(c: Case): Promise<Outcome> {
@@ -267,7 +286,7 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
       s.work,
       message(c, CODEX),
     ],
-    { cwd: s.work, env: codexEnv(s.dir, home) },
+    { cwd: s.work, env: { ...codexEnv(s.dir, home), PATH: s.path } },
   )
   const events = lines(r.stdout)
   assertCodexUsedOnlyProbe(events)
@@ -322,7 +341,7 @@ async function ompIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome> {
     {
       cwd: s.work,
       env: {
-        PATH: process.env.PATH,
+        PATH: s.path,
         HOME: home,
         ANTHROPIC_OAUTH_TOKEN: signIn.token,
         INBOX_EVAL_STATE: s.state,
