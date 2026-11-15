@@ -2,7 +2,7 @@ import { expect, setSystemTime, test } from 'bun:test'
 
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import { NOW } from './fixtures'
-import { allOf, focusTerminal, giveKeysElsewhere, keysHolder, openPanel } from './gpui-stand-in'
+import { allOf, focusTerminal, giveKeysElsewhere, keysHolder, openPanel, typeIn } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 
 setSystemTime(new Date(NOW))
@@ -104,7 +104,7 @@ test('a typed reply waits with its session while the panel follows another termi
   })!
   const pressReply = () => panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
   pressReply()
-  panel.panel.input!.state.typeIn('Ran it and it passed')
+  typeIn(panel.panel.input!.state, 'Ran it and it passed')
   focusTerminal('t2')
   panel.paint()
   expect(panel.panel.sessionId).toBeNull()
@@ -123,7 +123,7 @@ test('a reply sent before the panel follows another terminal is still out when i
     return allOf(byId(panel.paint(), id)!).some(n => n.label === 'Reply')
   })!
   panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
-  panel.panel.input!.state.typeIn('Ran it and it passed')
+  typeIn(panel.panel.input!.state, 'Ran it and it passed')
   panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Send')!)
   await panel.settle()
   expect(panel.panel.queue.sentTexts.map(t => t.text)).toEqual(['Ran it and it passed'])

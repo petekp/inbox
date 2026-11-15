@@ -34,7 +34,7 @@ test('a first draw forgets the last draw’s rows and draws its own at rest', ()
   expect(shown.nextAt).toBeNull()
 })
 
-test('a leaving row whose block above went too keeps its place among the blocks that remain', () => {
+test('a leaving group keeps its place among the blocks that remain, its heading and fold leaving with its rows', () => {
   const blocks = tabBlocks(demoScreen(), uiOn('findings'))
   const goneGroup = new Set(['group issue', 'd23', 'd22', 'fold issue'])
   const first = moveRows(blocks, NO_TRACKS, NOW, true)
@@ -44,21 +44,21 @@ test('a leaving row whose block above went too keeps its place among the blocks 
     NOW + 1,
     false,
   )
-  expect(leaving.blocks.map(b => b.id)).toEqual(['d23', 'd22', 'rule opportunity', 'group opportunity', 'd21', 'd20'])
-  expect([leaving.motion.get('d23')?.state, leaving.motion.get('d22')?.state]).toEqual(['leaving', 'leaving'])
+  expect(leaving.blocks.map(b => b.id)).toEqual([...goneGroup, 'rule opportunity', 'group opportunity', 'd21', 'd20'])
+  expect([...goneGroup].map(id => leaving.motion.get(id)?.state)).toEqual(['leaving', 'leaving', 'leaving', 'leaving'])
 })
 
-test('a PR dismissed and then undone changes form in place, never drawn twice and never fading in', () => {
+test('a PR dismissed and then undone changes form in place, never drawn twice and never fading in or out', () => {
   const ref = 'acme/visor#29'
   const id = prMarkId(ref)
   const open = tabBlocks(demoScreen(), uiOn('prs'))
   const first = moveRows(open, NO_TRACKS, NOW, true)
   const dismissed = moveRows(dismissedPr(ref).blocks, first.tracks, NOW + 1, false)
   expect(dismissed.blocks.filter(b => b.id === id).map(b => b.kind)).toEqual(['row'])
-  expect(dismissed.motion.get(id)?.state).toBe('settled')
+  expect(dismissed.motion.get(id)).toMatchObject({ state: 'settling', box: null })
   const undone = moveRows(open, dismissed.tracks, NOW + 2, false)
   expect(undone.blocks.filter(b => b.id === id).map(b => b.kind)).toEqual(['pr'])
-  expect(undone.motion.has(id)).toBe(false)
+  expect(undone.motion.get(id)).toMatchObject({ state: 'closing', box: null, closing: null })
 })
 
 const openRow = (blocks: Block[]) => rowsOf(blocks).find(r => r.isSelected)?.id

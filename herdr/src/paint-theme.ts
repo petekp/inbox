@@ -111,9 +111,15 @@ export type Paint = {
   select: (id: string, cx: Context) => void
   pick: (tab: ShownTab, cx: Context) => void
   motion: ReadonlyMap<string, RowMotion>
-  /** Each moving block's height without its space, from its last measure. */
-  heights: ReadonlyMap<string, number>
-  measure: (id: string, height: number, cx: Context) => void
+  /** Each block's height without its space, and each row's panel's, by `panelId`, from its last measure. */
+  heights: { get: (key: string) => number | undefined }
+  /**
+   * Whether a block's box takes its height at once in this draw: in the first draw of a tab, the Help page or a session,
+   * and after its height changed with its width.
+   */
+  isAtOnce: (key: string) => boolean
+  /** Saves a measured size under `key`, and draws again when its height changed. */
+  measure: (key: string, size: { width: number; height: number }, cx: Context) => void
   now: number
   /** The time left each timed button draws, by its id. */
   timeLeft: ReadonlyMap<string, TimeLeft>

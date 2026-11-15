@@ -2,7 +2,7 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import { ROW_STATE_MS } from '../../hooks/row-motion'
+import { MOVE_MS } from '../../hooks/row-motion'
 import type { Block } from './blocks'
 import type { RowMotion } from './motion'
 import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE_GAP } from './paint-theme'
@@ -46,6 +46,9 @@ function aboveOf(prev: Block | null, b: Block, isSection: boolean): number {
   return Math.max(0, gap - padOf(prev) - padOf(b))
 }
 
+/** The key a row's panel is measured under, beside the row's own height. */
+export const panelId = (id: string): string => `panel ${id}`
+
 /**
  * A drawn block and its space: `above` before it, and for the last of a run of moving blocks, `below` after it while
  * open and `floor`, the height its box keeps while shut.
@@ -88,17 +91,54 @@ export function spacesOf(blocks: Block[], isMoving: (b: Block) => boolean): Spac
   return out
 }
 
+const easing = 'ease-out' as const
+
 /**
- * A moving block in its box. A block that enters or leaves glides its box's height and opacity together, between none
- * and its measured height with its space, over its state's length. Until the block's first measure, its box stays shut.
+ * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
+ * Undefined until the block's first measure.
  */
-function boxEl(s: Space, m: RowMotion, p: Paint, inner: Element): Element {
+function fitHeight(id: string, m: RowMotion | undefined, p: Paint): number | undefined {
+  const measured = p.heights.get(id)
+  if (measured === undefined) return undefined
+
+  return measured - (m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0)
+}
+
+/**
+ * Content in a box at its measured height, whose height transition is always declared, as a list block, the tab bar or
+ * the banners above the list. When the content changes height, as a row opens, a status line comes, or a banner goes,
+ * the box keeps its old height for the draw that measures the new one, then glides to it. In a draw that takes heights
+ * at once, the box takes its content's height.
+ */
+export function fitEl(id: string, m: RowMotion | undefined, p: Paint, el: Element): Element {
+  const height = p.isAtOnce(id) ? undefined : fitHeight(id, m, p)
+  const sized = div()
+    .id(`size ${id}`)
+    .flex_none()
+    .on_size_change((size, cx) => p.measure(id, size, cx))
+    .child(el)
+
+  return v_flex()
+    .id(`fit ${id}`)
+    .flex_none()
+    .overflow_hidden()
+    .when(height !== undefined, e => e.h(height ?? 0))
+    .transition('height', { duration: MOVE_MS, easing })
+    .child(sized)
+}
+
+/**
+ * A block's outer box. A block that enters or leaves glides its height and opacity together, between none and its
+ * content's height with its space, over its glide's length. Until the block's first measure, its box stays shut. At
+ * rest the box takes its content's height.
+ */
+function boxEl(s: Space, m: RowMotion | undefined, p: Paint, inner: Element): Element {
   const id = s.block.id
   const box = v_flex().id(`box ${id}`).flex_none().child(inner)
-  if (m.box === null) return box
-  const height = p.heights.get(id)
+  if (!m?.box) return box
+  const height = fitHeight(id, m, p)
   const isOpen = m.box === 'open' && height !== undefined
-  const glide = { duration: ROW_STATE_MS[m.state], easing: 'ease-out' as const }
+  const glide = { duration: m.boxMs, easing }
 
   return box
     .overflow_hidden()
@@ -110,20 +150,18 @@ function boxEl(s: Space, m: RowMotion, p: Paint, inner: Element): Element {
 
 /**
  * Each block in a box that never shrinks, with its space. The list scrolls in a box of fixed height, and a block that
- * could shrink loses its space, or the end of its text, whenever the list overflows. A moving block reports its height
- * at every draw, so its box knows where to glide to and from.
+ * could shrink loses its space, or the end of its text, whenever the list overflows.
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
   return spacesOf(blocks, b => (p.motion.get(b.id)?.box ?? null) !== null).map(s => {
     const id = s.block.id
     const m = p.motion.get(id)
-    const spaced = div().flex_none().pt(s.above).pb(s.below)
-    if (!m) return spaced.child(el(s.block))
-    const sized = div()
-      .id(`size ${id}`)
-      .on_size_change((size, cx) => p.measure(id, size.height, cx))
-      .child(el(s.block))
+    const spaced = div()
+      .flex_none()
+      .pt(s.above)
+      .pb(s.below)
+      .child(fitEl(id, m, p, el(s.block)))
 
-    return boxEl(s, m, p, spaced.child(sized))
+    return boxEl(s, m, p, spaced)
   })
 }

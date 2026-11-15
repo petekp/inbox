@@ -1,57 +1,85 @@
 import { ROW_STATE_MS, isMoving, stepRow } from '../../hooks/row-motion'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
-import type { Block } from './blocks'
+import type { Block, RowBlock } from './blocks'
 
-type Tracked = { track: RowTrack; block: Block }
+/**
+ * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
+ * its last enter or leave set, which runs on until `endsAt` even if the block's state moves on.
+ */
+type Tracked = { track: RowTrack; block: Block; opened: RowBlock | null; glide: Glide | null }
 
-/** Each moving block's track and the block as last drawn, and the ids of every block the last draw showed, in order. */
+/** Each block's track and the block as last drawn, and the ids of every block the last draw showed, in order. */
 export type Tracks = { rows: ReadonlyMap<string, Tracked>; order: readonly string[] }
 export const NO_TRACKS: Tracks = { rows: new Map(), order: [] }
 
+/** Where a block's box glides to as it enters or leaves, over `ms`, and when that glide ends. */
+type Glide = { box: 'open' | 'shut'; ms: number; endsAt: number }
+
 /**
  * How a block moves in this draw. `isStart` marks the draw a move began. A block that enters or leaves draws in a box
- * whose height and opacity glide: `box` is `open` at the block's full height and opacity, `shut` at none, and null
- * while it neither enters nor leaves.
+ * whose height and opacity glide over `boxMs`: `box` is `open` at the block's measured height and full opacity, `shut`
+ * at none, and null at rest. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
+ * `closing` the open form whose panel a closing row keeps drawn. `isPanelLeftOut` says the row's content box moves to
+ * its measured height less its panel's: through a close after its first draw, through all of a close that turns an
+ * open back, and in the draw after a close, before the row measures without the panel. A close's first draw keeps the
+ * panel's height, so the row the selection moves to measures its new height in that draw and both start together.
  */
-export type RowMotion = { state: RowState; isStart: boolean; box: 'open' | 'shut' | null }
+export type RowMotion = {
+  state: RowState
+  isStart: boolean
+  box: Glide['box'] | null
+  boxMs: number
+  panel: 0 | 1 | null
+  closing: RowBlock | null
+  isPanelLeftOut: boolean
+}
+
+/** The draw after a move's first frame, which starts its transition. */
+export const NEXT_FRAME_MS = 16
 
 const targetOf = (b: Block): RowTarget =>
   b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : b.isSelected ? 'open' : 'closed'
 
-const isBoxed = (state: RowState | undefined): boolean => state === 'entering' || state === 'leaving'
+const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
 
 /**
- * The box a block draws in. gpui-kit's transition animates only a later change of its target, so a move's first draw
- * sets the height and opacity it moves from, and the next draw sets the ones it moves to. A block that turns back
- * mid-move was already in its box, so it moves to its new end at once, from where it is.
+ * The glide of a block's box as it enters or leaves. gpui-kit's transition animates only a later change of its target,
+ * so a move's first draw sets the height and opacity it moves from, and the next draw sets the ones it moves to. A
+ * block that turns back mid-glide was already in its box, so it moves to its new end at once, from where it is, over
+ * the length its box already declares, and a block that leaves stays drawn until that glide ends. A row selected as
+ * it enters keeps its box: the box glides on to the row's new height over the open's length, and lets go once that
+ * ends. The new height arrives in the draw after the open starts.
  */
-function boxOf(state: RowState, isStart: boolean, was: RowState | undefined): RowMotion['box'] {
-  if (!isBoxed(state)) return null
-  const isFrom = isStart && !isBoxed(was)
-  if (state === 'entering') return isFrom ? 'shut' : 'open'
+function glideOf(track: RowTrack, isStart: boolean, last: Glide | null, now: number): Glide | null {
+  const { state } = track
+  const ms = ROW_STATE_MS[state]
+  const isLive = last !== null && now < last.endsAt
+  if (state === 'entering' || state === 'leaving') {
+    const to = state === 'entering' ? 'open' : 'shut'
+    if (!isStart && last !== null) return { ...last, box: to }
+    if (isLive) return { box: to, ms: last.ms, endsAt: now + last.ms }
 
-  return isFrom ? 'open' : 'shut'
+    return { box: to === 'open' ? 'shut' : 'open', ms, endsAt: now + ms }
+  }
+  if (!isLive || last.box !== 'open') return null
+
+  return isStart ? { box: 'open', ms, endsAt: now + ms + NEXT_FRAME_MS } : last
 }
 
-/** The blocks that move as they come and go: every row, and every block an open fold shows, one step in after it. */
-function movingIds(blocks: Block[]): Set<string> {
-  const ids = new Set<string>()
-  let foldDepth: number | null = null
-  for (const b of blocks) {
-    const depth = 'depth' in b ? b.depth : 0
-    if (foldDepth !== null && depth <= foldDepth) foldDepth = null
-    if (foldDepth !== null || b.kind === 'row') ids.add(b.id)
-    if (b.kind === 'fold' && b.isOpen && foldDepth === null) foldDepth = depth
-  }
+/** A row's panel fades in as it opens and out as it closes, from where it is when the move turns back. */
+function panelOf(state: RowState, isStart: boolean, was: RowState | undefined, closing: RowBlock | null) {
+  const isFrom = isStart && !isFolding(was)
+  if (state === 'opening') return isFrom ? 0 : 1
+  if (state === 'closing' && closing) return isFrom ? 1 : 0
 
-  return ids
+  return null
 }
 
 /**
- * Steps every moving block through the shared row states. A block the publish dropped stays drawn while it leaves,
- * after the nearest block that was above it and is still drawn. A block that takes a moving block's id is that block
- * in another form, so it does not leave and the new one does not enter. `isFirst` forgets the tracks and draws every
- * block at rest, as a newly shown tab does. `nextAt` is when a move ends, so the look draws again then.
+ * Steps every block through the shared row states. A block the publish dropped stays drawn while it leaves, after the
+ * nearest block that was above it and is still drawn. A block that takes a leaving block's id is that block in another
+ * form, so it does not leave and the new one does not enter. `isFirst` forgets the tracks and draws every block at
+ * rest, as a newly shown tab does. `nextAt` is when a move or a box's glide ends, so the look draws again then.
  */
 export function moveRows(
   blocks: Block[],
@@ -64,17 +92,26 @@ export function moveRows(
   const rows = new Map<string, Tracked>()
   const motion = new Map<string, RowMotion>()
   const add = (block: Block, track: RowTrack) => {
-    rows.set(block.id, { track, block })
+    const last = was.rows.get(block.id)
+    const isOpen = block.kind === 'row' && block.isSelected
+    const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
+    const glide = glideOf(track, isStart, last?.glide ?? null, now)
+    rows.set(block.id, { track, block, opened, glide })
+    const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
+    const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
     motion.set(block.id, {
       state: track.state,
       isStart,
-      box: boxOf(track.state, isStart, was.rows.get(block.id)?.track.state),
+      box: glide?.box ?? null,
+      boxMs: glide?.ms ?? 0,
+      panel: panelOf(track.state, isStart, last?.track.state, closing),
+      closing,
+      isPanelLeftOut:
+        (closing !== null && (!isStart || isFolding(last?.track.state))) || (wasClosing && block.kind === 'row'),
     })
   }
-  const moving = movingIds(blocks)
   for (const b of blocks) {
-    if (!moving.has(b.id)) continue
     const track = stepRow(was.rows.get(b.id)?.track, targetOf(b), now, !isFirst && !wasDrawn.has(b.id))
     if (track) add(b, track)
   }
@@ -83,14 +120,18 @@ export function moveRows(
   was.order.forEach((id, i) => {
     const old = was.rows.get(id)
     if (!old || isDrawn.has(id) || rows.has(id)) return
-    const track = stepRow(old.track, 'gone', now)
+    const isGliding = old.glide !== null && now < old.glide.endsAt
+    const track = stepRow(old.track, 'gone', now) ?? (isGliding ? old.track : null)
     if (!track) return
     add(old.block, track)
     shown.splice(placeAfter(shown, was.order.slice(0, i)), 0, old.block)
   })
-  const ends = [...rows.values()].flatMap(t =>
-    isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : [],
-  )
+  const ends = [...rows.values()]
+    .flatMap(t => [
+      ...(isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : []),
+      ...(t.glide ? [t.glide.endsAt] : []),
+    ])
+    .filter(at => at > now)
 
   return {
     blocks: shown,

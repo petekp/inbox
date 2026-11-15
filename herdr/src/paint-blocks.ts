@@ -2,6 +2,7 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../hooks/layout'
+import { ROW_STATE_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
 import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
@@ -23,6 +24,8 @@ import {
   colorOf,
 } from './paint-theme'
 import { isStatusUnder } from './held-line'
+import type { RowMotion } from './motion'
+import { panelId } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -31,8 +34,8 @@ import { TIMED_W, timeLeftEl } from './paint-timer'
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
  * so a quiet button that starts a line puts its label where the text above it starts. A button whose press is out keeps its size, loses
  * its fill and border, and is the quietest thing in its row. A timed button's time left stays drawn and pauses while
- * its press is out. A hidden button keeps its place and draws nothing. A button of a row that is leaving draws but
- * takes no clicks, so the row keeps its height as it fades. A button that takes no clicks shows no hover or pressed
+ * its press is out. A hidden button keeps its place and draws nothing. A button of a block that is leaving draws but
+ * takes no clicks, so the block keeps its height as it fades. A button that takes no clicks shows no hover or pressed
  * change.
  */
 function buttonEl(b: Button, p: Paint, isInert = false): Element {
@@ -162,14 +165,13 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .child(r.age ?? ''),
       ),
     )
-  const feedbackUnder = isStatusUnder(r) ? r.feedback : null
   const lines = [
     ...(r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : []),
-    ...(r.feedback && !feedbackUnder ? [r.feedback] : []),
+    ...(r.feedback && !isStatusUnder(r) ? [r.feedback] : []),
     ...(r.heldLine ? [r.heldLine] : []),
-    ...r.body,
   ]
-  const isLeaving = p.motion.get(r.id)?.state === 'leaving'
+  const m = p.motion.get(r.id)
+  const isLeaving = m?.state === 'leaving'
 
   return v_flex()
     .id(`row ${r.id}`)
@@ -182,9 +184,37 @@ function rowEl(r: RowBlock, p: Paint): Element {
     )
     .child(line)
     .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))
-    .when(r.buttons.length > 0, e => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving)))
-    .when(r.field !== null, e => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div()))
-    .when(feedbackUnder !== null, e => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div()))
+    .children(panelEl(r, m, p, isLeaving))
+}
+
+/**
+ * A row's panel: its body, its buttons or text field, and a status its buttons put under them. A closing row keeps
+ * the panel of its open form drawn, without clicks, while it fades. The panel's opacity glides as the row opens or
+ * closes, and it reports its height, so a closing row's box can leave it out.
+ */
+function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boolean): Element[] {
+  const { t } = p
+  const from = m?.closing ?? r
+  const isInert = isLeaving || from !== r
+  const under = from === r && isStatusUnder(r) ? r.feedback : null
+  const parts = [
+    ...from.body.map(l => bodyLineEl(l, t)),
+    ...(from.buttons.length > 0 ? [buttonsEl(from.buttons, p, MARK_W, isInert)] : []),
+    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : []),
+    ...(under ? [bodyLineEl(under, t)] : []),
+  ]
+  if (parts.length === 0) return []
+  const key = panelId(r.id)
+  const opacity = m?.panel ?? null
+  const glide = { duration: ROW_STATE_MS[m?.state ?? 'open'], easing: 'ease-out' as const }
+
+  return [
+    v_flex()
+      .id(key)
+      .on_size_change((size, cx) => p.measure(key, size, cx))
+      .children(parts)
+      .when(opacity !== null, e => e.opacity(opacity ?? 1).transition('opacity', glide)),
+  ]
 }
 
 /**
@@ -194,7 +224,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
  */
 const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
 
-function statusEl(s: StatusLine, p: Paint): Element {
+function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const { t } = p
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)
     .when(s.isBold, e => e.font_semibold())
@@ -211,14 +241,14 @@ function statusEl(s: StatusLine, p: Paint): Element {
         .child(h_flex().flex_1().min_w(0).flex_wrap().child(name).children(stall)),
     )
     .children(s.under.map(l => lineEl(l, t.muted)))
-    .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W)))
+    .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)))
 }
 
 /**
  * A PR's title, with its number muted at the line's right end as a row's age is, then where it stands and
  * its buttons. In a narrow pane the number leads the status line instead, so the title keeps its width.
  */
-function prEl(b: PrBlock, p: Paint): Element {
+function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
   const { t } = p
   const title = h_flex()
     .items_start()
@@ -248,11 +278,11 @@ function prEl(b: PrBlock, p: Paint): Element {
     .child(title)
     .child(status)
     .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
-    .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0)))
+    .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
     .when(b.feedback !== null, e => e.child(lineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)))
 }
 
-function textLineEl(b: LineBlock, p: Paint): Element {
+function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
   const { t } = p
 
   return v_flex()
@@ -274,7 +304,7 @@ function textLineEl(b: LineBlock, p: Paint): Element {
             h_flex()
               .flex_none()
               .gap(CONTROL_GAP)
-              .children(b.buttons.map(x => buttonEl(x, p))),
+              .children(b.buttons.map(x => buttonEl(x, p, isInert))),
           ),
         ),
     )
@@ -285,13 +315,13 @@ function textLineEl(b: LineBlock, p: Paint): Element {
 const ruleLine = (t: Theme): Element => div().flex_1().border_t(1).border_color(t.border)
 
 /** A group's heading, its text where its rows' text starts. A label heading rules the goal's text to its buttons. */
-function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
+function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const buttons = h_flex()
     .flex_none()
     .gap(CONTROL_GAP)
     .items_center()
-    .children(b.buttons.map(x => buttonEl(x, p)))
+    .children(b.buttons.map(x => buttonEl(x, p, isInert)))
   if (b.isLabel)
     return h_flex()
       .flex_wrap()
@@ -314,7 +344,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
     .child(buttons)
 }
 
-function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint): Element {
+function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
 
   return v_flex()
@@ -338,12 +368,12 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint): Element {
           .justify_center()
           .gap(CONTROL_GAP)
           .pt(CONTROL_GAP)
-          .children(b.buttons.map(x => buttonEl(x, p))),
+          .children(b.buttons.map(x => buttonEl(x, p, isInert))),
       ),
     )
 }
 
-function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element {
+function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const fold: Button = {
     id: b.id,
@@ -360,9 +390,8 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     .py(ROW_PAD_PT)
     .items_start()
     .text_color(t.muted)
-    .hover(s => s.text_color(t.foreground))
     .accessibility_label(b.text)
-    .on_click((_e, cx) => p.press(fold, cx))
+    .when(!isInert, e => e.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx)))
     .when(b.kind === 'fold', e =>
       e.child(
         div()
@@ -410,26 +439,27 @@ function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
 
 export function blockEl(b: Block, p: Paint): Element {
   const { t } = p
+  const isLeaving = p.motion.get(b.id)?.state === 'leaving'
   if (b.kind === 'row') return rowEl(b, p)
-  if (b.kind === 'status') return statusEl(b, p)
-  if (b.kind === 'pr') return prEl(b, p)
-  if (b.kind === 'line') return textLineEl(b, p)
-  if (b.kind === 'heading') return headingEl(b, p)
-  if (b.kind === 'empty') return emptyEl(b, p)
-  if (b.kind === 'fold' || b.kind === 'more') return foldEl(b, p)
+  if (b.kind === 'status') return statusEl(b, p, isLeaving)
+  if (b.kind === 'pr') return prEl(b, p, isLeaving)
+  if (b.kind === 'line') return textLineEl(b, p, isLeaving)
+  if (b.kind === 'heading') return headingEl(b, p, isLeaving)
+  if (b.kind === 'empty') return emptyEl(b, p, isLeaving)
+  if (b.kind === 'fold' || b.kind === 'more') return foldEl(b, p, isLeaving)
   if (b.kind === 'rule') return ruleEl(b, t)
   if (b.kind === 'field')
     return div()
       .pl(TEXT_X)
       .pr(EDGE)
-      .child(fieldEl(b.field, p, 0))
+      .child(fieldEl(b.field, p, 0, isLeaving))
   if (b.kind === 'note') return noteEl(b, t)
   if (b.kind === 'caption') return div().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text)
   if (b.kind === 'banner')
     return bannerEl(
       b.banner,
       t,
-      b.buttons.map(x => buttonEl(x, p)),
+      b.buttons.map(x => buttonEl(x, p, isLeaving)),
       b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null,
     )
 

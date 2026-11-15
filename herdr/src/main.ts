@@ -49,14 +49,15 @@ import {
 } from './keys'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
 import type { LinesAbove } from './held-line'
-import { NO_TRACKS, moveRows } from './motion'
+import { NEXT_FRAME_MS, NO_TRACKS, moveRows } from './motion'
 import type { Tracks } from './motion'
+import { Heights } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
 import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
-import { spacedEls } from './paint-space'
+import { fitEl, spacedEls } from './paint-space'
 import { EDGE, END_SPACE, LINE, NARROW_PANE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PRESS_LABEL } from './press-file'
@@ -72,8 +73,6 @@ const AGE_TICK_MS = 60_000
 /** A read mid-write gives torn JSON: the look reads again this soon, this many times. */
 const TORN_RETRY_MS = 30
 const TORN_RETRIES = 5
-/** The draw after a move's first frame, which starts its transition. */
-const NEXT_FRAME_MS = 16
 
 type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; queue: PressQueue }
 
@@ -141,8 +140,7 @@ export default class Inbox extends View {
   listInput: ListInput | null = null
   queue = new PressQueue(queueIo)
   tracks: Tracks = NO_TRACKS
-  /** Each moving block's last measured height. It stays after the block leaves, for when it comes back at that size. */
-  heights = new Map<string, number>()
+  heights = new Heights()
   tracksOf = ''
   /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
   lastWaits: { tab: ShownTab; rows: RowWait[] } = { tab: 'needsYou', rows: [] }
@@ -410,6 +408,9 @@ export default class Inbox extends View {
     this.view = screen.is === 'inbox' ? screen.view : null
     this.drawTimer?.cancel()
     this.drawTimer = null
+    const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
+    const isFirst = tracksOf !== this.tracksOf
+    const resized = this.heights.takeResized()
     const paint: Paint = {
       t,
       press: (b, cx) => this.press(b, cx),
@@ -426,10 +427,9 @@ export default class Inbox extends View {
       },
       motion: new Map(),
       heights: this.heights,
-      measure: (id, height, cx) => {
-        if (this.heights.get(id) === height) return
-        this.heights.set(id, height)
-        if (paint.motion.get(id)?.box) cx.notify()
+      isAtOnce: key => isFirst || resized.has(key),
+      measure: (key, size, cx) => {
+        if (this.heights.measure(key, size)) cx.notify()
       },
       now,
       timeLeft: new Map(),
@@ -457,10 +457,9 @@ export default class Inbox extends View {
     }
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks
-    const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
-    const held = holdLinesAbove(shown, tracksOf !== this.tracksOf ? NO_LINES_ABOVE : this.linesAbove, now)
+    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const moved = moveRows(held.blocks, this.tracks, now, tracksOf !== this.tracksOf)
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
@@ -476,9 +475,17 @@ export default class Inbox extends View {
     return root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))
-      .children(screen.banners.map(b => bannerEl(b, t).mt(EDGE)))
-      .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t)))
+      .child(fitEl('tabs', undefined, paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)))
+      .child(
+        fitEl(
+          'chrome',
+          undefined,
+          paint,
+          v_flex()
+            .children(screen.banners.map(b => bannerEl(b, t).mt(EDGE)))
+            .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t))),
+        ),
+      )
       .child(
         div()
           .flex_1()
