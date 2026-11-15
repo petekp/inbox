@@ -75,10 +75,9 @@ const metGoal = () =>
       startedAt: null,
     })),
     nextMilestoneId: 3,
-    serves: { s5: 'm2' },
   })
 
-test('a met goal hangs a green ✓ beside Goal met, starts its text at the text column, folds its milestones into a line that names them, which j selects and f opens, and draws the head in its own section', () => {
+test('a met goal hangs a green ✓ beside Goal met, starts its text at the text column, folds its milestones into a line that names them, which j selects and f opens, and draws the head in its own section, and New opens its field at the text column', () => {
   const screen = metGoal()
   const page = screen.view.statusPage
   const lines = text(screen, onPage, 60).split('\n')
@@ -93,13 +92,17 @@ test('a met goal hangs a green ✓ beside Goal met, starts its text at the text 
   expect(lineAt(lines, 'Now:')).toBe(-1)
   expect(lineAt(lines, page.head!.title)).toBeGreaterThan(lineAt(lines, 'Fixes built, Announced'))
 
+  const foldId = page.goal!.milestonesFold!.id
   const opened = keys(screen, onPage, 'j', 'f')
-  expect(opened.selectedId).toBe('goal-milestones')
-  expect(opened.statusUnfolded).toContain('goal-milestones')
+  expect(opened.selectedId).toBe(foldId)
+  expect(opened.statusUnfolded).toContain(foldId)
   const shown = text(screen, opened, 60).split('\n')
   expect(shown[lineAt(shown, 'Fixes built, Announced')]).toContain('▾')
   expect(lineAt(shown, '✓ Fixes built')).toBeGreaterThan(lineAt(shown, 'Fixes built, Announced'))
-  expect(statusKeyRows(page, id => opened.statusUnfolded.includes(id)).map(t => t.id)[1]).toBe('goal-milestones')
+  expect(statusKeyRows(page, id => opened.statusUnfolded.includes(id)).map(t => t.id)[1]).toBe(foldId)
+
+  const typing = text(screen, keys(screen, onPage, 'n'), 60).split('\n')
+  expect(typing[lineAt(typing, 'An outcome to work toward:')]!.indexOf('An outcome')).toBe(textColumn)
 })
 
 test('Remove presses the goal by its key and selects the goal’s place, where Undo and New then show', () => {

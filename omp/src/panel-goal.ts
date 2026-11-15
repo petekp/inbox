@@ -112,15 +112,15 @@ export function setGoal(setGoal: { keys: StatusKey[]; isFieldOpen: boolean }): E
   return [goalEntry(setGoal.isFieldOpen ? { is: 'field' } : { is: 'keys', keys: setGoal.keys })]
 }
 
-/** The goal's text field with the draft in it and the cursor after it, under its placeholder. */
-function fieldLines(d: Draw): string[] {
+/** The goal's text field at column `at`, with the draft in it and the cursor after it, under its placeholder. */
+function fieldLines(d: Draw, at: number): string[] {
   const { ui, width, style: s } = d
   const text = ui.drafts[GOAL_KEYS_ID]?.text ?? ''
-  const field = wrapText(`${text}\u0000`, Math.max(10, width - PAGE_MARK_AT - 1))
+  const field = wrapText(`${text}\u0000`, Math.max(10, width - at - 1))
 
   return [
-    ' '.repeat(PAGE_MARK_AT) + s.dim(`${GOAL_FIELD.placeholder}:`),
-    ...field.map(l => ' '.repeat(PAGE_MARK_AT) + l.replace('\u0000', s.inverse(' '))),
+    ' '.repeat(at) + s.dim(`${GOAL_FIELD.placeholder}:`),
+    ...field.map(l => ' '.repeat(at) + l.replace('\u0000', s.inverse(' '))),
   ]
 }
 
@@ -207,7 +207,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   if (part.is === 'later') return [partHeading(LATER_TEXT, width, s)]
   if (part.is === 'title') {
     const g = part.goal
-    const text = part.isTyping ? fieldLines(d) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity)
+    const text = part.isTyping ? fieldLines(d, textAt) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity)
 
     return [
       ...text,
@@ -218,5 +218,5 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   }
   if (part.is === 'milestone') return milestoneLines(part.row, d, isSelected)
   if (part.is === 'keys') return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT)
-  return fieldLines(d)
+  return fieldLines(d, PAGE_MARK_AT)
 }

@@ -1,4 +1,4 @@
-import type { Item, SessionStatus } from '../types'
+import type { Item, SessionStatus, StatusGoal } from '../types'
 import { HELD_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
@@ -54,8 +54,8 @@ export type GoalBlock = {
   /** The line drawn in place of the milestones until the Status call writes them for this goal. */
   awaiting: string | null
   /**
-   * Once the goal is met, the line its milestones fold into, naming them, as "Release pass run, PRs merged". It starts
-   * folded, and `shownMilestones` gives the milestones a look draws under it.
+   * Once the goal is met, the line its milestones fold into, naming the done ones, as "Release pass run, PRs merged". It
+   * starts folded, and `shownMilestones` gives the milestones a look draws under it. `statusPage` fills it.
    */
   milestonesFold: { id: string; text: string } | null
   milestones: MilestoneRow[]
@@ -73,8 +73,8 @@ const AWAITING_TEXT = 'Milestones after the next reply'
 export const GOAL_HEADING = 'Goal'
 /** The dim line under the goal's heading while no goal is set. */
 export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
-/** The fold a met goal's milestones start in, apart from row and milestone ids. */
-const MILESTONES_FOLD_ID = 'goal-milestones'
+/** What starts the id of the fold a met goal's milestones start in, apart from row and milestone ids. */
+const MILESTONES_FOLD_PREFIX = 'goal-milestones'
 const MET_LABEL = 'Goal met'
 
 /** The milestones a look draws: none while the met goal's milestones fold is shut. */
@@ -82,6 +82,23 @@ export function shownMilestones(g: GoalBlock | null, isUnfolded: (id: string) =>
   if (g === null) return []
 
   return g.milestonesFold !== null && !isUnfolded(g.milestonesFold.id) ? [] : g.milestones
+}
+
+/**
+ * The line a met goal's milestones fold into, or null while one of them is open or `isQuiet` says work under it is not
+ * all seen and finished, so the fold never hides an ask, running work or what finished since the last look. Its id
+ * names the goal and when it was met, so a fold opened for one goal starts shut for the next.
+ */
+export function metMilestonesFold(
+  g: StatusGoal,
+  milestones: readonly MilestoneRow[],
+  isQuiet: (m: MilestoneRow) => boolean,
+): GoalBlock['milestonesFold'] {
+  const isClosed = (m: MilestoneRow) => m.place === 'done' || m.place === 'dropped'
+  const done = milestones.filter(m => m.place === 'done').map(m => m.name)
+  const isFolded = g.metAt !== null && done.length > 0 && milestones.every(m => isClosed(m) && isQuiet(m))
+
+  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(done) } : null
 }
 
 /** The oldest open ask linked to `id`, a subject or a milestone. */
@@ -145,7 +162,6 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[], now: n
   const nowText = head ? head.description || head.title : null
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept)
   const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map(step => milestoneRow(step, o, items))
-  const isFolded = isMet && milestones.length > 0
 
   return {
     goal: {
@@ -157,7 +173,7 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[], now: n
       // A met goal's head draws in its own section, since the work no longer serves the goal.
       now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestonesFold: isFolded ? { id: MILESTONES_FOLD_ID, text: namedList(milestones.map(m => m.name)) } : null,
+      milestonesFold: null,
       milestones,
     },
     canRestoreGoal: false,

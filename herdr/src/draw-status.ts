@@ -226,7 +226,9 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
     isLabel: true,
   }
-  const field: Block[] = goalField ? [{ kind: 'field', id: 'goal field', field: goalField }] : []
+  const field: Block[] = goalField
+    ? [{ kind: 'field', id: 'goal field', field: goalField, isAtEdge: g?.mark == null }]
+    : []
   if (g === null) return [heading, ...(goalField ? field : [headNote('goal text', NO_GOAL_TEXT, 'muted')])]
   /** A met goal's lines start at the text column, under its heading's label. */
   const atText = (b: Block): Block => (g.mark && b.kind === 'note' ? { ...b, isAtEdge: false } : b)

@@ -240,8 +240,11 @@ export type Block =
       path?: PathSide
       tree?: TreeStroke[]
     }
-  /** The goal's field while the person types a goal, in place of the goal's text. */
-  | { kind: 'field'; id: string; field: Field }
+  /**
+   * The goal's field while the person types a goal, in place of the goal's text: at the panel's edge, or at the text
+   * column under a met goal's label.
+   */
+  | { kind: 'field'; id: string; field: Field; isAtEdge: boolean }
   /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
   | { kind: 'rule'; id: string; text: string | null }
   /** A section's space above the block after it, or with `isMilestoneStep` the smaller space between two milestones. */

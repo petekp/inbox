@@ -44,9 +44,12 @@ test('a goal the Status call writes shows at once under the Goal heading with it
   expect(w.sent).toEqual([])
 })
 
-test('a met goal hangs a ✓ beside Goal met, folds its milestones into a line that names them, which j reaches and f or a press opens, draws the head in its own section, and desktop’s fold line takes its click', async ($, on) => {
+test('a met goal hangs a ✓ beside Goal met, folds its finished milestones into a line that names them, which j reaches and f or a press opens, draws the head in its own section, and desktop’s fold line takes its click', async ($, on) => {
   const { clock, pane } = await statusShown($, on, MET)
-  const foldLabel = async () => (await pane.find({ key: 'fold-status-goal-milestones' }))?.props.label
+  const foldId = (
+    (await pane.findAll({})).find(n => /^fold-status-goal-milestones-/.test(n.key ?? ''))?.key ?? ''
+  ).slice('fold-status-'.length)
+  const foldLabel = async () => (await pane.find({ key: `fold-status-${foldId}` }))?.props.label
 
   expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^✓\s*Goal met ─+/)
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
@@ -54,24 +57,24 @@ test('a met goal hangs a ✓ beside Goal met, folds its milestones into a line t
   expect(await pane.find({ key: 'goal-m1-name' })).toBeUndefined()
   expect(await pane.find({ key: 'goal-now' })).toBeUndefined()
   expect((await pane.find({ key: 'status-head' }))?.text).toContain('Shipping the pilot')
-  await pane.press({ key: 'fold-status-goal-milestones' })
+  await pane.press({ key: `fold-status-${foldId}` })
   await clock.settle()
   expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
-  await pane.press({ key: 'fold-status-goal-milestones' })
+  await pane.press({ key: `fold-status-${foldId}` })
   await clock.settle()
   expect(await pane.find({ key: 'goal-m1-name' })).toBeUndefined()
 
   await pane.press({ key: 'next' })
   await clock.settle()
-  await pane.press({ key: 'toggle-fold-goal-milestones-key' })
+  await pane.press({ key: `toggle-fold-${foldId}-key` })
   await clock.settle()
   expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
   await clock.settle()
-  expect(await desktop.find({ key: 'fold-status-goal-milestones' })).toMatchObject({ type: 'Client' })
-  await desktop.post({ isUnfolded: false }, { in: 'fold-status-goal-milestones' })
+  expect(await desktop.find({ key: `fold-status-${foldId}` })).toMatchObject({ type: 'Client' })
+  await desktop.post({ isUnfolded: false }, { in: `fold-status-${foldId}` })
   await clock.settle()
   expect(await desktop.find({ key: 'goal-m1-name' })).toBeUndefined()
 })

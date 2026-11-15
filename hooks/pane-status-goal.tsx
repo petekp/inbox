@@ -156,23 +156,23 @@ export function paneStatusGoal(
     onPress: () => void updateTyping(t => (t === GOAL_KEYS_ID ? null : t)),
   }
   const submitLabel = look === 'desktop' ? GOAL_FIELD.submit : 'save'
-  /** The terminal draws `⏎` and the submit label beside the field. */
-  const terminalFieldColumns = listColumns - statusMarkAt - cellWidth(`⏎ ${submitLabel}`) - 1
+  /** The terminal draws `⏎` and the submit label beside a field `inset` cells in from the head's column. */
+  const terminalFieldColumns = (inset: number) => listColumns - statusMarkAt - inset - cellWidth(`⏎ ${submitLabel}`) - 1
   /** A terminal field that passes one row takes all `REPLY_ROWS`, as the reply field does in `paneRows`. */
-  const fieldRowCount = (text: string) => {
+  const fieldRowCount = (text: string, inset: number) => {
     if (look === 'desktop')
       return fieldRows(text, line => desktopLines(line, DESKTOP_FIELD_PT).length, DESKTOP_REPLY_ROWS)
-    const fitsOneRow = fieldRows(text, line => lineCount(line, terminalFieldColumns), REPLY_ROWS) === 1
+    const fitsOneRow = fieldRows(text, line => lineCount(line, terminalFieldColumns(inset)), REPLY_ROWS) === 1
     return fitsOneRow ? 1 : REPLY_ROWS
   }
-  const goalInput = (Field: NonNullable<typeof Input>) => (
+  const goalInput = (Field: NonNullable<typeof Input>, inset: number) => (
     <Field
       key={fieldKey(GOAL_KEYS_ID)}
       placeholder={GOAL_FIELD.placeholder}
       {...(openFields.get(GOAL_KEYS_ID)?.seed ? { value: openFields.get(GOAL_KEYS_ID)?.seed } : {})}
       submitLabel={submitLabel}
       autoFocus
-      rows={fieldRowCount(drafts[GOAL_KEYS_ID]?.text ?? openFields.get(GOAL_KEYS_ID)?.seed ?? '')}
+      rows={fieldRowCount(drafts[GOAL_KEYS_ID]?.text ?? openFields.get(GOAL_KEYS_ID)?.seed ?? '', inset)}
       onInput={(value: string) =>
         void updateDrafts(d => ({
           ...d,
@@ -188,24 +188,25 @@ export function paneStatusGoal(
    * The goal's text field, as many rows tall as `fieldRowCount` gives. Submitting sets the typed goal. When the prompt kept the
    * keys, a line under it says to click it.
    */
-  const fieldInput = (): Drawn[] =>
+  const fieldInput = (inset: number): Drawn[] =>
     Input === null
       ? []
       : [
           uncounted(
             look === 'terminal' ? (
-              <Box key="goal-field" width={e.props.bodyColumns} flexShrink={0}>
-                {goalInput(Input)}
+              <Box key="goal-field" width={e.props.bodyColumns - inset} flexShrink={0}>
+                {goalInput(Input, inset)}
               </Box>
             ) : (
-              goalInput(Input)
+              goalInput(Input, inset)
             ),
           ),
           ...(paneState.fieldWithoutKeys === GOAL_KEYS_ID ? [muted('goal-field-click', ROW_COPY.clickField)] : []),
         ]
   const fieldKeys = (): Drawn[] =>
     Input === null ? [] : [uncounted(<Box key="goal-field-keys">{keyRow(`${GOAL_KEYS_ID}-field`, [cancel])}</Box>)]
-  const field = () => [...fieldInput(), ...fieldKeys()]
+  /** The goal's field and its keys, `inset` cells in from the head's column: the mark column under a met goal. */
+  const field = (inset: number) => [...fieldInput(inset), ...fieldKeys()]
   /** Marks in their tones, each with its text, on lines that wrap between them, as the Other work counts draw. */
   const markRun = (
     key: string,
@@ -417,7 +418,7 @@ export function paneStatusGoal(
       : muted('goal-none', NO_GOAL_TEXT)
     const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
     const under = [
-      ...(isTypingGoal ? field() : [goalText]),
+      ...(isTypingGoal ? field(mark === null ? 0 : markInset) : [goalText]),
       ...(g?.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`, width)] : []),
       ...(g?.now ? [muted('goal-now', g.now, width)] : []),
       ...(g?.awaiting ? [muted('goal-awaiting', g.awaiting, width)] : []),
@@ -460,7 +461,7 @@ export function paneStatusGoal(
       ? [
           uncounted(
             <Box key="goal-field-bare" flexDirection="column" width="100%">
-              {field().map(p => p.el)}
+              {field(0).map(p => p.el)}
             </Box>,
           ),
         ]

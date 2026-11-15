@@ -502,7 +502,7 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'rule') return ruleEl(b, t)
   if (b.kind === 'field')
     return div()
-      .pl(EDGE)
+      .pl(b.isAtEdge ? EDGE : TEXT_X)
       .pr(EDGE)
       .child(fieldEl(b.field, p, 0, isLeaving))
   if (b.kind === 'note') return noteEl(b, t)

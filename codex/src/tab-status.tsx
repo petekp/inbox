@@ -1,7 +1,7 @@
 import { Icon } from './row-actions'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan } from '../../hooks/status-keys'
-import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
+import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
@@ -14,7 +14,7 @@ import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from 
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
 import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
-import { goalHeadMotion, goalLineMotion, milestoneLines, statusRowMotion } from './tab-status-steps'
+import { goalHeadMotion, goalLineMotion, headApartMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
 import { lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
 import { foldMotion, Keys, StatusLine, toggleStatusFold } from './tab-status-line'
@@ -250,27 +250,17 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
 }
 
 /**
- * The line a met goal's milestones fold into, at the text column, as a done milestone folded to its name draws, and the
- * milestones under it while the person has it unfolded. They glide open and shut as a done fold's rows do.
+ * The line a met goal's milestones fold into, at the text column, as a done milestone folded to its name draws. The
+ * milestones it opens to draw in the goal's list, each growing in and leaving as a stepped line does.
  */
-function MilestonesFold({ fold, g }: { fold: NonNullable<GoalBlock['milestonesFold']>; g: GoalBlock }) {
-  const motion = foldMotion(fold.id)
-  const isUnfolded = statusUnfolded.has(fold.id)
-
+function MilestonesFold({ line: { id, fold } }: { line: DrawnStatus['fold'][number] }) {
   return (
-    <>
-      <div class="milestones-fold">
-        <button type="button" class="fold milestone-fold" data-fold={motion} onClick={() => toggleStatusFold(fold.id)}>
-          {fold.text}
-          <Icon name={isUnfolded ? 'down' : 'right'} />
-        </button>
-      </div>
-      {isUnfolded || closingFolds.has(motion) ? (
-        <div class="fold-rows" data-motion={`closed-${motion}`}>
-          <MilestoneList lines={milestoneLines(g.milestones)} />
-        </div>
-      ) : null}
-    </>
+    <div class="milestones-fold" {...lineMotion(metFoldMotion(id))}>
+      <button type="button" class="fold milestone-fold" onClick={() => toggleStatusFold(fold.id)}>
+        {fold.text}
+        <Icon name={statusUnfolded.has(fold.id) ? 'down' : 'right'} />
+      </button>
+    </div>
   )
 }
 
@@ -285,17 +275,18 @@ function MilestonesFold({ fold, g }: { fold: NonNullable<GoalBlock['milestonesFo
 function GoalSection({
   page,
   head,
+  fold,
   lines,
 }: {
   page: StatusPage
   head: DrawnStatus['head']
+  fold: DrawnStatus['fold']
   lines: DrawnStatus['goal']
 }) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
   const text = g ? <h1>{g.text}</h1> : <p class="muted">{NO_GOAL_TEXT}</p>
   const mark = g?.mark ?? null
-  const fold = g?.milestonesFold ?? null
 
   return (
     <section>
@@ -327,7 +318,9 @@ function GoalSection({
         ))}
         <GoalError />
       </div>
-      {g && fold ? <MilestonesFold fold={fold} g={g} /> : null}
+      {fold.map(l => (
+        <MilestonesFold key={l.id} line={l} />
+      ))}
       {lines.length > 0 ? <MilestoneList lines={lines} /> : null}
     </section>
   )
@@ -355,21 +348,22 @@ export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   const empty = emptyTab(v, { tab: 'overview', isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID })
   if (empty)
     return <EmptyState empty={empty}>{empty.under?.is === 'set-goal' ? <SetGoal {...empty.under} /> : null}</EmptyState>
-  const head =
-    page.isHeadApart && page.head ? (
+  const head = drawn.apart.map(({ id, head: h }) => (
+    <section key={id} {...lineMotion(headApartMotion(id))}>
       <div class="status-head">
-        <h1>{page.head.title}</h1>
-        {page.head.description ? <p class="muted">{page.head.description}</p> : null}
+        <h1>{h.title}</h1>
+        {h.description ? <p class="muted">{h.description}</p> : null}
       </div>
-    ) : null
+    </section>
+  ))
   // The list after a goal draws no line between sections: Other work's own rule sets it apart while the goal shows
   // milestones, and nothing does while it shows none.
   const isUnruledAfterGoal = page.goal !== null
 
   return (
     <main class="status-page">
-      <GoalSection page={page} head={drawn.head} lines={drawn.goal} />
-      {head ? <section>{head}</section> : null}
+      <GoalSection page={page} head={drawn.head} fold={drawn.fold} lines={drawn.goal} />
+      {head}
       {drawn.rows.length > 0 ? (
         <section class={isUnruledAfterGoal ? 'unruled' : undefined}>
           <div class="list">

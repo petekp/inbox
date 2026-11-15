@@ -3475,12 +3475,18 @@ function isSpacedAbove(milestones, n, isUnfolded) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var MILESTONES_FOLD_ID = "goal-milestones";
+var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
   if (g === null)
     return [];
   return g.milestonesFold !== null && !isUnfolded(g.milestonesFold.id) ? [] : g.milestones;
+}
+function metMilestonesFold(g, milestones, isQuiet) {
+  const isClosed = (m) => m.place === "done" || m.place === "dropped";
+  const done = milestones.filter((m) => m.place === "done").map((m) => m.name);
+  const isFolded = g.metAt !== null && done.length > 0 && milestones.every((m) => isClosed(m) && isQuiet(m));
+  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(done) } : null;
 }
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
@@ -3530,7 +3536,6 @@ function goalPage(o, items, now) {
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
   const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
-  const isFolded = isMet && milestones.length > 0;
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
@@ -3540,7 +3545,7 @@ function goalPage(o, items, now) {
       was: isWasShown ? g.was : null,
       now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestonesFold: isFolded ? { id: MILESTONES_FOLD_ID, text: namedList(milestones.map((m) => m.name)) } : null,
+      milestonesFold: null,
       milestones
     },
     canRestoreGoal: false
@@ -4074,11 +4079,11 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
     const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
     const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isAllSeen = p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
       ...m,
       text: null,
@@ -4088,7 +4093,11 @@ function statusPage(s, now) {
     } : { ...m, rows };
   };
   const g = goalParts.goal;
-  const goal = g && { ...g, milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n])) };
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isAllSeen(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
@@ -7467,13 +7476,13 @@ function withJoint(lines, joint, s) {
 function setGoal(setGoal) {
   return [goalEntry(setGoal.isFieldOpen ? { is: "field" } : { is: "keys", keys: setGoal.keys })];
 }
-function fieldLines(d) {
+function fieldLines(d, at) {
   const { ui, width, style: s } = d;
   const text = ui.drafts[GOAL_KEYS_ID]?.text ?? "";
-  const field = wrapText(`${text}\x00`, Math.max(10, width - PAGE_MARK_AT - 1));
+  const field = wrapText(`${text}\x00`, Math.max(10, width - at - 1));
   return [
-    " ".repeat(PAGE_MARK_AT) + s.dim(`${GOAL_FIELD.placeholder}:`),
-    ...field.map((l) => " ".repeat(PAGE_MARK_AT) + l.replace("\x00", s.inverse(" ")))
+    " ".repeat(at) + s.dim(`${GOAL_FIELD.placeholder}:`),
+    ...field.map((l) => " ".repeat(at) + l.replace("\x00", s.inverse(" ")))
   ];
 }
 function foldedNameLines(d, mark, name, foldId, isSelected) {
@@ -7532,7 +7541,7 @@ function drawGoalPart(part, d, isSelected) {
     return [partHeading(LATER_TEXT, width, s)];
   if (part.is === "title") {
     const g = part.goal;
-    const text = part.isTyping ? fieldLines(d) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
+    const text = part.isTyping ? fieldLines(d, textAt) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
     return [
       ...text,
       ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
@@ -7544,7 +7553,7 @@ function drawGoalPart(part, d, isSelected) {
     return milestoneLines(part.row, d, isSelected);
   if (part.is === "keys")
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT);
-  return fieldLines(d);
+  return fieldLines(d, PAGE_MARK_AT);
 }
 
 // ../hooks/herdr-install.ts

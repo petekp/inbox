@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T21:58:53.958Z. 236469 characters follow.
+// Built at 2026-11-15T22:48:12.970Z. 236973 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1439,12 +1439,18 @@ function isSpacedAbove(milestones, n, isUnfolded) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var MILESTONES_FOLD_ID = "goal-milestones";
+var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
   if (g === null)
     return [];
   return g.milestonesFold !== null && !isUnfolded(g.milestonesFold.id) ? [] : g.milestones;
+}
+function metMilestonesFold(g, milestones, isQuiet) {
+  const isClosed = (m) => m.place === "done" || m.place === "dropped";
+  const done = milestones.filter((m) => m.place === "done").map((m) => m.name);
+  const isFolded = g.metAt !== null && done.length > 0 && milestones.every((m) => isClosed(m) && isQuiet(m));
+  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(done) } : null;
 }
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
@@ -1494,7 +1500,6 @@ function goalPage(o, items, now) {
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
   const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
-  const isFolded = isMet && milestones.length > 0;
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
@@ -1504,7 +1509,7 @@ function goalPage(o, items, now) {
       was: isWasShown ? g.was : null,
       now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestonesFold: isFolded ? { id: MILESTONES_FOLD_ID, text: namedList(milestones.map((m) => m.name)) } : null,
+      milestonesFold: null,
       milestones
     },
     canRestoreGoal: false
@@ -1753,11 +1758,11 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
     const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
     const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isAllSeen = p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
       ...m,
       text: null,
@@ -1767,7 +1772,11 @@ function statusPage(s, now) {
     } : { ...m, rows };
   };
   const g = goalParts.goal;
-  const goal = g && { ...g, milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n])) };
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isAllSeen(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
@@ -3934,7 +3943,7 @@ function goalBlocks(page, { isUnfolded, goalField }) {
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
     isLabel: true
   };
-  const field = goalField ? [{ kind: "field", id: "goal field", field: goalField }] : [];
+  const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
   if (g === null)
     return [heading, ...goalField ? field : [headNote("goal text", NO_GOAL_TEXT, "muted")]];
   const atText = (b) => g.mark && b.kind === "note" ? { ...b, isAtEdge: false } : b;
@@ -5204,7 +5213,7 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div4().pl(EDGE).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
+    return div4().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
     return noteEl(b, t);
   if (b.kind === "caption")

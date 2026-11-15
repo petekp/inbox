@@ -116,13 +116,16 @@ test('the Status page draws the goal’s milestones on a path: a seen done one a
   expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
 })
 
-test('a met goal draws a ✓ in the met tone beside its Goal met label, its lines at the text column, and its milestones folded into a line that names them with the chevron after, which opens to the milestones', () => {
+test('a met goal draws a ✓ in the met tone beside its Goal met label, its lines at the text column, and its milestones folded into a line that names them with the chevron after, which opens to the milestones, and its field at the text column', () => {
   const s = demoSession(NOW, AGENT)
   const o = s.ledger.overview!
   const met = {
     ...o,
     goal: { ...o.goal!, metAt: NOW },
     milestones: o.milestones.map(m => ({ ...m, status: 'done' as const })),
+    subjects: o.subjects.map(x => ({ ...x, status: 'done' as const, closedAt: NOW - 1 })),
+    children: [],
+    lastLookAt: NOW,
   }
   const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
   const view = sessionView({ ...s, ledger: { ...s.ledger, overview: met } }, NOW, SETTLED_MS, holds)
@@ -144,6 +147,9 @@ test('a met goal draws a ✓ in the met tone beside its Goal met label, its line
   expect(open.find(b => b.id === fold.id)).toMatchObject({ isOpen: true })
   expect(open.filter(b => milestoneIds.includes(b.id)).map(b => b.id)).toEqual(milestoneIds)
   expect(shut.some(b => b.id === 'head title')).toBe(true)
+  expect(tabBlocks(screen, uiOn('overview', { typing: 'goal' })).find(b => b.id === 'goal field')).toMatchObject({
+    isAtEdge: false,
+  })
 })
 
 test('the Status page joins each parent to the rows under it: work beside the path’s line by an arm, other work by the milestone’s connector down to an elbow at its last row with nothing past it, and a subject’s children by its own connector', () => {

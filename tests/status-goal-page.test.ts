@@ -222,7 +222,7 @@ test('a queued milestone draws as worked on once work that serves it is working,
   })
 })
 
-test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met with a done check, its milestones folded into a line that names them, and its head apart', () => {
+test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met with a done check and its head apart', () => {
   const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45)
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
 
@@ -238,7 +238,6 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     awaiting: null,
     now: null,
     mark: SUBJECT_MARKS.done,
-    milestonesFold: { id: 'goal-milestones', text: 'Parsing works, Errors explained, +1 more' },
   })
   expect(page(met, 55).isHeadApart).toBe(true)
   expect(page(linked(), 40).isHeadApart).toBe(false)
@@ -248,26 +247,65 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
       .find(t => t.id === 'goal')
       ?.keys.map(k => k.label),
   ).toEqual(['New', 'Remove'])
+})
+
+test('a met goal keeps its milestones drawn while work under them is open, held, running or finished since the last look', () => {
+  const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50, new Set(['i1']))
+  const held = page(met, 55, {}, [askItem('i1')])
+  const finished = after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51)
+
+  expect(held.goal?.milestonesFold).toBeNull()
   expect(
-    statusKeyRows(page(met, 55))
+    statusKeyRows(held)
+      .find(t => t.id === 's2')
+      ?.keys.map(k => k.label),
+  ).toEqual(['View question'])
+  expect(page(finished, 55).goal?.milestonesFold).toBeNull()
+})
+
+test('once its work is seen and finished, a met goal folds its milestones into a line naming the done ones, which f opens, and a fold opened for one met goal starts shut when it is met again', () => {
+  const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
+  const seen = { ...after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51), lastLookAt: 52 }
+  const fold = page(seen, 55).goal?.milestonesFold
+  const milestoneIds = page(seen, 55).goal?.milestones.map(m => m.id) ?? []
+
+  expect(fold?.text).toBe('Parsing works, Errors explained, +1 more')
+  expect(milestoneIds).toHaveLength(3)
+  expect(
+    statusKeyRows(page(seen, 55))
       .map(t => t.id)
       .slice(0, 2),
-  ).toEqual(['goal', 'goal-milestones'])
+  ).toEqual(['goal', fold?.id])
+  expect(statusKeyRows(page(seen, 55)).filter(t => milestoneIds.includes(t.id))).toEqual([])
   expect(
-    statusKeyRows(page(met, 55))
-      .find(t => t.id === 'goal-milestones')
+    statusKeyRows(page(seen, 55))
+      .find(t => t.id === fold?.id)
       ?.keys.map(k => k.hotkey),
   ).toEqual(['f'])
-  const finished = after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51)
-  const seen = page({ ...finished, lastLookAt: 52 }, 55)
-  const milestoneIds = seen.goal?.milestones.map(m => m.id) ?? []
-  expect(milestoneIds).toHaveLength(3)
-  expect(statusKeyRows(seen).filter(t => milestoneIds.includes(t.id))).toEqual([])
   expect(
-    statusKeyRows(seen, id => id === 'goal-milestones')
+    statusKeyRows(page(seen, 55), id => id === fold?.id)
       .map(t => t.id)
       .slice(0, 3),
-  ).toEqual(['goal', 'goal-milestones', 'm2'])
+  ).toEqual(['goal', fold?.id, 'm2'])
+
+  const added = after(seen, 'MILESTONE: queued | Docs written | not started', 60)
+  const docs = page(added, 61).goal?.milestones.at(-1)?.id ?? ''
+  const again = { ...after(added, `DONE: ${docs} | written`, 70), lastLookAt: 71 }
+  const refolded = page(again, 72)
+
+  expect(page(added, 61).goal?.milestonesFold).toBeNull()
+  expect(refolded.goal?.milestonesFold?.id).not.toBe(fold?.id)
+  expect(
+    statusKeyRows(refolded, id => id === fold?.id).filter(t => refolded.goal?.milestones.some(m => m.id === t.id)),
+  ).toEqual([])
+})
+
+test("a met goal's fold line names only its done milestones, not one dropped since the last look", () => {
+  const finished = after(linked(), 'DONE: s1 | parsed\nDONE: s2 | explained', 40)
+  const dropped = { ...after({ ...finished, lastLookAt: 45 }, 'DONE: m2 | explained\nDROP: m3 | cut', 50) }
+
+  expect(page(dropped, 55).goal?.milestones.map(m => m.name)).toContain('Demo script')
+  expect(page(dropped, 55).goal?.milestonesFold?.text).toBe('Parsing works, Errors explained')
 })
 
 test('an ask linked to a milestone names it as what it holds up, and a milestone shows its was line only once it changed after the goal was set and since the last look', () => {
