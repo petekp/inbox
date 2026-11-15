@@ -5319,10 +5319,10 @@ function isViewKept(prState, links, lastActions, ref, shownSince) {
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
 }
-function settledPrState(mark, now, settleWindowMs) {
+function settledPrState(mark, now, settleWindowMs, isUndoOut) {
   const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
   const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
-  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
+  return { ...state, canUndo: isUndoOut || isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
 }
 function drawnPrs(prState, links, lastActions, placing) {
   const { now, settleWindowMs } = placing;
@@ -5333,7 +5333,7 @@ function drawnPrs(prState, links, lastActions, placing) {
     const mark = dismissal(lastActions, pr.ref);
     if (mark === null)
       return [];
-    const state = settledPrState(mark, now, settleWindowMs);
+    const state = settledPrState(mark, now, settleWindowMs, (placing.undoOut ?? []).includes(prMarkId(pr.ref)));
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
   return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
@@ -6693,7 +6693,7 @@ function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
     return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions);
   return isRowTabRunning(v, shown, isUnfolded);
 }
-function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {
+function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
   const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null));
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
@@ -6702,6 +6702,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
     now,
     settleWindowMs,
     undoShown,
+    undoOut,
     pressOutSince
   });
   const isSent = threadSentIn(lastActions);

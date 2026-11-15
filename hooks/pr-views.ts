@@ -71,7 +71,7 @@ export function openPrViews(drawn: DrawnPr[]): PrView[] {
  * How a settled block reads and marks its close: ✓ for a merge, the lapsed mark for a PR closed without one, ✕ for
  * the person's Dismiss. Each offers Undo while it lasts, which keeps the PR on the tab.
  */
-function settledPrState(mark: LastAction, now: number, settleWindowMs: number): SettledState {
+function settledPrState(mark: LastAction, now: number, settleWindowMs: number, isUndoOut: boolean): SettledState {
   const closed =
     mark.text === PR_MERGED_LABEL
       ? ({ how: 'update', outcome: PR_MERGED_LABEL } as const)
@@ -80,7 +80,7 @@ function settledPrState(mark: LastAction, now: number, settleWindowMs: number): 
         : ({ how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const)
   const state = closedRowState(closed, mark.at, now, settleWindowMs, null)
 
-  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true }
+  return { ...state, canUndo: isUndoOut || isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true }
 }
 
 /**
@@ -99,7 +99,7 @@ export function drawnPrs(
     if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: 'open' } }]
     const mark = dismissal(lastActions, pr.ref)
     if (mark === null) return []
-    const state = settledPrState(mark, now, settleWindowMs)
+    const state = settledPrState(mark, now, settleWindowMs, (placing.undoOut ?? []).includes(prMarkId(pr.ref)))
 
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : []
   })

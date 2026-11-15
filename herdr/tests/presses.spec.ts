@@ -308,6 +308,15 @@ test('u presses a dismissed PR’s Undo, which runs out with the settle window',
   expect(move?.is === 'press' && move.button.does).toMatchObject({ is: 'press', press: { action: 'pr-undo', ref } })
 })
 
+test('a dismissed PR’s Undo whose press is still out when its time ends stays drawn out until the press ends', () => {
+  const ref = 'acme/visor#29'
+  const at = NOW - SETTLED_MS - 500
+  const out = outOn(prMarkId(ref), { action: 'pr-undo', label: 'Undo' })
+  const kept = drawOuts(dismissedPr(ref, at, [prMarkId(ref)]).blocks, [out], {}, NOW)
+  expect(undoOf(kept, prMarkId(ref))).toMatchObject({ label: 'Undo', isOut: true })
+  expect(undoOf(dismissedPr(ref, at).blocks, prMarkId(ref))).toBeUndefined()
+})
+
 test('an Undo’s fill shows the whole of its time at the start, half in the middle, and none at the end or after', () => {
   const runsOutAt = NOW + SETTLED_MS
   expect(timeLeftShare(runsOutAt, NOW)).toBe(1)

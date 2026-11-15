@@ -118,7 +118,7 @@ export function earliestOf(times: (number | null)[]): number | null {
  */
 export type Placing = Pick<
   ViewInput,
-  'shownSince' | 'lastTypedMessageAt' | 'listInput' | 'now' | 'settleWindowMs' | 'undoShown'
+  'shownSince' | 'lastTypedMessageAt' | 'listInput' | 'now' | 'settleWindowMs' | 'undoShown' | 'undoOut'
 > & { pressOutSince: number | null }
 
 /**

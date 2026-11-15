@@ -38,24 +38,26 @@ export function finishedScreen(states: Record<string, 'MERGED' | 'CLOSED'>): Loo
   return { ...demoScreen(), view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, holds) }
 }
 
-export function dismissedPr(ref: string) {
+export function dismissedPr(ref: string, at = NOW - 500, undoOut: string[] = []) {
   const s = demoSession(NOW, AGENT)
   const r = applyPrPress(
     s.ledger,
     s.prViews,
     s.lastActions,
     { action: 'pr-dismiss', ref },
-    { now: NOW - 500, turnsStarted: 0 },
+    { now: at, turnsStarted: 0 },
   )
   if ('stale' in r) throw new Error('the Dismiss was stale')
-  const holds = { replies: {}, discarded: {}, shownSince: NOW - 1000, listInput: null }
+  const listInput = at < NOW - SETTLED_MS ? { since: at, last: NOW - 100 } : null
+  const shownSince = Math.min(NOW - 1000, at - 500)
+  const holds = { replies: {}, discarded: {}, shownSince, listInput, undoOut }
   const view = sessionView(
     { ...s, ledger: r.ledger, lastActions: { ...s.lastActions, ...r.lasts } },
     NOW,
     SETTLED_MS,
     holds,
   )
-  return { view, blocks: tabBlocks({ ...demoScreen(), view, shownSince: NOW - 1000 }, uiOn('prs')) }
+  return { view, blocks: tabBlocks({ ...demoScreen(), view, shownSince }, uiOn('prs')) }
 }
 
 export function withDismissedAsk(id: string, at: number) {

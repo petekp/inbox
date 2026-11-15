@@ -139,7 +139,7 @@ export default class Inbox extends View {
       discarded: this.discarded,
       shownSince: this.shownSince,
       listInput: this.listInput && withListInput(this.listInput, now),
-      undoOut: this.queue.outs.filter(o => o.action === 'undo').map(o => o.rowId),
+      undoOut: this.queue.outs.filter(o => o.action === 'undo' || o.action === 'pr-undo').map(o => o.rowId),
     }
   }
 

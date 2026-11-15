@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T05:25:04.262Z. 222374 characters follow.
+// Built at 2026-11-15T05:28:48.107Z. 222498 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2607,10 +2607,10 @@ function isDismissed(lastActions, ref) {
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
 }
-function settledPrState(mark, now, settleWindowMs) {
+function settledPrState(mark, now, settleWindowMs, isUndoOut) {
   const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
   const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
-  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
+  return { ...state, canUndo: isUndoOut || isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
 }
 function drawnPrs(prState, links, lastActions, placing) {
   const { now, settleWindowMs } = placing;
@@ -2621,7 +2621,7 @@ function drawnPrs(prState, links, lastActions, placing) {
     const mark = dismissal(lastActions, pr.ref);
     if (mark === null)
       return [];
-    const state = settledPrState(mark, now, settleWindowMs);
+    const state = settledPrState(mark, now, settleWindowMs, (placing.undoOut ?? []).includes(prMarkId(pr.ref)));
     return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
   return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
@@ -3318,7 +3318,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     statusPage: statusPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {
+function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
   const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null));
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
@@ -3327,6 +3327,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
     now,
     settleWindowMs,
     undoShown,
+    undoOut,
     pressOutSince
   });
   const isSent = threadSentIn(lastActions);
@@ -5341,7 +5342,7 @@ class Inbox extends View {
       discarded: this.discarded,
       shownSince: this.shownSince,
       listInput: this.listInput && withListInput(this.listInput, now),
-      undoOut: this.queue.outs.filter((o) => o.action === "undo").map((o) => o.rowId)
+      undoOut: this.queue.outs.filter((o) => o.action === "undo" || o.action === "pr-undo").map((o) => o.rowId)
     };
   }
   load(sessionId, cx) {
