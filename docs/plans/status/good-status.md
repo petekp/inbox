@@ -23,7 +23,7 @@ Adding offline sync to the notes app
 ● Export button
   works on web
   ├ ◆ Lay out the PDF export · waiting
-  └ ✓ Check the print styles · finished
+  └ ✓ Check the print styles
 ◌ 2.4 release
   in store review
 ✓ Sync engine

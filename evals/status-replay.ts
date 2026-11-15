@@ -20,7 +20,7 @@ import type { RowPress } from '../hooks/presses'
 import type { StatusPage } from '../hooks/status-page'
 import { CODEX } from '../codex/src/texts'
 import type { CallKind, ChildKind, Exchange, HostTask, Item, Ledger, Place, Session } from '../types'
-import { factsAfter } from './status-facts'
+import { factsAfter, factsForPage } from './status-facts'
 import type { Facts, FactsChange } from './status-facts'
 import { pageText } from './status-page-text'
 
@@ -349,7 +349,7 @@ async function runStep(
     session,
     page,
     text: pageText(page),
-    facts: factsAfter(facts, step.facts),
+    facts: factsForPage(factsAfter(facts, step.facts), session.ledger.overview?.goal?.text ?? null),
     calls,
     isStatusFailed,
     readSetAt,
