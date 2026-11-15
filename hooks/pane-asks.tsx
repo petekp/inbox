@@ -2,16 +2,17 @@ import { rowsIn, settledIn } from './action-plan'
 import { bannerOf, isResumable, READING_TEXT, stopBanner } from './banners'
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { emptyTab, type EmptyTab } from './empty-tab'
-import { FINDING_GROUPS, HELD_MARK } from './help'
+import { FINDING_GROUPS } from './help'
 import { READ_FAILED_TEXT } from './mod-sessions'
 import { sessionState } from './mod-state'
 import type { PaneBase, PaneHandlers, Row } from './pane-context'
 import type { PaneFrame } from './pane-frame'
-import { childPos, holdsUpLineOf, type PaneRowLines } from './pane-row-lines'
+import { childPos, type PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
 import { ROW_COLUMNS } from './pane-sizes'
 import {
+  ASK_MARK,
   closedShown,
   closedTotal,
   DOT,
@@ -45,38 +46,17 @@ export function paneAskRows(
   const itemRow = (r: RowView): Row => {
     const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
     const isHandedOff = r.state.is === 'handedOff'
-    const holdsUpLine = holdsUpLineOf(r)
-    const holdsUp = holdsUpLine ? (
-      <Text key="holds-up" color={pal.muted} wrap="wrap">
-        <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-        {holdsUpLine}
-      </Text>
-    ) : null
-    const recLine = r.recLine ? (
-      <Text key="rec" color={pal.muted} wrap="wrap">
-        {r.recLine}
-      </Text>
-    ) : null
-    const contextLine = r.contextLine ? (
-      <Text key="context" color={pal.muted} wrap="wrap">
-        {r.contextLine}
-      </Text>
-    ) : null
-    const subtitleLines = [contextLine, holdsUp, recLine].filter(line => line !== null)
+    const isAsk = r.state.is === 'open'
 
     return {
       id: r.id,
       view: r,
-      handle: '',
+      handle: look === 'terminal' && isAsk ? ASK_MARK.text : '',
+      ...(look === 'terminal' && isAsk && ASK_MARK.tone ? { handleTone: ASK_MARK.tone } : {}),
       ...(isHandedOff ? { fold: {} } : {}),
       title: rowTitle(r, look),
       titleAfter: asked,
       ...(r.at === null ? {} : { at: r.at }),
-      ...(subtitleLines.length > 1
-        ? { subtitle: <Box flexDirection="column">{subtitleLines}</Box> }
-        : subtitleLines.length === 1
-          ? { subtitle: subtitleLines[0] }
-          : {}),
       hasSecondLine: r.replyKind === 'answer',
       body: null,
       keys: () => rowKeyActions(r, optionsShown.includes(r.id)).keys,

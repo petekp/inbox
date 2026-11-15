@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { ActionButton, Icon } from './row-actions'
 import { mutedMarkShape } from '../../hooks/marks'
-import { DOT, rowResultMark } from '../../hooks/rows'
+import { DOT, rowMark } from '../../hooks/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { BannerView } from '../../hooks/banners'
@@ -24,9 +24,9 @@ export function EmptyState({ empty, children }: { empty: EmptyTab; children?: Co
   )
 }
 
-/** An Asks or Finds row's mark: its result's, in the mark column. An open row has none. */
+/** An Asks or Finds row's mark in the mark column: its result's, or ◆ on an open question or task. */
 export function resultHandle(r: RowView): Pick<Row, 'handle' | 'handleTone' | 'isHandleRunning'> {
-  const mark = rowResultMark(r)
+  const mark = rowMark(r)
 
   return mark
     ? { handle: mark.text, isHandleRunning: mark.isRunning, ...(mark.tone ? { handleTone: mark.tone } : {}) }

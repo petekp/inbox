@@ -58,8 +58,7 @@ test('a selected question draws why it came up first under its title, in the Why
   const selected = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: question.id }))).find(
     b => b.id === question.id,
   )!
-  expect(selected.body[0]).toEqual({ text: question.contextLine!, tone: 'muted' })
-  expect(selected.body.find(l => l.text === question.recLine)?.tone).toBe('muted')
+  expect(selected.body[0]).toMatchObject({ text: question.contextLine!, tone: 'muted' })
   const other = screen.view.needsYou.questions.find(r => r.id !== question.id && r.state.is === 'open')!
   const collapsed = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: other.id }))).find(b => b.id === question.id)!
   expect(collapsed.body.some(l => l.text === question.contextLine)).toBe(false)

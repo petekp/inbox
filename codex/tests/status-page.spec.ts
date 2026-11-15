@@ -212,16 +212,13 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.ok(root.querySelector('.status-head'))
     key('2')
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('main .holds-up')?.textContent, '◆ Holds up Label')
+    assert.equal(root.querySelector('main .holds-up')?.textContent, 'Holds up Label')
     key('1')
     assert.equal(shownTab(), 'Status')
     ;(root.querySelector('main.status-page .list .actions button') as HTMLElement).click()
     assert.equal(shownTab(), 'Asks1')
     assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
-    assert.deepEqual(
-      [...(root.querySelector('.row.selected .line')?.children ?? [])].map(c => c.className),
-      ['text', 'context-line', 'holds-up'],
-    )
+    assert.equal(root.querySelector('.row.selected .tree')?.firstElementChild?.className, 'context-line')
     assert.equal(root.querySelector('.row.selected .context-line')?.textContent, 'The new tab needs a one-word name.')
     key('1')
     assert.equal(shownTab(), 'Status')

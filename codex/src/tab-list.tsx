@@ -1,5 +1,4 @@
 import { RowActions } from './row-actions'
-import { HELD_MARK } from '../../hooks/help'
 import { settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
@@ -155,7 +154,7 @@ export function ListRow({
   const isSelected = track.hasPanel && !isClosing
   const handle = (
     <span
-      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}`}
+      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}${row.hasTree && (isSelected || isClosing) ? ' has-tree' : ''}`}
       ref={row.isHandleRunning ? pulseInStep : undefined}
     >
       <MarkGlyph text={row.handle} />
@@ -209,13 +208,7 @@ export function ListRow({
           {row.meta ? <span class="meta">{row.meta}</span> : null}
           {after(drawn, closed ? ' open-only' : '')}
           {closed ? after(closed, ' closed-only') : null}
-          {row.context ? <span class="context-line">{row.context}</span> : null}
-          {row.holdsUp ? (
-            <span class="holds-up">
-              <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
-            </span>
-          ) : null}
-          {row.recLine ? <span class="rec-line">{row.recLine}</span> : null}
+          {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>

@@ -10,6 +10,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-frame.tsx` | Mod only. The pane's frame in both looks: the tab bar, the inline rail, banners, the status line and the footer. |
 | `hooks/pane-row-frame.tsx` | Mod only. `desktopFrame`, the frame a desktop row, group title, PR block or Status row draws in: its mark column, side column and padding. |
 | `hooks/pane-asks.tsx` | Mod only. The Asks and Finds tabs: question, task and finding rows, the Needs you and Finds groups, and a tab's empty state. |
+| `hooks/pane-ask-tree.tsx` | Mod only. An open question's or task's context, option lines and Holds up line, hung on one connector in the terminal and drawn as plain lines on desktop. |
 | `hooks/pane-rows.tsx` | Mod only. `listRow`, which draws one list row, selected or not, in both looks. |
 | `hooks/title-client.tsx` | Mod only. The desktop pane's open row title, as a Client, so a click anywhere on the title collapses the row. It draws its own hover and pressed colors. |
 | `hooks/pane-row-lines.tsx` | Mod only. The parts a row's lines are drawn from: marks, tree lines, ages, feedback labels, an unselected row's line, and the props of the desktop row Client. |

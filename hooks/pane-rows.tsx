@@ -1,6 +1,7 @@
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { isStatusUnderActions } from './feedback'
 import { paneState } from './mod-state'
+import { paneAskTree } from './pane-ask-tree'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { fieldKey, openFields } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
@@ -20,9 +21,9 @@ import {
   TERMINAL_SIDE_CELLS,
   TREE_LINE_AT,
 } from './pane-sizes'
-import { DOT, ROW_COPY, shownOptionDescriptions } from './rows'
+import { DOT, ROW_COPY } from './rows'
 import { lineCount, SELECTION_BAR, type TreePos } from './terminal-text'
-import { cellWidth, clipLabel } from './text'
+import { cellWidth } from './text'
 
 export function paneRows(
   {
@@ -110,6 +111,7 @@ export function paneRows(
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
 ) {
+  const { askTree } = paneAskTree({ look, Box, Text, pal, optionsShown, blankLine }, { branch })
   const listRow = (row: Row, tree: TreePos) => {
     const columns = columnsFor(row)
     const index = indexOf.get(row.id) ?? -1
@@ -205,21 +207,7 @@ export function paneRows(
         : null
     const body =
       bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
-    const described = row.view ? shownOptionDescriptions(row.view, optionsShown.includes(row.id)) : []
-    const descriptionsBlock =
-      described.length > 0 ? (
-        <Box flexDirection="column" marginTop={blankLine}>
-          {described.map(o => {
-            const line = clipLabel(`${o.label}: ${o.description}`, look === 'desktop' ? titleWidth : textWidth)
-            return (
-              <Text wrap="truncate-end">
-                <Text>{line.slice(0, o.label.length)}</Text>
-                <Text color={pal.muted}>{line.slice(o.label.length)}</Text>
-              </Text>
-            )
-          })}
-        </Box>
-      ) : null
+    const descriptionsBlock = row.view ? askTree(row.view) : null
     const keysBlock = (
       <Box flexDirection="column" marginTop={blankLine}>
         {isTyping ? (
@@ -318,7 +306,7 @@ export function paneRows(
         backgroundColor={isSelected || isCursorMarked ? pal.selection : undefined}
       >
         <Box width={columns.lead} flexShrink={0} />
-        {row.view && look === 'terminal' ? null : (
+        {row.view && look === 'terminal' && !row.handle ? null : (
           <Box
             width={columns.textAt - columns.lead}
             flexShrink={0}

@@ -4,10 +4,11 @@ import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
-import { HELD_MARK, UNDO_KEY } from '../../hooks/help'
+import { UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
+import { askTreeLines } from './panel-ask-tree'
 import { focusOf } from './panel-keys'
 import { AGENT, INDENT, UNLED_INDENT, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
@@ -167,21 +168,13 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
-  const contextLine = isOpen ? line.row?.contextLine : null
-  if (contextLine) out.push(...indented(contextLine, indent, width, Infinity, s.dim))
   const holdsUp = line.row?.holdsUpLine
-  if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
-  const recLine = line.row?.recLine
-  if (recLine)
-    out.push(
-      ...(isOpen ? indented(recLine, indent, width, 3, s.dim) : [fit(`${' '.repeat(indent)}${s.dim(recLine)}`, width)]),
-    )
+  if (isOpen) out.push(...askTreeLines(line, pad, width, s))
+  else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))
   if (line.body && isOpen) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
   if (line.detail && (isOpen || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
   if (!isOpen) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
-  for (const o of line.row?.optionDescriptions ?? [])
-    out.push(fit(' '.repeat(indent) + o.label + s.dim(`: ${o.description}`), width))
   // As in the terminal, an open reply field replaces the row's buttons: Enter sends, so no button reads as focused.
   if (line.buttons.length > 0 && ui.typing !== line.id) out.push(...buttonLines(line, ui, indent - 1, width, s))
   if (ui.typing === line.id) {
