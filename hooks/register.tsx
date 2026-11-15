@@ -154,7 +154,6 @@ import {
   isNewRowFading,
   isPrsTabEmpty,
   isTabEmpty,
-  listedRowIds,
   openRowIds,
   prRowIds,
   showNewRows,
@@ -184,6 +183,7 @@ import {
   type Showing,
   type Shown,
   newRows,
+  forgetRows,
   tabRowIds,
   tabWaits,
   UNDO_REDRAW_STEPS,
@@ -1580,13 +1580,10 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     isPaneShown($),
   ])
   const { prViews: prState, stop, isDemo, isUnread, view } = drawn
-  const prs = view.prs.drawn
-  if (isOpening) paneState.recordedRows = null
-  const added = newRows(isDemo, {
-    ...listedRowIds(view),
-    prs: prState.isFetching ? null : prRowIds(prs),
-  })
+  if (isOpening) forgetRows()
+  const added = newRows({ isDemo, view, isPrsFetching: prState.isFetching }, isShown)
   if (!isShown) return
+  if (Object.values(added).flat().length > 0) void redraw($).catch(() => undefined)
   let opened: Tab[] = []
   await update($, SELECTION, s => {
     const arrived = arrivedSelection(view, added, s)
@@ -1597,7 +1594,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   const settled = new Set(settledRowIds(allRows(view)))
   const isEmpty =
     tab === 'prs'
-      ? isPrsTabEmpty(prs.length, prState.isFetching)
+      ? isPrsTabEmpty(view.prs.drawn.length, prState.isFetching)
       : isTabEmpty({
           rows: tab === 'needsYou' ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows,
           settled,
@@ -2187,7 +2184,7 @@ async function applyConversation(
   sessionState.resuming = null
   conversation.id = id
   conversation.root = sessionRoot
-  paneState.recordedRows = null
+  forgetRows()
   sessionState.isReadingAgain = false
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
@@ -3001,7 +2998,7 @@ export const register: Register = on => {
     const isStatusShown = savedPage === 'overview'
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
     const tabList = shownTabs()
-    paneState.newRows = showNewRows(paneState.newRows, shownTab, now)
+    if (!isHelpShown) paneState.newRows = showNewRows(paneState.newRows, shownTab, now)
     if (look === 'terminal')
       animateRunningMarks(
         showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)) ||
@@ -3236,6 +3233,7 @@ export const register: Register = on => {
         blankLine,
         Button,
         settledLayout,
+        shownTab,
         columnsFor,
         gutterMark,
         toned,

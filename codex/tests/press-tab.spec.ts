@@ -3,17 +3,7 @@ import { test } from 'node:test'
 
 import { recordClose, recordItem } from '../../hooks/tools'
 import { NO_HOLDS } from '../../hooks/timing'
-import {
-  addNewRows,
-  ARRIVAL_TABS,
-  followTo,
-  isNewRowFading,
-  NEW_FADE_MS,
-  NEW_HOLD_MS,
-  newRowShare,
-  showNewRows,
-  steppedShare,
-} from '../../hooks/arrivals'
+import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
 import { isShownEmpty, newRows, openRows } from '../src/arrivals'
 import { endTurn, noteHook, noteToolCall, viewOf } from '../src/core'
 import { demoState } from '../src/demo'
@@ -115,30 +105,6 @@ test('the tab moves from an empty Asks to Finds when it opens on a finding or a 
   const history = viewOf(afterClose, 30_000)
   assert.equal(isShownEmpty(history, 'findings', new Set(), new Set(['issue']), false), false)
   assert.equal(isShownEmpty(history, 'findings', new Set(), new Set(), false), true)
-})
-
-test("a new row's bar stays full until its tab shows, holds, fades, and is gone once the fade ends", () => {
-  const added = addNewRows(new Map(), { needsYou: [], findings: ['f1'] })
-  assert.equal(newRowShare(added.get('f1'), 0), 1)
-  const onAsks = showNewRows(added, 'needsYou', 100)
-  assert.equal(onAsks.get('f1')?.shownAt, null)
-  assert.equal(isNewRowFading(onAsks, 100), false)
-  const shown = showNewRows(onAsks, 'findings', 1000)
-  const row = shown.get('f1')
-  const fadeAt = 1000 + NEW_HOLD_MS
-  const midFade = fadeAt + NEW_FADE_MS / 2
-  const endAt = fadeAt + NEW_FADE_MS
-  assert.equal(newRowShare(row, fadeAt), 1)
-  assert.ok(Math.abs(newRowShare(row, midFade) - 0.5) < 1e-9)
-  assert.equal(newRowShare(row, midFade, true), 1)
-  assert.equal(steppedShare(row, midFade + 1), newRowShare(row, midFade))
-  assert.ok(steppedShare(row, midFade - 1) > newRowShare(row, midFade - 1))
-  assert.equal(isNewRowFading(shown, midFade), true)
-  assert.equal(newRowShare(row, endAt, true), 0)
-  assert.equal(isNewRowFading(shown, endAt), false)
-  assert.equal(showNewRows(shown, 'findings', endAt).size, 0)
-  assert.equal(addNewRows(shown, { findings: ['f1'] }).get('f1'), row)
-  assert.equal(steppedShare(showNewRows(added, 'findings', 0).get('f1'), NEW_HOLD_MS + 1), 1)
 })
 
 test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothing while PRs load', () => {

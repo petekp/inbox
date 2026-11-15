@@ -136,8 +136,9 @@ export type Paint = {
   /** Saves a measured size under `key`, and draws again when its height changed. */
   measure: (key: string, size: { width: number; height: number }, cx: Context) => void
   now: number
-  /** The rows whose bar shows that they are new, by id. */
+  /** The rows whose bar shows that they are new, by id, and the tab the look draws. */
   newRows: NewRows
+  tab: ShownTab
   /** The time left each timed button draws, by its id. */
   timeLeft: ReadonlyMap<string, TimeLeft>
   input: (rowId: string) => InputState | null

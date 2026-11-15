@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T23:09:05.062Z. 243559 characters follow.
+// Built at 2026-11-15T23:33:55.462Z. 244023 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -2753,7 +2753,11 @@ function showNewRows(rows, tab, now) {
   }
   return next;
 }
-function newRowShare(row, now, isReduced = false) {
+function newRowIn(rows, id, tab) {
+  const row = rows.get(id);
+  return row?.tab === tab ? row : undefined;
+}
+function newRowShare(row, now) {
   if (!row)
     return 0;
   if (row.shownAt === null)
@@ -2761,7 +2765,7 @@ function newRowShare(row, now, isReduced = false) {
   const p = (now - row.shownAt - NEW_HOLD_MS) / NEW_FADE_MS;
   if (p >= 1)
     return 0;
-  if (isReduced || p <= 0)
+  if (p <= 0)
     return 1;
   return (1 + Math.cos(Math.PI * p)) / 2;
 }
@@ -4469,16 +4473,21 @@ function withClosedSelection(ui, last, now) {
   const next = rowAfterClose(now, id);
   return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next);
 }
-function withArrivals(ui, last, now, at) {
+function withArrivals(ui, last, now) {
   const added = now.filter((r) => !last.some((l) => l.id === r.id)).map((r) => r.id);
   const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added);
-  const shown = added.length === 0 ? ui : { ...ui, newRows: showNewRows(addNewRows(ui.newRows, { [ui.tab]: added }), ui.tab, at) };
-  return id === null ? shown : withSelected(shown, id);
+  const recorded = added.length === 0 ? ui : { ...ui, newRows: addNewRows(ui.newRows, { [ui.tab]: added }) };
+  return id === null ? recorded : withSelected(recorded, id);
 }
-function withDrawnRows(ui, last, rows, at) {
-  if (rows === null || last.rows === null || last.tab !== ui.tab)
-    return ui;
-  return withArrivals(withClosedSelection(ui, last.rows, rows), last.rows, rows, at);
+function withShownNewRows(ui, at) {
+  const newRows = showNewRows(ui.newRows, ui.tab, at);
+  const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
+  return isSame ? ui : { ...ui, newRows };
+}
+function withDrawnRows(ui, last, rows, at, isTabShown) {
+  const lastRows = last.tab === ui.tab ? last.rows : null;
+  const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
+  return isTabShown ? withShownNewRows(arrived, at) : arrived;
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
@@ -5155,7 +5164,7 @@ function newRowsNextAt(rows, now) {
   return at.length > 0 ? Math.min(...at) : null;
 }
 function newBarEls(r, p) {
-  const row = p.newRows.get(r.id);
+  const row = newRowIn(p.newRows, r.id, p.tab);
   const at = row ? nextStepAt(row, p.now) : null;
   if (!row || at === null)
     return [];
@@ -6020,7 +6029,7 @@ class Inbox extends View {
       queue: this.queue
     });
     let screen = screenFor(this.ui);
-    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === "inbox" ? screen.waits : null, now);
+    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === "inbox" ? screen.waits : null, now, !this.isHelpShown);
     if (ui !== this.ui)
       screen = screenFor(this.ui = ui);
     this.lastWaits = { tab: this.ui.tab, rows: screen.is === "inbox" ? screen.waits : null };
@@ -6061,6 +6070,7 @@ class Inbox extends View {
       },
       now,
       newRows: this.ui.newRows,
+      tab: this.ui.tab,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
       isNarrow: this.isNarrow,

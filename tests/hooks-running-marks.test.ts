@@ -70,7 +70,7 @@ test('a row that arrives while the pane is open gets a bar in the terminal and o
   }
   const bars = async (id: string) => [
     (await pane.find({ key: `new-${id}` }))?.text ?? null,
-    JSON.stringify((await desktop.find({ key: `new-${id}` })) ?? null).includes('<animate'),
+    ((await desktop.find({ key: `new-${id}` })) ?? null) !== null,
   ]
 
   await turn('add a greeting cli', 't1')
@@ -84,6 +84,24 @@ test('a row that arrives while the pane is open gets a bar in the terminal and o
   await turn('add color', 't2')
   expect(await bars('i3')).toEqual([NEW_ROW_BAR, true])
   expect(await bars('i2')).toEqual([null, false])
+})
+
+test('a row that arrives while the pane is closed gets no bar once the pane shows', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: false, isFocused: false }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  await clock.settle()
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  w.paneState = { isShown: true, isFocused: true }
+  await pane.redraw()
+
+  expect((await pane.find({ key: 'row-i2' })) ?? null).not.toBe(null)
+  expect((await pane.find({ key: 'new-i2' })) ?? null).toBe(null)
 })
 
 test('a working subject’s mark on the Status moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {

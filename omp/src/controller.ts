@@ -184,7 +184,7 @@ export function createPanel(deps: PanelDeps): Panel {
       if (screen === null) return [` ${READING_TEXT}`]
       const now = deps.now()
       const maxHeight = deps.height()
-      ui = { ...ui, newRows: showNewRows(ui.newRows, ui.tab, now) }
+      if (!ui.isHelpShown) ui = { ...ui, newRows: showNewRows(ui.newRows, ui.tab, now) }
       syncFrames()
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))

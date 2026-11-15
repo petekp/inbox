@@ -208,6 +208,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         line: {
           ...blankLine(markId),
           lead,
+          isPrHead: true,
           mark: settledMark(state),
           title: pr.title,
           isDim: true,
@@ -229,6 +230,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       line: {
         ...blankLine(markId),
         lead,
+        isPrHead: true,
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
         age: doneAt(f),

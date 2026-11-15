@@ -6500,7 +6500,11 @@ function showNewRows(rows, tab, now) {
   }
   return next;
 }
-function newRowShare(row, now, isReduced = false) {
+function newRowIn(rows, id, tab) {
+  const row = rows.get(id);
+  return row?.tab === tab ? row : undefined;
+}
+function newRowShare(row, now) {
   if (!row)
     return 0;
   if (row.shownAt === null)
@@ -6508,7 +6512,7 @@ function newRowShare(row, now, isReduced = false) {
   const p = (now - row.shownAt - NEW_HOLD_MS) / NEW_FADE_MS;
   if (p >= 1)
     return 0;
-  if (isReduced || p <= 0)
+  if (p <= 0)
     return 1;
   return (1 + Math.cos(Math.PI * p)) / 2;
 }
@@ -8119,6 +8123,7 @@ function prEntries(screen, ui, now) {
         line: {
           ...blankLine(markId),
           lead,
+          isPrHead: true,
           mark: settledMark(state),
           title: pr.title,
           isDim: true,
@@ -8140,6 +8145,7 @@ function prEntries(screen, ui, now) {
       line: {
         ...blankLine(markId),
         lead,
+        isPrHead: true,
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
         age: doneAt(f),
@@ -8570,7 +8576,7 @@ function drawLine(line, isSelected, d) {
   const mark = markText(line.mark, now, s);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
-  const newShare = steppedShare(ui.newRows.get(line.id), now);
+  const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now);
   const edge = newShare > 0 ? s.newBar(newShare, NEW_ROW_BAR) : " ";
   const head = `${edge}${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
@@ -8977,7 +8983,8 @@ function createPanel(deps) {
         return [` ${READING_TEXT}`];
       const now = deps.now();
       const maxHeight = deps.height();
-      ui = { ...ui, newRows: showNewRows(ui.newRows, ui.tab, now) };
+      if (!ui.isHelpShown)
+        ui = { ...ui, newRows: showNewRows(ui.newRows, ui.tab, now) };
       syncFrames();
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
