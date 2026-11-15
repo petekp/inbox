@@ -154,7 +154,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
   const line = h_flex()
     .id(`title ${r.id}`)
     .items_start()
-    .when(isPressable && isOpen, e => e.cursor_pointer().on_click((_e, cx) => p.collapse(r.id, true, cx)))
+    .when(isPressable && isOpen, e => e.on_click((_e, cx) => p.collapse(r.id, true, cx)))
     .child(markEl(r.mark, t))
     .child(
       div()
