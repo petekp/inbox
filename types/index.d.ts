@@ -116,6 +116,11 @@ export type GoalRefusal = {
     | 'restates'
     /** The GOAL line names under `MILESTONES_MIN` milestones. */
     | 'few-milestones'
+  /**
+   * For a GOAL line that cut part of the goal, the ids of the open subjects it held that the line neither kept under a
+   * milestone it named again nor sent to Other work.
+   */
+  unplaced?: string[]
 }
 
 /** A goal the person removed, with its milestones and the links to them, so Undo can bring it back. */
@@ -157,6 +162,11 @@ export type SessionStatus = {
   missedInLastLook: Record<string, number | null>
   /** The look in progress, while the Status tab is shown. Null otherwise. */
   look: { startedAt: number } | null
+  /**
+   * When the last Status call whose answer applied read this Status. Each delegate that finished after it is listed to
+   * the next call, so every finish reaches the call once. Null before the first.
+   */
+  lastCallReadAt: number | null
 }
 
 /** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */
@@ -277,6 +287,8 @@ export type LastAction = {
   pressOrder?: number
   /** The turns started when it was pressed, so a handed-off row folds until the update for a later turn applies. */
   turnsStarted?: number
+  /** When the turn that followed a hand-off press ended, answered or not. A PR's hand-off button reads "… again" only once a fetch has read the PR after it. */
+  repliedAt?: number
   /** The latest Local press's outcome: its opens and copies, pending until each has run. Talk, Hand-off and Mark presses clear it. */
   result?: LocalResult
   /** Whether the press's message reached the agent. Missing on a press that sent nothing, and on one saved before the mod kept it, which reads as arrived. */

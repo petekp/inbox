@@ -1,5 +1,5 @@
 import { fadedOver } from './tones'
-import { steppedShare } from './arrivals'
+import { newRowIn, steppedShare } from './arrivals'
 import { ROW_BAR } from './help'
 import { newBarSvg } from './desktop-svg'
 import { ROW_PAD_PT } from './layout'
@@ -54,6 +54,7 @@ export function paneRows(
     blankLine,
     Button,
     settledLayout,
+    shownTab,
     columnsFor,
     gutterMark,
     toned,
@@ -96,6 +97,7 @@ export function paneRows(
       | 'blankLine'
       | 'Button'
       | 'settledLayout'
+      | 'shownTab'
     > &
     Pick<
       PaneRowLines,
@@ -116,9 +118,12 @@ export function paneRows(
   { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
 ) {
   const DesktopSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-  /** The bar at a new row's left edge, which fades once its tab is shown, or null for a row not new. */
-  const newBar = (row: Row, top = 0) => {
-    const newRow = paneState.newRows.get(row.id)
+  /**
+   * The bar at a new row's left edge, which fades once its tab is shown, or null for a row not new. `top` lines it up
+   * with the title, and on a selected row the terminal fades it toward the selection's color.
+   */
+  const newBar = (row: Row, { top = 0, isSelected = false }: { top?: number; isSelected?: boolean } = {}) => {
+    const newRow = newRowIn(paneState.newRows, row.id, shownTab)
     if (DesktopSvg && newRow)
       return (
         <Box key={`new-${row.id}`} position="absolute" top={0} left={0} marginTop={top}>
@@ -132,9 +137,10 @@ export function paneRows(
       )
     const share = steppedShare(newRow, now)
     if (look !== 'terminal' || share === 0) return null
+    const under = isSelected && pal.selection ? pal.selection : pal.under
     return (
-      <Box key={`new-${row.id}`} position="absolute" top={0} left={0} width={1}>
-        <Text color={pal.under ? fadedOver(pal.key, pal.under, share) : pal.key}>{ROW_BAR}</Text>
+      <Box key={`new-${row.id}`} position="absolute" top={0} left={0} width={1} marginTop={top}>
+        <Text color={under ? fadedOver(pal.key, under, share) : pal.key}>{ROW_BAR}</Text>
       </Box>
     )
   }
@@ -344,7 +350,7 @@ export function paneRows(
               keysBlock,
             ],
           })}
-          {newBar(row, selectedGapY)}
+          {newBar(row, { top: selectedGapY })}
         </Box>
       )
 
@@ -421,7 +427,9 @@ export function paneRows(
           </Box>
         ) : null}
         {isSelected ? branch(tree, blankLine, TREE_LINE_AT, pal.selectionLine ?? pal.line) : branch(tree, 0)}
-        {isCursorMarked && !pal.selection ? null : newBar(row)}
+        {isCursorMarked && !pal.selection
+          ? null
+          : newBar(row, { top: isSelected ? space.rowPad : 0, isSelected: isSelected || isCursorMarked })}
         {isCursorMarked ? (
           <Box
             key={settledScrollKey(`view-${row.id}`, settledLayout)}

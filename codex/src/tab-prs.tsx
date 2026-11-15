@@ -337,7 +337,7 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
         ...(b.pr.ref === othersRef
           ? [
               <section key="other-prs" class="other-prs">
-                <div class="group-title muted">{OTHER_PRS_TEXT}</div>
+                <div class="group-title unmarked muted">{OTHER_PRS_TEXT}</div>
               </section>,
             ]
           : []),
@@ -345,7 +345,7 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
       ])}
       {v.prs.olderText ? (
         <section>
-          <div class="group-title muted">{v.prs.olderText}</div>
+          <div class="group-title unmarked muted">{v.prs.olderText}</div>
         </section>
       ) : null}
     </main>

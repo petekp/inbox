@@ -1,6 +1,6 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
-import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS, newRowShare } from '../../hooks/arrivals'
+import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS, newRowIn, newRowShare } from '../../hooks/arrivals'
 import type { NewRow, NewRows } from '../../hooks/arrivals'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import type { RowBlock } from './blocks'
@@ -36,7 +36,7 @@ export function newRowsNextAt(rows: NewRows, now: number): number | null {
  * left until then, as a timed button's fill does, while the look draws each step.
  */
 export function newBarEls(r: RowBlock, p: Paint): Element[] {
-  const row = p.newRows.get(r.id)
+  const row = newRowIn(p.newRows, r.id, p.tab)
   const at = row ? nextStepAt(row, p.now) : null
   if (!row || at === null) return []
   const bar = barEl(r, `new ${r.id}`).bg(p.t.ansi4).opacity(newRowShare(row, at))

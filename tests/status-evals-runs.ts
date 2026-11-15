@@ -253,6 +253,15 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'one-task-plan': [
     'HEAD: Export tooltip | Adding a formats tooltip to the Export button\nNEW: working | Export tooltip | shows the formats on hover',
   ],
+  'children-finished': [
+    'SET: s1 | working | PDF works, merge left\nSET: s2 | waits-on-other | waits on sync engine',
+    'DONE: s1 | PDF export merged\nSET: s3 | working | retry queue done, unchecked',
+    'NO CHANGE',
+  ],
+  'fix-through-merge': [
+    'SET: s1 | working | fix reviewed, merge left\nSET: s2 | working | toggle works, merge left',
+    'DONE: s1 | fix merged\nNEW: working | 2.5 beta | building with the share sheet fix',
+  ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
   ],
@@ -312,6 +321,24 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'RETIRE: 2.5 is not going to the store',
       'HEAD: Share sheet hang | Fixing the share sheet hang on iPad',
       'SET: s5 | working | waits on a thumbnail on iPad',
+    ].join('\n'),
+  ],
+}
+
+/** A second right run of a replay whose step allows two right answers, as a recorded model wrote it. */
+export const OTHER_GOOD_RUNS: Record<string, string[]> = {
+  'milestone-dropped': [
+    [
+      'SET: s5 | queued | own setting, not started',
+      'SET: s2 | queued | waits for store release',
+      'SET: s3 | queued | waits for store release',
+      'GOAL: Notes 2.5 web beta out | working Sync fixed; queued Release notes; queued Beta published',
+      'SERVES: s1 | Sync fixed',
+      'SERVES: s2 | -',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
+      'SERVES: s5 | -',
+      'SERVES: s6 | Release notes',
     ].join('\n'),
   ],
 }

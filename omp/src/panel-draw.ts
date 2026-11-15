@@ -4,7 +4,7 @@ import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
-import { steppedShare } from '../../hooks/arrivals'
+import { newRowIn, steppedShare } from '../../hooks/arrivals'
 import { HELD_MARK, ROW_BAR, UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
@@ -152,7 +152,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : ''
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
-  const newShare = steppedShare(ui.newRows.get(line.id), now)
+  const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now)
   const bar = line.settled?.bar ?? null
   const edge = bar
     ? bar === 'muted'

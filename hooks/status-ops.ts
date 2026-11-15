@@ -188,6 +188,7 @@ export function applyOps(
   const markNamed = (m: Milestone | null, line: number) => {
     if (m) named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity))
   }
+  const servesLines = ops.flatMap(op => (op.kind === 'serves' ? [op] : []))
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt)
     .map((op, n) => ({ op, n }))
     .sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
@@ -199,7 +200,7 @@ export function applyOps(
       continue
     }
     if (op.kind === 'goal' || op.kind === 'retire' || op.kind === 'milestone' || op.kind === 'serves') {
-      o = applyGoalOp(o, op, now, find, last ?? o)
+      o = applyGoalOp(o, op, now, find, last ?? o, servesLines)
       if (op.kind === 'milestone') markNamed(findMilestone(o, op.name), n)
       if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n)
     } else if (op.kind === 'head') {

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T20:08:00.158Z. 237832 characters follow.
+// Built at 2026-11-15T23:42:22.535Z. 244497 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -14,9 +14,11 @@ import {
   props,
   readTextFile,
   run,
+  spaces,
   terminals,
   theme,
   watchFolder,
+  window as herdrWindow,
   writeTextFile
 } from "herdr";
 
@@ -141,6 +143,7 @@ var EMPTY_SESSION_STATUS = {
   lastLookAt: null,
   missedInLastLook: {},
   look: null,
+  lastCallReadAt: null,
   goal: null,
   removedGoals: [],
   goalRemoved: null,
@@ -244,6 +247,13 @@ function clockTime(ms) {
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
+function isFinishedAfter(c, at) {
+  return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
+}
+function isChildShown(c, now, lastLookAt) {
+  return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
+}
+var LOOK_MIN_MS = 5000;
 function subjectSeenAt(o, id) {
   return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
 }
@@ -425,7 +435,8 @@ function goalRefusedOf(saved) {
   const r = saved;
   const line = REFUSAL_LINES.find((x) => x === r?.line);
   const why = REFUSAL_WHYS.find((x) => x === r?.why);
-  return line && why ? { line, why } : null;
+  const unplaced = Array.isArray(r?.unplaced) ? r.unplaced.filter((id) => typeof id === "string") : [];
+  return line && why ? { line, why, ...unplaced.length > 0 ? { unplaced } : {} } : null;
 }
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -653,6 +664,7 @@ function upgradeStatus(saved) {
     lastLookAt: time2(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
+    lastCallReadAt: time2(o.lastCallReadAt),
     ...goal
   };
 }
@@ -760,6 +772,11 @@ function questionNumbers(ledger, promptTurn) {
   return numbers;
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
+
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
 
 // ../hooks/last-actions.ts
 function isAwaitingReply(last, turns) {
@@ -990,11 +1007,6 @@ function threadWhere(t, path = t.path) {
 function took(ms) {
   const secs = Math.max(0, Math.round(ms / 1000));
   return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/open-targets.ts
@@ -1391,9 +1403,6 @@ function countsByMark(folded) {
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
 }
-function isFinishedUnseen(c, lastLookAt) {
-  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
-}
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
@@ -1406,8 +1415,6 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 function childStall(c) {
-  if (c.delegateState === "finished")
-    return { text: "finished", tone: "done" };
   if (c.delegateState === "blocked")
     return { text: "waiting", tone: "needsYou" };
   return null;
@@ -1637,7 +1644,7 @@ function statusPage(s, now) {
   const hasMilestones = milestoneIds.size > 0;
   const isUnneeded = (x) => servedBy(x) === "none";
   const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
   const needed = subjects.filter((x) => !isUnneeded(x));
@@ -1762,12 +1769,27 @@ function statusPage(s, now) {
     error: s.overviewFailure ? STATUS_FAILED : null
   };
 }
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
+}
+function statusListRows(page) {
+  return [...(page.goal?.milestones ?? []).flatMap((m) => m.foldId === null ? m.rows : []), ...page.rows];
+}
 
 // ../hooks/timing.ts
 var SETTLED_MS = 5120;
 var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
+var PR_READ_WAIT_MS = 60000;
+function timedChangeAt(lastActions, now) {
+  const ends = Object.entries(lastActions).flatMap(([id, l]) => {
+    if (l.action === "compare")
+      return [l.at + COMPARE_LIMIT_MS];
+    return l.kind === "handoff" && isPrRowId(id) && l.repliedAt !== undefined ? [l.repliedAt + PR_READ_WAIT_MS] : [];
+  }).filter((at) => at > now);
+  return ends.length > 0 ? Math.min(...ends) : null;
+}
 function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
@@ -2041,6 +2063,9 @@ function pressUnderWaySince(f) {
     return f.at;
   return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
 }
+function prTabHoldSince(f) {
+  return f?.is === "working" && f.isHandoff === true ? null : pressUnderWaySince(f);
+}
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
@@ -2059,8 +2084,15 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isUnreported = last.action === "compare" && !(reportedAt !== undefined && reportedAt >= last.at);
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
-    return { is: "working", label: working, at: last.at };
+  const isHandoffWorking = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === undefined;
+  const isWorking = last.kind === "talk" || isHandoffWorking;
+  if (isWorking && working && (isAwaiting || isUnreported && !isPastLimit))
+    return {
+      is: "working",
+      label: working,
+      at: last.at,
+      ...last.kind === "handoff" ? { isHandoff: true } : {}
+    };
   if (pending === "sending")
     return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
   if (isUnreported)
@@ -2095,7 +2127,12 @@ var WORKING_LABELS = {
   discuss: "Discussing…",
   "thread-discuss": "Discussing…",
   "thread-draft": "Drafting a reply…",
-  "pr-rank-again": "Ranking…"
+  "pr-rank-again": "Ranking…",
+  "pr-conflicts": "Resolving conflicts…",
+  "pr-address-all": "Addressing…",
+  "pr-merge": "Merging…",
+  "thread-address": "Addressing…",
+  "check-fix": "Fixing…"
 };
 var DONE_LABELS = {
   address: () => "Handed off",
@@ -2263,7 +2300,10 @@ var PR_FIX_LABELS = {
 };
 var PR_READ_FIRST_LABELS = {
   ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL
+  "check-rerun": RERUN_LABEL,
+  "pr-address-all": "Address all",
+  "pr-merge": "Merge",
+  "thread-address": "Address"
 };
 function isPrReadFirstPress(p) {
   return p.action === "pr-conflicts" || p.action === "check-fix" || p.action === "check-rerun";
@@ -2317,10 +2357,19 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
-function lastPressOf(presses, rowId) {
+function isViewBeforeReply(last, fetchedAt) {
+  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt;
+}
+function isAwaitingFreshRead(last, fetchedAt, now) {
+  return isViewBeforeReply(last, fetchedAt) && now - last.repliedAt < PR_READ_WAIT_MS;
+}
+function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+  const pressing = pressOutAction(last, feedback);
+  const out = outAction(last, feedback);
+  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt, presses.now);
+  return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out };
 }
 function again(row, action, label) {
   return isAgain(row.last, action, row.pressing === action) ? `${label} again` : label;
@@ -2710,7 +2759,11 @@ function showNewRows(rows, tab, now) {
   }
   return next;
 }
-function newRowShare(row, now, isReduced = false) {
+function newRowIn(rows, id, tab) {
+  const row = rows.get(id);
+  return row?.tab === tab ? row : undefined;
+}
+function newRowShare(row, now) {
   if (!row)
     return 0;
   if (row.shownAt === null)
@@ -2718,7 +2771,7 @@ function newRowShare(row, now, isReduced = false) {
   const p = (now - row.shownAt - NEW_HOLD_MS) / NEW_FADE_MS;
   if (p >= 1)
     return 0;
-  if (isReduced || p <= 0)
+  if (p <= 0)
     return 1;
   return (1 + Math.cos(Math.PI * p)) / 2;
 }
@@ -2828,7 +2881,7 @@ function prOrderActions(row) {
 
 // ../hooks/pr-tab.ts
 function threadActions(pr, t, presses) {
-  const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt);
   const on = { ref: pr.ref, thread: t.id };
   return withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
@@ -2865,7 +2918,7 @@ function threadActions(pr, t, presses) {
   ]);
 }
 function checkActions(pr, c, presses) {
-  const row = lastPressOf(presses, prCheckId(pr, c));
+  const row = lastPressOf(presses, prCheckId(pr, c), pr.fetchedAt);
   const on = { ref: pr.ref, check: checkKey(c) };
   const isCancelled = c.bucket === "cancelled";
   const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, prCheckId(pr, o)).out === "check-rerun");
@@ -2901,7 +2954,7 @@ function checkActions(pr, c, presses) {
   return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
 }
 function prBlockActions(pr, isThreadSent, branchRef, presses) {
-  const row = lastPressOf(presses, prMarkId(pr.ref));
+  const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt);
   const { status } = readiness(pr, isThreadSent);
   const waitingOn = threadsOnYou(pr, isThreadSent).length;
   const moves = [
@@ -3455,7 +3508,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   };
 }
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
-  const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null));
+  const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, undefined, s.presence, now)) : null));
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
@@ -4297,6 +4350,17 @@ function readSession(text) {
     isFetchingPrs: file.isFetchingPrs === true
   };
 }
+var TORN_RETRY_MS = 30;
+var TORN_RETRIES = 5;
+async function readSessionFile(read, path, sleep) {
+  for (let n = 0;; n++) {
+    const text = await read(path).catch((e) => e);
+    const got = typeof text === "string" || text === null ? readSession(text) : { is: "refused", reason: String(text) };
+    if (got.is !== "torn" || n >= TORN_RETRIES)
+      return got;
+    await sleep(TORN_RETRY_MS);
+  }
+}
 
 // src/follow.ts
 function shownOf(where, address) {
@@ -4419,16 +4483,21 @@ function withClosedSelection(ui, last, now) {
   const next = rowAfterClose(now, id);
   return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next);
 }
-function withArrivals(ui, last, now, at) {
+function withArrivals(ui, last, now) {
   const added = now.filter((r) => !last.some((l) => l.id === r.id)).map((r) => r.id);
   const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added);
-  const shown = added.length === 0 ? ui : { ...ui, newRows: showNewRows(addNewRows(ui.newRows, { [ui.tab]: added }), ui.tab, at) };
-  return id === null ? shown : withSelected(shown, id);
+  const recorded = added.length === 0 ? ui : { ...ui, newRows: addNewRows(ui.newRows, { [ui.tab]: added }) };
+  return id === null ? recorded : withSelected(recorded, id);
 }
-function withDrawnRows(ui, last, rows, at) {
-  if (rows === null || last.rows === null || last.tab !== ui.tab)
-    return ui;
-  return withArrivals(withClosedSelection(ui, last.rows, rows), last.rows, rows, at);
+function withShownNewRows(ui, at) {
+  const newRows = showNewRows(ui.newRows, ui.tab, at);
+  const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
+  return isSame ? ui : { ...ui, newRows };
+}
+function withDrawnRows(ui, last, rows, at, isTabShown) {
+  const lastRows = last.tab === ui.tab ? last.rows : null;
+  const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
+  return isTabShown ? withShownNewRows(arrived, at) : arrived;
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
@@ -4441,6 +4510,18 @@ function withoutConfirmed(drafts, confirmed, typing, pending) {
     drafts: Object.fromEntries(Object.entries(drafts).filter(([id, d]) => !isSentDraft(id, d))),
     waiting: current.filter((c) => c.rowId === typing)
   };
+}
+var toggled = (list, x) => list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
+function withChange(ui, c) {
+  if ("showOptions" in c)
+    return { ...ui, optionsShown: toggled(ui.optionsShown, c.showOptions) };
+  if ("closedFold" in c)
+    return { ...ui, unfolded: toggled(ui.unfolded, c.closedFold) };
+  if ("earlier" in c)
+    return { ...ui, closedAll: [...ui.closedAll, c.earlier] };
+  if ("toggleFold" in c)
+    return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) };
+  return withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
 }
 
 // src/press-file.ts
@@ -5093,7 +5174,7 @@ function newRowsNextAt(rows, now) {
   return at.length > 0 ? Math.min(...at) : null;
 }
 function newBarEls(r, p) {
-  const row = p.newRows.get(r.id);
+  const row = newRowIn(p.newRows, r.id, p.tab);
   const at = row ? nextStepAt(row, p.now) : null;
   if (!row || at === null)
     return [];
@@ -5204,7 +5285,7 @@ function headingEl(b, p, isInert) {
   const buttons = h_flex2().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
     return h_flex2().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(statusPartEl(b.text).text_color(t.muted)).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
-  return h_flex2().pl(EDGE).pr(EDGE).items_center().child(markEl(b.mark, t)).child(div5().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div5().text_color(t.muted).child(`${SEP}${b.count}`))).child(div5().flex_1()).child(buttons);
+  return h_flex2().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div5().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div5().text_color(t.muted).child(`${SEP}${b.count}`))).child(div5().flex_1()).child(buttons);
 }
 function emptyEl(b, p, isInert) {
   const { t } = p;
@@ -5598,7 +5679,8 @@ function screenOf(followed, read, ui, o) {
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
     waits: rowWaits(screen, ui.tab),
     foldAt: nextFoldAt(settled, placing),
-    undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now)
+    undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now),
+    timedChangeAt: timedChangeAt(view.lastActions, o.now)
   };
 }
 function nextUndoPlaceEnd(settled, now) {
@@ -5606,12 +5688,91 @@ function nextUndoPlaceEnd(settled, now) {
   return ends.length > 0 ? Math.min(...ends) : null;
 }
 
+// src/status-look.ts
+var LOOK_TICK_MS = 1000;
+var LOOK_GAP_MS = 3 * LOOK_TICK_MS;
+function isPaneShown(paneId, panes, spaces, window2) {
+  const own = panes.find((p) => p.pane === paneId);
+  const tab = spaces.find((s) => s.active)?.tabs.find((t) => t.id === own?.tab);
+  return own !== undefined && window2.active && tab?.active === true && (!tab.zoomed || own.zoomed);
+}
+function statusPlaced(blocks, heightOf, page, room) {
+  const subjects = new Map(statusListRows(page).map((r) => [r.id, seenSubjectIds(r)]));
+  const rows = [];
+  let y = 0;
+  for (const { block, above } of spacesOf(blocks, () => false)) {
+    const height = heightOf(block.id);
+    if (height === undefined)
+      return null;
+    y += above;
+    const ids = subjects.get(block.id) ?? [];
+    if (ids.length > 0)
+      rows.push({ top: y + padOf(block), subjects: ids });
+    y += height;
+  }
+  return { rows, height: y, room };
+}
+function surelyShown({ rows, height, room }) {
+  const scrollEnd = Math.max(0, height - room);
+  return rows.filter((r) => r.top >= scrollEnd && r.top + LINE_HEIGHT <= room).flatMap((r) => r.subjects);
+}
+function statusDrawn(sessionId, read, view, blocks, heights, room) {
+  if (sessionId === null || read === null)
+    return null;
+  const placed = room === null ? null : statusPlaced(blocks, (k) => heights.get(k), view.statusPage, room);
+  return { sessionId, terminal: read.envelope.terminal, writtenAt: read.envelope.writtenAt, placed };
+}
+
+class StatusLook {
+  drawn = null;
+  restsFrom = 0;
+  run = null;
+  drew(drawn, now) {
+    const isSamePlaces = JSON.stringify(drawn?.placed ?? null) === JSON.stringify(this.drawn?.placed ?? null);
+    if (!isSamePlaces)
+      this.restsFrom = now;
+    this.drawn = drawn;
+  }
+  check(isPaneShown, now) {
+    const d = isPaneShown ? this.drawn : null;
+    const run = this.run;
+    const goesOn = d !== null && run?.sessionId === d.sessionId && now - run.lastShownAt <= LOOK_GAP_MS;
+    const ended = run && !goesOn ? lookOf(run) : null;
+    if (!goesOn)
+      this.run = d && {
+        sessionId: d.sessionId,
+        terminal: d.terminal,
+        startedAt: now,
+        lastShownAt: now,
+        drawnWrittenAt: d.writtenAt,
+        shown: {}
+      };
+    if (this.run && d) {
+      this.run.lastShownAt = now;
+      this.run.drawnWrittenAt = d.writtenAt;
+      const isAtRest = d.placed !== null && now - this.restsFrom >= HEIGHT_SETTLE_MS;
+      const shownAt = Math.min(now, d.writtenAt);
+      for (const id of isAtRest && d.placed ? surelyShown(d.placed) : [])
+        this.run.shown[id] = shownAt;
+    }
+    return ended;
+  }
+}
+function lookOf({ sessionId, terminal, startedAt, lastShownAt, drawnWrittenAt, shown }) {
+  if (lastShownAt - startedAt < LOOK_MIN_MS)
+    return null;
+  return { sessionId, terminal, look: { startedAt, endedAt: lastShownAt, shown, drawnWrittenAt } };
+}
+async function writeLook(io, appHome, ended) {
+  const id = newPressId(ended.look.endedAt, io.random());
+  const file = { format: HERDR_FORMAT, id, look: ended.look };
+  if (await io.write(pressPath(appHome, ended.sessionId, id), JSON.stringify(file)) === null)
+    await io.wake(ended.terminal, id);
+}
+
 // src/main.ts
 var REREAD_MS = 1e4;
 var AGE_TICK_MS = 60000;
-var TORN_RETRY_MS = 30;
-var TORN_RETRIES = 5;
-var toggled = (list, x) => list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
 var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
 
 class Inbox extends View {
@@ -5644,6 +5805,7 @@ class Inbox extends View {
   focus = null;
   outTimer = null;
   drawTimer = null;
+  look = new StatusLook;
   init(_props, cx) {
     this.focus = cx.focus_handle();
     cx.spawn(async (cx) => {
@@ -5657,6 +5819,7 @@ class Inbox extends View {
     });
     cx.timer.every(REREAD_MS, (cx) => this.sessionId && this.load(this.sessionId, cx));
     cx.timer.every(AGE_TICK_MS, (cx) => cx.notify());
+    cx.timer.every(LOOK_TICK_MS, (cx) => cx.spawn(() => this.checkLook()));
   }
   holds(now) {
     this.discarded = keptDiscards(this.discarded, this.shownSince);
@@ -5670,21 +5833,22 @@ class Inbox extends View {
   }
   load(sessionId, cx) {
     cx.spawn(async (cx) => {
-      for (let n = 0;; n++) {
-        const text = await readTextFile(publishedSessionPath(appHome(), sessionId)).catch((e) => e);
-        const read = typeof text === "string" || text === null ? readSession(text) : { is: "refused", reason: String(text) };
-        if (read.is === "torn" && n < TORN_RETRIES) {
-          await cx.sleep(TORN_RETRY_MS);
-          continue;
-        }
-        if (this.sessionId !== sessionId)
-          return;
-        this.read = read;
-        await this.settle(cx);
-        cx.notify();
+      const read = await readSessionFile(readTextFile, publishedSessionPath(appHome(), sessionId), (ms) => cx.sleep(ms));
+      if (this.sessionId !== sessionId)
         return;
-      }
+      this.read = read;
+      await this.settle(cx);
+      cx.notify();
     });
+  }
+  async checkLook(isClosing = false) {
+    const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow());
+    const ended = this.look.check(isShown, Date.now());
+    if (ended)
+      await writeLook(queueIo, appHome(), ended);
+  }
+  close() {
+    return this.checkLook(true);
   }
   async settle(cx) {
     if (this.read?.is !== "read" || !this.queue.isAwaiting())
@@ -5736,19 +5900,10 @@ class Inbox extends View {
       this.load(sessionId, cx);
   }
   change(c) {
-    const ui = this.ui;
-    if ("showOptions" in c)
-      ui.optionsShown = toggled(ui.optionsShown, c.showOptions);
-    else if ("closedFold" in c)
-      ui.unfolded = toggled(ui.unfolded, c.closedFold);
-    else if ("earlier" in c)
-      ui.closedAll = [...ui.closedAll, c.earlier];
-    else if ("toggleFold" in c)
-      ui.statusUnfolded = toggled(ui.statusUnfolded, c.toggleFold);
-    else if ("showAsk" in c)
-      this.ui = withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
-    else
+    if ("toggleHelp" in c)
       this.isHelpShown = !this.isHelpShown;
+    else
+      this.ui = withChange(this.ui, c);
     this.closeStaleField();
   }
   closeStaleField() {
@@ -5890,7 +6045,7 @@ class Inbox extends View {
       queue: this.queue
     });
     let screen = screenFor(this.ui);
-    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === "inbox" ? screen.waits : null, now);
+    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === "inbox" ? screen.waits : null, now, !this.isHelpShown);
     if (ui !== this.ui)
       screen = screenFor(this.ui = ui);
     this.lastWaits = { tab: this.ui.tab, rows: screen.is === "inbox" ? screen.waits : null };
@@ -5931,6 +6086,7 @@ class Inbox extends View {
       },
       now,
       newRows: this.ui.newRows,
+      tab: this.ui.tab,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
       isNarrow: this.isNarrow,
@@ -5940,6 +6096,7 @@ class Inbox extends View {
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
+      this.look.drew(null, now);
       return root.child(messageEl(screen.message, t));
     }
     const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
@@ -5950,12 +6107,15 @@ class Inbox extends View {
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
+    const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
+    const room = moved.nextAt === null ? this.listRoom : null;
+    this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     const isStarting = [...moved.motion.values()].some((m) => m.isStart);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
     const nextFrame = isStarting ? now + NEXT_FRAME_MS : null;
     const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, now)]);
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, timed].filter((at) => at !== null);
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;

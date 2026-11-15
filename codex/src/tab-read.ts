@@ -29,7 +29,7 @@ export function applyView(next: View, seq: number) {
   const isOpening = LISTED_TABS.every(t => tabState.rowsSeen[t.id] === undefined)
   const rows = newRows(tabState.rowsSeen, next, next.isFetchingPrs)
   tabState.rowsSeen = rows.seen
-  tabState.newRows = addNewRows(tabState.newRows, rows.added)
+  if (document.visibilityState === 'visible') tabState.newRows = addNewRows(tabState.newRows, rows.added)
   const added = [...rows.added.needsYou, ...rows.added.findings]
   for (const id of added) entering.add(id)
   for (const { id: t } of LISTED_TABS) {

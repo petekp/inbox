@@ -2,7 +2,7 @@ import { linkDialogs } from './dialogs'
 import { closedAt, pruneClosed } from './ledger-close'
 import type { Host } from './model-text'
 import { applyPrPress, withFinishedPrsSettled } from './pr-tab'
-import { isPrPress, pressRowId } from './pr-press'
+import { isPrPress, lastPressOf, pressRowId } from './pr-press'
 import { isViewKept } from './pr-views'
 import { itemPrSteps, tabPrs } from './pr-fetch'
 import { withOrderStatuses } from './pr-order'
@@ -30,11 +30,17 @@ type DrawnWith = { settleWindowMs: number; holds: Holds }
  * A press of an action whose button the look draws as out, since its earlier press is still out. It changes nothing,
  * so a second press sends nothing.
  */
-function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number, drawn: DrawnWith): boolean {
+export function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number, drawn: DrawnWith): boolean {
   const rowId = pressRowId(p)
   const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds)
   const row = allRows(view).find(r => r.id === rowId)
   const last = view.lastActions[rowId]
+  if (isPrPress(p)) {
+    const fetchedAt = 'ref' in p ? s.prViews.views[p.ref]?.fetchedAt : undefined
+    const presses = { lastActions: view.lastActions, turns: s.presence, now: at }
+
+    return lastPressOf(presses, rowId, fetchedAt).out === actionId(p)
+  }
   const state: RowState = row?.state ?? { is: 'open' }
   const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt)
 

@@ -103,7 +103,7 @@ export const GOAL_RULES: Rule[] = [
     id: 'milestones-true',
     reads: 'facts',
     property: 15,
-    text: "Each of the goal's milestones in the facts has a milestone with a status its state allows, and a goal has them once a call has read it.",
+    text: "Each of the goal's milestones in the facts has a milestone with a status its state allows, or none when it is dropped, and a goal has them once a call has read it.",
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       if (!o?.goal) return []
@@ -115,7 +115,7 @@ export const GOAL_RULES: Rule[] = [
       const standsFor = (x: Milestone) => facts.filter(m => milestonesFor(m, result.facts, o).some(y => y.id === x.id))
       return facts.flatMap(m => {
         const saved = milestonesFor(m, result.facts, o)
-        if (saved.length === 0) return [`no milestone for ${m.name}`]
+        if (saved.length === 0) return m.state === 'dropped' ? [] : [`no milestone for ${m.name}`]
         return saved
           .filter(x => !rightForAll(standsFor(x)).includes(x.status))
           .map(x => `"${x.name}" is ${x.status}, and ${m.name} is ${m.state}`)

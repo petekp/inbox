@@ -96,6 +96,8 @@ export type Line = {
   isFolded: boolean
   /** A row the person collapsed: drawn as its one line, even while selected, until they expand it. */
   isCollapsed?: boolean
+  /** A PR's own line, which no look marks with a new row's bar: its threads and checks get the bar. */
+  isPrHead?: boolean
   /**
    * The PRs tab's own buttons, drawn on one line after the line's title, if any, with their press status after them,
    * or under them when it does not fit. Their keys work from any row of the tab.

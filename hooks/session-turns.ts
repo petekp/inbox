@@ -14,6 +14,7 @@ import { withArrival, withUnconfirmed } from './press-reducer'
 import { prRefs } from './prs'
 import type { Exchange, Ledger, Press, Session } from '../types'
 import { NO_TURN } from './session-files'
+import { repliedAtTurnEnd } from './last-actions'
 
 /**
  * A resumed conversation still holds the guidance from
@@ -129,11 +130,19 @@ export function turnStarted<S extends Session>(s: S, at: number | null): S {
   return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } }
 }
 
-/** Marks the main agent's turn as ended at `at`, or at a time the host did not say. */
-export function turnEnded<S extends Session>(s: S, at: number | null): S {
+/**
+ * Marks the main agent's turn as ended at `at`, or at a time the host did not say. `clock` is the host's clock now,
+ * which times a hand-off press's end when the host gave no time.
+ */
+export function turnEnded<S extends Session>(s: S, at: number | null, clock?: number): S {
   const lastReplyAt = at ?? s.presence.lastReplyAt
+  const endedAt = at ?? clock
 
-  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } }
+  return {
+    ...s,
+    lastActions: endedAt === undefined ? s.lastActions : repliedAtTurnEnd(s.lastActions, s.presence, endedAt),
+    presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt },
+  }
 }
 
 /**
@@ -148,8 +157,8 @@ export function messageTyped<S extends Session>(s: S, at: number): S {
  * A reload or a quit can cut off a turn's end, so at load no turn runs. A turn the agent still runs sets it again at
  * its next start.
  */
-export function cutOffTurn<S extends Session>(s: S): S {
-  return s.presence.isTurnRunning ? turnEnded(s, null) : s
+export function cutOffTurn<S extends Session>(s: S, now: number): S {
+  return s.presence.isTurnRunning ? turnEnded(s, null, now) : s
 }
 
 /** The session with the folder it started in, kept from the first time a host names it, and the branch it is on now. */

@@ -13,11 +13,11 @@ import {
   withChild,
 } from '../hooks/status-children'
 import { delegatesSettled, delegatesStarted, nameInWords } from '../hooks/children'
-import { delegatesInHerdr, herdrTarget } from '../hooks/herdr'
+import { delegatesInHerdr } from '../hooks/herdr'
 import type { HerdrAgent, HerdrStatus } from '../hooks/herdr'
 import type { Run } from '../hooks/gh'
 import { CHILD_ROWS } from '../hooks/status-page-parts'
-import type { SessionStatus } from '../types'
+import type { Child, SessionStatus } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
 test('the call reads open subjects with ids and how long ago each changed, finished ones by name, and running children with their links', () => {
@@ -33,8 +33,35 @@ test('the call reads open subjects with ids and how long ago each changed, finis
     finished: 's2 | done | Docs',
   })
   expect(subjectsText(null, 0).open).toBe('(none yet)')
-  expect(runningText(closed, 300)).toBe('c1 | subagent | npm test | -')
+  expect(runningText(closed, 300)).toBe('c1 | subagent | npm test | - | running')
   expect(runningText(childEnded(closed, 't1', 250), 300)).toBe('')
+})
+
+test('the call reads a finished delegate until an applied call has read it, whether or not the person looked, while its subject is open', () => {
+  const o = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Docs | being written', 100)!
+  const docs: Child = {
+    id: 'c1',
+    ref: 'herdr:docs',
+    kind: 'delegate',
+    name: 'write the docs',
+    subjectId: 's2',
+    startedAt: 110,
+    endedAt: 200,
+    lastActivityAt: 200,
+    delegateState: 'finished',
+  }
+  const withDocs = (c: Child, readAt: number | null, lookAt: number | null = null): SessionStatus => ({
+    ...o,
+    lastCallReadAt: readAt,
+    lastLookAt: lookAt,
+    children: [c],
+  })
+
+  expect(runningText(withDocs(docs, 150, 250), 300)).toBe('c1 | delegate | write the docs | s2 | finished')
+  expect(runningText(withDocs(docs, 250), 300)).toBe('')
+  expect(runningText(after(withDocs(docs, null), 'DONE: s2 | written', 260), 300)).toBe('')
+  const blocked = withDocs({ ...docs, endedAt: null, delegateState: 'blocked' }, 250)
+  expect(runningText(blocked, 300)).toBe('c1 | delegate | write the docs | s2 | blocked')
 })
 
 test('a child the host reports again keeps its id and link, and old ended children are let go', () => {
@@ -159,7 +186,7 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   const finished = delegatesSettled(blocked, herdr('done'), 4 * 60 * MIN)
   expect(page(finished, 4 * 60 * MIN).rows).toMatchObject([
     { kind: 'subject', isRunning: false },
-    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' } },
+    { kind: 'child', mark: '✓', tone: 'done', stall: null },
   ])
   expect(isSubjectSeen(finished!, finished!.subjects[0]!)).toBe(false)
   const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS, 'all')
@@ -376,7 +403,12 @@ const seenIds = (o: SessionStatus) => o.subjects.filter(x => isSubjectSeen(o, x)
 
 test('a reported look counts as seen the subjects it showed after they changed, and keeps the look this host has open', () => {
   const open = lookStarted(TWO(), 15 * MIN)!
-  const reported = lookReported(open, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 20 * MIN, s2: 5 * MIN } })!
+  const reported = lookReported(open, {
+    startedAt: 20 * MIN,
+    endedAt: 21 * MIN,
+    shown: { s1: 20 * MIN, s2: 5 * MIN },
+    drawnWrittenAt: 21 * MIN,
+  })!
 
   expect(seenIds(reported)).toEqual(['s1'])
   expect(reported.lastLookAt).toBe(21 * MIN)
@@ -384,7 +416,12 @@ test('a reported look counts as seen the subjects it showed after they changed, 
 })
 
 test('a reported look shorter than five seconds counts nothing', () => {
-  const short = { startedAt: 20 * MIN, endedAt: 20 * MIN + LOOK_MIN_MS - 1, shown: { s1: 20 * MIN } }
+  const short = {
+    startedAt: 20 * MIN,
+    endedAt: 20 * MIN + LOOK_MIN_MS - 1,
+    shown: { s1: 20 * MIN },
+    drawnWrittenAt: 21 * MIN,
+  }
 
   expect(seenIds(lookReported(TWO(), short)!)).toEqual([])
   expect(lookReported(TWO(), { ...short, endedAt: 20 * MIN + LOOK_MIN_MS })!.lastLookAt).toBe(20 * MIN + LOOK_MIN_MS)
@@ -392,68 +429,36 @@ test('a reported look shorter than five seconds counts nothing', () => {
 
 test('a reported look that ended before the last look counts the subjects it showed, and leaves the last look when it was', () => {
   const missed = lookEnded(lookStarted(TWO(), 30 * MIN), 31 * MIN, {})!
-  const late = lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 20 * MIN } })!
+  const late = lookReported(missed, {
+    startedAt: 20 * MIN,
+    endedAt: 21 * MIN,
+    shown: { s1: 20 * MIN },
+    drawnWrittenAt: 21 * MIN,
+  })!
 
   expect(seenIds(missed)).toEqual([])
   expect(seenIds(late)).toEqual(['s1'])
   expect(late.lastLookAt).toBe(31 * MIN)
-  expect(lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 5 * MIN } })).toBe(missed)
-})
-
-const HC_TARGET = herdrTarget({ HC_TERMINAL_ID: 't9', HOME: '/home/person' })
-const hcList = (terminals: object[]): Run => {
-  const stdout = JSON.stringify({ terminals })
-
-  return async argv =>
-    argv.join(' ') === 'hc ls --json' ? { code: 0, stdout, stderr: '' } : { code: 1, stdout: '', stderr: '' }
-}
-
-test('a terminal hc lists under this session starts a delegate row before the session ever sends to it, and a shell, another parent and a ready terminal start none', async () => {
-  const o: SessionStatus | null = after(null, 'NEW: working | Export | layout next', 10 * MIN)
-  const run = hcList([
-    { address: 't1', name: 'pdf-layout', parent: 't9', status: 'working' },
-    { address: 't2', parent: 't9', status: 'blocked' },
-    { address: 't3', name: 'fixer', parent: 't9', status: 'error' },
-    { address: 't4', name: 'shell', parent: 't9' },
-    { address: 't5', name: 'elsewhere', parent: 't8', status: 'working' },
-    { address: 't6', name: 'spare', parent: 't9', status: 'idle' },
-  ])
-  const agents = await delegatesInHerdr(o, run, HC_TARGET)
-  const started = delegatesSettled(o, agents!, 30 * MIN)
-
-  expect(started!.children.map(c => [c.ref, c.name, c.delegateState])).toEqual([
-    ['herdr:pdf-layout', 'pdf layout', 'working'],
-    ['herdr:t2', 't2', 'blocked'],
-    ['herdr:fixer', 'fixer', 'blocked'],
-  ])
-  expect(delegatesSettled(started, agents!, 31 * MIN)).toBe(started)
   expect(
-    page(started, 31 * MIN)
-      .rows.filter(r => r.kind === 'child')
-      .map(r => r.isRunning),
-  ).toEqual([true, false, false])
+    lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 5 * MIN }, drawnWrittenAt: 21 * MIN }),
+  ).toBe(missed)
 })
 
-test('a delegate listed under an hc terminal ends finished once hc shows it ready, and starts again when it works again', async () => {
-  const o: SessionStatus | null = after(null, 'NEW: working | Export | layout next', 10 * MIN)
-  const listed = (status: string) => hcList([{ address: 't1', name: 'pdf', parent: 't9', status }])
-  const at = async (x: SessionStatus | null, status: string, now: number) =>
-    delegatesSettled(x, (await delegatesInHerdr(x, listed(status), HC_TARGET))!, now)
+test('a reported look counts the Status only as it stood when the host wrote the last Status the look drew', () => {
+  const drewOld = { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 18 * MIN }, drawnWrittenAt: 18 * MIN }
+  const reported = lookReported(TWO(), drewOld)!
 
-  const working = await at(o, 'working', 30 * MIN)
-  const done = await at(working, 'done', 40 * MIN)
-  expect(done!.children.map(c => [c.endedAt !== null, c.delegateState])).toEqual([[true, 'finished']])
-  const again = await at(done, 'working', 50 * MIN)
-  expect(again!.children.map(c => [c.endedAt === null, c.delegateState])).toEqual([[true, 'working']])
-})
+  expect(seenIds(reported)).toEqual(['s1'])
+  expect(reported.lastLookAt).toBe(18 * MIN)
 
-test('inside a Herdr app terminal, nothing asks herdr, and hc is asked while the Status holds no delegate', async () => {
-  const asked: string[] = []
-  const run: Run = async argv => {
-    asked.push(argv.join(' '))
+  const missed = lookEnded(lookStarted(TWO(), 30 * MIN), 31 * MIN, {})!
+  const late = lookReported(missed, {
+    ...drewOld,
+    endedAt: 32 * MIN,
+    shown: { s1: 30 * MIN },
+    drawnWrittenAt: 30 * MIN,
+  })!
 
-    return { code: 0, stdout: JSON.stringify({ terminals: [] }), stderr: '' }
-  }
-  await delegatesInHerdr(null, run, HC_TARGET)
-  expect(asked).toEqual(['hc ls --json'])
+  expect(late.lastLookAt).toBe(31 * MIN)
+  expect(late.missedInLastLook.s1).toBe(30 * MIN)
 })

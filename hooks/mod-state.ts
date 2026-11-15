@@ -25,7 +25,7 @@ class PaneState {
   /** The ends of the Undos whose end work has yet to run. */
   undoEnds = new Set<number>()
   isUndoLoopRunning = false
-  compareRedrawAt: number | null = null
+  timedRedrawAt: number | null = null
   /** The person's latest run of input on the pane's list, which keeps a row due to fold in place. */
   listInput: ListInput | null = null
   foldRedrawAt: number | null = null

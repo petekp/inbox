@@ -15,6 +15,16 @@ export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: num
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
 }
 
+/** Whether `c` is a delegate that finished after `at`, or at any time when `at` is null. */
+function isFinishedAfter(c: Child, at: number | null): boolean {
+  return c.delegateState === 'finished' && c.endedAt !== null && (at === null || c.endedAt > at)
+}
+
+/** Whether the page draws a row for `c`: it runs, or it is a delegate that finished after the person last looked. */
+export function isChildShown(c: Child, now: number, lastLookAt: number | null): boolean {
+  return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt)
+}
+
 /** What a host reports about a child: everything but the id and the link, which the Status owns. A delegate's state is null until reported. */
 type ChildReport = Omit<Child, 'id' | 'subjectId' | 'delegateState'> & Partial<Pick<Child, 'delegateState'>>
 
@@ -104,11 +114,19 @@ export function asksText(o: SessionStatus | null, asks: readonly Pick<Item, 'id'
     .join(NL)
 }
 
-/** The running children as the call reads them. */
+/**
+ * The children as the call reads them: each running one, and each delegate that finished since the last call read the
+ * Status, while its subject is open. A finished delegate whose subject closed gives the call nothing to change.
+ */
 export function runningText(o: SessionStatus | null, now: number): string {
+  const isSubjectOpen = (id: string | null) => id === null || (o?.subjects.some(s => s.id === id && isOpen(s)) ?? false)
+  const isFinishNew = (c: Child) => isFinishedAfter(c, o?.lastCallReadAt ?? null) && isSubjectOpen(c.subjectId)
+  const state = (c: Child) =>
+    !isChildRunning(c, now) ? 'finished' : c.delegateState === 'blocked' ? 'blocked' : 'running'
+
   return (o?.children ?? [])
-    .filter(c => isChildRunning(c, now))
-    .map(c => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? '-'}`)
+    .filter(c => isChildRunning(c, now) || isFinishNew(c))
+    .map(c => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? '-'} | ${state(c)}`)
     .join(NL)
 }
 
@@ -144,40 +162,51 @@ export type ShownRows = Record<string, number> | 'all'
 /**
  * The Status tab is no longer shown, at `at`. A look shorter than `LOOK_MIN_MS` counts nothing as seen. A longer
  * one counts each subject as seen when `shown` says its row was on screen at any point after the subject last
- * changed, even for a moment during a scroll. Every other subject keeps when the person last saw it.
+ * changed, even for a moment during a scroll. Every other subject keeps when the person last saw it. The look counts
+ * as seeing the Status as it stood at `seenUpTo`, which is `at` unless the look drew an older Status.
  */
-export function lookEnded(o: SessionStatus | null, at: number, shown: ShownRows): SessionStatus | null {
+export function lookEnded(
+  o: SessionStatus | null,
+  at: number,
+  shown: ShownRows,
+  seenUpTo: number = at,
+): SessionStatus | null {
   if (o === null || o.look === null) return o
   const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS
   if (!isLongEnough) return { ...o, look: null }
   const isShown = (s: Subject) => shown === 'all' || (shown[s.id] ?? -Infinity) >= s.changedAt
   const missed = o.subjects.filter(s => s.into === null && !isShown(s)).map(s => [s.id, subjectSeenAt(o, s.id)])
 
-  return { ...o, lastLookAt: at, missedInLastLook: Object.fromEntries(missed), look: null }
+  return { ...o, lastLookAt: seenUpTo, missedInLastLook: Object.fromEntries(missed), look: null }
 }
 
-/** A look that another program drew and reported once it ended: when it ran, and when each row was last on screen. */
-export type ReportedLook = { startedAt: number; endedAt: number; shown: Record<string, number> }
+/**
+ * A look that another program drew and reported once it ended: when it ran, when each row was last on screen, and
+ * when this host wrote the last Status the look drew. No change after that write counts as seen.
+ */
+export type ReportedLook = { startedAt: number; endedAt: number; shown: Record<string, number>; drawnWrittenAt: number }
 
 /**
- * Counts a reported look as `lookEnded` counts a look, and keeps the look this host has in progress. A look that ended
- * by `lastLookAt` leaves `lastLookAt` where it is: it moves each subject the last look missed up to its end, when it
- * showed the subject after the subject last changed.
+ * Counts a reported look as `lookEnded` counts a look, and keeps the look this host has in progress. The look saw the
+ * Status as it stood when it ended or when its last drawn Status was written, whichever came first. A look that saw it
+ * only as it stood by `lastLookAt` leaves `lastLookAt` where it is: it moves each subject the last look missed up to
+ * that time, when it showed the subject after the subject last changed.
  */
 export function lookReported(o: SessionStatus | null, look: ReportedLook): SessionStatus | null {
   if (o === null) return o
   const { startedAt, endedAt, shown } = look
-  const isLate = o.lastLookAt !== null && endedAt <= o.lastLookAt
+  const seenUpTo = Math.min(endedAt, look.drawnWrittenAt)
+  const isLate = o.lastLookAt !== null && seenUpTo <= o.lastLookAt
   if (!isLate) {
-    const ended = lookEnded({ ...o, look: { startedAt } }, endedAt, shown)
+    const ended = lookEnded({ ...o, look: { startedAt } }, endedAt, shown, seenUpTo)
     return ended && { ...ended, look: o.look }
   }
   if (endedAt - startedAt < LOOK_MIN_MS) return o
   const isShown = (s: Subject) => (shown[s.id] ?? -Infinity) >= s.changedAt
   const raised = o.subjects.filter(
-    s => s.id in o.missedInLastLook && (o.missedInLastLook[s.id] ?? -Infinity) < endedAt && isShown(s),
+    s => s.id in o.missedInLastLook && (o.missedInLastLook[s.id] ?? -Infinity) < seenUpTo && isShown(s),
   )
   if (raised.length === 0) return o
 
-  return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map(s => [s.id, endedAt])) } }
+  return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map(s => [s.id, seenUpTo])) } }
 }

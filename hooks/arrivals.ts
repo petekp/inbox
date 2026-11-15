@@ -162,15 +162,25 @@ export function showNewRows(rows: NewRows, tab: string, now: number): NewRows {
 }
 
 /**
- * The strength of a row's bar at `now`, from 1 to 0: full until its tab is shown, then full for `NEW_HOLD_MS`, then an
- * ease to 0 over `NEW_FADE_MS`. With `isReduced`, it stays full for the whole time and then ends. 0 for a row not new.
+ * The new row a look draws for row `id` in `tab`, or undefined. An entry recorded for another tab draws nothing there, as
+ * when a row id names a different row in another conversation.
  */
-export function newRowShare(row: NewRow | undefined, now: number, isReduced = false): number {
+export function newRowIn(rows: NewRows, id: string, tab: string): NewRow | undefined {
+  const row = rows.get(id)
+
+  return row?.tab === tab ? row : undefined
+}
+
+/**
+ * The strength of a row's bar at `now`, from 1 to 0: full until its tab is shown, then full for `NEW_HOLD_MS`, then an
+ * ease to 0 over `NEW_FADE_MS`. 0 for a row not new.
+ */
+export function newRowShare(row: NewRow | undefined, now: number): number {
   if (!row) return 0
   if (row.shownAt === null) return 1
   const p = (now - row.shownAt - NEW_HOLD_MS) / NEW_FADE_MS
   if (p >= 1) return 0
-  if (isReduced || p <= 0) return 1
+  if (p <= 0) return 1
 
   return (1 + Math.cos(Math.PI * p)) / 2
 }
