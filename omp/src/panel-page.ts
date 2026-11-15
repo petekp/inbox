@@ -99,7 +99,7 @@ function withTree(lines: string[], at: number, first: string | null, rest: strin
 }
 
 /** The cells a Status rule spans: from the text column to the end of the row. */
-function pageRuleCells(width: number, textAt = PAGE_TEXT_AT): number {
+export function pageRuleCells(width: number, textAt = PAGE_TEXT_AT): number {
   return Math.max(0, width - textAt - 1)
 }
 

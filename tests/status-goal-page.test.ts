@@ -7,6 +7,7 @@ import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
 import { withChild } from '../hooks/status-children'
 import { setTypedGoal } from '../hooks/status-goal-ops'
+import { shownMilestones } from '../hooks/status-goal-page'
 import { statusKeyRows } from '../hooks/status-keys'
 import { unfoldedRows } from '../hooks/status-page-parts'
 import { NO_HOLDS } from '../hooks/timing'
@@ -222,7 +223,7 @@ test('a queued milestone draws as worked on once work that serves it is working,
   })
 })
 
-test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met', () => {
+test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met with a done check and its head apart', () => {
   const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45)
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
 
@@ -232,12 +233,114 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     awaiting: 'Milestones after the next reply',
     milestones: [],
   })
-  expect(page(met, 55).goal).toMatchObject({ label: 'Goal met', isMet: true, awaiting: null })
+  expect(page(met, 55).goal).toMatchObject({
+    label: 'Goal met',
+    isMet: true,
+    awaiting: null,
+    now: null,
+    mark: SUBJECT_MARKS.done,
+  })
+  expect(page(met, 55).isHeadApart).toBe(true)
+  expect(page(linked(), 40).isHeadApart).toBe(false)
+  expect(page(linked(), 40).goal).toMatchObject({ mark: null, milestonesFold: null })
   expect(
     statusKeyRows(page(met, 55))
       .find(t => t.id === 'goal')
       ?.keys.map(k => k.label),
   ).toEqual(['New', 'Remove'])
+})
+
+test('a met goal keeps its milestones drawn while work under them is open or held', () => {
+  const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50, new Set(['i1']))
+  const held = page(met, 55, {}, [askItem('i1')])
+
+  expect(held.goal?.milestonesFold).toBeNull()
+  expect(
+    statusKeyRows(held)
+      .find(t => t.id === 's2')
+      ?.keys.map(k => k.label),
+  ).toEqual(['View question'])
+})
+
+test('a met goal keeps its milestones drawn while a delegate under them still runs, wherever it draws, and folds them once it has finished', () => {
+  const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written\nDONE: s1 | parsed\nDONE: s2 | explained', 50)
+  const delegate = (endedAt: number | null, delegateState: 'blocked' | 'finished') =>
+    after(
+      withChild(
+        met,
+        {
+          ref: 'review',
+          kind: 'subagent',
+          name: 'Review bot',
+          startedAt: 52,
+          endedAt,
+          lastActivityAt: 53,
+          delegateState,
+        },
+        54,
+      ),
+      'LINK: c1 | s1',
+      54,
+    )
+  const waiting = page(delegate(null, 'blocked'), 55)
+  const inDoneFold = { ...delegate(null, 'blocked'), lastLookAt: 53 }
+  const finished = { ...delegate(54, 'finished'), lastLookAt: 53 }
+
+  expect(waiting.goal?.milestonesFold).toBeNull()
+  expect(waiting.goal?.milestones.find(m => m.id === 'm2')?.rows.map(r => r.kind)).toContain('child')
+  expect(page(inDoneFold, 55).goal?.milestonesFold).toBeNull()
+  expect(
+    page(finished, 55)
+      .goal?.milestones.find(m => m.id === 'm2')
+      ?.rows.map(r => r.kind),
+  ).toContain('child')
+  expect(page(finished, 55).goal?.milestonesFold).not.toBeNull()
+})
+
+test('once its work is closed, before the person looks, a met goal folds its milestones into a line naming them, which f opens, and a fold opened for one met goal starts shut when it is met again', () => {
+  const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
+  const seen = after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51)
+
+  expect(seen.lastLookAt).toBeNull()
+  const fold = page(seen, 55).goal?.milestonesFold
+  const milestoneIds = page(seen, 55).goal?.milestones.map(m => m.id) ?? []
+
+  expect(fold?.text).toBe('Parsing works, Errors explained, +1 more')
+  expect(milestoneIds).toHaveLength(3)
+  expect(
+    statusKeyRows(page(seen, 55))
+      .map(t => t.id)
+      .slice(0, 2),
+  ).toEqual(['goal', fold?.id])
+  expect(statusKeyRows(page(seen, 55)).filter(t => milestoneIds.includes(t.id))).toEqual([])
+  expect(
+    statusKeyRows(page(seen, 55))
+      .find(t => t.id === fold?.id)
+      ?.keys.map(k => k.hotkey),
+  ).toEqual(['f'])
+  expect(shownMilestones(page(seen, 55).goal, () => false)).toEqual([])
+  expect(shownMilestones(page(seen, 55).goal, id => id === fold?.id).map(m => m.id)).toEqual(milestoneIds)
+
+  const added = after(seen, 'MILESTONE: queued | Docs written | not started', 60)
+  const docs = page(added, 61).goal?.milestones.at(-1)?.id ?? ''
+  const again = after(added, `DONE: ${docs} | written`, 70)
+  const refolded = page(again, 72)
+
+  expect(page(added, 61).goal?.milestonesFold).toBeNull()
+  expect(refolded.goal?.milestonesFold?.id).not.toBe(fold?.id)
+  expect(
+    statusKeyRows(refolded, id => id === fold?.id).filter(t => refolded.goal?.milestones.some(m => m.id === t.id)),
+  ).toEqual([])
+})
+
+test('a met goal keeps its milestones drawn while one dropped since the last look is listed, then folds them once the person looks', () => {
+  const finished = after(linked(), 'DONE: s1 | parsed\nDONE: s2 | explained', 40)
+  const dropped = after({ ...finished, lastLookAt: 45 }, 'DONE: m2 | explained\nDROP: m3 | cut', 50)
+  const looked = { ...dropped, lastLookAt: 55 }
+
+  expect(page(dropped, 52).goal?.milestones.map(m => m.name)).toContain('Demo script')
+  expect(page(dropped, 52).goal?.milestonesFold).toBeNull()
+  expect(page(looked, 56).goal?.milestonesFold?.text).toBe('Parsing works, Errors explained')
 })
 
 test('an ask linked to a milestone names it as what it holds up, and a milestone shows its was line only once it changed after the goal was set and since the last look', () => {

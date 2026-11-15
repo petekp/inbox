@@ -355,7 +355,7 @@ function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: 
   if (empty) return emptyEntries(empty, empty.under?.is === 'set-goal' ? setGoal(empty.under) : [])
   const description = page.head?.description
   const head: Entry[] =
-    page.goal === null && page.head
+    page.isHeadApart && page.head
       ? [
           { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
           ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),

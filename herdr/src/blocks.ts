@@ -13,9 +13,10 @@ import type { ShownTab } from '../../hooks/tabs'
 
 /**
  * A color the paint maps onto Herdr's theme. The first six are the shared tones of `hooks/tones.ts`, so a tone means
- * the same thing in every look, and done means what it does in Herdr's sidebar.
+ * the same thing in every look, and done means what it does in Herdr's sidebar. Met is a met goal's ✓ and heading.
  */
-export type Tone = 'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error' | 'notice' | 'warning' | 'muted' | null
+export type Tone =
+  'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error' | 'notice' | 'warning' | 'muted' | 'met' | null
 
 export type Mark = { text: string; tone: Tone; isRunning: boolean }
 
@@ -186,7 +187,7 @@ export type LineBlock = {
 export type Block =
   /**
    * A group's title with its count, or with `isLabel` a quiet label over a part, such as the goal's, ruled to its
-   * buttons.
+   * buttons. A label's `mark` hangs in the mark column, and the label takes the mark's tone.
    */
   | {
       kind: 'heading'
@@ -205,7 +206,8 @@ export type Block =
   | LineBlock
   /**
    * A Closed fold or a Status done fold, which the person opens and shuts. A done milestone folded to its name draws
-   * its `mark` in the mark column and the chevron after its name.
+   * its `mark` in the mark column and the chevron after its name. `isLabelFirst` draws the chevron after the text with
+   * no mark, as a met goal's folded milestones do.
    */
   | {
       kind: 'fold'
@@ -215,6 +217,7 @@ export type Block =
       isOpen: boolean
       change: ViewChange
       mark?: Mark
+      isLabelFirst?: true
       path?: PathSide
       tree?: TreeStroke[]
     }
@@ -237,8 +240,11 @@ export type Block =
       path?: PathSide
       tree?: TreeStroke[]
     }
-  /** The goal's field while the person types a goal, in place of the goal's text. */
-  | { kind: 'field'; id: string; field: Field }
+  /**
+   * The goal's field while the person types a goal, in place of the goal's text: at the panel's edge, or at the text
+   * column under a met goal's label.
+   */
+  | { kind: 'field'; id: string; field: Field; isAtEdge: boolean }
   /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
   | { kind: 'rule'; id: string; text: string | null }
   /** A section's space above the block after it, or with `isMilestoneStep` the smaller space between two milestones. */

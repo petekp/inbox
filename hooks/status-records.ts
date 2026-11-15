@@ -32,7 +32,12 @@ export function statusCallPrompt(input: StatusCallInput, read: StatusExchange): 
 }
 
 /** A Status call: what it reads as its exchange, and the model call that sends its prompt with the host's Status system text. */
-export type StatusCall = { exchange: StatusExchange; ask: Ask }
+export type StatusCall = {
+  exchange: StatusExchange
+  ask: Ask
+  /** The run cannot catch up, as when the conversation cannot be read, so this answer clears a saved failure. */
+  isCatchUpImpossible?: boolean
+}
 
 type StatusHost<S extends Session> = Pick<
   UpdateHost<S>,
@@ -141,21 +146,36 @@ function attemptOf({ text, report, thrown, ms }: HeardCall): StatusAttempt {
   }
 }
 
+/** The session as a Status call reads it, with the time taken just before the read. */
+type StatusRead<S extends Session> = { s: S; at: number }
+
 /**
- * Runs the Status call on the Status and asks in `s`, and writes its answer, or saves why it wrote nothing. An
+ * Reads the session for a Status call. The time comes first, so a delegate that finishes while the read is under way is
+ * newer than the time the call reports as read, and the next call lists it.
+ */
+export async function readForStatus<S extends Session>(
+  host: Pick<StatusHost<S>, 'now' | 'read'>,
+): Promise<StatusRead<S>> {
+  const at = await host.now()
+
+  return { s: await host.read(), at }
+}
+
+/**
+ * Runs the Status call on the Status and asks in `read.s`, and writes its answer, or saves why it wrote nothing. An
  * answer with no operation is asked once more. `appliedAfter` drops the write as `appliedStatus` does, and skips the
- * call when `s` already shows it would be dropped. With
+ * call when the session already shows it would be dropped. With
  * `records`, it then writes the call's record in the background, and drops a failed write.
  */
 export async function askAndWriteStatus<S extends Session>(
   host: Pick<StatusHost<S>, 'now' | 'update' | 'records' | 'names'>,
-  s: S,
+  { s, at: readAt }: StatusRead<S>,
   call: StatusCall,
   tasks: HostTask[],
   appliedAfter: number,
 ): Promise<void> {
   if (!isStatusCallCurrent(s, appliedAfter)) return
-  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
+  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: readAt }
   const prompt = statusCallPrompt(input, call.exchange)
   const system = hostStatusSystem(host.names)
   const heards: { kind: CallKind; heard: HeardCall }[] = []
@@ -167,22 +187,30 @@ export async function askAndWriteStatus<S extends Session>(
   })
   const attempts = heards.map(h => attemptOf(h.heard))
   const answer = last.text === null ? null : parseStatus(last.text)
-  const now = await host.now()
   let before: SessionStatus | null = null
   let isWritten = false
-  const noted = (current: S) =>
+  const noted = (current: S, now: number) =>
     heards.reduce(
       (x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now),
       current,
     )
-  const after = await host.update(current => {
-    const x = noted(current)
+  const after = await host.update(async current => {
+    const now = await host.now()
+    const x = noted(current, now)
     before = x.ledger.overview
     isWritten = isStatusCallCurrent(x, appliedAfter)
     const readSetAt = input.last?.goal?.setAt ?? null
     return answer === null
       ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === 'catch-up')
-      : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === 'catch-up', input.now)
+      : appliedStatus(
+          x,
+          answer,
+          appliedAfter,
+          now,
+          readSetAt,
+          call.exchange.kind === 'catch-up' || call.isCatchUpImpossible === true,
+          input.now,
+        )
   })
   if (!host.records) return
   const record: StatusRecord = {
@@ -210,10 +238,11 @@ export async function askAndWriteStatus<S extends Session>(
  */
 export function refreshStatus<S extends Session>(host: StatusHost<S>): Promise<void> {
   return host.inOrder(async () => {
-    const s = await host.read()
+    const read = await readForStatus(host)
+    const { s } = read
     if (!s.presence.isTurnRunning) return
     const { person, trigger, activity } = s.turn
     const call: StatusCall = { exchange: { kind: 'mid-turn', turn: { person, trigger, activity } }, ask: host.ask }
-    await askAndWriteStatus(host, s, call, s.hostTasks, s.presence.turnsApplied)
+    await askAndWriteStatus(host, read, call, s.hostTasks, s.presence.turnsApplied)
   })
 }

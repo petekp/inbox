@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { parseStatus } from '../hooks/status'
 import { setTypedGoal } from '../hooks/status-goal-ops'
-import { GOAL_LEFT_MS } from '../hooks/status-limits'
+import { GOAL_LEFT_MS, namesOtherVersion } from '../hooks/status-limits'
 import { applyStatus } from '../hooks/status-ops'
 import { statusPrompt } from '../hooks/status-prompt'
 import { upgradeStatus } from '../hooks/status-upgrade'
@@ -176,6 +176,19 @@ test('a SERVES line whose subject names another version than its milestone links
 
   expect(served.serves).toMatchObject({ s3: 'none', s4: 'm4' })
   expect(same.serves).toMatchObject({ s5: 'm4', s3: 'm2' })
+})
+
+test('a version written 2.5.0 is the version 2.5, so work named either way links to the milestone', () => {
+  const o = after(
+    linked(),
+    'NEW: working | Release 2.5.0 build | signed\nNEW: working | iPad crash | fix in review',
+    25 * MIN,
+  )
+
+  expect(namesOtherVersion('Release 2.5.0', '2.5 in the store')).toBe(false)
+  expect(namesOtherVersion('0.3 shipped', '0.3.0 release notes')).toBe(false)
+  expect(namesOtherVersion('2.5.1 beta', '2.5 published')).toBe(true)
+  expect(after(o, 'SERVES: s3 | m4', 26 * MIN).serves).toMatchObject({ s3: 'm4' })
 })
 
 test('a saved refusal loads when it is well formed, and as none otherwise, and a typed goal clears one', () => {

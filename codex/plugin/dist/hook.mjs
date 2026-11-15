@@ -103,7 +103,7 @@ function words(text2) {
 }
 var VERSION = /^v?\d+(\.\d+)+$/;
 function namesOtherVersion(name, other) {
-  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
   const mine = versions(name);
   const theirs = new Set(versions(other));
   return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
@@ -519,6 +519,10 @@ function missedOf(saved, ids) {
   const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
   return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
 }
+function newestEnd(children) {
+  const ends = children.flatMap((c) => c.endedAt === null ? [] : [c.endedAt]);
+  return ends.length === 0 ? null : Math.max(...ends);
+}
 function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null) return null;
@@ -546,7 +550,7 @@ function upgradeStatus(saved) {
     lastLookAt: time2(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
-    lastCallReadAt: time2(o.lastCallReadAt),
+    lastCallReadAt: "lastCallReadAt" in o ? time2(o.lastCallReadAt) : newestEnd(children),
     ...goal
   };
 }
@@ -1171,106 +1175,13 @@ var MARK_LEGEND = [
   }
 ];
 
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-function isHeldSend(last) {
-  return last?.delivery?.state === "held";
-}
-
-// ../hooks/press-reducer.ts
-function withArrival(lastActions, message, pressedAt, deliveryId) {
-  const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
-  const waiting = Object.values(lastActions).filter(
-    (a) => isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0)
-  );
-  if (waiting.length === 0) return lastActions;
-  const at = pressedAt ?? Math.min(...waiting.map((a) => a.at));
-  return Object.fromEntries(
-    Object.entries(lastActions).map(([id, a]) => [
-      id,
-      isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0 && a.at === at) ? { ...a, delivery: { state: "arrived" } } : a
-    ])
-  );
-}
-function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
-  return Object.fromEntries(
-    Object.entries(lastActions).map(([id, action]) => [
-      id,
-      action.delivery?.state === "queued" && action.delivery.message === message && (deliveryId ? action.delivery.id === deliveryId : pressedAt === void 0 || action.delivery.id === void 0 && action.at === pressedAt) ? { ...action, delivery: { ...action.delivery, state: "unconfirmed" } } : action
-    ])
-  );
-}
-
-// ../hooks/status-children.ts
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
-}
-function isFinishedAfter(c, at) {
-  return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
-}
-function isChildShown(c, now, lastLookAt) {
-  return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
-}
-function withChild(last, c, now) {
-  const o = last ?? EMPTY_SESSION_STATUS;
-  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
-  const known = kept.find((x) => x.ref === c.ref);
-  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
-  return {
-    ...o,
-    nextChildId: o.nextChildId + 1,
-    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
-  };
-}
-function changedChild(o, ref, change) {
-  const known = o?.children.find((c) => c.ref === ref);
-  if (!o || !known) return o;
-  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
-}
-function childEnded(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
-}
-function subjectTouched(o, id, at) {
-  const touched = (s) => isSubjectSeen(o, s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
-  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
-}
-function childActive(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
-}
-function subjectSeenAt(o, id) {
-  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
-}
-function isSubjectSeen(o, s) {
-  const seenAt = subjectSeenAt(o, s.id);
-  return seenAt !== null && s.changedAt <= seenAt;
-}
-
 // ../hooks/status-page-parts.ts
+var LISTED_NAMES = 2;
+var namedFoldMore = (n) => `+${n} more`;
+function namedList(names) {
+  const hidden = names.length - LISTED_NAMES;
+  return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
+}
 var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
@@ -1403,6 +1314,12 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
+var MILESTONES_FOLD_PREFIX = "goal-milestones";
+var MET_LABEL = "Goal met";
+function metMilestonesFold(g, milestones, isWorkClosed) {
+  const isFolded = g.metAt !== null && milestones.length > 0 && milestones.every((m) => m.place === "done" && isWorkClosed(m));
+  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map((m) => m.name)) } : null;
+}
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -1451,18 +1368,121 @@ function goalPage(o, items, now) {
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
   return {
     goal: {
-      label: isMet ? "Goal met" : GOAL_HEADING,
+      label: isMet ? MET_LABEL : GOAL_HEADING,
+      mark: isMet ? SUBJECT_MARKS.done : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
-      now: nowText !== null && !isNowSaid ? `Now: ${nowText}` : null,
+      // A met goal's head draws in its own section, since the work no longer serves the goal.
+      now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items))
+      milestonesFold: null,
+      milestones
     },
     canRestoreGoal: false
   };
+}
+
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
+}
+
+// ../hooks/press-reducer.ts
+function withArrival(lastActions, message, pressedAt, deliveryId) {
+  const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
+  const waiting = Object.values(lastActions).filter(
+    (a) => isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0)
+  );
+  if (waiting.length === 0) return lastActions;
+  const at = pressedAt ?? Math.min(...waiting.map((a) => a.at));
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, a]) => [
+      id,
+      isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0 && a.at === at) ? { ...a, delivery: { state: "arrived" } } : a
+    ])
+  );
+}
+function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, action]) => [
+      id,
+      action.delivery?.state === "queued" && action.delivery.message === message && (deliveryId ? action.delivery.id === deliveryId : pressedAt === void 0 || action.delivery.id === void 0 && action.at === pressedAt) ? { ...action, delivery: { ...action.delivery, state: "unconfirmed" } } : action
+    ])
+  );
+}
+
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function isFinishedAfter(c, at) {
+  return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
+}
+function isChildShown(c, now, lastLookAt) {
+  return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_SESSION_STATUS;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known) return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function subjectTouched(o, id, at) {
+  const touched = (s) => isSubjectSeen(o, s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
+}
+function subjectSeenAt(o, id) {
+  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
+}
+function isSubjectSeen(o, s) {
+  const seenAt = subjectSeenAt(o, s.id);
+  return seenAt !== null && s.changedAt <= seenAt;
 }
 
 // ../hooks/status-page.ts
@@ -1470,8 +1490,6 @@ var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
-var NAMED_FOLD_NAMES = 2;
-var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
   const o = s.ledger.overview;
@@ -1541,16 +1559,13 @@ function statusPage(s, now) {
   const foldCtx = { ...ctx, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
     const closed = named.filter((x) => x.status === status);
-    const names = closed.map((x) => x.name);
-    const hidden = names.length - NAMED_FOLD_NAMES;
-    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
-    return names.length === 0 ? [] : [
+    return closed.length === 0 ? [] : [
       {
         kind: "fold",
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
         subjectIds: closed.map((x) => x.id)
       }
     ];
@@ -1607,11 +1622,14 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some(
+    (c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id))
+  );
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
     const rows2 = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
     const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isAllSeen = p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
       ...m,
       text: null,
@@ -1621,11 +1639,16 @@ function statusPage(s, now) {
     } : { ...m, rows: rows2 };
   };
   const g = goalParts.goal;
-  const goal = g && { ...g, milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n])) };
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
+    isHeadApart: goal === null || goal.isMet,
     ...goalParts,
     goal,
     rows,

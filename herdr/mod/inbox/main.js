@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T22:55:37.333Z. 241217 characters follow.
+// Built at 2026-11-15T23:20:24.814Z. 243377 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -165,7 +165,7 @@ function words(text) {
 var NUMBER_KINDS = new Set(["pr", "prs", "pull", "request", "issue", "issues", "ticket", "gh"]);
 var VERSION = /^v?\d+(\.\d+)+$/;
 function namesOtherVersion(name, other) {
-  const versions = (text) => [...words(text)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const versions = (text) => [...words(text)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
   const mine = versions(name);
   const theirs = new Set(versions(other));
   return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
@@ -634,6 +634,10 @@ function missedOf(saved, ids) {
   const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
   return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
 }
+function newestEnd(children) {
+  const ends = children.flatMap((c) => c.endedAt === null ? [] : [c.endedAt]);
+  return ends.length === 0 ? null : Math.max(...ends);
+}
 function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null)
@@ -664,7 +668,7 @@ function upgradeStatus(saved) {
     lastLookAt: time2(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
-    lastCallReadAt: time2(o.lastCallReadAt),
+    lastCallReadAt: "lastCallReadAt" in o ? time2(o.lastCallReadAt) : newestEnd(children),
     ...goal
   };
 }
@@ -1277,120 +1281,13 @@ function helpKeys(look, tab, hasStatusButtons) {
   }
 }
 
-// ../hooks/status-keys.ts
-var GOAL_KEYS_ID = "goal";
-var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
-function viewAsk(ask) {
-  return {
-    press: { action: "show-ask", askId: ask.id },
-    label: VIEW_ASK_LABELS[ask.kind],
-    hotkey: "v",
-    kind: "view",
-    emphasis: "normal"
-  };
-}
-function statusKeyPlan(row) {
-  if (row.kind === "done-fold")
-    return [toggleFold(row.id, row.text)];
-  return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
-}
-var toggleFold = (foldId, label) => ({
-  press: { action: "toggle-fold", foldId },
-  label,
-  hotkey: "f",
-  kind: "view",
-  emphasis: "quiet"
-});
-function milestoneKeyPlan(m) {
-  if (m.foldId !== null)
-    return [toggleFold(m.foldId, m.name)];
-  return m.ask === null ? [] : [viewAsk(m.ask)];
-}
-var REMOVE_GOAL = {
-  press: { action: "remove-goal" },
-  label: "Remove",
-  hotkey: "r",
-  kind: "mark",
-  emphasis: "quiet"
-};
-var RESTORE_GOAL = {
-  press: { action: "restore-goal" },
-  label: "Undo",
-  hotkey: UNDO_KEY,
-  kind: "mark",
-  emphasis: "normal"
-};
-var newGoal = (emphasis) => ({
-  press: { action: "type-goal", text: "" },
-  label: "New",
-  hotkey: "n",
-  kind: "view",
-  emphasis
-});
-function goalKeyPlan(page) {
-  const g = page.goal;
-  if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
-  if (g.isMet)
-    return [newGoal("normal"), REMOVE_GOAL];
-  return [
-    { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    REMOVE_GOAL
-  ];
-}
-var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
-
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function pendingResult(effects, at, pressId) {
-  return {
-    state: "pending",
-    parts: effects.flatMap((e) => e.kind === "send" ? [] : [{ kind: e.kind, name: e.name, isCommand: e.kind === "copy" && e.isCommand, error: null }]),
-    at,
-    ...pressId ? { pressId } : {}
-  };
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id))
-    return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step)
-    return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-function isHeldSend(last) {
-  return last?.delivery?.state === "held";
-}
-
-// ../hooks/press-reducer.ts
-var STALE_TEXT = "This changed before your press. Nothing was sent.";
-function noteText() {
-  return STALE_TEXT;
-}
-function isPressConfirmed(outcome) {
-  return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
-}
-
 // ../hooks/status-page-parts.ts
+var LISTED_NAMES = 2;
+var namedFoldMore = (n) => `+${n} more`;
+function namedList(names) {
+  const hidden = names.length - LISTED_NAMES;
+  return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
+}
 var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
@@ -1549,6 +1446,17 @@ function isSpacedAbove(milestones, n, isUnfolded) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
+var MILESTONES_FOLD_PREFIX = "goal-milestones";
+var MET_LABEL = "Goal met";
+function shownMilestones(g, isUnfolded) {
+  if (g === null)
+    return [];
+  return g.milestonesFold !== null && !isUnfolded(g.milestonesFold.id) ? [] : g.milestones;
+}
+function metMilestonesFold(g, milestones, isWorkClosed) {
+  const isFolded = g.metAt !== null && milestones.length > 0 && milestones.every((m) => m.place === "done" && isWorkClosed(m));
+  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map((m) => m.name)) } : null;
+}
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -1596,18 +1504,134 @@ function goalPage(o, items, now) {
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
   return {
     goal: {
-      label: isMet ? "Goal met" : GOAL_HEADING,
+      label: isMet ? MET_LABEL : GOAL_HEADING,
+      mark: isMet ? SUBJECT_MARKS.done : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
-      now: nowText !== null && !isNowSaid ? `Now: ${nowText}` : null,
+      now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items))
+      milestonesFold: null,
+      milestones
     },
     canRestoreGoal: false
   };
+}
+
+// ../hooks/status-keys.ts
+var GOAL_KEYS_ID = "goal";
+var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
+function viewAsk(ask) {
+  return {
+    press: { action: "show-ask", askId: ask.id },
+    label: VIEW_ASK_LABELS[ask.kind],
+    hotkey: "v",
+    kind: "view",
+    emphasis: "normal"
+  };
+}
+function statusKeyPlan(row) {
+  if (row.kind === "done-fold")
+    return [toggleFold(row.id, row.text)];
+  return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
+}
+var toggleFold = (foldId, label) => ({
+  press: { action: "toggle-fold", foldId },
+  label,
+  hotkey: "f",
+  kind: "view",
+  emphasis: "quiet"
+});
+function milestoneKeyPlan(m) {
+  if (m.foldId !== null)
+    return [toggleFold(m.foldId, m.name)];
+  return m.ask === null ? [] : [viewAsk(m.ask)];
+}
+var REMOVE_GOAL = {
+  press: { action: "remove-goal" },
+  label: "Remove",
+  hotkey: "r",
+  kind: "mark",
+  emphasis: "quiet"
+};
+var RESTORE_GOAL = {
+  press: { action: "restore-goal" },
+  label: "Undo",
+  hotkey: UNDO_KEY,
+  kind: "mark",
+  emphasis: "normal"
+};
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
+  label: "New",
+  hotkey: "n",
+  kind: "view",
+  emphasis
+});
+function goalKeyPlan(page) {
+  const g = page.goal;
+  if (g === null)
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
+  if (g.isMet)
+    return [newGoal("normal"), REMOVE_GOAL];
+  return [
+    { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
+    REMOVE_GOAL
+  ];
+}
+var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
+
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function pendingResult(effects, at, pressId) {
+  return {
+    state: "pending",
+    parts: effects.flatMap((e) => e.kind === "send" ? [] : [{ kind: e.kind, name: e.name, isCommand: e.kind === "copy" && e.isCommand, error: null }]),
+    at,
+    ...pressId ? { pressId } : {}
+  };
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id))
+    return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step)
+    return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
+}
+
+// ../hooks/press-reducer.ts
+var STALE_TEXT = "This changed before your press. Nothing was sent.";
+function noteText() {
+  return STALE_TEXT;
+}
+function isPressConfirmed(outcome) {
+  return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
 }
 
 // ../hooks/status-page.ts
@@ -1618,8 +1642,6 @@ var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " · ";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
-var NAMED_FOLD_NAMES = 2;
-var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
@@ -1687,16 +1709,13 @@ function statusPage(s, now) {
   const foldCtx = { ...ctx, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
     const closed = named.filter((x) => x.status === status);
-    const names = closed.map((x) => x.name);
-    const hidden = names.length - NAMED_FOLD_NAMES;
-    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
-    return names.length === 0 ? [] : [
+    return closed.length === 0 ? [] : [
       {
         kind: "fold",
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
         subjectIds: closed.map((x) => x.id)
       }
     ];
@@ -1744,11 +1763,12 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
     const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
     const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isAllSeen = p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
       ...m,
       text: null,
@@ -1758,11 +1778,16 @@ function statusPage(s, now) {
     } : { ...m, rows };
   };
   const g = goalParts.goal;
-  const goal = g && { ...g, milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n])) };
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
+    isHeadApart: goal === null || goal.isMet,
     ...goalParts,
     goal,
     rows,
@@ -1772,8 +1797,12 @@ function statusPage(s, now) {
 function seenSubjectIds(row) {
   return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
+var listRows = (milestones, rows) => [
+  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
+  ...rows
+];
 function statusListRows(page) {
-  return [...(page.goal?.milestones ?? []).flatMap((m) => m.foldId === null ? m.rows : []), ...page.rows];
+  return listRows(page.goal?.milestones ?? [], page.rows);
 }
 
 // ../hooks/timing.ts
@@ -3962,30 +3991,44 @@ function goalBlocks(page, { isUnfolded, goalField }) {
     id: "goal heading",
     text: g?.label ?? GOAL_HEADING,
     count: null,
-    mark: null,
+    mark: g?.mark ? { text: g.mark.mark, tone: "met", isRunning: false } : null,
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
     isLabel: true
   };
-  const field = goalField ? [{ kind: "field", id: "goal field", field: goalField }] : [];
+  const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
   if (g === null)
     return [heading, ...goalField ? field : [headNote("goal text", NO_GOAL_TEXT, "muted")]];
+  const atText = (b) => g.mark && b.kind === "note" ? { ...b, isAtEdge: false } : b;
   const lines = goalField ? field : [
     headTitle("goal text", g.text),
     ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
     ...g.now ? [headNote("goal now", g.now, "muted")] : [],
     ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
-  ];
-  const milestones = g.milestones.flatMap((m, n) => {
+  ].map(atText);
+  const fold = g.milestonesFold;
+  const foldLine = fold ? [
+    {
+      kind: "fold",
+      id: fold.id,
+      depth: 0,
+      text: fold.text,
+      isOpen: isUnfolded(fold.id),
+      change: { toggleFold: fold.id },
+      isLabelFirst: true
+    }
+  ] : [];
+  const shown = shownMilestones(g, isUnfolded);
+  const milestones = shown.flatMap((m, n) => {
     const rows = milestoneRows(m, isUnfolded);
     const joints = workJoints(rows, m.line);
     return [
-      ...isSpacedAbove(g.milestones, n, isUnfolded) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
+      ...isSpacedAbove(shown, n, isUnfolded) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
       ...m.startsLater ? [{ kind: "rule", id: "goal later", text: LATER_TEXT }] : [],
-      milestoneBlock(m, g.milestones[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
+      milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
       ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded).map((b) => besidePath(b, m.line, joints[k])))
     ];
   });
-  return [heading, ...lines, ...milestones];
+  return [heading, ...lines, ...foldLine, ...milestones];
 }
 function statusBlocks(view, ui) {
   const page = view.statusPage;
@@ -4003,7 +4046,7 @@ function statusBlocks(view, ui) {
     return [emptyBlock("overview", empty, parts)];
   }
   const description = page.head?.description;
-  const head = page.goal === null && page.head ? [
+  const head = page.isHeadApart && page.head ? [
     headTitle("head title", page.head.title),
     ...description ? [headNote("head text", description, "muted")] : []
   ] : [];
@@ -4799,6 +4842,7 @@ var TONE_COLORS = {
   findings: "ansi5",
   prs: "ansi6",
   done: "done",
+  met: "ansi2",
   error: "ansi1",
   muted: "muted"
 };
@@ -5136,7 +5180,7 @@ function rowEl(r, p) {
   const isOpen = isOpenRow(r);
   const isWrapped = isOpen || m?.isWrapHeld === true;
   const isPressable = r.isSelectable && !isLeaving;
-  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.cursor_pointer().on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
@@ -5191,7 +5235,7 @@ function headingEl(b, p, isInert) {
   const { t } = p;
   const buttons = h_flex2().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
-    return h_flex2().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(statusPartEl(b.text).text_color(t.muted)).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
+    return h_flex2().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex2().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
   return h_flex2().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div4().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div4().text_color(t.muted).child(`${SEP}${b.count}`))).child(div4().flex_1()).child(buttons);
 }
 function emptyEl(b, p, isInert) {
@@ -5212,7 +5256,8 @@ function foldEl(b, p, isInert) {
   };
   const mark = b.kind === "fold" ? b.mark : undefined;
   const chevron = b.kind === "fold" && b.isOpen ? "▾" : "▸";
-  return h_flex2().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold" && mark === undefined, (e) => e.child(div4().mr(CONTROL_GAP).child(chevron))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div4().min_w(0).whitespace_normal().child(b.text)).when(mark !== undefined, (e) => e.child(div4().flex_none().ml(LINE_GAP).child(chevron)));
+  const isChevronAfter = mark !== undefined || b.kind === "fold" && b.isLabelFirst === true;
+  return h_flex2().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold" && !isChevronAfter, (e) => e.child(div4().mr(CONTROL_GAP).child(chevron))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div4().min_w(0).whitespace_normal().child(b.text)).when(isChevronAfter, (e) => e.child(div4().flex_none().ml(LINE_GAP).child(chevron)));
 }
 function ruleEl(b, t) {
   if (b.text === null)
@@ -5243,7 +5288,7 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div4().pl(EDGE).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
+    return div4().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
     return noteEl(b, t);
   if (b.kind === "caption")

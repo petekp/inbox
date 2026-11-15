@@ -195,8 +195,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
  */
 function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): KeyResult | null {
   const page = screen.view.statusPage
-  const rows = statusKeyRows(page)
-  const row = statusSelected(page, ui.selectedId)
+  const isUnfolded = (id: string) => ui.statusUnfolded.includes(id)
+  const rows = statusKeyRows(page, isUnfolded)
+  const row = statusSelected(page, ui.selectedId, isUnfolded)
   if (!row) return null
   if (key === 'j' || key === 'k') {
     const at = rows.findIndex(r => r.id === row.id)
