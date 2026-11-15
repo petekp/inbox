@@ -1,5 +1,5 @@
 import type { GoalRefusal, SessionStatus, StatusGoal, Subject } from '../types'
-import { GOAL_LEFT_MS, isOpen } from './status-limits'
+import { GOAL_LEFT_MS, isOpen, nameKey } from './status-limits'
 
 /** The subjects linked to one of the goal's open milestones: the work the goal still holds. A done milestone holds nothing. */
 export function heldSubjects(o: SessionStatus): Subject[] {
@@ -59,6 +59,31 @@ export function hasWorkForGoal(o: SessionStatus): boolean {
   const held = new Set(heldSubjects(o).map(s => s.id))
 
   return o.subjects.some(s => isOpen(s) && !held.has(s.id))
+}
+
+/**
+ * Whether a GOAL line revises the inferred goal the answer found, as when the person cuts part of its outcome, so it may
+ * replace that goal while its work is open. Its milestones, `names`, leave out at least one milestone that was open
+ * when the answer started, and name again at least one that holds open work, whose work moves with it. Each other open
+ * subject the goal holds goes to Other work in the same answer, by a SERVES line to - among `toOtherWork`. So a
+ * rewording, an added milestone or a renamed one is not a revision, and the work under a cut milestone leaves the goal.
+ */
+export function revisesGoal(
+  o: SessionStatus,
+  start: SessionStatus,
+  names: readonly string[],
+  toOtherWork: ReadonlySet<string>,
+): boolean {
+  const g = o.goal
+  const isFound = g !== null && g.setAt === start.goal?.setAt
+  if (!isFound || g.source !== 'inferred' || g.isAwaitingMilestones || isGoalMet(o)) return false
+  const named = new Set(names.map(nameKey))
+  const isCut = start.milestones.some(m => isOpen(m) && !named.has(nameKey(m.name)))
+  const byId = new Map(o.milestones.map(m => [m.id, m]))
+  const isCarried = (s: Subject) => named.has(nameKey(byId.get(o.serves[s.id] ?? '')?.name ?? ''))
+  const held = heldSubjects(o).filter(isOpen)
+
+  return isCut && held.some(isCarried) && held.every(s => isCarried(s) || toOtherWork.has(s.id))
 }
 
 /**

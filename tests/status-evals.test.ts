@@ -13,7 +13,7 @@ import { REPLAYS } from '../evals/status-replays'
 import { blockingFailures, gradeReplay, gradeStep, tally } from '../evals/status-grade'
 import { RULES } from '../evals/status-rules'
 import { subject, statusOf, sessionOf, baseScene, contextOf, PATH_SCENES, SCENES } from './status-evals-scenes'
-import { GOOD_RUNS } from './status-evals-runs'
+import { GOOD_RUNS, OTHER_GOOD_RUNS } from './status-evals-runs'
 import type { Scene } from './status-evals-scenes'
 
 function failuresOf(rule: string, change?: (s: Scene) => void): string[] {
@@ -214,6 +214,16 @@ test('a good run of each replay passes every rule that is built, at every step',
   for (const r of REPLAYS) {
     const steps = await gradedRun(r, GOOD_RUNS[r.name]!)
     expect({ replay: r.name, failed: steps.filter(s => s.failed.length > 0) }).toEqual({ replay: r.name, failed: [] })
+  }
+})
+
+test('a second right run of a replay passes every rule that is built, at every step', async () => {
+  for (const [name, answers] of Object.entries(OTHER_GOOD_RUNS)) {
+    const steps = await gradedRun(
+      REPLAYS.find(r => r.name === name)!,
+      answers,
+    )
+    expect({ replay: name, failed: steps.filter(s => s.failed.length > 0) }).toEqual({ replay: name, failed: [] })
   }
 })
 
