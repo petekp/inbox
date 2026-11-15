@@ -192,3 +192,39 @@ test('text from an interrupted turn stays out of the next turn’s per-turn call
   expect(prompts.at(-1)).toContain('The parser is fixed.')
   expect(prompts.at(-1)).not.toContain('Checking the old build.')
 })
+
+test('slash commands reach the turn once in either event order, and command-only and repeated commands remain', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Session | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  let row = 0
+  const appendCommand = (name: string, args = '') =>
+    $.session.append({
+      message: {
+        type: 'user',
+        content: [{ type: 'text', text: `<command-name>/${name}</command-name><command-args>${args}</command-args>` }],
+      },
+      door: 'command',
+      origin: { kind: 'composer' },
+      uuid: `command-${++row}`,
+    })
+  const prompt = {
+    text: '/coordinator inbox',
+    command: { name: 'coordinator', args: 'inbox' },
+    wait: false,
+    origin: { kind: 'composer' as const },
+  }
+  await $.prompt.submit(prompt)
+  await appendCommand('coordinator', 'inbox')
+  expect(session!.turn.person).toBe('/coordinator inbox')
+  await appendCommand('help')
+  expect(session!.turn.person).toBe('/coordinator inbox\n\n/help')
+  await appendCommand('coordinator', 'inbox')
+  await $.prompt.submit(prompt)
+  expect(session!.turn.person).toBe('/coordinator inbox\n\n/help\n\n/coordinator inbox')
+})

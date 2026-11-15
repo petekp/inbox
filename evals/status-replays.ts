@@ -24,6 +24,7 @@ import { goalOutcomeDropped } from './replays/goal-outcome-dropped'
 import { staleGoal } from './replays/stale-goal'
 import { nextRelease } from './replays/next-release'
 import { nextMilestone } from './replays/next-milestone'
+import { chatStatesDirection, restartReadsBacklog, unrelatedAskReasons } from './replays/restart-reads-backlog'
 
 export const REPLAYS: Replay[] = [
   coordinatorDay,
@@ -51,4 +52,7 @@ export const REPLAYS: Replay[] = [
   goalOutcomeDropped,
   nextRelease,
   nextMilestone,
+  restartReadsBacklog,
+  chatStatesDirection,
+  unrelatedAskReasons,
 ]
