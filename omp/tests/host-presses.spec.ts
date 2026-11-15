@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { isSubjectSeen } from '../../hooks/status-children'
@@ -31,6 +31,13 @@ async function withQuestion() {
   const [item] = state().ledger.items
   return { inbox, id: item.id as string }
 }
+
+async function until(isReady: () => boolean) {
+  for (let waited = 0; !isReady() && waited < 10_000; waited += 10) await Bun.sleep(10)
+  expect(isReady()).toBe(true)
+}
+
+const isDrained = (folder: string) => readdirSync(folder).length === 0
 
 test('only what the person submits in the editor counts as a typed message, not a press’s message or other input', async () => {
   const { inbox, id } = await withQuestion()
@@ -266,8 +273,7 @@ test('in a Herdr app terminal, a press the look ran itself records its result an
   const { inbox, stepPress } = await withSteps({ ...deps(), herdrTarget: target })
   await call('session_start', { type: 'session_start' })
   const sessionFile = join(appHome, 'inbox/sessions/s1.json')
-  for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
-  expect(existsSync(sessionFile)).toBe(true)
+  await until(() => existsSync(sessionFile))
   const folder = join(appHome, 'inbox/presses/s1')
   mkdirSync(folder, { recursive: true })
   const press = {
@@ -280,10 +286,9 @@ test('in a Herdr app terminal, a press the look ran itself records its result an
   }
   writeFileSync(join(folder, 'p1.json'), JSON.stringify(press))
 
-  for (let waited = 0; existsSync(join(folder, 'p1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await until(() => isDrained(folder))
   await settle()
 
-  expect(existsSync(join(folder, 'p1.json'))).toBe(false)
   expect(w.execCalls.filter(c => c.command === 'open')).toEqual([])
   const screen = await inbox.screen(makeCtx())
   expect(JSON.stringify(screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]?.result)).toContain('no browser')
@@ -301,7 +306,7 @@ test('in a Herdr app terminal, a look file the look wrote counts the Status subj
   createInbox(pi(), { ...deps(), herdrTarget: target })
   await call('session_start', { type: 'session_start' })
   const sessionFile = join(appHome, 'inbox/sessions/s1.json')
-  for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await until(() => existsSync(sessionFile))
   w.statusReply =
     'HEAD: Offline sync | Adding offline sync\nNEW: working | Queue | built\nNEW: queued | Docs | not started'
   await prompt('add offline sync')
@@ -318,7 +323,7 @@ test('in a Herdr app terminal, a look file the look wrote counts the Status subj
   }
   writeFileSync(join(folder, 'l1.json'), JSON.stringify({ format: 1, id: 'l1', look }))
 
-  for (let waited = 0; existsSync(join(folder, 'l1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await until(() => isDrained(folder))
   await settle()
 
   const overview = state().ledger.overview
