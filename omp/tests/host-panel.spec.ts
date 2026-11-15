@@ -82,6 +82,29 @@ test('opening the panel finds gh and fetches PRs again only after the refresh in
   expect(ghCalls('--version')).toBe(1)
 })
 
+test('while gh is missing, a PR the session tracks but never read sends the shown PRs tab looking for gh at most 6 times in 10 minutes of checks every 15 seconds', async () => {
+  const inbox = createInbox(pi(), deps())
+  for (const gh of ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']) w.execResults.set(gh, new Error('spawn failed'))
+  await call('tool_result', {
+    toolName: 'bash',
+    input: { command: 'gh pr create --fill' },
+    content: [{ type: 'text', text: 'https://github.com/acme/app/pull/12\n' }],
+    isError: false,
+  })
+  inbox.fetchPrsWhenDue(makeCtx(), true)
+  await settle()
+  expect(state().ledger.prs).toEqual(['acme/app#12'])
+  const looks = () => w.execCalls.filter(c => c.args[0] === '--version').length
+  const perLook = looks()
+  expect(perLook).toBeGreaterThan(0)
+  for (let n = 0; n < 40; n++) {
+    w.clock += 15_000
+    inbox.fetchPrsWhenDue(makeCtx(), true)
+    await settle()
+  }
+  expect(looks() / perLook).toBeLessThanOrEqual(6)
+})
+
 test('the panel being open is told to the agent beside the prompt', async () => {
   const inbox = createInbox(pi(), deps())
   await prompt('hello')

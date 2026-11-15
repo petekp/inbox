@@ -131,7 +131,8 @@ export function makeSessionHost(
   }
 
   function fetchPrsWhenDue(id: string, s: SessionState) {
-    void prFetches.fetchWhenDue(id, s, s.shownTab === 'prs', () => fetchPrs(hostFor(id), true))
+    const seen = { ...s, prViews: { ...s.prViews, isGhMissing } }
+    void prFetches.fetchWhenDue(id, seen, s.shownTab === 'prs', () => fetchPrs(hostFor(id), true))
   }
 
   const served = async (s: SessionState, id: string, isDemo = false, holds: Holds = NO_HOLDS): Promise<TabView> => {
