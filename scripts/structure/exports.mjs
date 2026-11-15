@@ -25,7 +25,7 @@ const ENTRY_POINTS = {
   'videos/src/videos.ts': { names: ['TIMELINES'], why: 'videos/record/drive.py imports it from the built bundle.' },
 }
 
-/** The source files Git tracks or would track, so files .gitignore covers, such as recorded takes, are left out. */
+/** The source files Git tracks or would track, so untracked files .gitignore covers, such as recorded takes, are left out. */
 function sourceFiles(root) {
   const listed = execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
     encoding: 'utf8',

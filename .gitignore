@@ -16,7 +16,6 @@ node_modules
 # The Codex plugin's test bundles; its plugin/dist bundles are committed
 codex/test-dist/
 
-
 # The Herdr app's own type files that herdr/herdr-types.ts copies in
 herdr/.herdr-types/
 # `herdr-app check` writes the app's types and an editor config into the mod folder it checks
