@@ -3509,6 +3509,9 @@ function hasRunningDelegate(o) {
   return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
 }
 function delegatesSettled(o, agents, at) {
+  return delegatesListed(delegatesEnded(o, agents, at), agents, at);
+}
+function delegatesEnded(o, agents, at) {
   if (!o) return o;
   const byRef = new Map([...agents].map(([name, agent]) => [delegateRef(name), agent]));
   const settled = (running) => {
@@ -3532,8 +3535,46 @@ function delegatesSettled(o, agents, at) {
   );
   return finished.reduce((x, c) => subjectTouched(x, c.subjectId, at), { ...o, children });
 }
+function delegatesListed(o, agents, at) {
+  return [...agents].reduce((x, [name, agent]) => {
+    const isShownWorking = agent.status === "working" || agent.status === "blocked";
+    const ref = delegateRef(name);
+    const isRunning = x?.children.some((c) => c.ref === ref && c.endedAt === null) ?? false;
+    if (!agent.isChild || !isShownWorking || isRunning) return x;
+    return childStarted(x, { ref, kind: "delegate", name: nameInWords(name) }, at, agent.status);
+  }, o);
+}
 function childrenCutOff(o, at) {
   return childrenEnded(o, (c) => c.kind !== "delegate", at);
+}
+
+// ../hooks/hc-terminals.ts
+var HC_TIMEOUT_MS = 5e3;
+var HC_STATUSES = ["idle", "working", "blocked", "done"];
+var HC_BLOCKED = /* @__PURE__ */ new Set(["blocked", "error"]);
+async function delegatesInHc(target, run2) {
+  for (const hc of target.hc) {
+    const r = await run2([hc, "ls", "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
+    if (r.code === UNSTARTABLE_CODE) continue;
+    return r.code === 0 ? childAgents(r.stdout, target.terminal) : null;
+  }
+  return null;
+}
+function childAgents(stdout, parent) {
+  try {
+    const terminals = JSON.parse(stdout)?.terminals;
+    if (!Array.isArray(terminals)) return null;
+    const agents = /* @__PURE__ */ new Map();
+    for (const t of terminals) {
+      const key = typeof t?.name === "string" && t.name ? t.name : t?.address;
+      if (typeof key !== "string" || t.parent !== parent || typeof t.status !== "string") continue;
+      const status = HC_BLOCKED.has(t.status) ? "blocked" : HC_STATUSES.find((s) => s === t.status) ?? "unknown";
+      agents.set(key, { status, focus: null, isChild: true });
+    }
+    return agents;
+  } catch {
+    return null;
+  }
 }
 
 // ../hooks/herdr.ts
@@ -3552,7 +3593,8 @@ var CLEARED_TOKENS = Object.fromEntries(
 var HERDR_TIMEOUT_MS = 5e3;
 var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
 var HERDR_STATUSES = ["idle", "working", "blocked", "done", "unknown"];
-async function delegatesInHerdr(o, run2) {
+async function delegatesInHerdr(o, run2, target = null) {
+  if (target?.kind === "terminal") return delegatesInHc(target, run2);
   if (!hasRunningDelegate(o)) return null;
   const r = await run2(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
   return r.code === 0 ? herdrAgents(r.stdout) : null;
@@ -4737,7 +4779,7 @@ async function handleHook(input, deps) {
         rolloutTail(input.transcript_path),
         folder ? branchIn(deps.run, folder) : null,
         before.then(
-          (s) => delegatesInHerdr(s.ledger.overview, deps.run),
+          (s) => delegatesInHerdr(s.ledger.overview, deps.run, herdrTarget(env)),
           () => null
         )
       ]);

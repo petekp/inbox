@@ -287,7 +287,7 @@ export function sessionCalls(context: HostContext) {
     if (!isHerdrCheckDue(id, deps.now())) return
     deps.background(
       (async () => {
-        const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run)
+        const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run, deps.herdrTarget)
         if (states) await change(id, s => statusChanged(s, o => delegatesSettled(o, states, deps.now())))
       })(),
     )

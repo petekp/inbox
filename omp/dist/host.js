@@ -1466,6 +1466,9 @@ function hasRunningDelegate(o) {
   return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
 }
 function delegatesSettled(o, agents, at) {
+  return delegatesListed(delegatesEnded(o, agents, at), agents, at);
+}
+function delegatesEnded(o, agents, at) {
   if (!o)
     return o;
   const byRef = new Map([...agents].map(([name, agent]) => [delegateRef(name), agent]));
@@ -1492,6 +1495,16 @@ function delegatesSettled(o, agents, at) {
   const finished = children.filter((c, n) => c.delegateState === "finished" && o.children[n].delegateState !== "finished");
   return finished.reduce((x, c) => subjectTouched(x, c.subjectId, at), { ...o, children });
 }
+function delegatesListed(o, agents, at) {
+  return [...agents].reduce((x, [name, agent]) => {
+    const isShownWorking = agent.status === "working" || agent.status === "blocked";
+    const ref = delegateRef(name);
+    const isRunning = x?.children.some((c) => c.ref === ref && c.endedAt === null) ?? false;
+    if (!agent.isChild || !isShownWorking || isRunning)
+      return x;
+    return childStarted(x, { ref, kind: "delegate", name: nameInWords(name) }, at, agent.status);
+  }, o);
+}
 function activityGate() {
   return onceEvery(ACTIVITY_SAVE_MS);
 }
@@ -1507,6 +1520,38 @@ function onceEvery(ms) {
 }
 function childrenCutOff(o, at) {
   return childrenEnded(o, (c) => c.kind !== "delegate", at);
+}
+
+// ../hooks/hc-terminals.ts
+var HC_TIMEOUT_MS = 5000;
+var HC_STATUSES = ["idle", "working", "blocked", "done"];
+var HC_BLOCKED = new Set(["blocked", "error"]);
+async function delegatesInHc(target, run) {
+  for (const hc of target.hc) {
+    const r = await run([hc, "ls", "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
+    if (r.code === UNSTARTABLE_CODE)
+      continue;
+    return r.code === 0 ? childAgents(r.stdout, target.terminal) : null;
+  }
+  return null;
+}
+function childAgents(stdout, parent) {
+  try {
+    const terminals = JSON.parse(stdout)?.terminals;
+    if (!Array.isArray(terminals))
+      return null;
+    const agents = new Map;
+    for (const t of terminals) {
+      const key = typeof t?.name === "string" && t.name ? t.name : t?.address;
+      if (typeof key !== "string" || t.parent !== parent || typeof t.status !== "string")
+        continue;
+      const status = HC_BLOCKED.has(t.status) ? "blocked" : HC_STATUSES.find((s) => s === t.status) ?? "unknown";
+      agents.set(key, { status, focus: null, isChild: true });
+    }
+    return agents;
+  } catch {
+    return null;
+  }
 }
 
 // ../hooks/ledger-close.ts
@@ -4723,7 +4768,9 @@ var HERDR_TIMEOUT_MS = 5000;
 var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
 var HERDR_STATUSES = ["idle", "working", "blocked", "done", "unknown"];
 var HERDR_CHECK_MS = 30000;
-async function delegatesInHerdr(o, run) {
+async function delegatesInHerdr(o, run, target = null) {
+  if (target?.kind === "terminal")
+    return delegatesInHc(target, run);
   if (!hasRunningDelegate(o))
     return null;
   const r = await run(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
@@ -12238,7 +12285,7 @@ async function applyHerdrFile(host, file) {
 
 // ../hooks/herdr-sweep.ts
 var SWEEP_AFTER_MS = 24 * 60 * 60 * 1000;
-var HC_TIMEOUT_MS = 5000;
+var HC_TIMEOUT_MS2 = 5000;
 var LIST_REQUEST = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "terminal.list", params: {} });
 function labelledIn(stdout, ownTerminal) {
   for (const line of stdout.split(`
@@ -12264,7 +12311,7 @@ async function labelledSessions(run, hcs, ownTerminal) {
   for (const hc of hcs) {
     const r = await run(["/bin/sh", "-c", 'printf "%s\\n" "$1" | "$0" connect', hc, LIST_REQUEST], {
       cwd: "/",
-      timeoutMs: HC_TIMEOUT_MS
+      timeoutMs: HC_TIMEOUT_MS2
     }).catch(() => null);
     const labelled = r?.code === 0 ? labelledIn(r.stdout, ownTerminal) : null;
     if (labelled)
@@ -12824,7 +12871,7 @@ function sessionCalls(context) {
     if (!isHerdrCheckDue(id, deps.now()))
       return;
     deps.background((async () => {
-      const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run);
+      const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run, deps.herdrTarget);
       if (states)
         await change(id, (s) => statusChanged(s, (o) => delegatesSettled(o, states, deps.now())));
     })());
@@ -13034,7 +13081,7 @@ function turnHandlers(context, sessions) {
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const [inHerdr, branch] = await Promise.all([
-      readState(dir, id).catch(() => null).then((saved) => delegatesInHerdr(saved?.ledger.overview ?? null, run)),
+      readState(dir, id).catch(() => null).then((saved) => delegatesInHerdr(saved?.ledger.overview ?? null, run, deps.herdrTarget)),
       branchIn(run, ctx.cwd)
     ]);
     const endedAt = deps.now();

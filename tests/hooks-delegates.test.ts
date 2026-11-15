@@ -176,3 +176,23 @@ test('a delegate named by an id draws the focus its own session publishes to Her
   await clock.settle()
   expect(await pane.find({ text: /Lay out the PDF export/ })).toBeDefined()
 })
+
+test('in a Herdr app terminal, a turn’s end shows the hc terminals that are children of the session as running delegates', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't9', HOME: '/home/person' })
+  const terminals = [
+    { address: 't1', name: 'fixer', parent: 't9', status: 'working' },
+    { address: 't2', name: 'notes', parent: 't9' },
+  ]
+  w.ghAnswers.push({
+    match: argv => argv.join(' ') === 'hc ls --json',
+    stdout: JSON.stringify({ terminals }),
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Handed off.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+
+  expect(childrenOf(w.stored).map(c => [c.kind, c.name, c.endedAt === null])).toEqual([['delegate', 'fixer', true]])
+})

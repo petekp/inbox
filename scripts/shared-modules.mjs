@@ -10,6 +10,7 @@ export const SHARED = [
   'dialogs',
   'gh',
   'help',
+  'hc-terminals',
   'herdr',
   'herdr-app',
   'herdr-ask',
