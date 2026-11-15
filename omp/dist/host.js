@@ -2826,6 +2826,50 @@ function goalRefusal(o, start, kind, now) {
   return refusalOf(start, kind, now) === null ? null : why;
 }
 
+// ../hooks/status-milestone-work.ts
+function forgetSeenWas(m, lastLookAt) {
+  if (lastLookAt !== null && m.changedAt <= lastLookAt)
+    m.was = null;
+}
+function withWorkDoneMilestones(o, now) {
+  let isChanged = false;
+  const milestones = o.milestones.map((m) => {
+    if (!isOpen(m))
+      return m;
+    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
+    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
+    if (!isWorkDone)
+      return m;
+    isChanged = true;
+    return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
+  });
+  return isChanged ? { ...o, milestones } : o;
+}
+function withWorkStartedMilestones(o, now) {
+  const startedAs = (m) => {
+    if (m.status !== "queued")
+      return null;
+    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
+    if (linked.some((s) => s.status === "working"))
+      return "working";
+    return linked.some((s) => s.status === "waits-on-other") ? "waits-on-other" : null;
+  };
+  if (!o.milestones.some((m) => startedAs(m) !== null))
+    return o;
+  return {
+    ...o,
+    milestones: o.milestones.map((m) => {
+      const status = startedAs(m);
+      if (status === null)
+        return m;
+      const started = { ...m };
+      forgetSeenWas(started, o.lastLookAt);
+      const isWrittenNow = m.changedAt === now;
+      return { ...started, status, text: isWrittenNow ? m.text : "", changedAt: now };
+    })
+  };
+}
+
 // ../hooks/status-goal-ops.ts
 var RESTATED_SHARE = 0.8;
 function restatesGoal(text, goal) {
@@ -2854,10 +2898,6 @@ function findMilestone(o, ref) {
 function linkableMilestone(o, ref) {
   const m = findMilestone(o, ref);
   return m && m.status !== "dropped" ? m : null;
-}
-function forgetSeenWas(m, lastLookAt) {
-  if (lastLookAt !== null && m.changedAt <= lastLookAt)
-    m.was = null;
 }
 function moveMilestone(o, m, op, now) {
   if (op.kind === "set") {
@@ -3036,25 +3076,11 @@ function applyGoalOp(o, op, now, findSubject, start = o, servesLines = []) {
   const isOtherVersion = milestone !== null && namesOtherVersion(subject.name, milestone.name);
   return { ...o, serves: { ...o.serves, [subject.id]: milestone === null || isOtherVersion ? "none" : milestone.id } };
 }
-function withWorkDoneMilestones(o, now) {
-  let isChanged = false;
-  const milestones = o.milestones.map((m) => {
-    if (!isOpen(m))
-      return m;
-    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
-    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
-    if (!isWorkDone)
-      return m;
-    isChanged = true;
-    return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
-  });
-  return isChanged ? { ...o, milestones } : o;
-}
 function settleGoal(saved, now, readSetAt, named) {
   const g = saved.goal;
   if (g === null)
     return saved;
-  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now);
+  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
   const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").sort((x, y) => named.get(x.id) - named.get(y.id)).slice(0, MILESTONES_MAX) : o.milestones;
