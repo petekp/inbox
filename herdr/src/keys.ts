@@ -100,7 +100,9 @@ export function keyMove(
   const selected = blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelected)
   if (key === COLLAPSE_KEY && selected?.isSelectable)
     return { is: 'collapse', id: selected.id, isCollapsed: !selected.isCollapsed }
-  const lines = blocks.flatMap(b => (b.kind === 'line' || b.kind === 'banner' ? b.buttons : []))
+  const lines = blocks.flatMap(b =>
+    b.kind === 'line' || b.kind === 'banner' ? b.buttons : b.kind === 'empty' ? (b.under?.buttons ?? []) : [],
+  )
   const pressed = [...(selected?.buttons ?? []), ...lines].find(b => b.hotkey === key && !b.isOut)
 
   return pressed ? { is: 'press', button: pressed } : null

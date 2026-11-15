@@ -350,32 +350,42 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
     .child(buttons)
 }
 
+/** An empty tab's block, centred across and, at least as tall as the list's room, centred down it too. */
 function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
+  const { empty, under } = b
+  const centred = (text: string, color = t.foreground) =>
+    div().text_center().whitespace_normal().text_color(color).child(text)
 
   return v_flex()
     .items_center()
+    .justify_center()
+    .when(p.listRoom !== null, e => e.min_h(p.listRoom ?? 0))
     .p(GROUP_GAP)
     .gap(LINE_GAP)
-    .child(div().font_semibold().text_center().whitespace_normal().child(b.title))
-    .when(b.hint !== null, e =>
-      e.child(
-        div()
-          .text_center()
-          .whitespace_normal()
-          .text_color(t.muted)
-          .child(b.hint ?? ''),
-      ),
-    )
-    .when(b.buttons.length > 0, e =>
+    .child(centred(empty.title).font_semibold())
+    .when(empty.hint !== null, e => e.child(centred(empty.hint ?? '', t.muted)))
+    .when(under?.text != null, e => e.child(centred(under?.text ?? '').pt(CONTROL_GAP)))
+    .when((under?.buttons.length ?? 0) > 0, e =>
       e.child(
         h_flex()
           .flex_wrap()
           .justify_center()
           .gap(CONTROL_GAP)
           .pt(CONTROL_GAP)
-          .children(b.buttons.map(x => buttonEl(x, p, isInert))),
+          .children((under?.buttons ?? []).map(x => buttonEl(x, p, isInert))),
       ),
+    )
+    .when(under?.field != null, e =>
+      e.child(
+        div()
+          .w_full()
+          .pt(CONTROL_GAP)
+          .child(under?.field ? fieldEl(under.field, p, 0, isInert) : div()),
+      ),
+    )
+    .when(under?.feedback != null, e =>
+      e.child(centred(under?.feedback?.text ?? '', colorOf(t, under?.feedback?.tone ?? null))),
     )
 }
 

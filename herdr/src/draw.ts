@@ -24,9 +24,9 @@ import {
 import { firstWaiting, rowAfterClose, rowKeyPlan } from '../../hooks/action-plan'
 import type { RowWait } from '../../hooks/action-plan'
 import { stepEffects } from '../../hooks/help-steps'
-import { emptyText, groupEmptyText, tabBarBanners } from '../../hooks/banners'
+import { groupEmptyText, tabBarBanners } from '../../hooks/banners'
 import type { BannerView } from '../../hooks/banners'
-import { isMaybeStale } from '../../hooks/band'
+import { emptyTab } from '../../hooks/empty-tab'
 import { isFailure, rowFeedbackText } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
 import { FINDING_GROUPS, HELD_MARK } from '../../hooks/help'
@@ -36,7 +36,7 @@ import type { ShownTab } from '../../hooks/tabs'
 import { QUEUED_AFTER_MS, SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerStatus } from '../../hooks/view'
 import type { PressKind } from '../../types'
-import { button } from './blocks'
+import { button, emptyBlock } from './blocks'
 import type { Block, Button, Does, Field, Mark, RowBlock, Tone } from './blocks'
 import { prTabBlocks } from './draw-prs'
 import { prRowWaits } from '../../hooks/pr-rows'
@@ -79,6 +79,8 @@ export type LookScreen = {
   shownSince: number
   /** Whether the host could not find gh, which the session's PR state records and the shared view leaves out. */
   isGhMissing: boolean
+  /** Whether the host has a PR fetch running, from the published file. */
+  isFetchingPrs: boolean
 }
 
 const HOLDS_UP_MARK: Mark = { text: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false }
@@ -336,11 +338,14 @@ function selectedOf(groups: Group[], selected: string | null, collapsed: string[
 
 function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'findings'): Block[] {
   const groups = groupsOf(screen.view, tab, screen.shownSince)
-  const isEmpty = groups.every(g => g.rows.length === 0 && g.closed.length === 0)
-  if (isEmpty) {
-    const empty = emptyText(tab, screen.agent, isMaybeStale(screen.view))
-    return [{ kind: 'empty', id: `empty ${tab}`, title: empty.title, hint: empty.hint, buttons: [] }]
-  }
+  const empty = emptyTab(screen.view, {
+    tab,
+    agent: screen.agent,
+    drawn: groups.filter(g => g.rows.length > 0 || g.closed.length > 0).length,
+    hasBlocker: false,
+    isReadFailed: false,
+  })
+  if (empty) return [emptyBlock(tab, empty)]
   const selected = selectedOf(groups, ui.selected, screen.view.collapsed)
 
   return groups.flatMap((g, n): Block[] => [
@@ -368,7 +373,7 @@ export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView
   const status = footerStatus(
     tab,
     screen.view.status,
-    { isFetching: false, hasPrs: screen.view.prs.drawn.length > 0 },
+    { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
     screen.view.statusPage.error,
   )
 
@@ -378,7 +383,7 @@ export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView
 export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {
   if (ui.tab === 'overview') {
     const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null
-    return statusBlocks(screen.view.statusPage, { isUnfolded: id => ui.statusUnfolded.includes(id), goalField })
+    return statusBlocks(screen.view, { isUnfolded: id => ui.statusUnfolded.includes(id), goalField })
   }
   if (ui.tab === 'prs') return prTabBlocks(screen, ui.selected)
 

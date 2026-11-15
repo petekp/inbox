@@ -93,6 +93,7 @@ export function screenOf(
     now: o.now,
     shownSince: holds.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
+    isFetchingPrs: read.isFetchingPrs,
   }
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows]
   const settled = rows.flatMap(r => (r.state.is === 'settled' ? [r.state] : []))

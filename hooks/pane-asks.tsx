@@ -1,7 +1,7 @@
 import { rowsIn, settledIn } from './action-plan'
-import { bannerOf, emptyText, isResumable, READING_TEXT, stopBanner } from './banners'
-import { isMaybeStale } from './band'
+import { bannerOf, isResumable, READING_TEXT, stopBanner } from './banners'
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
+import { emptyTab, type EmptyTab } from './empty-tab'
 import { FINDING_GROUPS, HELD_MARK } from './help'
 import { READ_FAILED_TEXT } from './mod-sessions'
 import { sessionState } from './mod-state'
@@ -181,8 +181,9 @@ export function paneAskTabs(
     Pick<PaneFrame, 'banner'>,
   { readAgain, resume }: Pick<PaneHandlers, 'readAgain' | 'resume'>,
 ) {
-  /** A tab's empty text, centred in the pane, with `below` under it. */
-  const emptyState = ({ title, hint: text = '' }: { title: string; hint?: string }, below: JSX.Element[] = []) => {
+  /** A tab's empty state from `emptyTab`, centred in the docked pane, with `below`, its drawn `under`, under it. */
+  const emptyState = ({ title, hint }: EmptyTab, below: JSX.Element[] = []) => {
+    const text = hint ?? ''
     const wrap = (width: number) => {
       const lines: string[] = []
       for (const word of text.split(' ').filter(Boolean)) {
@@ -246,8 +247,9 @@ export function paneAskTabs(
         ]),
       ]
     })
-    const isNothing = needsYouGroups.every(
-      g => g.entries.length === 0 && closedTotal(view.needsYou.closed[g.list], settledIn(g.entries)) === 0,
+    const drawn = needsYouGroups.reduce(
+      (sum, g) => sum + g.entries.length + closedTotal(view.needsYou.closed[g.list], settledIn(g.entries)),
+      0,
     )
     const unread = isUnread
       ? [
@@ -259,8 +261,9 @@ export function paneAskTabs(
           ),
         ]
       : []
-    if (isNothing && !stop && unread.length === 0)
-      return emptyState(emptyText('needsYou', 'Claude', isMaybeStale(view, isUnread)))
+    const hasBlocker = stop !== null || isUnread
+    const empty = emptyTab(view, { tab: 'needsYou', agent: 'Claude', drawn, hasBlocker, isReadFailed: isUnread })
+    if (empty) return emptyState(empty)
     const outside = stop
       ? [
           section(
@@ -285,12 +288,13 @@ export function paneAskTabs(
         ]
       : []
 
-    return sections([...outside, ...unread, ...groups])
+    return sections([...outside, ...unread, ...(drawn > 0 ? groups : [])])
   }
   const findingsView = () => {
     const settled = settledIn(findingEntries)
-    if (findingEntries.length === 0 && closedTotal(view.findings.closed, settled) === 0)
-      return emptyState(emptyText('findings', 'Claude', isMaybeStale(view, isUnread)))
+    const drawn = findingEntries.length + closedTotal(view.findings.closed, settled)
+    const empty = emptyTab(view, { tab: 'findings', agent: 'Claude', drawn, hasBlocker: false, isReadFailed: isUnread })
+    if (empty) return emptyState(empty)
     const groups = lists.findingGroups.map(g => {
       const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
       const closed = closedShown(closedOf, settled, closedAll.includes(g.kind)).map(f => ({
