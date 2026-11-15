@@ -100,22 +100,36 @@ export function runningSvg(now: number): string {
 /** The bar's width and its left edge, in the frame inset before the mark column. */
 const NEW_BAR_PT = 3
 const NEW_BAR_X_PT = 3.3
-/**
- * A new row's bar on desktop, as tall as a row with one line. It shows at full strength for `NEW_HOLD_MS` from
- * `shownAt`, then fades. SMIL runs it, and each pane redraw starts it again, so it begins at the clock's point.
- */
-export function newBarSvg(shownAt: number, now: number): string {
+/** A bar at a row's left edge on desktop, as tall as a row with one line, in `light` and `dark`, with SMIL `animation`. */
+function barSvg(light: string, dark: string, animation = ''): string {
   const width = FRAME_INSET_PT - DESKTOP_CELL_PT
   const height = 2 * ROW_PAD_PT + DESKTOP_LINE_PT
-  const total = NEW_HOLD_MS + NEW_FADE_MS
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>.bar{fill:${LIGHT_TONES.key}}@media (prefers-color-scheme: dark){.bar{fill:${DARK_TONES.key}}}</style>` +
+    `<style>.bar{fill:${light}}@media (prefers-color-scheme: dark){.bar{fill:${dark}}}</style>` +
     `<rect class="bar" x="${NEW_BAR_X_PT}" y="${ROW_PAD_PT}" width="${NEW_BAR_PT}" height="${DESKTOP_LINE_PT}" rx="1.5">` +
-    `<animate attributeName="opacity" values="1;1;0" keyTimes="0;${NEW_HOLD_MS / total};1" calcMode="spline" ` +
-    `keySplines="0 0 1 1;0.37 0 0.63 1" dur="${total}ms" begin="-${Math.max(0, now - shownAt)}ms" fill="freeze"/>` +
-    `</rect></svg>`
+    `${animation}</rect></svg>`
   )
+}
+/**
+ * A new row's bar on desktop. It shows at full strength for `NEW_HOLD_MS` from `shownAt`, then fades. SMIL runs it,
+ * and each pane redraw starts it again, so it begins at the clock's point.
+ */
+export function newBarSvg(shownAt: number, now: number): string {
+  const total = NEW_HOLD_MS + NEW_FADE_MS
+  return barSvg(
+    LIGHT_TONES.key,
+    DARK_TONES.key,
+    `<animate attributeName="opacity" values="1;1;0" keyTimes="0;${NEW_HOLD_MS / total};1" calcMode="spline" ` +
+      `keySplines="0 0 1 1;0.37 0 0.63 1" dur="${total}ms" begin="-${Math.max(0, now - shownAt)}ms" fill="freeze"/>`,
+  )
+}
+/** A settled row's bar on desktop, in its tone, held while the row stays in place. */
+export function settledBarSvg(tone: 'done' | 'muted' | 'error'): string {
+  if (tone === 'muted') return barSvg(MUTED_MARK.light, MUTED_MARK.dark)
+  return tone === 'error'
+    ? barSvg(LIGHT_TONES.errorMark, DARK_TONES.errorMark)
+    : barSvg(LIGHT_TONES.done, DARK_TONES.done)
 }
 function escapeXml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

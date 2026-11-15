@@ -17,6 +17,7 @@ import {
   rowResultMark,
   rowTitle,
   settledLabel,
+  settledBarTone,
   settledTone,
   shortAgo,
   shownOptionDescriptions,
@@ -198,7 +199,11 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
     settled: isSettled
-      ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) }
+      ? {
+          label: settledLabel(state.label, state.delivery, state.reply),
+          tone: settledTone(state),
+          bar: settledBarTone(state),
+        }
       : null,
     isDim: isSettled,
     isSelectable: !isSettled,

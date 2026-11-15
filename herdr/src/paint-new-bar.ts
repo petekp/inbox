@@ -4,7 +4,7 @@ import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS, newRowShare } from '../../hooks/ar
 import type { NewRow, NewRows } from '../../hooks/arrivals'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import type { RowBlock } from './blocks'
-import { EDGE, LINE_HEIGHT, NEST } from './paint-theme'
+import { colorOf, EDGE, LINE_HEIGHT, NEST } from './paint-theme'
 import type { Paint } from './paint-theme'
 
 const FADE_STEP_MS = NEW_FADE_MS / NEW_STEPS
@@ -39,16 +39,24 @@ export function newBarEls(r: RowBlock, p: Paint): Element[] {
   const row = p.newRows.get(r.id)
   const at = row ? nextStepAt(row, p.now) : null
   if (!row || at === null) return []
-  const bar = div()
-    .id(`new ${r.id}`)
+  const bar = barEl(r, `new ${r.id}`).bg(p.t.ansi4).opacity(newRowShare(row, at))
+
+  return [bar.transition('opacity', { duration: at - p.now, easing: 'linear' })]
+}
+
+/** A settled row's bar, in the tone of why it closed, held while the row stays in place. */
+export function settledBarEls(r: RowBlock, p: Paint): Element[] {
+  return r.settled?.bar ? [barEl(r, `settled ${r.id}`).bg(colorOf(p.t, r.settled.bar))] : []
+}
+
+/** A bar at a row's left edge, before its mark. */
+function barEl(r: RowBlock, id: string) {
+  return div()
+    .id(id)
     .absolute()
     .left(EDGE + r.depth * NEST - BAR_GAP - BAR_W)
     .top(ROW_PAD_PT - 2)
     .w(BAR_W)
     .h(LINE_HEIGHT + 4)
     .rounded(BAR_W / 2)
-    .bg(p.t.ansi4)
-    .opacity(newRowShare(row, at))
-
-  return [bar.transition('opacity', { duration: at - p.now, easing: 'linear' })]
 }

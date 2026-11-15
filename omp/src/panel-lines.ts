@@ -3,6 +3,7 @@ import type { FoldKind } from '../../types'
 import type { PrAction } from '../../hooks/pr-press'
 import {
   closedLineAction,
+  settledBarTone,
   settledTone,
   closedShown,
   closedTotal,
@@ -69,7 +70,14 @@ export type Line = {
   file: string | null
   feedback: { text: string; tone: Tone | null; source: Feedback | null } | null
   /** Set once the row has closed and its label shows until it leaves. */
-  settled: { label: string; tone: 'done' | 'muted'; undo: PanelPress | null; at: number } | null
+  /** `bar` is the tone of the bar at the row's left edge, or null for a PR, which draws none. */
+  settled: {
+    label: string
+    tone: 'done' | 'muted'
+    bar: 'done' | 'muted' | 'error' | null
+    undo: PanelPress | null
+    at: number
+  } | null
   buttons: Button[]
   row: RowView | null
   /** The group a Closed line folds. Enter unfolds or folds it. */
@@ -209,6 +217,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
         ? {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
+            bar: settledBarTone(state),
             undo: undo ? undo.press : null,
             at: state.at,
           }

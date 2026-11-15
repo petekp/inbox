@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { RUNNING_FRAME_MS, SETTLED_MS, runningMark } from '../hooks/timing'
-import { IDLE_MARK, RUNNING_FRAMES } from '../hooks/help'
-import { NEW_FADE_MS, NEW_HOLD_MS, NEW_ROW_BAR } from '../hooks/arrivals'
+import { IDLE_MARK, ROW_BAR, RUNNING_FRAMES } from '../hooks/help'
+import { NEW_FADE_MS, NEW_HOLD_MS } from '../hooks/arrivals'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
@@ -74,7 +74,7 @@ test('a row that arrives while the pane is open gets a bar in the terminal and o
   ]
 
   await turn('add a greeting cli', 't1')
-  expect(await bars('i2')).toEqual([NEW_ROW_BAR, true])
+  expect(await bars('i2')).toEqual([ROW_BAR, true])
   await clock.advance(NEW_HOLD_MS + NEW_FADE_MS)
   await pane.redraw()
   await desktop.redraw()
@@ -82,7 +82,7 @@ test('a row that arrives while the pane is open gets a bar in the terminal and o
 
   w.ledgerReply = 'NEW: decide | 3 | Print in color? | yes / no | no'
   await turn('add color', 't2')
-  expect(await bars('i3')).toEqual([NEW_ROW_BAR, true])
+  expect(await bars('i3')).toEqual([ROW_BAR, true])
   expect(await bars('i2')).toEqual([null, false])
 })
 

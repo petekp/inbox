@@ -31,7 +31,7 @@ import { panelId, restId, sizeEl, titleEl } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
-import { newBarEls } from './paint-new-bar'
+import { newBarEls, settledBarEls } from './paint-new-bar'
 
 /**
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
@@ -192,7 +192,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
         .hover(s => s.bg(t.hover))
         .on_click((_e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))),
     )
-    .children(newBarEls(r, p))
+    .children(r.settled ? settledBarEls(r, p) : newBarEls(r, p))
     .child(titleEl(r, p, line))
     .child(
       sizeEl(

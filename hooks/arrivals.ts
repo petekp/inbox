@@ -136,8 +136,6 @@ export const NEW_HOLD_MS = 1500
 export const NEW_FADE_MS = 3000
 /** The colors a look that redraws on a timer steps the fade through. */
 export const NEW_STEPS = 6
-/** The bar a look that draws text puts at a new row's left edge, narrower than the terminal cursor's `▌`. */
-export const NEW_ROW_BAR = '▍'
 
 /** A new row: the tab that lists it, and when that tab was first shown in an open look after it arrived. */
 export type NewRow = { tab: string; shownAt: number | null }

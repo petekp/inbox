@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T18:13:55.655Z. 237358 characters follow.
+// Built at 2026-11-15T20:08:00.158Z. 237832 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -2009,6 +2009,12 @@ function canUndoRefused(delivery) {
 function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
 }
+function settledBarTone(state) {
+  return isSendRefused(state.delivery) ? "error" : settledTone(state);
+}
+function isSendRefused(delivery) {
+  return delivery !== null && typeof delivery === "object";
+}
 function settledLabel(label, delivery, reply) {
   if (delivery && typeof delivery === "object")
     return `${label} · Not sent: ${delivery.error}`;
@@ -3624,7 +3630,7 @@ function settledPr(d) {
     title: pr.title,
     age: `#${pr.number}`,
     feedback: null,
-    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted" },
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted", bar: null },
     isDim: true,
     isSelectable: false,
     isSelected: false,
@@ -4089,7 +4095,11 @@ function rowBlock(row, ui, selected, screen) {
     title: rowTitle(row, LOOK2),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
-    settled: isSettled ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) } : null,
+    settled: isSettled ? {
+      label: settledLabel(state.label, state.delivery, state.reply),
+      tone: settledTone(state),
+      bar: settledBarTone(state)
+    } : null,
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
@@ -5087,8 +5097,14 @@ function newBarEls(r, p) {
   const at = row ? nextStepAt(row, p.now) : null;
   if (!row || at === null)
     return [];
-  const bar = div4().id(`new ${r.id}`).absolute().left(EDGE + r.depth * NEST - BAR_GAP - BAR_W).top(ROW_PAD_PT - 2).w(BAR_W).h(LINE_HEIGHT + 4).rounded(BAR_W / 2).bg(p.t.ansi4).opacity(newRowShare(row, at));
+  const bar = barEl(r, `new ${r.id}`).bg(p.t.ansi4).opacity(newRowShare(row, at));
   return [bar.transition("opacity", { duration: at - p.now, easing: "linear" })];
+}
+function settledBarEls(r, p) {
+  return r.settled?.bar ? [barEl(r, `settled ${r.id}`).bg(colorOf(p.t, r.settled.bar))] : [];
+}
+function barEl(r, id) {
+  return div4().id(id).absolute().left(EDGE + r.depth * NEST - BAR_GAP - BAR_W).top(ROW_PAD_PT - 2).w(BAR_W).h(LINE_HEIGHT + 4).rounded(BAR_W / 2);
 }
 
 // src/paint-blocks.ts
@@ -5138,7 +5154,7 @@ function rowEl(r, p) {
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).children(newBarEls(r, p)).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving))));
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).children(r.settled ? settledBarEls(r, p) : newBarEls(r, p)).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving))));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;

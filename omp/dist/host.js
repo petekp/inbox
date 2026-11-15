@@ -3111,6 +3111,7 @@ var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: null };
+var ROW_BAR = "\u258D";
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -4267,6 +4268,12 @@ function canUndoRefused(delivery) {
 }
 function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
+}
+function settledBarTone(state) {
+  return isSendRefused(state.delivery) ? "error" : settledTone(state);
+}
+function isSendRefused(delivery) {
+  return delivery !== null && typeof delivery === "object";
 }
 function settledLabel(label, delivery, reply) {
   if (delivery && typeof delivery === "object")
@@ -6365,7 +6372,6 @@ function isPrsTabEmpty(drawnCount, isFetching) {
 var NEW_HOLD_MS = 1500;
 var NEW_FADE_MS = 3000;
 var NEW_STEPS = 6;
-var NEW_ROW_BAR = "\u258D";
 function addNewRows(rows, added) {
   const next = new Map(rows);
   for (const [tab, ids] of Object.entries(added))
@@ -7765,6 +7771,7 @@ function lineOfRow(row, isAllShown) {
     settled: state.is === "settled" ? {
       label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
+      bar: settledBarTone(state),
       undo: undo ? undo.press : null,
       at: state.at
     } : null,
@@ -8003,6 +8010,7 @@ function prEntries(screen, ui, now) {
           settled: {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
+            bar: null,
             undo: state.canUndo ? { action: "pr-undo", ref: pr.ref } : null,
             at: state.at
           }
@@ -8449,7 +8457,8 @@ function drawLine(line, isSelected, d) {
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const newShare = steppedShare(ui.newRows.get(line.id), now);
-  const edge = newShare > 0 ? s.newBar(newShare, NEW_ROW_BAR) : " ";
+  const bar = line.settled?.bar ?? null;
+  const edge = bar ? bar === "muted" ? s.dim(ROW_BAR) : s.tone(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : " ";
   const head = `${edge}${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
@@ -9517,6 +9526,7 @@ var CLIENTS = {
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
       "new-row-bar": { kind: "different", reason: "The terminal steps the fade in 6 colors. Desktop fades an Svg." },
+      "settled-row-bar": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -9626,6 +9636,7 @@ var CLIENTS = {
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
       "new-row-bar": { kind: "full" },
+      "settled-row-bar": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": { kind: "full" },
@@ -9744,6 +9755,7 @@ var CLIENTS = {
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
       "new-row-bar": { kind: "different", reason: "Steps the fade in 6 colors." },
+      "settled-row-bar": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {

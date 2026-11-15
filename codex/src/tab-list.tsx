@@ -1,6 +1,6 @@
 import { RowActions } from './row-actions'
 import { HELD_MARK } from '../../hooks/help'
-import { settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
+import { settledBarTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
 import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hooks/feedback'
@@ -313,6 +313,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
+      <span class={`settled-bar ${settledBarTone(state)}`} aria-hidden="true" />
       <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">

@@ -1,14 +1,14 @@
 import type { UiPressArgument } from 'claude-code'
 import type { FoldKind } from '../types'
 import { groupEmptyText } from './banners'
-import { chevronSvg, RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
+import { chevronSvg, RESULT_MARK_CELLS, settledBarSvg, toneSvg, undoSvg } from './desktop-svg'
 import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
 import type { FoldProps } from './fold-client'
 import { ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
 import type { Entry, PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import { followUpPresses } from './pane-keys'
-import { UNDO_KEY } from './help'
+import { ROW_BAR, UNDO_KEY } from './help'
 import type { PaneRowFrame } from './pane-row-frame'
 import { childPos, type PaneRowLines } from './pane-row-lines'
 import { type ClosedLine, settledScrollKey } from './pane-selection'
@@ -41,6 +41,7 @@ import {
   settledLabel,
   settledMark,
   type SettledState,
+  settledBarTone,
   settledTone,
   shortAgo,
 } from './rows'
@@ -472,30 +473,58 @@ export function paneRowParts(
       settledLabel(state.label, state.delivery, state.reply),
       Math.max(12, Math.floor((listColumns - 1) * DESKTOP_CLIP_CHARS_PER_CELL)),
     )
+  /** The bar at a settled row's left edge, in the tone of why it closed. */
+  const settledBar = (id: string, state: SettledState) => {
+    const tone = settledBarTone(state)
+    if (ToneSvg)
+      return (
+        <Box key={`bar-${id}`} position="absolute" top={0} left={0}>
+          <ToneSvg
+            source={settledBarSvg(tone)}
+            alt=""
+            width={FRAME_INSET_PT - DESKTOP_CELL_PT}
+            height={2 * ROW_PAD_PT + DESKTOP_LINE_PT}
+          />
+        </Box>
+      )
+    return (
+      <Box key={`bar-${id}`} position="absolute" top={0} left={0} width={1}>
+        <Text color={tone === 'muted' ? pal.muted : pal.mark[tone]}>{ROW_BAR}</Text>
+      </Box>
+    )
+  }
   const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
     const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
     const mark = settledMark(state)
     if (look === 'desktop')
-      return desktopFrame({
-        key: `settled-${r.id}`,
-        markCells: DESKTOP_MARK_CELLS,
-        mark: markGlyph(mark, `settled-${r.id}`, pal.muted),
-        side: undoPlace(r.id, undo, state.at, state.offersUndo),
-        padY: space.settledPad,
-        isSideCentered: true,
-        children: [
-          <Text wrap="wrap">
-            {r.title}
-            <Text color={pal.muted}>{`${DOT}${desktopSettledLabel(state)}`}</Text>
-          </Text>,
-        ],
-      })
+      return (
+        <Box key={`settled-${r.id}`} flexDirection="column">
+          {desktopRow(r, state, undo, mark)}
+          {settledBar(r.id, state)}
+        </Box>
+      )
     return (
       <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
         {treeRow(pos, null, settledContent(rowTitle(r, look), state, undo, mark))}
+        {settledBar(r.id, state)}
       </Box>
     )
   }
+  const desktopRow = (r: RowView, state: SettledState, undo: RowPress | null, mark: ResultMark) =>
+    desktopFrame({
+      key: `settled-frame-${r.id}`,
+      markCells: DESKTOP_MARK_CELLS,
+      mark: markGlyph(mark, `settled-${r.id}`, pal.muted),
+      side: undoPlace(r.id, undo, state.at, state.offersUndo),
+      padY: space.settledPad,
+      isSideCentered: true,
+      children: [
+        <Text wrap="wrap">
+          {r.title}
+          <Text color={pal.muted}>{`${DOT}${desktopSettledLabel(state)}`}</Text>
+        </Text>,
+      ],
+    })
 
   return {
     groupEmpty,

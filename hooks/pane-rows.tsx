@@ -1,5 +1,6 @@
 import { fadedOver } from './tones'
-import { NEW_ROW_BAR, steppedShare } from './arrivals'
+import { steppedShare } from './arrivals'
+import { ROW_BAR } from './help'
 import { newBarSvg } from './desktop-svg'
 import { ROW_PAD_PT } from './layout'
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
@@ -133,7 +134,7 @@ export function paneRows(
     if (look !== 'terminal' || share === 0) return null
     return (
       <Box key={`new-${row.id}`} position="absolute" top={0} left={0} width={1}>
-        <Text color={pal.under ? fadedOver(pal.key, pal.under, share) : pal.key}>{NEW_ROW_BAR}</Text>
+        <Text color={pal.under ? fadedOver(pal.key, pal.under, share) : pal.key}>{ROW_BAR}</Text>
       </Box>
     )
   }
