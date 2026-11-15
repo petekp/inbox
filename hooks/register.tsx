@@ -874,15 +874,18 @@ async function toggleRow($: EngineInterface, id: string | null) {
   const [{ view, now }, tab, selection] = await Promise.all([drawnState($), readRowTab($), read($, SELECTION)])
   const toggle = id === null ? collapseKeyPress(view, tab, selection) : titlePress(view, tab, selection, now, id)
   if (tab === null || toggle === null) return
-  const { is, index } = toggle
-  if (is === 'select') return select($, tab, toggle.id, index)
+  const { is, id: row, index } = toggle
+  if (is === 'select') return select($, tab, row, index)
   const isCollapsed = is === 'collapse'
-  if (isCollapsed) await update($, SELECTION, s => pinnedOn(s, tab, toggle.id, index))
-  const [at, isDemo] = await Promise.all([$.clock.now(), read($, DEMO)])
-  if (isDemo)
-    await update($, DEMO, d => d && withCollapse({ ...d, collapsed: d.collapsed ?? {} }, toggle.id, isCollapsed, at))
-  else await commit($, currentOwner(), s => withCollapse(s, toggle.id, isCollapsed, at))
-  if (!isCollapsed) await select($, tab, toggle.id, index)
+  if (isCollapsed)
+    await Promise.all([
+      update($, SELECTION, s => pinnedOn(s, tab, row, index)),
+      update($, TYPING, t => (t === row ? null : t)),
+    ])
+  const at = await $.clock.now()
+  if (await read($, DEMO)) await update($, DEMO, d => d && withCollapse(d, row, isCollapsed, at))
+  else await commit($, currentOwner(), s => withCollapse(s, row, isCollapsed, at))
+  if (!isCollapsed) await select($, tab, row, index)
 }
 
 async function openLeftRows($: EngineInterface) {

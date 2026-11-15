@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T04:23:32.907Z. 220187 characters follow.
+// Built at 2026-11-15T04:52:03.317Z. 220866 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -3264,26 +3264,31 @@ function newsByRow({ ledger, prViews, lastActions }) {
   const pressed = (id) => lastActions[id]?.at;
   const prs = Object.values(prViews.views);
   return new Map([
-    ...ledger.items.map((i) => [i.id, latest(i.reportedAt, pressed(i.id))]),
-    ...ledger.findings.map((f) => [f.id, latest(pressed(f.id))]),
+    ...ledger.items.map((i) => [i.id, { at: latest(i.reportedAt, pressed(i.id)), untimedUrl: null }]),
+    ...ledger.findings.map((f) => [f.id, { at: latest(f.reopenedAt, pressed(f.id)), untimedUrl: null }]),
     ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
       const id = prThreadId(pr, t);
-      return [id, latest(t.reply?.at, pressed(id))];
+      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+      return [id, { at: latest(t.reply?.at, pressed(id)), untimedUrl }];
     })),
     ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
-      return [id, latest(c.finishedAt, pressed(id))];
+      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
+      return [id, { at: latest(c.finishedAt, pressed(id)), untimedUrl }];
     }))
   ]);
 }
+var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null);
 function collapsedRows(s) {
   const news = newsByRow(s);
-  return Object.entries(s.collapsed).flatMap(([id, at]) => (news.get(id) ?? Infinity) <= at ? [id] : []);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
 }
 function withCollapse(s, row, isCollapsed, at) {
   const news = newsByRow(s);
-  const kept = Object.fromEntries(Object.entries(s.collapsed).filter(([id]) => id !== row && news.has(id)));
-  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: at } : kept };
+  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
+  const untimedUrl = news.get(row)?.untimedUrl ?? null;
+  const collapse = { at, ...untimedUrl !== null && { untimedUrl } };
+  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
 }
 
 // ../hooks/session-view.ts
@@ -4066,6 +4071,7 @@ function readSession(text) {
     envelope,
     session: upgradeSession(file.session),
     isTrimmed: file.trimmed === true,
+    savesCollapses: "collapsed" in file.session,
     lastPress: lastPressOf2(file.lastPress),
     projectFolder: typeof file.projectFolder === "string" && file.projectFolder.startsWith("/") ? file.projectFolder : null
   };
@@ -4228,19 +4234,22 @@ function pressFileText(id, pressedAt, press, holds, result = null) {
 
 // src/collapse.ts
 var COLLAPSE_WAIT_MS = 30000;
-var isShown = (s, row, c) => c.isCollapsed ? s.collapsed[row] === c.at : s.collapsed[row] === undefined;
+var isShown = (s, row, c) => c.isCollapsed ? s.collapsed[row]?.at === c.at : s.collapsed[row] === undefined;
 function withCollapses(read, collapses, now) {
   if (read?.is !== "read")
     return { read, collapses };
-  const waiting = Object.fromEntries(Object.entries(collapses).filter(([row, c]) => now - c.at < COLLAPSE_WAIT_MS && !isShown(read.session, row, c)));
+  const isWaiting = (row, c) => now - c.at < COLLAPSE_WAIT_MS && !isShown(read.session, row, c);
+  const waiting = read.savesCollapses ? Object.fromEntries(Object.entries(collapses).filter(([row, c]) => isWaiting(row, c))) : collapses;
   const session = Object.entries(waiting).reduce((s, [row, c]) => withCollapse(s, row, c.isCollapsed, c.at), read.session);
   return { read: { ...read, session }, collapses: waiting };
 }
-async function writeCollapse(io, to, row, c) {
+async function writeCollapse(io, to, read, row, c) {
+  if (!read.savesCollapses)
+    return;
   const id = newPressId(c.at, io.random());
   const file = { format: HERDR_FORMAT, id, collapse: { row, ...c } };
   if (await io.write(pressPath(to.appHome, to.sessionId, id), JSON.stringify(file)) === null)
-    await io.wake(to.terminal, id);
+    await io.wake(read.envelope.terminal, id);
 }
 
 // src/held-line.ts
@@ -5477,8 +5486,8 @@ class Inbox extends View {
     this.collapses = { ...this.collapses, [id]: c };
     this.ui = { ...withSelected(this.ui, id), ...isCollapsed && { typing: null } };
     this.closeStaleField();
-    const to = { appHome: appHome(), sessionId: this.sessionId, terminal: read.envelope.terminal };
-    cx.spawn(() => writeCollapse(queueIo, to, id, c));
+    const to = { appHome: appHome(), sessionId: this.sessionId };
+    cx.spawn(() => writeCollapse(queueIo, to, read, id, c));
     cx.notify();
   }
   onKey(key, tabs, blocks, cx) {

@@ -11,6 +11,7 @@ export type Painted = {
   isDisabled: boolean
   hasHover: boolean
   click: Handler | null
+  keyDown: Handler | null
   field: StandInField | null
   parent: Painted | null
   kids: Painted[]
@@ -88,6 +89,7 @@ function element(field: StandInField | null = null): unknown {
     isDisabled: false,
     hasHover: false,
     click: null,
+    keyDown: null,
     field,
     parent: null,
     kids: [],
@@ -116,6 +118,7 @@ function element(field: StandInField | null = null): unknown {
           if (key === 'disabled') node.isDisabled = Boolean(first)
           if (key === 'hover') node.hasHover = true
           if (key === 'on_click') node.click = first as Handler
+          if (key === 'on_key_down') node.keyDown = first as Handler
 
           return proxy
         }
@@ -193,5 +196,12 @@ export async function openPanel() {
     }
   }
 
-  return { panel, paint, click, settle }
+  const press = (key: string) => {
+    const root = paint()
+    allOf(root)
+      .find(n => n.keyDown !== null)
+      ?.keyDown?.({ keystroke: key }, cx)
+  }
+
+  return { panel, paint, click, press, settle }
 }

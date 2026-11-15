@@ -343,7 +343,7 @@ export default class Inbox extends View {
     cx.notify()
   }
 
-  /** Collapses or expands row `id`. The look draws it at once, and the host saves it from the file the look writes. */
+  /** Collapses or expands row `id`. The look draws it at once, and a host that saves collapses saves it. */
   collapse(id: string, isCollapsed: boolean, cx: Context): void {
     const read = this.read?.is === 'read' ? this.read : null
     if (this.sessionId === null || read === null) return
@@ -351,8 +351,8 @@ export default class Inbox extends View {
     this.collapses = { ...this.collapses, [id]: c }
     this.ui = { ...withSelected(this.ui, id), ...(isCollapsed && { typing: null }) }
     this.closeStaleField()
-    const to = { appHome: appHome(), sessionId: this.sessionId, terminal: read.envelope.terminal }
-    cx.spawn(() => writeCollapse(queueIo, to, id, c))
+    const to = { appHome: appHome(), sessionId: this.sessionId }
+    cx.spawn(() => writeCollapse(queueIo, to, read, id, c))
     cx.notify()
   }
 

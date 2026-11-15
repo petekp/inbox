@@ -1563,7 +1563,7 @@ function reopenAskedFindings(ledger, closes) {
       ...reopened,
       findings: reopened.findings.map((f) => {
         const { askedAs: _askedAs, ...rest } = f;
-        return f.id === record.id ? rest : f;
+        return f.id === record.id ? { ...rest, reopenedAt: c.at } : f;
       })
     };
   }, ledger);
@@ -6633,26 +6633,31 @@ function newsByRow({ ledger, prViews, lastActions }) {
   const pressed = (id) => lastActions[id]?.at;
   const prs = Object.values(prViews.views);
   return new Map([
-    ...ledger.items.map((i) => [i.id, latest(i.reportedAt, pressed(i.id))]),
-    ...ledger.findings.map((f) => [f.id, latest(pressed(f.id))]),
+    ...ledger.items.map((i) => [i.id, { at: latest(i.reportedAt, pressed(i.id)), untimedUrl: null }]),
+    ...ledger.findings.map((f) => [f.id, { at: latest(f.reopenedAt, pressed(f.id)), untimedUrl: null }]),
     ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
       const id = prThreadId(pr, t);
-      return [id, latest(t.reply?.at, pressed(id))];
+      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+      return [id, { at: latest(t.reply?.at, pressed(id)), untimedUrl }];
     })),
     ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
-      return [id, latest(c.finishedAt, pressed(id))];
+      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
+      return [id, { at: latest(c.finishedAt, pressed(id)), untimedUrl }];
     }))
   ]);
 }
+var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null);
 function collapsedRows(s) {
   const news = newsByRow(s);
-  return Object.entries(s.collapsed).flatMap(([id, at]) => (news.get(id) ?? Infinity) <= at ? [id] : []);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
 }
 function withCollapse(s, row, isCollapsed, at) {
   const news = newsByRow(s);
-  const kept = Object.fromEntries(Object.entries(s.collapsed).filter(([id]) => id !== row && news.has(id)));
-  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: at } : kept };
+  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
+  const untimedUrl = news.get(row)?.untimedUrl ?? null;
+  const collapse = { at, ...untimedUrl !== null && { untimedUrl } };
+  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
 }
 
 // ../hooks/session-view.ts

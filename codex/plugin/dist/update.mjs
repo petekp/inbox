@@ -362,7 +362,7 @@ function reopenAskedFindings(ledger, closes) {
       ...reopened,
       findings: reopened.findings.map((f) => {
         const { askedAs: _askedAs, ...rest } = f;
-        return f.id === record2.id ? rest : f;
+        return f.id === record2.id ? { ...rest, reopenedAt: c.at } : f;
       })
     };
   }, ledger);
@@ -3414,25 +3414,28 @@ function newsByRow({ ledger, prViews, lastActions }) {
   const pressed2 = (id) => lastActions[id]?.at;
   const prs = Object.values(prViews.views);
   return new Map([
-    ...ledger.items.map((i) => [i.id, latest(i.reportedAt, pressed2(i.id))]),
-    ...ledger.findings.map((f) => [f.id, latest(pressed2(f.id))]),
+    ...ledger.items.map((i) => [i.id, { at: latest(i.reportedAt, pressed2(i.id)), untimedUrl: null }]),
+    ...ledger.findings.map((f) => [f.id, { at: latest(f.reopenedAt, pressed2(f.id)), untimedUrl: null }]),
     ...prs.flatMap(
       (pr) => waitingThreads(pr).map((t) => {
         const id = prThreadId(pr, t);
-        return [id, latest(t.reply?.at, pressed2(id))];
+        const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+        return [id, { at: latest(t.reply?.at, pressed2(id)), untimedUrl }];
       })
     ),
     ...prs.flatMap(
       (pr) => blockingChecks(pr).map((c) => {
         const id = prCheckId(pr, c);
-        return [id, latest(c.finishedAt, pressed2(id))];
+        const untimedUrl = c.finishedAt === void 0 ? c.url ?? "" : null;
+        return [id, { at: latest(c.finishedAt, pressed2(id)), untimedUrl }];
       })
     )
   ]);
 }
+var isUnchanged = (news, c) => news !== void 0 && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null);
 function collapsedRows(s) {
   const news = newsByRow(s);
-  return Object.entries(s.collapsed).flatMap(([id, at]) => (news.get(id) ?? Infinity) <= at ? [id] : []);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
 }
 
 // ../hooks/session-view.ts

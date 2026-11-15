@@ -169,7 +169,9 @@ export function pressCollapseKey(t: Tab, rows: Row[], at: number) {
 
 /**
  * Collapses the row `id`, or expands it once collapsed, in this draw. The cursor stays on the row, so a collapse opens
- * no other row. The server saves it, and its view replaces this one.
+ * no other row, and a collapse closes the row's reply field, keeping its draft. The view drawn here counts as the
+ * newest, so no view asked for before the press replaces it. The server's answer replaces it in the order the presses
+ * were made, so an earlier collapse's answer cannot undo a later one.
  */
 function toggleCollapse(t: Tab, id: string, index: number) {
   const v = tabState.view
@@ -177,6 +179,9 @@ function toggleCollapse(t: Tab, id: string, index: number) {
   const isCollapsed = !v.collapsed.includes(id)
   if (!isCollapsed) open(t, id, index)
   else if (selection[t]?.id !== id) selection[t] = { id, openedAt: 0, index }
+  if (isCollapsed && tabState.typing === id) tabState.typing = null
+  const seq = ++tabState.requested
+  tabState.shown = seq
   tabState.view = { ...v, collapsed: isCollapsed ? [...v.collapsed, id] : v.collapsed.filter(x => x !== id) }
   tabState.draw()
   const generation = tabState.viewGeneration
@@ -187,8 +192,7 @@ function toggleCollapse(t: Tab, id: string, index: number) {
     ...holds(),
   })
     .then(r => {
-      if (!tabState.isDisposed && generation === tabState.viewGeneration && r.view)
-        applyView(r.view, ++tabState.requested)
+      if (!tabState.isDisposed && generation === tabState.viewGeneration && r.view) applyView(r.view, seq)
     })
     .catch(() => undefined)
 }
