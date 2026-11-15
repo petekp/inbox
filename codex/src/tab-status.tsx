@@ -8,7 +8,7 @@ import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { emptyTab } from '../../hooks/empty-tab'
 import type { TabView as View } from './core'
-import { closingFolds, drafts, drawnRows, errors, sending, statusUnfolded, tabState } from './tab-state'
+import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
 import type { Key } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
@@ -17,7 +17,8 @@ import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
 import { pulseInStep, markClassOf, MarkGlyph, EmptyState } from './tab-parts'
-import { goalLineMotion, statusRowMotion } from './tab-status-steps'
+import { goalHeadMotion, goalLineMotion, statusRowMotion } from './tab-status-steps'
+import { lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
 
 let measuring: CanvasRenderingContext2D | null | undefined
@@ -72,10 +73,6 @@ function toggleStatusFold(id: string) {
 /** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
 const depthStyle = (row: StatusRow) => ({ '--depth': row.depth })
 
-/** A line's motion key, and its buttons out of reach while it leaves. A line in a fold moves with its fold. */
-const motionOf = (motion: string | undefined) =>
-  motion ? { 'data-motion': motion, inert: drawnRows.get(motion)?.track.state === 'leaving' } : {}
-
 function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
   if (row.kind === 'subject') {
     const merged = row.merged
@@ -86,7 +83,7 @@ function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
         class={row.hasChildren ? 'row has-children' : 'row'}
         style={depthStyle(row)}
         {...{ [SUBJECTS_ATTRIBUTE]: row.id }}
-        {...motionOf(motion)}
+        {...lineMotion(motion)}
       >
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
@@ -118,7 +115,11 @@ function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
   }
   if (row.kind === 'child')
     return (
-      <div class={row.branch ? `row child branch-${row.branch}` : 'row'} style={depthStyle(row)} {...motionOf(motion)}>
+      <div
+        class={row.branch ? `row child branch-${row.branch}` : 'row'}
+        style={depthStyle(row)}
+        {...lineMotion(motion)}
+      >
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
         </span>
@@ -129,25 +130,25 @@ function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
     )
   if (row.kind === 'more')
     return (
-      <div class={`row child branch-${row.branch}`} style={depthStyle(row)} {...motionOf(motion)}>
+      <div class={`row child branch-${row.branch}`} style={depthStyle(row)} {...lineMotion(motion)}>
         <span class="mark" />
         <div class="content tight muted">{row.text}</div>
       </div>
     )
   if (row.kind === 'done-fold') {
     const isUnfolded = statusUnfolded.has(row.id)
-    const motion = foldMotion(row.id)
+    const fold = foldMotion(row.id)
 
     return (
       <>
-        <div class="row fold-row" style={depthStyle(row)} {...motionOf(motion)}>
-          <button type="button" class="fold" data-fold={motion} onClick={() => toggleStatusFold(row.id)}>
+        <div class="row fold-row" style={depthStyle(row)} {...lineMotion(motion)}>
+          <button type="button" class="fold" data-fold={fold} onClick={() => toggleStatusFold(row.id)}>
             <Icon name={isUnfolded ? 'down' : 'right'} />
             {row.text}
           </button>
         </div>
-        {isUnfolded || closingFolds.has(motion) ? (
-          <div class="fold-rows" data-motion={`closed-${motion}`}>
+        {isUnfolded || closingFolds.has(fold) ? (
+          <div class="fold-rows" data-motion={`closed-${fold}`}>
             {row.rows.map(r => (
               <StatusLine key={r.id} row={r} />
             ))}
@@ -158,13 +159,13 @@ function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
   }
   if (row.kind === 'part')
     return (
-      <div class="row part-line" {...motionOf(motion)}>
+      <div class="row part-line" {...lineMotion(motion)}>
         <div class="part-rule">{row.text}</div>
       </div>
     )
   if (row.kind === 'counts')
     return (
-      <div class="row" style={depthStyle(row)} {...motionOf(motion)}>
+      <div class="row" style={depthStyle(row)} {...lineMotion(motion)}>
         <span class="mark" />
         <div class="content tight">
           <div>
@@ -189,7 +190,7 @@ function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
       class="row"
       style={depthStyle(row)}
       {...(subjects.length > 0 ? { [SUBJECTS_ATTRIBUTE]: subjects.join(' ') } : {})}
-      {...motionOf(motion)}
+      {...lineMotion(motion)}
     >
       <span class={markClassOf(row.tone, false)}>
         <MarkGlyph text={row.mark} />
@@ -260,7 +261,7 @@ function Keys({ keys }: { keys: StatusKey[] }) {
 
 function MilestoneLine({ m, motion }: { m: MilestoneRow; motion: string }) {
   return (
-    <div class="row milestone" {...motionOf(motion)}>
+    <div class="row milestone" {...lineMotion(motion)}>
       <span class={markClassOf(m.tone, false)}>
         <MarkGlyph text={m.mark} />
       </span>
@@ -290,7 +291,15 @@ function MilestoneLine({ m, motion }: { m: MilestoneRow; motion: string }) {
  * goal, the field takes the text's place and the buttons leave the heading.
  * The buttons wrap under the rule, still at the right, when they do not fit beside the title.
  */
-function GoalSection({ page, lines }: { page: StatusPage; lines: DrawnStatus['goal'] }) {
+function GoalSection({
+  page,
+  head,
+  lines,
+}: {
+  page: StatusPage
+  head: DrawnStatus['head']
+  lines: DrawnStatus['goal']
+}) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
   const text = g ? (
@@ -325,14 +334,11 @@ function GoalSection({ page, lines }: { page: StatusPage; lines: DrawnStatus['go
         <div class="goal-text" data-motion="goal-text">
           {isTyping ? <GoalField /> : text}
         </div>
-        {g?.was ? (
-          <p class="muted">
-            {WAS_PREFIX}
-            {g.was}
+        {head.map(l => (
+          <p key={l.id} class="muted" {...lineMotion(goalHeadMotion(l.id))}>
+            {l.text}
           </p>
-        ) : null}
-        {g?.now ? <p class="muted">{g.now}</p> : null}
-        {g?.awaiting ? <p class="muted">{g.awaiting}</p> : null}
+        ))}
         <GoalError />
       </div>
       {lines.length > 0 ? (
@@ -385,7 +391,7 @@ export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
 
   return (
     <main class="status-page">
-      <GoalSection page={page} lines={drawn.goal} />
+      <GoalSection page={page} head={drawn.head} lines={drawn.goal} />
       {head ? <section>{head}</section> : null}
       {drawn.rows.length > 0 ? (
         <section class={isUnruledAfterGoal ? 'unruled' : undefined}>

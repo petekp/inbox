@@ -41,12 +41,16 @@ export function measure(): Drawing {
 
 type Size = 'height' | 'width'
 
-/** A size move under way: where its spring started, where it goes, and the animation that plays it. */
-type Glide = { size: Size; from: SpringState; to: number; anim: Animation }
+/**
+ * A size move under way: where its spring started, where it goes, and the animation that plays it. An element that
+ * comes or goes also scales its vertical padding and top margin with its height, so it truly grows from and shrinks
+ * to no height.
+ */
+type Glide = { size: Size; from: SpringState; to: number; anim: Animation; scalesEdges: boolean }
 const glides = new WeakMap<HTMLElement, Glide>()
 
 function play(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions): Animation {
-  el.style.overflow = 'hidden'
+  el.style.overflow = 'clip'
   const a = el.animate(frames, timing)
   animations.add(a)
   const done = () => {
@@ -70,17 +74,39 @@ function springOf(el: HTMLElement, size: number): SpringState {
   return springStep(g.from, g.to, Number(g.anim.currentTime ?? 0))
 }
 
-/** Moves an element's size on the spring from `from` to `to`. `hold` keeps it at `to` once there, until released. */
-function glide(el: HTMLElement, size: Size, from: SpringState, to: number, hold = false) {
-  glides.get(el)?.anim.cancel()
-  const frames = springFrames(from, to)
-  if (frames.length < 2) frames.push(to)
-  const anim = play(
-    el,
-    frames.map(x => ({ [size]: `${x}px` })),
-    { duration: (frames.length - 1) * FRAME_MS, easing: 'linear', fill: hold ? 'forwards' : 'none' },
-  )
-  glides.set(el, { size, from, to, anim })
+const EDGES = ['paddingTop', 'paddingBottom', 'marginTop'] as const
+
+/** One keyframe per spring frame. Edges, when given, scale with the height's share of `full`. */
+function sizeFrames(size: Size, xs: number[], edges: number[] | null, full: number): Keyframe[] {
+  return xs.map(x => {
+    const frame: Keyframe = { [size]: `${x}px` }
+    if (edges) {
+      const share = full > 0 ? Math.min(1, Math.max(0, x / full)) : 0
+      EDGES.forEach((edge, i) => (frame[edge] = `${(edges[i] ?? 0) * share}px`))
+    }
+
+    return frame
+  })
+}
+
+/**
+ * Moves an element's size on the spring from `from` to `to`. `hold` keeps it at `to` once there, until released.
+ * `comesOrGoes` marks an element growing in from nothing or shrinking away.
+ */
+function glide(el: HTMLElement, size: Size, from: SpringState, to: number, hold = false, comesOrGoes = false) {
+  const was = glides.get(el)
+  const scalesEdges = size === 'height' && (comesOrGoes || (isRunning(was?.anim) && was!.scalesEdges))
+  was?.anim.cancel()
+  const style = scalesEdges ? getComputedStyle(el) : null
+  const edges = style ? EDGES.map(edge => parseFloat(style[edge]) || 0) : null
+  const xs = springFrames(from, to)
+  if (xs.length < 2) xs.push(to)
+  const anim = play(el, sizeFrames(size, xs, edges, Math.max(from.x, to)), {
+    duration: (xs.length - 1) * FRAME_MS,
+    easing: 'linear',
+    fill: hold ? 'forwards' : 'none',
+  })
+  glides.set(el, { size, from, to, anim, scalesEdges })
 }
 
 /** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. */
@@ -117,7 +143,7 @@ const isFadingIn = (el: HTMLElement) => {
 }
 
 function growIn(el: HTMLElement, from: SpringState, opacity: number) {
-  glide(el, 'height', from, naturalHeight(el))
+  glide(el, 'height', from, naturalHeight(el), false, true)
   fade(el, opacity, 1, ENTER_FADE_MS)
 }
 
@@ -147,6 +173,8 @@ function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const key = el.dataset.motion!
   const state = drawnRows.get(key)?.track.state
   const isFresh = !was || was.el !== el
+  const part = drawnRows.has(key) ? el.querySelector<HTMLElement>(OPEN_PART) : null
+  if (part && !part.classList.contains('closing')) part.style.marginTop = ''
   const from = springOf(el, isFresh ? el.getBoundingClientRect().height : was.height)
   if (state && changed.has(key) && startState(el, state, from, isFresh, was?.openTop ?? null)) return
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
@@ -178,7 +206,7 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
       collapse(el, from, state === 'settling' ? openTop : null)
       return true
     case 'leaving':
-      glide(el, 'height', from, 0, true)
+      glide(el, 'height', from, 0, true, true)
       fade(el, opacityOf(el), 0, FADE_MS, true)
       return true
     default:
@@ -218,7 +246,11 @@ function keepTop(el: HTMLElement, part: HTMLElement, top: number) {
 function glideTabs(widths: Drawing['tabWidths']) {
   for (const el of root.querySelectorAll<HTMLElement>('[data-tab]')) {
     const was = widths.get(el.dataset.tab!)
-    if (!was || was.el !== el || was.isShown !== isShownTab(el)) continue
+    if (!was || was.el !== el) continue
+    if (was.isShown !== isShownTab(el)) {
+      glides.get(el)?.anim.cancel()
+      continue
+    }
     const from = springOf(el, was.width)
     glides.get(el)?.anim.cancel()
     const to = el.getBoundingClientRect().width
@@ -247,7 +279,7 @@ export function toggleFold(id: string, shown: Set<string>, motion = id) {
   closingFolds.add(motion)
   tabState.draw()
   el.dataset.closing = '1'
-  glide(el, 'height', springOf(el, el.getBoundingClientRect().height), 0, true)
+  glide(el, 'height', springOf(el, el.getBoundingClientRect().height), 0, true, true)
   fade(el, opacityOf(el), 0, FADE_MS, true)
   later(() => {
     if (shown.has(id) || !closingFolds.delete(motion)) return

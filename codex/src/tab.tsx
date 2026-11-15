@@ -73,7 +73,7 @@ function App({
           <Prs v={v} prs={prs} now={now} />
         ) : null
       ) : (
-        <StatusTab v={v} drawn={status ?? { goal: [], rows: [] }} />
+        <StatusTab v={v} drawn={status ?? { head: [], goal: [], rows: [] }} />
       )}
       <footer>
         <button
@@ -109,6 +109,7 @@ function draw() {
   tabState.lastLists = step?.lists ?? null
   tabState.lastPrs = step?.prs ?? null
   tabState.lastStatus = step?.status ?? null
+  tabState.lastBanners = step?.banners ?? null
   wakeForMoves()
   render(<App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />, root)
   animateDraw(before, step?.changed ?? new Set())

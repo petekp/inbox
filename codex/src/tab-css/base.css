@@ -144,16 +144,16 @@ button {
   font-weight: 600;
   color: var(--tone);
 }
-/* Drawn with no banners too, so its height glides as banners come and go. Its -4px takes back the tab bar's 4px row gap. */
+/* Drawn with no banners too, so its height glides as banners come and go. Its -4px takes back the tab bar's 4px row gap.
+   Each banner carries its own gap above it, so the gap grows and shrinks with the banner. */
 .banner-stack {
   flex-basis: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--banner-gap);
   margin-top: -4px;
 }
-.banner-stack:not(:empty) {
-  padding-top: var(--banner-gap);
+.banner-stack > * {
+  margin-top: var(--banner-gap);
 }
 #app > .banner {
   margin: 12px 12px 0;

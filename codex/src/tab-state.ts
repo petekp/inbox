@@ -12,6 +12,7 @@ import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
 import type { DrawnPrs, OpenPrBlock } from './tab-pr-steps'
 import type { DrawnStatus } from './tab-status-steps'
+import type { BannerLine } from './tab-line-steps'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
@@ -171,6 +172,8 @@ class TabState {
   lastPrs: DrawnPrs | null = null
   /** The Status page's lists as the last draw drew them, or null when that draw showed another tab. */
   lastStatus: DrawnStatus | null = null
+  /** The banners under the tab bar as the last draw drew them, or null before a view. */
+  lastBanners: BannerLine[] | null = null
   requested = 0
   shown = 0
   activePresses = 0
