@@ -2783,16 +2783,17 @@ function goalRevision(o, start, named, placed) {
     return null;
   const keys = (status) => new Set(named.filter(status).map((m) => nameKey(m.name)));
   const kept = keys(isOpen);
+  const carried = new Set(o.milestones.filter(isOpen).map((m) => nameKey(m.name)).filter((key) => kept.has(key)));
   const finished = keys((m) => m.status === "done");
   const byId = new Map(o.milestones.map((m) => [m.id, m]));
   const isCut = (m) => isOpen(m) && byId.get(m.id)?.status !== "done" && !kept.has(nameKey(m.name)) && !finished.has(nameKey(m.name));
-  const isCarried = (s) => kept.has(nameKey(byId.get(o.serves[s.id] ?? "")?.name ?? ""));
+  const isCarried = (s) => carried.has(nameKey(byId.get(o.serves[s.id] ?? "")?.name ?? ""));
   const held = heldSubjects(o).filter(isOpen);
   if (!start.milestones.some(isCut) || !held.some(isCarried))
     return null;
   const isPlaced = (s) => {
     const to = placed.get(s.id);
-    return to === null || to !== undefined && kept.has(nameKey(to));
+    return to === null || to !== undefined && carried.has(nameKey(to));
   };
   return held.filter((s) => !isCarried(s) && !isPlaced(s));
 }

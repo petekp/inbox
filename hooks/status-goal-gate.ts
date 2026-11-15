@@ -66,9 +66,10 @@ export function hasWorkForGoal(o: SessionStatus): boolean {
  * line revises the inferred goal the answer found when the person cut part of its outcome. It cuts a milestone that was
  * open when the answer started and that the answer did not finish, by leaving it out or naming it dropped. It names
  * again, with an open status, a milestone that holds open work, and that work moves with it. Each other open subject
- * the goal holds needs a SERVES line in `placed`, the answer's SERVES lines by subject id, to - or to a milestone the
- * line names again with an open status. The revision applies only when no subject is left with no place. So a rewording or an added milestone that cuts nothing is not a revision. A milestone named in other words
- * counts as cut, so its work must go to Other work.
+ * the goal holds needs a SERVES line in `placed`, the answer's SERVES lines by subject id. The line goes to -, or to an
+ * open milestone of the goal that the GOAL line names again with an open status. A milestone new to the goal is no
+ * place. The revision applies only when no subject is left with no place. So a rewording or an added milestone that
+ * cuts nothing is not a revision. A milestone named in other words counts as cut, so its work must go to Other work.
  */
 export function goalRevision(
   o: SessionStatus,
@@ -82,17 +83,23 @@ export function goalRevision(
   const keys = (status: (m: Pick<Milestone, 'status'>) => boolean) =>
     new Set(named.filter(status).map(m => nameKey(m.name)))
   const kept = keys(isOpen)
+  const carried = new Set(
+    o.milestones
+      .filter(isOpen)
+      .map(m => nameKey(m.name))
+      .filter(key => kept.has(key)),
+  )
   const finished = keys(m => m.status === 'done')
   const byId = new Map(o.milestones.map(m => [m.id, m]))
   const isCut = (m: Milestone) =>
     isOpen(m) && byId.get(m.id)?.status !== 'done' && !kept.has(nameKey(m.name)) && !finished.has(nameKey(m.name))
-  const isCarried = (s: Subject) => kept.has(nameKey(byId.get(o.serves[s.id] ?? '')?.name ?? ''))
+  const isCarried = (s: Subject) => carried.has(nameKey(byId.get(o.serves[s.id] ?? '')?.name ?? ''))
   const held = heldSubjects(o).filter(isOpen)
   if (!start.milestones.some(isCut) || !held.some(isCarried)) return null
 
   const isPlaced = (s: Subject) => {
     const to = placed.get(s.id)
-    return to === null || (to !== undefined && kept.has(nameKey(to)))
+    return to === null || (to !== undefined && carried.has(nameKey(to)))
   }
 
   return held.filter(s => !isCarried(s) && !isPlaced(s))
