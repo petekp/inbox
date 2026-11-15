@@ -33,7 +33,7 @@ import { bannerOf } from '../../hooks/banners'
 import { DOT, ROW_COPY, settledLabel, settledMark, shortAgo } from '../../hooks/rows'
 import { SETTLED_MS } from '../../hooks/timing'
 import { clipLabel } from '../../hooks/text'
-import { button } from './blocks'
+import { agedText, button } from './blocks'
 import type { Block, Button, LineBlock, Mark, RowBlock, Tone } from './blocks'
 import type { LookScreen } from './draw'
 
@@ -62,9 +62,11 @@ function prFeedback(screen: LookScreen, id: string): RowBlock['feedback'] {
   const { view, now } = screen
   const f = feedbackOf(id, view.lastActions[id], undefined, view.turns, now)
   if (!f) return null
-  const text = hasAge(f) ? `${markedFeedbackText(f, false, LOOK)}${DOT}${shortAgo(now - f.at)}` : feedbackText(f, LOOK)
+  const tone = isFailure(f) ? 'error' : 'muted'
+  if (!hasAge(f)) return { text: feedbackText(f, LOOK), tone, source: f }
+  const aged = { lead: markedFeedbackText(f, false, LOOK), at: f.at }
 
-  return { text, tone: isFailure(f) ? 'error' : 'muted', source: f }
+  return { text: agedText(aged, now), tone, source: f, aged }
 }
 
 const markOf = (m: PrRowMark): Mark => ({

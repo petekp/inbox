@@ -2,7 +2,7 @@ import { expect, setSystemTime, test } from 'bun:test'
 
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import { NOW } from './fixtures'
-import { allOf, giveKeysElsewhere, keysHolder, openPanel } from './gpui-stand-in'
+import { allOf, focusTerminal, giveKeysElsewhere, keysHolder, openPanel } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 
 setSystemTime(new Date(NOW))
@@ -94,4 +94,44 @@ test('a press on a row with a status line above its buttons keeps the buttons on
   await panel.settle()
   expect(panel.panel.queue.outs.map(o => o.rowId)).toEqual(['d18'])
   expect([before, buttonsLine()]).toEqual([2, 2])
+})
+
+test('a typed reply waits with its session while the panel follows another terminal, and comes back with it', async () => {
+  const panel = await openPanel()
+  const rowId = idsOf(panel.paint(), 'row ').find(id => {
+    panel.click(byId(panel.paint(), id)!)
+    return allOf(byId(panel.paint(), id)!).some(n => n.label === 'Reply')
+  })!
+  const pressReply = () => panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
+  pressReply()
+  panel.panel.input!.state.typeIn('Ran it and it passed')
+  focusTerminal('t2')
+  panel.paint()
+  expect(panel.panel.sessionId).toBeNull()
+  focusTerminal('t1')
+  panel.paint()
+  await panel.settle()
+  panel.click(byId(panel.paint(), rowId)!)
+  pressReply()
+  expect(panel.panel.input?.state.value()).toBe('Ran it and it passed')
+})
+
+test('a reply sent before the panel follows another terminal is still out when it comes back, so its confirmation can drop the draft', async () => {
+  const panel = await openPanel()
+  const rowId = idsOf(panel.paint(), 'row ').find(id => {
+    panel.click(byId(panel.paint(), id)!)
+    return allOf(byId(panel.paint(), id)!).some(n => n.label === 'Reply')
+  })!
+  panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
+  panel.panel.input!.state.typeIn('Ran it and it passed')
+  panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Send')!)
+  await panel.settle()
+  expect(panel.panel.queue.sentTexts.map(t => t.text)).toEqual(['Ran it and it passed'])
+  focusTerminal('t2')
+  panel.paint()
+  focusTerminal('t1')
+  panel.paint()
+  await panel.settle()
+  expect(panel.panel.queue.outs.map(o => `row ${o.rowId}`)).toEqual([rowId])
+  expect(panel.panel.queue.sentTexts.map(t => t.text)).toEqual(['Ran it and it passed'])
 })

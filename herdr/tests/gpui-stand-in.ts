@@ -1,6 +1,6 @@
 import { mock } from 'bun:test'
 
-import { SESSION_LABEL } from '../src/follow'
+import { SESSION_LABEL } from '../../hooks/herdr'
 import { demoEnvelopeText } from './fixtures'
 
 type Handler = (event: unknown, cx: StandInContext) => void
@@ -18,8 +18,13 @@ export type Painted = {
 
 class StandInField {
   text: string
+  handlers = new Map<string, () => void>()
   constructor(options?: { value?: string }) {
     this.text = options?.value ?? ''
+  }
+  typeIn(text: string) {
+    this.text = text
+    this.handlers.get('change')?.()
   }
   focus() {
     keys = this
@@ -31,12 +36,17 @@ class StandInField {
   value() {
     return this.text
   }
-  on() {
+  on(event: string, handler: () => void) {
+    this.handlers.set(event, handler)
     return true
   }
 }
 
 let keys: 'panel' | StandInField | null = null
+let focusedTerminal = 't1'
+export const focusTerminal = (address: string) => {
+  focusedTerminal = address
+}
 export const keysHolder = () => keys
 export const giveKeysElsewhere = () => {
   keys = null
@@ -146,10 +156,12 @@ mock.module('herdr', () => ({
   panes: () => [
     { pane: 'p-inbox', tab: 'tab1', terminal: null },
     { pane: 'p-agent', tab: 'tab1', terminal: 't1' },
+    { pane: 'p-shell', tab: 'tab1', terminal: 't2' },
   ],
-  focused: () => ({ tab: 'tab1', terminal: 't1' }),
+  focused: () => ({ tab: 'tab1', terminal: focusedTerminal }),
   terminals: () => [
     { address: 't1', labels: { [SESSION_LABEL]: 's1' }, program: { name: 'Claude Code', shell: false } },
+    { address: 't2', labels: {}, program: { name: 'zsh', shell: true } },
   ],
   theme: () => new Proxy({}, { get: () => '#808080' }),
   readTextFile: async (path: string) => (path.endsWith('s1.json') ? demoEnvelopeText() : ''),
@@ -165,6 +177,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 export async function openPanel() {
   const { default: Inbox } = await import('../src/main')
   keys = null
+  focusedTerminal = 't1'
   const panel = new Inbox()
   const cx = standInContext()
   panel.init(undefined, cx as never)

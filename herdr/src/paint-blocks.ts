@@ -2,7 +2,6 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import { ENTER_MS, EXIT_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
 import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
@@ -140,18 +139,6 @@ function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
     .child(buttonsEl(f.buttons, p, 0, isInert))
 }
 
-/**
- * A row fades in as it enters and out as it leaves. gpui-kit's transition animates only a later change of its target,
- * so a fade's first draw sets the opacity it starts from, and the next draw sets the one it ends at.
- */
-function opacityOf(r: RowBlock, p: Paint): number | null {
-  const m = p.motion.get(r.id)
-  if (m?.state === 'leaving') return m.isStart ? 1 : 0
-  if (m?.state === 'entering') return m.isStart ? 0 : 1
-
-  return null
-}
-
 function rowEl(r: RowBlock, p: Paint): Element {
   const { t } = p
   const line = h_flex()
@@ -182,7 +169,6 @@ function rowEl(r: RowBlock, p: Paint): Element {
     ...(r.heldLine ? [r.heldLine] : []),
     ...r.body,
   ]
-  const opacity = opacityOf(r, p)
   const isLeaving = p.motion.get(r.id)?.state === 'leaving'
 
   return v_flex()
@@ -190,9 +176,6 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .pl(EDGE + r.depth * NEST)
     .pr(EDGE)
     .py(ROW_PAD_PT)
-    .when(opacity !== null, e =>
-      e.opacity(opacity ?? 1).transition('opacity', { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: 'ease-out' }),
-    )
     .when(r.isSelected, e => e.bg(t.selected))
     .when(r.isSelectable && !r.isSelected && !isLeaving, e =>
       e.hover(s => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx)),

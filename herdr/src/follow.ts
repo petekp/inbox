@@ -1,7 +1,5 @@
+import { SESSION_LABEL } from '../../hooks/herdr'
 import { isSessionFile } from '../../hooks/session-files'
-
-/** The label a host sets on its Herdr app terminal, naming the session it publishes. */
-export const SESSION_LABEL = 'inbox.session'
 
 /** What the look reads from Herdr's live data to pick a terminal. Each field is the part of Herdr's own value it uses. */
 export type Where = {

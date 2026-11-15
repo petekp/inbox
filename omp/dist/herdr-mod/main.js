@@ -1,9 +1,9 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-14T23:25:54.503Z. 205461 characters follow.
+// Built at 2026-11-15T01:04:31.175Z. 209510 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
-import { InputState, Scrollbar, v_flex as v_flex3 } from "gpui-base";
+import { InputState, Scrollbar, v_flex as v_flex4 } from "gpui-base";
 import {
   appHome,
   exec,
@@ -2562,6 +2562,7 @@ var COUNT_TOKENS = {
   prs: "inbox-prs"
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
+var SESSION_LABEL = "inbox.session";
 var HERDR_FORMAT = 1;
 var SESSION_FIELDS = Object.keys(emptySession());
 function publishedSessionsFolder(appHome) {
@@ -3286,6 +3287,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
 
 // src/blocks.ts
 var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
+var agedText = (a, now) => `${a.lead}${DOT}${shortAgo(now - a.at)}`;
 
 // src/draw-prs.ts
 var LOOK = "herdr";
@@ -3306,8 +3308,11 @@ function prFeedback(screen, id) {
   const f = feedbackOf(id, view.lastActions[id], undefined, view.turns, now);
   if (!f)
     return null;
-  const text = hasAge(f) ? `${markedFeedbackText(f, false, LOOK)}${DOT}${shortAgo(now - f.at)}` : feedbackText(f, LOOK);
-  return { text, tone: isFailure(f) ? "error" : "muted", source: f };
+  const tone = isFailure(f) ? "error" : "muted";
+  if (!hasAge(f))
+    return { text: feedbackText(f, LOOK), tone, source: f };
+  const aged = { lead: markedFeedbackText(f, false, LOOK), at: f.at };
+  return { text: agedText(aged, now), tone, source: f, aged };
 }
 var markOf = (m) => ({
   text: m.text,
@@ -3972,7 +3977,6 @@ function readSession(text) {
 }
 
 // src/follow.ts
-var SESSION_LABEL = "inbox.session";
 function shownOf(where, address) {
   const t = where.terminals.find((x) => x.address === address);
   const sessionId = t?.labels?.[SESSION_LABEL];
@@ -4107,30 +4111,49 @@ function withoutConfirmed(drafts, confirmed, typing, pending) {
 // src/held-line.ts
 var NO_LINES_ABOVE = new Map;
 var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
-var isStatusUnder = (r) => r.feedback !== null && isStatusUnderActions(r.feedback.source, hasActions(r));
+var isStatusUnder = (r) => r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)));
 var isUnderWay = (f) => f?.is === "queued" || pressUnderWaySince(f) !== null;
-function holdLinesAbove(blocks, held) {
+var lineOf = (f) => ({
+  text: f.text,
+  tone: f.tone,
+  isHidden: isFailure(f.source),
+  ...f.aged ? { aged: f.aged } : {}
+});
+var drawn = (l, now) => ({
+  text: l.aged ? agedText(l.aged, now) : l.text,
+  tone: l.tone,
+  isHidden: l.isHidden
+});
+function holdLinesAbove(blocks, held, now) {
   const next = new Map;
   const shown = blocks.map((b) => {
     if (b.kind !== "row")
       return b;
-    const line = held.get(b.id);
-    const isPressUnderWay = isUnderWay(b.feedback?.source ?? null);
+    const kept = held.get(b.id);
+    const f = b.feedback;
     if (!hasActions(b)) {
-      if (line && isPressUnderWay)
-        next.set(b.id, line);
+      if (kept !== undefined && isUnderWay(f?.source ?? null))
+        next.set(b.id, kept);
       return b;
+    }
+    if (f === null) {
+      if (kept === undefined)
+        return b;
+      const empty = kept && { ...kept, isHidden: true };
+      next.set(b.id, empty);
+      return empty ? { ...b, heldLine: drawn(empty, now) } : b;
     }
     if (!isStatusUnder(b)) {
-      const f = b.feedback;
-      if (f)
-        next.set(b.id, { text: f.text, tone: f.tone, isHidden: isFailure(f.source) });
+      next.set(b.id, kept === null ? null : lineOf(f));
+      return kept === null ? { ...b, isStatusHeldUnder: true } : b;
+    }
+    if (kept === undefined) {
+      if (isUnderWay(f.source))
+        next.set(b.id, null);
       return b;
     }
-    if (!line || !isPressUnderWay)
-      return b;
-    next.set(b.id, line);
-    return { ...b, heldLine: line };
+    next.set(b.id, kept);
+    return kept ? { ...b, heldLine: drawn(kept, now) } : b;
   });
   return { blocks: shown, held: next };
 }
@@ -4204,18 +4227,47 @@ function rest(track, form, target, now) {
 
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [] };
-var targetOf = (r) => r.settled ? "settled" : r.isSelected ? "open" : "closed";
+var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : b.isSelected ? "open" : "closed";
+var isBoxed = (state) => state === "entering" || state === "leaving";
+function boxOf(state, isStart, was) {
+  if (!isBoxed(state))
+    return null;
+  const isFrom = isStart && !isBoxed(was);
+  if (state === "entering")
+    return isFrom ? "shut" : "open";
+  return isFrom ? "open" : "shut";
+}
+function movingIds(blocks) {
+  const ids = new Set;
+  let foldDepth = null;
+  for (const b of blocks) {
+    const depth = "depth" in b ? b.depth : 0;
+    if (foldDepth !== null && depth <= foldDepth)
+      foldDepth = null;
+    if (foldDepth !== null || b.kind === "row")
+      ids.add(b.id);
+    if (b.kind === "fold" && b.isOpen && foldDepth === null)
+      foldDepth = depth;
+  }
+  return ids;
+}
 function moveRows(blocks, last, now, isFirst) {
   const was = isFirst ? NO_TRACKS : last;
   const wasDrawn = new Set(was.order);
   const rows = new Map;
   const motion = new Map;
-  const add = (row, track) => {
-    rows.set(row.id, { track, row });
-    motion.set(row.id, { state: track.state, isStart: track.since === now && isMoving(track.state) });
+  const add = (block, track) => {
+    rows.set(block.id, { track, block });
+    const isStart = track.since === now && isMoving(track.state);
+    motion.set(block.id, {
+      state: track.state,
+      isStart,
+      box: boxOf(track.state, isStart, was.rows.get(block.id)?.track.state)
+    });
   };
+  const moving = movingIds(blocks);
   for (const b of blocks) {
-    if (b.kind !== "row")
+    if (!moving.has(b.id))
       continue;
     const track = stepRow2(was.rows.get(b.id)?.track, targetOf(b), now, !isFirst && !wasDrawn.has(b.id));
     if (track)
@@ -4230,8 +4282,8 @@ function moveRows(blocks, last, now, isFirst) {
     const track = stepRow2(old.track, "gone", now);
     if (!track)
       return;
-    add(old.row, track);
-    shown.splice(placeAfter(shown, was.order.slice(0, i)), 0, old.row);
+    add(old.block, track);
+    shown.splice(placeAfter(shown, was.order.slice(0, i)), 0, old.block);
   });
   const ends = [...rows.values()].flatMap((t) => isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : []);
   return {
@@ -4402,14 +4454,6 @@ function fieldEl(f, p, indent, isInert = false) {
   ] : [];
   return v_flex2().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
 }
-function opacityOf(r, p) {
-  const m = p.motion.get(r.id);
-  if (m?.state === "leaving")
-    return m.isStart ? 1 : 0;
-  if (m?.state === "entering")
-    return m.isStart ? 0 : 1;
-  return null;
-}
 function rowEl(r, p) {
   const { t } = p;
   const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div3().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div3().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
@@ -4420,9 +4464,8 @@ function rowEl(r, p) {
     ...r.heldLine ? [r.heldLine] : [],
     ...r.body
   ];
-  const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
-  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3())).when(feedbackUnder !== null, (e) => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div3()));
+  return v_flex2().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving).pt(CONTROL_GAP) : div3())).when(feedbackUnder !== null, (e) => e.child(feedbackUnder ? bodyLineEl(feedbackUnder, t) : div3()));
 }
 var statusPartEl = (text) => div3().min_w(0).max_w_full().whitespace_normal().child(text);
 function statusEl(s, p) {
@@ -4509,6 +4552,7 @@ function blockEl(b, p) {
 
 // src/paint-space.ts
 import { div as div4 } from "gpui-kit";
+import { v_flex as v_flex3 } from "gpui-base";
 var padOf = (b) => b.kind === "row" || b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
 var depthOf = (b) => ("depth" in b) ? b.depth : 0;
 var isOneLine = (b) => b.kind === "status" ? b.under.length === 0 && b.buttons.length === 0 : b.kind === "note" || b.kind === "fold";
@@ -4537,22 +4581,61 @@ function gapBetween(prev, b) {
     return EDGE;
   return itemGap(prev, b);
 }
-function spacedEls(blocks, el) {
+function aboveOf(prev, b, isSection) {
+  if (prev === null)
+    return 0;
+  const gap = isSection ? GROUP_GAP : gapBetween(prev, b);
+  return Math.max(0, gap - padOf(prev) - padOf(b));
+}
+function spacesOf(blocks, isMoving) {
   const out = [];
   let prev = null;
   let isSection = false;
+  let resting = null;
+  let isSectionSinceResting = false;
   for (const b of blocks) {
     if (b.kind === "gap") {
       isSection = prev !== null;
+      isSectionSinceResting = resting !== null;
       continue;
     }
-    const gap = prev === null ? 0 : isSection ? GROUP_GAP : gapBetween(prev, b);
-    const above = Math.max(0, gap - (prev === null ? 0 : padOf(prev)) - padOf(b));
-    out.push(div4().flex_none().pt(above).child(el(b)));
+    const above = aboveOf(prev, b, isSection);
+    const run = out.at(-1);
+    const isUnderRun = run !== undefined && isMoving(run.block) && !isMoving(b);
+    const shut = isUnderRun ? aboveOf(resting, b, isSectionSinceResting) : above;
+    const held = Math.min(shut, above);
+    if (run && isUnderRun)
+      Object.assign(run, { below: above - held, floor: shut - held });
+    out.push({ block: b, above: held, below: 0, floor: 0 });
     prev = b;
     isSection = false;
+    if (!isMoving(b)) {
+      resting = b;
+      isSectionSinceResting = false;
+    }
   }
   return out;
+}
+function boxEl(s, m, p, inner) {
+  const id = s.block.id;
+  const box = v_flex3().id(`box ${id}`).flex_none().child(inner);
+  if (m.box === null)
+    return box;
+  const height = p.heights.get(id);
+  const isOpen = m.box === "open" && height !== undefined;
+  const glide = { duration: ROW_STATE_MS[m.state], easing: "ease-out" };
+  return box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor).opacity(isOpen ? 1 : 0).transition("height", glide).transition("opacity", glide);
+}
+function spacedEls(blocks, p, el) {
+  return spacesOf(blocks, (b) => (p.motion.get(b.id)?.box ?? null) !== null).map((s) => {
+    const id = s.block.id;
+    const m = p.motion.get(id);
+    const spaced = div4().flex_none().pt(s.above).pb(s.below);
+    if (!m)
+      return spaced.child(el(s.block));
+    const sized = div4().id(`size ${id}`).on_size_change((size, cx) => p.measure(id, size.height, cx)).child(el(s.block));
+    return boxEl(s, m, p, spaced.child(sized));
+  });
 }
 
 // src/press-file.ts
@@ -4645,6 +4728,17 @@ function nextOutCheckAt(outs, now) {
   return later.length ? Math.min(...later) : null;
 }
 var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
+function withUndoOut(rowId, buttons, out) {
+  if (out?.action !== "undo")
+    return buttons;
+  const id = `${rowId} undo`;
+  const kept = buttons.find((b) => b.id === id);
+  if (kept && !kept.isHidden)
+    return buttons;
+  const { isHidden: _, ...spent } = kept ?? button(id, out.label, "quiet");
+  const drawn = { ...spent, label: out.label, isOut: true };
+  return kept ? buttons.map((b) => b === kept ? drawn : b) : [...buttons, drawn];
+}
 function drawOuts(blocks, outs, lines, now) {
   const byRow = new Map(outs.map((o) => [o.rowId, o]));
   const outRows = new Set(byRow.keys());
@@ -4660,7 +4754,9 @@ function drawOuts(blocks, outs, lines, now) {
   return blocks.map((b) => {
     if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
       const line = lineOf(b.id);
-      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
+      const isSettledRow = b.kind === "row" && b.settled !== null;
+      const buttons = isSettledRow ? withUndoOut(b.id, b.buttons, byRow.get(b.id)) : b.buttons;
+      return { ...b, buttons: withOutButtons(buttons, outRows), ...line ? { feedback: line } : {} };
     }
     if (b.kind === "status" || b.kind === "heading" || b.kind === "empty")
       return { ...b, buttons: withOutButtons(b.buttons, outRows) };
@@ -4919,12 +5015,14 @@ class Inbox extends View {
   isHelpShown = false;
   isNarrow = false;
   drafts = {};
+  left = {};
   confirmed = [];
   input = null;
   discarded = {};
   listInput = null;
   queue = new PressQueue(queueIo);
   tracks = NO_TRACKS;
+  heights = new Map;
   tracksOf = "";
   lastWaits = { tab: "needsYou", rows: [] };
   timeLeft = new Map;
@@ -5004,17 +5102,23 @@ class Inbox extends View {
     const sessionId = this.followed.is === "session" ? this.followed.sessionId : null;
     if (sessionId === this.sessionId)
       return;
+    if (this.sessionId)
+      this.left[this.sessionId] = { drafts: this.drafts, confirmed: this.confirmed, queue: this.queue };
     this.sessionId = sessionId;
     this.read = null;
     this.view = null;
     this.ui = freshUi(this.ui.tab);
     this.shownSince = Date.now();
-    this.drafts = {};
-    this.confirmed = [];
+    const kept = sessionId && this.left[sessionId] || null;
+    if (sessionId)
+      delete this.left[sessionId];
+    this.drafts = kept?.drafts ?? {};
+    this.confirmed = kept?.confirmed ?? [];
     this.input?.state.release();
     this.input = null;
     this.discarded = {};
-    this.queue = new PressQueue(queueIo);
+    this.heights.clear();
+    this.queue = kept?.queue ?? new PressQueue(queueIo);
     if (sessionId)
       this.load(sessionId, cx);
   }
@@ -5182,12 +5286,20 @@ class Inbox extends View {
         cx.notify();
       },
       motion: new Map,
+      heights: this.heights,
+      measure: (id, height, cx) => {
+        if (this.heights.get(id) === height)
+          return;
+        this.heights.set(id, height);
+        if (paint.motion.get(id)?.box)
+          cx.notify();
+      },
       now,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
       isNarrow: this.isNarrow
     };
-    const root = v_flex3().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change((size, cx) => {
+    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change((size, cx) => {
       const isNarrow = size.width < NARROW_PANE;
       if (isNarrow === this.isNarrow)
         return;
@@ -5202,7 +5314,7 @@ class Inbox extends View {
     const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks;
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`;
-    const held = holdLinesAbove(shown, tracksOf !== this.tracksOf ? NO_LINES_ABOVE : this.linesAbove);
+    const held = holdLinesAbove(shown, tracksOf !== this.tracksOf ? NO_LINES_ABOVE : this.linesAbove, now);
     this.linesAbove = held.held;
     const moved = moveRows(held.blocks, this.tracks, now, tracksOf !== this.tracksOf);
     this.tracks = moved.tracks;
@@ -5217,13 +5329,13 @@ class Inbox extends View {
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div5().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)).children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div5().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
       else
         this.focus?.focus();
-    }).children(spacedEls(moved.blocks, (b) => blockEl(b, paint)))).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    }).children(spacedEls(moved.blocks, paint, (b) => blockEl(b, paint)))).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
   }
 }
 export {

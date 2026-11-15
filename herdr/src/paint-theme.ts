@@ -111,6 +111,9 @@ export type Paint = {
   select: (id: string, cx: Context) => void
   pick: (tab: ShownTab, cx: Context) => void
   motion: ReadonlyMap<string, RowMotion>
+  /** Each moving block's height without its space, from its last measure. */
+  heights: ReadonlyMap<string, number>
+  measure: (id: string, height: number, cx: Context) => void
   now: number
   /** The time left each timed button draws, by its id. */
   timeLeft: ReadonlyMap<string, TimeLeft>

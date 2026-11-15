@@ -234,6 +234,18 @@ test('once Undo ends, a row the list holds keeps a hidden Undo that u skips, and
   expect(rowsOf(folded.blocks).find(r => r.id === 'd8')).toBeUndefined()
 })
 
+test('an Undo whose press is still out when its time ends stays drawn out in its place until the press ends', () => {
+  const at = NOW - SETTLED_MS - 500
+  const { blocks } = dismissedRows({ d8: at }, at - 1000, { since: at, last: NOW - 100 })
+  const out = drawOuts(blocks, [outOn('d8', { action: 'undo', label: 'Undo' })], {}, NOW)
+  expect(undoOf(out, 'd8')).toMatchObject({ label: 'Undo', isOut: true })
+  expect(undoOf(out, 'd8')?.isHidden).toBeUndefined()
+  expect(rowsOf(out).find(r => r.id === 'd8')?.buttons.length).toBe(
+    rowsOf(blocks).find(r => r.id === 'd8')?.buttons.length,
+  )
+  expect(undoOf(drawOuts(blocks, [], {}, NOW), 'd8')?.isHidden).toBe(true)
+})
+
 test('a settled answer keeps its spent Undo’s place until its message has waited for the agent past Undo’s end, and the look draws again then', () => {
   const at = NOW - SETTLED_MS - 500
   const s = demoSession(NOW, AGENT)
