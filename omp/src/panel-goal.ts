@@ -1,28 +1,31 @@
 import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey } from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
-import { STALL_GAP, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
-import { unfoldedRows } from '../../hooks/status-page-parts'
+import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusPage } from '../../hooks/status-page'
+import { isSpacedAbove, LATER_TEXT, milestoneRows } from '../../hooks/status-path'
+import type { PathLine } from '../../hooks/status-path'
 import { paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import type { Entry } from './panel-lines'
 import { PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
-import { GLUE, pageButtonLines, pageLine, partHeading } from './panel-page'
+import { pageButtonLines, pageLine, partHeading } from './panel-page'
 import { indented, visibleLength, wrapText } from './panel-text'
+import type { Style } from './panel'
 import { cellWidth } from '../../hooks/text'
 
 /**
  * A part of the goal's section on the Status page: its heading row with the goal's buttons, the goal's text with its
- * was, Now and awaiting lines, a blank line before a milestone or its rows, a milestone, or on the empty page New or
- * its field.
+ * was, Now and awaiting lines, a blank line before a milestone or its rows with the path's line through it, the Later
+ * label, a milestone, or on the empty page New or its field.
  */
 export type GoalPart =
   | { is: 'heading'; text: string; page: StatusPage | null }
   | { is: 'title'; goal: GoalBlock | null; isTyping: boolean }
   | { is: 'milestone'; row: MilestoneRow }
   | { is: 'keys'; keys: StatusKey[] }
-  | { is: 'gap' }
+  | { is: 'gap'; line: PathLine }
+  | { is: 'later' }
   | { is: 'field' }
 
 /** The id of the Status target a part draws the buttons of, or null for a part with none. */
@@ -36,26 +39,46 @@ const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
 
 /**
  * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at the right
- * edge, then the goal's text, or the line that says no goal is set, then the milestones, each after a blank line, with
- * a blank line between it and the rows of its work. While the person types a goal, the field takes the text's place,
- * and the buttons leave.
+ * edge, then the goal's text, or the line that says no goal is set, then the milestones as a path, with a blank line
+ * between a milestone and the rows of its work. A blank line comes before each milestone unless it and the one above
+ * draw only their names, and the Later label before the first that waits under it. The path's line runs in the mark
+ * column from each milestone to the next. While the person types a goal, the field takes the text's place, and the
+ * buttons leave.
  */
 export function goalSection(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
   const g = page.goal
-  const gap = goalEntry({ is: 'gap' })
+  const milestones = g?.milestones ?? []
 
   return [
     goalEntry({ is: 'heading', text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
     goalEntry({ is: 'title', goal: g, isTyping }),
-    ...(g?.milestones ?? []).flatMap(row => [
-      gap,
-      goalEntry({ is: 'milestone', row }),
-      ...(row.rows.length > 0
-        ? [gap, ...unfoldedRows(row.rows, isUnfolded).map((r): Entry => ({ kind: 'page', row: r }))]
-        : []),
-    ]),
+    ...milestones.flatMap((row, n) => {
+      const rows = milestoneRows(row, isUnfolded)
+
+      return [
+        ...(isSpacedAbove(milestones, n, isUnfolded)
+          ? [goalEntry({ is: 'gap', line: milestones[n - 1]?.line ?? null })]
+          : []),
+        ...(row.startsLater ? [goalEntry({ is: 'later' })] : []),
+        goalEntry({ is: 'milestone', row }),
+        ...(rows.length > 0
+          ? [
+              goalEntry({ is: 'gap', line: row.line }),
+              ...rows.map((r): Entry => ({ kind: 'page', row: r, path: row.line })),
+            ]
+          : []),
+      ]
+    }),
   ]
+}
+
+/** `lines` with the path's line in the milestones' mark column, `┆` into the milestone that reads next. */
+export function withPathLine(lines: string[], line: PathLine, s: Style): string[] {
+  if (line === null) return lines
+  const glyph = s.dim(line === 'to-next' ? '┆' : '│')
+
+  return lines.map(l => l.slice(0, PAGE_MARK_AT).padEnd(PAGE_MARK_AT) + glyph + l.slice(PAGE_MARK_AT + 1))
 }
 
 /** Under the empty state: New, or the field it opened. */
@@ -75,18 +98,33 @@ function fieldLines(d: Draw): string[] {
   ]
 }
 
-/** The goal's text in bold, its count after it, dim and kept whole on the line with the text's last word. */
-function textWithCount(g: GoalBlock, d: Draw): string[] {
-  const { width, style: s } = d
-  if (g.count === null) return indented(g.text, PAGE_MARK_AT, width, Infinity, s.bold)
-  const tail = `${STALL_GAP}${g.count}`.replaceAll(' ', GLUE)
-  const lines = wrapText(`${g.text}${tail}`, Math.max(10, width - PAGE_MARK_AT - 1))
+/** The cells between the end of a name's first line and its word. */
+const WORD_GAP = 2
 
-  return lines.map(
-    l =>
-      ' '.repeat(PAGE_MARK_AT) +
-      (l.endsWith(tail) ? s.bold(l.slice(0, -tail.length)) + s.dim(tail.replaceAll(GLUE, ' ')) : s.bold(l)),
-  )
+/**
+ * A milestone's lines: its mark and name, its word dim at the right edge of the name's first line where it fits, then
+ * where it stands, its was line and its buttons. A done milestone folded to its name draws the name dim with the fold's
+ * chevron after it, and takes Enter as its fold.
+ */
+function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[] {
+  const { width, now, style: s } = d
+  const mark = paintMark({ ...m, isRunning: false }, now, s)
+  if (m.foldId !== null) {
+    const chevron = d.ui.statusUnfolded.includes(m.foldId) ? '▾' : '▸'
+    const [namePaint, chevronPaint] = isSelected ? [s.bold, (t: string) => s.tone('accent', t)] : [s.dim, s.dim]
+
+    return pageLine(d, PAGE_MARK_AT, mark, `${m.name} ${chevron}`, t =>
+      t.endsWith(chevron) ? namePaint(t.slice(0, -chevron.length)) + chevronPaint(chevron) : namePaint(t),
+    )
+  }
+  const namePaint = (t: string) => (m.isMuted ? s.dim : (u: string) => u)(m.isChanged ? s.bold(t) : t)
+  const [first = '', ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { stall: m.stall, text: m.text })
+  const room = width - 1 - visibleLength(first) - cellWidth(m.word ?? '')
+  const word = m.word !== null && room >= WORD_GAP ? `${' '.repeat(room)}${s.dim(m.word)}` : ''
+  const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
+  const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]
+
+  return [`${first}${word}`, ...withPathLine(after, m.line, s)]
 }
 
 /**
@@ -112,14 +150,15 @@ function headingLines(part: GoalPart & { is: 'heading' }, d: Draw, isSelected: b
 }
 
 export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): string[] {
-  const { width, now, style: s } = d
+  const { width, style: s } = d
   const at = (text: string, paint: (t: string) => string, lines = STATUS_TEXT_LINES) =>
     indented(text, PAGE_MARK_AT, width, lines, paint)
   if (part.is === 'heading') return headingLines(part, d, isSelected)
-  if (part.is === 'gap') return ['']
+  if (part.is === 'gap') return withPathLine([''], part.line, s)
+  if (part.is === 'later') return [partHeading(LATER_TEXT, width, s)]
   if (part.is === 'title') {
     const g = part.goal
-    const text = part.isTyping ? fieldLines(d) : g ? textWithCount(g, d) : at(NO_GOAL_TEXT, s.dim)
+    const text = part.isTyping ? fieldLines(d) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity)
 
     return [
       ...text,
@@ -128,14 +167,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
       ...(g?.awaiting ? at(g.awaiting, s.dim) : []),
     ]
   }
-  if (part.is === 'milestone') {
-    const m = part.row
-    const mark = paintMark({ ...m, isRunning: false }, now, s)
-    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, t => t, { stall: m.stall, text: m.text })
-    if (m.was) out.push(...indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim))
-
-    return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]
-  }
+  if (part.is === 'milestone') return milestoneLines(part.row, d, isSelected)
   if (part.is === 'keys') return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT)
   return fieldLines(d)
 }

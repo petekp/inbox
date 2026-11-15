@@ -26,11 +26,11 @@ export type PathStep = {
   startsLater: boolean
 }
 
-export const NOW_WORD = 'now'
-export const NEXT_WORD = 'next'
+const NOW_WORD = 'now'
+const NEXT_WORD = 'next'
 export const LATER_TEXT = 'Later'
 /** How long a milestone runs before its row says for how long: a step under an hour is the normal pace of the work. */
-export const UNDER_WAY_TIME_AFTER_MS = 60 * 60_000
+const UNDER_WAY_TIME_AFTER_MS = 60 * 60_000
 const HOUR_MS = 60 * 60_000
 const DAY_HOURS = 24
 /** Hours past this read as days, as `idle 2d` does. */
@@ -109,4 +109,29 @@ export function milestoneRows(
   isUnfolded: (id: string) => boolean,
 ): StatusRow[] {
   return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded)
+}
+
+type SpacedMilestone = {
+  foldId: string | null
+  rows: StatusRow[]
+  text: string | null
+  was: string | null
+  ask: unknown
+}
+
+/**
+ * Whether a look leaves a blank line's space above the milestone at `n`. Two milestones that each draw only their
+ * name, such as done ones folded to their names, sit on adjacent lines. The Later label always has space above it.
+ */
+export function isSpacedAbove(
+  milestones: readonly (SpacedMilestone & { startsLater: boolean })[],
+  n: number,
+  isUnfolded: (id: string) => boolean,
+): boolean {
+  const drawsNameOnly = (m: SpacedMilestone) =>
+    m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0
+  const above = milestones[n - 1]
+  const m = milestones[n]
+
+  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above) || !drawsNameOnly(m)
 }

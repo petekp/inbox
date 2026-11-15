@@ -29,6 +29,7 @@ import {
 } from './pane-status-tops'
 import type { Drawn } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
+import type { PaneStatusPath } from './pane-status-path'
 import type { StatusTone } from './help'
 import type { MilestoneRow } from './status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT } from './status-goal-page'
@@ -36,6 +37,7 @@ import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
+import { isSpacedAbove, LATER_TEXT, milestoneRows } from './status-path'
 import { ROW_COPY } from './rows'
 
 /** One line of the Status list, as `paneStatus` draws it, so milestones line up with subjects. */
@@ -74,14 +76,21 @@ export function paneStatusGoal(
   { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
   {
     statusRowLine,
-    statusRows,
+    drawRows,
     keysRow,
     statusKeys,
+    statusPartLine,
+    isUnfolded,
+    path,
   }: {
     statusRowLine: StatusRowLine
     statusKeys: (t: StatusKeyTarget) => KeyAction[]
-    statusRows: (rows: StatusRow[]) => Drawn[]
+    /** Draws rows as given, with no fold opened. */
+    drawRows: (rows: StatusRow[]) => Drawn[]
     keysRow: (t: StatusKeyTarget, width: number) => Drawn[]
+    statusPartLine: (id: string, text: string, isFirst: boolean) => Drawn
+    isUnfolded: (id: string) => boolean
+    path: PaneStatusPath
   },
 ) {
   const isTypingGoal = Input !== null && typing === GOAL_KEYS_ID
@@ -209,21 +218,59 @@ export function paneStatusGoal(
   /** A blank line in the terminal, and on desktop the space Codex leaves there, `SECTION_GAP_PT`. */
   const milestoneGap = look === 'terminal' ? 1 : SECTION_GAP_PT / DESKTOP_LINE_PT
   const gap = (key: string): Drawn => ({ el: <Box key={key} height={milestoneGap} />, lines: exactly(milestoneGap) })
-  /** A milestone, then a blank line's space and the work that serves it, one step in. */
-  const milestoneLines = (m: MilestoneRow): Drawn[] => [
-    statusRowLine({
+  /** The milestone's line: its mark, then its name, or the fold of a done milestone folded to its name. */
+  const milestoneLine = (m: MilestoneRow): Drawn => {
+    const mark = markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted)
+    if (m.foldId !== null) {
+      const fold = path.foldedName({ ...m, foldId: m.foldId })
+      return look === 'desktop'
+        ? fold
+        : statusRowLine({ key: `status-${m.id}`, mark, content: [fold], isSelected: isSelected(m.id) })
+    }
+    const name = {
+      text: m.name,
+      ...(m.isChanged ? { bold: true as const } : {}),
+      ...(m.isMuted ? { isMuted: true as const } : {}),
+    }
+
+    return statusRowLine({
       key: `status-${m.id}`,
-      mark: markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted),
+      mark,
       content: [
-        statusNameLine(`goal-${m.id}-name`, { text: m.name }, m.stall, 0),
+        statusNameLine(`goal-${m.id}-name`, name, m.stall, 0),
+        ...path.pathWord(m),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
         ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),
       ],
       isSelected: isSelected(m.id),
-    }),
-    ...(m.rows.length > 0 ? [gap(`goal-${m.id}-rows-gap`), ...statusRows(m.rows)] : []),
-  ]
+    })
+  }
+  /** A milestone, then a blank line's space and the work that serves it, one step in. */
+  const milestoneLines = (m: MilestoneRow): Drawn[] => {
+    const rows = milestoneRows(m, isUnfolded)
+
+    return [milestoneLine(m), ...(rows.length > 0 ? [gap(`goal-${m.id}-rows-gap`), ...drawRows(rows)] : [])]
+  }
+  /**
+   * The milestones in path order. The space under a milestone the path's line leaves from is part of its group, so the
+   * line runs through it. The Later label sits above the first milestone under Later.
+   */
+  const milestoneSection = (milestones: MilestoneRow[]): Drawn[] => {
+    const spaceAbove = (n: number) =>
+      isSpacedAbove(milestones, n, isUnfolded) ? [gap(`goal-${milestones[n]?.id}-gap`)] : []
+
+    return milestones.flatMap((m, n) => {
+      const hasLineAbove = (milestones[n - 1]?.line ?? null) !== null
+      const under = m.line !== null && n + 1 < milestones.length ? spaceAbove(n + 1) : []
+
+      return [
+        ...(hasLineAbove ? [] : spaceAbove(n)),
+        ...(m.startsLater ? [statusPartLine('goal-later', LATER_TEXT, true)] : []),
+        ...path.pathGroup(`goal-${m.id}-path`, m.line, [...milestoneLines(m), ...under]),
+      ]
+    })
+  }
 
   /** The cells the terminal draws `keys` in on one line, or the points desktop draws them in. */
   /** The cells the terminal draws `keys` in on one line, `STALL_GAP` between them, or the points desktop draws them in. */
@@ -315,12 +362,11 @@ export function paneStatusGoal(
     const goalText = g
       ? wrapped(
           <Box key="goal-text">
-            <Text wrap="wrap">
-              <Text bold>{g.text}</Text>
-              {g.count ? <Text color={pal.muted}>{`${STALL_GAP}${g.count}`.replaceAll(' ', '\u00a0')}</Text> : null}
+            <Text wrap="wrap" bold>
+              {g.text}
             </Text>
           </Box>,
-          `${g.text}${g.count ? `${STALL_GAP}${g.count}`.replaceAll(' ', '_') : ''}`,
+          g.text,
         )
       : muted('goal-none', NO_GOAL_TEXT)
     const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
@@ -331,12 +377,8 @@ export function paneStatusGoal(
       ...(g?.now ? [muted('goal-now', g.now)] : []),
       ...(g?.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
     ]
-    const milestones = g?.milestones ?? []
 
-    return [
-      block(`status-${GOAL_KEYS_ID}`, body, isSelected(GOAL_KEYS_ID)),
-      ...milestones.flatMap(m => [gap(`goal-${m.id}-gap`), ...milestoneLines(m)]),
-    ]
+    return [block(`status-${GOAL_KEYS_ID}`, body, isSelected(GOAL_KEYS_ID)), ...milestoneSection(g?.milestones ?? [])]
   }
   /** New, or the field it opened, with no frame, for the empty page's centred column. */
   const setGoalBare = (setGoal: { keys: StatusKey[]; isFieldOpen: boolean }): Drawn[] =>

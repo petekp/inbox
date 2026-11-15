@@ -3659,6 +3659,7 @@ function unfoldedRows(rows, isUnfolded) {
 // ../hooks/status-path.ts
 var NOW_WORD = "now";
 var NEXT_WORD = "next";
+var LATER_TEXT = "Later";
 var UNDER_WAY_TIME_AFTER_MS = 60 * 60000;
 var HOUR_MS = 60 * 60000;
 var DAY_HOURS = 24;
@@ -3700,6 +3701,15 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
     const row = stems(`${m.name} ${m.text}`);
     return [...said].every((w) => row.has(w));
   });
+}
+function milestoneRows(m, isUnfolded) {
+  return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded);
+}
+function isSpacedAbove(milestones, n, isUnfolded) {
+  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
+  const above = milestones[n - 1];
+  const m = milestones[n];
+  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above) || !drawsNameOnly(m);
 }
 
 // ../hooks/status-goal-page.ts
@@ -7253,16 +7263,29 @@ var goalEntry = (part) => ({ kind: "goal", part });
 function goalSection(page, typing, isUnfolded) {
   const isTyping = typing === GOAL_KEYS_ID;
   const g = page.goal;
-  const gap = goalEntry({ is: "gap" });
+  const milestones = g?.milestones ?? [];
   return [
     goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
     goalEntry({ is: "title", goal: g, isTyping }),
-    ...(g?.milestones ?? []).flatMap((row) => [
-      gap,
-      goalEntry({ is: "milestone", row }),
-      ...row.rows.length > 0 ? [gap, ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))] : []
-    ])
+    ...milestones.flatMap((row, n) => {
+      const rows = milestoneRows(row, isUnfolded);
+      return [
+        ...isSpacedAbove(milestones, n, isUnfolded) ? [goalEntry({ is: "gap", line: milestones[n - 1]?.line ?? null })] : [],
+        ...row.startsLater ? [goalEntry({ is: "later" })] : [],
+        goalEntry({ is: "milestone", row }),
+        ...rows.length > 0 ? [
+          goalEntry({ is: "gap", line: row.line }),
+          ...rows.map((r) => ({ kind: "page", row: r, path: row.line }))
+        ] : []
+      ];
+    })
   ];
+}
+function withPathLine(lines, line, s) {
+  if (line === null)
+    return lines;
+  const glyph = s.dim(line === "to-next" ? "\u2506" : "\u2502");
+  return lines.map((l) => l.slice(0, PAGE_MARK_AT).padEnd(PAGE_MARK_AT) + glyph + l.slice(PAGE_MARK_AT + 1));
 }
 function setGoal(setGoal) {
   return [goalEntry(setGoal.isFieldOpen ? { is: "field" } : { is: "keys", keys: setGoal.keys })];
@@ -7276,13 +7299,22 @@ function fieldLines(d) {
     ...field.map((l) => " ".repeat(PAGE_MARK_AT) + l.replace("\x00", s.inverse(" ")))
   ];
 }
-function textWithCount(g, d) {
-  const { width, style: s } = d;
-  if (g.count === null)
-    return indented(g.text, PAGE_MARK_AT, width, Infinity, s.bold);
-  const tail = `${STALL_GAP}${g.count}`.replaceAll(" ", GLUE);
-  const lines = wrapText(`${g.text}${tail}`, Math.max(10, width - PAGE_MARK_AT - 1));
-  return lines.map((l) => " ".repeat(PAGE_MARK_AT) + (l.endsWith(tail) ? s.bold(l.slice(0, -tail.length)) + s.dim(tail.replaceAll(GLUE, " ")) : s.bold(l)));
+var WORD_GAP = 2;
+function milestoneLines(m, d, isSelected) {
+  const { width, now, style: s } = d;
+  const mark = paintMark({ ...m, isRunning: false }, now, s);
+  if (m.foldId !== null) {
+    const chevron = d.ui.statusUnfolded.includes(m.foldId) ? "\u25BE" : "\u25B8";
+    const [namePaint, chevronPaint] = isSelected ? [s.bold, (t) => s.tone("accent", t)] : [s.dim, s.dim];
+    return pageLine(d, PAGE_MARK_AT, mark, `${m.name} ${chevron}`, (t) => t.endsWith(chevron) ? namePaint(t.slice(0, -chevron.length)) + chevronPaint(chevron) : namePaint(t));
+  }
+  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged ? s.bold(t) : t);
+  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { stall: m.stall, text: m.text });
+  const room = width - 1 - visibleLength(first) - cellWidth(m.word ?? "");
+  const word = m.word !== null && room >= WORD_GAP ? `${" ".repeat(room)}${s.dim(m.word)}` : "";
+  const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
+  const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
+  return [`${first}${word}`, ...withPathLine(after, m.line, s)];
 }
 function headingLines(part, d, isSelected) {
   const { width, style: s } = d;
@@ -7298,15 +7330,17 @@ function headingLines(part, d, isSelected) {
   return [`${" ".repeat(PAGE_MARK_AT)}${s.dim(label + "\u2500".repeat(rule))}${keys[0]}`];
 }
 function drawGoalPart(part, d, isSelected) {
-  const { width, now, style: s } = d;
+  const { width, style: s } = d;
   const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
   if (part.is === "heading")
     return headingLines(part, d, isSelected);
   if (part.is === "gap")
-    return [""];
+    return withPathLine([""], part.line, s);
+  if (part.is === "later")
+    return [partHeading(LATER_TEXT, width, s)];
   if (part.is === "title") {
     const g = part.goal;
-    const text = part.isTyping ? fieldLines(d) : g ? textWithCount(g, d) : at(NO_GOAL_TEXT, s.dim);
+    const text = part.isTyping ? fieldLines(d) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
     return [
       ...text,
       ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
@@ -7314,14 +7348,8 @@ function drawGoalPart(part, d, isSelected) {
       ...g?.awaiting ? at(g.awaiting, s.dim) : []
     ];
   }
-  if (part.is === "milestone") {
-    const m = part.row;
-    const mark = paintMark({ ...m, isRunning: false }, now, s);
-    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, (t) => t, { stall: m.stall, text: m.text });
-    if (m.was)
-      out.push(...indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
-    return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
-  }
+  if (part.is === "milestone")
+    return milestoneLines(part.row, d, isSelected);
   if (part.is === "keys")
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT);
   return fieldLines(d);
@@ -8533,7 +8561,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
         subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
       const isSelected = id !== null && id === pageSelected?.id;
-      body.push(...e.kind === "page" ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));
+      body.push(...e.kind === "page" ? withPathLine(drawPageRow(e.row, d, isSelected), e.path ?? null, style) : drawGoalPart(e.part, d, isSelected));
       if (isSelected)
         pageSelectedAt = [start, body.length - 1];
     } else if (e.kind === "banner")
@@ -8867,6 +8895,16 @@ function demoView(now, agent) {
         goalRemoved: null,
         milestones: [
           {
+            id: "m4",
+            name: "Glances found by gaze",
+            status: "done",
+            text: "",
+            was: null,
+            changedAt: now - 5 * 60 * MIN,
+            closedAt: now - 5 * 60 * MIN,
+            startedAt: null
+          },
+          {
             id: "m1",
             name: "Glances fade out",
             status: "done",
@@ -8884,7 +8922,7 @@ function demoView(now, agent) {
             was: null,
             changedAt: now - 35 * MIN,
             closedAt: null,
-            startedAt: now - 35 * MIN
+            startedAt: now - 95 * MIN
           },
           {
             id: "m3",
@@ -8895,10 +8933,20 @@ function demoView(now, agent) {
             changedAt: now - 5 * MIN,
             closedAt: null,
             startedAt: null
+          },
+          {
+            id: "m5",
+            name: "Beta build sent",
+            status: "queued",
+            text: "after the glasses trial",
+            was: null,
+            changedAt: now - 60 * MIN,
+            closedAt: null,
+            startedAt: null
           }
         ],
-        nextMilestoneId: 4,
-        serves: { s1: "m2", s3: "m3", s4: "m1", s6: "none", s7: "none" },
+        nextMilestoneId: 6,
+        serves: { s1: "m2", s3: "m3", s4: "m1", s5: "m5", s6: "m4", s7: "none" },
         goalRefused: null
       },
       items: [
@@ -10262,7 +10310,7 @@ var GOAL_PARTS = {
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
   "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open.`,
   "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
-  "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next. Leave it out when the milestone marked ${NEXT_MARK} in <milestones> is right.`,
+  "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next. Name a milestone this answer adds by its name, since it has no id yet. Leave it out when the milestone marked ${NEXT_MARK} in <milestones> is right.`,
   "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
   "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
   "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,

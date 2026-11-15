@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T05:21:54.511Z. 225755 characters follow.
+// Built at 2026-11-15T05:45:32.868Z. 228227 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1467,6 +1467,7 @@ function unfoldedRows(rows, isUnfolded) {
 // ../hooks/status-path.ts
 var NOW_WORD = "now";
 var NEXT_WORD = "next";
+var LATER_TEXT = "Later";
 var UNDER_WAY_TIME_AFTER_MS = 60 * 60000;
 var HOUR_MS = 60 * 60000;
 var DAY_HOURS = 24;
@@ -1508,6 +1509,15 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
     const row = stems(`${m.name} ${m.text}`);
     return [...said].every((w) => row.has(w));
   });
+}
+function milestoneRows(m, isUnfolded) {
+  return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded);
+}
+function isSpacedAbove(milestones, n, isUnfolded) {
+  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
+  const above = milestones[n - 1];
+  const m = milestones[n];
+  return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above) || !drawsNameOnly(m);
 }
 
 // ../hooks/status-goal-page.ts
@@ -3627,7 +3637,6 @@ var note = (id, text, tone) => ({
   kind: "note",
   id,
   text,
-  count: null,
   tone,
   isHead: true,
   isAtEdge: false,
@@ -3804,25 +3813,40 @@ function rowBlocks(row, isUnfolded) {
     }
   ];
 }
-function milestoneBlock(m) {
+function milestoneBlock(m, lineAbove, isUnfolded) {
+  const mark = markOf2(m.mark, m.tone, false);
+  const path = { is: "milestone", above: lineAbove, below: m.line };
+  if (m.foldId !== null)
+    return {
+      kind: "fold",
+      id: m.id,
+      depth: 0,
+      text: m.name,
+      isOpen: isUnfolded(m.foldId),
+      change: { toggleFold: m.foldId },
+      mark,
+      path
+    };
   return {
     kind: "status",
     id: m.id,
     depth: 0,
-    mark: markOf2(m.mark, m.tone, false),
+    mark,
     name: m.name,
-    isBold: false,
-    isMuted: false,
+    isBold: m.isChanged,
+    isMuted: m.isMuted,
     stall: m.stall,
+    ...m.word === null ? {} : { word: m.word },
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
-    buttons: keyButtons(m.id, milestoneKeyPlan(m))
+    buttons: keyButtons(m.id, milestoneKeyPlan(m)),
+    path
   };
 }
+var besidePath = (b, line) => line !== null && (b.kind === "status" || b.kind === "fold" || b.kind === "note") ? { ...b, path: { is: "work", line } } : b;
 var note2 = (id, text, tone) => ({
   kind: "note",
   id,
   text,
-  count: null,
   tone,
   isHead: false,
   isAtEdge: false,
@@ -3834,9 +3858,8 @@ var headNote = (id, text, tone) => ({
   isHead: true,
   isAtEdge: true
 });
-var headTitle = (id, text, count) => ({
+var headTitle = (id, text) => ({
   ...note2(id, text, null),
-  count,
   isHead: true,
   isAtEdge: true,
   isStrong: true
@@ -3856,15 +3879,16 @@ function goalBlocks(page, { isUnfolded, goalField }) {
   if (g === null)
     return [heading, ...goalField ? field : [headNote("goal text", NO_GOAL_TEXT, "muted")]];
   const lines = goalField ? field : [
-    headTitle("goal text", g.text, g.count === null ? null : `${STALL_GAP}${g.count}`),
+    headTitle("goal text", g.text),
     ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
     ...g.now ? [headNote("goal now", g.now, "muted")] : [],
     ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
   ];
-  const milestones = g.milestones.flatMap((m) => [
-    { kind: "gap", id: `gap ${m.id}` },
-    milestoneBlock(m),
-    ...unfoldedRows(m.rows, isUnfolded).flatMap((r) => rowBlocks(r, isUnfolded))
+  const milestones = g.milestones.flatMap((m, n) => [
+    ...isSpacedAbove(g.milestones, n, isUnfolded) ? [{ kind: "gap", id: `gap ${m.id}` }] : [],
+    ...m.startsLater ? [{ kind: "rule", id: "goal later", text: LATER_TEXT }] : [],
+    milestoneBlock(m, g.milestones[n - 1]?.line ?? null, isUnfolded),
+    ...milestoneRows(m, isUnfolded).flatMap((r) => rowBlocks(r, isUnfolded).map((b) => besidePath(b, m.line)))
   ]);
   return [heading, ...lines, ...milestones];
 }
@@ -3885,7 +3909,7 @@ function statusBlocks(view, ui) {
   }
   const description = page.head?.description;
   const head = page.goal === null && page.head ? [
-    headTitle("head title", page.head.title, null),
+    headTitle("head title", page.head.title),
     ...description ? [headNote("head text", description, "muted")] : []
   ] : [];
   const top = [...goalBlocks(page, ui), ...head.length > 0 ? [{ kind: "gap", id: "gap head" }, ...head] : []];
@@ -4037,7 +4061,6 @@ function groupBlocks(g, ui, selected, screen) {
       kind: "note",
       id: `empty ${g.kind}`,
       text: groupEmptyText(g.title),
-      count: null,
       tone: "muted",
       isHead: false,
       isAtEdge: false,
@@ -4776,11 +4799,25 @@ function boxEl(s, m, p, inner) {
   const sized = box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor);
   return springHeight(sized).opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
 }
+var PATH_X = EDGE + 4;
+function pathLineEl(line, top, height, t) {
+  if (line === null)
+    return [];
+  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(t.border);
+  const sized = height === null ? el.bottom(0) : el.h(height);
+  return [line === "to-next" ? sized.border_dashed() : sized];
+}
+function pathEls(path, above, t) {
+  if (path.is === "work")
+    return pathLineEl(path.line, 0, null, t);
+  return [...pathLineEl(path.above, 0, above, t), ...pathLineEl(path.below, above + parseInt(LINE), null, t)];
+}
 function spacedEls(blocks, p, el) {
   return spacesOf(blocks, (b) => (p.motion.get(b.id)?.box ?? null) !== null).map((s) => {
     const id = s.block.id;
     const m = p.motion.get(id);
-    const spaced = div().flex_none().pt(s.above).pb(s.below).child(fitEl(id, m, p, el(s.block), s.block.kind === "empty"));
+    const path = "path" in s.block ? s.block.path : undefined;
+    const spaced = div().flex_none().pt(s.above).pb(s.below).when(path !== undefined, (e) => e.relative()).child(fitEl(id, m, p, el(s.block), s.block.kind === "empty")).children(path ? pathEls(path, s.above, p.t) : []);
     return boxEl(s, m, p, spaced);
   });
 }
@@ -4925,11 +4962,13 @@ function panelEl(r, m, p, isLeaving) {
   ];
 }
 var statusPartEl = (text) => div4().min_w(0).max_w_full().whitespace_normal().child(text);
+var wordEl = (s, word, t) => h_flex2().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name).invisible().when(s.isBold, (e) => e.font_semibold())).child(div4().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
 function statusEl(s, p, isInert) {
   const { t } = p;
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(name).children(stall))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)];
+  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 function prEl(b, p, isInert) {
   const { t } = p;
@@ -4968,7 +5007,9 @@ function foldEl(b, p, isInert) {
     hotkey: null,
     does: { is: "view", change: b.change }
   };
-  return h_flex2().id(`fold ${b.id}`).pl(TEXT_X + b.depth * NEST).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold", (e) => e.child(div4().mr(CONTROL_GAP).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div4().min_w(0).whitespace_normal().child(b.text));
+  const mark = b.kind === "fold" ? b.mark : undefined;
+  const chevron = b.kind === "fold" && b.isOpen ? "▾" : "▸";
+  return h_flex2().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold" && mark === undefined, (e) => e.child(div4().mr(CONTROL_GAP).child(chevron))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div4().min_w(0).whitespace_normal().child(b.text)).when(mark !== undefined, (e) => e.child(div4().flex_none().ml(LINE_GAP).child(chevron)));
 }
 function ruleEl(b, t) {
   if (b.text === null)
@@ -4977,8 +5018,7 @@ function ruleEl(b, t) {
 }
 function noteEl(b, t) {
   const text = div4().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  const count = b.count === null ? [] : [div4().whitespace_nowrap().text_color(t.muted).child(b.count)];
-  return h_flex2().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
+  return h_flex2().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text);
 }
 function blockEl(b, p) {
   const { t } = p;

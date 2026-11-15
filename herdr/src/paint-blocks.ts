@@ -15,6 +15,7 @@ import {
   HEAD_LINE,
   HEAD_TEXT,
   INSET,
+  LINE,
   LINE_GAP,
   MARK_W,
   NEST,
@@ -230,12 +231,34 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
  */
 const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
 
+/**
+ * A milestone's word over its name's line. gpui-kit cannot measure text, so a hidden copy of the name and stall lays
+ * out beside the word in a box one line tall: when they do not fit on one line, the word wraps out of the box and does
+ * not show.
+ */
+const wordEl = (s: StatusLine, word: string, t: Theme): Element =>
+  h_flex()
+    .absolute()
+    .top(0)
+    .left(0)
+    .w_full()
+    .h(LINE)
+    .overflow_hidden()
+    .flex_wrap()
+    .child(
+      statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name)
+        .invisible()
+        .when(s.isBold, e => e.font_semibold()),
+    )
+    .child(div().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word))
+
 function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const { t } = p
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)
     .when(s.isBold, e => e.font_semibold())
     .when(s.isMuted, e => e.text_color(t.muted))
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : []
+  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)]
 
   return v_flex()
     .pl(EDGE + s.depth * NEST)
@@ -244,7 +267,7 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
       h_flex()
         .items_start()
         .child(markEl(s.mark, t))
-        .child(h_flex().flex_1().min_w(0).flex_wrap().child(name).children(stall)),
+        .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word)),
     )
     .children(s.under.map(l => lineEl(l, t.muted)))
     .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)))
@@ -399,23 +422,22 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     hotkey: null,
     does: { is: 'view', change: b.change },
   }
+  const mark = b.kind === 'fold' ? b.mark : undefined
+  const chevron = b.kind === 'fold' && b.isOpen ? '▾' : '▸'
+
   return h_flex()
     .id(`fold ${b.id}`)
-    .pl(TEXT_X + b.depth * NEST)
+    .pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE)
     .pr(EDGE)
     .py(ROW_PAD_PT)
     .items_start()
     .text_color(t.muted)
     .accessibility_label(b.text)
     .when(!isInert, e => e.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx)))
-    .when(b.kind === 'fold', e =>
-      e.child(
-        div()
-          .mr(CONTROL_GAP)
-          .child(b.kind === 'fold' && b.isOpen ? '▾' : '▸'),
-      ),
-    )
+    .when(b.kind === 'fold' && mark === undefined, e => e.child(div().mr(CONTROL_GAP).child(chevron)))
+    .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(div().min_w(0).whitespace_normal().child(b.text))
+    .when(mark !== undefined, e => e.child(div().flex_none().ml(LINE_GAP).child(chevron)))
 }
 
 /**
@@ -440,7 +462,6 @@ function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
     .when(b.isStrong, e => e.font_semibold())
     .text_color(b.isStrong ? t.foreground : colorOf(t, b.tone))
     .child(b.text)
-  const count = b.count === null ? [] : [div().whitespace_nowrap().text_color(t.muted).child(b.count)]
 
   return h_flex()
     .flex_wrap()
@@ -450,7 +471,6 @@ function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
     .whitespace_normal()
     .when(b.isStrong, e => e.text_size(HEAD_TEXT).line_height(HEAD_LINE))
     .child(text)
-    .children(count)
 }
 
 export function blockEl(b: Block, p: Paint): Element {

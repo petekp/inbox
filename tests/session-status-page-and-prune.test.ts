@@ -132,10 +132,19 @@ test('a sample saved without a Status is replaced, and the sample session carrie
   expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.goal?.milestones.map(m => m.rows.map(r => r.kind))).toEqual([
     ['subject'],
+    ['subject'],
     ['subject', 'child', 'child', 'child'],
     ['subject'],
+    ['fold'],
   ])
-  expect(page.rows.map(r => r.kind)).toEqual(['part', 'subject', 'child', 'subject', 'done-fold'])
+  expect(page.goal?.milestones.map(m => [m.place, m.foldId])).toEqual([
+    ['done', 'm4-done'],
+    ['done', null],
+    ['now', null],
+    ['next', null],
+    ['later', null],
+  ])
+  expect(page.rows.map(r => r.kind)).toEqual(['part', 'subject', 'child', 'done-fold'])
 })
 
 test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {

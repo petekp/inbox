@@ -2,10 +2,11 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import type { Block } from './blocks'
+import type { Block, PathSide } from './blocks'
+import type { PathLine } from '../../hooks/status-path'
 import type { RowMotion } from './motion'
-import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE_GAP } from './paint-theme'
-import type { Paint } from './paint-theme'
+import { CONTROL_GAP, EDGE, GROUP_GAP, HEAD_GAP, INSET, ITEM_GAP, LINE, LINE_GAP } from './paint-theme'
+import type { Paint, Theme } from './paint-theme'
 import { HEIGHT_SPRING } from './springs'
 
 /** The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space. */
@@ -146,6 +147,25 @@ function boxEl(s: Space, m: RowMotion | undefined, p: Paint, inner: Element): El
     .transition('opacity', { duration: m.fadeMs, easing: 'ease-out' })
 }
 
+/** Where the path's line runs: under the middle of a milestone's mark. */
+const PATH_X = EDGE + 4
+
+/** A stretch of the path's line from `top`, down to `height` or to the end of its block. Dashed into the milestone that reads next. */
+function pathLineEl(line: PathLine, top: number, height: number | null, t: Theme): Element[] {
+  if (line === null) return []
+  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(t.border)
+  const sized = height === null ? el.bottom(0) : el.h(height)
+
+  return [line === 'to-next' ? sized.border_dashed() : sized]
+}
+
+/** The path's line beside a block, below the space `above` it and around a milestone's mark. */
+function pathEls(path: PathSide, above: number, t: Theme): Element[] {
+  if (path.is === 'work') return pathLineEl(path.line, 0, null, t)
+
+  return [...pathLineEl(path.above, 0, above, t), ...pathLineEl(path.below, above + parseInt(LINE), null, t)]
+}
+
 /**
  * Each block in a box that never shrinks, with its space. The list scrolls in a box of fixed height, and a block that
  * could shrink loses its space, or the end of its text, whenever the list overflows.
@@ -154,11 +174,14 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
   return spacesOf(blocks, b => (p.motion.get(b.id)?.box ?? null) !== null).map(s => {
     const id = s.block.id
     const m = p.motion.get(id)
+    const path = 'path' in s.block ? s.block.path : undefined
     const spaced = div()
       .flex_none()
       .pt(s.above)
       .pb(s.below)
+      .when(path !== undefined, e => e.relative())
       .child(fitEl(id, m, p, el(s.block), s.block.kind === 'empty'))
+      .children(path ? pathEls(path, s.above, p.t) : [])
 
     return boxEl(s, m, p, spaced)
   })

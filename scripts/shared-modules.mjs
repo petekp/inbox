@@ -34,6 +34,7 @@ export const SHARED = [
   'status-goal-ops',
   'status-goal-gate',
   'status-goal-page',
+  'status-path',
   'status-keys',
   'goal-press',
   'status-upgrade',

@@ -24,7 +24,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its count after its text, its Now line and the field Edit opens draw in place', async context => {
+test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its milestones as a path with the next one’s word, its Now line and the field Edit opens draw in place', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -276,8 +276,13 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.equal(root.querySelector('.goal-heading')?.textContent, 'GoalEdit·Remove')
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
+      ['Status tab shipped', 'Now: Drawing the Status in the Codex tab'],
     )
+    assert.deepEqual(
+      [...root.querySelectorAll('.milestone-group')].map(e => e.className),
+      ['milestone-group path-to-next', 'milestone-group'],
+    )
+    assert.equal(root.querySelector('.path-word')?.textContent, 'next')
     assert.equal(root.querySelector('.status-head:not(.goal)'), null)
     assert.deepEqual(buttons(), ['Edit', 'Remove'])
     await click('Edit')
@@ -286,7 +291,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
-    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 done')
+    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped')
 
     await click('Edit')
     const field = window.document.querySelector('#type-goal')!

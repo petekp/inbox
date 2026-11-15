@@ -119,20 +119,68 @@
 .status-page .goal-heading .actions {
   margin: 0;
 }
-/* The goal's count after its text, kept whole on the line with the text's last word. */
-.status-head h1 .count {
-  font-weight: 400;
-  white-space: nowrap;
-}
 .status-head .actions {
   margin-top: 6px;
 }
-/* A blank line's space between the goal's buttons and its milestones, before each milestone after the first, and
-   between a milestone and the rows under it, as the terminal and omp leave. */
+/* A blank line's space between the goal's buttons and its milestones, above a milestone that `isSpacedAbove` spaces,
+   and between a milestone and the rows under it, as the terminal and omp leave. */
 .status-head.goal + .list,
-.status-page .row.milestone ~ .row.milestone,
 .status-page .row.milestone + .row {
   margin-top: var(--section-gap);
+}
+/* The gap above a folded milestone's rows is content, so the rows open from and close to 0. */
+.status-page .row.milestone + .fold-rows::before {
+  content: '';
+  display: block;
+  height: var(--section-gap);
+}
+.status-page .milestone-group {
+  position: relative;
+  --space-above: 0px;
+}
+.status-page .milestone-group.spaced {
+  --space-above: var(--section-gap);
+  padding-top: var(--space-above);
+}
+/* The path's line, from under a milestone's mark to the next milestone's mark, through the space above that one. */
+.status-page .milestone-group.path-continues::before,
+.status-page .milestone-group.path-to-next::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  top: calc(var(--space-above) + var(--status-row-pad) + 1lh);
+  bottom: calc(-1 * var(--status-row-pad));
+  border-left: 1px solid var(--tree-line);
+}
+.status-page .milestone-group.gap-under::before {
+  bottom: calc(-1 * (var(--section-gap) + var(--status-row-pad)));
+}
+.status-page .milestone-group.path-to-next::before {
+  border-left-style: dashed;
+}
+/* The milestone's word, at the right of its name's first line. `fitPathWord` hides it where it does not fit. */
+.status-page .milestone-name {
+  position: relative;
+}
+.status-page .path-word {
+  position: absolute;
+  top: 0;
+  right: 0;
+  white-space: nowrap;
+}
+.status-page .milestone-name .changed {
+  font-weight: 600;
+}
+/* A done milestone folded to its name: the name where other milestones' names start, its chevron after it. */
+.status-page .milestone-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+.status-page .milestone-fold .icon {
+  margin-right: 0;
 }
 /* "Other work" at the text column, then a solid rule to the tab's edge. */
 .status-page .row.part-line {
