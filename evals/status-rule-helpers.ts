@@ -75,10 +75,14 @@ export function milestonesFor(m: { id: string; match: string }, facts: Pick<Fact
   return milestonesOf(o).filter(x => held.has(x.id))
 }
 
-/** The open milestones a piece with no open subject is drawn as, when the piece is the whole of the milestone it serves. */
+/**
+ * The open milestones a piece with no open subject is drawn as, when it is the whole of the milestone it serves: the
+ * only piece that serves it.
+ */
 export function milestonesAsPiece(p: Piece, facts: Pick<Facts, 'pieces' | 'goal'>, o: SessionStatus | null) {
   const m = facts.goal?.milestones.find(x => x.id === p.serves)
-  if (!m || subjectsFor(p, o).some(isOpen)) return []
+  const isWhole = facts.pieces.every(x => x.id === p.id || (x.serves !== p.serves && x.servesAlso !== p.serves))
+  if (!m || !isWhole || subjectsFor(p, o).some(isOpen)) return []
 
   return milestonesFor(m, facts, o).filter(isOpen)
 }

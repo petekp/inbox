@@ -79,8 +79,8 @@ const untilAt = (replay: Replay, i: number, id: string) => replay.steps[i]?.unti
 /**
  * Every test of the four layers. A replay step's target pools both models' runs; a short case's is judged per model.
  * The spread layer pools each rule over a model's whole run, and the judge layer each check over its checkpoints.
- * Rules that wait on a change not built yet, rules and judge checks at a step that waits on one, and code holds, are
- * in no layer.
+ * Rules that wait on a change not built yet, and code holds, are in no layer. A target at a step that waits on a change
+ * is in no target layer, and a judge check there is in no judge layer. A rule there still counts in its spread.
  */
 export function layerTests(cases: GradedCase[], agents: Agent[], isJudged: boolean): LayerTest[] {
   const isWaiting = (id: string) => RULES.find(r => r.id === id)?.until !== undefined
@@ -100,16 +100,13 @@ export function layerTests(cases: GradedCase[], agents: Agent[], isJudged: boole
           })
       }
   for (const agent of agents) {
+    const mine = cases.flatMap(c => c.runs.filter(r => r.agent === agent))
     for (const rule of RULES.filter(r => !r.isHold && r.until === undefined))
       drafts.push({
         family: 'spread',
         name: `${agent} ${rule.id}`,
         id: rule.id,
-        tallies: cases.flatMap(({ replay, runs }) =>
-          runs
-            .filter(r => r.agent === agent)
-            .flatMap(r => r.steps.map((_, i) => (untilAt(replay, i, rule.id) ? null : tallyOf(r, i, rule.id)))),
-        ),
+        tallies: mine.flatMap(r => r.steps.map((_, i) => tallyOf(r, i, rule.id))),
       })
     if (!isJudged) continue
     for (const check of JUDGE_CHECKS)

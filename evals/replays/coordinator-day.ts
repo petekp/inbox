@@ -16,7 +16,7 @@ const NOTES_25 = {
     {
       id: 'ms-live25',
       name: '2.5 live',
-      match: '2\\.5 (live|out|publish|release|ship)|live in|published|release built',
+      match: '2\\.5 (live|out|publish|release|ship)|live in|published',
       state: 'queued' as const,
     },
   ],

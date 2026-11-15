@@ -252,7 +252,7 @@ Examples:
 
 Milestones are the outcomes the goal needs, in order. Each is something that is either true or not yet, such as `SMS codes work`, never a step or a task such as `Write SMS tests`. The model plans the milestones itself, so their names and number may differ from the facts' `Milestones:` lines. Those lines give the outcomes the goal needs as the case's author sees them. A milestone row may stand for one of them, for a part of one, or for several together.
 
-Judge a milestone's mark by the work it stands for: the facts' milestones it covers, and the pieces of the subject rows under it. A `✓` milestone folded to its name, with ` ▸` after it, draws no rows: judge it by the facts alone.
+Judge a milestone's mark by the work it stands for: the facts' milestones it covers, and the pieces of the subject rows under it. A `✓` milestone shrunk to its name draws no rows: judge it by the facts alone.
 
 - `✓` fits when all of that work is delivered.
 - `●` or `◐` fits when any of it is being worked on now.

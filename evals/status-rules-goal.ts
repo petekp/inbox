@@ -16,9 +16,10 @@ const hasCall = ({ step }: RuleContext) => step.call !== undefined
 function rightForAll(ms: MilestoneFact[]): SubjectStatus[] {
   const kept = ms.filter(m => m.state !== 'dropped')
   if (kept.length <= 1) return (kept.length === 1 ? kept : ms).flatMap(rightStatuses)
-  if (kept.every(m => m.state === 'done')) return ['done']
-  if (kept.some(m => m.state === 'working')) return ['working']
-  return kept.some(m => m.state === 'done') ? ['working', 'queued'] : [...new Set(kept.flatMap(rightStatuses))]
+  const also = kept.flatMap(m => m.alsoRight ?? [])
+  if (kept.every(m => m.state === 'done')) return ['done', ...also]
+  if (kept.some(m => m.state === 'working')) return ['working', ...also]
+  return kept.some(m => m.state === 'done') ? ['working', 'queued', ...also] : kept.flatMap(rightStatuses)
 }
 const stripState = (failure: string) => failure.slice(0, failure.lastIndexOf(', and '))
 

@@ -126,6 +126,7 @@ export const longTurn: Replay = {
             match: 'speed|100 ms',
             state: 'queued',
             stands: '0.3 s on large libraries, the target is 100 ms',
+            alsoRight: ['working'],
             serves: 'ms-fast',
           }),
           piece({

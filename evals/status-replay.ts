@@ -66,7 +66,8 @@ export type Step = {
   targets?: string[]
   /**
    * Targets this step is expected to fail until a change is built, each with what it waits on: a rule's or a judge
-   * check's id, as a rule's own `until` does for every step. Its failures here are listed apart and block nothing.
+   * check's id. Its failures here are listed apart, and its target test is left out. A rule's failures still count in
+   * its spread over the whole run, unlike a rule's own `until`, which takes it out everywhere.
    */
   until?: Record<string, string>
 }

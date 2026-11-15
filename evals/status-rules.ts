@@ -3,11 +3,11 @@ import { NAMED_FOLD_TEXT, namedFoldMore, statusListRows } from '../hooks/status-
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts, Piece } from './status-facts'
+import { ASK_RULES } from './status-rules-asks'
 import { GOAL_RULES } from './status-rules-goal'
 import { HOLD_RULES } from './status-holds'
 import type { Step, StepResult } from './status-replay'
 import {
-  DECISION_WORDS,
   DATE_WORDS,
   ID_PATTERNS,
   milestoneNames,
@@ -237,62 +237,6 @@ const FIXED_RULES: Rule[] = [
     },
   },
   {
-    id: 'held-text',
-    reads: 'answer',
-    property: 9,
-    text: "A held subject's or milestone's text names no decision.",
-    failures: ({ result }) => {
-      const o = result.session.ledger.overview
-      const held = new Set(result.session.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
-      return [...shownOf(o), ...milestonesOf(o)]
-        .filter(s => held.has(s.id) && DECISION_WORDS.test(s.text))
-        .map(s => `held, and names the decision: "${s.name}: ${s.text}"`)
-    },
-  },
-  {
-    id: 'asks-linked',
-    reads: 'facts',
-    property: 8,
-    text: 'Each open ask is linked only to subjects it holds up, or to the milestone a piece it holds up is the whole of, and an ask that holds up nothing is linked to none.',
-    failures: ({ result }) => {
-      const o = result.session.ledger.overview
-      return result.facts.asks.flatMap(a => {
-        const item = result.session.ledger.items.find(i => new RegExp(a.match, 'i').test(i.ask))
-        if (!item) return [`no open ask like /${a.match}/`]
-        const ids = o?.askSubjects[item.id] ?? []
-        const linked = shownOf(o).filter(s => ids.includes(s.id))
-        const pieces = result.facts.pieces.filter(p => a.holdsUp.includes(p.id))
-        const heldMilestones = pieces
-          .flatMap(p => milestonesAsPiece(p, result.facts, o))
-          .filter(m => ids.includes(m.id))
-        if (pieces.length === 0) return linked.map(s => `"${item.ask}" holds up nothing, and is linked to ${label(s)}`)
-        if (linked.length === 0 && heldMilestones.length === 0) return [`"${item.ask}" is linked to no subject`]
-        return linked
-          .filter(s => !pieces.some(p => new RegExp(p.match, 'i').test(s.name)))
-          .map(s => `"${item.ask}" is linked to ${label(s)}, not ${pieces.map(p => p.names[0]).join(' or ')}`)
-      })
-    },
-  },
-  {
-    id: 'ask-holds-several',
-    reads: 'facts',
-    property: 8,
-    text: 'An ask that holds up several pieces marks each of them.',
-    failures: ({ result }) => {
-      const o = result.session.ledger.overview
-      return result.facts.asks
-        .filter(a => a.holdsUp.length > 1)
-        .flatMap(a => {
-          const item = result.session.ledger.items.find(i => new RegExp(a.match, 'i').test(i.ask))
-          const linked = item ? (o?.askSubjects[item.id] ?? []) : []
-          return result.facts.pieces
-            .filter(p => a.holdsUp.includes(p.id))
-            .filter(p => !subjectsFor(p, o).some(s => linked.includes(s.id)))
-            .map(p => `"${a.text}" does not hold up ${p.names[0]}`)
-        })
-    },
-  },
-  {
     id: 'children-linked',
     reads: 'facts',
     property: 7,
@@ -359,8 +303,9 @@ const FIXED_RULES: Rule[] = [
       return result.facts.changed.flatMap(id => {
         const piece = result.facts.pieces.find(p => p.id === id)
         if (piece === undefined || isLinkOnly(id)) return []
-        const subjects = subjectsFor(piece, result.session.ledger.overview)
-        return subjects.some(s => s.changedAt === result.now) ? [] : [`${piece.names[0]} changed, and no row moved`]
+        const o = result.session.ledger.overview
+        const rows = [...subjectsFor(piece, o), ...milestonesAsPiece(piece, result.facts, o)]
+        return rows.some(s => s.changedAt === result.now) ? [] : [`${piece.names[0]} changed, and no row moved`]
       })
     },
   },
@@ -471,4 +416,4 @@ const FIXED_RULES: Rule[] = [
   },
 ]
 
-export const RULES: Rule[] = [...FIXED_RULES, ...GOAL_RULES, ...HOLD_RULES]
+export const RULES: Rule[] = [...FIXED_RULES, ...ASK_RULES, ...GOAL_RULES, ...HOLD_RULES]
