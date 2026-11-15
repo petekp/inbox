@@ -49,43 +49,35 @@ function aboveOf(prev: Block | null, b: Block, isSection: boolean): number {
 /** The key a row's panel is measured under, beside the row's own height. */
 export const panelId = (id: string): string => `panel ${id}`
 
-/**
- * A drawn block and its space: `above` before it, and for the last of a run of moving blocks, `below` after it while
- * open and `floor`, the height its box keeps while shut.
- */
-export type Space = { block: Block; above: number; below: number; floor: number }
+/** The key a row's title is measured under. */
+export const titleId = (id: string): string => `title ${id}`
+
+/** The key a row's lines under its title, with its panel, are measured under. */
+export const restId = (id: string): string => `rest ${id}`
+
+/** A drawn block and the space above it. */
+export type Space = { block: Block; above: number }
 
 /**
- * Each drawn block with the space above it. A gap block draws nothing and opens a section's space above the block after
- * it. A moving block's box glides its height, and padding cannot glide. So the block under a run of moving blocks keeps
- * the space it has while they are shut, against the last resting block above them, and the run's last box holds the
- * rest of the space it has while they are open, or keeps what the shut space has beyond that.
+ * Each drawn block with the space above it, from the last block above it that is not shut. A gap block draws nothing
+ * and opens a section's space above the next block. A shut block, one that enters or leaves at no height, has no space.
  */
-export function spacesOf(blocks: Block[], isMoving: (b: Block) => boolean): Space[] {
+export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[] {
   const out: Space[] = []
   let prev: Block | null = null
   let isSection = false
-  let resting: Block | null = null
-  let isSectionSinceResting = false
   for (const b of blocks) {
     if (b.kind === 'gap') {
       isSection = prev !== null
-      isSectionSinceResting = resting !== null
       continue
     }
-    const above = aboveOf(prev, b, isSection)
-    const run = out.at(-1)
-    const isUnderRun = run !== undefined && isMoving(run.block) && !isMoving(b)
-    const shut = isUnderRun ? aboveOf(resting, b, isSectionSinceResting) : above
-    const held = Math.min(shut, above)
-    if (run && isUnderRun) Object.assign(run, { below: above - held, floor: shut - held })
-    out.push({ block: b, above: held, below: 0, floor: 0 })
+    if (isShut(b)) {
+      out.push({ block: b, above: 0 })
+      continue
+    }
+    out.push({ block: b, above: aboveOf(prev, b, isSection) })
     prev = b
     isSection = false
-    if (!isMoving(b)) {
-      resting = b
-      isSectionSinceResting = false
-    }
   }
 
   return out
@@ -94,72 +86,103 @@ export function spacesOf(blocks: Block[], isMoving: (b: Block) => boolean): Spac
 /** Springs later changes of an element's height. */
 const springHeight = <E extends Element>(el: E): E => el.spring('height', HEIGHT_SPRING)
 
-/**
- * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
- * Undefined until the block's first measure.
- */
-function fitHeight(id: string, m: RowMotion | undefined, p: Paint): number | undefined {
-  const measured = p.heights.get(id)
-  if (measured === undefined) return undefined
-
-  return measured - (m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0)
-}
-
-/**
- * Content in a box at its measured height, whose height spring is always declared, as a list block, the tab bar or
- * the banners above the list. When the content changes height, as a row opens, a status line comes, or a banner goes,
- * the box keeps its old height for the draw that measures the new one, then springs to it. In a draw that takes
- * heights at once, and always for content whose height follows the pane's, the box takes its content's height.
- */
-export function fitEl(id: string, m: RowMotion | undefined, p: Paint, el: Element, isPaneSized = false): Element {
-  const height = isPaneSized || p.isAtOnce(id) ? undefined : fitHeight(id, m, p)
-  const sized = div()
-    .id(`size ${id}`)
-    .flex_none()
-    .on_size_change((size, cx) => p.measure(id, size, cx))
-    .child(el)
-
-  return springHeight(
+/** A box whose height spring is always declared, at `height`, or at its content's height when undefined. */
+const springBox = (id: string, height: number | undefined): Element =>
+  springHeight(
     v_flex()
-      .id(`fit ${id}`)
+      .id(id)
       .flex_none()
       .overflow_hidden()
       .when(height !== undefined, e => e.h(height ?? 0)),
-  ).child(sized)
-}
+  )
+
+/** Content that reports its size under `key`. */
+export const sizeEl = (key: string, p: Paint, el: Element): Element =>
+  div()
+    .id(`size ${key}`)
+    .flex_none()
+    .on_size_change((size, cx) => p.measure(key, size, cx))
+    .child(el)
 
 /**
- * A block's outer box. A block that enters or leaves springs its height between none and its content's height with its
- * space, and fades its opacity over the same move's length. Until the block's first measure, its box stays shut. At
- * rest the box takes its content's height.
+ * Content in a box at its measured height, as the tab bar, the banners above the list or a row's title. When the
+ * content changes height, as a banner goes or a title wraps, the box keeps its old height for the draw that measures
+ * the new one, then springs to it. In a draw that takes heights at once, and always for content whose height follows
+ * the pane's, the box takes its content's height.
  */
-function boxEl(s: Space, m: RowMotion | undefined, p: Paint, inner: Element): Element {
-  const id = s.block.id
-  const box = v_flex().id(`box ${id}`).flex_none().child(inner)
-  if (!m?.box) return box
-  const height = fitHeight(id, m, p)
-  const isOpen = m.box === 'open' && height !== undefined
-  const sized = box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor)
+export function fitEl(key: string, p: Paint, el: Element, isPaneSized = false): Element {
+  const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key)
 
-  return springHeight(sized)
-    .opacity(isOpen ? 1 : 0)
-    .transition('opacity', { duration: m.fadeMs, easing: 'ease-out' })
+  return springBox(`fit ${key}`, height).child(sizeEl(key, p, el))
 }
 
 /**
- * Each block in a box that never shrinks, with its space. The list scrolls in a box of fixed height, and a block that
- * could shrink loses its space, or the end of its text, whenever the list overflows.
+ * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
+ * A row's height is its padding, its title's and the rest's, each measured on its own, so the row's box springs in step
+ * with its title's box. Undefined until the block's first measure.
+ */
+function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undefined {
+  const id = b.id
+  const panel = m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0
+  if (b.kind !== 'row') {
+    const measured = p.heights.get(id)
+
+    return measured === undefined ? undefined : measured - panel
+  }
+  const title = p.heights.get(titleId(id))
+  const rest = p.heights.get(restId(id))
+
+  return title === undefined || rest === undefined ? undefined : 2 * ROW_PAD_PT + title + rest - panel
+}
+
+/**
+ * A block's content box. Its height springs to none while the block's box is shut, and to the content's measured
+ * height while it is open or at rest, so a change of content glides as the block enters, leaves or changes. In a draw
+ * that takes heights at once, and at rest for content whose height follows the pane's, the box takes its content's
+ * height.
+ */
+function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element): Element {
+  const id = b.id
+  const isRow = b.kind === 'row'
+  const isAtOnce = isRow ? p.isAtOnce(titleId(id)) || p.isAtOnce(restId(id)) : p.isAtOnce(id)
+  const measured = fitHeight(b, m, p)
+  const atRest = isAtOnce || b.kind === 'empty' ? undefined : measured
+  const open = isAtOnce ? undefined : (measured ?? 0)
+  const height = m?.box === 'shut' ? 0 : m?.box === 'open' ? open : atRest
+
+  return springBox(`fit ${id}`, height).child(isRow ? el : sizeEl(id, p, el))
+}
+
+/**
+ * A block's space, as a box whose height springs, so a change of the space glides from where it is drawn. In a draw
+ * that takes heights at once, it takes its height from padding, which sets no target to spring from.
+ */
+function spaceEl(s: Space, p: Paint): Element {
+  const id = `space ${s.block.id}`
+  const box = springHeight(div().id(id).flex_none())
+
+  return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above)
+}
+
+/**
+ * Each block in a box that never shrinks, with its space above it. Every distance that can change is the height of a
+ * box whose spring is declared in every draw: the space, and the content. So a move that starts while another glides
+ * starts where each box is drawn. A block that enters or leaves also fades over the same move's length. The list
+ * scrolls in a box of fixed height, and a block that could shrink loses its space, or the end of its text, whenever the
+ * list overflows.
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
-  return spacesOf(blocks, b => (p.motion.get(b.id)?.box ?? null) !== null).map(s => {
-    const id = s.block.id
-    const m = p.motion.get(id)
-    const spaced = div()
+  return spacesOf(blocks, b => p.motion.get(b.id)?.box === 'shut').map(s => {
+    const b = s.block
+    const m = p.motion.get(b.id)
+    const box = v_flex()
+      .id(`box ${b.id}`)
       .flex_none()
-      .pt(s.above)
-      .pb(s.below)
-      .child(fitEl(id, m, p, el(s.block), s.block.kind === 'empty'))
+      .child(spaceEl(s, p))
+      .child(contentEl(b, m, p, el(b)))
+    if (!m?.box) return box
+    const isOpen = m.box === 'open' && fitHeight(b, m, p) !== undefined
 
-    return boxEl(s, m, p, spaced)
+    return box.opacity(isOpen ? 1 : 0).transition('opacity', { duration: m.fadeMs, easing: 'ease-out' })
   })
 }

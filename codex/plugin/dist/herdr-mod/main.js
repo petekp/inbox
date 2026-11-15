@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T05:41:55.716Z. 222868 characters follow.
+// Built at 2026-11-15T06:22:54.765Z. 223207 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4659,63 +4659,69 @@ function aboveOf(prev, b, isSection) {
   return Math.max(0, gap - padOf(prev) - padOf(b));
 }
 var panelId = (id) => `panel ${id}`;
-function spacesOf(blocks, isMoving) {
+var titleId = (id) => `title ${id}`;
+var restId = (id) => `rest ${id}`;
+function spacesOf(blocks, isShut) {
   const out = [];
   let prev = null;
   let isSection = false;
-  let resting = null;
-  let isSectionSinceResting = false;
   for (const b of blocks) {
     if (b.kind === "gap") {
       isSection = prev !== null;
-      isSectionSinceResting = resting !== null;
       continue;
     }
-    const above = aboveOf(prev, b, isSection);
-    const run = out.at(-1);
-    const isUnderRun = run !== undefined && isMoving(run.block) && !isMoving(b);
-    const shut = isUnderRun ? aboveOf(resting, b, isSectionSinceResting) : above;
-    const held = Math.min(shut, above);
-    if (run && isUnderRun)
-      Object.assign(run, { below: above - held, floor: shut - held });
-    out.push({ block: b, above: held, below: 0, floor: 0 });
+    if (isShut(b)) {
+      out.push({ block: b, above: 0 });
+      continue;
+    }
+    out.push({ block: b, above: aboveOf(prev, b, isSection) });
     prev = b;
     isSection = false;
-    if (!isMoving(b)) {
-      resting = b;
-      isSectionSinceResting = false;
-    }
   }
   return out;
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
-function fitHeight(id, m, p) {
-  const measured = p.heights.get(id);
-  if (measured === undefined)
-    return;
-  return measured - (m?.isPanelLeftOut ? p.heights.get(panelId(id)) ?? 0 : 0);
+var springBox = (id, height) => springHeight(v_flex().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
+var sizeEl = (key, p, el) => div().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
+function fitEl(key, p, el, isPaneSized = false) {
+  const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
+  return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
 }
-function fitEl(id, m, p, el, isPaneSized = false) {
-  const height = isPaneSized || p.isAtOnce(id) ? undefined : fitHeight(id, m, p);
-  const sized = div().id(`size ${id}`).flex_none().on_size_change((size, cx) => p.measure(id, size, cx)).child(el);
-  return springHeight(v_flex().id(`fit ${id}`).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0))).child(sized);
+function fitHeight(b, m, p) {
+  const id = b.id;
+  const panel = m?.isPanelLeftOut ? p.heights.get(panelId(id)) ?? 0 : 0;
+  if (b.kind !== "row") {
+    const measured = p.heights.get(id);
+    return measured === undefined ? undefined : measured - panel;
+  }
+  const title = p.heights.get(titleId(id));
+  const rest = p.heights.get(restId(id));
+  return title === undefined || rest === undefined ? undefined : 2 * ROW_PAD_PT + title + rest - panel;
 }
-function boxEl(s, m, p, inner) {
-  const id = s.block.id;
-  const box = v_flex().id(`box ${id}`).flex_none().child(inner);
-  if (!m?.box)
-    return box;
-  const height = fitHeight(id, m, p);
-  const isOpen = m.box === "open" && height !== undefined;
-  const sized = box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor);
-  return springHeight(sized).opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
+function contentEl(b, m, p, el) {
+  const id = b.id;
+  const isRow = b.kind === "row";
+  const isAtOnce = isRow ? p.isAtOnce(titleId(id)) || p.isAtOnce(restId(id)) : p.isAtOnce(id);
+  const measured = fitHeight(b, m, p);
+  const atRest = isAtOnce || b.kind === "empty" ? undefined : measured;
+  const open = isAtOnce ? undefined : measured ?? 0;
+  const height = m?.box === "shut" ? 0 : m?.box === "open" ? open : atRest;
+  return springBox(`fit ${id}`, height).child(isRow ? el : sizeEl(id, p, el));
+}
+function spaceEl(s, p) {
+  const id = `space ${s.block.id}`;
+  const box = springHeight(div().id(id).flex_none());
+  return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
 function spacedEls(blocks, p, el) {
-  return spacesOf(blocks, (b) => (p.motion.get(b.id)?.box ?? null) !== null).map((s) => {
-    const id = s.block.id;
-    const m = p.motion.get(id);
-    const spaced = div().flex_none().pt(s.above).pb(s.below).child(fitEl(id, m, p, el(s.block), s.block.kind === "empty"));
-    return boxEl(s, m, p, spaced);
+  return spacesOf(blocks, (b) => p.motion.get(b.id)?.box === "shut").map((s) => {
+    const b = s.block;
+    const m = p.motion.get(b.id);
+    const box = v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p)).child(contentEl(b, m, p, el(b)));
+    if (!m?.box)
+      return box;
+    const isOpen = m.box === "open" && fitHeight(b, m, p) !== undefined;
+    return box.opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
   });
 }
 
@@ -4836,7 +4842,7 @@ function rowEl(r, p) {
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(line).children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving));
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(fitEl(titleId(r.id), p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving))));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;
@@ -5639,7 +5645,7 @@ class Inbox extends View {
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", undefined, paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", undefined, paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div5().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div5().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

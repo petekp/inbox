@@ -458,11 +458,10 @@ export default class Inbox extends View {
     return root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(fitEl('tabs', undefined, paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)))
+      .child(fitEl('tabs', paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)))
       .child(
         fitEl(
           'chrome',
-          undefined,
           paint,
           v_flex()
             .children(screen.banners.map(b => bannerEl(b, t).mt(EDGE)))

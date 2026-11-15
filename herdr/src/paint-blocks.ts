@@ -25,7 +25,7 @@ import {
 } from './paint-theme'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
-import { panelId } from './paint-space'
+import { fitEl, panelId, restId, sizeEl, titleId } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -188,9 +188,16 @@ function rowEl(r: RowBlock, p: Paint): Element {
         .hover(s => s.bg(t.hover))
         .on_click((_e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))),
     )
-    .child(line)
-    .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))
-    .children(panelEl(r, m, p, isLeaving))
+    .child(fitEl(titleId(r.id), p, line))
+    .child(
+      sizeEl(
+        restId(r.id),
+        p,
+        v_flex()
+          .children(lines.map(l => ('isHidden' in l && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))))
+          .children(panelEl(r, m, p, isLeaving)),
+      ),
+    )
 }
 
 /**
