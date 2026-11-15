@@ -1,18 +1,12 @@
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import { localTarget } from './imports.mjs'
 import { API, nameOf, ts } from './ts.mjs'
 
-/** Build output, and types/parts, which scripts/build-types.mjs joins into types/index.d.ts instead of importing. */
-const SKIPPED_DIRS = new Set([
-  'codex/plugin/dist',
-  'codex/test-dist',
-  'herdr/mod',
-  'omp/dist',
-  'types/parts',
-  'videos/out',
-])
+/** Committed build output, and types/parts, which scripts/build-types.mjs joins into types/index.d.ts instead of importing. */
+const SKIPPED_DIRS = ['codex/plugin/dist', 'herdr/mod', 'omp/dist', 'types/parts']
 
 /**
  * Exports whose consumer is outside the repo's imports: a host or a tool loads the file, or a script reads it as text.
@@ -31,16 +25,17 @@ const ENTRY_POINTS = {
   'videos/src/videos.ts': { names: ['TIMELINES'], why: 'videos/record/drive.py imports it from the built bundle.' },
 }
 
-function sourceFiles(root, dir = '.') {
-  const entries = readdirSync(join(root, dir), { withFileTypes: true }).sort((x, y) => (x.name < y.name ? -1 : 1))
-  return entries.flatMap(entry => {
-    const path = dir === '.' ? entry.name : `${dir}/${entry.name}`
-    if (entry.isDirectory())
-      return entry.name.startsWith('.') || entry.name === 'node_modules' || SKIPPED_DIRS.has(path)
-        ? []
-        : sourceFiles(root, path)
-    return /\.(?:[cm]?ts|tsx|[cm]?js|jsx)$/.test(entry.name) ? [path] : []
+/** The source files Git tracks or would track, so files .gitignore covers, such as recorded takes, are left out. */
+function sourceFiles(root) {
+  const listed = execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   })
+  const isSkipped = path => SKIPPED_DIRS.some(dir => path.startsWith(`${dir}/`))
+  const isSource = path => /\.(?:[cm]?ts|tsx|[cm]?js|jsx)$/.test(path)
+  return [...new Set(listed.split('\0'))]
+    .filter(path => path && isSource(path) && !isSkipped(path) && existsSync(join(root, path)))
+    .sort()
 }
 
 const isExported = node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false
