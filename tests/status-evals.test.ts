@@ -186,6 +186,16 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: GOOD_RUNS['next-milestone']![1]!.replace('\nNEXT: m4', ''),
     breaks: 'milestone-next',
   },
+  'children-finished': {
+    at: 1,
+    answer: 'DONE: s1 | PDF export merged',
+    breaks: 'step-left-named',
+  },
+  'fix-through-merge': {
+    at: 1,
+    answer: 'SET: s1 | working | fix merged, beta next\nNEW: working | 2.5 beta | building with the share sheet fix',
+    breaks: 'marks-true',
+  },
   'next-release': {
     at: 0,
     answer: `${GOOD_RUNS['next-release']![0]!.replace(/^RETIRE: [^\n]*\n/, '')}\nSERVES: Share extension | -`,

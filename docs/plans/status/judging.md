@@ -75,6 +75,7 @@ These run after every step of every replay, on the saved Status, the page `statu
 - No subject matches an ask, a finding, a task for the person or a standing rule in the fact list. No text restates an open ask or finding.
 - Each open ask is linked to every subject the fact list says it holds up, and to no other. A held subject's text names no decision, such as "needs your decision" or "your call".
 - Each running child is linked to the subject the fact list names.
+- A working subject whose child rows have all finished, and that no ask holds up, names in where it stands the step left in this session, as the fact list gives it.
 - A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. The replays start their delegates with ids and show no Herdr focus, so this check stays known failing for them. The eval-trust follow-ups name the replay step it needs.
 - On a step the fact list marks as no news, no row's or milestone's last-changed time or place moves.
 - On a step the fact list marks as a change, each changed piece's last-changed time moves.
@@ -141,9 +142,9 @@ A release run may block falsely with a chance of at most 0.05 when every rate si
 
 The report lists each test with its failures, its count, its 95% interval and the count at which it blocks. A test over its tolerance but under its blocking count is listed for reading. A code hold that fails blocks. Known failing cases are listed apart and block nothing. A target counts a failure on any piece; counting only the pieces its step changes is not built yet.
 
-**Calls that fail.** A call that ends with no answer before the host's time limit, as on a network error, failed outside the model. The runner tries that call again from the same prompt, twice, and then the run can't be graded. A call that answers past the limit fails as it would in the host. Each model stops at 220 Status calls, re-asks and retries included. That model's later runs then have no grade, and the other model's runs go on.
+**Calls that fail.** A call that ends with no answer before the host's time limit, as on a network error, failed outside the model. The runner tries that call again from the same prompt, twice, and then the run can't be graded. A call that answers past the limit fails as it would in the host. Each model stops a quarter past the planned Status calls of the replays a run selects, or 10 past them when that is more, re-asks and retries included. That model's later runs then have no grade, and the other model's runs go on.
 
-**Exit status.** 0 when nothing blocks; 1 when a test or a code hold blocks; 2 when a case could not be graded, as when its model reached 220 Status calls; 3 when the run stopped because a session could reach more than the stand-in inbox.
+**Exit status.** 0 when nothing blocks; 1 when a test or a code hold blocks; 2 when a case could not be graded, as when its model reached its Status call limit; 3 when the run stopped because a session could reach more than the stand-in inbox.
 
 ### Free checks in `check.sh`
 
@@ -173,4 +174,4 @@ These make no model calls.
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
 | **Total** | **232** | **54** | **82** |
 
-An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run makes 189 Status calls before re-asks and retries. Each model stops at 220 Status calls, so one `--agent both` run grades both models.
+An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run plans 222 Status calls before re-asks and retries. Each model stops a quarter past the planned calls of the replays a run selects, or 10 past them when that is more, 278 for all of them, so one `--agent both` run grades both models. `STATUS_CALLS_MAX` in `evals/status-run.ts` sets it.

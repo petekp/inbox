@@ -23,11 +23,6 @@ export function countsByMark(folded: Subject[]): StatusCount[] {
   })
 }
 
-/** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
-export function isFinishedUnseen(c: Child, lastLookAt: number | null): boolean {
-  return c.delegateState === 'finished' && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt)
-}
-
 const DAY_MS = 24 * 60 * 60_000
 
 /**

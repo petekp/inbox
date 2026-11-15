@@ -1,12 +1,12 @@
 import type { Item, Ledger, Session, Subject } from '../types'
-import { isChildRunning, isSubjectSeen } from './status-children'
+import { isChildShown, isSubjectSeen } from './status-children'
 import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, oldestAsk } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
-import { childRow, countsByMark, isFinishedUnseen, partRows } from './status-page-parts'
+import { childRow, countsByMark, partRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
@@ -206,7 +206,7 @@ export function statusPage(
   const isUnneeded = (x: Subject) => servedBy(x) === 'none'
   const isOther = (x: Subject) => isUnneeded(x) || (hasMilestones && milestoneOf(x) === null)
   const running = (o?.children ?? [])
-    .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
+    .filter(c => isChildShown(c, now, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
   const hasChildRow = (x: Subject) => running.some(c => c.subjectId === x.id)
   const unseenClosedOf = (part: Subject[]) =>

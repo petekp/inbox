@@ -16,6 +16,11 @@ export type Piece = {
   stands: string
   /** Parts whose states differ, by part. */
   parts?: Record<string, string>
+  /**
+   * A case-insensitive pattern for the step left in this session, which where it stands names while the piece is
+   * working and every child row under it has finished. It holds only at the step that gives it.
+   */
+  left?: string
   /** The plan the piece's last change replaced, while the person has not seen it. */
   was?: string
   /** The ids of pieces merged into this one. */
@@ -158,11 +163,13 @@ export function factsAfter(before: Facts, change: FactsChange | undefined): Fact
     if (isChanged) changed.push(p.id)
   }
 
+  const givesLeft = new Set((change?.pieces ?? []).filter(p => p.left !== undefined).map(p => p.id))
+
   return {
     focus: change?.focus ?? before.focus,
     focusMatch: change?.focusMatch ?? before.focusMatch,
     ...((change?.pastMatch ?? before.pastMatch) ? { pastMatch: change?.pastMatch ?? before.pastMatch } : {}),
-    pieces,
+    pieces: pieces.map(({ left, ...p }) => (left !== undefined && givesLeft.has(p.id) ? { ...p, left } : p)),
     asks: change?.asks ?? before.asks,
     notWork: [...before.notWork, ...(change?.notWork ?? [])],
     children: change?.children ?? before.children,

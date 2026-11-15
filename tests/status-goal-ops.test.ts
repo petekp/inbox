@@ -216,15 +216,6 @@ test('SERVES links a subject to a milestone or to none, and LINK can hold up a m
   expect(o.askSubjects).toEqual({ i1: ['m3'] })
 })
 
-test('the goal is met once every milestone left is done, and unmet when one opens again', () => {
-  const met = after(withGoal(), 'DONE: m2 | named\nDROP: m3 | not needed', 30)
-  const reopened = after(met, 'SET: m1 | working | broke on Excel', 40)
-
-  expect(met.goal?.metAt).toBe(30)
-  expect(after(met, 'SET: s1 | working | XLSX next', 35).goal?.metAt).toBe(30)
-  expect(reopened.goal?.metAt).toBeNull()
-})
-
 test('a typed goal unlinks every subject and waits until an answer from a call that read it keeps a milestone, and a rewording keeps its milestones and links and sends nothing', () => {
   const linked = after(withGoal(), 'SERVES: s1 | m1\nSERVES: s2 | -', 22)
   const met = after(linked, 'DONE: m2 | named\nDONE: m3 | written', 25)

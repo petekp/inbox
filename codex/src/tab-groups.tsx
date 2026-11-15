@@ -201,7 +201,7 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
     <main>
       {notHeard ? (
         <section>
-          <div class="group-title">
+          <div class="group-title unmarked">
             {notHeard[0]}
             {notHeard[1] ? <div class="muted">{notHeard[1]}</div> : null}
           </div>

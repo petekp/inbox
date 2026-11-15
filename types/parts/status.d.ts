@@ -160,6 +160,11 @@ export type SessionStatus = {
   missedInLastLook: Record<string, number | null>
   /** The look in progress, while the Status tab is shown. Null otherwise. */
   look: { startedAt: number } | null
+  /**
+   * When the last Status call whose answer applied read this Status. Each delegate that finished after it is listed to
+   * the next call, so every finish reaches the call once. Null before the first.
+   */
+  lastCallReadAt: number | null
 }
 
 /** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */

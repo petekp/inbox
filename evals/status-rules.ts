@@ -1,4 +1,5 @@
 import { isOpen, NAME_WORDS } from '../hooks/status-limits'
+import { isChildRunning, isChildShown } from '../hooks/status-children'
 import { NAMED_FOLD_TEXT, namedFoldMore, statusListRows } from '../hooks/status-page'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
@@ -264,6 +265,31 @@ const FIXED_RULES: Rule[] = [
       (result.session.ledger.overview?.children ?? [])
         .filter(c => c.endedAt === null && !isPlainLabel(c.name, c.ref))
         .map(c => `child label "${c.name}"`),
+  },
+  {
+    id: 'step-left-named',
+    reads: 'facts',
+    property: 6,
+    text: 'A working subject whose child rows have all finished, and that no ask holds up, names in where it stands the step left in this session.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const look = o?.lastLookAt ?? null
+      const held = new Set(result.session.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
+      const childRows = (s: Subject) =>
+        (o?.children ?? []).filter(c => c.subjectId === s.id && isChildShown(c, result.now, look))
+      const isEveryChildFinished = (s: Subject) => {
+        const rows = childRows(s)
+        return rows.length > 0 && rows.every(c => !isChildRunning(c, result.now))
+      }
+      return result.facts.pieces.flatMap(({ left, ...p }) =>
+        left === undefined
+          ? []
+          : subjectsFor(p, o)
+              .filter(s => s.status === 'working' && !held.has(s.id) && isEveryChildFinished(s))
+              .filter(s => !new RegExp(left, 'i').test(s.text))
+              .map(s => `${label(s)} works on with its children finished, and names no step left like /${left}/`),
+      )
+    },
   },
   {
     id: 'no-news-no-move',

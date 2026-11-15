@@ -2,7 +2,9 @@ import type { Replay } from './status-replay'
 import { askHoldsTwo } from './replays/ask-holds-two'
 import { catchUpFromEmpty } from './replays/catch-up-from-empty'
 import { catchUpShipped } from './replays/catch-up-shipped'
+import { childrenFinished } from './replays/children-finished'
 import { coordinatorDay } from './replays/coordinator-day'
+import { fixThroughMerge } from './replays/fix-through-merge'
 import { removedGoal } from './replays/removed-goal'
 import { goalFromWork } from './replays/goal-from-work'
 import { goalMetNext } from './replays/goal-met-next'
@@ -55,4 +57,6 @@ export const REPLAYS: Replay[] = [
   restartReadsBacklog,
   chatStatesDirection,
   unrelatedAskReasons,
+  childrenFinished,
+  fixThroughMerge,
 ]
