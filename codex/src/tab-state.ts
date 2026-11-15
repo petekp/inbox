@@ -169,6 +169,8 @@ class TabState {
   seen = new Map<string, number>()
   rowsSeen: SeenRows = {}
   newRows: NewRows = new Map()
+  /** Whether the page was visible at the last read, so a row that arrived while it was hidden gets no bar. */
+  wasVisibleAtRead = false
   lastLists: Lists | null = null
   /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
   lastPrs: DrawnPrs | null = null

@@ -377,7 +377,13 @@ export default class Inbox extends View {
         queue: this.queue,
       })
     let screen = screenFor(this.ui)
-    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === 'inbox' ? screen.waits : null, now, !this.isHelpShown)
+    const ui = withDrawnRows(
+      this.ui,
+      this.lastWaits,
+      screen.is === 'inbox' ? screen.waits : null,
+      now,
+      !this.isHelpShown,
+    )
     if (ui !== this.ui) screen = screenFor((this.ui = ui))
     this.lastWaits = { tab: this.ui.tab, rows: screen.is === 'inbox' ? screen.waits : null }
     this.view = screen.is === 'inbox' ? screen.view : null
