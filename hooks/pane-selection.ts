@@ -8,7 +8,7 @@ import { drawnLists, listWaits, type RowWait } from './action-plan'
 import { type InboxView } from './view'
 import { SETTLED_MS } from './timing'
 import { type ShownTab } from './tabs'
-import { recordRows } from './arrivals'
+import { addNewRows, recordRows } from './arrivals'
 import { paneState } from './mod-state'
 
 /** The tab the pane shows, whether it shows the sample, and since when. */
@@ -125,6 +125,7 @@ export function newRows(isDemo: boolean, current: Record<Tab, string[] | null>):
     current,
   )
   paneState.recordedRows = { isDemo, ids: seen }
+  paneState.newRows = addNewRows(paneState.newRows, added)
 
   return added
 }

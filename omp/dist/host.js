@@ -6358,6 +6358,49 @@ function prRowIds(drawn) {
 function isPrsTabEmpty(drawnCount, isFetching) {
   return drawnCount === 0 && !isFetching;
 }
+var NEW_HOLD_MS = 1500;
+var NEW_FADE_MS = 3000;
+var NEW_STEPS = 6;
+var NEW_ROW_BAR = "\u258D";
+function addNewRows(rows, added) {
+  const next = new Map(rows);
+  for (const [tab, ids] of Object.entries(added))
+    for (const id of ids ?? [])
+      if (!next.has(id))
+        next.set(id, { tab, shownAt: null });
+  return next;
+}
+function showNewRows(rows, tab, now) {
+  const next = new Map;
+  for (const [id, row] of rows) {
+    const shown = row.tab === tab && row.shownAt === null ? { ...row, shownAt: now } : row;
+    if (newRowShare(shown, now) > 0)
+      next.set(id, shown);
+  }
+  return next;
+}
+function newRowShare(row, now, isReduced = false) {
+  if (!row)
+    return 0;
+  if (row.shownAt === null)
+    return 1;
+  const p = (now - row.shownAt - NEW_HOLD_MS) / NEW_FADE_MS;
+  if (p >= 1)
+    return 0;
+  if (isReduced || p <= 0)
+    return 1;
+  return (1 + Math.cos(Math.PI * p)) / 2;
+}
+function steppedShare(row, now, steps = NEW_STEPS) {
+  if (row?.shownAt == null)
+    return newRowShare(row, now);
+  const step = NEW_FADE_MS / steps;
+  const faded = Math.max(0, now - row.shownAt - NEW_HOLD_MS);
+  return newRowShare(row, row.shownAt + NEW_HOLD_MS + Math.floor(faded / step) * step);
+}
+function isNewRowFading(rows, now) {
+  return [...rows.values()].some((r) => r.shownAt !== null && newRowShare(r, now) > 0);
+}
 
 // ../hooks/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
@@ -8401,7 +8444,9 @@ function drawLine(line, isSelected, d) {
   const mark = markText(line.mark, now, s);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
-  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
+  const newShare = steppedShare(ui.newRows.get(line.id), now);
+  const edge = newShare > 0 ? s.newBar(newShare, NEW_ROW_BAR) : " ";
+  const head = `${edge}${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
   const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
@@ -8470,6 +8515,7 @@ function isShownEmpty(screen, ui, tab) {
 function followRows(screen, ui, seen, isOpening, now) {
   const { listed, open } = tabRows(screen);
   const recorded = recordRows(seen, listed);
+  ui = { ...ui, newRows: addNewRows(ui.newRows, recorded.added) };
   const { tab } = ui;
   if (!isRowTab(tab))
     return { ui, seen: recorded.seen };
@@ -8582,7 +8628,8 @@ var INITIAL_UI = {
   openedAt: 0,
   shownSince: 0,
   isHelpShown: false,
-  listInput: null
+  listInput: null,
+  newRows: new Map
 };
 function holdsOf(ui) {
   return {
@@ -8712,6 +8759,15 @@ function createPanel(deps) {
   let isOpening = true;
   let heldHeight = null;
   const stops = [];
+  const syncFrames = () => {
+    const hasFrames = screen !== null && (isNewRowFading(ui.newRows, deps.now()) || showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind)));
+    if (hasFrames && frames === null)
+      frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS);
+    if (!hasFrames && frames !== null) {
+      timers.stop(frames);
+      frames = null;
+    }
+  };
   const syncAnimation = () => {
     const isMoving = screen !== null && isAnimating(screen, ui, deps.now());
     if (isMoving && animation === null)
@@ -8720,13 +8776,7 @@ function createPanel(deps) {
       timers.stop(animation);
       animation = null;
     }
-    const hasFrames = screen !== null && showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind));
-    if (hasFrames && frames === null)
-      frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS);
-    if (!hasFrames && frames !== null) {
-      timers.stop(frames);
-      frames = null;
-    }
+    syncFrames();
     const now = deps.now();
     const at = screen === null ? null : compareEndsAt(screen.view.lastActions, now);
     if (compareEnd !== null && compareEnd.at !== at) {
@@ -8801,6 +8851,8 @@ function createPanel(deps) {
         return [` ${READING_TEXT}`];
       const now = deps.now();
       const maxHeight = deps.height();
+      ui = { ...ui, newRows: showNewRows(ui.newRows, ui.tab, now) };
+      syncFrames();
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
       heldHeight = Math.max(heldHeight, drawn.lines.length);
@@ -9460,6 +9512,7 @@ var CLIENTS = {
       "compare-in-background": { kind: "full" },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
+      "new-row-bar": { kind: "different", reason: "The terminal steps the fade in 6 colors. Desktop fades an Svg." },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -9568,6 +9621,7 @@ var CLIENTS = {
       },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
+      "new-row-bar": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": { kind: "full" },
@@ -9685,6 +9739,7 @@ var CLIENTS = {
       "compare-in-background": { kind: "full" },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
+      "new-row-bar": { kind: "different", reason: "Steps the fade in 6 colors." },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -11056,6 +11111,12 @@ var LIGHT_BANNER_TINTS = {
   notice: LIGHT_BLUE_TINT,
   ask: LIGHT_BLUE_TINT
 };
+var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
+function fadedOver(hex, under, share) {
+  const channel = (c, i) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
+  const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
+  return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
 
 // src/theme.ts
 var ESC = "\x1B[";
@@ -11077,7 +11138,8 @@ function styleOf(theme) {
     inverse: theme.inverse.bind(theme),
     underline: theme.underline.bind(theme),
     tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
-    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text)
+    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
+    newBar: (share, text) => truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? "light" : "dark"], share), text)
   };
 }
 

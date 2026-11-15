@@ -1,3 +1,4 @@
+import type { NewRows } from '../../hooks/arrivals'
 import type { Context } from 'gpui-kit'
 import type { InputState } from 'gpui-base'
 import type { ShownTab } from '../../hooks/tabs'
@@ -137,6 +138,8 @@ export type Paint = {
   /** Saves a measured size under `key`, and draws again when its height changed. */
   measure: (key: string, size: { width: number; height: number }, cx: Context) => void
   now: number
+  /** The rows whose bar shows that they are new, by id. */
+  newRows: NewRows
   /** The time left each timed button draws, by its id. */
   timeLeft: ReadonlyMap<string, TimeLeft>
   input: (rowId: string) => InputState | null

@@ -9,6 +9,7 @@ import {
   LIGHT_BANNER_TINTS,
   LIGHT_DALTONIZED_TONES,
   LIGHT_TONES,
+  THEME_BACKGROUND,
 } from './tones'
 
 const NEEDS_YOU = 'warning'
@@ -36,6 +37,8 @@ type Palette = {
   divider: string
   tone: Partial<Record<Tone, string>>
   mark: Record<Tone, string>
+  /** The background a palette of hex colors is drawn for, which a fade moves toward. Theme keys have none. */
+  under?: string
   /** A banner's border, and its fill where the palette can tint one. */
   banner: Record<BannerTone, { line: string; fill?: string }>
 }
@@ -48,6 +51,7 @@ const THEME_KEY_BANNERS: Palette['banner'] = {
   ask: { line: 'remember' },
 }
 const DARK_PALETTE: Palette = {
+  under: THEME_BACKGROUND.dark,
   card: '#373737',
   tab: '#373737',
   raised: '#4c4c4c',
@@ -63,6 +67,7 @@ const DARK_PALETTE: Palette = {
   banner: DARK_BANNER_TINTS,
 }
 const LIGHT_PALETTE: Palette = {
+  under: THEME_BACKGROUND.light,
   card: '#e6e6e6',
   tab: '#e6e6e6',
   raised: '#d0d0d0',

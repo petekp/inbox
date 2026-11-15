@@ -7,6 +7,7 @@ import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hoo
 import { SETTLED_MS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
+import { showNewRows } from '../../hooks/arrivals'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
 import { stepRow } from '../../hooks/row-motion'
@@ -26,6 +27,7 @@ import type { BannerLine, TextLine } from './tab-line-steps'
 import { tabBanners } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
 import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
+import { NewBar } from './tab-new-bar'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
@@ -39,6 +41,7 @@ export function stepLists(v: View): {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
+  if (document.visibilityState === 'visible') tabState.newRows = showNewRows(tabState.newRows, t, now)
   const rows = isListedTab(t) ? lists.byTab[t] : []
   const openId = isRowTab(t) ? openRowId(rows, t, v) : undefined
   const changed = new Set<string>()
@@ -196,6 +199,7 @@ export function ListRow({
       onClick={isSelected ? undefined : onSelect}
     >
       {handle}
+      <NewBar row={tabState.newRows.get(row.id)} />
       <div class="content">
         <button type="button" class="line" aria-expanded={isSelected} onClick={isSelected ? onSelect : undefined}>
           <span class="text">

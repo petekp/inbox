@@ -1,5 +1,6 @@
 import { drawnLists, latestUndo, openOnArrival, rowAfterClose, steppedIndex, tabUndos } from '../../hooks/action-plan'
 import type { RowWait } from '../../hooks/action-plan'
+import { addNewRows, showNewRows } from '../../hooks/arrivals'
 import { COLLAPSE_KEY, UNDO_KEY } from '../../hooks/help'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
@@ -132,13 +133,29 @@ export function withClosedSelection(ui: LookUi, last: RowWait[], now: RowWait[])
 
 /**
  * After a publish, selects the first new row that waits while the selected row is collapsed, as `openOnArrival` says.
- * `last` and `now` are the tab's rows at the last draw and at this one.
+ * The new rows start their bar's clock `at` this draw, since the look finds them only in the tab it shows. `last` and
+ * `now` are the tab's rows at the last draw and at this one.
  */
-export function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
+export function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[], at: number): LookUi {
   const added = now.filter(r => !last.some(l => l.id === r.id)).map(r => r.id)
   const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added)
+  const shown =
+    added.length === 0 ? ui : { ...ui, newRows: showNewRows(addNewRows(ui.newRows, { [ui.tab]: added }), ui.tab, at) }
 
-  return id === null ? ui : withSelected(ui, id)
+  return id === null ? shown : withSelected(shown, id)
+}
+
+/** The tab a draw showed, and its rows, or null when it showed no inbox, as while a session is read. */
+export type LastWaits = { tab: ShownTab; rows: RowWait[] | null }
+
+/**
+ * The look's state after a draw that shows `rows`, from the rows the last draw showed. Rows count as closed or new
+ * only between two draws of the same tab's rows.
+ */
+export function withDrawnRows(ui: LookUi, last: LastWaits, rows: RowWait[] | null, at: number): LookUi {
+  if (rows === null || last.rows === null || last.tab !== ui.tab) return ui
+
+  return withArrivals(withClosedSelection(ui, last.rows, rows), last.rows, rows, at)
 }
 
 /**

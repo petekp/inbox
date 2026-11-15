@@ -1,6 +1,6 @@
 import type { Timer } from 'claude-code'
 import type { Tab } from '../types'
-import type { RowRecord } from './arrivals'
+import type { NewRows, RowRecord } from './arrivals'
 import type { PendingUndoScroll } from './pane-selection'
 import type { ModLook } from './rows'
 import type { ListInput } from './timing'
@@ -8,6 +8,7 @@ import type { HerdrAsk } from './herdr-ask'
 
 class PaneState {
   recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
+  newRows: NewRows = new Map()
   isInlinePane = false
   isInlineTerminalPane = false
   terminalInlineSize: string | null = null

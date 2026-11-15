@@ -21,10 +21,9 @@ import { ROW_COPY } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
-import { SETTLED_MS, heldReplies, isGuarded, keptDiscards, withListInput } from '../../hooks/timing'
+import { SETTLED_MS, earliestOf, heldReplies, isGuarded, keptDiscards, withListInput } from '../../hooks/timing'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
-import type { RowWait } from '../../hooks/action-plan'
 import type { Draft } from '../../types'
 import type { Block, Button, Does, ViewChange } from './blocks'
 import { freshUi } from './draw'
@@ -39,12 +38,12 @@ import {
   isFieldDrawn,
   keyMove,
   tabUndo,
-  withArrivals,
-  withClosedSelection,
+  withDrawnRows,
   withSelected,
   withTab,
   withoutConfirmed,
 } from './keys'
+import type { LastWaits } from './keys'
 import { withCollapses, writeCollapse } from './collapse'
 import type { Collapses } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
@@ -54,6 +53,7 @@ import type { Tracks } from './motion'
 import { Heights } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws, timeLeftNextAt } from './time-left'
+import { newRowsNextAt } from './paint-new-bar'
 import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
@@ -110,7 +110,7 @@ export default class Inbox extends View {
   heights = new Heights()
   tracksOf = ''
   /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
-  lastWaits: { tab: ShownTab; rows: RowWait[] } = { tab: 'needsYou', rows: [] }
+  lastWaits: LastWaits = { tab: 'needsYou', rows: null }
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
@@ -381,12 +381,9 @@ export default class Inbox extends View {
         queue: this.queue,
       })
     let screen = screenFor(this.ui)
-    if (screen.is === 'inbox' && this.lastWaits.tab === this.ui.tab) {
-      const last = this.lastWaits.rows
-      const ui = withArrivals(withClosedSelection(this.ui, last, screen.waits), last, screen.waits)
-      if (ui !== this.ui) screen = screenFor((this.ui = ui))
-    }
-    this.lastWaits = { tab: this.ui.tab, rows: screen.is === 'inbox' ? screen.waits : [] }
+    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === 'inbox' ? screen.waits : null, now)
+    if (ui !== this.ui) screen = screenFor((this.ui = ui))
+    this.lastWaits = { tab: this.ui.tab, rows: screen.is === 'inbox' ? screen.waits : null }
     this.view = screen.is === 'inbox' ? screen.view : null
     this.drawTimer?.cancel()
     this.drawTimer = null
@@ -420,6 +417,7 @@ export default class Inbox extends View {
         if (this.heights.measure(key, size)) cx.notify()
       },
       now,
+      newRows: this.ui.newRows,
       timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
       isNarrow: this.isNarrow,
@@ -451,7 +449,7 @@ export default class Inbox extends View {
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
     const nextFrame = isStarting ? now + NEXT_FRAME_MS : null
-    const timed = timeLeftNextAt(moved.blocks, now)
+    const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, now)])
     const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, timed].filter(at => at !== null)
     if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
     const focus = this.focus

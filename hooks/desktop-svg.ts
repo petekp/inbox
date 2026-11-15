@@ -1,4 +1,5 @@
 import { CLOSED_MARKS } from './help'
+import { NEW_FADE_MS, NEW_HOLD_MS } from './arrivals'
 import { RUNNING_PULSE_MS } from './timing'
 import { ROW_PAD_PT } from './layout'
 import { markShape, mutedMarkShape } from './marks'
@@ -94,6 +95,26 @@ export function runningSvg(now: number): string {
     `<circle class="mark" cx="${MARK_GLYPH_MID_PT}" cy="${height / 2}" r="${MARK_GLYPH_PT / 2}">` +
     `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" begin="-${now % RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
     `</circle></svg>`
+  )
+}
+/** The bar's width and its left edge, in the frame inset before the mark column. */
+const NEW_BAR_PT = 3
+const NEW_BAR_X_PT = 3.3
+/**
+ * A new row's bar on desktop, as tall as a row with one line. It shows at full strength for `NEW_HOLD_MS` from
+ * `shownAt`, then fades. SMIL runs it, and each pane redraw starts it again, so it begins at the clock's point.
+ */
+export function newBarSvg(shownAt: number, now: number): string {
+  const width = FRAME_INSET_PT - DESKTOP_CELL_PT
+  const height = 2 * ROW_PAD_PT + DESKTOP_LINE_PT
+  const total = NEW_HOLD_MS + NEW_FADE_MS
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<style>.bar{fill:${LIGHT_TONES.key}}@media (prefers-color-scheme: dark){.bar{fill:${DARK_TONES.key}}}</style>` +
+    `<rect class="bar" x="${NEW_BAR_X_PT}" y="${ROW_PAD_PT}" width="${NEW_BAR_PT}" height="${DESKTOP_LINE_PT}" rx="1.5">` +
+    `<animate attributeName="opacity" values="1;1;0" keyTimes="0;${NEW_HOLD_MS / total};1" calcMode="spline" ` +
+    `keySplines="0 0 1 1;0.37 0 0.63 1" dur="${total}ms" begin="-${Math.max(0, now - shownAt)}ms" fill="freeze"/>` +
+    `</rect></svg>`
   )
 }
 function escapeXml(text: string): string {

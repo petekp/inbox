@@ -151,11 +151,13 @@ import {
   ARRIVAL_TABS,
   closedGroups,
   followTo,
+  isNewRowFading,
   isPrsTabEmpty,
   isTabEmpty,
   listedRowIds,
   openRowIds,
   prRowIds,
+  showNewRows,
 } from './arrivals'
 import { parseInline } from './inline'
 import {
@@ -2993,9 +2995,11 @@ export const register: Register = on => {
     const isStatusShown = savedPage === 'overview'
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
     const tabList = shownTabs()
+    paneState.newRows = showNewRows(paneState.newRows, shownTab, now)
     if (look === 'terminal')
       animateRunningMarks(
-        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
+        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)) ||
+          isNewRowFading(paneState.newRows, now),
         now,
         (ms, fn) => $.clock.every(ms, fn),
         () => void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined),

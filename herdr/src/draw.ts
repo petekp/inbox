@@ -1,3 +1,4 @@
+import type { NewRows } from '../../hooks/arrivals'
 import type { Closed, FoldKind } from '../../types'
 import type { RowPress } from '../../hooks/presses'
 import type { ClosedDelivery, ResultMark, RowView, SettledState } from '../../hooks/rows'
@@ -59,6 +60,8 @@ export type LookUi = {
   optionsShown: string[]
   statusUnfolded: string[]
   typing: string | null
+  /** The rows that arrived while their tab showed, whose bar shows until it fades. */
+  newRows: NewRows
 }
 
 export const freshUi = (tab: ShownTab): LookUi => ({
@@ -69,6 +72,7 @@ export const freshUi = (tab: ShownTab): LookUi => ({
   optionsShown: [],
   statusUnfolded: [],
   typing: null,
+  newRows: new Map(),
 })
 
 /** What one draw of a session shows, from its published file. */

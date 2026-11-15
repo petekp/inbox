@@ -1,3 +1,7 @@
+import { fadedOver } from './tones'
+import { NEW_ROW_BAR, steppedShare } from './arrivals'
+import { newBarSvg } from './desktop-svg'
+import { ROW_PAD_PT } from './layout'
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { isStatusUnderActions } from './feedback'
 import { paneState } from './mod-state'
@@ -110,6 +114,29 @@ export function paneRows(
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
 ) {
+  const DesktopSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+  /** The bar at a new row's left edge, which fades once its tab is shown, or null for a row not new. */
+  const newBar = (row: Row, top = 0) => {
+    const newRow = paneState.newRows.get(row.id)
+    if (DesktopSvg && newRow)
+      return (
+        <Box key={`new-${row.id}`} position="absolute" top={0} left={0} marginTop={top}>
+          <DesktopSvg
+            source={newBarSvg(newRow.shownAt ?? now, now)}
+            alt=""
+            width={FRAME_INSET_PT - DESKTOP_CELL_PT}
+            height={2 * ROW_PAD_PT + DESKTOP_LINE_PT}
+          />
+        </Box>
+      )
+    const share = steppedShare(newRow, now)
+    if (look !== 'terminal' || share === 0) return null
+    return (
+      <Box key={`new-${row.id}`} position="absolute" top={0} left={0} width={1}>
+        <Text color={pal.under ? fadedOver(pal.key, pal.under, share) : pal.key}>{NEW_ROW_BAR}</Text>
+      </Box>
+    )
+  }
   const listRow = (row: Row, tree: TreePos) => {
     const columns = columnsFor(row)
     const index = indexOf.get(row.id) ?? -1
@@ -143,6 +170,7 @@ export function paneRows(
               props={rowClientProps(row, desktopRowTextPt)}
             />
           </Box>
+          {newBar(row)}
         </Box>
       )
     }
@@ -279,35 +307,45 @@ export function paneRows(
         {desktopAfter ? <Text color={pal.muted}>{desktopAfter}</Text> : null}
       </Text>
     )
+    const selectedGapY = (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT
     if (look === 'desktop' && isSelected)
-      return desktopFrame({
-        key: `row-${row.id}`,
-        markCells: DESKTOP_MARK_CELLS,
-        mark: row.view
-          ? gutterMark(row)
-          : (toned(row) ??
-            (row.handleTone ? <Text color={pal.mark[row.handleTone]}>{row.handle}</Text> : <Text>{row.handle}</Text>)),
-        side: <Text color={pal.age}>{sideAge(row)}</Text>,
-        fill: pal.selection,
-        gapY: (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT,
-        children: [
-          <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
-          desktopTitle,
-          row.subtitle ?? null,
-          row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
-          descriptionsBlock,
-          status.length > 0 ? (
-            <Box flexDirection="column" marginTop={blankLine}>
-              {status.map(st => (
-                <Text color={st.color} wrap="wrap">
-                  {st.text}
-                </Text>
-              ))}
-            </Box>
-          ) : null,
-          keysBlock,
-        ],
-      })
+      return (
+        <Box key={`row-${row.id}`} flexDirection="column">
+          {desktopFrame({
+            key: `frame-${row.id}`,
+            markCells: DESKTOP_MARK_CELLS,
+            mark: row.view
+              ? gutterMark(row)
+              : (toned(row) ??
+                (row.handleTone ? (
+                  <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
+                ) : (
+                  <Text>{row.handle}</Text>
+                ))),
+            side: <Text color={pal.age}>{sideAge(row)}</Text>,
+            fill: pal.selection,
+            gapY: selectedGapY,
+            children: [
+              <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
+              desktopTitle,
+              row.subtitle ?? null,
+              row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
+              descriptionsBlock,
+              status.length > 0 ? (
+                <Box flexDirection="column" marginTop={blankLine}>
+                  {status.map(st => (
+                    <Text color={st.color} wrap="wrap">
+                      {st.text}
+                    </Text>
+                  ))}
+                </Box>
+              ) : null,
+              keysBlock,
+            ],
+          })}
+          {newBar(row, selectedGapY)}
+        </Box>
+      )
 
     return (
       <Box
@@ -382,6 +420,7 @@ export function paneRows(
           </Box>
         ) : null}
         {isSelected ? branch(tree, blankLine, TREE_LINE_AT, pal.selectionLine ?? pal.line) : branch(tree, 0)}
+        {isCursorMarked && !pal.selection ? null : newBar(row)}
         {isCursorMarked ? (
           <Box
             key={settledScrollKey(`view-${row.id}`, settledLayout)}

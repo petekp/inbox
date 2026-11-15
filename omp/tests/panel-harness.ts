@@ -18,6 +18,7 @@ export const style: Style = {
   underline: s => `${ESC}4m${s}${ESC}24m`,
   tone: (_name, s) => `${ESC}35m${s}${ESC}39m`,
   banner: (_tone, _part, s) => s,
+  newBar: (_share, s) => s,
 }
 export const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 
