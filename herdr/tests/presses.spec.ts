@@ -202,7 +202,7 @@ const undoOf = (blocks: Block[], id: string) =>
     .find(r => r.id === id)
     ?.buttons.find(b => b.id === `${id} undo`)
 
-test('u presses the Undo of the row dismissed last, and a fresh Undo’s fill starts at its share left, then empties', () => {
+test('u presses the Undo of the row dismissed last, whose fill empties', () => {
   const { view, blocks } = dismissedRows({ d8: NOW - 900, d7: NOW - 500 }, NOW - 1000)
   const [older, newer] = [undoOf(blocks, 'd8'), undoOf(blocks, 'd7')]
   expect([older?.isOut, newer?.isOut]).toEqual([false, false])
@@ -210,9 +210,7 @@ test('u presses the Undo of the row dismissed last, and a fresh Undo’s fill st
   expect(newer?.runsOutAt).toBe(NOW - 500 + SETTLED_MS)
   const move = keyMove('u', ASKS, blocks, null, tabUndo(view, 'needsYou', NOW - 1000))
   expect(move?.is === 'press' && move.button).toBe(newer!)
-  const first = timeLeftDraws(blocks, new Map(), NOW)
-  expect(first.get('d7 undo')).toEqual({ is: 'emptying', isStarted: false })
-  expect(timeLeftDraws(blocks, first, NOW + 16).get('d7 undo')).toEqual({ is: 'emptying', isStarted: true })
+  expect(timeLeftDraws(blocks, new Map(), NOW).get('d7 undo')).toEqual({ is: 'emptying' })
 })
 
 test('while the last Undo’s press is out, u does nothing and that Undo’s fill holds the share it had', () => {

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T06:33:36.461Z. 223867 characters follow.
+// Built at 2026-11-15T06:55:23.217Z. 224193 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4783,29 +4783,35 @@ import { div as div3 } from "gpui-kit";
 function timeLeftShare(runsOutAt, now) {
   return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
 }
+var TIME_LEFT_STEP_MS = 250;
 function timeLeftOf(b, drawn, now) {
   if (b.runsOutAt === undefined || b.isHidden)
     return null;
   const was = drawn.get(b.id);
   if (b.isOut)
     return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
-  return b.runsOutAt > now ? { is: "emptying", isStarted: was?.is === "emptying" } : null;
+  return b.runsOutAt > now ? { is: "emptying" } : null;
 }
+var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined && !b.isHidden);
 function timeLeftDraws(blocks, drawn, now) {
-  const buttons = blocks.flatMap((b) => b.kind === "row" ? b.buttons : []);
-  return new Map(buttons.flatMap((b) => {
+  return new Map(timedButtons(blocks).flatMap((b) => {
     const left = timeLeftOf(b, drawn, now);
     return left ? [[b.id, left]] : [];
   }));
 }
+function timeLeftNextAt(blocks, now) {
+  const ends = timedButtons(blocks).filter((b) => !b.isOut && (b.runsOutAt ?? 0) > now).map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS));
+  return ends.length > 0 ? Math.min(...ends) : null;
+}
 
 // src/paint-timer.ts
 var TIMED_W = 64;
-function timeLeftEl(left, runsOutAt, now, t) {
-  const cut = div3().absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div3().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover));
+function timeLeftEl(id, left, runsOutAt, now, t) {
+  const cut = div3().id(`time left ${id}`).absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div3().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover));
   if (left.is === "paused")
     return cut.w(left.share * TIMED_W);
-  return cut.w(left.isStarted ? 0 : timeLeftShare(runsOutAt, now) * TIMED_W).transition("width", { duration: Math.max(0, runsOutAt - now), easing: "linear" });
+  const step = Math.min(TIME_LEFT_STEP_MS, Math.max(0, runsOutAt - now));
+  return cut.w(timeLeftShare(runsOutAt, now + step) * TIMED_W).transition("width", { duration: step, easing: "linear" });
 }
 
 // src/paint-blocks.ts
@@ -4814,7 +4820,7 @@ function buttonEl(b, p, isInert = false) {
   const isPill = b.emphasis !== "quiet";
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
-  const base = h_flex2().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(left, runsOutAt ?? 0, p.now, t)) : e).child(b.label);
+  const base = h_flex2().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(b.label);
   const shaped = isPill && runsOutAt === undefined ? base.px(INSET).rounded(BUTTON_H / 2).border_1() : base;
   if (b.isHidden)
     return shaped.invisible().disabled(true);
@@ -5652,9 +5658,9 @@ class Inbox extends View {
     const isStarting = [...moved.motion.values()].some((m) => m.isStart);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
-    const isTimerStarting = [...this.timeLeft.values()].some((l) => l.is === "emptying" && !l.isStarted);
-    const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null;
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt].filter((at) => at !== null);
+    const nextFrame = isStarting ? now + NEXT_FRAME_MS : null;
+    const timed = timeLeftNextAt(moved.blocks, now);
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, timed].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;

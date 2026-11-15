@@ -57,7 +57,7 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
         .w(TIMED_W)
         .rounded(BUTTON_H / 2),
     )
-    .when(left !== undefined, e => (left ? e.child(timeLeftEl(left, runsOutAt ?? 0, p.now, t)) : e))
+    .when(left !== undefined, e => (left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e))
     .child(b.label)
   const shaped =
     isPill && runsOutAt === undefined

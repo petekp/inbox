@@ -53,7 +53,7 @@ import { NEXT_FRAME_MS, NO_TRACKS, moveRows } from './motion'
 import type { Tracks } from './motion'
 import { Heights } from './heights'
 import { blockEl } from './paint-blocks'
-import { timeLeftDraws } from './time-left'
+import { timeLeftDraws, timeLeftNextAt } from './time-left'
 import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
@@ -449,9 +449,9 @@ export default class Inbox extends View {
     const isStarting = [...moved.motion.values()].some(m => m.isStart)
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
-    const isTimerStarting = [...this.timeLeft.values()].some(l => l.is === 'emptying' && !l.isStarted)
-    const nextFrame = isStarting || isTimerStarting ? now + NEXT_FRAME_MS : null
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt].filter(at => at !== null)
+    const nextFrame = isStarting ? now + NEXT_FRAME_MS : null
+    const timed = timeLeftNextAt(moved.blocks, now)
+    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, timed].filter(at => at !== null)
     if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
     const focus = this.focus
 

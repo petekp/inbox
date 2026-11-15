@@ -17,8 +17,9 @@ export type Painted = {
   kids: Painted[]
   flow: 'row' | 'column'
   text: string | null
-  style: Partial<Record<Side | 'h' | 'gap' | 'line', number>> & { isTruncated?: boolean; isAbsolute?: boolean }
+  style: Partial<Record<Side | 'h' | 'w' | 'gap' | 'line', number>> & { isTruncated?: boolean; isAbsolute?: boolean }
   springs: Set<string>
+  transitions: Map<string, number>
   onSize: ((size: { width: number; height: number }, cx: unknown) => void) | null
 }
 
@@ -113,6 +114,7 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
     text: null,
     style: {},
     springs: new Set(),
+    transitions: new Map(),
     onSize: null,
   }
   const adopt = (kid: unknown) => {
@@ -142,11 +144,12 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
           if (key === 'on_click') node.click = first as Handler
           if (key === 'on_key_down') node.keyDown = first as Handler
           for (const side of SIDES[key] ?? []) node.style[side] = first as number
-          if (key === 'h' || key === 'gap') node.style[key] = first as number
+          if (key === 'h' || key === 'w' || key === 'gap') node.style[key] = first as number
           if (key === 'line_height') node.style.line = parseFloat(String(first))
           if (key === 'truncate') node.style.isTruncated = true
           if (key === 'absolute') node.style.isAbsolute = true
           if (key === 'spring') node.springs.add(String(first))
+          if (key === 'transition') node.transitions.set(String(first), (second as { duration: number }).duration)
           if (key === 'on_size_change') node.onSize = first as Painted['onSize']
 
           return proxy
