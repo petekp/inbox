@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T17:19:56.911Z. 234901 characters follow.
+// Built at 2026-11-15T17:37:54.759Z. 235016 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -5623,7 +5623,8 @@ class Inbox extends View {
     this.tab ??= own?.tab ?? focused()?.tab ?? null;
     if (this.tab === null)
       return;
-    this.followed = follow({ focused: focused(), panes: panes(), terminals: terminals() }, this.tab, this.last);
+    const terminalRecords = terminals().map(({ address, labels, program }) => ({ address, labels, program }));
+    this.followed = follow({ focused: focused(), panes: panes(), terminals: terminalRecords }, this.tab, this.last);
     if (this.followed.is !== "no-terminal")
       this.last = this.followed.terminal;
     const sessionId = this.followed.is === "session" ? this.followed.sessionId : null;
