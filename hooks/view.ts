@@ -53,6 +53,7 @@ export type ViewInput = {
 }
 
 export type InboxView = {
+  untrackedWork: NonNullable<Ledger['untrackedWork']>
   needsYou: {
     count: number
     questions: RowView[]
@@ -296,6 +297,7 @@ export function inboxView({
     })
 
   return {
+    untrackedWork: ledger.untrackedWork ?? [],
     needsYou: {
       count: counted.length,
       questions: questionRows,

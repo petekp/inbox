@@ -70,15 +70,22 @@ export function isPersonsAnswer(outcome: string): boolean {
  */
 export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number, promptAt = now): Ledger {
   const feedIds = new Set(ledger.findings.filter(f => f.feedOwned).map(f => f.id))
+  const sourceItemIds = new Set(ledger.items.filter(i => i.sourceManaged).map(i => i.id))
   const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
   const closing = new Map(
     u.closed
-      .filter(c => !feedIds.has(c.id) && !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome))
+      .filter(
+        c => !feedIds.has(c.id) && !sourceItemIds.has(c.id) && !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome),
+      )
       .map(c => [c.id, c.outcome]),
   )
   const closed = [...ledger.closed]
   const items: Item[] = []
   for (const item of ledger.items) {
+    if (item.sourceManaged) {
+      items.push(item)
+      continue
+    }
     const outcome = closing.get(item.id)
     const helps = u.helped.filter(h => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps)
     const isClosing = outcome !== undefined && (item.from !== 'record' || isPersonsAnswer(outcome))
@@ -87,7 +94,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
   }
   const recordedThisTurn = new Set(
     [...ledger.items, ...ledger.closed.flatMap(c => c.item ?? [])]
-      .filter(i => i.from === 'record' && i.turn === turn)
+      .filter(i => !i.sourceManaged && i.from === 'record' && i.turn === turn)
       .map(i => i.kind),
   )
 
@@ -96,6 +103,10 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
   const addedIds: (string | null)[] = []
   const created = new Set<string>()
   for (const a of u.added) {
+    if (items.some(i => i.sourceManaged && matchOpen([i], a) >= 0)) {
+      addedIds.push(null)
+      continue
+    }
     if (repeatsClosed(ledger.closed, a, promptAt)) {
       addedIds.push(null)
       continue
@@ -145,10 +156,11 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     const id = typeof a.item === 'number' ? addedIds[a.item] : a.item
     const asker = items.find(i => i.id === id)
     const finding = ledger.findings.find(f => f.id === a.id)
-    if (asker && finding && asksAbout(asker, finding, true)) askedBy.set(a.id, asker.id)
+    if (asker && finding && !finding.sourceManaged && asksAbout(asker, finding, true)) askedBy.set(a.id, asker.id)
   }
   for (const i of items.filter(i => created.has(i.id)))
-    for (const f of ledger.findings) if (!f.feedOwned && !askedBy.has(f.id) && asksAbout(i, f)) askedBy.set(f.id, i.id)
+    for (const f of ledger.findings)
+      if (!f.sourceManaged && !f.feedOwned && !askedBy.has(f.id) && asksAbout(i, f)) askedBy.set(f.id, i.id)
   const { findings, closedFindings } = ledger.findings.reduce((l, f) => {
     const asker = askedBy.get(f.id)
     const outcome = closing.get(f.id)
@@ -192,6 +204,11 @@ export function addFinding(
   ledger: Ledger,
   finding: Omit<Finding, 'id'>,
 ): { ledger: Ledger; id: string; isAdded: boolean; expired: Finding | null; dismissed: ClosedFinding | null } {
+  const sourceManaged =
+    ledger.findings.find(f => f.sourceManaged && sameAsk(f.title, finding.title)) ??
+    ledger.items.find(i => i.sourceManaged && restates(i.ask, finding.title))
+  if (sourceManaged) return { ledger, id: sourceManaged.id, isAdded: false, expired: null, dismissed: null }
+
   const sameFinding = ledger.findings.find(f => sameAsk(f.title, finding.title))
   const same = sameFinding ?? ledger.items.find(i => restates(i.ask, finding.title))
   if (same) {
@@ -228,6 +245,7 @@ export function addFinding(
 
 type AgentItemResult =
   | { ledger: Ledger; is: 'added'; id: string }
+  | { ledger: Ledger; is: 'source-managed'; id: string }
   /** `newRec` is the recommendation the record changed the item to, or null when it kept the item's own. */
   | {
       ledger: Ledger
@@ -256,7 +274,10 @@ export function addAgentItem(
   now: number,
 ): AgentItemResult {
   const candidate = { ...entry, label: null }
-  const recordedThisTurn = new Set(ledger.items.filter(i => i.turn === ledger.turn).map(i => i.id))
+  const managedMatch = ledger.items.find(i => i.sourceManaged && matchOpen([i], candidate) >= 0)
+  if (managedMatch) return { ledger, is: 'source-managed', id: managedMatch.id }
+
+  const recordedThisTurn = new Set(ledger.items.filter(i => !i.sourceManaged && i.turn === ledger.turn).map(i => i.id))
   const open = matchOpen(ledger.items, candidate, recordedThisTurn)
   const openItem = ledger.items[open]
   if (openItem) {
@@ -304,7 +325,7 @@ export function addAgentItem(
   const id = `i${ledger.nextId}`
   const items = [...ledger.items, { ...entry, label: null, id, turn: ledger.turn, at: now, from: 'record' as const }]
   const asked = { ...entry, label: null }
-  const restated = ledger.findings.filter(f => asksAbout(asked, f))
+  const restated = ledger.findings.filter(f => !f.sourceManaged && asksAbout(asked, f))
   const base: Ledger = { ...ledger, items, nextId: ledger.nextId + 1, batchTurn: ledger.turn }
   const next = restated.reduce(
     (l, f) => closeFinding(l, f.id, { outcome: `asked as ${id}`, how: 'update' }, now, id),

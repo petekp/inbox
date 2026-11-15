@@ -21,6 +21,8 @@ export type Finding = {
   feedSource?: string
   /** Marks findings created by the versioned progress-feed lifecycle. */
   feedOwned?: true
+  /** The active-items source owns this finding's lifecycle. */
+  sourceManaged?: true
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']
@@ -114,6 +116,8 @@ export type Ledger = {
   findings: Finding[]
   /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */
   closedFindings: ClosedFinding[]
+  /** Read-only warnings from live work signals that have no matching open external item. */
+  untrackedWork?: { key: string; title: string; detail: string; at: number; feedSource: string }[]
   /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
   /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. */

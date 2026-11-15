@@ -58,6 +58,7 @@ Write plainly. No jargon, no filler, no markdown.`
 
 export function ledgerBlocks(ledger: Ledger): string[] {
   const open = ledger.items
+    .filter(i => !i.sourceManaged)
     .map(
       i =>
         `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? '-'} | ${i.ask} | ${i.options.join(' / ') || '-'} | ${i.rec ?? '-'} | ${i.isDesignChoice ? 'design' : '-'}`,

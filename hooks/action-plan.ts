@@ -52,6 +52,7 @@ export function actionsOf(
   feedback: Feedback | null,
 ): ActionView[] {
   const { id, item, steps } = row
+  if (item?.sourceManaged || row.finding?.sourceManaged) return []
   const pressing = pressOutAction(last, feedback)
   const out = outAction(last, feedback)
   const action = (

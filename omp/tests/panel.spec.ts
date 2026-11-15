@@ -68,6 +68,26 @@ test('a feed finding draws in the Progress group', () => {
   expect(lines).toContain('Implement the progress feed')
 })
 
+test('the panel draws untracked live work as a warning banner', () => {
+  const state = demoState(NOW)
+  state.ledger = {
+    ...state.ledger,
+    untrackedWork: [
+      {
+        key: 'herdr/local/meta-worker/untracked-work',
+        title: 'meta-worker',
+        detail: 'working agent has no open item',
+        at: NOW,
+        feedSource: '/feed/herdr-local.json',
+      },
+    ],
+  }
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true) })
+  const lines = text(screen, INITIAL_UI)
+  expect(lines).toContain('Untracked work')
+  expect(lines).toContain('meta-worker')
+})
+
 test('a row’s follow-ups share its buttons’ last line only when all of them fit there, and otherwise start a line of their own together', () => {
   const screen = screenOf()
   const row = screen.view.findings.rows.find(r => r.state.is === 'open')!

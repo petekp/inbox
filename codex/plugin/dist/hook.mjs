@@ -467,6 +467,7 @@ var EMPTY = {
   closed: [],
   findings: [],
   closedFindings: [],
+  untrackedWork: [],
   prs: [],
   prOrder: null,
   nextId: 1,
@@ -477,7 +478,7 @@ var EMPTY = {
 function isBlankLedger(ledger) {
   const o = ledger.overview;
   const isStatusBlank = !o || o.head === null && o.subjects.length === 0 && o.goal === null;
-  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
+  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0 && (ledger.untrackedWork?.length ?? 0) === 0;
 }
 function upgradeLedger(ledger) {
   const {
@@ -555,8 +556,9 @@ function screenText(host, isOpen2, tab) {
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => !i.sourceManaged && i.turn === ledger.batchTurn);
 }
+var promptItems = (ledger) => ledger.items.filter((i) => !i.sourceManaged);
 function describe(item) {
   const parts = [`"${item.ask}"`];
   if (item.options.length > 0) parts.push(`options: ${item.options.join(" / ")}`);
@@ -634,11 +636,11 @@ function statusSummaryLines(ledger) {
 function carryText(ledger, title) {
   const findings = ledger.findings.filter((f) => !f.feedOwned);
   const lines = statusSummaryLines(ledger);
-  if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null;
+  if (lines.length === 0 && promptItems(ledger).length === 0 && findings.length === 0) return null;
   const out = [title, ...lines];
-  if (ledger.items.length > 0) {
+  if (promptItems(ledger).length > 0) {
     out.push("Waiting on the user:");
-    for (const item of ledger.items) out.push(itemLine(item));
+    for (const item of promptItems(ledger)) out.push(itemLine(item));
   }
   if (findings.length > 0) {
     out.push("Findings you recorded, still open:");
@@ -656,9 +658,9 @@ function inboxText(host, ledger, isOpen2) {
   const out = [
     `inbox: what waits on the user, as of your last reply. Anything not listed here is closed. ${CLOSE_ID_RULE}`
   ];
-  if (ledger.items.length > 0) {
+  if (promptItems(ledger).length > 0) {
     out.push("Waiting on the user:");
-    for (const item of ledger.items) out.push(itemLine(item));
+    for (const item of promptItems(ledger)) out.push(itemLine(item));
   } else {
     out.push("Nothing is waiting on the user.");
   }
@@ -685,7 +687,7 @@ function promptNotes(host, ledger, prompt, told) {
   const inbox = inboxText(host, ledger, prompt.isOpen);
   const toldClosed = new Set(told.closed);
   const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
-  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
+  const isEmpty = promptItems(ledger).length === 0 && ledger.findings.every((f) => f.feedOwned);
   if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
   notes.push(closed ? `${inbox}${NL2}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
@@ -2042,6 +2044,7 @@ var ACTION_KEYS = {
 };
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
+  if (item?.sourceManaged || row.finding?.sourceManaged) return [];
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
   const action = (press, label, kind, flags = {}) => {
@@ -2279,6 +2282,7 @@ function inboxView({
     };
   });
   return {
+    untrackedWork: ledger.untrackedWork ?? [],
     needsYou: {
       count: counted.length,
       questions: questionRows,
@@ -3579,26 +3583,45 @@ function parseFeed(text2) {
     const feed = JSON.parse(text2);
     if (!feed || typeof feed !== "object") return null;
     const f = feed;
-    if (f.version !== 1 || !validSource(f.source) || !validTime(f.writtenAt) || !Array.isArray(f.entries)) return null;
+    if (f.version !== 1 || !validSource(f.source) || !validTime(f.writtenAt) || !Array.isArray(f.entries) || f.warnings !== void 0 && !Array.isArray(f.warnings))
+      return null;
     if (f.entries.length > 40) return null;
     const keys = /* @__PURE__ */ new Set();
     const entries = [];
     for (const value of f.entries) {
       if (!value || typeof value !== "object") return null;
       const e = value;
-      if (typeof e.key !== "string" || e.key.length === 0 || e.key.length > 100 || keys.has(e.key) || !["working", "blocked", "done"].includes(e.state) || typeof e.title !== "string" || e.title.length === 0 || typeof e.detail !== "string" || !validTime(e.at))
+      if (typeof e.key !== "string" || e.key.length === 0 || e.key.length > 100 || keys.has(e.key) || !["working", "blocked", "done"].includes(e.state) || typeof e.title !== "string" || e.title.length === 0 || typeof e.detail !== "string" || !validTime(e.at) || e.kind !== void 0 && !["work", "task"].includes(e.kind) || e.owner !== void 0 && !validOwner(e.owner) || e.signalKey !== void 0 && (typeof e.signalKey !== "string" || e.signalKey.length === 0 || e.signalKey.length > 100))
         return null;
+      if (f.source === "meta-open-items" && (e.kind === void 0 || e.owner === void 0)) return null;
       keys.add(e.key);
       entries.push({ ...e, title: e.title.slice(0, 120), detail: e.detail.slice(0, 600) });
     }
-    return { version: 1, source: f.source, writtenAt: f.writtenAt, entries };
+    const warningKeys = /* @__PURE__ */ new Set();
+    const warnings = [];
+    for (const value of f.warnings ?? []) {
+      if (!value || typeof value !== "object") return null;
+      const w = value;
+      if (typeof w.key !== "string" || w.key.length === 0 || w.key.length > 100 || warningKeys.has(w.key) || typeof w.title !== "string" || w.title.length === 0 || typeof w.detail !== "string" || !validTime(w.at))
+        return null;
+      warningKeys.add(w.key);
+      warnings.push({ key: w.key, title: w.title.slice(0, 120), detail: w.detail.slice(0, 600), at: w.at });
+    }
+    if (warnings.length > 40) return null;
+    return { version: 1, source: f.source, writtenAt: f.writtenAt, entries, warnings };
   } catch {
     return null;
   }
 }
 var validTime = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0;
 var validSource = (s) => typeof s === "string" && s.length > 0;
+var validOwner = (value) => {
+  if (!value || typeof value !== "object") return false;
+  const owner = value;
+  return validSource(owner.machine) && validSource(owner.agent) && owner.machine.length <= 80 && owner.agent.length <= 80;
+};
 function applyFeed(ledger, feed, now, source = "") {
+  if (feed.source === "meta-open-items") return applyMetaOpenItems(ledger, feed, now, source);
   const keys = new Set(feed.entries.map((e) => e.key));
   const owns = (f) => f.feedOwned === true && f.feedKey !== void 0 && f.feedSource === source;
   const staleClosed = ledger.closedFindings.some((f) => owns(f) && !keys.has(f.feedKey));
@@ -3637,14 +3660,84 @@ function applyFeed(ledger, feed, now, source = "") {
 }
 function applyFeedFiles(ledger, root, files, now) {
   const present = new Set(files.map((f) => f.path));
-  const sources = new Set([...ledger.findings, ...ledger.closedFindings].map((f) => f.feedSource).filter(Boolean));
+  const sources = new Set(
+    [...ledger.findings, ...ledger.closedFindings, ...ledger.items].map((f) => f.feedSource).filter(Boolean)
+  );
   let next = ledger;
   for (const source of sources)
-    if (sourceUnder(source, root) && !present.has(source)) next = applyFeed(next, emptyFeed, now, source);
+    if (sourceUnder(source, root) && !present.has(source) && !next.findings.some((f) => f.feedSource === source && f.sourceManaged) && !next.items.some((i) => i.feedSource === source && i.sourceManaged))
+      next = applyFeed(next, emptyFeed, now, source);
   for (const file of files) if (file.feed) next = applyFeed(next, file.feed, now, file.path);
+  const validPaths = new Set(files.filter((file) => file.feed).map((file) => file.path));
+  const carriedWarnings = (next.untrackedWork ?? []).filter(
+    (w) => !sourceUnder(w.feedSource, root) || present.has(w.feedSource) && !validPaths.has(w.feedSource)
+  );
+  const currentWarnings = files.flatMap(
+    (file) => file.feed ? (file.feed.warnings ?? []).map((w) => ({ ...w, feedSource: file.path })) : []
+  );
+  const untrackedWork = [...carriedWarnings, ...currentWarnings];
+  if (JSON.stringify(untrackedWork) !== JSON.stringify(next.untrackedWork ?? [])) next = { ...next, untrackedWork };
   for (const finding of next.findings)
-    if (finding.feedOwned === true && finding.feedKey && finding.feedSource && now - finding.at >= FEED_TTL_MS)
+    if (finding.feedOwned === true && !finding.sourceManaged && finding.feedKey && finding.feedSource && now - finding.at >= FEED_TTL_MS)
       next = closeFinding(next, finding.id, { how: "update", outcome: "done: feed entry expired" }, now);
+  return next;
+}
+function applyMetaOpenItems(ledger, feed, now, source) {
+  const tasks = new Map(
+    feed.entries.filter((entry) => entry.kind === "task" && entry.state !== "done").map((entry) => [entry.key, entry])
+  );
+  const work = new Map(
+    feed.entries.filter((entry) => entry.kind !== "task" && entry.state !== "done").map((entry) => [entry.key, entry])
+  );
+  let next = ledger;
+  for (const item of next.items)
+    if (item.sourceManaged && item.feedSource === source && !tasks.has(item.feedKey ?? ""))
+      next = { ...next, items: next.items.filter((i) => i.id !== item.id) };
+  for (const entry of tasks.values()) {
+    const existing = next.items.find((i) => i.sourceManaged && i.feedSource === source && i.feedKey === entry.key);
+    const updated = {
+      ...existing,
+      id: existing?.id ?? `i${next.nextId}`,
+      kind: "task",
+      label: null,
+      ask: entry.title,
+      detail: entry.detail,
+      options: [],
+      rec: null,
+      helps: [],
+      turn: 0,
+      at: entry.at,
+      from: "record",
+      sourceManaged: true,
+      feedKey: entry.key,
+      feedSource: source
+    };
+    if (!existing) next = { ...next, items: [...next.items, updated], nextId: next.nextId + 1 };
+    else if (existing.ask !== updated.ask || existing.detail !== updated.detail || existing.at !== updated.at)
+      next = { ...next, items: next.items.map((i) => i.id === existing.id ? updated : i) };
+  }
+  for (const entry of work.values()) {
+    const current = next.findings.find((f) => f.sourceManaged && f.feedSource === source && f.feedKey === entry.key);
+    const updated = {
+      ...current,
+      id: current?.id ?? `f${next.nextId}`,
+      kind: "progress",
+      title: entry.title,
+      detail: detailOf(entry),
+      path: null,
+      at: entry.at,
+      feedKey: entry.key,
+      feedSource: source,
+      feedOwned: true,
+      sourceManaged: true
+    };
+    if (!current) next = { ...next, findings: [...next.findings, updated], nextId: next.nextId + 1 };
+    else if (current.title !== updated.title || current.detail !== updated.detail || current.at !== updated.at)
+      next = { ...next, findings: next.findings.map((f) => f.id === current.id ? updated : f) };
+  }
+  for (const finding of next.findings)
+    if (finding.sourceManaged && finding.feedSource === source && !work.has(finding.feedKey ?? ""))
+      next = closeFinding(next, finding.id, { how: "update", outcome: "done: no longer reported" }, now);
   return next;
 }
 var emptyFeed = { version: 1, source: "", writtenAt: 0, entries: [] };

@@ -153,6 +153,11 @@ export type Item = {
   isDesignChoice?: boolean
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
+  /** An item mirrored from a durable external source; only that source may update or remove it. */
+  sourceManaged?: true
+  /** The external feed key and file that own this item. */
+  feedKey?: string
+  feedSource?: string
   /**
    * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
    */
@@ -308,6 +313,8 @@ export type Finding = {
   feedSource?: string
   /** Marks findings created by the versioned progress-feed lifecycle. */
   feedOwned?: true
+  /** The active-items source owns this finding's lifecycle. */
+  sourceManaged?: true
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']
@@ -401,6 +408,8 @@ export type Ledger = {
   findings: Finding[]
   /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */
   closedFindings: ClosedFinding[]
+  /** Read-only warnings from live work signals that have no matching open external item. */
+  untrackedWork?: { key: string; title: string; detail: string; at: number; feedSource: string }[]
   /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
   /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. */

@@ -187,7 +187,7 @@ export function drawPanel(
     screen.view.statusPage.error,
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
-  const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null)
+  const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null, screen.view.untrackedWork)
   const head = [
     ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
     rule,

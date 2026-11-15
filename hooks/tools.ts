@@ -266,6 +266,11 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
     },
     now,
   )
+  if (r.is === 'source-managed')
+    return unchanged(
+      ledger,
+      'Not recorded: a matching task is managed by the active work source and was left unchanged.',
+    )
   if (r.is === 'open') {
     const changes = [
       ...(r.addedSteps > 0 ? ['added its new steps'] : []),
@@ -345,6 +350,11 @@ export function recordClose(host: Host, ledger: Ledger, input: Record<string, un
   const reason = cut(input.reason, 80)
   if (id === '' || (answer === '' && reason === ''))
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.")
+  if (
+    ledger.items.some(item => item.id === id && item.sourceManaged) ||
+    ledger.findings.some(finding => finding.id === id && finding.sourceManaged)
+  )
+    return unchanged(ledger, 'Not closed: this row is owned by the active-items source. Update that source instead.')
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now)
   if (r.closed && 'item' in r.closed)
     return {

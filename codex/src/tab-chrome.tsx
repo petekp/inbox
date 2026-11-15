@@ -120,6 +120,7 @@ export function TabBar({ v }: { v: View }) {
         tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
           ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
           : null,
+        v.untrackedWork,
       ).map(b =>
         b.kind === 'server-builds-differ' ? (
           <Banner banner={b} label="Reload" press={() => location.reload()} />

@@ -8,11 +8,11 @@ Part of [the look map](../looks.md#files).
 | `hooks/timing.ts` | Shared module. The timing constants: how long a row stays settled, the press guard, when a send reads Queued, and the running mark's frames. Which rows a look draws in place, and which replies and discards it holds. |
 | `hooks/rows.ts` | Shared module. The `Look`, `RowView` and `RowState` types. Row handles, titles, reply hints and action labels, a closed row's state, outcome label and mark, and the labels of the closed folds. `RowView.detail` carries an item's explanation or a finding's detail. |
 | `hooks/feedback.ts` | Shared module. A press's feedback on its row: `feedbackOf`, its text in each look, the working and done labels, and whether the press is still out. |
-| `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
+| `hooks/banners.ts` | Shared module. The banners under the tab bar, including the read-only warning for live work with no open item, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
 | `hooks/tabs.ts` | Shared module. The tabs each build shows, with their names, symbols and badges, how the tab bar fits them, and the `/inbox` command's description. |
 | `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the Last seen line, the merged line and the text before a stall. |
 | `hooks/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order with the Seen line, the counts by mark, and the rules between rows. |
-| `hooks/action-plan.ts` | Shared module. A row's actions in order, from `actionsOf`, and the key plans `rowKeyPlan` and `statusKeyPlan`. `actionLines` wraps a row's buttons. `drawnLists` gives each tab's drawn rows, and `rowAfterClose` the row that opens after a close. |
+| `hooks/action-plan.ts` | Shared module. A row's actions in order, from `actionsOf`; source-managed rows have none because their feed owns their lifecycle. Also the key plans `rowKeyPlan` and `statusKeyPlan`. `actionLines` wraps a row's buttons. `drawnLists` gives each tab's drawn rows, and `rowAfterClose` the row that opens after a close. |
 | `hooks/help.ts` | Shared module. The marks that rows and group titles draw, the Help legend, Help's labels, and the keys Help lists in each look. |
 | `hooks/presses.ts` | Shared module. The press types `RowPress` and `PrActionId`, and `isPrRowId`, which tells whether a row id is a PR row's. `read-document` is a view-state action, not a ledger press. |
 | `hooks/press-labels.ts` | Shared module. `actionId` and `pressText`, the action id and label that a press records, and the `capitalized` and `ISSUE_LABEL` they use. It imports only types, so importing it loads no other module. |
@@ -31,7 +31,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/ask-match.ts` | Shared module. Whether two asks say the same thing, whether a new ask repeats an open or closed one, and which option a recommendation names. |
 | `hooks/ledger-close.ts` | Shared module. Closing and reopening items and findings, and whether a closed record counts as handled, dismissed or lapsed. |
 | `hooks/ledger-update.ts` | Shared module. Applying a parsed update to the ledger, and adding findings and the items the agent records. Re-recording an item may replace its detail; per-reply updates keep it. |
-| `hooks/feed.ts` | Shared module. Validating progress-feed snapshots, reconciling each file's entries and expiring stale findings. |
+| `hooks/feed.ts` | Shared module. Validating feed snapshots, reconciling progress findings and source-managed tasks, keeping live mismatch warnings separate, and expiring only ordinary stale findings. |
 | `hooks/host-tasks.ts` | Shared module. The agent's own task list: how each host's tool calls become `Session.hostTasks`, and the `<tasks>` lines the Status call reads. |
 | `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds prose. |
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |

@@ -3376,6 +3376,7 @@ export const register: Register = on => {
         hasRail,
         blankLine,
         isHelpShown,
+        view,
       },
       handlers,
     )

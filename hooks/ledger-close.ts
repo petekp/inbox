@@ -31,8 +31,10 @@ export function closeByAgent(
       ? { how: 'answered', outcome: how.answer }
       : { how: 'claude', outcome: `closed by ${host.agent}: ${how.reason}` }
   const item = ledger.items.find(i => i.id === id)
+  if (item?.sourceManaged) return { ledger, closed: null }
   if (item) return { ledger: closeItem(ledger, id, closing, now), closed: { item } }
   const finding = ledger.findings.find(f => f.id === id)
+  if (finding?.sourceManaged) return { ledger, closed: null }
   if (finding) return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } }
 
   return { ledger, closed: null }
@@ -41,6 +43,7 @@ export function closeByAgent(
 type Closing = Pick<Closed, 'how' | 'outcome'>
 
 export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
+  if (ledger.items.some(i => i.id === id && i.sourceManaged)) return ledger
   const records = ledger.items.filter(i => i.id === id).map(i => closedRecord(i, closing, now))
 
   return reopenAskedFindings(

@@ -42,6 +42,7 @@ export function paneFrame(
     raiseEdge,
     raise,
     status,
+    view,
     railWidth,
     hasRail,
     blankLine,
@@ -68,6 +69,7 @@ export function paneFrame(
       | 'raiseEdge'
       | 'raise'
       | 'status'
+      | 'view'
       | 'railWidth'
       | 'hasRail'
       | 'blankLine'
@@ -163,6 +165,7 @@ export function paneFrame(
     lineNote
       ? { text: feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look), isError: false }
       : null,
+    view.untrackedWork,
   ).map(b => banner(b))
   const namesWidth = (naming: TabNaming) =>
     tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)

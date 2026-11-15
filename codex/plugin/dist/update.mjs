@@ -550,13 +550,20 @@ function isPersonsAnswer(outcome) {
 }
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
   const feedIds = new Set(ledger.findings.filter((f) => f.feedOwned).map((f) => f.id));
+  const sourceItemIds = new Set(ledger.items.filter((i) => i.sourceManaged).map((i) => i.id));
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const closing = new Map(
-    u.closed.filter((c) => !feedIds.has(c.id) && !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map((c) => [c.id, c.outcome])
+    u.closed.filter(
+      (c) => !feedIds.has(c.id) && !sourceItemIds.has(c.id) && !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)
+    ).map((c) => [c.id, c.outcome])
   );
   const closed = [...ledger.closed];
   const items = [];
   for (const item of ledger.items) {
+    if (item.sourceManaged) {
+      items.push(item);
+      continue;
+    }
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
     const isClosing = outcome !== void 0 && (item.from !== "record" || isPersonsAnswer(outcome));
@@ -564,13 +571,17 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     else items.push(withUpdate({ ...item, helps }, u.updated));
   }
   const recordedThisTurn = new Set(
-    [...ledger.items, ...ledger.closed.flatMap((c) => c.item ?? [])].filter((i) => i.from === "record" && i.turn === turn).map((i) => i.kind)
+    [...ledger.items, ...ledger.closed.flatMap((c) => c.item ?? [])].filter((i) => !i.sourceManaged && i.from === "record" && i.turn === turn).map((i) => i.kind)
   );
   let nextId = ledger.nextId;
   let added = 0;
   const addedIds = [];
   const created = /* @__PURE__ */ new Set();
   for (const a of u.added) {
+    if (items.some((i) => i.sourceManaged && matchOpen([i], a) >= 0)) {
+      addedIds.push(null);
+      continue;
+    }
     if (repeatsClosed(ledger.closed, a, promptAt)) {
       addedIds.push(null);
       continue;
@@ -616,10 +627,11 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     const id = typeof a.item === "number" ? addedIds[a.item] : a.item;
     const asker = items.find((i) => i.id === id);
     const finding = ledger.findings.find((f) => f.id === a.id);
-    if (asker && finding && asksAbout(asker, finding, true)) askedBy.set(a.id, asker.id);
+    if (asker && finding && !finding.sourceManaged && asksAbout(asker, finding, true)) askedBy.set(a.id, asker.id);
   }
   for (const i of items.filter((i2) => created.has(i2.id)))
-    for (const f of ledger.findings) if (!f.feedOwned && !askedBy.has(f.id) && asksAbout(i, f)) askedBy.set(f.id, i.id);
+    for (const f of ledger.findings)
+      if (!f.sourceManaged && !f.feedOwned && !askedBy.has(f.id) && asksAbout(i, f)) askedBy.set(f.id, i.id);
   const { findings, closedFindings } = ledger.findings.reduce((l, f) => {
     const asker = askedBy.get(f.id);
     const outcome = closing.get(f.id);
@@ -911,6 +923,7 @@ var EMPTY = {
   closed: [],
   findings: [],
   closedFindings: [],
+  untrackedWork: [],
   prs: [],
   prOrder: null,
   nextId: 1,
@@ -1025,7 +1038,7 @@ TODO: <work>
 Write plainly. No jargon, no filler, no markdown.`;
 }
 function ledgerBlocks(ledger) {
-  const open3 = ledger.items.map(
+  const open3 = ledger.items.filter((i) => !i.sourceManaged).map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
   ).join(NL4);
   const findings = ledger.findings.filter((f) => !f.feedOwned).map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
@@ -1066,7 +1079,7 @@ function screenText(host, isOpen2, tab) {
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => !i.sourceManaged && i.turn === ledger.batchTurn);
 }
 function numberOf(label) {
   const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
@@ -2506,6 +2519,7 @@ var ACTION_KEYS = {
 };
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
+  if (item?.sourceManaged || row.finding?.sourceManaged) return [];
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
   const action = (press, label, kind, flags = {}) => {
@@ -2743,6 +2757,7 @@ function inboxView({
     };
   });
   return {
+    untrackedWork: ledger.untrackedWork ?? [],
     needsYou: {
       count: counted.length,
       questions: questionRows,

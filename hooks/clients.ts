@@ -23,6 +23,8 @@ export type FeatureId =
   | 'pr-arrivals'
   | 'account-pr-list'
   | 'feed-findings'
+  | 'meta-active-items'
+  | 'untracked-work-warning'
   | 'prs-empty-hint'
   | 'gh-signed-out-notice'
   | 'link-open-rule'
@@ -92,6 +94,8 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-arrivals': { kind: 'full' },
       'account-pr-list': { kind: 'full' },
       'feed-findings': { kind: 'full' },
+      'meta-active-items': { kind: 'full' },
+      'untracked-work-warning': { kind: 'full' },
       'prs-empty-hint': { kind: 'full' },
       'gh-signed-out-notice': { kind: 'full' },
       'link-open-rule': { kind: 'full' },
@@ -183,6 +187,8 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: 'Codex has no idle timer, so it applies the feed at hooks and Inbox tab view requests.',
       },
+      'meta-active-items': { kind: 'full' },
+      'untracked-work-warning': { kind: 'full' },
       'prs-empty-hint': {
         kind: 'different',
         reason: 'The Codex app calls a conversation a chat, so its hint says chat where the mod says session.',
@@ -309,6 +315,8 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-arrivals': { kind: 'full' },
       'account-pr-list': { kind: 'full' },
       'feed-findings': { kind: 'full' },
+      'meta-active-items': { kind: 'full' },
+      'untracked-work-warning': { kind: 'full' },
       'prs-empty-hint': { kind: 'full' },
       'gh-signed-out-notice': { kind: 'full' },
       'link-open-rule': { kind: 'full' },

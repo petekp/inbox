@@ -5,8 +5,10 @@ import type { Feed, FeedEntry } from '../hooks/feed'
 import { inboxText, carryText } from '../hooks/inbox-text'
 import { EMPTY } from '../hooks/ledger'
 import { closeFinding } from '../hooks/ledger-close'
-import { addFinding, applyUpdate } from '../hooks/ledger-update'
+import { addAgentItem, addFinding, applyUpdate } from '../hooks/ledger-update'
+import { recordItem } from '../hooks/tools'
 import { buildPrompt } from '../hooks/ledger-prompt'
+import { tabBarBanners } from '../hooks/banners'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { parseReply } from '../hooks/reply-parse'
 import type { Finding } from '../types'
@@ -59,6 +61,159 @@ describe('progress feed', () => {
     expect(
       parseFeed(JSON.stringify({ ...valid, entries: Array.from({ length: 41 }, (_, i) => entry({ key: `m/${i}` })) })),
     ).toBeNull()
+  })
+
+  test('reads durable Meta tasks without six-hour expiry and keeps live warnings separate', () => {
+    const source = '/feed/meta-open-items.json'
+    const durable = {
+      version: 1 as const,
+      source: 'meta-open-items',
+      writtenAt: 100,
+      entries: [
+        entry({
+          key: 'task/human-check',
+          kind: 'task',
+          state: 'blocked',
+          title: 'Check the milestone',
+          detail: 'Verify the exit criteria',
+          owner: { machine: 'local', agent: 'meta' },
+          at: 100,
+        }),
+        entry({
+          key: 'work/training',
+          title: 'Training run',
+          kind: 'work',
+          owner: { machine: 'local', agent: 'meta-trainer' },
+          at: 100,
+        }),
+      ],
+    }
+    const parsed = parseFeed(JSON.stringify(durable))
+    expect(parsed).toMatchObject({ source: 'meta-open-items', entries: durable.entries })
+    const withWarning = parseFeed(
+      JSON.stringify({
+        version: 1,
+        source: 'herdr-meta-patrol',
+        writtenAt: 100,
+        entries: [],
+        warnings: [{ key: 'herdr/local/meta-worker/untracked-work', title: 'meta-worker', detail: 'working', at: 100 }],
+      }),
+    )!
+    const loaded = applyFeedFiles(
+      EMPTY,
+      '/feed',
+      [
+        { path: source, feed: parsed },
+        { path: '/feed/herdr-local.json', feed: withWarning },
+      ],
+      100 + FEED_TTL_MS * 2,
+    )
+    expect(loaded.items).toMatchObject([{ kind: 'task', ask: 'Check the milestone', sourceManaged: true }])
+    expect(loaded.findings).toMatchObject([{ title: 'Training run', sourceManaged: true }])
+    expect(loaded.untrackedWork).toMatchObject([
+      { key: 'herdr/local/meta-worker/untracked-work', title: 'meta-worker' },
+    ])
+    expect(tabBarBanners([], null, null, loaded.untrackedWork)).toMatchObject([
+      { kind: 'untracked-work', lead: 'Untracked work.', body: expect.stringContaining('meta-worker') },
+    ])
+    expect(inboxText(CLAUDE_CODE, loaded, false)).not.toContain('Check the milestone')
+    expect(applyUpdate(loaded, parseReply('CLOSED: i1 | done: checked')!, 200, 1).items).toEqual(loaded.items)
+    const reply = parseReply(
+      `NEW: do | - | Check the milestone | - | -\nASKED: ${loaded.findings[0]!.id} | ${loaded.items[0]!.id}`,
+    )!
+    const modelUpdate = applyUpdate(loaded, reply, 200, 1)
+    expect(modelUpdate.items).toEqual(loaded.items)
+    expect(modelUpdate.findings).toEqual(loaded.findings)
+    const recorded = recordItem(
+      CLAUDE_CODE,
+      loaded,
+      { kind: 'task', ask: 'Check the milestone', steps: ['Review again'], detail: 'Changed detail' },
+      200,
+    )
+    expect(recorded.result).toContain('managed by the active work source')
+    expect(recorded.ledger.items).toEqual(loaded.items)
+    const relatedTask = addAgentItem(
+      loaded,
+      {
+        kind: 'task',
+        ask: 'Training run',
+        options: [],
+        rec: null,
+        helps: [],
+        isDesignChoice: false,
+        detail: undefined,
+        document: undefined,
+        documentPreview: undefined,
+      },
+      200,
+    )
+    expect(relatedTask.is).toBe('added')
+    expect(relatedTask.ledger.findings).toEqual(loaded.findings)
+    const duplicateFinding = addFinding(loaded, {
+      kind: 'issue',
+      title: 'Training run',
+      detail: 'A different description.',
+      path: null,
+      document: 'new report.md',
+      at: 200,
+    })
+    expect(duplicateFinding.isAdded).toBe(false)
+    expect(duplicateFinding.ledger.findings).toEqual(loaded.findings)
+    const missingSource = applyFeedFiles(
+      loaded,
+      '/feed',
+      [{ path: '/feed/herdr-local.json', feed: withWarning }],
+      999999999,
+    )
+    expect(missingSource.items).toEqual(loaded.items)
+    const cleared = applyFeedFiles(
+      loaded,
+      '/feed',
+      [
+        { path: source, feed: parseFeed(JSON.stringify({ ...durable, entries: [] })) },
+        { path: '/feed/herdr-local.json', feed: parseFeed(JSON.stringify({ ...withWarning, warnings: [] })) },
+      ],
+      999999999,
+    )
+    expect(cleared.items).toEqual([])
+    expect(cleared.findings).toEqual([])
+    expect(cleared.untrackedWork).toEqual([])
+  })
+
+  test('retains untracked warnings while a machine snapshot is invalid and clears them on a valid snapshot', () => {
+    const path = '/feed/herdr-local.json'
+    const warningFeed = parseFeed(
+      JSON.stringify({
+        version: 1,
+        source: 'herdr-meta-patrol',
+        writtenAt: 1,
+        entries: [],
+        warnings: [{ key: 'w1', title: 'meta-worker', detail: 'working', at: 1 }],
+      }),
+    )!
+    const initial = applyFeedFiles(EMPTY, '/feed', [{ path, feed: warningFeed }], 2)
+    const unavailable = applyFeedFiles(initial, '/feed', [{ path, feed: undefined }], 3)
+    expect(unavailable.untrackedWork).toEqual(initial.untrackedWork)
+    const cleared = applyFeedFiles(
+      unavailable,
+      '/feed',
+      [
+        {
+          path,
+          feed: parseFeed(
+            JSON.stringify({
+              version: 1,
+              source: 'herdr-meta-patrol',
+              writtenAt: 4,
+              entries: [],
+              warnings: [],
+            }),
+          ),
+        },
+      ],
+      4,
+    )
+    expect(cleared.untrackedWork).toEqual([])
   })
 
   test('adds and updates feed-owned findings without adopting hand findings', () => {

@@ -32,6 +32,11 @@ export type Item = {
   isDesignChoice?: boolean
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
+  /** An item mirrored from a durable external source; only that source may update or remove it. */
+  sourceManaged?: true
+  /** The external feed key and file that own this item. */
+  feedKey?: string
+  feedSource?: string
   /**
    * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
    */

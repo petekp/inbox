@@ -20,6 +20,7 @@ const [{ Findings }, { stepLists }, { tabState }] = await Promise.all([
   import('../src/tab-list'),
   import('../src/tab-state'),
 ])
+const { TabBar } = await import('../src/tab-chrome')
 after(() => window.happyDOM.close())
 
 test('the Codex tab draws feed entries under Progress', () => {
@@ -56,4 +57,25 @@ test('the Codex tab draws feed entries under Progress', () => {
   render(h(Findings, { v: view, lists, now }), root)
   assert.match(root.textContent ?? '', /Progress/)
   assert.match(root.textContent ?? '', /Implement the progress feed/)
+})
+
+test('the Codex tab draws untracked live work as a warning banner', () => {
+  const now = Date.now()
+  const state = emptyState('s1')
+  state.ledger.untrackedWork = [
+    {
+      key: 'herdr/local/meta-worker/untracked-work',
+      title: 'meta-worker',
+      detail: 'working agent has no open item',
+      at: now,
+      feedSource: '/feed/herdr-local.json',
+    },
+  ]
+  const view = { ...viewOf(state, now), thread: 's1', devPage: '', isFetchingPrs: false, isGhMissing: false }
+  tabState.view = view
+  tabState.tab = 'needsYou'
+  const root = document.createElement('div')
+  render(h(TabBar, { v: view }), root)
+  assert.match(root.textContent ?? '', /Untracked work/)
+  assert.match(root.textContent ?? '', /meta-worker/)
 })
