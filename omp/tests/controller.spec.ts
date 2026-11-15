@@ -229,7 +229,7 @@ test('a Compare press with no report redraws the panel at its limit, reading No 
   expect(limit[0]!.stopped).toBe(true)
 })
 
-test('while the PRs tab is hidden, the panel fetches the PRs 10 to 10.5 minutes apart though each fetch takes 3 seconds, until it is disposed', async () => {
+test('for a session that tracks no PR, while the PRs tab is hidden, the panel fetches 10 to 10.5 minutes apart though each fetch takes 3 seconds, until it is disposed', async () => {
   let elapsed = 0
   const now = () => 1_700_000_000_000 + elapsed
   const prFetches = prFetchTracker(now)

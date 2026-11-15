@@ -1,5 +1,6 @@
 import {
   splitLinked,
+  fetchFailureWords,
   fetchTracked,
   GH_TIMED_OUT_TEXT,
   isLimitInForce,
@@ -21,20 +22,24 @@ const NEW_PR_FETCH_MS = 15_000
 /** How often a host asks `isPrFetchDue`. Far under `PRS_REFRESH_MS`, since that counts from when the last fetch ended, after the tick that started it. */
 export const PR_POLL_MS = 15_000
 
+/** The tracked PRs no fetch has tried: those with no view and no `unread` entry. */
+function untriedPrs(s: Session): string[] {
+  const { views, unread = {} } = s.prViews
+
+  return splitLinked(s.prViews, s.ledger).tracked.filter(ref => !(ref in views) && !(ref in unread))
+}
+
 /**
  * True when the PRs are due for a fetch: none was fetched yet, the last is old, or, once `NEW_PR_FETCH_MS` has passed
- * since the last, a new tracked PR waits for its first read or the agent replied since, as after a push that fixed a
- * PR. A PR GitHub could not read is not new, and no PR is while the mod's `isGhMissing` is set or the last fetch read
- * none, so those wait for the PRs to be old. The last is old after `PRS_REFRESH_MS` while the PRs tab is shown, and after
+ * since the last, a tracked PR no fetch has tried waits for its first read or the agent replied since, as after a push
+ * that fixed a PR. A PR a fetch could not read is in `unread`, so it waits for the PRs to be old, and so does every PR
+ * while the mod's `isGhMissing` is set. The last is old after `PRS_REFRESH_MS` while the PRs tab is shown, and after
  * `PRS_HIDDEN_REFRESH_MS` while it is not, since every session spends from one GitHub budget and a hidden tab's PRs
  * only feed the counts.
  */
 export function isPrFetchDue(s: Session, lastFetchedAt: number | undefined, now: number, isTabShown: boolean): boolean {
   if (lastFetchedAt === undefined) return true
-  const { views, unread = {}, failure, isGhMissing } = s.prViews
-  const canReadNewPr = !isGhMissing && !failure
-  const hasNewPr =
-    canReadNewPr && splitLinked(s.prViews, s.ledger).tracked.some(ref => !(ref in views) && !(ref in unread))
+  const hasNewPr = !s.prViews.isGhMissing && untriedPrs(s).length > 0
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt
   const refreshMs = isTabShown ? PRS_REFRESH_MS : PRS_HIDDEN_REFRESH_MS
 
@@ -109,7 +114,8 @@ export function prFetchTracker(now: () => number): {
  * Fetches the PRs the session tracks and merges them in. `findsBranchPr` also looks up the current branch's PR.
  * `isPress` says a press asked, so every tracked PR is read now, even under a limit error, whose answer says
  * whether the limit still holds. Otherwise a view another session of the host read lately stands in, and a limit
- * error any session met stops the fetch until the limit resets, with the limit shown in this session's views.
+ * error any session met stops the fetch until the limit resets, with the limit shown in this session's views and its
+ * PRs with no view in `unread`.
  * Returns without fetching when gh cannot start. A gh found again counts as found only once the fetch reports, so the
  * tab keeps the notice it showed while the fetch runs.
  */
@@ -121,11 +127,18 @@ export async function fetchPrs<S extends Session>(
   const s = await host.read()
   const shared = (await host.gh.shared?.read()) ?? NO_PR_SHARED
   const now = await host.now()
-  if (!isPress && isLimitInForce(shared.limit, now)) {
+  if (!isPress && shared.limit && isLimitInForce(shared.limit, now)) {
     const limit = shared.limit
-    await host.update(cur =>
-      cur.prViews.failure?.at === limit?.at ? cur : { ...cur, prViews: { ...cur.prViews, failure: limit } },
-    )
+    await host.update(cur => {
+      const skipped = untriedPrs(cur)
+      if (cur.prViews.failure?.at === limit.at && skipped.length === 0) return cur
+      const unread = {
+        ...cur.prViews.unread,
+        ...Object.fromEntries(skipped.map(ref => [ref, fetchFailureWords(limit)])),
+      }
+
+      return { ...cur, prViews: { ...cur.prViews, failure: limit, ...(skipped.length > 0 ? { unread } : {}) } }
+    })
     return
   }
   const bin = await host.gh.find()

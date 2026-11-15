@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { press } from '../hooks/host-press'
-import { fetchPrs } from '../hooks/host-prs'
+import { fetchPrs, isPrFetchDue } from '../hooks/host-prs'
 import { CLOSED_PR_REFRESH_MS, fetchTracked, LIMIT_RETRY_MS, NO_PR_SHARED, PR_SHARED_MS } from '../hooks/pr-fetch'
 import type { PrShared } from '../hooks/pr-fetch'
 import { runFailureOf } from '../hooks/pr-query'
@@ -267,6 +267,28 @@ test('a limit error stops every session’s polling until GitHub’s reset time,
   expect(shared().views['acme/app#1']?.fetchedAt).toBe(resetAt)
   expect(sessionView(state(), clock, 1000, NO_HOLDS).prs.refresh).toBeNull()
 })
+
+const UNREACHABLE: Answer = { exitCode: 1, stdout: '', stderr: 'error connecting to api.github.com' }
+
+for (const [why, answer] of [
+  ['could not reach GitHub', UNREACHABLE],
+  ['met the limit', LIMIT_ANSWER],
+] as const) {
+  test(`after a fetch that ${why}, the PRs it skipped wait 2 minutes, and a PR linked after it is due 15 seconds after it`, async () => {
+    const base = emptySession()
+    const start = { ...base, ledger: { ...base.ledger, prs: ['acme/app#1'] } }
+    const run = async (args: string[]) => (args[1] === 'rate_limit' ? { ...UNREACHABLE, stderr: 'HTTP 500' } : answer)
+    const { host, state } = hostOf(run, start, () => NOW)
+    const isDue = () => isPrFetchDue(state(), NOW, NOW + 15_000, true)
+
+    await fetchPrs(host, false)
+    expect(isDue()).toBe(false)
+    await host.update(s => ({ ...s, ledger: { ...s.ledger, prs: [...s.ledger.prs, 'acme/app#2'] } }))
+    expect(isDue()).toBe(true)
+    await fetchPrs(host, false)
+    expect(isDue()).toBe(false)
+  })
+}
 
 test('a limit error GitHub gives no reset for stops polling for a while, and a fetch that cannot reach GitHub or gets an error says so at the top and keeps the views', async () => {
   const base = emptySession()

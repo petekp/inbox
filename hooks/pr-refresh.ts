@@ -1,7 +1,7 @@
 import type { PrFetchFailure, PrViews } from '../types'
 import { pressFeedbackIn } from './feedback'
 import type { PressState } from './feedback'
-import { GH_TIMED_OUT_TEXT, splitLinked } from './pr-fetch'
+import { fetchFailureWords, GH_TIMED_OUT_TEXT, splitLinked } from './pr-fetch'
 import type { PrLinks } from './pr-fetch'
 import { lastPressOf, withOut } from './pr-press'
 import type { LastPress, PrAction } from './pr-press'
@@ -26,20 +26,6 @@ export function fetchFailureNotice(f: PrFetchFailure): string {
       return `${GH_TIMED_OUT_TEXT}. The PRs show as last read.`
     case 'error':
       return `Could not read the PRs: ${f.text}. They show as last read.`
-  }
-}
-
-/** A fetch failure in a few words, as the Refresh press's result gives it: "GitHub's limit resets at 4:46 PM". */
-function fetchFailureWords(f: PrFetchFailure): string {
-  switch (f.kind) {
-    case 'limit':
-      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`
-    case 'unreachable':
-      return 'could not reach GitHub'
-    case 'timed-out':
-      return GH_TIMED_OUT_TEXT
-    case 'error':
-      return f.text
   }
 }
 

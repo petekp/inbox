@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T00:47:59.019Z. 205486 characters follow.
+// Built at 2026-11-15T01:40:15.372Z. 205486 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2119,6 +2119,18 @@ function olderPrsText(prState, links) {
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
+function fetchFailureWords(f) {
+  switch (f.kind) {
+    case "limit":
+      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
+    case "unreachable":
+      return "could not reach GitHub";
+    case "timed-out":
+      return GH_TIMED_OUT_TEXT;
+    case "error":
+      return f.text;
+  }
+}
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`;
 
 // ../hooks/pr-press.ts
@@ -2232,18 +2244,6 @@ function fetchFailureNotice(f) {
       return `${GH_TIMED_OUT_TEXT}. The PRs show as last read.`;
     case "error":
       return `Could not read the PRs: ${f.text}. They show as last read.`;
-  }
-}
-function fetchFailureWords(f) {
-  switch (f.kind) {
-    case "limit":
-      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
-    case "unreachable":
-      return "could not reach GitHub";
-    case "timed-out":
-      return GH_TIMED_OUT_TEXT;
-    case "error":
-      return f.text;
   }
 }
 function tabWideProblem(prs) {
