@@ -17,6 +17,9 @@ export const QUEUED_AFTER_MS = 1000
 /** How long a Compare press waits for the agent to record the question again after its reply. */
 export const COMPARE_LIMIT_MS = 30 * 60_000
 
+/** How long after a hand-off's reply its button waits for a fetch of the PR, before it reads the PR as last fetched. A host with no tab open fetches none. */
+export const PR_READ_WAIT_MS = 60_000
+
 /** When the soonest Compare press still inside its limit reaches it, so a look can redraw then. */
 export function compareEndsAt(lastActions: Record<string, LastAction>, now: number): number | null {
   const ends = Object.values(lastActions)

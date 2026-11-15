@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { SESSION_VERSION } from '../hooks/session-version'
 import type { TabsProps } from '../hooks/tabs-client'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
+import { PR_READ_WAIT_MS, PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { PANE, SAVED_SESSION, leaveAndReturn } from './hooks-helpers'
 
@@ -83,6 +83,20 @@ test(
     expect(await pane.find({ text: /Resolving conflicts…/ })).toBeDefined()
     expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts')
     expect(await pane.find({ text: /Asked to resolve conflicts/ })).toBeUndefined()
+
+    await $.turn.start({ turnId: 't2', text: 'Resolve the conflicts' })
+    await $.turn.complete({ answer: 'Pushed.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+    await clock.settle()
+    expect(await pane.find({ text: /Resolving conflicts…/ })).toBeUndefined()
+    expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts')
+    isHeld = false
+    const sentBefore = w.sent.length
+    await pane.press({ key: 'resolve-acme/greet#12' })
+    expect(w.sent.length).toBe(sentBefore)
+
+    await clock.advance(PR_READ_WAIT_MS)
+    await leaveAndReturn(pane, clock, 'prs')
+    expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
   },
 )
 

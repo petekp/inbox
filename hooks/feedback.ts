@@ -42,12 +42,17 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
  * When a row's press under way began, or null while none is: its talk press waits on the agent's reply, its message is
  * sending, or its open or copy runs. A settled row on its tab that was still in place when the press began waits for it
  * to end, so nothing shifts under the row being worked on. A queued or unconfirmed message does not count, since it can
- * wait a whole turn or for good. A hand-off's work does not count either, since it can run for minutes.
+ * wait a whole turn or for good.
  */
 export function pressUnderWaySince(f: Feedback | null): number | null {
-  if ((f?.is === 'working' && f.isHandoff !== true) || f?.is === 'sending') return f.at
+  if (f?.is === 'working' || f?.is === 'sending') return f.at
 
   return f?.is === 'local' && f.result.state === 'pending' ? f.result.at : null
+}
+
+/** `pressUnderWaySince` for the PRs tab's hold on its settled rows. A hand-off's work can run for minutes, so it does not hold them. */
+export function prTabHoldSince(f: Feedback | null): number | null {
+  return f?.is === 'working' && f.isHandoff === true ? null : pressUnderWaySince(f)
 }
 
 export function feedbackOf(
@@ -72,7 +77,8 @@ export function feedbackOf(
   const isUnreported = last.action === 'compare' && !(reportedAt !== undefined && reportedAt >= last.at)
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS
   const working = WORKING_LABELS[last.action]
-  const isWorking = last.kind === 'talk' || (last.kind === 'handoff' && isPrRowId(id))
+  const isHandoffWorking = last.kind === 'handoff' && isPrRowId(id) && last.repliedAt === undefined
+  const isWorking = last.kind === 'talk' || isHandoffWorking
   if (isWorking && working && (isAwaiting || (isUnreported && !isPastLimit)))
     return {
       is: 'working',

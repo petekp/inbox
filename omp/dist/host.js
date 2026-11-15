@@ -2622,15 +2622,11 @@ function isAwaitingReply(last, turns) {
   const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
   return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
 }
-function withReplied(lastActions, before, after, repliedAt) {
-  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [
-    id,
-    isAwaitingReply(last, before) && !isAwaitingReply(last, after) ? { ...last, repliedAt } : last
-  ]));
-}
-function repliedBy(s, after, now) {
-  const repliedAt = Math.min(now, s.presence.lastReplyAt ?? now);
-  return withReplied(s.lastActions, s.presence, after, repliedAt);
+function repliedAtTurnEnd(lastActions, turns, endedAt) {
+  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => {
+    const isAnswered = last.kind === "handoff" && last.repliedAt === undefined && last.turnsStarted !== undefined && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
+    return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt ?? 0) } : last];
+  }));
 }
 function isHandedOff(last, turns) {
   return last?.kind === "handoff" && isAwaitingReply(last, turns);
@@ -4074,6 +4070,7 @@ var SETTLED_MS = 5120;
 var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
+var PR_READ_WAIT_MS = 60000;
 function compareEndsAt(lastActions, now) {
   const ends = Object.values(lastActions).filter((l) => l.action === "compare").map((l) => l.at + COMPARE_LIMIT_MS).filter((at) => at > now);
   return ends.length > 0 ? Math.min(...ends) : null;
@@ -4349,9 +4346,12 @@ function rowFeedbackText(row, look) {
   return f.is === "done" ? f.label : f.is === "local" ? localText(f.result, look) : feedbackText(f, look);
 }
 function pressUnderWaySince(f) {
-  if (f?.is === "working" && f.isHandoff !== true || f?.is === "sending")
+  if (f?.is === "working" || f?.is === "sending")
     return f.at;
   return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
+}
+function prTabHoldSince(f) {
+  return f?.is === "working" && f.isHandoff === true ? null : pressUnderWaySince(f);
 }
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
@@ -4371,7 +4371,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isUnreported = last.action === "compare" && !(reportedAt !== undefined && reportedAt >= last.at);
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  const isWorking = last.kind === "talk" || last.kind === "handoff" && isPrRowId(id);
+  const isHandoffWorking = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === undefined;
+  const isWorking = last.kind === "talk" || isHandoffWorking;
   if (isWorking && working && (isAwaiting || isUnreported && !isPastLimit))
     return {
       is: "working",
@@ -4578,15 +4579,18 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
-function isAwaitingFreshRead(last, fetchedAt) {
-  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt;
+function isAwaitingFreshRead(last, fetchedAt, now) {
+  const repliedAt = last?.repliedAt;
+  if (repliedAt === undefined || fetchedAt === undefined)
+    return false;
+  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS;
 }
 function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
-  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt);
+  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt, presses.now);
   return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out };
 }
 function again(row, action, label) {
@@ -6928,7 +6932,7 @@ function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
   return isRowTabRunning(v, shown, isUnfolded);
 }
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
-  const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null));
+  const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, undefined, s.presence, now)) : null));
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
@@ -6960,6 +6964,11 @@ function isRepeatWhileOut(s, p, at, drawn) {
   const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds);
   const row = allRows(view).find((r) => r.id === rowId);
   const last = view.lastActions[rowId];
+  if (isPrPress(p)) {
+    const fetchedAt = "ref" in p ? s.prViews.views[p.ref]?.fetchedAt : undefined;
+    const presses = { lastActions: view.lastActions, turns: s.presence, now: at };
+    return lastPressOf(presses, rowId, fetchedAt).out === actionId(p);
+  }
   const state = row?.state ?? { is: "open" };
   const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt);
   return outAction(last, feedback) === actionId(p);
@@ -9954,7 +9963,11 @@ function turnStarted(s, at) {
 }
 function turnEnded(s, at) {
   const lastReplyAt = at ?? s.presence.lastReplyAt;
-  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
+  return {
+    ...s,
+    lastActions: repliedAtTurnEnd(s.lastActions, s.presence, at),
+    presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt }
+  };
 }
 function messageTyped(s, at) {
   return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } };
@@ -10051,11 +10064,9 @@ function applied(s, parsed, now, promptAt) {
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
   const isCurrent = !hasDroppedReply;
   const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
-  const turnsApplied = Math.max(s.presence.turnsApplied, next.turnsStarted);
   return linkDialogs({
     ...s,
     ledger,
-    lastActions: repliedBy(s, { ...s.presence, turnsApplied }, now),
     pending: s.pending.slice(1),
     presence: {
       ...s.presence,
@@ -10063,7 +10074,7 @@ function applied(s, parsed, now, promptAt) {
       hasDroppedReply,
       failedAttempts: isCurrent ? 0 : failedAttempts,
       isConversationUnreadable: isCurrent ? false : s.presence.isConversationUnreadable,
-      turnsApplied
+      turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
     }
   });
 }
@@ -10358,7 +10369,6 @@ function appliedCatchUp(s, begun, parsed, now) {
   return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
-    lastActions: repliedBy(s, { ...s.presence, turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted) }, now),
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
@@ -12282,7 +12292,11 @@ async function startPress(host, p, isStale, holds) {
       await host.update((s) => ({ ...s, ledger: f(s.ledger) }));
     }
   };
-  const check = isPrPress(p) && isPrReadFirstPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
+  const isOut = async () => isRepeatWhileOut(withHolds(await host.read(), holds), p, await host.now(), {
+    settleWindowMs: host.settleWindowMs,
+    holds
+  });
+  const check = isPrPress(p) && isPrReadFirstPress(p) && !isStale && !await isOut() ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
     error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
     return "unread";
   }) : null;

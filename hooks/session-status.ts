@@ -2,7 +2,6 @@ import { linkDialogs } from './dialogs'
 import { isBlankLedger } from './ledger'
 import { applyUpdate } from './ledger-update'
 import type { Update } from './reply-parse'
-import { repliedBy } from './last-actions'
 import { lookEnded, lookReported, lookStarted } from './status-children'
 import type { ReportedLook, ShownRows } from './status-children'
 import { applyStatus } from './status-ops'
@@ -188,11 +187,6 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
   return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
-    lastActions: repliedBy(
-      s,
-      { ...s.presence, turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted) },
-      now,
-    ),
     pending: s.pending.filter(p => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T21:25:00.546Z. 235996 characters follow.
+// Built at 2026-11-15T22:36:30.268Z. 236293 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1772,6 +1772,7 @@ var SETTLED_MS = 5120;
 var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
+var PR_READ_WAIT_MS = 60000;
 function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
@@ -2035,9 +2036,12 @@ function rowFeedbackText(row, look) {
   return f.is === "done" ? f.label : f.is === "local" ? localText(f.result, look) : feedbackText(f, look);
 }
 function pressUnderWaySince(f) {
-  if (f?.is === "working" && f.isHandoff !== true || f?.is === "sending")
+  if (f?.is === "working" || f?.is === "sending")
     return f.at;
   return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
+}
+function prTabHoldSince(f) {
+  return f?.is === "working" && f.isHandoff === true ? null : pressUnderWaySince(f);
 }
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
@@ -2057,7 +2061,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isUnreported = last.action === "compare" && !(reportedAt !== undefined && reportedAt >= last.at);
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  const isWorking = last.kind === "talk" || last.kind === "handoff" && isPrRowId(id);
+  const isHandoffWorking = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === undefined;
+  const isWorking = last.kind === "talk" || isHandoffWorking;
   if (isWorking && working && (isAwaiting || isUnreported && !isPastLimit))
     return {
       is: "working",
@@ -2326,15 +2331,18 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
-function isAwaitingFreshRead(last, fetchedAt) {
-  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt;
+function isAwaitingFreshRead(last, fetchedAt, now) {
+  const repliedAt = last?.repliedAt;
+  if (repliedAt === undefined || fetchedAt === undefined)
+    return false;
+  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS;
 }
 function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
-  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt);
+  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt, presses.now);
   return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out };
 }
 function again(row, action, label) {
@@ -3438,7 +3446,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   };
 }
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
-  const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null));
+  const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, undefined, s.presence, now)) : null));
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,

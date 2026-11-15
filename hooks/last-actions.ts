@@ -1,4 +1,4 @@
-import type { LastAction, Session, Turns } from '../types'
+import type { LastAction, Turns } from '../types'
 
 export function isAwaitingReply(
   last: Pick<LastAction, 'turnsStarted' | 'delivery'> | undefined,
@@ -10,28 +10,28 @@ export function isAwaitingReply(
 }
 
 /**
- * `lastActions` with `repliedAt` on each press the reply that just applied answered: awaiting a reply under `before`
- * and not under `after`. `repliedAt` is when that reply ended, or `now` when the host did not say.
+ * `lastActions` with `repliedAt` on each hand-off press that a turn started after it, as that turn ends at `endedAt`.
+ * The turn ended whether or not it answered, so a press whose turn was interrupted or failed stops waiting too.
+ * `endedAt` is null when the host did not say; the press's own time then stands in, and `repliedAt` never precedes the
+ * press.
  */
-function withReplied(
+export function repliedAtTurnEnd(
   lastActions: Record<string, LastAction>,
-  before: Turns,
-  after: Turns,
-  repliedAt: number,
+  turns: Turns,
+  endedAt: number | null,
 ): Record<string, LastAction> {
   return Object.fromEntries(
-    Object.entries(lastActions).map(([id, last]) => [
-      id,
-      isAwaitingReply(last, before) && !isAwaitingReply(last, after) ? { ...last, repliedAt } : last,
-    ]),
+    Object.entries(lastActions).map(([id, last]) => {
+      const isAnswered =
+        last.kind === 'handoff' &&
+        last.repliedAt === undefined &&
+        last.turnsStarted !== undefined &&
+        last.turnsStarted < turns.turnsStarted &&
+        isAwaitingReply(last, turns)
+
+      return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt ?? 0) } : last]
+    }),
   )
-}
-
-/** `s.lastActions` with `repliedAt` on the presses the reply that raised the applied turns to `after` answered. */
-export function repliedBy(s: Session, after: Turns, now: number): Session['lastActions'] {
-  const repliedAt = Math.min(now, s.presence.lastReplyAt ?? now)
-
-  return withReplied(s.lastActions, s.presence, after, repliedAt)
 }
 
 export function isHandedOff(

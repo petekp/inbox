@@ -794,6 +794,14 @@ function isAwaitingReply(last, turns) {
   const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
   return pressed2 !== void 0 && pressed2 <= turns.turnsStarted && turns.turnsApplied <= pressed2;
 }
+function repliedAtTurnEnd(lastActions, turns, endedAt) {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, last]) => {
+      const isAnswered = last.kind === "handoff" && last.repliedAt === void 0 && last.turnsStarted !== void 0 && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
+      return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt ?? 0) } : last];
+    })
+  );
+}
 function isHandedOff(last, turns) {
   return last?.kind === "handoff" && isAwaitingReply(last, turns);
 }
@@ -1629,6 +1637,7 @@ function statusPage(s, now) {
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
+var PR_READ_WAIT_MS = 6e4;
 function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
@@ -1758,8 +1767,11 @@ function outcomeLabel(c) {
 
 // ../hooks/feedback.ts
 function pressUnderWaySince(f) {
-  if (f?.is === "working" && f.isHandoff !== true || f?.is === "sending") return f.at;
+  if (f?.is === "working" || f?.is === "sending") return f.at;
   return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
+}
+function prTabHoldSince(f) {
+  return f?.is === "working" && f.isHandoff === true ? null : pressUnderWaySince(f);
 }
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
@@ -1776,7 +1788,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  const isWorking = last.kind === "talk" || last.kind === "handoff" && isPrRowId(id);
+  const isHandoffWorking = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === void 0;
+  const isWorking = last.kind === "talk" || isHandoffWorking;
   if (isWorking && working && (isAwaiting || isUnreported && !isPastLimit))
     return {
       is: "working",
@@ -1928,15 +1941,17 @@ var PR_READ_FIRST_LABELS = {
   ...PR_FIX_LABELS,
   "check-rerun": RERUN_LABEL
 };
-function isAwaitingFreshRead(last, fetchedAt) {
-  return last?.repliedAt !== void 0 && fetchedAt !== void 0 && fetchedAt <= last.repliedAt;
+function isAwaitingFreshRead(last, fetchedAt, now) {
+  const repliedAt = last?.repliedAt;
+  if (repliedAt === void 0 || fetchedAt === void 0) return false;
+  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS;
 }
 function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
-  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt);
+  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt, presses.now);
   return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out };
 }
 function withOut(row, actions) {
@@ -2941,7 +2956,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
   const pressOutSince = earliestOf(
     Object.entries(lastActions).map(
-      ([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, void 0, s.presence, now)) : null
+      ([id, last]) => isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, void 0, s.presence, now)) : null
     )
   );
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
@@ -3371,7 +3386,11 @@ function turnStarted(s, at) {
 }
 function turnEnded(s, at) {
   const lastReplyAt = at ?? s.presence.lastReplyAt;
-  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
+  return {
+    ...s,
+    lastActions: repliedAtTurnEnd(s.lastActions, s.presence, at),
+    presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt }
+  };
 }
 function messageTyped(s, at) {
   return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } };

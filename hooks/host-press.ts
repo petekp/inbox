@@ -16,7 +16,7 @@ import type { EffectHost } from './press-effects'
 import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from './pressed'
 import { releaseHeldSendEarly, releaseHeldSends } from './held-sends'
 import type { RowPress } from './presses'
-import { completedAttempt, withHolds, pressOn } from './session-presses'
+import { completedAttempt, isRepeatWhileOut, withHolds, pressOn } from './session-presses'
 import type { Pressed, SendOutcome } from './session-presses'
 import type { Holds } from './timing'
 import type { Session, RowNote, LastAction } from '../types'
@@ -262,8 +262,13 @@ export async function startPress<S extends Session>(
       await host.update(s => ({ ...s, ledger: f(s.ledger) }))
     },
   }
+  const isOut = async () =>
+    isRepeatWhileOut(withHolds(await host.read(), holds), p, await host.now(), {
+      settleWindowMs: host.settleWindowMs,
+      holds,
+    })
   const check =
-    isPrPress(p) && isPrReadFirstPress(p) && !isStale
+    isPrPress(p) && isPrReadFirstPress(p) && !isStale && !(await isOut())
       ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err: unknown) => {
           error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
           return 'unread' as const

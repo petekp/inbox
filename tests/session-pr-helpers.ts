@@ -32,9 +32,8 @@ export async function blockedPrHost(refreshed: (pr: PrView, at: number) => PrVie
   return { host, delivered, shownWhileRefreshing, shownOn }
 }
 
-export const NO_UPDATE = { closed: [], added: [], helped: [], updated: [], asked: [], todos: [] }
+const NO_UPDATE = { closed: [], added: [], helped: [], updated: [], asked: [], todos: [] }
 
-/** The session after the agent got `text`, answered it and the update for that turn applied. */
 export function repliedTo(s: Session, text: string, now: number): Session {
   const ended = endTurn(CLAUDE_CODE, notePrompt(CLAUDE_CODE, s, text, false).state, 'Done.', false)
 

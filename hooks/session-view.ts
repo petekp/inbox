@@ -11,7 +11,7 @@ import { prClearActions } from './pr-tab'
 import type { PrAction } from './pr-press'
 import { prNeedsYou } from './prs'
 import { isPrRowId } from './presses'
-import { feedbackOf, pressUnderWaySince } from './feedback'
+import { feedbackOf, prTabHoldSince } from './feedback'
 import { MARK_LEGEND } from './help'
 import { earliestOf, hasRunningMark, NO_HOLDS } from './timing'
 import { inboxView, perTurnStatus } from './view'
@@ -142,7 +142,7 @@ function prTabOf(
 ): PrTab {
   const pressOutSince = earliestOf(
     Object.entries(lastActions).map(([id, last]) =>
-      isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null,
+      isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, undefined, s.presence, now)) : null,
     ),
   )
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {

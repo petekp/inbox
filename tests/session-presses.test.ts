@@ -190,6 +190,7 @@ test('Resolve conflicts and Fix send their message when the PR on GitHub still h
     expect(still.delivered.length).toBe(2 * round)
     for (const text of still.delivered.slice(-2))
       await still.host.update(async s => repliedTo(s, text, await still.host.now()))
+    await still.host.refreshPrs()
   }
   expect(still.delivered[2]).toContain('PR #12 (https://github.com/acme/app/pull/12) conflicts with main.')
   expect(still.delivered[3]).toContain('The test check failed on PR #12')

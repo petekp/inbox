@@ -7,6 +7,7 @@ import type { PressState } from './feedback'
 import { CLEAR_FINISHED_ID, checkRowId, prMarkId, PR_REFRESH_ID, RANK_AGAIN_ID, threadRowId } from './pr-rows'
 import { failedSibling, isSameRun, runOf } from './pr-checks'
 import { checkKey } from './prs'
+import { PR_READ_WAIT_MS } from './timing'
 
 /** Fetches every PR the session tracks, so the row reads "Refreshing PRs…". */
 export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
@@ -183,12 +184,16 @@ export type PlannedPrAction = Omit<PrAction, 'isOut'>
 export type LastPress = { last: LastAction | undefined; pressing: string | null; out: string | null }
 
 /**
- * A hand-off press the agent has answered, whose PR no fetch has read since: the PR may still show the problem the agent
- * fixed. Its button stays out, without "again", until that fetch. A PR view saved before the inbox kept `fetchedAt` has
- * no time to compare, so it counts as read.
+ * A hand-off press whose turn ended, whose PR no fetch has read since: the PR may still show the problem the agent
+ * fixed. Its button stays out, without "again", until that fetch, or until `PR_READ_WAIT_MS` after the turn ended,
+ * since a host with no PRs tab open fetches none. A PR view saved before the inbox kept `fetchedAt` has no time to
+ * compare, so it counts as read.
  */
-function isAwaitingFreshRead(last: LastAction | undefined, fetchedAt: number | undefined): boolean {
-  return last?.repliedAt !== undefined && fetchedAt !== undefined && fetchedAt <= last.repliedAt
+function isAwaitingFreshRead(last: LastAction | undefined, fetchedAt: number | undefined, now: number): boolean {
+  const repliedAt = last?.repliedAt
+  if (repliedAt === undefined || fetchedAt === undefined) return false
+
+  return fetchedAt <= repliedAt && now - repliedAt < PR_READ_WAIT_MS
 }
 
 /** `fetchedAt` is when a fetch last read the PR the row belongs to. */
@@ -197,7 +202,7 @@ export function lastPressOf(presses: PressState, rowId: string, fetchedAt?: numb
   const feedback = pressFeedbackIn(rowId, { is: 'open' }, last, presses.turns, presses.now)
   const pressing = pressOutAction(last, feedback)
   const out = outAction(last, feedback)
-  const isChecking = last?.kind === 'handoff' && pressing === null && isAwaitingFreshRead(last, fetchedAt)
+  const isChecking = last?.kind === 'handoff' && pressing === null && isAwaitingFreshRead(last, fetchedAt, presses.now)
 
   return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out }
 }
