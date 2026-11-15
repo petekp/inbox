@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T03:56:45.792Z. 213926 characters follow.
+// Built at 2026-11-15T04:25:42.497Z. 213097 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -67,7 +67,6 @@ function tabBarBanners(host, statusError, pressNote) {
   ];
 }
 var READING_TEXT = "Reading the inbox…";
-var NEXT_BUILD_MARK = ".next-build";
 var MAYBE_STALE_TEXT = "May be out of date";
 function emptyText(tab, agent, isStale = false) {
   const text = tab === "needsYou" ? { title: "Nothing needed", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
@@ -82,10 +81,9 @@ var TAB_NAMES = [
   { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
-var NEXT_BUILD_TABS = numbered(TAB_NAMES);
-var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
-function shownTabs(isNextBuild) {
-  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
+var SHOWN_TABS = numbered(TAB_NAMES);
+function shownTabs() {
+  return SHOWN_TABS;
 }
 function tabBadge(id, counts) {
   return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
@@ -1189,18 +1187,14 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
-var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
-function markLegend(isNextBuild) {
-  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
-}
 var HELP_COPY = { open: "Help", close: "✕ Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
 var UNDO_KEY = "u";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "Clear the merged and closed PRs" }
 ];
-function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
-  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
+function helpKeys(look, tab, hasStatusButtons) {
+  const tabKeys = shownTabs().map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
   const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
@@ -3768,14 +3762,14 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
     ]
   };
 }
-function rowBody(row, isAllShown, isNextBuild) {
+function rowBody(row, isAllShown) {
   const lines = [
     { text: row.contextLine, tone: "muted" },
     { text: row.detail, tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: "muted" },
     ...shownOptionDescriptions(row, isAllShown).map((o) => ({ text: `${o.label}: ${o.description}`, tone: null })),
     { text: row.recLine, tone: "muted" },
-    { text: isNextBuild ? row.holdsUpLine : null, tone: "muted", mark: HOLDS_UP_MARK }
+    { text: row.holdsUpLine, tone: "muted", mark: HOLDS_UP_MARK }
   ];
   return lines.flatMap((l) => l.text ? [{ ...l, text: l.text }] : []);
 }
@@ -3798,7 +3792,7 @@ function rowBlock(row, ui, selected, screen) {
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
-    body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
+    body: isSelected ? rowBody(row, isAllShown) : [],
     buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
     field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
   };
@@ -3915,7 +3909,7 @@ function rowTabBlocks(screen, ui, tab) {
 function tabCells(screen, tab) {
   const { view } = screen;
   const counts = { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count };
-  return shownTabs(screen.isNextBuild).map((t) => ({
+  return shownTabs().map((t) => ({
     id: t.id,
     label: t.label,
     badge: tabBadge(t.id, counts),
@@ -4001,8 +3995,8 @@ function follow(where, tab, last) {
 }
 
 // src/draw-help.ts
-function helpBlocks(isNextBuild, tab, hasStatusButtons) {
-  const keys = helpKeys("herdr", isNextBuild, tab, hasStatusButtons);
+function helpBlocks(tab, hasStatusButtons) {
+  const keys = helpKeys("herdr", tab, hasStatusButtons);
   const heading = (id, text) => ({
     kind: "heading",
     id,
@@ -4027,7 +4021,7 @@ function helpBlocks(isNextBuild, tab, hasStatusButtons) {
       buttons: []
     })),
     heading("help marks", HELP_COPY.marks),
-    ...markLegend(isNextBuild).map((m) => ({
+    ...MARK_LEGEND.map((m) => ({
       kind: "status",
       id: `mark ${m.mark}`,
       depth: 0,
@@ -5050,7 +5044,6 @@ function screenOf(followed, read, ui, o) {
     agent: read.envelope.agent,
     now: o.now,
     shownSince: holds.shownSince ?? o.now,
-    isNextBuild: o.isNextBuild,
     isGhMissing: read.session.prViews.isGhMissing === true
   };
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
@@ -5125,7 +5118,6 @@ class Inbox extends View {
   view = null;
   ui = freshUi("needsYou");
   shownSince = Date.now();
-  isNextBuild = false;
   isHelpShown = false;
   isNarrow = false;
   drafts = {};
@@ -5146,10 +5138,6 @@ class Inbox extends View {
   drawTimer = null;
   init(_props, cx) {
     this.focus = cx.focus_handle();
-    cx.spawn(async (cx) => {
-      this.isNextBuild = await readTextFile(`${appHome()}/mods/inbox/${NEXT_BUILD_MARK}`).catch(() => null) !== null;
-      cx.notify();
-    });
     cx.spawn(async (cx) => {
       for (;; ) {
         const changed = await watchFolder(publishedSessionsFolder(appHome())).catch(() => null);
@@ -5371,7 +5359,6 @@ class Inbox extends View {
     const now = Date.now();
     const screenFor = (ui) => screenOf(this.followed, this.read, ui, {
       now,
-      isNextBuild: this.isNextBuild,
       holds: this.holds(now),
       queue: this.queue
     });
@@ -5427,7 +5414,7 @@ class Inbox extends View {
       return root.child(messageEl(screen.message, t));
     }
     const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
-    const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks;
+    const shown = this.isHelpShown ? helpBlocks(this.ui.tab, hasStatusButtons) : screen.blocks;
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now);
     this.linesAbove = held.held;
     const moved = moveRows(held.blocks, this.tracks, now, isFirst);

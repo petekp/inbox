@@ -118,7 +118,6 @@ test(
   async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
-    w.files = ['/.next-build']
     const herdrAsks = () => w.ran.filter(argv => argv.join(' ') === 'herdr agent list').length
     const answer = (agent_status: string) =>
       w.ghAnswers.unshift({
@@ -158,7 +157,6 @@ test(
 test('a delegate named by an id draws the focus its own session publishes to Herdr once Herdr shows it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })

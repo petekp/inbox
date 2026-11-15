@@ -180,8 +180,7 @@ function itemRow(v: View, r: RowView): Row {
     ...resultHandle(r),
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
-    // A next build draws the Status, so only it names the subject an ask holds up.
-    ...(v.isNextBuild === true && r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
+    ...(r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     ...(r.recLine ? { recLine: r.recLine } : {}),
     ...(r.contextLine ? { context: r.contextLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),

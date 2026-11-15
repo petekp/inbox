@@ -1,5 +1,5 @@
 import { toneSvg } from './desktop-svg'
-import { HELP_COPY, type HelpKey, type LegendEntry, markLegend, tabLegend } from './help'
+import { HELP_COPY, type HelpKey, type LegendEntry, MARK_LEGEND, tabLegend } from './help'
 import { markShape } from './marks'
 import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
@@ -21,8 +21,7 @@ export function paneHelp({
   groupTitle,
   sections,
   statusRowLine,
-  isNextBuild,
-}: { isNextBuild: boolean } & Pick<PaneBase, 'pal' | 'keyList' | 'Box' | 'keyColumn' | 'Text' | 'hasRail'> &
+}: Pick<PaneBase, 'pal' | 'keyList' | 'Box' | 'keyColumn' | 'Text' | 'hasRail'> &
   Pick<PaneRowLines, 'ToneSvg' | 'svgCell' | 'markGlyph'> &
   Pick<PaneRowParts, 'section' | 'groupTitle' | 'sections'> &
   Pick<PaneStatus, 'statusRowLine'>) {
@@ -54,11 +53,11 @@ export function paneHelp({
   const helpKeysSection = () => section([groupTitle(HELP_COPY.keys, 0), ...keyRows(keyList, 'help-key', keyColumn)])
   /** A tab's symbol takes two cells, so its column is the wider of that and the keys' column. */
   const helpTabsSection = () =>
-    section([groupTitle(HELP_COPY.tabs, 0), ...keyRows(tabLegend(isNextBuild), 'help-tab', Math.max(keyColumn, 4))])
+    section([groupTitle(HELP_COPY.tabs, 0), ...keyRows(tabLegend(), 'help-tab', Math.max(keyColumn, 4))])
   const helpMarksSection = () =>
     section([
       groupTitle(HELP_COPY.marks, 0),
-      ...markLegend(isNextBuild).map(
+      ...MARK_LEGEND.map(
         m =>
           statusRowLine({
             key: `help-mark-${m.mark}`,

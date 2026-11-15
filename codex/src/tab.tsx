@@ -54,7 +54,7 @@ function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): Com
       ) : null}
       <TabBar v={v} />
       {tabState.isHelpShown ? (
-        <HelpPage v={v} />
+        <HelpPage />
       ) : shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
       ) : shown === 'findings' ? (
@@ -166,7 +166,7 @@ document.addEventListener(
       draw()
       return
     }
-    const switched = shownTabs(tabState.view.isNextBuild === true).find(t => t.hotkey === e.key)
+    const switched = shownTabs().find(t => t.hotkey === e.key)
     if (switched) {
       switchTab(switched.id)
       draw()

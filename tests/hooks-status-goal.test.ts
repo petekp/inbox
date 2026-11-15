@@ -15,7 +15,6 @@ const INFERRING = [
 async function statusShown($: Engine, on: On) {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply = INFERRING
   on('ui.focus', () => ({}))
@@ -29,7 +28,7 @@ async function statusShown($: Engine, on: On) {
   return { clock, pane }
 }
 
-test('on a next build, a goal the Status call writes shows at once under the Goal heading with its milestones, Edit and Remove draw at the right end of the heading row, the head draws as its Now line, and nothing is sent', async ($, on) => {
+test('a goal the Status call writes shows at once under the Goal heading with its milestones, Edit and Remove draw at the right end of the heading row, the head draws as its Now line, and nothing is sent', async ($, on) => {
   const { pane } = await statusShown($, on)
 
   expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+e: Edit · r: Remove$/)
@@ -44,7 +43,7 @@ test('on a next build, a goal the Status call writes shows at once under the Goa
   expect(w.sent).toEqual([])
 })
 
-test('on a next build, Remove goal leaves the Goal heading with the line that says no goal is set and offers Undo, which brings the goal back, then New, which opens an empty goal field that sets the typed goal and waits for its milestones', async ($, on) => {
+test('Remove goal leaves the Goal heading with the line that says no goal is set and offers Undo, which brings the goal back, then New, which opens an empty goal field that sets the typed goal and waits for its milestones', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
 
   await pane.press({ key: 'remove-goal-goal-key' })
@@ -75,7 +74,7 @@ test('on a next build, Remove goal leaves the Goal heading with the line that sa
   expect(w.sent).toEqual([])
 })
 
-test('on a next build, in a narrow pane the goal’s buttons wrap under its heading’s rule, at the right edge, with nothing cut', async ($, on) => {
+test('in a narrow pane the goal’s buttons wrap under its heading’s rule, at the right edge, with nothing cut', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
   await pane.unmount()
   const narrow = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 24 } })
@@ -87,7 +86,7 @@ test('on a next build, in a narrow pane the goal’s buttons wrap under its head
   expect(await narrow.find({ key: 'goal-heading' })).toBeUndefined()
 })
 
-test('on a next build, the goal’s Edit opens the field with the goal in it in place of the goal’s text, leaves the heading as Goal and gives the field the keys, and Cancel closes it and keeps the goal', async ($, on) => {
+test('the goal’s Edit opens the field with the goal in it in place of the goal’s text, leaves the heading as Goal and gives the field the keys, and Cancel closes it and keeps the goal', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
 
   await pane.press({ key: 'type-goal-goal-key' })
@@ -106,10 +105,9 @@ test('on a next build, the goal’s Edit opens the field with the goal in it in 
   )
 })
 
-test('on a next build, New on the empty Status page sets the typed goal before any Status call', async ($, on) => {
+test('New on the empty Status page sets the typed goal before any Status call', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const pane = await $.ui.mount(PANE)
