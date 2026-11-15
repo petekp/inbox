@@ -2,7 +2,8 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import type { Block, PathSide, TreeStroke } from './blocks'
+import { isOpenRow } from './blocks'
+import type { Block, PathSide, RowBlock, TreeStroke } from './blocks'
 import type { PathLine } from '../../hooks/status-path'
 import type { RowMotion } from './motion'
 import {
@@ -12,8 +13,8 @@ import {
   HEAD_GAP,
   INSET,
   ITEM_GAP,
-  LINE,
   LINE_GAP,
+  LINE_HEIGHT,
   NEST,
   opaqueOver,
 } from './paint-theme'
@@ -65,44 +66,36 @@ function aboveOf(prev: Block | null, b: Block, section: number | null): number {
 /** The key a row's panel is measured under, beside the row's own height. */
 export const panelId = (id: string): string => `panel ${id}`
 
-/**
- * A drawn block and its space: `above` before it, and for the last of a run of moving blocks, `below` after it while
- * open and `floor`, the height its box keeps while shut.
- */
-export type Space = { block: Block; above: number; below: number; floor: number }
+/** The key a row's title is measured under. */
+export const titleId = (id: string): string => `title ${id}`
+
+/** The key a row's lines under its title, with its panel, are measured under. */
+export const restId = (id: string): string => `rest ${id}`
+
+/** A drawn block and the space above it. */
+export type Space = { block: Block; above: number }
 
 /**
- * Each drawn block with the space above it. A gap block draws nothing and opens a section's space above the block after
- * it. A moving block's box glides its height, and padding cannot glide. So the block under a run of moving blocks keeps
- * the space it has while they are shut, against the last resting block above them, and the run's last box holds the
- * rest of the space it has while they are open, or keeps what the shut space has beyond that.
+ * Each drawn block with the space above it, from the last block above it that is not shut. A gap block draws nothing
+ * and opens a section's space above the next block, or a milestone step's smaller space. A shut block, one that enters
+ * or leaves at no height, has no space.
  */
-export function spacesOf(blocks: Block[], isMoving: (b: Block) => boolean): Space[] {
+export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[] {
   const out: Space[] = []
   let prev: Block | null = null
   let section: number | null = null
-  let resting: Block | null = null
-  let sectionSinceResting: number | null = null
   for (const b of blocks) {
     if (b.kind === 'gap') {
-      const space = b.isMilestoneStep ? ITEM_GAP : GROUP_GAP
-      section = prev === null ? null : space
-      sectionSinceResting = resting === null ? null : space
+      section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : GROUP_GAP
       continue
     }
-    const above = aboveOf(prev, b, section)
-    const run = out.at(-1)
-    const isUnderRun = run !== undefined && isMoving(run.block) && !isMoving(b)
-    const shut = isUnderRun ? aboveOf(resting, b, sectionSinceResting) : above
-    const held = Math.min(shut, above)
-    if (run && isUnderRun) Object.assign(run, { below: above - held, floor: shut - held })
-    out.push({ block: b, above: held, below: 0, floor: 0 })
+    if (isShut(b)) {
+      out.push({ block: b, above: 0 })
+      continue
+    }
+    out.push({ block: b, above: aboveOf(prev, b, section) })
     prev = b
     section = null
-    if (!isMoving(b)) {
-      resting = b
-      sectionSinceResting = null
-    }
   }
 
   return out
@@ -111,56 +104,107 @@ export function spacesOf(blocks: Block[], isMoving: (b: Block) => boolean): Spac
 /** Springs later changes of an element's height. */
 const springHeight = <E extends Element>(el: E): E => el.spring('height', HEIGHT_SPRING)
 
-/**
- * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
- * Undefined until the block's first measure.
- */
-function fitHeight(id: string, m: RowMotion | undefined, p: Paint): number | undefined {
-  const measured = p.heights.get(id)
-  if (measured === undefined) return undefined
-
-  return measured - (m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0)
-}
-
-/**
- * Content in a box at its measured height, whose height spring is always declared, as a list block, the tab bar or
- * the banners above the list. When the content changes height, as a row opens, a status line comes, or a banner goes,
- * the box keeps its old height for the draw that measures the new one, then springs to it. In a draw that takes
- * heights at once, and always for content whose height follows the pane's, the box takes its content's height.
- */
-export function fitEl(id: string, m: RowMotion | undefined, p: Paint, el: Element, isPaneSized = false): Element {
-  const height = isPaneSized || p.isAtOnce(id) ? undefined : fitHeight(id, m, p)
-  const sized = div()
-    .id(`size ${id}`)
-    .flex_none()
-    .on_size_change((size, cx) => p.measure(id, size, cx))
-    .child(el)
-
-  return springHeight(
+/** A box whose height spring is always declared, at `height`, or at its content's height when undefined. */
+const springBox = (id: string, height: number | undefined): Element =>
+  springHeight(
     v_flex()
-      .id(`fit ${id}`)
+      .id(id)
       .flex_none()
       .overflow_hidden()
       .when(height !== undefined, e => e.h(height ?? 0)),
-  ).child(sized)
+  )
+
+/** Content that reports its size under `key`. */
+export const sizeEl = (key: string, p: Paint, el: Element): Element =>
+  div()
+    .id(`size ${key}`)
+    .flex_none()
+    .on_size_change((size, cx) => p.measure(key, size, cx))
+    .child(el)
+
+/**
+ * Content in a box at its measured height, as the tab bar or the banners above the list. When the content changes
+ * height, as a banner goes, the box keeps its old height for the draw that measures the new one, then springs to it. In
+ * a draw that takes heights at once, and always for content whose height follows the pane's, the box takes its
+ * content's height.
+ */
+export function fitEl(key: string, p: Paint, el: Element, isPaneSized = false): Element {
+  const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key)
+
+  return springBox(`fit ${key}`, height).child(sizeEl(key, p, el))
 }
 
 /**
- * A block's outer box. A block that enters or leaves springs its height between none and its content's height with its
- * space, and fades its opacity over the same move's length. Until the block's first measure, its box stays shut. At
- * rest the box takes its content's height.
+ * The height a row's title box moves to: one line unless the row is open, else the title's measured height, which is
+ * undefined until its first measure.
  */
-function boxEl(s: Space, m: RowMotion | undefined, p: Paint, inner: Element): Element {
-  const id = s.block.id
-  const box = v_flex().id(`box ${id}`).flex_none().child(inner)
-  if (!m?.box) return box
-  const height = fitHeight(id, m, p)
-  const isOpen = m.box === 'open' && height !== undefined
-  const sized = box.overflow_hidden().h(isOpen ? s.above + (height ?? 0) + s.below : s.floor)
+const titleHeightOf = (r: RowBlock, p: Paint): number | undefined =>
+  isOpenRow(r) ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
 
-  return springHeight(sized)
-    .opacity(isOpen ? 1 : 0)
-    .transition('opacity', { duration: m.fadeMs, easing: 'ease-out' })
+/**
+ * A row's title in a box whose height springs to `titleHeightOf`. The box clips, so a title that keeps its wrap while
+ * the row closes loses the lines under its first as the box glides to one line. An open row's title box takes its
+ * content's height in a draw that takes heights at once.
+ */
+export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
+  const key = titleId(r.id)
+  const height = isOpenRow(r) && p.isAtOnce(key) ? undefined : titleHeightOf(r, p)
+
+  return springBox(`fit ${key}`, height).child(sizeEl(key, p, el))
+}
+
+/**
+ * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
+ * A row's height is its padding, its title's and the rest's, each measured on its own, so the row's box springs in step
+ * with its title's box. Undefined until the block's first measure.
+ */
+function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undefined {
+  const id = b.id
+  const panel = m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0
+  if (b.kind !== 'row') {
+    const measured = p.heights.get(id)
+
+    return measured === undefined ? undefined : measured - panel
+  }
+  const title = titleHeightOf(b, p)
+  const rest = p.heights.get(restId(id))
+
+  return title === undefined || rest === undefined ? undefined : 2 * ROW_PAD_PT + title + rest - panel
+}
+
+/**
+ * A block's content box. Its height springs to none while the block's box is shut, and to the content's measured
+ * height while it is open or at rest, so a change of content glides as the block enters, leaves or changes. In a draw
+ * that takes heights at once, and at rest for content whose height follows the pane's, the box takes its content's
+ * height.
+ */
+function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element, strokes: Element[]): Element {
+  const id = b.id
+  const isRow = b.kind === 'row'
+  const isAtOnce = isRow ? p.isAtOnce(titleId(id)) || p.isAtOnce(restId(id)) : p.isAtOnce(id)
+  const measured = fitHeight(b, m, p)
+  const atRest = isAtOnce || b.kind === 'empty' ? undefined : measured
+  const open = isAtOnce ? undefined : (measured ?? 0)
+  const height = m?.box === 'shut' ? 0 : m?.box === 'open' ? open : atRest
+
+  return springBox(`fit ${id}`, height)
+    .when(strokes.length > 0, e => e.relative())
+    .child(isRow ? el : sizeEl(id, p, el))
+    .children(strokes)
+}
+
+/**
+ * A block's space, as a box whose height springs, so a change of the space glides from where it is drawn. In a draw
+ * that takes heights at once, it takes its height from padding, which sets no target to spring from. The columns that
+ * run on into the block draw across the whole box, at the height it is drawn.
+ */
+function spaceEl(s: Space, p: Paint, columns: Element[]): Element {
+  const id = `space ${s.block.id}`
+  const box = springHeight(div().id(id).flex_none())
+    .when(columns.length > 0, e => e.relative())
+    .children(columns)
+
+  return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above)
 }
 
 /** The path's line and the nesting connectors, in the border color made opaque over the panel's background. */
@@ -169,7 +213,7 @@ const lineColor = (t: Theme) => opaqueOver(t.border, t.background)
 /** Where the path's line runs: under the middle of a milestone's mark. */
 const PATH_X = EDGE + 4
 
-/** A stretch of the path's line from `top`, down to `height` or to the end of its block. Dashed into the milestone that reads next. */
+/** A stretch of the path's line from `top`, down to `height` or to the end of its box. Dashed into the milestone that reads next. */
 function pathLineEl(line: PathLine, top: number, height: number | null, t: Theme): Element[] {
   if (line === null) return []
   const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t))
@@ -178,60 +222,87 @@ function pathLineEl(line: PathLine, top: number, height: number | null, t: Theme
   return [line === 'to-next' ? sized.border_dashed() : sized]
 }
 
-/** The path's line beside a block whose first line starts `top` down, around a milestone's mark. */
-function pathEls(path: PathSide, top: number, t: Theme): Element[] {
-  if (path.is === 'work') return pathLineEl(path.line, 0, null, t)
+/** A tree column at `depth`, from `top` down to `height` or to the end of its box. */
+const columnEl = (depth: number, top: number, height: number | null, t: Theme): Element => {
+  const el = div()
+    .absolute()
+    .left(PATH_X + depth * NEST)
+    .top(top)
+    .w(1)
+    .border_l_1()
+    .border_color(lineColor(t))
 
-  return [...pathLineEl(path.above, 0, top, t), ...pathLineEl(path.below, top + parseInt(LINE), null, t)]
+  return height === null ? el.bottom(0) : el.h(height)
+}
+
+/** The path's line and the tree columns that run in from above a block, drawn again across the block's space. */
+function throughSpaceEls(b: Block, t: Theme): Element[] {
+  const path = 'path' in b ? b.path : undefined
+  const tree = 'tree' in b ? (b.tree ?? []) : []
+  const line = path === undefined ? null : path.is === 'work' ? path.line : path.above
+  const columns = tree.flatMap(({ depth, is }) =>
+    is === 'past' || is === 'mid' || is === 'last' ? [columnEl(depth, 0, null, t)] : [],
+  )
+
+  return [...pathLineEl(line, 0, null, t), ...columns]
 }
 
 /**
- * The nesting connectors beside a block, each in the column under the marks of rows at its depth, the column the path's
- * line takes at depth 0, beside a block whose first line starts `top` down. An arm starts a pixel right of its column,
- * and a column that ends at an arm takes the arm's row, so no two strokes cover the same pixel.
+ * The path's line and the nesting connectors beside a block's content, each in the column under the marks of rows at
+ * its depth, the column the path's line takes at depth 0. An arm starts a pixel right of its column, and a column that
+ * ends at an arm takes the arm's row, so no two strokes cover the same pixel. Arms belong to their row and fade with it.
  */
-function treeEls(tree: TreeStroke[], top: number, t: Theme): Element[] {
-  const armAt = Math.round(top + parseInt(LINE) / 2)
-
-  return tree.flatMap(({ depth, is }) => {
-    const x = PATH_X + depth * NEST
-    const column = div().absolute().left(x).w(1).border_l_1().border_color(lineColor(t))
-    const arm = div()
-      .absolute()
-      .left(x + 1)
-      .top(armAt)
-      .w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP)
-      .h(1)
-      .border_t_1()
-      .border_color(lineColor(t))
-    if (is === 'down') return [column.top(top + parseInt(LINE)).bottom(0)]
-    if (is === 'past') return [column.top(0).bottom(0)]
+function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): Element[] {
+  const path = 'path' in b ? b.path : undefined
+  const tree = 'tree' in b ? (b.tree ?? []) : []
+  const top = Math.round(padOf(b))
+  const armAt = Math.round(top + LINE_HEIGHT / 2)
+  const pathEls = (side: PathSide): Element[] =>
+    side.is === 'work'
+      ? pathLineEl(side.line, 0, null, t)
+      : [...pathLineEl(side.above, 0, top, t), ...pathLineEl(side.below, top + LINE_HEIGHT, null, t)]
+  const treeEls = tree.flatMap(({ depth, is }: TreeStroke): Element[] => {
+    const arm = fade(
+      div()
+        .absolute()
+        .left(PATH_X + depth * NEST + 1)
+        .top(armAt)
+        .w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP)
+        .h(1)
+        .border_t_1()
+        .border_color(lineColor(t)),
+    )
+    if (is === 'down') return [columnEl(depth, top + LINE_HEIGHT, null, t)]
+    if (is === 'past') return [columnEl(depth, 0, null, t)]
     if (is === 'arm') return [arm]
-    if (is === 'last') return [column.top(0).h(armAt + 1), arm]
+    if (is === 'last') return [columnEl(depth, 0, armAt + 1, t), arm]
 
-    return [column.top(0).bottom(0), arm]
+    return [columnEl(depth, 0, null, t), arm]
   })
+
+  return [...(path ? pathEls(path) : []), ...treeEls]
 }
 
 /**
- * Each block in a box that never shrinks, with its space. The list scrolls in a box of fixed height, and a block that
- * could shrink loses its space, or the end of its text, whenever the list overflows.
+ * Each block in a box that never shrinks, with its space above it. Every distance that can change is the height of a
+ * box whose spring is declared in every draw: the space, and the content. So a move that starts while another glides
+ * starts where each box is drawn. A block that enters or leaves also fades its own drawing over the same move's length.
+ * The path's line and the tree columns beside it do not fade, so they stay whole past a block that comes or goes. The
+ * list scrolls in a box of fixed height, and a block that could shrink loses its space, or the end of its text,
+ * whenever the list overflows.
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
-  return spacesOf(blocks, b => (p.motion.get(b.id)?.box ?? null) !== null).map(s => {
-    const id = s.block.id
-    const m = p.motion.get(id)
-    const path = 'path' in s.block ? s.block.path : undefined
-    const tree = 'tree' in s.block ? (s.block.tree ?? []) : []
-    const top = Math.round(s.above + padOf(s.block))
-    const spaced = div()
-      .flex_none()
-      .pt(s.above)
-      .pb(s.below)
-      .when(path !== undefined || tree.length > 0, e => e.relative())
-      .child(fitEl(id, m, p, el(s.block), s.block.kind === 'empty'))
-      .children([...(path ? pathEls(path, top, p.t) : []), ...treeEls(tree, top, p.t)])
+  return spacesOf(blocks, b => p.motion.get(b.id)?.box === 'shut').map(s => {
+    const b = s.block
+    const m = p.motion.get(b.id)
+    const isOpen = m?.box === 'open' && fitHeight(b, m, p) !== undefined
+    const fade = (e: Element): Element =>
+      m?.box ? e.opacity(isOpen ? 1 : 0).transition('opacity', { duration: m.fadeMs, easing: 'ease-out' }) : e
 
-    return boxEl(s, m, p, spaced)
+    return v_flex()
+      .id(`box ${b.id}`)
+      .flex_none()
+      .child(spaceEl(s, p, throughSpaceEls(b, p.t)))
+      .child(contentEl(b, m, p, fade(el(b)), contentStrokeEls(b, p.t, fade)))
   })
 }

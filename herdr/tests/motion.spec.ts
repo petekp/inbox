@@ -11,8 +11,6 @@ import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import { NOW, demoScreen, dismissedPr, uiOn, withDismissedAsk } from './fixtures'
 import { allOf, openPanel } from './gpui-stand-in'
 
-const { spacesOf } = await import('../src/paint-space')
-
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
 
 test('a row the publish dropped stays drawn until its fade and its height spring come to rest, then goes', () => {
@@ -126,36 +124,6 @@ test('a line that leaves starts open, then shuts, and a Status done fold’s row
   expect(boxesOf(start, done).every(b => b === 'open')).toBe(true)
   expect(boxesOf(next, done).every(b => b === 'shut')).toBe(true)
   expect(boxesOf(moveRows(open, NO_TRACKS, NOW, true), ['s2', 's5'])).toEqual([null, null])
-})
-
-test('the block under moving blocks keeps its space as they glide, and the run’s last box holds the rest', () => {
-  const blocks = tabBlocks(demoScreen(), uiOn('overview', { statusUnfolded: ['other-done'] }))
-  const atFold = blocks.findIndex(b => b.id === 'other-done')
-  const withBelow = [
-    ...blocks,
-    {
-      kind: 'note' as const,
-      id: 'after',
-      text: 'after',
-      count: null,
-      tone: null,
-      isHead: false,
-      isAtEdge: false,
-      isStrong: false,
-      depth: 0,
-    },
-  ]
-  const done = new Set(withBelow.slice(atFold + 1, -1).map(b => b.id))
-  const resting = spacesOf(withBelow, () => false)
-  const moving = spacesOf(withBelow, b => done.has(b.id))
-  const shut = spacesOf(
-    withBelow.filter(b => !done.has(b.id)),
-    () => false,
-  )
-  const spaceOf = (spaces: typeof moving, id: string) => spaces.find(s => s.block.id === id)!
-  const last = moving.filter(s => done.has(s.block.id)).at(-1)!
-  expect(spaceOf(moving, 'after').above + last.floor).toBe(spaceOf(shut, 'after').above)
-  expect(spaceOf(moving, 'after').above + last.below).toBe(spaceOf(resting, 'after').above)
 })
 
 test('in the panel, opening each row of a tab and pressing z leaves no row open after each press, and the last one collapsed stays selected', async () => {
