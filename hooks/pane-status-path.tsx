@@ -199,11 +199,11 @@ export function paneStatusPath(
           },
         ]
   /**
-   * A done milestone folded to its name. The terminal draws its name muted with the fold's chevron after it, as one
-   * button. Desktop draws a fold line, whose chevron takes the mark's place, since only a `Client` takes a click across
-   * the line.
+   * A done milestone folded to its name, or a met goal's milestones folded into the line that names them. The terminal
+   * draws the name muted with the fold's chevron after it, as one button. Desktop draws a fold line, whose chevron takes
+   * the mark's place, since only a `Client` takes a click across the line.
    */
-  const foldedName = (m: MilestoneRow & { foldId: string }) => {
+  const foldedName = (m: Pick<MilestoneRow, 'id' | 'name'> & { foldId: string }) => {
     const toggle = () => toggleFold(m.foldId)
     const isOpen = isUnfolded(m.foldId)
     const key = foldKey({ statusId: m.foldId })

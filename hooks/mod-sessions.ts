@@ -6,7 +6,6 @@ import { CLAUDE_CODE } from './model-text'
 import type { AgentTool } from './tools'
 import { exclusiveKeys, orderedKeys } from './session-host'
 import { withDemoPresence } from './demo'
-export { PR_POLL_MS } from './host-prs'
 
 /** The drawn conversation's session. `revision` counts its writes, so a write computed from an older one is retried. */
 export type ModSession = Session & { revision: number }

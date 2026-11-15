@@ -18,6 +18,7 @@ import type { SessionState } from '../src/state'
 import { noteShownRows, rowsInView, takeShownRows } from '../src/tab-shown'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
+import { ROW_STATE_MS } from '../../hooks/row-motion'
 import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 const window = new Window()
@@ -286,6 +287,9 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       ['milestone-group path-to-next', 'milestone-group'],
     )
     assert.equal(root.querySelector('.path-word')?.textContent, 'next')
+    assert.notEqual(root.querySelector('.status-head:not(.goal)'), null)
+    context.mock.timers.tick(ROW_STATE_MS.leaving + 100)
+    await new Promise<void>(resolve => setImmediate(resolve))
     assert.equal(root.querySelector('.status-head:not(.goal)'), null)
     assert.deepEqual(buttons(), ['Edit', 'Remove'])
     await click('Edit')

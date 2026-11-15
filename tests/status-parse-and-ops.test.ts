@@ -208,3 +208,47 @@ test('a SET, a DONE or another DROP takes a folded subject out of its target, an
   expect(dropped.subjects.map(s => s.merged)).toEqual([null, null, null])
   expect(dropped.subjects[0]).toMatchObject({ status: 'dropped', into: null })
 })
+
+test('lines the answer takes back are left out: a NO CHANGE cancels the lines before it, and the last line for a subject counts', () => {
+  expect(parseStatus('SET: s1 | working | merged\nWait, nothing changed.\nNO CHANGE')).toEqual({ kind: 'unchanged' })
+  expect(opsOf('SET: s1 | working | merged\nNO CHANGE\nDONE: s2 | shipped')).toEqual([
+    { kind: 'done', ref: 's2', text: 'shipped' },
+  ])
+  expect(
+    opsOf('SET: s1 | waits-on-other | merged\nWait: it is finished.\nDONE: s1 | shipped\nWAS: s1 | was waiting'),
+  ).toEqual([
+    { kind: 'done', ref: 's1', text: 'shipped' },
+    { kind: 'was', ref: 's1', text: 'was waiting' },
+  ])
+  expect(
+    opsOf('NEW: working | Search | built\nDONE: Search | shipped\nDONE: s2 | one\nSET: s3 | queued | next'),
+  ).toHaveLength(4)
+})
+
+test('a SET or NEW whose status is a close form of waits-on-other is read as it', () => {
+  expect(
+    opsOf(
+      'SET: s1 | waiting-on-other | PR merged\nNEW: Waiting on other | Review | sent\nSET: s2 | waits_on_others | x',
+    ),
+  ).toEqual([
+    { kind: 'set', ref: 's1', status: 'waits-on-other', text: 'PR merged' },
+    { kind: 'new', status: 'waits-on-other', name: 'Review', text: 'sent' },
+    { kind: 'set', ref: 's2', status: 'waits-on-other', text: 'x' },
+  ])
+  expect(parseStatus('SET: s1 | waiting-on-you | PR merged')).toBeNull()
+})
+
+test('a NEW for follow-up work does not reopen a subject the same answer closed', () => {
+  const start = after(null, 'NEW: working | Login page | being built', 100)
+
+  expect(after(start, 'DONE: s1 | works\nNEW: working | Login page tests | being written', 200).subjects).toEqual([
+    expect.objectContaining({ id: 's1', name: 'Login page', status: 'done', text: 'works' }),
+    expect.objectContaining({ id: 's2', name: 'Login page tests', status: 'working' }),
+  ])
+  const folded = after(
+    after(start, 'NEW: working | Index | built', 150),
+    'DROP: s1 | folded into index | INTO s2\nNEW: working | Login page polish | spacing',
+    200,
+  )
+  expect(folded.subjects.map(s => `${s.id} ${s.status}`)).toEqual(['s1 dropped', 's2 working', 's3 working'])
+})

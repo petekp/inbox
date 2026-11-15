@@ -1,7 +1,8 @@
-import type { Item, SessionStatus } from '../types'
+import type { Item, SessionStatus, StatusGoal } from '../types'
 import { HELD_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
+import { namedList } from './status-page-parts'
 import { milestonePath, namesOnlyMilestoneUnderWay } from './status-path'
 import type { PathLine, PathPlace, PathStep } from './status-path'
 
@@ -39,6 +40,8 @@ export type MilestoneRow = {
 export type GoalBlock = {
   /** The section's heading: `GOAL_HEADING`, or "Goal met". */
   label: string
+  /** The heading's mark, in the mark column with the label in its tone: ✓ in the done tone once the goal is met. */
+  mark: { mark: string; tone: StatusTone } | null
   text: string
   isMet: boolean
   /** The goal this one replaced, while the person has not seen it. */
@@ -50,6 +53,11 @@ export type GoalBlock = {
   now: string | null
   /** The line drawn in place of the milestones until the Status call writes them for this goal. */
   awaiting: string | null
+  /**
+   * Once the goal is met, the line its milestones fold into, naming the done ones, as "Release pass run, PRs merged". It
+   * starts folded, and `shownMilestones` gives the milestones a look draws under it. `statusPage` fills it.
+   */
+  milestonesFold: { id: string; text: string } | null
   milestones: MilestoneRow[]
 }
 
@@ -65,6 +73,37 @@ const AWAITING_TEXT = 'Milestones after the next reply'
 export const GOAL_HEADING = 'Goal'
 /** The dim line under the goal's heading while no goal is set. */
 export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
+/** What starts the id of the fold a met goal's milestones start in, apart from row and milestone ids. */
+const MILESTONES_FOLD_PREFIX = 'goal-milestones'
+
+export const isMilestonesFold = (id: string) => id.startsWith(`${MILESTONES_FOLD_PREFIX}-`)
+
+const MET_LABEL = 'Goal met'
+
+/** The milestones a look draws: none while the met goal's milestones fold is shut. */
+export function shownMilestones(g: GoalBlock | null, isUnfolded: (id: string) => boolean): MilestoneRow[] {
+  if (g === null) return []
+
+  return g.milestonesFold !== null && !isUnfolded(g.milestonesFold.id) ? [] : g.milestones
+}
+
+/**
+ * The line a met goal's milestones fold into, naming them, or null while one is not done or `isWorkClosed` says work
+ * under it is open or running. So the fold never hides an ask, running work or a milestone dropped since the last look.
+ * Its id names the goal and when it was met, so a fold opened for one goal starts shut for the next.
+ */
+export function metMilestonesFold(
+  g: StatusGoal,
+  milestones: readonly MilestoneRow[],
+  isWorkClosed: (m: MilestoneRow) => boolean,
+): GoalBlock['milestonesFold'] {
+  const isFolded =
+    g.metAt !== null && milestones.length > 0 && milestones.every(m => m.place === 'done' && isWorkClosed(m))
+
+  return isFolded
+    ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map(m => m.name)) }
+    : null
+}
 
 /** The oldest open ask linked to `id`, a subject or a milestone. */
 export function oldestAsk(
@@ -126,16 +165,20 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[], now: n
   const head = o.head
   const nowText = head ? head.description || head.title : null
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept)
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map(step => milestoneRow(step, o, items))
 
   return {
     goal: {
-      label: isMet ? 'Goal met' : GOAL_HEADING,
+      label: isMet ? MET_LABEL : GOAL_HEADING,
+      mark: isMet ? SUBJECT_MARKS.done : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
-      now: nowText !== null && !isNowSaid ? `Now: ${nowText}` : null,
+      // A met goal's head draws in its own section, since the work no longer serves the goal.
+      now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : milestonePath(shown, now).map(step => milestoneRow(step, o, items)),
+      milestonesFold: null,
+      milestones,
     },
     canRestoreGoal: false,
   }

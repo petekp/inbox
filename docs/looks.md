@@ -23,7 +23,9 @@ Change a rule in its owner. Do not change it in a reader.
 
 - [Tabs, lists, banners and the footer](looks/owners-tabs-and-lists.md)
 - [Rows, presses and feedback](looks/owners-rows-and-feedback.md)
+- [Presses: their messages, status and reducer](looks/owners-presses.md)
 - [The Status page](looks/owners-status.md)
+- [The Status goal and Other work](looks/owners-status-goal.md)
 - [The Status call](looks/owners-status-call.md)
 - [The ledger, sessions and model-read texts](looks/owners-ledger-and-sessions.md)
 - [PRs](looks/owners-prs.md)
@@ -56,6 +58,7 @@ omp draws the terminal's text and handles, with its own keys and a panel it owns
 The Herdr look is a Herdr app mod that draws the session a host publishes. This table compares it with the Codex tab. The structure check reads the parts whose file names start with `differences-herdr` as this table.
 
 - [The Herdr look](looks/differences-herdr.md)
+- [The Herdr look's Status page](looks/differences-herdr-status.md)
 
 ## Adding a host
 

@@ -1,4 +1,5 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,9 +9,15 @@ import type { HookDeps, HookInput } from '../src/hook'
 import type { Run } from '../../hooks/gh'
 import { PARTS_STATUS_SYSTEM } from '../../hooks/status-prompt'
 import type { Ask } from '../../hooks/session-host'
+import type { Server } from '../src/server'
 
 export function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'inbox-codex-'))
+}
+
+export async function removeTempDir(dir: string, ...servers: Server[]): Promise<void> {
+  await Promise.all(servers.map(server => server.settled()))
+  await rm(dir, { recursive: true, force: true })
 }
 
 export function fakeRunner(answer: (args: string[]) => { code: number; stdout: string; stderr: string }) {

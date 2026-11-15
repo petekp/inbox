@@ -142,7 +142,7 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
         : isRowTab(ui.tab)
           ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch', '? help']
           : [
-              ...statusHints(screen.view.statusPage, ui.selectedId),
+              ...statusHints(screen.view.statusPage, ui.selectedId, id => ui.statusUnfolded.includes(id)),
               ...(isPageScrolling ? ['↑↓ scroll'] : []),
               'tab switch',
               '? help',
@@ -194,9 +194,9 @@ export function scrolled(body: string[], selectedAt: number[], room: number, s: 
 }
 
 /** The Status's key hints: j and k while a target has buttons, and ←→ while the selected one has more than one. */
-function statusHints(page: StatusPage, selectedId: string | null): string[] {
-  if (statusKeyRows(page).length === 0) return []
-  const isPicking = (statusSelected(page, selectedId)?.keys.length ?? 0) > 1
+function statusHints(page: StatusPage, selectedId: string | null, isUnfolded: (id: string) => boolean): string[] {
+  if (statusKeyRows(page, isUnfolded).length === 0) return []
+  const isPicking = (statusSelected(page, selectedId, isUnfolded)?.keys.length ?? 0) > 1
 
   return ['j k select', ...(isPicking ? ['←→ pick'] : []), '↵ press']
 }

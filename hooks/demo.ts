@@ -608,6 +608,7 @@ export function demoView(now: number, agent: string): DemoCopy {
         text: 'Address',
         at: now - 2 * MIN,
         turnsStarted: 14,
+        repliedAt: now - 1 * MIN,
       },
     },
     notes: {},

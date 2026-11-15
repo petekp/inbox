@@ -22,7 +22,7 @@ import type { Paint, Theme } from './paint-theme'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
 /** The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space. */
-const padOf = (b: Block): number => (b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0)
+export const padOf = (b: Block): number => (b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0)
 
 const depthOf = (b: Block): number => ('depth' in b ? b.depth : 0)
 
@@ -67,13 +67,13 @@ function aboveOf(prev: Block | null, b: Block, section: number | null): number {
 export const panelId = (id: string): string => `panel ${id}`
 
 /** The key a row's title is measured under. */
-export const titleId = (id: string): string => `title ${id}`
+const titleId = (id: string): string => `title ${id}`
 
 /** The key a row's lines under its title, with its panel, are measured under. */
 export const restId = (id: string): string => `rest ${id}`
 
 /** A drawn block and the space above it. */
-export type Space = { block: Block; above: number }
+type Space = { block: Block; above: number }
 
 /**
  * Each drawn block with the space above it, from the last block above it that is not shut. A gap block draws nothing

@@ -311,8 +311,10 @@ export function paneStatus(
       statusMarkAt,
       statusNameLine,
       statusPageText,
+      statusTextWidth,
       desktopBlockWidth,
       markGlyph,
+      markWidth,
       keyRow,
       terminalKeyCells,
       desktopFrame,
@@ -458,7 +460,7 @@ export function paneStatus(
         tops: new Map(),
       }
     }
-    const head = page.goal === null && page.head ? [statusHead(page.head)] : []
+    const head = page.isHeadApart && page.head ? [statusHead(page.head)] : []
     const rows = page.rows.length > 0 ? statusRows(page.rows) : []
     const shown = [goalSection(page), head, rows]
       .filter(lines => lines.length > 0)
@@ -466,14 +468,15 @@ export function paneStatus(
     // A hairline between two desktop sections sits a margin under the one above.
     const sectionGap = look === 'desktop' ? DESKTOP_HAIR_LINES + desktopSpaceLines(1) : terminalSectionGap
     // The goal's section and the list after it draw no hairline between them: Other work's own rule sets that list
-    // apart while the goal shows milestones, and nothing does while it shows none.
+    // apart while the goal shows milestones, and nothing does while it shows none. A met goal's head sits between them,
+    // after a hairline, as it does with no goal.
     const isUnruledAfterGoal = page.goal !== null && rows.length > 0
 
     return {
       el: sections(
         shown.map(p => p.el),
         1,
-        isUnruledAfterGoal ? [1] : [],
+        isUnruledAfterGoal ? [shown.length - 1] : [],
       ),
       tops: new Map(stacked(shown, sectionGap).tops),
     }

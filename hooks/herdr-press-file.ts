@@ -2,6 +2,7 @@ import { HERDR_FORMAT } from './herdr'
 import type { PrPress } from './pr-press'
 import type { RowPress } from './presses'
 import type { ReportedLook } from './status-children'
+import { listInputOf } from './timing'
 import type { Holds } from './timing'
 
 /** A press the Herdr look made, with the look's holds, which `press()` needs to tell a stale press. */
@@ -108,6 +109,7 @@ const isTime = (x: unknown): x is number => typeof x === 'number' && Number.isFi
 function lookProblem(look: unknown): string | null {
   if (!isRecord(look) || !isTime(look.startedAt) || !isTime(look.endedAt)) return 'look without its times'
   if (look.endedAt < look.startedAt) return 'look ends before it starts'
+  if (!isTime(look.drawnWrittenAt)) return 'look without when its Status was written'
 
   return isTimes(look.shown) ? null : 'look without shown rows'
 }
@@ -142,5 +144,5 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
   if (reason) return { ok: false, reason }
   const read = file as PressFile
 
-  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } }
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: listInputOf(read.holds.listInput) } } }
 }

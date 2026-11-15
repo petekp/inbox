@@ -107,6 +107,21 @@
   padding: 0 14px 0 var(--mark-x);
   color: var(--muted);
 }
+/* A met goal hangs its ✓ in the mark column, centred as a row's mark is, so its title starts at the text column. */
+.status-page .goal-heading .goal-mark {
+  flex-shrink: 0;
+  align-self: center;
+  width: calc(var(--text-x) - var(--mark-x) - 8px);
+  padding-right: 0;
+}
+.status-page .status-head.goal.marked {
+  padding-left: var(--text-x);
+}
+/* The line a met goal's milestones fold into, at the text column under its text. */
+.status-page .milestones-fold {
+  margin-top: 6px;
+  padding: 0 14px 0 var(--text-x);
+}
 .status-page .goal-heading .goal-rule {
   flex: 1 0 32px;
   border-top: 1px solid var(--soft);

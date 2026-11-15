@@ -61,7 +61,7 @@ import {
 } from './children'
 import { CATCH_UP_CALL, runUpdates } from './session-host'
 import { heardCall } from './call-record'
-import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue } from './host-prs'
+import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue, PR_POLL_MS } from './host-prs'
 import { tabPrs } from './pr-fetch'
 import type { FetchAsk } from './pr-fetch'
 import { prSharedStore } from './mod-pr-shared'
@@ -136,7 +136,7 @@ import {
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
-  compareEndsAt,
+  timedChangeAt,
   SETTLED_MS,
   keptDiscards,
   nextFoldAt,
@@ -243,7 +243,6 @@ import {
   type ModSession,
   NO_SESSION,
   type Owner,
-  PR_POLL_MS,
   PRESENT,
   resultsOrder,
   type SavedRecord,
@@ -906,16 +905,16 @@ async function openAfterClose(
   return { isMoved: true, undoBlock: move.undoBlock }
 }
 
-/** Redraws when the soonest Compare press reaches its limit, then waits for the next one. */
-async function redrawAtCompareEnd($: EngineInterface) {
+/** Redraws when the next press that changes with the clock alone changes, then waits for the next one. */
+async function redrawAtTimedChange($: EngineInterface) {
   const { lastActions, now } = await drawnState($)
-  const at = compareEndsAt(lastActions, now)
-  if (at === null || (paneState.compareRedrawAt !== null && paneState.compareRedrawAt <= at)) return
-  paneState.compareRedrawAt = at
+  const at = timedChangeAt(lastActions, now)
+  if (at === null || (paneState.timedRedrawAt !== null && paneState.timedRedrawAt <= at)) return
+  paneState.timedRedrawAt = at
   later($, at - now, async () => {
-    paneState.compareRedrawAt = null
+    paneState.timedRedrawAt = null
     await redraw($)
-    await redrawAtCompareEnd($)
+    await redrawAtTimedChange($)
   })
 }
 
@@ -929,7 +928,7 @@ async function redrawAfterReload($: EngineInterface) {
   const latest = Math.max(...times)
   if (times.length > 0 && latest + SETTLED_MS > now) later($, latest + SETTLED_MS - now, () => redraw($))
   await redraw($)
-  await redrawAtCompareEnd($)
+  await redrawAtTimedChange($)
 }
 
 /** The Status call after a catch-up, over the whole transcript. */
@@ -1773,7 +1772,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const canRevealUndo = undoKey !== null && undoRevision === paneState.undoScrollRevision
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
-  if (!isPrPress(p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
+  if (!isPrPress(p) && p.action === 'compare') void redrawAtTimedChange($).catch(() => undefined)
   if (!isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
   // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
@@ -2065,7 +2064,7 @@ async function initializeInbox($: EngineInterface) {
   await Promise.all([upgradeState($), readVersion($)])
   mod.isOn = true
   mod.toolsRefused = false
-  paneState.compareRedrawAt = null
+  paneState.timedRedrawAt = null
   const refused = () => {
     mod.toolsRefused = true
   }
@@ -2195,7 +2194,7 @@ async function applyConversation(
   // The pane now shows another conversation, so it starts a new showing.
   await syncShown($, { since: loadedAt })
   const turns = await $.session.turns().catch(() => null)
-  const cutOff = (s: Session) => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt))
+  const cutOff = (s: Session) => statusChanged(cutOffTurn(cutOffUpdate(s), loadedAt), o => childrenCutOff(o, loadedAt))
   // Before notePlace's save, so this conversation is never saved with the previous one's tool fields.
   await replaceDrawn($, s => withLoadedToolFields(cutOff(s), by, saved?.session, parent, turns))
   if (revision !== sessionState.loadRevision) return
@@ -2658,6 +2657,7 @@ export const register: Register = on => {
         : withSubagents
       return place ? place(withDelegates) : withDelegates
     })
+    void redrawAtTimedChange($).catch(() => undefined)
     if (e.reason === 'error' && !sessionState.hasStopFromError) await setStopFromLastReply($)
     void wakeAfterSettle($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
@@ -3151,8 +3151,9 @@ export const register: Register = on => {
     const top = isListShown ? firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions)) : null
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
-    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
-    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
+    const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
+    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded) : null
+    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage, isStatusUnfolded) : []
 
     const {
       desktopColumnPt,

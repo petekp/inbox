@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { rm } from 'node:fs/promises'
 import { test } from 'node:test'
 import { Window } from 'happy-dom'
 import { PRESS_GUARD_MS } from '../../hooks/timing'
@@ -7,7 +6,7 @@ import { updateState } from '../src/state'
 import { makeServer } from '../src/server'
 import { POLL_MS } from '../src/settle'
 import TAB_HTML from '../src/tab.html'
-import { fakeRunner, tempDir } from './helpers'
+import { fakeRunner, removeTempDir, tempDir } from './helpers'
 import { task } from './row-actions-fixtures'
 
 test('the built tab closes the reply field of a row it collapses and keeps the draft, and two quick collapses stay collapsed whatever order the answers arrive in', async () => {
@@ -109,6 +108,6 @@ test('the built tab closes the reply field of a row it collapses and keeps the d
     assert.ok(openRow() === null, 'a row opened after the next poll')
   } finally {
     await host.happyDOM.close()
-    await rm(dir, { recursive: true, force: true })
+    await removeTempDir(dir, handle)
   }
 })

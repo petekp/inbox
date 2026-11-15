@@ -135,6 +135,7 @@ export function applyOps(
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
     goalRefused: null,
   }
+  const closedHere = new Set<string>()
   const find = (ref: string) => {
     const key = nameKey(clipWords(ref, NAME_KEPT))
 
@@ -143,7 +144,8 @@ export function applyOps(
   /**
    * The subject that closed since the person last looked whose name `name` repeats, the latest first: the same key
    * words, or every word of a name of two words or more, as "Retry button bug" repeats "Retry button". A NEW for it
-   * reopens it, so the page shows one row for the piece, not one for each time it finished.
+   * reopens it, so the page shows one row for the piece, not one for each time it finished. A subject this answer
+   * closed is not reopened by it, so a DONE and a NEW for follow-up work stay two rows.
    */
   const closedUnseen = (name: string) => {
     const said = words(clipWords(name, NAME_KEPT))
@@ -152,7 +154,7 @@ export function applyOps(
       return nameKey(s.name) === nameKey([...said].join(' ')) || (own.length >= 2 && own.every(w => said.has(w)))
     }
 
-    return o.subjects.findLast(s => !isOpen(s) && !isSubjectSeen(o, s) && repeats(s)) ?? null
+    return o.subjects.findLast(s => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && repeats(s)) ?? null
   }
   /** A was line and a merged line stay until the person has seen them. The page shows them only on rows that changed since the last look. */
   const forgetSeenWas = (s: Subject) => {
@@ -249,6 +251,7 @@ export function applyOps(
         forgetSeenWas(s)
         s.closedAt = now
         s.changedAt = now
+        closedHere.add(s.id)
       } else if (op.kind === 'drop') {
         const target = op.into ? find(op.into) : null
         unfold(s)
@@ -257,6 +260,7 @@ export function applyOps(
         s.closedAt = now
         s.into = target && target.id !== s.id ? target.id : null
         s.changedAt = now
+        closedHere.add(s.id)
         if (target && s.into) {
           forgetSeenWas(target)
           target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name

@@ -30,7 +30,7 @@ import {
 import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
 
 export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
-  const row = lastPressOf(presses, threadRowId(pr.ref, t.id))
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt)
   const on = { ref: pr.ref, thread: t.id }
 
   return withOut(row, [
@@ -73,7 +73,7 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
  * while another row of its run has a re-run out, since that re-run covers this row too.
  */
 export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
-  const row = lastPressOf(presses, prCheckId(pr, c))
+  const row = lastPressOf(presses, prCheckId(pr, c), pr.fetchedAt)
   const on = { ref: pr.ref, check: checkKey(c) }
   const isCancelled = c.bucket === 'cancelled'
   const isRunRerunOut = sameRunChecks(pr, c).some(o => lastPressOf(presses, prCheckId(pr, o)).out === 'check-rerun')
@@ -124,7 +124,7 @@ export function prBlockActions(
   branchRef: string | null,
   presses: PressState,
 ): PrAction[] {
-  const row = lastPressOf(presses, prMarkId(pr.ref))
+  const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt)
   const { status } = readiness(pr, isThreadSent)
   const waitingOn = threadsOnYou(pr, isThreadSent).length
   const moves: Omit<PlannedPrAction, 'emphasis'>[] = [

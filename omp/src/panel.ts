@@ -217,7 +217,9 @@ export function drawPanel(
   const body: string[] = []
   let selectedAt = [0, 0]
   const pageSelected =
-    isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
+    isRowTab(ui.tab) || ui.typing !== null
+      ? null
+      : statusSelected(screen.view.statusPage, ui.selectedId, id => ui.statusUnfolded.includes(id))
   let pageSelectedAt: number[] | null = null
   /** The line each subject a Status row stands for starts on. */
   const subjectAt: [string, number][] = []

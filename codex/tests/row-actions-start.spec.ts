@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { rm } from 'node:fs/promises'
 import { test } from 'node:test'
 import { Window } from 'happy-dom'
 import { handleHook } from '../src/hook'
@@ -7,7 +6,7 @@ import { readState, updateState } from '../src/state'
 import { makeServer } from '../src/server'
 import { POLL_MS } from '../src/settle'
 import TAB_HTML from '../src/tab.html'
-import { fakeRunner, hookDeps, input, rolloutCopy, tempDir } from './helpers'
+import { fakeRunner, hookDeps, input, removeTempDir, rolloutCopy, tempDir } from './helpers'
 import { task } from './row-actions-fixtures'
 
 test('the built tab starts without randomUUID and reloads without losing its host or reusing numeric request IDs', async () => {
@@ -156,7 +155,7 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     await until(() => !(document.getElementById('app')?.textContent?.includes('Sending…') ?? false))
   } finally {
     await host.happyDOM.close()
-    await rm(dir, { recursive: true, force: true })
+    await removeTempDir(dir, handle)
   }
 })
 
@@ -249,6 +248,6 @@ test('the built tab keeps polling after a view it cannot draw, so a queued Expla
     assert.ok(drawErrors[0] instanceof host.TypeError)
   } finally {
     await host.happyDOM.close()
-    await rm(dir, { recursive: true, force: true })
+    await removeTempDir(dir, handle)
   }
 })

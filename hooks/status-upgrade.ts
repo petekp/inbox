@@ -150,6 +150,16 @@ function missedOf(saved: unknown, ids: ReadonlySet<string>): Record<string, numb
   return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time(at) !== null)))
 }
 
+/**
+ * When the newest of `children` ended, or null when none has. A Status saved before `lastCallReadAt` existed counts
+ * the finishes it holds as read, so the first call after the upgrade lists none of them.
+ */
+function newestEnd(children: Child[]): number | null {
+  const ends = children.flatMap(c => (c.endedAt === null ? [] : [c.endedAt]))
+
+  return ends.length === 0 ? null : Math.max(...ends)
+}
+
 /** A saved Status, from this build or an earlier one, with anything wrongly shaped left out. Null for none. */
 export function upgradeStatus(saved: unknown): SessionStatus | null {
   const o = saved as Record<string, unknown> | null | undefined
@@ -180,7 +190,7 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
     lastLookAt: time(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map(s => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
-    lastCallReadAt: time(o.lastCallReadAt),
+    lastCallReadAt: 'lastCallReadAt' in o ? time(o.lastCallReadAt) : newestEnd(children),
     ...goal,
   }
 }

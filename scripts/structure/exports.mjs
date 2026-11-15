@@ -46,6 +46,21 @@ function bindingNames(name) {
   return name.elements.flatMap(element => (ts.isOmittedExpression(element) ? [] : bindingNames(element.name)))
 }
 
+/**
+ * The names an `import()` takes: those it destructures when it reads `const { a, b } = await import(...)`, and every
+ * name otherwise, since the module's object may be used whole.
+ */
+function dynamicImportNames(call) {
+  const awaited = call.parent
+  const declaration = awaited && ts.isAwaitExpression(awaited) ? awaited.parent : null
+  const pattern = declaration && ts.isVariableDeclaration(declaration) ? declaration.name : null
+  if (!pattern || !ts.isObjectBindingPattern(pattern) || pattern.elements.some(e => e.dotDotDotToken)) return ['*']
+
+  const names = pattern.elements.map(e => nameOf(e.propertyName ?? e.name))
+
+  return names.includes(null) ? ['*'] : names
+}
+
 /** The names a file exports itself, and each module it takes names from: `'*'` for every name. */
 function scan(source) {
   const exported = []
@@ -88,7 +103,7 @@ function scan(source) {
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
         (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
     ) {
-      use(node.arguments[0], ['*'])
+      use(node.arguments[0], node.expression.kind === ts.SyntaxKind.ImportKeyword ? dynamicImportNames(node) : ['*'])
     } else if (ts.isJsxAttribute(node) && nameOf(node.name) === 'module' && node.initializer) {
       use(node.initializer, ['default'])
     }

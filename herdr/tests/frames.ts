@@ -11,15 +11,15 @@ const { Heights } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE } = await import('../src/paint-theme')
 
-export const FRAME_MS = 16
+const FRAME_MS = 16
 const PANE_WIDTH = 300
 const WRAP_AT = 40
 
 type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
-export type Jump = { at: number; id: string; by: number }
-export type TitleForm = { at: number; id: string; isCut: boolean; box: number; isBoxResting: boolean }
-export type ColumnGap = { at: number; id: string; x: number; y: number }
+type Jump = { at: number; id: string; by: number }
+type TitleForm = { at: number; id: string; isCut: boolean; box: number; isBoxResting: boolean }
+type ColumnGap = { at: number; id: string; x: number; y: number }
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
 
 const linesOf = (n: Painted): number =>
@@ -136,7 +136,7 @@ class Springs {
   }
 }
 
-export class Frames {
+class Frames {
   private tracks = NO_TRACKS
   private heights = new Heights()
   private linesAbove = NO_LINES_ABOVE

@@ -22,7 +22,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-prs.tsx` | Codex adapter. The PRs tab: PR blocks, their keys, the order lines, and settled PRs. |
 | `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR block, PR row, PR group, press line and the tab's own buttons on the PRs tab, through the row states. |
 | `codex/src/tab-pr-lines.ts` | Codex adapter. The press status under a PR block's buttons and under the order's changed line. |
-| `codex/src/tab-status.tsx` | Codex adapter. The Status tab: its rows, the goal and its milestones, the goal's text field, and the fitting of merged lines to the width. |
+| `codex/src/tab-status.tsx` | Codex adapter. The Status tab: the goal and its milestones, a met goal's folded milestones, and the goal's text field. |
+| `codex/src/tab-status-line.tsx` | Codex adapter. A Status row with its keys and presses, the done folds' toggle, and the fitting of merged lines to the width. |
 | `codex/src/tab-shown.ts` | Codex adapter. The Status subject rows the tab had on screen since its last view request, which the request sends. |
 | `codex/src/tab-status-name.tsx` | Codex adapter. A Status row's name line, cut so that it and its stall word fit the lines it may take. |
 | `codex/src/tab-chrome.tsx` | Codex adapter. The tab bar, the footer's status, Help, and the demo toggle. |
@@ -39,7 +40,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/data-dir.ts` | Codex host. The data folder and the dev build, which the loader reads. It imports no shared module, so a shared-module change leaves the loader's bundle unchanged. |
 | `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `types/index.d.ts`. |
 | `codex/src/host.ts` | Codex host. `codexStore`, the Codex store that `hooks/session-host.ts` runs on. |
-| `codex/src/server.ts` | Codex host. The MCP server: `makeServer`, which takes `ServerDeps` and answers each JSON-RPC call. |
+| `codex/src/server.ts` | Codex host. The MCP server: `makeServer`, which takes `ServerDeps` and answers each JSON-RPC call. Its `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. |
+| `codex/src/background.ts` | Codex host. `makeBackground`, which tracks the work the server starts and does not wait for, such as a PR fetch's state update, so `settled` can wait for it. |
 | `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, the tool fields of the last list it gave, and the readers of a call's session, turn and arguments. |
 | `codex/src/server-herdr.ts` | Codex host. `followCodexPresses`: in a Herdr app terminal, the MCP server watches the presses folder and applies the presses for the Codex sessions this terminal publishes. |
 | `codex/src/server-host.ts` | Codex host. The bindings `hooks/session-host.ts` runs on for presses, opening, `codex queue` and the session's background PR fetch. Also the tab view each answer carries. |

@@ -1,4 +1,5 @@
 import type { LastAction, Turns } from '../types'
+import { isPrRowId } from './presses'
 
 export function isAwaitingReply(
   last: Pick<LastAction, 'turnsStarted' | 'delivery'> | undefined,
@@ -7,6 +8,31 @@ export function isAwaitingReply(
   const pressed = last?.delivery?.state !== 'failed' ? last?.turnsStarted : undefined
 
   return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed
+}
+
+/**
+ * `lastActions` with `repliedAt` on each PR hand-off press that a turn started after it, as that turn ends at
+ * `endedAt`. The turn ended whether or not it answered, so a press whose turn was interrupted or failed stops waiting
+ * too. `repliedAt` never precedes the press.
+ */
+export function repliedAtTurnEnd(
+  lastActions: Record<string, LastAction>,
+  turns: Turns,
+  endedAt: number,
+): Record<string, LastAction> {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, last]) => {
+      const isAnswered =
+        last.kind === 'handoff' &&
+        isPrRowId(id) &&
+        last.repliedAt === undefined &&
+        last.turnsStarted !== undefined &&
+        last.turnsStarted < turns.turnsStarted &&
+        isAwaitingReply(last, turns)
+
+      return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt) } : last]
+    }),
+  )
 }
 
 export function isHandedOff(
