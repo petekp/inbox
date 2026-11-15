@@ -2,10 +2,20 @@ import type { Replay } from '../status-replay'
 import { minutes } from '../status-replay'
 import { goal, milestone, NO_FACTS, overview, subject } from './builders'
 
+const STORE_GOAL = {
+  text: 'Notes 2.5 in the store',
+  match: '2\\.5',
+  milestones: [
+    { id: 'ms-sync', name: 'Sync fixed', match: 'sync', state: 'working' as const },
+    { id: 'ms-review', name: 'Store review', match: 'store review', state: 'queued' as const },
+    { id: 'ms-notes', name: 'Release notes', match: 'release notes', state: 'queued' as const },
+  ],
+}
+
 export const milestoneDropped: Replay = {
   name: 'milestone-dropped',
   about:
-    'A goal with three milestones. In one message the person cuts one, whose work must be linked again, and splits a subject that was folded into another back out.',
+    'A goal with three milestones. In one message the person cuts one, whose work must be linked again, and splits a subject that was folded into another back out. Dropping the cut milestone and a new web-beta goal that keeps the other two are both right.',
   hasLedgerCalls: false,
   start: {
     ledger: {
@@ -35,15 +45,7 @@ export const milestoneDropped: Replay = {
       ...NO_FACTS,
       focus: 'the notes 2.5 release',
       focusMatch: '2\\.5',
-      goal: {
-        text: 'Notes 2.5 in the store',
-        match: '2\\.5',
-        milestones: [
-          { id: 'ms-sync', name: 'Sync fixed', match: 'sync', state: 'working' },
-          { id: 'ms-review', name: 'Store review', match: 'store review', state: 'queued' },
-          { id: 'ms-notes', name: 'Release notes', match: 'release notes', state: 'queued' },
-        ],
-      },
+      goal: STORE_GOAL,
       pieces: [
         {
           id: 'sync',
@@ -103,6 +105,18 @@ export const milestoneDropped: Replay = {
           '2.5 now ships as a web beta. Store screenshots and review notes wait for the store release. Tag colors are their own piece again, with a setting of their own. Nothing is built for it yet.',
       },
       facts: {
+        goal: {
+          ...STORE_GOAL,
+          or: {
+            text: 'Notes 2.5 out as a web beta',
+            match: 'web|beta|browser',
+            milestones: [
+              STORE_GOAL.milestones[0]!,
+              { ...STORE_GOAL.milestones[1]!, state: 'dropped' },
+              STORE_GOAL.milestones[2]!,
+            ],
+          },
+        },
         milestones: [{ id: 'ms-review', state: 'dropped' }],
         pieces: [
           { id: 'screenshots', stands: 'waits for the store release', serves: 'none' },
@@ -111,7 +125,6 @@ export const milestoneDropped: Replay = {
         ],
       },
       targets: ['serves-linked', 'milestones-true', 'open-pieces-kept'],
-      until: { 'milestones-true': 'the follow-up on a new goal written in place of a DROP' },
     },
   ],
 }

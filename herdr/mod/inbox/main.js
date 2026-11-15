@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T18:00:49.617Z. 234931 characters follow.
+// Built at 2026-11-15T18:38:18.499Z. 235079 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -425,7 +425,8 @@ function goalRefusedOf(saved) {
   const r = saved;
   const line = REFUSAL_LINES.find((x) => x === r?.line);
   const why = REFUSAL_WHYS.find((x) => x === r?.why);
-  return line && why ? { line, why } : null;
+  const unplaced = Array.isArray(r?.unplaced) ? r.unplaced.filter((id) => typeof id === "string") : [];
+  return line && why ? { line, why, ...unplaced.length > 0 ? { unplaced } : {} } : null;
 }
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;

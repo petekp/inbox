@@ -320,7 +320,8 @@ function goalRefusedOf(saved) {
   const r = saved;
   const line = REFUSAL_LINES.find((x) => x === r?.line);
   const why = REFUSAL_WHYS.find((x) => x === r?.why);
-  return line && why ? { line, why } : null;
+  const unplaced = Array.isArray(r?.unplaced) ? r.unplaced.filter((id) => typeof id === "string") : [];
+  return line && why ? { line, why, ...unplaced.length > 0 ? { unplaced } : {} } : null;
 }
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
