@@ -113,7 +113,7 @@ test('a milestone under Later shows only the work that cannot fold, and counts t
     n => `NEW: working | Task ${n} | going\nSERVES: s${n.charCodeAt(0) - 93} | m2`,
   )
   const busy = after(planned(), tasks.join('\n'), 40)
-  const later = after(busy, ['x', 'y', 'z'].map(n => `NEW: working | Later ${n} | going`).join('\n'), 50)
+  const later = after(busy, ['x', 'y', 'z'].map(n => `NEW: queued | Later ${n} | not started`).join('\n'), 50)
   const linked = after(later, 'SERVES: s9 | m4\nSERVES: s10 | m4\nSERVES: s11 | m4', 60)
   const errors = page({ ...linked, lastLookAt: 70 }, 80).goal?.milestones.find(m => m.name === 'Errors explained')
 
