@@ -192,7 +192,8 @@ export default class Inbox extends View {
     const own = panes().find(p => p.pane === props()?.pane)
     this.tab ??= own?.tab ?? focused()?.tab ?? null
     if (this.tab === null) return
-    this.followed = follow({ focused: focused(), panes: panes(), terminals: terminals() }, this.tab, this.last)
+    const terminalRecords = terminals().map(({ address, labels, program }) => ({ address, labels, program }))
+    this.followed = follow({ focused: focused(), panes: panes(), terminals: terminalRecords }, this.tab, this.last)
     if (this.followed.is !== 'no-terminal') this.last = this.followed.terminal
     const sessionId = this.followed.is === 'session' ? this.followed.sessionId : null
     if (sessionId === this.sessionId) return
