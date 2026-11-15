@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 
-import { PR_POLL_MS } from '../../hooks/host-prs'
+import { prFetchTracker } from '../../hooks/host-prs'
+import { emptySession } from '../../hooks/session-files'
 import { COMPARE_LIMIT_MS, NO_HOLDS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/timing'
 import { createPanel } from '../src/controller'
 import type { PanelSource } from '../src/controller'
@@ -228,13 +229,36 @@ test('a Compare press with no report redraws the panel at its limit, reading No 
   expect(limit[0]!.stopped).toBe(true)
 })
 
-test('the panel asks whether the PRs are due as often as the mod does, until it is disposed', async () => {
-  const { panel, timers, calls } = open()
+test('while the PRs tab is hidden, the panel fetches the PRs 10 to 10.5 minutes apart though each fetch takes 3 seconds, until it is disposed', async () => {
+  let elapsed = 0
+  const now = () => 1_700_000_000_000 + elapsed
+  const prFetches = prFetchTracker(now)
+  const startedAt: number[] = []
+  const running: { endsAt: number; end: () => void }[] = []
+  const { panel, timers, advance } = open({
+    fetchPrsWhenDue: isTabShown =>
+      void prFetches.fetchWhenDue('session', emptySession(), isTabShown, () => {
+        startedAt.push(now())
+        return new Promise<void>(end => running.push({ endsAt: now() + 3000, end }))
+      }),
+  })
   await panel.start()
-  const check = live(timers, PR_POLL_MS)
-  expect(check).toHaveLength(1)
-  check[0]!.fn()
-  expect(calls.fetches).toBe(1)
+  for (let second = 1; second <= 40 * 60; second++) {
+    elapsed += 1000
+    advance(1000)
+    for (const fetch of running.filter(f => f.endsAt <= now())) {
+      running.splice(running.indexOf(fetch), 1)
+      fetch.end()
+    }
+    await flush()
+    for (const timer of timers.filter(t => !t.stopped && elapsed % t.ms === 0)) timer.fn()
+  }
+  const gaps = startedAt.slice(1).map((at, n) => at - startedAt[n]!)
+  expect(gaps.length).toBeGreaterThanOrEqual(3)
+  for (const gap of gaps) {
+    expect(gap).toBeGreaterThanOrEqual(10 * 60_000)
+    expect(gap).toBeLessThanOrEqual(10.5 * 60_000)
+  }
   panel.dispose()
   expect(timers.every(t => t.stopped)).toBe(true)
 })

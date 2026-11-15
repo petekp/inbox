@@ -1,4 +1,12 @@
-import { splitLinked, fetchTracked, GH_TIMED_OUT_TEXT, isLimitInForce, NO_PR_SHARED, PR_SHARED_MS } from './pr-fetch'
+import {
+  splitLinked,
+  fetchTracked,
+  GH_TIMED_OUT_TEXT,
+  isLimitInForce,
+  NO_PR_SHARED,
+  PR_SHARED_MS,
+  tabPrs,
+} from './pr-fetch'
 import { TIMED_OUT_CODE } from './gh'
 import { rerunArgs } from './pr-press'
 import type { Effect } from './press-reducer'
@@ -15,17 +23,37 @@ export const PR_POLL_MS = 15_000
 
 /**
  * True when the PRs are due for a fetch: none was fetched yet, the last is old, or, once `NEW_PR_FETCH_MS` has passed
- * since the last, a new tracked PR waits for its first or the agent replied since, as after a push that fixed a PR.
- * The last is old after `PRS_REFRESH_MS` while the PRs tab is shown, and after `PRS_HIDDEN_REFRESH_MS` while it is
- * not, since every session spends from one GitHub budget and a hidden tab's PRs only feed the counts.
+ * since the last, a new tracked PR waits for its first read or the agent replied since, as after a push that fixed a
+ * PR. A PR GitHub could not read is not new, and no PR is while the mod's `isGhMissing` is set or the last fetch read
+ * none, so those wait for the PRs to be old. The last is old after `PRS_REFRESH_MS` while the PRs tab is shown, and after
+ * `PRS_HIDDEN_REFRESH_MS` while it is not, since every session spends from one GitHub budget and a hidden tab's PRs
+ * only feed the counts.
  */
 export function isPrFetchDue(s: Session, lastFetchedAt: number | undefined, now: number, isTabShown: boolean): boolean {
   if (lastFetchedAt === undefined) return true
-  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some(ref => !(ref in s.prViews.views))
+  const { views, unread = {}, failure, isGhMissing } = s.prViews
+  const canReadNewPr = !isGhMissing && !failure
+  const hasNewPr =
+    canReadNewPr && splitLinked(s.prViews, s.ledger).tracked.some(ref => !(ref in views) && !(ref in unread))
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt
   const refreshMs = isTabShown ? PRS_REFRESH_MS : PRS_HIDDEN_REFRESH_MS
 
   return now - lastFetchedAt >= refreshMs || ((hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS)
+}
+
+/**
+ * Whether the mod's poll tick fetches: the person is around, the session tracks a PR or shows its PRs tab, no fetch
+ * runs or waits, as `prViews.isFetching` says, and `isPrFetchDue` says the PRs are due. A fetch queued behind a running
+ * one would read the PRs again as soon as that one ends.
+ */
+export function isPrPollDue(
+  s: Session,
+  poll: { lastFetchedAt: number | undefined; now: number; isTabShown: boolean; isAway: boolean },
+): boolean {
+  const hasNothingToRead = !poll.isTabShown && tabPrs(s.ledger).length === 0 && s.prViews.branchRef === null
+  if (poll.isAway || hasNothingToRead || s.prViews.isFetching) return false
+
+  return isPrFetchDue(s, poll.lastFetchedAt, poll.now, poll.isTabShown)
 }
 
 /** Which sessions have a PR fetch running, and when each last ended. */

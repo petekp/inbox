@@ -61,7 +61,7 @@ import {
 } from './children'
 import { CATCH_UP_CALL, runUpdates } from './session-host'
 import { heardCall } from './call-record'
-import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
+import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue } from './host-prs'
 import { tabPrs } from './pr-fetch'
 import type { FetchAsk } from './pr-fetch'
 import { prSharedStore } from './mod-pr-shared'
@@ -1681,10 +1681,8 @@ async function pollPrs($: EngineInterface) {
     isPrsTabShown($),
     $.clock.now(),
   ])
-  const { ledger, prViews } = session
-  if (away.isAway || (!isTabShown && tabPrs(ledger).length === 0 && prViews.branchRef === null)) return
-  if (!isPrFetchDue(session, mod.prFetchEndedAt, now, isTabShown)) return
-  await fetchPrs($, isTabShown)
+  const poll = { lastFetchedAt: mod.prFetchEndedAt, now, isTabShown, isAway: away.isAway }
+  if (isPrPollDue(session, poll)) await fetchPrs($, isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */

@@ -6802,7 +6802,9 @@ var PR_POLL_MS = 15000;
 function isPrFetchDue(s, lastFetchedAt, now, isTabShown) {
   if (lastFetchedAt === undefined)
     return true;
-  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some((ref) => !(ref in s.prViews.views));
+  const { views, unread = {}, failure, isGhMissing } = s.prViews;
+  const canReadNewPr = !isGhMissing && !failure;
+  const hasNewPr = canReadNewPr && splitLinked(s.prViews, s.ledger).tracked.some((ref) => !(ref in views) && !(ref in unread));
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
   const refreshMs = isTabShown ? PRS_REFRESH_MS : PRS_HIDDEN_REFRESH_MS;
   return now - lastFetchedAt >= refreshMs || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;

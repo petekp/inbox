@@ -368,6 +368,22 @@ test('PRs are due for a fetch 15 seconds after the last once the agent replied s
   expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_000_000 + PRS_HIDDEN_REFRESH_MS, false)).toBe(true)
 })
 
+test('a tracked PR no fetch has read is due 15 seconds after the last fetch, unless GitHub could not read it, gh is missing, or the last fetch read no PR, which wait the 2 minutes', () => {
+  const s = { ...emptySession(), ledger: { ...emptySession().ledger, prs: [FIX_REF] } }
+  const withViews = (prViews: Partial<typeof s.prViews>) => ({ ...s, prViews: { ...s.prViews, ...prViews } })
+  const states = [
+    withViews({ unread: { [FIX_REF]: 'Could not resolve to a PullRequest' } }),
+    withViews({ isGhMissing: true }),
+    withViews({ failure: { kind: 'limit', at: 1_000_000, resetsAt: 1_000_000 + 3_600_000 } }),
+    withViews({ failure: { kind: 'unreachable', at: 1_000_000 } }),
+  ]
+  expect(isPrFetchDue(s, 1_000_000, 1_015_000, false)).toBe(true)
+  for (const state of states) {
+    expect(isPrFetchDue(state, 1_000_000, 1_015_000, true)).toBe(false)
+    expect(isPrFetchDue(state, 1_000_000, 1_120_000, true)).toBe(true)
+  }
+})
+
 test('a fetch a press asks for while another runs starts once that one ends, and presses during one fetch share the next', async () => {
   const tracker = prFetchTracker(() => 1)
   const started: string[] = []
