@@ -215,7 +215,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     const [inHerdr, branch] = await Promise.all([
       readState(dir, id)
         .catch(() => null)
-        .then(saved => delegatesInHerdr(saved?.ledger.overview ?? null, run)),
+        .then(saved => delegatesInHerdr(saved?.ledger.overview ?? null, run, deps.herdrTarget)),
       branchIn(run, ctx.cwd),
     ])
     const endedAt = deps.now()
