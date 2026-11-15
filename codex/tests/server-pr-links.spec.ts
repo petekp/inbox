@@ -103,10 +103,10 @@ test('an order_prs call ranks the PRs it names without linking them, the next vi
   assert.deepEqual(ordered.prOrder?.refs, ['acme/app#9', 'acme/app#7'])
   const { prs } = (await viewAfterFetch(call)).result.structuredContent
   assert.deepEqual(
-    prs.drawn.map(d => [d.pr.number, d.rank]),
+    prs.drawn.map(d => [d.pr.number, d.isRanked]),
     [
-      [9, 1],
-      [7, 2],
+      [9, true],
+      [7, true],
     ],
   )
   assert.match(prs.order?.title ?? '', /^Merge in this order · set by Codex/)

@@ -18,7 +18,7 @@ import { isShownSince } from './timing'
 import { outAction, pressFeedbackIn } from './feedback'
 import type { Holds } from './timing'
 import type { RowState } from './rows'
-import type { PrFetchFailure, PrViews, Session } from '../types'
+import type { PrFetchFailure, PrViews, Session, ToolFields } from '../types'
 import { sessionView } from './session-view'
 
 export type Pressed = Exclude<Applied, { stale: true }>
@@ -120,7 +120,8 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
 
 /**
  * Applies a call of one of `agentTools` from the agent to the ledger. `result` is the tool's answer, and `personLine` the
- * line the person sees under the call, as `hooks/tools.ts:ToolAnswer` says.
+ * line the person sees under the call, as `hooks/tools.ts:ToolAnswer` says. `fields` are the input fields of the tools
+ * the agent has, as its host knows them.
  */
 export function recorded<S extends Session>(
   host: Host,
@@ -128,9 +129,10 @@ export function recorded<S extends Session>(
   tool: AgentTool,
   args: Record<string, unknown>,
   now: number,
+  fields: ToolFields,
 ): { state: S } & Omit<ToolAnswer, 'ledger'> {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt }
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses)
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields)
   const ledger = withOrderStatuses(r.ledger, s.prViews.views)
   const state = linkDialogs({ ...s, ledger }, now)
   const answered = ledger.items.find(i => !state.ledger.items.some(o => o.id === i.id))
@@ -181,7 +183,8 @@ export function pruned<S extends Session>(s: S): S {
 /**
  * Merges fetched PRs into the session, and records the status of each ranked PR the order has none for. The write that
  * saves it drops, through `pruned`, each view no look draws. `isGhSignedOut` is null when no gh run answered, and the
- * saved one stands.
+ * saved one stands. `isFetching` stays as the mod set it, since the mod clears it only once it has noted when the fetch
+ * ended, and its poll counts from then.
  */
 export function withFetchedPrs<S extends Session>(
   s: S,
@@ -207,7 +210,7 @@ export function withFetchedPrs<S extends Session>(
     prViews: {
       views,
       branchRef,
-      isFetching: false,
+      isFetching: s.prViews.isFetching,
       ...(isSignedOut ? { isGhSignedOut: true } : {}),
       ...(failure ? { failure } : {}),
       ...(Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}),

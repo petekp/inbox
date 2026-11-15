@@ -17,6 +17,7 @@ import { earliestOf, hasRunningMark, NO_HOLDS } from './timing'
 import { inboxView, perTurnStatus } from './view'
 import type { UpdateRecovery } from './view'
 import { isRowTab } from './tabs'
+import { collapsedRows } from './collapse'
 import { statusPage } from './status-page'
 import type { InboxView } from './view'
 import type { StatusPage } from './status-page'
@@ -103,6 +104,7 @@ export function sessionView(
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    collapsed: collapsedRows(s),
   })
 
   return {
@@ -135,7 +137,7 @@ function prTabOf(
   s: Session,
   lastActions: Record<string, LastAction>,
   now: number,
-  { shownSince, listInput, undoShown }: Holds,
+  { shownSince, listInput, undoShown, undoOut }: Holds,
   settleWindowMs: number,
 ): PrTab {
   const pressOutSince = earliestOf(
@@ -150,6 +152,7 @@ function prTabOf(
     now,
     settleWindowMs,
     undoShown,
+    undoOut,
     pressOutSince,
   })
   const isSent = threadSentIn(lastActions)

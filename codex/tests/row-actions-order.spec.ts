@@ -11,6 +11,7 @@ import { ledgerActions, RowActions } from '../src/row-actions'
 import { recordItem } from '../../hooks/tools'
 import { CODEX } from '../src/texts'
 import { buttons, named, task } from './row-actions-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 test('the Codex renderer preserves retry, folded-option and finding action order, keeps a row’s follow-ups in one group that wraps as a unit, maps emphasis, and guards presses', async () => {
   const { row, ledger } = task()
@@ -134,6 +135,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     EMPTY,
     { kind: 'finding', finding_kind: 'issue', title: 'Missing retry limit', detail: 'The request loops.' },
     1,
+    TOOL_FIELDS,
   ).ledger
   const finding = inboxView({
     ledger: findingLedger,

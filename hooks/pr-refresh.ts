@@ -1,7 +1,7 @@
 import type { PrFetchFailure, PrViews } from '../types'
 import { pressFeedbackIn } from './feedback'
 import type { PressState } from './feedback'
-import { GH_TIMED_OUT_TEXT, splitLinked } from './pr-fetch'
+import { fetchFailureWords, GH_TIMED_OUT_TEXT, splitLinked } from './pr-fetch'
 import type { PrLinks } from './pr-fetch'
 import { lastPressOf, withOut } from './pr-press'
 import type { LastPress, PrAction } from './pr-press'
@@ -26,20 +26,6 @@ export function fetchFailureNotice(f: PrFetchFailure): string {
       return `${GH_TIMED_OUT_TEXT}. The PRs show as last read.`
     case 'error':
       return `Could not read the PRs: ${f.text}. They show as last read.`
-  }
-}
-
-/** A fetch failure in a few words, as the Refresh press's result gives it: "GitHub's limit resets at 4:46 PM". */
-function fetchFailureWords(f: PrFetchFailure): string {
-  switch (f.kind) {
-    case 'limit':
-      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`
-    case 'unreachable':
-      return 'could not reach GitHub'
-    case 'timed-out':
-      return GH_TIMED_OUT_TEXT
-    case 'error':
-      return f.text
   }
 }
 
@@ -96,7 +82,7 @@ export function refreshProblem(prs: PrReadState, links: PrLinks): string | null 
 /**
  * The line at the top of the PRs tab, under the notices, while a PR could not be read or Refresh PRs' press shows.
  * `text` names the PRs that could not be read, or is null when a notice above says the cause. `actions` holds
- * Refresh PRs while a PR could not be read. `showsPress` says whether the line draws the press's status: while the
+ * Refresh PRs while a PR could not be read or its press is out. `showsPress` says whether the line draws the press's status: while the
  * press is out, or since the tab was shown. The line is null once nothing is left to draw: no PR fails to read, and
  * the press's status has faded, or was a failure a later fetch made good.
  */
@@ -121,7 +107,7 @@ export function prRefreshView(
 
   return {
     text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
+    actions: problem === null && row.pressing === null ? [] : prRefreshActions(row),
     showsPress: isPressShown,
   }
 }

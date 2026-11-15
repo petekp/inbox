@@ -62,6 +62,8 @@ type GoalFact = {
   isDropped?: true
   /** The work has paused on it: the page may keep it, or show it met or no goal. */
   mayEnd?: true
+  /** The id of the queued milestone the plan takes up next, when the session made it clear. */
+  next?: string
 }
 
 /** An outcome with a finish line that a step makes clear, from the person's words or the work, which a goal set there should match. */
@@ -110,6 +112,8 @@ export type FactsChange = {
   goal?: GoalFact | null
   /** Milestones of the goal whose facts change: a known id updates it. */
   milestones?: (Partial<MilestoneFact> & { id: string })[]
+  /** The id of the queued milestone the plan now takes up next. */
+  next?: string
   goalClear?: GoalClear
 }
 
@@ -128,7 +132,8 @@ function goalAfter(before: Facts['goal'], change: FactsChange | undefined, chang
     return next
   })
 
-  return { ...goal, milestones, ...(replaced ? { replaced } : {}) }
+  const nextMilestone = change?.next ?? goal.next
+  return { ...goal, milestones, ...(nextMilestone ? { next: nextMilestone } : {}), ...(replaced ? { replaced } : {}) }
 }
 
 /** The facts after `change`, with `changed` naming each piece whose state, stand, parts, plan or merges changed. */
@@ -229,7 +234,8 @@ export function factsText(f: Facts): string {
         'Milestones:',
         list(
           f.goal.milestones.map(
-            m => `- ${m.name}: ${STATE_TEXT[m.state]}.${f.changed.includes(m.id) ? ' Changed at this step.' : ''}`,
+            m =>
+              `- ${m.name}: ${STATE_TEXT[m.state]}.${f.goal?.next === m.id ? ' The plan takes it up next.' : ''}${f.changed.includes(m.id) ? ' Changed at this step.' : ''}`,
           ),
         ),
       ]

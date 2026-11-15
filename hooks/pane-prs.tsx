@@ -1,6 +1,7 @@
 import type { UiPressArgument } from 'claude-code'
 import type { PrCheck, PrThread, PrView } from '../types'
 import { bannerOf } from './banners'
+import { emptyTab } from './empty-tab'
 import type { PaneAskTabs } from './pane-asks'
 import type { PaneBase, PaneHandlers, Row } from './pane-context'
 import type { PaneFrame } from './pane-frame'
@@ -10,7 +11,7 @@ import type { PaneRowKeys } from './pane-row-keys'
 import { childPos, type PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
-import { prRankText } from './pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart } from './pr-order'
 import type { PrAction, PrPress } from './pr-press'
 import {
   checkRowText,
@@ -21,7 +22,6 @@ import {
   prCheckId,
   prMarkId,
   prRefreshFailedText,
-  prsEmptyText,
   prThreadId,
   PR_REFRESH_ID,
   RANK_AGAIN_ID,
@@ -271,7 +271,6 @@ export function panePrBlocks({
 
     const titleLine = (
       <Text wrap="wrap">
-        {b.rank === null ? null : <Text color={pal.muted}>{prRankText(b.rank)}</Text>}
         <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
         <Text bold>{pr.title}</Text>
         <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>{`\u2002${statusHead}`}</Text>
@@ -349,6 +348,25 @@ export function panePrBlocks({
     </Text>
   )
   const olderPrs = () => (view.prs.olderText ? prTabLine('older-prs', mutedLine(view.prs.olderText)) : [])
+  /** The muted line above the first PR the agent's order does not rank, in that PR's section. */
+  const otherPrsLine = () =>
+    look === 'desktop' ? (
+      desktopFrame({ key: 'other-prs', padY: 0, children: mutedLine(OTHER_PRS_TEXT) })
+    ) : (
+      <Box key="other-prs" paddingLeft={1} marginBottom={blankLine}>
+        {mutedLine(OTHER_PRS_TEXT)}
+      </Box>
+    )
+  const othersStart = otherPrsStart(prGroups)
+  const prBlockIn = (g: (typeof prGroups)[number]) =>
+    g === othersStart ? (
+      <Box flexDirection="column" paddingTop={look === 'desktop' ? blankLine : 0}>
+        {otherPrsLine()}
+        {prBlock(g)}
+      </Box>
+    ) : (
+      prBlock(g)
+    )
   /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
   const prOrderLines = () => {
     const order = view.prs.order
@@ -377,22 +395,31 @@ export function panePrBlocks({
 
     return prTabLine('pr-order', lines)
   }
-  /** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
+  const refresh = view.prs.refresh
+  const isRefreshInBanner = ghNotice !== null && refresh !== null && refresh.text === null
+  const prRefreshButtons = () => (prRefreshKeys.length > 0 ? keyRow(PR_REFRESH_ID, prRefreshKeys) : null)
+  const prRefreshStatus = () => {
+    const pressed = refresh?.showsPress ? lastActionText(PR_REFRESH_ID) : null
+
+    return pressed ? (
+      <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
+        {pressed.text}
+      </Text>
+    ) : null
+  }
+  /**
+   * The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. While a
+   * notice names the cause, the notice holds Refresh PRs and its status instead.
+   */
   const prRefreshLines = () => {
-    const refresh = view.prs.refresh
     if (!refresh) return []
-    const pressed = refresh.showsPress ? lastActionText(PR_REFRESH_ID) : null
     const lines = (
       <Box flexDirection="column">
         <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
           {refresh.text ? <Text wrap="wrap">{refresh.text}</Text> : null}
-          {prRefreshKeys.length > 0 ? keyRow(PR_REFRESH_ID, prRefreshKeys) : null}
+          {prRefreshButtons()}
         </Box>
-        {pressed ? (
-          <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-            {pressed.text}
-          </Text>
-        ) : null}
+        {prRefreshStatus()}
       </Box>
     )
 
@@ -400,22 +427,35 @@ export function panePrBlocks({
   }
   const prClearLines = () =>
     prClearKeys.length === 0 ? [] : prTabLine('pr-clear', keyRow(CLEAR_FINISHED_ID, prClearKeys))
+  const emptyPrs = emptyTab(view, {
+    tab: 'prs',
+    place: 'session',
+    drawn: prGroups.length,
+    isFetchingPrs: prState.isFetching,
+    isGhMissing: ghState.isGhMissing,
+  })
   const prsView = () =>
-    prGroups.length === 0 ? (
+    emptyPrs ? (
       <Box flexDirection="column" flexGrow={1}>
-        {emptyState(
-          prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'),
-          view.prs.refresh ? prRefreshLines() : [],
-        )}
+        {emptyState(emptyPrs, emptyPrs.under?.is === 'pr-refresh' ? prRefreshLines() : [])}
       </Box>
     ) : (
       sections(
         [
-          ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
-          ...prRefreshLines(),
+          ...(ghNotice
+            ? [
+                section(
+                  banner(
+                    bannerOf(ghNotice.kind, ghNotice.text),
+                    isRefreshInBanner ? { action: prRefreshButtons(), extra: prRefreshStatus() } : {},
+                  ),
+                ),
+              ]
+            : []),
+          ...(isRefreshInBanner ? [] : prRefreshLines()),
           ...prClearLines(),
           ...prOrderLines(),
-          ...prGroups.map(prBlock),
+          ...prGroups.map(prBlockIn),
           ...olderPrs(),
         ],
         2,

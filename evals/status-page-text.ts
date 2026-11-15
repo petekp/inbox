@@ -1,5 +1,8 @@
+import { EMPTY_STATUS_TEXT } from '../hooks/empty-tab'
 import { mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/status-page'
 import type { StatusPage, StatusRow, StatusStall } from '../hooks/status-page'
+import type { MilestoneRow } from '../hooks/status-goal-page'
+import { LATER_TEXT, milestoneRows } from '../hooks/status-path'
 
 /** A row's name, with its stall word after it. */
 function nameLine(name: string, stall: StatusStall | null): string {
@@ -39,21 +42,33 @@ function rowText(r: StatusRow): string[] {
   }
 }
 
+/**
+ * A milestone in the goal's path: the Later label above the first one under Later, its word after an arrow, and ▸ after
+ * a done milestone folded to its name, whose rows stay folded.
+ */
+function milestoneText(m: MilestoneRow): string[] {
+  const word = m.word ? `  ← ${m.word}` : ''
+  const fold = m.foldId ? ' ▸' : ''
+
+  return [
+    ...(m.startsLater ? [LATER_TEXT] : []),
+    `${m.mark} ${nameLine(m.name, m.stall)}${fold}${word}`,
+    ...(m.text ? [`  ${m.text}`] : []),
+    ...milestoneRows(m, () => false).flatMap(rowText),
+  ]
+}
+
 /** The goal with its Now line and its milestones, each with its rows under it, in the order the looks draw them. */
 function goalText(page: StatusPage): string[] {
   const g = page.goal
   const goal = g
     ? [
         g.label,
-        g.count ? `${g.text}${STALL_GAP}${g.count}` : g.text,
+        g.text,
         ...(g.was ? [`${WAS_PREFIX}${g.was}`] : []),
         ...(g.now ? [g.now] : []),
         ...(g.awaiting ? [g.awaiting] : []),
-        ...g.milestones.flatMap(m => [
-          `${m.mark} ${nameLine(m.name, m.stall)}`,
-          ...(m.text ? [`  ${m.text}`] : []),
-          ...m.rows.flatMap(rowText),
-        ]),
+        ...g.milestones.flatMap(milestoneText),
       ]
     : []
 
@@ -62,7 +77,7 @@ function goalText(page: StatusPage): string[] {
 
 /** The Status page as plain text, in the order every look draws it, with no styling. */
 export function pageText(page: StatusPage): string {
-  if (page.isEmpty) return `${page.empty.title}\n${page.empty.hint}`
+  if (page.isEmpty) return `${EMPTY_STATUS_TEXT.title}\n${EMPTY_STATUS_TEXT.hint}`
 
   const head =
     page.goal === null && page.head ? [page.head.title, ...(page.head.description ? [page.head.description] : [])] : []

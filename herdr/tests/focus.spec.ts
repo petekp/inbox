@@ -1,8 +1,9 @@
 import { expect, setSystemTime, test } from 'bun:test'
 
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
+import { PRESS_GUARD_MS } from '../../hooks/timing'
 import { NOW } from './fixtures'
-import { allOf, giveKeysElsewhere, keysHolder, openPanel } from './gpui-stand-in'
+import { allOf, focusTerminal, giveKeysElsewhere, keysHolder, openPanel, typeIn } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 
 setSystemTime(new Date(NOW))
@@ -80,4 +81,80 @@ test('a click on an open text field, on its box or in the list gives the field t
 test('a button whose press is out takes no hover and no click', () => {
   expect(swept.outButtons.length).toBeGreaterThan(0)
   expect(swept.outButtons.filter(n => n.hasHover || n.click !== null).map(n => n.id)).toEqual([])
+})
+
+test('a press on a row with a status line above its buttons keeps the buttons on the same line of the row', async () => {
+  const panel = (await reach(['row d18']))!
+  const buttonsLine = () => {
+    const underTitle = byId(panel.paint(), 'size rest d18')!.kids[0]!
+    return underTitle.kids.findIndex(k => allOf(k).some(n => n.label === 'Explain'))
+  }
+  const before = buttonsLine()
+  const explain = allOf(byId(panel.paint(), 'row d18')!).find(n => n.label === 'Explain')!
+  panel.click(explain)
+  await panel.settle()
+  expect(panel.panel.queue.outs.map(o => o.rowId)).toEqual(['d18'])
+  expect([before, buttonsLine()]).toEqual([1, 1])
+})
+
+test('a typed reply waits with its session while the panel follows another terminal, and comes back with it', async () => {
+  const panel = await openPanel()
+  const rowId = idsOf(panel.paint(), 'row ').find(id => {
+    panel.click(byId(panel.paint(), id)!)
+    return allOf(byId(panel.paint(), id)!).some(n => n.label === 'Reply')
+  })!
+  const pressReply = () => panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
+  pressReply()
+  typeIn(panel.panel.input!.state, 'Ran it and it passed')
+  focusTerminal('t2')
+  panel.paint()
+  expect(panel.panel.sessionId).toBeNull()
+  focusTerminal('t1')
+  panel.paint()
+  await panel.settle()
+  panel.click(byId(panel.paint(), rowId)!)
+  pressReply()
+  expect(panel.panel.input?.state.value()).toBe('Ran it and it passed')
+})
+
+test('a reply sent before the panel follows another terminal is still out when it comes back, so its confirmation can drop the draft', async () => {
+  const panel = await openPanel()
+  const rowId = idsOf(panel.paint(), 'row ').find(id => {
+    panel.click(byId(panel.paint(), id)!)
+    return allOf(byId(panel.paint(), id)!).some(n => n.label === 'Reply')
+  })!
+  panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
+  typeIn(panel.panel.input!.state, 'Ran it and it passed')
+  panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Send')!)
+  await panel.settle()
+  expect(panel.panel.queue.sentTexts.map(t => t.text)).toEqual(['Ran it and it passed'])
+  focusTerminal('t2')
+  panel.paint()
+  focusTerminal('t1')
+  panel.paint()
+  await panel.settle()
+  expect(panel.panel.queue.outs.map(o => `row ${o.rowId}`)).toEqual([rowId])
+  expect(panel.panel.queue.sentTexts.map(t => t.text)).toEqual(['Ran it and it passed'])
+})
+
+test('a click on an open row’s title collapses it and closes its reply field, and the draft is there once it expands', async () => {
+  const panel = await openPanel()
+  const rowId = idsOf(panel.paint(), 'row ').find(id => {
+    panel.click(byId(panel.paint(), id)!)
+    return allOf(byId(panel.paint(), id)!).some(n => n.label === 'Reply')
+  })!
+  const pressReply = () => panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
+  pressReply()
+  typeIn(panel.panel.input!.state, 'Ran it and it passed')
+  setSystemTime(new Date(NOW + PRESS_GUARD_MS + 1))
+  try {
+    panel.click(byId(panel.paint(), rowId.replace(/^row /, 'title '))!)
+    expect(panel.panel.ui.typing).toBeNull()
+    expect(allOf(byId(panel.paint(), rowId)!).some(n => n.label === 'Reply')).toBe(false)
+    panel.click(byId(panel.paint(), rowId)!)
+    pressReply()
+    expect(panel.panel.input?.state.value()).toBe('Ran it and it passed')
+  } finally {
+    setSystemTime(new Date(NOW))
+  }
 })

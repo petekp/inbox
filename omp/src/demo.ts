@@ -2,6 +2,7 @@ import { demoSession } from '../../hooks/demo'
 import { isCompareInBackground } from '../../hooks/clients'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/press-effects'
 import { pressOn } from '../../hooks/session-presses'
+import { withCollapse } from '../../hooks/collapse'
 import { sessionView } from '../../hooks/session-view'
 import type { PanelSource } from './controller'
 import { emptyState } from './state'
@@ -72,6 +73,10 @@ export function demoSource(deps: {
       changed()
 
       return { error: null, note: null, isUnconfirmed: false }
+    },
+    collapse: async (id, isCollapsed) => {
+      state = withCollapse(state, id, isCollapsed, deps.now())
+      changed()
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},

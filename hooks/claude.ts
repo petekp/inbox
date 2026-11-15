@@ -8,8 +8,12 @@ import { clip } from './text'
 
 const NL = '\n'
 
+/** Claude Code's AskUserQuestion result, from 2.1.318 to 2.1.323, when it holds no answer and no reply. */
+const UNANSWERED_DIALOG = 'The user did not answer the questions.'
+
 export function dialogOutcome(ran: { text?: string; isError?: true; deny?: string; result?: unknown }): DialogOutcome {
-  if (ran.isError || typeof ran.deny === 'string') return { kind: 'dismissed' }
+  if (ran.isError || typeof ran.deny === 'string' || ran.text?.trim() === UNANSWERED_DIALOG)
+    return { kind: 'dismissed' }
   const answer = ran.text ?? ''
   const fields = ran.result && typeof ran.result === 'object' ? (ran.result as { afkTimeoutMs?: unknown }) : {}
 

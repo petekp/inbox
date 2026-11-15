@@ -86,6 +86,10 @@ export type Milestone = {
   was: string | null
   changedAt: number
   closedAt: number | null
+  /** When its status last turned `working` from another, so the page can say how long it has been under way. Null in a Status an earlier build saved. */
+  startedAt: number | null
+  /** When a NEXT line last moved it ahead of the other queued milestones. It marks the milestone changed, but is no progress, so `changedAt` keeps its time. */
+  madeNextAt?: number
 }
 
 /** What a subject serves: one milestone by its id, or `none` for work the goal does not need. */
@@ -155,7 +159,7 @@ export type SessionStatus = {
   look: { startedAt: number } | null
 }
 
-/** The folder a session started in, and its branch when the host last read it. */
+/** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */
 export type Place = { folder: string; branch: string | null }
 
 export type Item = {
@@ -343,6 +347,8 @@ export type Finding = {
   at: number
   /** The item that replaced this finding by asking about it. A finding closed as "asked as iN" reopens when that item closes with the work undone. */
   askedAs?: string
+  /** When the question that had replaced it closed with the work undone, which reopened it. */
+  reopenedAt?: number
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']
@@ -496,6 +502,12 @@ export type PageTab = 'overview'
  */
 export type Cursor = { id: string | null; index: number; openedAt: number }
 
+/**
+ * A row's collapse: when, and the address of the row's newest entry GitHub gave no time, as it was then. A new such
+ * entry has another address, so it counts as new.
+ */
+export type RowCollapse = { at: number; untimedUrl?: string }
+
 export type PrViews = {
   views: Record<string, PrView>
   branchRef: string | null
@@ -539,6 +551,8 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   turns: Turns
+  /** The sample rows the person collapsed, as `Session.collapsed`. A copy saved before collapsing existed has none. */
+  collapsed?: Record<string, RowCollapse>
 }
 
 export type Exchange = {
@@ -566,11 +580,8 @@ export type HostTaskStatus = 'pending' | 'in-progress' | 'done' | 'dropped' | 'b
 export type HostTask = { id: string; text: string; status: HostTaskStatus }
 
 /**
- * Why a Status call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
- * parser refused, and `answer` holds the start of the second answer.
- */
-/**
- * A Status call that wrote nothing. `catchUpsFailed` counts the catch-ups that failed while it stood, and
+ * A Status call that wrote nothing. `cause` is `no-answer` when the call gave no text, or `refused` when it answered
+ * twice with text the parser refused, and then `answer` holds the start of the second answer. `catchUpsFailed` counts the catch-ups that failed while it stood, and
  * `catchUpTurn` is `turnsStarted` at the last of them, so the next catch-up waits longer after each (`needsCatchUp`).
  * Saved failures from before these fields read as none.
  */
@@ -679,7 +690,7 @@ export type Session = {
      */
     lastTypedMessageAt: number | null
   }
-  /** Where the session started. Null until the host names it. */
+  /** Where the session runs. Null until the host names it. */
   place: Place | null
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks
@@ -711,6 +722,11 @@ export type Session = {
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**
+   * The rows the person collapsed, each with when, by row id. A row stays collapsed until something new arrives on it,
+   * as `hooks/collapse.ts:collapsedRows` decides.
+   */
+  collapsed: Record<string, RowCollapse>
+  /**
    * When the look began showing the tab it shows, at the latest write that knew. Null while no look shows the inbox.
    * Every write keeps the closed records of the rows closed or pressed since then, which stay drawn in place.
    */
@@ -737,7 +753,16 @@ export type Session = {
    * per-reply update.
    */
   dialogQuestions: TurnDialogQuestion[]
+  /**
+   * The input fields of each inbox tool the agent has in this conversation, which a tool's answer may ask it to send.
+   * Only the mod saves them, since Claude Code keeps a conversation's first tools when the conversation resumes on a
+   * later build. Null when the session does not know them, as in a session saved before they were kept.
+   */
+  toolFields: ToolFields | null
 }
+
+/** The input fields of each inbox tool, by the tool's name. */
+export type ToolFields = { record: string[]; close: string[]; order_prs: string[] }
 
 declare module 'claude-code' {
   interface PluginState {

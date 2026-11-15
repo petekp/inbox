@@ -23,7 +23,16 @@ export function subject(id: string, status: SubjectStatus, name: string, text: s
 export function milestone(id: string, status: SubjectStatus, name: string, text: string, changedAt: number): Milestone {
   const at = minutes(changedAt)
 
-  return { id, name, status, text, was: null, changedAt: at, closedAt: status === 'done' ? at : null }
+  return {
+    id,
+    name,
+    status,
+    text,
+    was: null,
+    changedAt: at,
+    closedAt: status === 'done' ? at : null,
+    startedAt: status === 'working' ? at : null,
+  }
 }
 
 /** A goal set at `setAt`, by the Status call unless `source` says the person typed it, with its milestones written. */

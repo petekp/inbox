@@ -91,18 +91,43 @@ export async function assertCodexOffersOnlyProbe(cli: string, cwd: string, env: 
 }
 
 /**
+ * Codex's own tools for MCP resources. Codex offers them whenever a session has an MCP server, and no config turns
+ * them off. Each lists or reads the resources of the session's own MCP servers, which the preflight holds to the
+ * probe. Its event names the server the call asked for, or `codex` when it asked for none.
+ */
+const CODEX_RESOURCE_TOOLS = ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource']
+const CODEX_OWN_SERVER = 'codex'
+
+const itemOf = (e: Record<string, any>) => (e.type === 'item.completed' || e.type === 'item.started' ? e.item : null)
+
+const isResourceCall = (item: Record<string, any>) =>
+  item.type === 'mcp_tool_call' &&
+  CODEX_RESOURCE_TOOLS.includes(item.tool) &&
+  (item.server === CODEX_OWN_SERVER || item.server === PROBE)
+
+/**
  * Throws on a `codex exec --json` event that reached past the probe: another MCP server's tool, a web search, or a
  * command that names the runner's home folder, where its skills and config live.
  */
 export function assertCodexUsedOnlyProbe(events: Record<string, any>[]) {
   const runnerHome = homedir()
-  for (const e of events) {
-    const item = e.type === 'item.completed' || e.type === 'item.started' ? e.item : null
+  for (const item of events.map(itemOf)) {
     if (!item) continue
-    if (item.type === 'mcp_tool_call' && item.server !== PROBE)
+    if (item.type === 'mcp_tool_call' && item.server !== PROBE && !isResourceCall(item))
       throw new IsolationError(`Codex called ${item.server} ${item.tool}`)
     if (item.type === 'web_search') throw new IsolationError('Codex searched the web')
     if (item.type === 'command_execution' && String(item.command).includes(runnerHome))
       throw new IsolationError(`Codex ran a command in the runner's home folder: ${item.command}`)
   }
+}
+
+/** Why a run that called one of Codex's resource tools cannot be graded, or null when it called none. */
+export function codexResourceCall(events: Record<string, any>[]): string | null {
+  const calls = events
+    .map(itemOf)
+    .filter(item => item?.type === 'mcp_tool_call' && isResourceCall(item))
+    .map(item => `${item.server} ${item.tool}`)
+  if (calls.length === 0) return null
+
+  return `Codex called its own resource tool, which a run cannot turn off: ${[...new Set(calls)].join(', ')}`
 }

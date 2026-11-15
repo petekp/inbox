@@ -17,6 +17,9 @@ Status: built.
    - Reason: a person read a muted `waiting` as work waiting on them. The word now appears only when it is true for the person, and a time on a waiting row added words they did not need.
    - Reason: an age on every row was hard to read and said little. A row that rose because the page checked it would claim a change that did not happen.
    - Reason for the idle time: someone coming back cold cannot tell live work from work that stalled days ago, and principle 2 puts time on the page where it means something, such as how long something has stalled. A day keeps it off work that moves within a session, and code writes it, so it never freezes the way a model's time word does. A held row keeps `waiting`, which matters more to the person. The Status call closes a working subject idle a day that nothing holds, and leaves queued and waiting ones to the work, since a release in store review can wait for days.
+   - The goal's current milestone also shows a time: after an hour under way it reads `now · 3h`, from when its first work started. Code writes it from `startedAt`.
+   - Reason: on the goal's path, how long the current step has run says whether the goal moves. An hour keeps it off a step at the normal pace of the work.
+   - This replaces the rule that no row but an idle one shows a time.
 5. **A changed state always reaches the page.** Code keeps the old text and place only when the new text has the same content words, in any order.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
 6. **◆ comes from a link between an open ask and the subjects it holds up.** The Status call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
@@ -43,11 +46,15 @@ Status: built.
     - Reason: one form keeps the page the same shape wherever the person opens it.
 15. **The job is the four questions above.** The page shows no reason for a decision, and has no separate "next" part.
     - Reason: reasons need a line of prose under each decision, which brings back sections. ○ rows already say what comes next.
+    - The goal's milestones now say which comes next. They draw as a path on one vertical line: done milestones by name, the current one reading "now", and the one the work takes up next reading "next", where the line ends. The rest sit under "Later". The Status call orders the queued milestones with a NEXT line. A NEXT line marks the milestone it moves as changed, but is no progress toward the goal, as a DROP is none.
+    - Reason: on a goal with several queued milestones, ○ alone did not say which one the work takes up next, and the plan's order often went stale.
+    - This replaces the goal's count of done milestones after its text, and the milestones drawn as a list of rows.
 16. **Evals are a cheap check that a failure seen in real use does not come back.** They run at each release, within about 200 Status calls. Fixed rules check what code can measure. A model judge checks what only reading can tell. The judge is first checked against hand-written good and bad pages that the author of its instructions never sees.
     - Reason: the person's daily use of next builds and reports from users are the main signal. The evals only keep a fixed failure fixed. The old Status cases passed 42 of 42 while a live Status kept a goal about a release that had shipped, and listed one piece of work under two names. Each case checked one rule of the Status prompt, most of them in a single exchange.
     - This reverses the decision to check the tab with fixed rules only.
-17. **Only next builds draw the tab.**
-    - Reason: it is not ready to release. A release build treats a saved Status tab as unknown and shows its first tab.
+17. **Every build draws the tab.**
+    - Reason: the tab is ready to release, from 0.4.0. Updating moves Asks to key 2 and puts the Status on key 1; which tab the inbox opens on does not change.
+    - This reverses the decision to draw the tab on next builds only while it was not ready.
 18. **The page has no identity line, and the Status call writes no role.**
     - Reason: the line takes space without telling sessions apart. Folder, branch and role are often the same across sessions, and each host already names the session in its own window, tab or title. Nothing else drew the role.
 19. **The head is a title and a one-line description of what the session is focused on now.** The title is short, like a row's name. The page has no live line.

@@ -18,6 +18,7 @@ import { SETTLE_WINDOW_MS } from '../src/settle'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { after, pressed, released, SHOWN, withItems } from './press-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 test('a fetch that finds tab PRs merged settles each but the branch’s own as Merged, and Undo keeps one on the tab', () => {
   const d = demoView(100, 'Codex')
@@ -149,6 +150,7 @@ test('Fix hands a finding off and settles it as the choice made, each press with
       w.ledger,
       { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
       10,
+      TOOL_FIELDS,
     ).ledger,
   }
   const r = pressed(s, { action: 'address', id: 'f3' })
@@ -348,6 +350,7 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
       s.ledger,
       { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
       10,
+      TOOL_FIELDS,
     ).ledger,
   }
   const restored = after(after(withFinding, { action: 'dismiss', id: 'f3' }), { action: 'undo', id: 'f3' })

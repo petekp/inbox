@@ -18,12 +18,19 @@ import type { SessionState } from '../src/state'
 import { noteShownRows, rowsInView, takeShownRows } from '../src/tab-shown'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 const window = new Window()
+const animate = window.HTMLElement.prototype.animate
+window.HTMLElement.prototype.animate = function (...args: Parameters<typeof animate>) {
+  const animation = animate.apply(this, args)
+  animation.finished.catch(() => {})
+  return animation
+}
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its count after its text, its Now line and the field Edit opens draw in place', async context => {
+test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its milestones as a path with the next one’s word, its Now line and the field Edit opens draw in place', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -33,6 +40,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     EMPTY,
     { kind: 'question', ask: 'Which label?', context: 'The new tab needs a one-word name.', options: ['Tab', 'Page'] },
     now,
+    TOOL_FIELDS,
   ).ledger
   const shownStatus = {
     ...applyStatus(
@@ -92,7 +100,6 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
   const sentTabs: unknown[] = []
   const presses: RowPress[] = []
   let isOlderServer = false
-  let isNextBuild = true
   window.parent.postMessage = message => {
     const request = message as {
       id?: number
@@ -108,7 +115,6 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       serverBuild: SERVER_BUILD,
       isFetchingPrs: false,
       isGhMissing: false,
-      ...(isNextBuild ? { isNextBuild: true } : {}),
     })
     if (request.method === 'ui/initialize') result = {}
     else if (request.params?.name === 'inbox_view') {
@@ -158,7 +164,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
         b.getAttribute('title'),
         b.querySelector('.tab-symbol')?.textContent,
       ]),
-      shownTabs(true).map(t => [t.label, t.symbol]),
+      shownTabs().map(t => [t.label, t.symbol]),
     )
     assert.equal(shownTab(), 'Status')
     assert.equal(sentTabs[0], 'overview')
@@ -191,6 +197,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       state.ledger,
       { kind: 'finding', title: 'The bar wraps at 320 px', detail: 'Four tabs need two lines.' },
       Date.now(),
+      TOOL_FIELDS,
     ).ledger
     await afterPoll()
     assert.equal(shownTab(), 'Status')
@@ -229,29 +236,18 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(shownTab(), 'Status')
     assert.ok(root.querySelector('.status-head'))
 
-    isNextBuild = false
-    await afterPoll()
-    assert.deepEqual(tabLabels(), ['Asks1', 'Finds1', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => b.getAttribute('title')),
-      shownTabs(false).map(t => t.label),
+      shownTabs().map(t => t.label),
     )
-    assert.equal(shownTab(), 'Asks1')
-    assert.ok(root.querySelector('.status-head') === null, 'the Status page is drawn')
-    assert.ok(root.querySelector('main .holds-up') === null, 'a row names what it holds up')
     key('4')
-    assert.equal(shownTab(), 'Asks1')
-    isNextBuild = true
-    await afterPoll()
-    assert.equal(shownTab(), 'Status')
-    isNextBuild = false
-    await afterPoll()
-    key('3')
     assert.equal(shownTab(), 'PRs')
-    key('1')
+    key('2')
+    assert.equal(shownTab(), 'Asks1')
+    assert.ok(root.querySelector('main .holds-up'), 'a row names what it holds up')
+    key('5')
     assert.equal(shownTab(), 'Asks1')
 
-    isNextBuild = true
     state.ledger = closeItem(state.ledger, asked.items[0]!.id, { how: 'claude', outcome: 'answered in chat' }, now)
     await afterPoll()
     key('1')
@@ -286,8 +282,13 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(root.querySelector('.goal-heading')?.textContent, 'GoalEdit·Remove')
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
+      ['Status tab shipped', 'Now: Drawing the Status in the Codex tab'],
     )
+    assert.deepEqual(
+      [...root.querySelectorAll('.milestone-group')].map(e => e.className),
+      ['milestone-group path-to-next', 'milestone-group'],
+    )
+    assert.equal(root.querySelector('.path-word')?.textContent, 'next')
     assert.equal(root.querySelector('.status-head:not(.goal)'), null)
     assert.deepEqual(buttons(), ['Edit', 'Remove'])
     await click('Edit')
@@ -296,7 +297,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
-    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 done')
+    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped')
 
     await click('Edit')
     const field = window.document.querySelector('#type-goal')!

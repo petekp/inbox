@@ -139,6 +139,7 @@ export function sessionCalls(context: HostContext) {
                 terminal: target.terminal,
                 writtenAt: now,
                 projectFolder: memory.shownCwd?.(),
+                isFetchingPrs: prFetches.isFetching(id),
               },
               s,
               context.logHerdr,
@@ -286,7 +287,7 @@ export function sessionCalls(context: HostContext) {
     if (!isHerdrCheckDue(id, deps.now())) return
     deps.background(
       (async () => {
-        const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run)
+        const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run, deps.herdrTarget)
         if (states) await change(id, s => statusChanged(s, o => delegatesSettled(o, states, deps.now())))
       })(),
     )
@@ -298,11 +299,9 @@ export function sessionCalls(context: HostContext) {
     deps.background(
       (async () => {
         const host = hostFor(ctx)
-        const fetching = prFetches.fetchWhenDue(id, await host.read(), isTabShown, () => fetchPrs(host, true))
-        if (!fetching) return
-        notifyChanged(id)
-        await fetching
-        notifyChanged(id)
+        const s = await host.read()
+        const seen = { ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } }
+        await prFetches.fetchWhenDue(id, seen, isTabShown, () => fetchPrs(host, true))
       })(),
     )
   }
@@ -313,6 +312,7 @@ export function sessionCalls(context: HostContext) {
 
   return {
     change,
+    notifyChanged,
     endedTurn,
     hostFor,
     updateHostFor,

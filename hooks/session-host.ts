@@ -56,8 +56,6 @@ export function orderedKeys(): { run<T>(key: string, fn: () => Promise<T>): Prom
   }
 }
 
-export type { CallKind }
-
 /** The kind of a catch-up's ledger call. */
 export const CATCH_UP_CALL: CallKind = { call: 'ledger', reads: 'catch-up' }
 

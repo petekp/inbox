@@ -258,6 +258,29 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: s4 | -',
     ].join('\n'),
   ],
+  'next-milestone': [
+    [
+      'SET: s1 | working | deletes next',
+      'GOAL: Notes 2.4 released | working Conflicts resolved; queued Export button shipped; queued Store release',
+      'SERVES: s1 | m1',
+      'SERVES: s2 | m2',
+    ].join('\n'),
+    [
+      'SET: s2 | queued | waits for 2.5',
+      'SERVES: s2 | -',
+      'DROP: m2 | moved to 2.5',
+      'MILESTONE: queued | Old notes migrated | not started',
+      'NEXT: m4',
+      'NEW: queued | Migration script | not started',
+      'SERVES: s3 | m4',
+    ].join('\n'),
+    [
+      'HEAD: 2.4 release | Migrating old notes for 2.4',
+      'DONE: s1 | edits and deletes merge',
+      'SET: s3 | working | reads the old format',
+      'SET: m4 | working | reads the old format',
+    ].join('\n'),
+  ],
   'goal-outcome-dropped': [
     ...STALE_GOAL_ANSWERS,
     [

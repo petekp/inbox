@@ -15,24 +15,39 @@ import { isUndoLeft } from './settle'
 import { tabState, drafts, sending, SENDING, errors, copies, entering, undoing, drawnRows } from './tab-state'
 import type { Row, Entry, Lists } from './tab-state'
 import { reducedMotion, drawIn } from './tab-motion'
-import { drawnTab, shownSettled, selectedIndex, open, select, isOpenGuarded, rowActions } from './tab-selection'
+import { drawnTab, shownSettled, openRowId, open, isOpenGuarded, rowActions } from './tab-selection'
 import { discardReply, outPending } from './tab-press'
-import { act, listsOf } from './tab-rows'
+import { act, listsOf, pressTitle } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
 import type { DrawnPrs } from './tab-pr-steps'
+import { stepStatus } from './tab-status-steps'
+import { bannerMotion, lineMotion, stepLines } from './tab-line-steps'
+import type { BannerLine, TextLine } from './tab-line-steps'
+import { tabBanners } from './tab-chrome'
+import type { DrawnStatus } from './tab-status-steps'
 import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
-export function stepLists(v: View): { lists: Lists; prs: DrawnPrs | null; changed: Set<string> } {
+export function stepLists(v: View): {
+  lists: Lists
+  prs: DrawnPrs | null
+  status: DrawnStatus | null
+  banners: BannerLine[]
+  changed: Set<string>
+} {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
   const rows = isListedTab(t) ? lists.byTab[t] : []
-  const openId = isRowTab(t) ? rows[selectedIndex(rows, t, v)]?.id : undefined
+  const openId = isRowTab(t) ? openRowId(rows, t, v) : undefined
   const changed = new Set<string>()
   const kept = new Set<string>()
   const prs = t === 'prs' ? stepPrs(v, now, changed, kept) : null
+  const status = t === 'overview' ? stepStatus(v.statusPage, now, changed, kept) : null
+  const banners = stepLines(tabBanners(v), tabState.lastBanners ?? undefined, bannerMotion, now, changed, kept)
+  const lastPressLines = new Map(pressLines)
+  pressLines.clear()
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
@@ -61,6 +76,11 @@ export function stepLists(v: View): { lists: Lists; prs: DrawnPrs | null; change
       drawnRows.set(id, { track, openRow })
       kept.add(id)
       drawn.push(x)
+      if (track.hasPanel && 'row' in x) {
+        const text = statusUnderOf(x.row)
+        const lines = text ? [{ id: x.row.id, text }] : []
+        pressLines.set(x.row.id, stepLines(lines, lastPressLines.get(x.row.id), pressMotion, now, changed, kept))
+      }
     }
     lists[LIST_OF[group]] = drawn
   }
@@ -69,7 +89,7 @@ export function stepLists(v: View): { lists: Lists; prs: DrawnPrs | null; change
     entries: lists.findings.filter(x => ('row' in x ? x.row.kind : x.settled.finding?.kind) === g.kind),
   }))
   for (const id of [...drawnRows.keys()]) if (!kept.has(id)) drawnRows.delete(id)
-  return { lists, prs, changed }
+  return { lists, prs, status, banners, changed }
 }
 
 export async function undo(r: RowView) {
@@ -91,11 +111,31 @@ export async function undo(r: RowView) {
   }
 }
 
+/** A row's press as its line draws it: whether one is out or still sending, and the status it shows. */
+function pressOf(row: Row) {
+  const isPressing = sending.has(row.id)
+  const pending = outPending(tabState.view, row.id)
+  const isSending = isPressing && sending.get(row.id)?.pending === null
+  const f = isFeedbackShown(row) ? row.feedback : null
+  const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
+
+  return { isPressing, pending, isSending, f, label }
+}
+
+/** The status an open row draws under its buttons, while its press is out. */
+function statusUnderOf(row: Row): string | null {
+  const { pending, isSending, f, label } = pressOf(row)
+
+  return !isSending && isStatusUnderActions(pending ?? f, true) ? label : null
+}
+
+const pressLines = new Map<string, TextLine[]>()
+const pressMotion = (id: string) => `press-${id}`
+
 /** What a row's line and side column draw, in its open form or its closed one. */
 type LineForm = {
   isOpen: boolean
   sideLabel: string | null
-  statusUnder: string | null
   last: string | null
   side: string | null | undefined
 }
@@ -122,11 +162,7 @@ export function ListRow({
     </span>
   )
 
-  const isPressing = sending.has(row.id)
-  const pending = outPending(tabState.view, row.id)
-  const isSending = isPressing && sending.get(row.id)?.pending === null
-  const f = isFeedbackShown(row) ? row.feedback : null
-  const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
+  const { isPressing, pending, isSending, f, label } = pressOf(row)
   const ageAt = !isPressing && f && hasAge(f) ? f.at : null
   const lineForm = (isOpen: boolean): LineForm => {
     const isInSide = ageAt !== null && !isOpen && f?.is !== 'queued' && f?.is !== 'unconfirmed'
@@ -134,7 +170,7 @@ export function ListRow({
     const last = isInSide || statusUnder ? null : label
     const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : last ? null : row.age
 
-    return { isOpen, sideLabel: isInSide ? label : null, statusUnder, last, side }
+    return { isOpen, sideLabel: isInSide ? label : null, last, side }
   }
   const drawn = lineForm(isSelected || isClosing)
   // A closing row also draws its closed line, hidden, so that collapse() measures the height it comes to rest at.
@@ -161,11 +197,7 @@ export function ListRow({
     >
       {handle}
       <div class="content">
-        <button
-          type="button"
-          class="line"
-          {...(isSelected ? { tabIndex: -1, 'aria-disabled': true } : { 'aria-expanded': false })}
-        >
+        <button type="button" class="line" aria-expanded={isSelected} onClick={isSelected ? onSelect : undefined}>
           <span class="text">
             {row.lead ? (
               <>
@@ -196,12 +228,12 @@ export function ListRow({
           side(drawn)
         )}
       </span>
-      {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} status={drawn.statusUnder} /> : null}
+      {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} /> : null}
     </div>
   )
 }
 
-function Panel({ row, isClosing, status }: { row: Row; isClosing: boolean; status?: string | null }) {
+function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const { keys, more } = rowActions(row)
   const copied = copies.get(row.id)
   const note = noteOf(row.id)
@@ -244,7 +276,11 @@ function Panel({ row, isClosing, status }: { row: Row; isClosing: boolean; statu
         }
         isBlocked={isOpenGuarded}
       />
-      {status ? <div class="muted">{status}</div> : null}
+      {(pressLines.get(row.id) ?? []).map(l => (
+        <div key={l.id} class="muted" {...lineMotion(pressMotion(l.id))}>
+          {l.text}
+        </div>
+      ))}
       {copied ? (
         <div>
           <div class="muted">Copy {copied.name} from here:</div>
@@ -315,7 +351,12 @@ export function Entries({ entries, group, all, now }: { entries: Entry[]; group:
         return (
           <div class="entry" key={id} data-motion={id}>
             {'row' in x ? (
-              <ListRow row={x.row} track={drawn.track} now={now} onSelect={() => select(t, all, all.indexOf(x.row))} />
+              <ListRow
+                row={x.row}
+                track={drawn.track}
+                now={now}
+                onSelect={() => pressTitle(t, all, all.indexOf(x.row))}
+              />
             ) : (
               <SettledView settled={x.settled} panel={drawn.openRow} />
             )}

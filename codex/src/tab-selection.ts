@@ -1,4 +1,4 @@
-import { isRowTab, drawnTabOf } from '../../hooks/tabs'
+import { isRowTab } from '../../hooks/tabs'
 import { isGuarded, PRESS_GUARD_MS } from '../../hooks/timing'
 import { firstWaiting, listWaits } from '../../hooks/action-plan'
 import type { RowWait } from '../../hooks/action-plan'
@@ -21,11 +21,9 @@ export function switchTab(to: ShownTab) {
   tabState.isHelpShown = false
 }
 
-/** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Status page, as from an older server. */
+/** The tab drawn: the shown tab, or Asks in place of a Status while the view has no Status page, as from an older server. */
 export function drawnTab(): ShownTab {
-  const drawn = drawnTabOf(tabState.tab, tabState.view?.isNextBuild === true)
-
-  return drawn === 'overview' && !tabState.view?.statusPage ? 'needsYou' : drawn
+  return tabState.tab === 'overview' && !tabState.view?.statusPage ? 'needsYou' : tabState.tab
 }
 
 export function follow(v: View, added: Record<Tab, string[]>) {
@@ -39,7 +37,7 @@ export function follow(v: View, added: Record<Tab, string[]>) {
 }
 
 export function tabWaits(v: View, t: Tab): RowWait[] {
-  return t === 'prs' ? prRowWaits(openPrViews(v.prs.drawn), v.lastActions) : listWaits(v)[t]
+  return t === 'prs' ? prRowWaits(openPrViews(v.prs.drawn), v.lastActions, v.collapsed) : listWaits(v)[t]
 }
 
 export function shownSettled(v: View): Set<string> {
@@ -65,6 +63,13 @@ export function selectedIndex(rows: Row[], t: Tab, v: View): number {
   const id = firstWaiting(tabWaits(v, t))
 
   return id ? rows.findIndex(r => r.id === id) : -1
+}
+
+/** The id of the row drawn open on tab `t`: the selected row, unless the person collapsed it. */
+export function openRowId(rows: Row[], t: Tab, v: View): string | undefined {
+  const id = rows[selectedIndex(rows, t, v)]?.id
+
+  return id !== undefined && !v.collapsed.includes(id) ? id : undefined
 }
 
 export function open(t: Tab, id: string, index?: number) {

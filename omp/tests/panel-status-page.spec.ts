@@ -4,6 +4,7 @@ import { parseStatus } from '../../hooks/status'
 import { applyStatus } from '../../hooks/status-ops'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import { STATUS_TEXT_LINES } from '../../hooks/status-page'
+import { EMPTY_STATUS_TEXT } from '../../hooks/empty-tab'
 import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { render } from '../src/panel'
@@ -60,7 +61,7 @@ test('on the Status page, the rows under a subject hang from its mark, ├─ fo
     at('Time the'),
     at('Flick decided'),
   ]
-  const col = lines[subject]!.search(/\S/)
+  const col = lines[subject]!.indexOf('Dismiss gesture') - 2
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
 
   expect(subject).toBeLessThan(first)
@@ -128,7 +129,9 @@ test('on the Status page, a subject’s name stays plain, and where it stands go
 
 test('each subject’s mark takes its tone, and a mark with no tone is muted', () => {
   const screen = trialChangedScreen()
-  const subjects = screen.view.statusPage.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
+  const page = screen.view.statusPage
+  const drawnRows = [...page.rows, ...(page.goal?.milestones ?? []).flatMap(m => (m.foldId === null ? m.rows : []))]
+  const subjects = drawnRows.flatMap(r => (r.kind === 'subject' ? [r] : []))
   const lines = render(screen, onPage, 200, NOW, toneNamed)
   const lineOf = (s: string) => lines.find(l => l.includes(s))!
   for (const row of subjects.filter(r => r.tone !== null))
@@ -139,10 +142,9 @@ test('each subject’s mark takes its tone, and a mark with no tone is muted', (
 
 test('a Status page with nothing yet reads its empty text', () => {
   const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
-  const { empty } = screen.view.statusPage
   expect(screen.view.statusPage.isEmpty).toBe(true)
-  expect(text(screen, onPage)).toContain(empty.title)
-  expect(text(screen, onPage)).toContain(empty.hint)
+  expect(text(screen, onPage)).toContain(EMPTY_STATUS_TEXT.title)
+  expect(text(screen, onPage)).toContain(EMPTY_STATUS_TEXT.hint)
 })
 
 test('no line on the Status page is wider than the panel', () => {

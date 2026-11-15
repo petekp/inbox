@@ -84,6 +84,10 @@ export type Milestone = {
   was: string | null
   changedAt: number
   closedAt: number | null
+  /** When its status last turned `working` from another, so the page can say how long it has been under way. Null in a Status an earlier build saved. */
+  startedAt: number | null
+  /** When a NEXT line last moved it ahead of the other queued milestones. It marks the milestone changed, but is no progress, so `changedAt` keeps its time. */
+  madeNextAt?: number
 }
 
 /** What a subject serves: one milestone by its id, or `none` for work the goal does not need. */
@@ -153,5 +157,5 @@ export type SessionStatus = {
   look: { startedAt: number } | null
 }
 
-/** The folder a session started in, and its branch when the host last read it. */
+/** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */
 export type Place = { folder: string; branch: string | null }

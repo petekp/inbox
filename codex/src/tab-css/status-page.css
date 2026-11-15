@@ -37,13 +37,14 @@
 .status-page .unbroken {
   white-space: nowrap;
 }
-/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark, a step in. */
+/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark, a step in. Its color is
+   opaque, the text's share mixed into the page's background, so where an arm meets a column no pixel draws twice as dark. */
 .status-page .list {
   --step: calc(var(--text-x) - var(--mark-x));
-  --mark-middle: 6px;
+  --mark-middle: 5.5px;
   --arm-gap: 2px;
   --tree-x: calc(var(--mark-x) + var(--mark-middle));
-  --tree-line: color-mix(in oklab, var(--text) 15%, transparent);
+  --tree-line: color-mix(in srgb, var(--text) 15%, var(--bg));
 }
 .status-page .row.has-children,
 .status-page .row.branch-mid,
@@ -119,20 +120,108 @@
 .status-page .goal-heading .actions {
   margin: 0;
 }
-/* The goal's count after its text, kept whole on the line with the text's last word. */
-.status-head h1 .count {
-  font-weight: 400;
-  white-space: nowrap;
-}
 .status-head .actions {
   margin-top: 6px;
 }
-/* A blank line's space between the goal's buttons and its milestones, before each milestone after the first, and
-   between a milestone and the rows under it, as the terminal and omp leave. */
-.status-head.goal + .list,
-.status-page .row.milestone ~ .row.milestone,
-.status-page .row.milestone + .row {
+/* Keeps the field's top margin inside, so clipping the box while it glides does not move the field. */
+.status-head .goal-text {
+  display: flow-root;
+}
+/* A blank line's space between the goal's buttons and its milestones, as the terminal and omp leave. A milestone's rows
+   follow its name as a subject's children do. A row's padding more sits above a milestone that `isSpacedAbove` spaces,
+   and above the Later label, so a milestone's work sits closer to its own name than to the next milestone. */
+.status-head.goal + .list {
   margin-top: var(--section-gap);
+}
+.status-page .milestone-group {
+  position: relative;
+  --space-above: 0px;
+}
+.status-page .milestone-group.spaced {
+  --space-above: var(--status-row-pad);
+  padding-top: var(--space-above);
+}
+.status-page .milestone-group + .row.part-line {
+  margin-top: var(--status-row-pad);
+}
+/* The path's line, from under a milestone's mark to the next milestone's mark, through the space above that one. */
+.status-page .milestone-group.path-continues::before,
+.status-page .milestone-group.path-to-next::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  top: calc(var(--space-above) + var(--status-row-pad) + 1lh);
+  bottom: calc(-1 * var(--status-row-pad));
+  border-left: 1px solid var(--tree-line);
+}
+.status-page .milestone-group.gap-under::before {
+  bottom: calc(-2 * var(--status-row-pad));
+}
+/* Dashes of whole pixels from the line's top. A dashed border stretches its dashes to fit the line, which blurs their ends. */
+.status-page .milestone-group.path-to-next::before {
+  width: 1px;
+  border-left: 0;
+  background: repeating-linear-gradient(to bottom, var(--tree-line) 0 3px, transparent 3px 5px);
+}
+/* A milestone's nesting connector, from under its mark to the arm of its last work row, as a subject's tree line runs to
+   its children. Where the path's line runs past the work, each work row draws only its arm, and the path's line is the
+   column. */
+.status-page .row.milestone.connector-down,
+.status-page .work-joint {
+  position: relative;
+}
+.status-page .row.milestone.connector-down::before,
+.status-page .work-joint.beside-connector::before,
+.status-page .work-joint.arm-elbow::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  border-left: 1px solid var(--tree-line);
+}
+.status-page .row.milestone.connector-down::before {
+  top: calc(var(--status-row-pad) + 1lh);
+  bottom: 0;
+}
+.status-page .work-joint.beside-connector::before {
+  top: 0;
+  bottom: 0;
+}
+.status-page .work-joint.arm-elbow::before {
+  top: 0;
+  height: calc(var(--status-row-pad) + 0.5lh);
+}
+.status-page .work-joint.arm-tee::after,
+.status-page .work-joint.arm-elbow::after {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  top: calc(var(--status-row-pad) + 0.5lh);
+  width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
+  border-top: 1px solid var(--tree-line);
+}
+/* The milestone's word, at the right of its name's first line. `fitPathWord` hides it where it does not fit. */
+.status-page .milestone-name {
+  position: relative;
+}
+.status-page .path-word {
+  position: absolute;
+  top: 0;
+  right: 0;
+  white-space: nowrap;
+}
+.status-page .milestone-name .changed {
+  font-weight: 600;
+}
+/* A done milestone folded to its name: the name where other milestones' names start, its chevron after it. */
+.status-page .milestone-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+.status-page .milestone-fold .icon {
+  margin-right: 0;
 }
 /* "Other work" at the text column, then a solid rule to the tab's edge. */
 .status-page .row.part-line {

@@ -20,12 +20,14 @@ export type Op =
   | { kind: 'milestone'; status: SubjectStatus; name: string; text: string }
   /** `milestone` is null for work the goal does not need. */
   | { kind: 'serves'; subject: string; milestone: string | null }
+  /** Names the queued milestone the work takes up after the one under way. */
+  | { kind: 'next'; ref: string }
 
 /** What the Status call answered: nothing to change, or the changes to make. */
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
 const LINE =
-  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i
+  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES|NEXT)\s*(?::\s*(.*))?$/i
 
 function fields(value: string): string[] {
   return value.split('|').map(f => f.trim())
@@ -83,6 +85,7 @@ function opOf(key: string, f: string[]): Op | null {
 
     return f[0] && f[1] ? { kind: 'serves', subject: f[0], milestone: isNone ? null : f[1] } : null
   }
+  if (key === 'NEXT') return f[0] ? { kind: 'next', ref: f[0] } : null
 
   return null
 }

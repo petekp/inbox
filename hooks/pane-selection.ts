@@ -100,7 +100,7 @@ export function tabWaits(
   prViews: PrView[],
   lastActions: Record<string, LastAction>,
 ): RowWait[] {
-  return tab === 'prs' ? prRowWaits(prViews, lastActions) : listWaits(view)[tab]
+  return tab === 'prs' ? prRowWaits(prViews, lastActions, view.collapsed) : listWaits(view)[tab]
 }
 
 export function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {

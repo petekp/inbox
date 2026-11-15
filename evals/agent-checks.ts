@@ -1,5 +1,6 @@
 import type { AgentTool } from '../hooks/tools'
 import type { LastAction, Ledger } from '../types'
+import type { CaseTools } from './probe-tools'
 
 export type Agent = 'claude' | 'codex' | 'omp'
 
@@ -41,6 +42,8 @@ export type Case = {
   min?: Partial<Record<Agent, number>>
   /** The agents that run the case, when not all of them do. */
   agents?: Agent[]
+  /** The inbox tools the agent has, when not this build's, as `evals/probe-tools.ts:probeTools` gives them. */
+  tools?: CaseTools
 }
 
 export type Call = { tool: string; args: Record<string, unknown>; result: string }

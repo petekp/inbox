@@ -67,22 +67,6 @@ export function ghNoticeOf(gh: {
   return null
 }
 
-/** The hint under an empty PRs tab. `place` is the host's word for a conversation with the agent. */
-export function prsEmptyHint(place: string): string {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`
-}
-
-/** What an empty PRs tab says. When gh cannot read the PRs, its hint is the `ghNoticeOf` text. */
-export function prsEmptyText(
-  prs: { isFetching: boolean; isGhMissing: boolean; isGhSignedOut: boolean },
-  place: string,
-) {
-  return {
-    title: prs.isFetching ? 'Checking for PRs…' : 'No PRs',
-    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place),
-  }
-}
-
 /** The line a PR block shows when its last refresh failed. */
 export function prRefreshFailedText(error: string): string {
   return `Last refresh failed: ${error}`
@@ -216,16 +200,28 @@ export function isPrTabRunning(prs: PrView[], lastActions: Record<string, LastAc
  * The rows of the PR blocks `prs` in drawn order, each block's review threads, failing checks, then cancelled checks,
  * and whether each still waits on the person: a thread not sent to the agent, a check whose Fix was not handed off.
  */
-export function prRowWaits(prs: PrView[], lastActions: Record<string, LastAction>): RowWait[] {
+export function prRowWaits(
+  prs: PrView[],
+  lastActions: Record<string, LastAction>,
+  collapsed: readonly string[] = [],
+): RowWait[] {
   const isSent = threadSentIn(lastActions)
+  const isCollapsed = (id: string) => collapsed.includes(id)
 
   return prs.flatMap(pr => [
-    ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), isWaiting: !isSent(pr, t) })),
+    ...waitingThreads(pr).map(t => {
+      const id = prThreadId(pr, t)
+      return { id, isWaiting: !isSent(pr, t), isCollapsed: isCollapsed(id) }
+    }),
     ...blockingChecks(pr).map(c => {
       const id = prCheckId(pr, c)
       const last = lastActions[id]
 
-      return { id, isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === 'failed' }
+      return {
+        id,
+        isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === 'failed',
+        isCollapsed: isCollapsed(id),
+      }
     }),
   ])
 }

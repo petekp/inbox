@@ -6,9 +6,9 @@ import { noteText } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { statusChanged } from '../../hooks/session-status'
 import { recorded, withHolds } from '../../hooks/session-presses'
-import { drawnTabOf } from '../../hooks/tabs'
 import type { RowNote } from '../../types'
 import type { HerdrFile } from '../../hooks/herdr-press-file'
+import { withCollapse } from '../../hooks/collapse'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import type { HooksTrust } from './hook-trust'
@@ -19,6 +19,8 @@ import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
 import {
   holdsOf,
+  listedToolFields,
+  noteToolsListed,
   sessionOf,
   shownRowsOf,
   shownTabOf,
@@ -101,7 +103,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
     hooksTrustNow,
     currentPage,
   )
-  const { demoOf, onDemoPress } = makeDemo(deps, served)
+  const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)
   deps.followHerdrPresses?.(onHerdrFile)
 
   const isHerdrCheckDue = herdrCheckGate()
@@ -133,7 +135,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
       case 'order_prs': {
         let result = ''
         await codexStore(dir, id, now, deps.onWrite).update(s => {
-          const r = recorded(CODEX, s, name, args, now())
+          const r = recorded(CODEX, s, name, args, now(), listedToolFields())
           result = r.result
           return heard(r.state)
         })
@@ -151,7 +153,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
         await catchUpOnOpen(id).catch(() => undefined)
         const sentTab = shownTabOf(args.tab)
         const s = await updateState(dir, id, s => {
-          const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
+          const shownTab = sentTab ?? s.shownTab
 
           const looked = lookOnView(s, shownTab, now(), shownRowsOf(args))
           return { ...withHolds(looked, holds), tabSeenAt: now(), shownTab }
@@ -163,10 +165,23 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
       case 'inbox_tab_page':
         return { ...text('Tab page'), structuredContent: { html: stamped(await currentPage()) } }
       case 'inbox_press': {
-        const asked = args.press as { action?: unknown; isYes?: unknown }
+        const asked = args.press as { action?: unknown; isYes?: unknown; id?: unknown; isCollapsed?: unknown }
         if (asked.action === 'herdr-ask' && deps.herdrAsk) {
           const r = await deps.herdrAsk.answer(asked.isYes === true)
           return { ...text(r.failure ?? 'Done'), structuredContent: r }
+        }
+        if (asked.action === 'collapse' && typeof asked.id === 'string') {
+          const [row, isCollapsed, holds] = [asked.id, asked.isCollapsed === true, holdsOf(args)]
+          const view =
+            args.demo === true
+              ? await collapseDemo(id, row, isCollapsed, holds)
+              : await served(
+                  await codexStore(dir, id, now, deps.onWrite).update(s => withCollapse(s, row, isCollapsed, now())),
+                  id,
+                  false,
+                  holds,
+                )
+          return { ...text('Done'), structuredContent: { view, copy: null, error: null, note: null } }
         }
         const p = args.press as RowPress | PrPress
         const holds = holdsOf(args)
@@ -191,6 +206,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
           serverInfo: { name: 'inbox', version: VERSION },
         })
       case 'tools/list':
+        noteToolsListed()
         return ok({ tools: TOOLS })
       case 'tools/call': {
         const name = String(params?.name ?? '')

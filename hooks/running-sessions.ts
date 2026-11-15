@@ -6,7 +6,7 @@ type SessionsFolder = {
   sessionId: () => Promise<string>
   list: (folder: string) => Promise<{ name: string; kind: string }[]>
   read: (path: string) => Promise<string>
-  run: (argv: string[], init: { timeoutMs: number }) => Promise<{ stdout: string }>
+  run: (argv: string[], init: { cwd: string; timeoutMs: number }) => Promise<{ stdout: string }>
 }
 
 type SessionFile = { pid: number; sessionId: string }
@@ -52,7 +52,7 @@ export async function runningSessions(f: SessionsFolder): Promise<ReadonlySet<st
 /** The pids among `pids` whose process runs, by one `ps`. Null when `ps` cannot run. */
 async function livePids(f: SessionsFolder, pids: number[]): Promise<ReadonlySet<number> | null> {
   try {
-    const r = await f.run(['ps', '-p', pids.join(','), '-o', 'pid='], { timeoutMs: PS_TIMEOUT_MS })
+    const r = await f.run(['ps', '-p', pids.join(','), '-o', 'pid='], { cwd: '/', timeoutMs: PS_TIMEOUT_MS })
 
     return new Set(
       r.stdout

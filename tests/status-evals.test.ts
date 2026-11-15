@@ -163,6 +163,11 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: GOOD_RUNS['goal-outcome-dropped']![4]!.replace(/\nRETIRE: [^\n]*/, ''),
     breaks: 'goal-left',
   },
+  'next-milestone': {
+    at: 1,
+    answer: GOOD_RUNS['next-milestone']![1]!.replace('\nNEXT: m4', ''),
+    breaks: 'milestone-next',
+  },
   'next-release': {
     at: 0,
     answer: `${GOOD_RUNS['next-release']![0]!.replace(/^RETIRE: [^\n]*\n/, '')}\nSERVES: Share extension | -`,

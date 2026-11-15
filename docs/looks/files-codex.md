@@ -7,7 +7,9 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab.tsx` | Codex adapter. The tab's entry: `App`, `draw`, the key and pointer listeners, and the start that connects to Codex. |
 | `codex/src/tab-state.ts` | Codex adapter. The page's state. `tabState` holds each value that more than one tab file sets, and the file also holds the shared maps and sets and the row types. |
 | `codex/src/tab-host.ts` | Codex adapter. The bridge to Codex: timers, `request` and `callTool`, the message listener, the host's theme, and `dispose`. |
-| `codex/src/tab-motion.ts` | Codex adapter. Row motion: measured heights, the animation each row state starts, folds, and the draws that end a move. |
+| `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the spring glide each height change plays, the animation each row state starts, tab widths, folds, and the draws that end a move. |
+| `codex/src/tab-line-steps.ts` | Codex adapter. Steps lines that come and go, such as banners and a press's status, through the row states, so a line enters and leaves from its place. |
+| `codex/src/tab-status-steps.ts` | Codex adapter. Steps the Status page's lines, the goal's milestones and the lines under the goal's text with `stepLines`. |
 | `codex/src/tab-selection.ts` | Codex adapter. The shown tab and its open row: switching tabs, following arrivals, and opening and selecting rows. |
 | `codex/src/tab-swap.ts` | Codex adapter. The swap to the server's newer page, and the state the old page hands to it. |
 | `codex/src/tab-read.ts` | Codex adapter. Reads the view and applies it, and sends the replies and discards the server holds with each request. |
@@ -37,7 +39,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `types/index.d.ts`. |
 | `codex/src/host.ts` | Codex host. `codexStore`, the Codex store that `hooks/session-host.ts` runs on. |
 | `codex/src/server.ts` | Codex host. The MCP server: `makeServer`, which takes `ServerDeps` and answers each JSON-RPC call. |
-| `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, and the readers of a call's session, turn and arguments. |
+| `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, the tool fields of the last list it gave, and the readers of a call's session, turn and arguments. |
 | `codex/src/server-herdr.ts` | Codex host. `followCodexPresses`: in a Herdr app terminal, the MCP server watches the presses folder and applies the presses for the Codex sessions this terminal publishes. |
 | `codex/src/server-host.ts` | Codex host. The bindings `hooks/session-host.ts` runs on for presses, opening, `codex queue` and the session's background PR fetch. Also the tab view each answer carries. |
 | `codex/src/server-trust.ts` | Codex host. Whether Codex runs the inbox's hooks in a chat's folder. The server asks Codex in the background and caches the answer. |

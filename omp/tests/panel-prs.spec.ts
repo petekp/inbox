@@ -7,12 +7,12 @@ import {
   prCheckId,
   prMarkId,
   PR_REFRESH_ID,
-  prsEmptyHint,
   prThreadId,
   threadRowText,
   threadSentIn,
 } from '../../hooks/pr-rows'
 import { cancelledChecks, failingChecks } from '../../hooks/pr-checks'
+import { prsEmptyHint } from '../../hooks/empty-tab'
 import { waitingThreads } from '../../hooks/prs'
 import { ago } from '../../hooks/text'
 import type { LastAction, PrOrder } from '../../types'
@@ -45,21 +45,21 @@ function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAc
   return screenOf({ view: sessionView(ordered, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
-test('an order draws its title and reason above the PR blocks and a dim rank before each ranked PR, ahead of the rest', () => {
+test('an order draws its title and reason above the ranked PR blocks, with no rank numbers, and a dim Other PRs line above the rest', () => {
   const screen = withOrder({})
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   const lines = text(screen, ui).split('\n')
   const title = lines.findIndex(l => l.includes('Merge in this order · set by omp 2m ago'))
   const heads = lines
     .slice(title + 2)
-    .flatMap(l => l.match(/(?:\d+\. )?#\d+ /) ?? [])
+    .flatMap(l => l.match(/(?:\d+\. )?#\d+ |Other PRs/) ?? [])
     .map(h => h.trim())
 
   expect(title).toBeLessThan(lines.findIndex(l => /#\d+ /.test(l)))
   expect(lines[title + 1]).toContain('#33 builds on #29.')
   expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2m#33 builds on #29.`)
-  expect(heads).toEqual(['1. #29', '2. #33', '#31'])
-  expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2m1. ${ESC}22m`)
+  expect(heads).toEqual(['#29', '#33', 'Other PRs', '#31'])
+  expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2mOther PRs`)
   expect(text(screen, ui)).not.toContain('changed since')
   expect(text(screenOf(), ui)).not.toContain('Merge in this order')
 })
@@ -98,7 +98,7 @@ test('a ranked PR that changed since the order draws the changed line with Rank 
   const at = narrow.findIndex(l => l.includes('1 PR changed since'))
   expect(narrow[at]).toContain('g Rank again')
   expect(narrow[at + 1]?.trim()).toBe('Ranking…')
-  expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('g')
+  expect(helpKeys('omp', 'prs', false).map(k => k.keys)).toContain('g')
 })
 
 function withFinished(states: Record<string, 'MERGED' | 'CLOSED'>): PanelScreen {
@@ -125,7 +125,7 @@ test('Clear merged and closed draws above the PR blocks, and m from any row or E
   expect(handleKey(screen, { ...ui, selectedId: CLEAR_FINISHED_ID }, 'enter', NOW).press).toEqual({
     action: 'pr-clear-finished',
   })
-  expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('m')
+  expect(helpKeys('omp', 'prs', false).map(k => k.keys)).toContain('m')
 })
 
 test('the PRs tab opens with Clear merged and closed unselected when no PR waits, so Enter does not clear', () => {

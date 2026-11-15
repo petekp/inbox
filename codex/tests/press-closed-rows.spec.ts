@@ -4,19 +4,20 @@ import { test } from 'node:test'
 import { applyPress } from '../../hooks/press-reducer'
 import { recordClose, recordItem } from '../../hooks/tools'
 import { closedShown } from '../../hooks/rows'
-import { firstWaiting, keptOpen, listWaits, rowAfterClose } from '../../hooks/action-plan'
+import { firstWaiting, keptOpen, listWaits, openOnArrival, rowAfterClose } from '../../hooks/action-plan'
 import { QUEUED_AFTER_MS, NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
 import type { RowWait } from '../../hooks/action-plan'
 import { viewOf } from '../src/core'
-import { EXIT_MS } from '../../hooks/row-motion'
+import { ROW_STATE_MS } from '../../hooks/row-motion'
 import { drawnSettled, SETTLE_WINDOW_MS } from '../src/settle'
 import { CODEX } from '../src/texts'
 import { after, withItems } from './press-fixtures'
+import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
 test('the tab draws a settled row while it shows the tab the row closed in, and lists it in the Closed fold once the person switches tab', () => {
   const s = withItems()
   const dismissed = after(s, { action: 'dismiss', id: 'i1' })
-  const shown = viewOf(dismissed, 2050 + SETTLED_MS + EXIT_MS + 1, { ...NO_HOLDS, shownSince: 40 })
+  const shown = viewOf(dismissed, 2050 + SETTLED_MS + ROW_STATE_MS.leaving + 1, { ...NO_HOLDS, shownSince: 40 })
   assert.equal(shown.needsYou.questions[0]?.state.is, 'settled')
   const fold = (shownSince: number) =>
     closedShown(shown.needsYou.closed.questions, drawnSettled(shown, shownSince)).map(d => d.id)
@@ -139,6 +140,7 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
     s.ledger,
     { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
     10,
+    TOOL_FIELDS,
   ).ledger
   const closed = recordClose(CODEX, recorded, { id: 'f3', reason: 'added one' }, 50, {
     lastActions: {},
@@ -214,4 +216,15 @@ test('after a close the next waiting row opens, else the nearest one before it, 
   assert.equal(rowAfterClose([w('i1')], 'i9'), null)
   assert.equal(keptOpen([w('i3'), w('i1'), w('i2')], ['i3']), 'i1')
   assert.equal(keptOpen([w('i3'), w('i1', false)], ['i3']), null)
+})
+
+test('a finished row never opens a collapsed row, and a row that arrives while every row is collapsed opens', () => {
+  const w = (id: string, isWaiting = true): RowWait => ({ id, isWaiting })
+  const c = (id: string): RowWait => ({ id, isWaiting: true, isCollapsed: true })
+  assert.equal(rowAfterClose([w('i1', false), c('i2'), w('i3')], 'i1'), 'i3')
+  assert.equal(rowAfterClose([c('i1'), w('i2', false), c('i3')], 'i2'), null)
+  assert.equal(firstWaiting([c('i1'), c('i2')]), null)
+  assert.equal(openOnArrival([c('i1'), c('i2'), w('i3')], 'i2', ['i3']), 'i3')
+  assert.equal(openOnArrival([c('i1'), w('i2'), w('i3')], 'i2', ['i3']), null)
+  assert.equal(openOnArrival([c('i1'), c('i2')], 'i2', []), null)
 })

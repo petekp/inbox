@@ -38,6 +38,11 @@ export async function selectRow(
   if (await pane.find({ key: `title-${id}` })) await pane.press({ key: `title-${id}` })
 }
 
+export async function openTitle(pane: Pick<Mounted, 'findAll'>) {
+  const client = (await pane.findAll({ type: 'Client' })).find(c => (c.key ?? '').startsWith('collapse-'))
+  return client?.props.props as { title: string; after: string } | undefined
+}
+
 export async function leaveAndReturn(
   pane: Pick<Mounted, 'press'>,
   clock: Pick<ReturnType<typeof mock.clock>, 'advance' | 'settle'>,
