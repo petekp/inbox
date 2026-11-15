@@ -97,21 +97,27 @@ One row per piece, whatever words the conversation used for it. Finished work do
 
 #### 5. Each mark is true, and every open piece stays on the page
 
-The person can trust a mark at a glance. A piece that is delivered, dropped or filed for later closes. The page has no mark of its own for filed work, so it closes as delivered, and where it stands says it is filed. Every piece still open is on the page, as a row or in the "N more" fold, however many there are and however old. A piece not started yet whose whole outcome is a milestone may show as that milestone alone, as `○ Live in store ← next` stands for a 2.5 release no one has started. The page gets shorter by closing what is done, dropped, filed or listed twice, never by losing open work.
+The person can trust a mark at a glance. A piece that is delivered, dropped or filed for later closes. A piece that goes through PRs is delivered when its last PR merges, not when its delegate finishes or its checks pass, and the work that follows the merge, such as a beta build, is a piece of its own. The page has no mark of its own for filed work, so it closes as delivered, and where it stands says it is filed. Every piece still open is on the page, as a row or in the "N more" fold, however many there are and however old. A piece not started yet whose whole outcome is a milestone may show as that milestone alone, as `○ Live in store ← next` stands for a 2.5 release no one has started. The page gets shorter by closing what is done, dropped, filed or listed twice, never by losing open work.
 
 - **Good:** `✓ 2.4 release: live in the store`, with a separate `● Sync bug: cause found`.
 - **Good:** a piece set aside for a day keeps its row: `○ Export button: works on web`.
 - **Good:** `✓ Dark mode toggle: filed for later`.
 - **Bad:** `● 2.4 release: published, sync bug next`. The release is over.
+- **Bad:** `● Share sheet bug: fix merged, beta next`. Its PR merged, so the piece is over, and the beta build is its own row.
 - **Bad:** ten `○` rows that read "filed for later", all evening.
 - **Bad:** `○ Dark mode toggle: filed for later`. Filed work is closed.
 - **Bad:** nine pieces are open, and the page shows six, with no fold and no ✓ or ✗ for the other three.
+
+A milestone's mark follows the work that serves it. It reads as being worked on while any of that work is, and it closes once that work is closed and some of it was delivered. The person reads the goal block first, so a `○` milestone over a `●` row tells them nothing has started on it when it has.
+
+- **Good:** `● Under 100 ms`, over `● Search index: 0.3 s, the target is 100 ms`.
+- **Bad:** `○ Under 100 ms`, over `● Search index: 0.3 s, the target is 100 ms`.
 
 #### 6. Where it stands says the state of the work
 
 A few words on what works, what is left or what it waits on, in the work's own terms. It does not name the step that ran, the tool that runs now, an id, or what was said in the conversation. A row that covers several parts keeps every part whose state differs. When those parts do not fit in a few words, each gets its own row.
 
-While every child row under a working piece has finished, and no ask holds it up, where it stands names the step left in this session, so the person sees why the row still works. When the step left is another piece's work, the piece waits on it. When neither the session nor where it stands says what came of a finished delegate, the step left is checking its work.
+While every child row under a working piece has finished, and no ask holds it up, where it stands names the step left in this session, so the person sees why the row still works. When the step left is another piece's work, the piece waits on it, until all of its own work has merged: then it is done. A release still waits until it is published. When neither the session nor where it stands says what came of a finished delegate, the step left is checking its work.
 
 - **Good:** `Export button: works on web and iOS`.
 - **Good:** `2.5 release: in review`, for a coordinator's stream.

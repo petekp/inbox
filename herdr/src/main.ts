@@ -11,9 +11,11 @@ import {
   props,
   readTextFile,
   run,
+  spaces,
   terminals,
   theme,
   watchFolder,
+  window as herdrWindow,
   writeTextFile,
 } from 'herdr'
 import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
@@ -29,7 +31,7 @@ import type { Draft } from '../../types'
 import type { Block, Button, Does, ViewChange } from './blocks'
 import { freshUi } from './draw'
 import type { LookUi, TabCell } from './draw'
-import { isSessionChange, readSession } from './files'
+import { isSessionChange, readSessionFile } from './files'
 import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
@@ -40,6 +42,7 @@ import {
   keyMove,
   tabUndo,
   withArrivals,
+  withChange,
   withClosedSelection,
   withSelected,
   withTab,
@@ -65,18 +68,14 @@ import type { PressTarget } from './press-queue'
 import { herdrIo } from './io'
 import { runHere } from './run-here'
 import { screenOf } from './screen'
+import { LOOK_TICK_MS, StatusLook, isPaneShown, statusDrawn, writeLook } from './status-look'
 
 /** How often the look reads its session again when no folder change came, and how long it waits to watch again. */
 const REREAD_MS = 10_000
 /** Ages read in minutes, so the look draws again each minute. */
 const AGE_TICK_MS = 60_000
-/** A read mid-write gives torn JSON: the look reads again this soon, this many times. */
-const TORN_RETRY_MS = 30
-const TORN_RETRIES = 5
 
 type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; queue: PressQueue }
-
-const toggled = <T>(list: T[], x: T): T[] => (list.includes(x) ? list.filter(y => y !== x) : [...list, x])
 
 const { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile })
 
@@ -117,6 +116,7 @@ export default class Inbox extends View {
   /** The next read for the presses still out, and the next draw for a fold or a move. */
   outTimer: Timer | null = null
   drawTimer: Timer | null = null
+  look = new StatusLook()
 
   init(_props: unknown, cx: Context): void {
     this.focus = cx.focus_handle()
@@ -129,6 +129,7 @@ export default class Inbox extends View {
     })
     cx.timer.every(REREAD_MS, cx => this.sessionId && this.load(this.sessionId, cx))
     cx.timer.every(AGE_TICK_MS, cx => cx.notify())
+    cx.timer.every(LOOK_TICK_MS, cx => cx.spawn(() => this.checkLook()))
   }
 
   holds(now: number): Holds {
@@ -145,23 +146,23 @@ export default class Inbox extends View {
 
   load(sessionId: string, cx: Context): void {
     cx.spawn(async cx => {
-      for (let n = 0; ; n++) {
-        const text = await readTextFile(publishedSessionPath(appHome(), sessionId)).catch((e: unknown) => e)
-        const read =
-          typeof text === 'string' || text === null
-            ? readSession(text)
-            : { is: 'refused' as const, reason: String(text) }
-        if (read.is === 'torn' && n < TORN_RETRIES) {
-          await cx.sleep(TORN_RETRY_MS)
-          continue
-        }
-        if (this.sessionId !== sessionId) return
-        this.read = read
-        await this.settle(cx)
-        cx.notify()
-        return
-      }
+      const read = await readSessionFile(readTextFile, publishedSessionPath(appHome(), sessionId), ms => cx.sleep(ms))
+      if (this.sessionId !== sessionId) return
+      this.read = read
+      await this.settle(cx)
+      cx.notify()
     })
+  }
+
+  /** Writes the look at the Status for its session's host once the pane stops showing it. */
+  async checkLook(isClosing = false): Promise<void> {
+    const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow())
+    const ended = this.look.check(isShown, Date.now())
+    if (ended) await writeLook(queueIo, appHome(), ended)
+  }
+
+  close(): Promise<void> {
+    return this.checkLook(true)
   }
 
   /**
@@ -218,13 +219,8 @@ export default class Inbox extends View {
   }
 
   change(c: ViewChange): void {
-    const ui = this.ui
-    if ('showOptions' in c) ui.optionsShown = toggled(ui.optionsShown, c.showOptions)
-    else if ('closedFold' in c) ui.unfolded = toggled(ui.unfolded, c.closedFold)
-    else if ('earlier' in c) ui.closedAll = [...ui.closedAll, c.earlier]
-    else if ('toggleFold' in c) ui.statusUnfolded = toggled(ui.statusUnfolded, c.toggleFold)
-    else if ('showAsk' in c) this.ui = withSelected({ ...ui, tab: 'needsYou' }, c.showAsk)
-    else this.isHelpShown = !this.isHelpShown
+    if ('toggleHelp' in c) this.isHelpShown = !this.isHelpShown
+    else this.ui = withChange(this.ui, c)
     this.closeStaleField()
   }
 
@@ -437,6 +433,7 @@ export default class Inbox extends View {
     if (screen.is === 'message') {
       this.timeLeft = new Map()
       this.tracksOf = ''
+      this.look.drew(null, now)
       return root.child(messageEl(screen.message, t))
     }
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
@@ -447,6 +444,9 @@ export default class Inbox extends View {
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
+    const read = drawn.read?.is === 'read' && this.ui.tab === 'overview' && !this.isHelpShown ? drawn.read : null
+    const room = moved.nextAt === null ? this.listRoom : null
+    this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
     const isStarting = [...moved.motion.values()].some(m => m.isStart)
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft

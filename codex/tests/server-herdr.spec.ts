@@ -198,7 +198,11 @@ test('a look file the Herdr look wrote counts the Status subjects it showed as s
     },
   })
 
-  await apply!('s1', { format: 1, id: 'l1', look: { startedAt: 20, endedAt: 20_000, shown: { s1: 20 } } })
+  await apply!('s1', {
+    format: 1,
+    id: 'l1',
+    look: { startedAt: 20, endedAt: 20_000, shown: { s1: 20 }, drawnWrittenAt: 20_000 },
+  })
   const looked = await readState(dir, 's1')
   const overview = looked.ledger.overview!
 

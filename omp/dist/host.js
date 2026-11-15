@@ -1368,7 +1368,7 @@ function isSubjectSeen(o, s) {
   const seenAt = subjectSeenAt(o, s.id);
   return seenAt !== null && s.changedAt <= seenAt;
 }
-function lookEnded(o, at, shown) {
+function lookEnded(o, at, shown, seenUpTo = at) {
   if (o === null || o.look === null)
     return o;
   const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS;
@@ -1376,24 +1376,25 @@ function lookEnded(o, at, shown) {
     return { ...o, look: null };
   const isShown = (s) => shown === "all" || (shown[s.id] ?? -Infinity) >= s.changedAt;
   const missed = o.subjects.filter((s) => s.into === null && !isShown(s)).map((s) => [s.id, subjectSeenAt(o, s.id)]);
-  return { ...o, lastLookAt: at, missedInLastLook: Object.fromEntries(missed), look: null };
+  return { ...o, lastLookAt: seenUpTo, missedInLastLook: Object.fromEntries(missed), look: null };
 }
 function lookReported(o, look) {
   if (o === null)
     return o;
   const { startedAt, endedAt, shown } = look;
-  const isLate = o.lastLookAt !== null && endedAt <= o.lastLookAt;
+  const seenUpTo = Math.min(endedAt, look.drawnWrittenAt);
+  const isLate = o.lastLookAt !== null && seenUpTo <= o.lastLookAt;
   if (!isLate) {
-    const ended = lookEnded({ ...o, look: { startedAt } }, endedAt, shown);
+    const ended = lookEnded({ ...o, look: { startedAt } }, endedAt, shown, seenUpTo);
     return ended && { ...ended, look: o.look };
   }
   if (endedAt - startedAt < LOOK_MIN_MS)
     return o;
   const isShown = (s) => (shown[s.id] ?? -Infinity) >= s.changedAt;
-  const raised = o.subjects.filter((s) => (s.id in o.missedInLastLook) && (o.missedInLastLook[s.id] ?? -Infinity) < endedAt && isShown(s));
+  const raised = o.subjects.filter((s) => (s.id in o.missedInLastLook) && (o.missedInLastLook[s.id] ?? -Infinity) < seenUpTo && isShown(s));
   if (raised.length === 0)
     return o;
-  return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map((s) => [s.id, endedAt])) } };
+  return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map((s) => [s.id, seenUpTo])) } };
 }
 
 // ../hooks/children.ts
@@ -2832,6 +2833,50 @@ function goalRefusal(o, start, kind, now) {
   return refusalOf(start, kind, now) === null ? null : why;
 }
 
+// ../hooks/status-milestone-work.ts
+function forgetSeenWas(m, lastLookAt) {
+  if (lastLookAt !== null && m.changedAt <= lastLookAt)
+    m.was = null;
+}
+function withWorkDoneMilestones(o, now) {
+  let isChanged = false;
+  const milestones = o.milestones.map((m) => {
+    if (!isOpen(m))
+      return m;
+    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
+    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
+    if (!isWorkDone)
+      return m;
+    isChanged = true;
+    return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
+  });
+  return isChanged ? { ...o, milestones } : o;
+}
+function withWorkStartedMilestones(o, now) {
+  const startedAs = (m) => {
+    if (m.status !== "queued")
+      return null;
+    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
+    if (linked.some((s) => s.status === "working"))
+      return "working";
+    return linked.some((s) => s.status === "waits-on-other") ? "waits-on-other" : null;
+  };
+  if (!o.milestones.some((m) => startedAs(m) !== null))
+    return o;
+  return {
+    ...o,
+    milestones: o.milestones.map((m) => {
+      const status = startedAs(m);
+      if (status === null)
+        return m;
+      const started = { ...m };
+      forgetSeenWas(started, o.lastLookAt);
+      const isWrittenNow = m.changedAt === now;
+      return { ...started, status, text: isWrittenNow ? m.text : "", changedAt: now };
+    })
+  };
+}
+
 // ../hooks/status-goal-ops.ts
 var RESTATED_SHARE = 0.8;
 function restatesGoal(text, goal) {
@@ -2860,10 +2905,6 @@ function findMilestone(o, ref) {
 function linkableMilestone(o, ref) {
   const m = findMilestone(o, ref);
   return m && m.status !== "dropped" ? m : null;
-}
-function forgetSeenWas(m, lastLookAt) {
-  if (lastLookAt !== null && m.changedAt <= lastLookAt)
-    m.was = null;
 }
 function moveMilestone(o, m, op, now) {
   if (op.kind === "set") {
@@ -3042,25 +3083,11 @@ function applyGoalOp(o, op, now, findSubject, start = o, servesLines = []) {
   const isOtherVersion = milestone !== null && namesOtherVersion(subject.name, milestone.name);
   return { ...o, serves: { ...o.serves, [subject.id]: milestone === null || isOtherVersion ? "none" : milestone.id } };
 }
-function withWorkDoneMilestones(o, now) {
-  let isChanged = false;
-  const milestones = o.milestones.map((m) => {
-    if (!isOpen(m))
-      return m;
-    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
-    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
-    if (!isWorkDone)
-      return m;
-    isChanged = true;
-    return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
-  });
-  return isChanged ? { ...o, milestones } : o;
-}
 function settleGoal(saved, now, readSetAt, named) {
   const g = saved.goal;
   if (g === null)
     return saved;
-  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now);
+  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
   const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").sort((x, y) => named.get(x.id) - named.get(y.id)).slice(0, MILESTONES_MAX) : o.milestones;
@@ -10587,7 +10614,7 @@ LINK: running or ask id | subject id or name
 HEAD: title | description
 ${GOAL_LINES}
 
-A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open.${parts} A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open.${parts} A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A problem, the fix for it and the fix's PR are one subject, whatever words the conversation uses for them, and so are a feature and the PR that builds it. A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
 The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never a PR or issue number, and never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
 
@@ -10601,15 +10628,15 @@ Status is one of: working, queued, waits-on-other.
 - waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
-- Change a subject by its id. Write NEW only when no subject in <subjects> covers it. When work in <finished> comes back, SET its id to reopen it.
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it: first check each one for the same work under another name, such as the bug a fix is for. When work in <finished> comes back, SET its id to reopen it.
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
-- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
+- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason. A subject is finished when all the work its name names is done. Work that goes through PRs is done once its last PR merges, not when its delegate finishes, its review comes back clean or its checks pass. A release is done when it is published. Work its name does not cover, such as a release or another change, is a NEW subject with a name that does not repeat the finished one's.
 - Check how long ago each working subject in <subjects> last changed. One that changed a day or more ago, that this exchange does not work on, and that no item in <asks> or <running> holds up, has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on". Never SET it to keep it working. Queued and waits-on-other subjects stay until the work says otherwise.
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
-- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for an item in <running>, or its progress in its subject's text: code shows it under its subject. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When an item finished, as <running> or the exchange shows, and no other item in <running> still works for its subject, a subject that stays working says in where it stands what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate laying out the PDF" or "delegate finished". When neither the exchange nor where it stands says what came of the finished item, say its work is not checked yet: "PDF done, not checked". Keep where it stands when it already says what came of the item or what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other.
+- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for an item in <running>, or its progress in its subject's text: code shows it under its subject. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When an item finished, as <running> or the exchange shows, and no other item in <running> still works for its subject, a subject that stays working says in where it stands what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate laying out the PDF" or "delegate finished". When neither the exchange nor where it stands says what came of the finished item, say its work is not checked yet: "PDF done, not checked". Keep where it stands when it already says what came of the item or what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other. Once all of its own work has merged, it is DONE, even when another subject's work follows. A release still waits until it is published.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
 - The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.
 
@@ -10660,7 +10687,7 @@ function statusMidTurnPrompt(input, turn) {
 }
 function statusCatchUpPrompt(input, transcript) {
   return [
-    "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.",
+    "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends. A conversation often names one piece of work several ways. Match each piece to its subject in <subjects> or <finished> before you write NEW. A finished piece that the conversation only retells gets no line.",
     ...statusBlocks(input),
     `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`
   ].join(NL5);
@@ -12036,6 +12063,8 @@ function lookProblem(look) {
     return "look without its times";
   if (look.endedAt < look.startedAt)
     return "look ends before it starts";
+  if (!isTime(look.drawnWrittenAt))
+    return "look without when its Status was written";
   return isTimes(look.shown) ? null : "look without shown rows";
 }
 function pressFile(text) {

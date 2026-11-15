@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T22:49:02.881Z. 236898 characters follow.
+// Built at 2026-11-15T22:55:37.333Z. 241217 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -14,9 +14,11 @@ import {
   props,
   readTextFile,
   run,
+  spaces,
   terminals,
   theme,
   watchFolder,
+  window as herdrWindow,
   writeTextFile
 } from "herdr";
 
@@ -251,6 +253,7 @@ function isFinishedAfter(c, at) {
 function isChildShown(c, now, lastLookAt) {
   return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
 }
+var LOOK_MIN_MS = 5000;
 function subjectSeenAt(o, id) {
   return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
 }
@@ -1765,6 +1768,12 @@ function statusPage(s, now) {
     rows,
     error: s.overviewFailure ? STATUS_FAILED : null
   };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
+}
+function statusListRows(page) {
+  return [...(page.goal?.milestones ?? []).flatMap((m) => m.foldId === null ? m.rows : []), ...page.rows];
 }
 
 // ../hooks/timing.ts
@@ -4294,6 +4303,17 @@ function readSession(text) {
     isFetchingPrs: file.isFetchingPrs === true
   };
 }
+var TORN_RETRY_MS = 30;
+var TORN_RETRIES = 5;
+async function readSessionFile(read, path, sleep) {
+  for (let n = 0;; n++) {
+    const text = await read(path).catch((e) => e);
+    const got = typeof text === "string" || text === null ? readSession(text) : { is: "refused", reason: String(text) };
+    if (got.is !== "torn" || n >= TORN_RETRIES)
+      return got;
+    await sleep(TORN_RETRY_MS);
+  }
+}
 
 // src/follow.ts
 function shownOf(where, address) {
@@ -4432,6 +4452,18 @@ function withoutConfirmed(drafts, confirmed, typing, pending) {
     drafts: Object.fromEntries(Object.entries(drafts).filter(([id, d]) => !isSentDraft(id, d))),
     waiting: current.filter((c) => c.rowId === typing)
   };
+}
+var toggled = (list, x) => list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
+function withChange(ui, c) {
+  if ("showOptions" in c)
+    return { ...ui, optionsShown: toggled(ui.optionsShown, c.showOptions) };
+  if ("closedFold" in c)
+    return { ...ui, unfolded: toggled(ui.unfolded, c.closedFold) };
+  if ("earlier" in c)
+    return { ...ui, closedAll: [...ui.closedAll, c.earlier] };
+  if ("toggleFold" in c)
+    return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) };
+  return withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
 }
 
 // src/press-file.ts
@@ -5563,12 +5595,91 @@ function nextUndoPlaceEnd(settled, now) {
   return ends.length > 0 ? Math.min(...ends) : null;
 }
 
+// src/status-look.ts
+var LOOK_TICK_MS = 1000;
+var LOOK_GAP_MS = 3 * LOOK_TICK_MS;
+function isPaneShown(paneId, panes, spaces, window2) {
+  const own = panes.find((p) => p.pane === paneId);
+  const tab = spaces.find((s) => s.active)?.tabs.find((t) => t.id === own?.tab);
+  return own !== undefined && window2.active && tab?.active === true && (!tab.zoomed || own.zoomed);
+}
+function statusPlaced(blocks, heightOf, page, room) {
+  const subjects = new Map(statusListRows(page).map((r) => [r.id, seenSubjectIds(r)]));
+  const rows = [];
+  let y = 0;
+  for (const { block, above } of spacesOf(blocks, () => false)) {
+    const height = heightOf(block.id);
+    if (height === undefined)
+      return null;
+    y += above;
+    const ids = subjects.get(block.id) ?? [];
+    if (ids.length > 0)
+      rows.push({ top: y + padOf(block), subjects: ids });
+    y += height;
+  }
+  return { rows, height: y, room };
+}
+function surelyShown({ rows, height, room }) {
+  const scrollEnd = Math.max(0, height - room);
+  return rows.filter((r) => r.top >= scrollEnd && r.top + LINE_HEIGHT <= room).flatMap((r) => r.subjects);
+}
+function statusDrawn(sessionId, read, view, blocks, heights, room) {
+  if (sessionId === null || read === null)
+    return null;
+  const placed = room === null ? null : statusPlaced(blocks, (k) => heights.get(k), view.statusPage, room);
+  return { sessionId, terminal: read.envelope.terminal, writtenAt: read.envelope.writtenAt, placed };
+}
+
+class StatusLook {
+  drawn = null;
+  restsFrom = 0;
+  run = null;
+  drew(drawn, now) {
+    const isSamePlaces = JSON.stringify(drawn?.placed ?? null) === JSON.stringify(this.drawn?.placed ?? null);
+    if (!isSamePlaces)
+      this.restsFrom = now;
+    this.drawn = drawn;
+  }
+  check(isPaneShown, now) {
+    const d = isPaneShown ? this.drawn : null;
+    const run = this.run;
+    const goesOn = d !== null && run?.sessionId === d.sessionId && now - run.lastShownAt <= LOOK_GAP_MS;
+    const ended = run && !goesOn ? lookOf(run) : null;
+    if (!goesOn)
+      this.run = d && {
+        sessionId: d.sessionId,
+        terminal: d.terminal,
+        startedAt: now,
+        lastShownAt: now,
+        drawnWrittenAt: d.writtenAt,
+        shown: {}
+      };
+    if (this.run && d) {
+      this.run.lastShownAt = now;
+      this.run.drawnWrittenAt = d.writtenAt;
+      const isAtRest = d.placed !== null && now - this.restsFrom >= HEIGHT_SETTLE_MS;
+      const shownAt = Math.min(now, d.writtenAt);
+      for (const id of isAtRest && d.placed ? surelyShown(d.placed) : [])
+        this.run.shown[id] = shownAt;
+    }
+    return ended;
+  }
+}
+function lookOf({ sessionId, terminal, startedAt, lastShownAt, drawnWrittenAt, shown }) {
+  if (lastShownAt - startedAt < LOOK_MIN_MS)
+    return null;
+  return { sessionId, terminal, look: { startedAt, endedAt: lastShownAt, shown, drawnWrittenAt } };
+}
+async function writeLook(io, appHome, ended) {
+  const id = newPressId(ended.look.endedAt, io.random());
+  const file = { format: HERDR_FORMAT, id, look: ended.look };
+  if (await io.write(pressPath(appHome, ended.sessionId, id), JSON.stringify(file)) === null)
+    await io.wake(ended.terminal, id);
+}
+
 // src/main.ts
 var REREAD_MS = 1e4;
 var AGE_TICK_MS = 60000;
-var TORN_RETRY_MS = 30;
-var TORN_RETRIES = 5;
-var toggled = (list, x) => list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
 var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
 
 class Inbox extends View {
@@ -5601,6 +5712,7 @@ class Inbox extends View {
   focus = null;
   outTimer = null;
   drawTimer = null;
+  look = new StatusLook;
   init(_props, cx) {
     this.focus = cx.focus_handle();
     cx.spawn(async (cx) => {
@@ -5614,6 +5726,7 @@ class Inbox extends View {
     });
     cx.timer.every(REREAD_MS, (cx) => this.sessionId && this.load(this.sessionId, cx));
     cx.timer.every(AGE_TICK_MS, (cx) => cx.notify());
+    cx.timer.every(LOOK_TICK_MS, (cx) => cx.spawn(() => this.checkLook()));
   }
   holds(now) {
     this.discarded = keptDiscards(this.discarded, this.shownSince);
@@ -5627,21 +5740,22 @@ class Inbox extends View {
   }
   load(sessionId, cx) {
     cx.spawn(async (cx) => {
-      for (let n = 0;; n++) {
-        const text = await readTextFile(publishedSessionPath(appHome(), sessionId)).catch((e) => e);
-        const read = typeof text === "string" || text === null ? readSession(text) : { is: "refused", reason: String(text) };
-        if (read.is === "torn" && n < TORN_RETRIES) {
-          await cx.sleep(TORN_RETRY_MS);
-          continue;
-        }
-        if (this.sessionId !== sessionId)
-          return;
-        this.read = read;
-        await this.settle(cx);
-        cx.notify();
+      const read = await readSessionFile(readTextFile, publishedSessionPath(appHome(), sessionId), (ms) => cx.sleep(ms));
+      if (this.sessionId !== sessionId)
         return;
-      }
+      this.read = read;
+      await this.settle(cx);
+      cx.notify();
     });
+  }
+  async checkLook(isClosing = false) {
+    const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow());
+    const ended = this.look.check(isShown, Date.now());
+    if (ended)
+      await writeLook(queueIo, appHome(), ended);
+  }
+  close() {
+    return this.checkLook(true);
   }
   async settle(cx) {
     if (this.read?.is !== "read" || !this.queue.isAwaiting())
@@ -5693,19 +5807,10 @@ class Inbox extends View {
       this.load(sessionId, cx);
   }
   change(c) {
-    const ui = this.ui;
-    if ("showOptions" in c)
-      ui.optionsShown = toggled(ui.optionsShown, c.showOptions);
-    else if ("closedFold" in c)
-      ui.unfolded = toggled(ui.unfolded, c.closedFold);
-    else if ("earlier" in c)
-      ui.closedAll = [...ui.closedAll, c.earlier];
-    else if ("toggleFold" in c)
-      ui.statusUnfolded = toggled(ui.statusUnfolded, c.toggleFold);
-    else if ("showAsk" in c)
-      this.ui = withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
-    else
+    if ("toggleHelp" in c)
       this.isHelpShown = !this.isHelpShown;
+    else
+      this.ui = withChange(this.ui, c);
     this.closeStaleField();
   }
   closeStaleField() {
@@ -5899,6 +6004,7 @@ class Inbox extends View {
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
+      this.look.drew(null, now);
       return root.child(messageEl(screen.message, t));
     }
     const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
@@ -5909,6 +6015,9 @@ class Inbox extends View {
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
+    const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
+    const room = moved.nextAt === null ? this.listRoom : null;
+    this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     const isStarting = [...moved.motion.values()].some((m) => m.isStart);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
