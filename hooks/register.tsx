@@ -3152,8 +3152,9 @@ export const register: Register = on => {
     const top = isListShown ? firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions)) : null
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
-    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
-    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
+    const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
+    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded) : null
+    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage, isStatusUnfolded) : []
 
     const {
       desktopColumnPt,
