@@ -144,19 +144,8 @@ export function versionLabel(version: string, isNextBuild: boolean): string {
   return isNextBuild ? `v${version} · next` : `v${version}`
 }
 
+/** What the band and an empty Asks tab read when nothing waits on the person. */
+export const NOTHING_NEEDED_TEXT = 'Nothing needed'
+
 /** What the band, the Herdr line and an empty tab read in place of "Nothing needed" while rows may be missing. */
 export const MAYBE_STALE_TEXT = 'May be out of date'
-
-/** An empty tab's text. With `isStale`, from `isMaybeStale`, the title says the tab may be missing rows. */
-export function emptyText(
-  tab: 'needsYou' | 'findings',
-  agent: string,
-  isStale = false,
-): { title: string; hint: string } {
-  const text =
-    tab === 'needsYou'
-      ? { title: 'Nothing needed', hint: `${agent}'s questions and the tasks only you can do show up here.` }
-      : { title: 'No findings yet', hint: `${agent} flags issues and opportunities it spots beyond your task.` }
-
-  return isStale ? { ...text, title: MAYBE_STALE_TEXT } : text
-}

@@ -10,7 +10,8 @@ Part of [the look map](../looks.md#files).
 | `hooks/row-motion.ts` | Shared module. The motion state machine for rows, how long each moving state lasts, and each state's fade length. |
 | `hooks/springs.ts` | Shared module. The spring every box's height moves on, its frames for a look that plays them, and how long a height move can take to come to rest. |
 | `hooks/feedback.ts` | Shared module. A press's feedback on its row: `feedbackOf`, its text in each look, the working and done labels, and whether the press is still out. |
-| `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
+| `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the text an empty Asks tab shares with the band. |
+| `hooks/empty-tab.ts` | Shared module. `emptyTab` decides when each tab is empty and returns its title, hint and what goes under them. The empty tabs' texts. |
 | `hooks/tabs.ts` | Shared module. The tabs each build shows, with their names, symbols and badges, how the tab bar fits them, and the `/inbox` command's description. |
 | `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the merged line and the text before a stall. |
 | `hooks/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order, with each part's folds after its open or its closed rows, and the counts by mark. |
@@ -77,7 +78,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pr-checks.ts` | Shared module. Which checks fail, which were cancelled, the GitHub Actions run a check belongs to, the failing check that cancelled another, and `blockingChecks`, the checks that wait on the person. |
 | `hooks/pr-tab.ts` | Shared module. What each PR press does, in `applyPrPress`, and the PR button plans: `threadActions`, `checkActions`, `prBlockActions`, and `prClearActions` for Clear merged and closed. `withFinishedPrsSettled` settles a tab PR that a fetch first finds merged or closed, and the old branch PR once the branch has another PR or none. |
 | `hooks/pr-fetch.ts` | Shared module. Which linked PRs the tab tracks, the line that names the older ones it leaves out, the Open PR help step for any linked PR, and `fetchTracked`, which reads the tracked PRs through a host's gh runner in one query, skips merged and lately read ones, and names the cause when a whole fetch fails. |
-| `hooks/pr-rows.ts` | Shared module. PR row ids, each PR row's mark, title and meta line, which PR rows wait on the person, the gh notices, the PRs tab's empty text, and the tone of each PR status. |
+| `hooks/pr-rows.ts` | Shared module. PR row ids, each PR row's mark, title and meta line, which PR rows wait on the person, the gh notices, and the tone of each PR status. |
 | `hooks/pr-views.ts` | Shared module. The PR blocks a look draws and their order, which PR views a session keeps, and whether the person dismissed a PR. |
 | `hooks/pr-order.ts` | Shared module. The agent's PR order: the order's lines above the PR blocks, the "Other PRs" line above the PRs it does not rank and the rule for when that line draws, the statuses it records, and its Rank again button. |
 | `hooks/pr-press.ts` | Shared module. The PR press types, the open or refresh each press runs, the row each press records on, and the helpers the PR button plans share, which add "again" to a label, add Try again, and mark the button whose press is out. |

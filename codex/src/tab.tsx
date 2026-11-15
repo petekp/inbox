@@ -73,7 +73,7 @@ function App({
           <Prs v={v} prs={prs} now={now} />
         ) : null
       ) : (
-        <StatusTab page={v.statusPage} drawn={status ?? { goal: [], rows: [] }} />
+        <StatusTab v={v} drawn={status ?? { goal: [], rows: [] }} />
       )}
       <footer>
         <button

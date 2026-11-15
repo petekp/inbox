@@ -109,10 +109,10 @@ function fitHeight(id: string, m: RowMotion | undefined, p: Paint): number | und
  * Content in a box at its measured height, whose height spring is always declared, as a list block, the tab bar or
  * the banners above the list. When the content changes height, as a row opens, a status line comes, or a banner goes,
  * the box keeps its old height for the draw that measures the new one, then springs to it. In a draw that takes
- * heights at once, the box takes its content's height.
+ * heights at once, and always for content whose height follows the pane's, the box takes its content's height.
  */
-export function fitEl(id: string, m: RowMotion | undefined, p: Paint, el: Element): Element {
-  const height = p.isAtOnce(id) ? undefined : fitHeight(id, m, p)
+export function fitEl(id: string, m: RowMotion | undefined, p: Paint, el: Element, isPaneSized = false): Element {
+  const height = isPaneSized || p.isAtOnce(id) ? undefined : fitHeight(id, m, p)
   const sized = div()
     .id(`size ${id}`)
     .flex_none()
@@ -158,7 +158,7 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
       .flex_none()
       .pt(s.above)
       .pb(s.below)
-      .child(fitEl(id, m, p, el(s.block)))
+      .child(fitEl(id, m, p, el(s.block), s.block.kind === 'empty'))
 
     return boxEl(s, m, p, spaced)
   })

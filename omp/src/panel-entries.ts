@@ -1,7 +1,6 @@
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import {
   ghNoticeOf,
-  prsEmptyText,
   prRefreshFailedText,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -29,15 +28,15 @@ import { commentParts, readiness } from '../../hooks/prs'
 import { capitalized } from '../../hooks/press-labels'
 import { cellWidth, clipLabel } from '../../hooks/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../hooks/rows'
-import { bannerOf, emptyText, isResumable, stopFix, stopText } from '../../hooks/banners'
-import { isMaybeStale } from '../../hooks/band'
+import { bannerOf, isResumable, stopFix, stopText } from '../../hooks/banners'
+import { emptyTab, type EmptyTab } from '../../hooks/empty-tab'
 import { FINDING_GROUPS, HELP_COPY, helpKeys, MARK_LEGEND, tabLegend } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
-import { statusKeyRows } from '../../hooks/status-keys'
+import { GOAL_KEYS_ID, statusKeyRows } from '../../hooks/status-keys'
+import type { SessionView } from '../../hooks/session-view'
 import { goalSection, setGoal } from './panel-goal'
 import { unfoldedRows } from '../../hooks/status-page-parts'
-import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab } from '../../hooks/tabs'
 import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../hooks/herdr-ask'
 import {
@@ -119,6 +118,15 @@ function stopEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
   ]
 }
 
+/** A tab's empty state from `emptyTab`: its title, its hint, and `under`, the drawn parts its `under` names. */
+function emptyEntries(empty: EmptyTab, under: Entry[] = []): Entry[] {
+  return [
+    { kind: 'note', text: empty.title, isStrong: true },
+    ...(empty.hint ? [{ kind: 'note' as const, text: empty.hint, isWhole: true }] : []),
+    ...under,
+  ]
+}
+
 function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'findings'): Entry[] {
   const { view } = screen
   const groups: Group[] =
@@ -137,18 +145,17 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
           closed: view.findings.closed.filter(f => f.kind === kind).map(f => ({ ...f, at: f.closedAt })),
         }))
   const stops = tab === 'needsYou' ? [...herdrAskEntries(screen), ...stopEntries(screen, ui)] : []
-  if (groups.every(isGroupEmpty)) {
-    const empty = emptyText(tab, AGENT, isMaybeStale(view, screen.isReadFailed))
+  const empty = emptyTab(view, {
+    tab,
+    agent: AGENT,
+    drawn: groups.filter(g => !isGroupEmpty(g)).length,
+    hasBlocker: stops.length > 0,
+    isReadFailed: screen.isReadFailed === true,
+  })
+  if (empty) return emptyEntries(empty)
+  const hasRows = !groups.every(isGroupEmpty)
 
-    return stops.length > 0
-      ? stops
-      : [
-          { kind: 'note', text: empty.title, isStrong: true },
-          { kind: 'note', text: empty.hint, isWhole: true },
-        ]
-  }
-
-  return [...stops, ...groups.flatMap(g => groupEntries(g, ui))]
+  return [...stops, ...(hasRows ? groups.flatMap(g => groupEntries(g, ui)) : [])]
 }
 
 function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
@@ -163,14 +170,15 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   })
   const out: Entry[] = []
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure }
-  if (prs.drawn.length === 0) {
-    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, 'session')
-    return [
-      { kind: 'note', text: empty.title, isStrong: true },
-      { kind: 'note', text: empty.hint, isWhole: true },
-      ...(prs.refresh ? refreshEntries(screen, prs.refresh, now) : []),
-    ]
-  }
+  const empty = emptyTab(screen.view, {
+    tab: 'prs',
+    place: 'session',
+    drawn: prs.drawn.length,
+    isFetchingPrs: screen.isFetchingPrs,
+    isGhMissing: screen.isGhMissing,
+  })
+  if (empty)
+    return emptyEntries(empty, empty.under?.is === 'pr-refresh' ? refreshEntries(screen, empty.under.refresh, now) : [])
   const ghNotice = ghNoticeOf(ghState)
   if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
   if (prs.refresh) out.push(...refreshEntries(screen, prs.refresh, now))
@@ -340,14 +348,11 @@ export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 export const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
-function pageEntries(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
+function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
+  const page = view.statusPage
   const blank: Entry = { kind: 'note', text: '' }
-  if (page.isEmpty)
-    return [
-      { kind: 'note', text: page.empty.title, isStrong: true },
-      { kind: 'note', text: page.empty.hint, isWhole: true },
-      ...setGoal(page, typing),
-    ]
+  const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: typing === GOAL_KEYS_ID })
+  if (empty) return emptyEntries(empty, empty.under?.is === 'set-goal' ? setGoal(empty.under) : [])
   const description = page.head?.description
   const head: Entry[] =
     page.goal === null && page.head
@@ -382,7 +387,7 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
 
 export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen, tab)
-  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage, ui.typing, id => ui.statusUnfolded.includes(id))
+  if (!isRowTab(tab)) return pageEntries(screen.view, ui.typing, id => ui.statusUnfolded.includes(id))
 
   const collapsed = new Set(screen.view.collapsed)
   const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)

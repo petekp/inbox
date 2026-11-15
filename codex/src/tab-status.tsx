@@ -6,6 +6,8 @@ import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
+import { emptyTab } from '../../hooks/empty-tab'
+import type { TabView as View } from './core'
 import { closingFolds, drafts, drawnRows, errors, sending, statusUnfolded, tabState } from './tab-state'
 import type { Key } from './tab-state'
 import { act } from './tab-rows'
@@ -349,10 +351,10 @@ function GoalSection({ page, lines }: { page: StatusPage; lines: DrawnStatus['go
 }
 
 /** New, or the field it opened, under the empty page's centred text. */
-function SetGoal({ page }: { page: StatusPage }) {
+function SetGoal({ keys, isFieldOpen }: { keys: StatusKey[]; isFieldOpen: boolean }) {
   return (
     <div class="status-head">
-      {tabState.typing === GOAL_KEYS_ID ? <GoalField /> : <Keys keys={goalKeyPlan(page)} />}
+      {isFieldOpen ? <GoalField /> : <Keys keys={keys} />}
       <GoalError />
     </div>
   )
@@ -365,13 +367,11 @@ function GoalError() {
   return error ? <p class="tone-error">{error}</p> : null
 }
 
-export function StatusTab({ page, drawn }: { page: StatusPage; drawn: DrawnStatus }) {
-  if (page.isEmpty)
-    return (
-      <EmptyState title={page.empty.title} hint={page.empty.hint}>
-        <SetGoal page={page} />
-      </EmptyState>
-    )
+export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
+  const page = v.statusPage
+  const empty = emptyTab(v, { tab: 'overview', isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID })
+  if (empty)
+    return <EmptyState empty={empty}>{empty.under?.is === 'set-goal' ? <SetGoal {...empty.under} /> : null}</EmptyState>
   const head =
     page.goal === null && page.head ? (
       <div class="status-head">

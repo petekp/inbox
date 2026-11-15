@@ -16,6 +16,7 @@ import {
   FRAME_INSET_PT,
   STATUS_PAD_Y,
 } from './pane-sizes'
+import { emptyTab } from './empty-tab'
 import { paneStatusGoal } from './pane-status-goal'
 import {
   desktopButtonLines,
@@ -293,7 +294,7 @@ export function paneStatus(
               ? toggleFold(press.foldId)
               : pressGoal(press.action, p.surface),
     }))
-  const { goalSection, setGoalBare, markRun } = paneStatusGoal(
+  const { goalSection, setGoalBare, markRun, isTypingGoal } = paneStatusGoal(
     {
       e,
       look,
@@ -432,18 +433,19 @@ export function paneStatus(
   /** The Status page, and each subject row's first line from the page's top. */
   const drawStatus = (): { el: JSX.Element; tops: Map<string, RowTop> } => {
     const page = view.statusPage
-    if (page.isEmpty)
+    const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: isTypingGoal })
+    if (empty) {
+      const below = empty.under?.is === 'set-goal' ? setGoalBare(empty.under).map(p => p.el) : []
+
       return {
         el: (
           <Box flexDirection="column" flexGrow={1}>
-            {emptyState(
-              page.empty,
-              setGoalBare(page).map(p => p.el),
-            )}
+            {emptyState(empty, below)}
           </Box>
         ),
         tops: new Map(),
       }
+    }
     const head = page.goal === null && page.head ? [statusHead(page.head)] : []
     const rows = page.rows.length > 0 ? statusRows(page.rows) : []
     const shown = [goalSection(page), head, rows]

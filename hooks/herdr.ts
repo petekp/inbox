@@ -385,15 +385,19 @@ export type EnvelopeSource = {
   terminal: string
   writtenAt: number
   projectFolder?: string
+  /** Whether the host has a PR fetch running for the session, which the saved session does not hold. */
+  isFetchingPrs?: boolean
 }
 
 /**
  * The file a host publishes for the Herdr look. It has `projectFolder` only when that is an absolute path. `trimmed` is set when the host left out closed items the view does not
  * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`. `lastPress` is the session's `lastHerdrPress`.
+ * `isFetchingPrs` is set only while a fetch runs, so a file without it, as from an older host, reads as not fetching.
  */
-export type HerdrEnvelope = EnvelopeSource & {
+export type HerdrEnvelope = Omit<EnvelopeSource, 'isFetchingPrs'> & {
   format: typeof HERDR_FORMAT
   trimmed?: true
+  isFetchingPrs?: true
   lastPress?: HerdrPressOutcome
   session: Session
 }
@@ -405,13 +409,14 @@ export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimme
   const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
 
   const { lastHerdrPress } = session
-  const { projectFolder, ...rest } = source
+  const { projectFolder, isFetchingPrs, ...rest } = source
 
   return {
     format: HERDR_FORMAT,
     ...rest,
     ...(projectFolder?.startsWith('/') && { projectFolder }),
     ...(isTrimmed && { trimmed: true }),
+    ...(isFetchingPrs && { isFetchingPrs: true }),
     ...(lastHerdrPress && { lastPress: lastHerdrPress }),
     session: shared as Session,
   }
