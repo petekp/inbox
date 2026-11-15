@@ -110,7 +110,11 @@ export const milestoneDropped: Replay = {
           or: {
             text: 'Notes 2.5 out as a web beta',
             match: 'web|beta|browser',
-            milestones: [STORE_GOAL.milestones[0]!, STORE_GOAL.milestones[2]!],
+            milestones: [
+              STORE_GOAL.milestones[0]!,
+              { ...STORE_GOAL.milestones[1]!, state: 'dropped' },
+              STORE_GOAL.milestones[2]!,
+            ],
           },
         },
         milestones: [{ id: 'ms-review', state: 'dropped' }],

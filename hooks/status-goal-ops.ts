@@ -1,6 +1,6 @@
 import type { GoalRefusal, Milestone, SessionStatus, StatusGoal, Subject } from '../types'
 import type { Op } from './status'
-import { goalRefusal, hasWorkForGoal, revisesGoal } from './status-goal-gate'
+import { goalRefusal, goalRevision, hasWorkForGoal } from './status-goal-gate'
 import {
   clipWords,
   DESCRIPTION_KEPT,
@@ -193,7 +193,7 @@ export function withRestatedGoalAsMilestones(o: SessionStatus | null, ops: Op[],
 
 /**
  * The goal a GOAL line sets, with its milestones as it wrote them. Each open milestone of the goal before it that the
- * line names again carries on into the new one of that name: its open subjects and asks stay linked to it, and while
+ * line names again with an open status carries on into the new one of that name: its open subjects and asks stay linked to it, and while
  * its status is the same it keeps where it stands and when it started. Every other link goes.
  */
 function inferredGoal(
@@ -208,7 +208,7 @@ function inferredGoal(
     const id = `m${o.nextMilestoneId + n}`
     const was = earlier(m.name)
     const isSame = was !== undefined && was.status === m.status
-    if (was) carried.set(was.id, id)
+    if (was && isOpen(m)) carried.set(was.id, id)
     return {
       id,
       name: m.name,
@@ -260,7 +260,9 @@ function goalLineRefusal(
   revisedFrom: SessionStatus | null,
 ): GoalRefusal['why'] | null {
   const text = clipWords(op.text, DESCRIPTION_KEPT)
-  const milestones = op.milestones.slice(0, MILESTONES_MAX).map(m => ({ name: clipWords(m.name, NAME_KEPT) }))
+  const milestones = op.milestones
+    .slice(0, MILESTONES_MAX)
+    .flatMap(m => (m.status === 'dropped' ? [] : [{ name: clipWords(m.name, NAME_KEPT) }]))
   const g = o.goal
   const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(revisedFrom ?? o, milestones))
   const isPrevious = g?.was != null && restatesGoal(text, g.was)
@@ -273,8 +275,8 @@ function goalLineRefusal(
 
 /**
  * Applies a GOAL, RETIRE, MILESTONE or SERVES line. A GOAL line sets the goal when `goalRefusal` allows it and
- * `hasWorkForGoal` holds, or when it revises the goal as `revisesGoal` says, with `toOtherWork` the subjects the
- * answer's SERVES lines send to -. It also needs `MILESTONES_MIN` milestones, and restates neither the goal, in its
+ * `hasWorkForGoal` holds, or when it revises the goal as `goalRevision` says, with `toOtherWork` the subjects the
+ * answer's SERVES lines send to -. A revision that leaves open work with no place is refused with that work. It also needs `MILESTONES_MIN` milestones, and restates neither the goal, in its
  * words or its milestones, nor the goal it replaced, nor a removed one. RETIRE clears the goal when `goalRefusal` allows it, so
  * never a goal the same answer set. The gate reads the milestones as the answer's subject lines close them, so a GOAL
  * may follow the DONE that finishes the goal's last work. A refused line is saved for the next call to read.
@@ -296,12 +298,12 @@ export function applyGoalOp(
         ? op.milestones.slice(0, MILESTONES_MAX).map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }))
         : []
     const unlinked = new Set(toOtherWork.flatMap(ref => findSubject(ref)?.id ?? []))
-    const names = milestones.map(m => m.name)
-    const isRevision = op.kind === 'goal' && revisesGoal(settled, start, names, unlinked)
+    const unplaced = op.kind === 'goal' ? goalRevision(settled, start, milestones, unlinked) : null
     const why =
-      (op.kind === 'goal' && goalLineRefusal(settled, op, isRevision ? start : null)) ||
-      (isRevision ? null : goalRefusal(settled, start, op.kind, now))
-    if (why !== null) return { ...o, goalRefused: { line: op.kind, why } }
+      (op.kind === 'goal' && goalLineRefusal(settled, op, unplaced === null ? null : start)) ||
+      (unplaced === null ? goalRefusal(settled, start, op.kind, now) : unplaced.length > 0 ? 'work-open' : null)
+    const ids = why === 'work-open' && unplaced ? unplaced.map(s => s.id) : []
+    if (why !== null) return { ...o, goalRefused: { line: op.kind, why, ...(ids.length > 0 ? { unplaced: ids } : {}) } }
     if (op.kind === 'retire') return withoutGoal(o)
 
     return inferredGoal(o, clipWords(op.text, DESCRIPTION_KEPT), milestones, now)

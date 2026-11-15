@@ -114,6 +114,11 @@ export type GoalRefusal = {
     | 'restates'
     /** The GOAL line names under `MILESTONES_MIN` milestones. */
     | 'few-milestones'
+  /**
+   * For a GOAL line that cut part of the goal, the ids of the open subjects it held that the line neither kept under a
+   * milestone it named again nor sent to Other work.
+   */
+  unplaced?: string[]
 }
 
 /** A goal the person removed, with its milestones and the links to them, so Undo can bring it back. */

@@ -1,4 +1,4 @@
-import type { GoalRefusal, SessionStatus, StatusGoal, Subject } from '../types'
+import type { GoalRefusal, Milestone, SessionStatus, StatusGoal, Subject } from '../types'
 import { GOAL_LEFT_MS, isOpen, nameKey } from './status-limits'
 
 /** The subjects linked to one of the goal's open milestones: the work the goal still holds. A done milestone holds nothing. */
@@ -62,28 +62,35 @@ export function hasWorkForGoal(o: SessionStatus): boolean {
 }
 
 /**
- * Whether a GOAL line revises the inferred goal the answer found, as when the person cuts part of its outcome, so it may
- * replace that goal while its work is open. Its milestones, `names`, leave out at least one milestone that was open
- * when the answer started, and name again at least one that holds open work, whose work moves with it. Each other open
- * subject the goal holds goes to Other work in the same answer, by a SERVES line to - among `toOtherWork`. So a
- * rewording, an added milestone or a renamed one is not a revision, and the work under a cut milestone leaves the goal.
+ * The open subjects a GOAL line that revises the goal leaves with no place, or null when the line does not revise it. A
+ * line revises the inferred goal the answer found when the person cut part of its outcome. It cuts a milestone that was
+ * open when the answer started and that the answer did not finish, by leaving it out or naming it dropped. It names
+ * again, with an open status, a milestone that holds open work, and that work moves with it. Each other open subject
+ * the goal holds needs a SERVES line to - among `toOtherWork`. The revision applies only when no subject is left with
+ * no place. So a rewording or an added milestone that cuts nothing is not a revision. A milestone named in other words
+ * counts as cut, so its work must go to Other work.
  */
-export function revisesGoal(
+export function goalRevision(
   o: SessionStatus,
   start: SessionStatus,
-  names: readonly string[],
+  named: readonly Pick<Milestone, 'name' | 'status'>[],
   toOtherWork: ReadonlySet<string>,
-): boolean {
+): Subject[] | null {
   const g = o.goal
   const isFound = g !== null && g.setAt === start.goal?.setAt
-  if (!isFound || g.source !== 'inferred' || g.isAwaitingMilestones || isGoalMet(o)) return false
-  const named = new Set(names.map(nameKey))
-  const isCut = start.milestones.some(m => isOpen(m) && !named.has(nameKey(m.name)))
+  if (!isFound || g.source !== 'inferred' || g.isAwaitingMilestones || isGoalMet(o)) return null
+  const keys = (status: (m: Pick<Milestone, 'status'>) => boolean) =>
+    new Set(named.filter(status).map(m => nameKey(m.name)))
+  const kept = keys(isOpen)
+  const finished = keys(m => m.status === 'done')
   const byId = new Map(o.milestones.map(m => [m.id, m]))
-  const isCarried = (s: Subject) => named.has(nameKey(byId.get(o.serves[s.id] ?? '')?.name ?? ''))
+  const isCut = (m: Milestone) =>
+    isOpen(m) && byId.get(m.id)?.status !== 'done' && !kept.has(nameKey(m.name)) && !finished.has(nameKey(m.name))
+  const isCarried = (s: Subject) => kept.has(nameKey(byId.get(o.serves[s.id] ?? '')?.name ?? ''))
   const held = heldSubjects(o).filter(isOpen)
+  if (!start.milestones.some(isCut) || !held.some(isCarried)) return null
 
-  return isCut && held.some(isCarried) && held.every(s => isCarried(s) || toOtherWork.has(s.id))
+  return held.filter(s => !isCarried(s) && !toOtherWork.has(s.id))
 }
 
 /**

@@ -217,7 +217,7 @@ test('a good run of each replay passes every rule that is built, at every step',
   }
 })
 
-test('a second right run of a replay passes every rule that is built, at every step', async () => {
+test('a second right run of a replay passes every rule that is built, at every step, and fails once it keeps a cut milestone', async () => {
   for (const [name, answers] of Object.entries(OTHER_GOOD_RUNS)) {
     const steps = await gradedRun(
       REPLAYS.find(r => r.name === name)!,
@@ -225,6 +225,13 @@ test('a second right run of a replay passes every rule that is built, at every s
     )
     expect({ replay: name, failed: steps.filter(s => s.failed.length > 0) }).toEqual({ replay: name, failed: [] })
   }
+  const kept = OTHER_GOOD_RUNS['milestone-dropped']![0]!.replace('Beta published', 'Store review later')
+  const steps = await gradedRun(
+    REPLAYS.find(r => r.name === 'milestone-dropped')!,
+    [kept],
+  )
+
+  expect(steps[0]!.failed).toEqual(['milestones-true'])
 })
 
 test('a bad run of each replay fails the rule it breaks at the step it breaks, and nothing before', async () => {

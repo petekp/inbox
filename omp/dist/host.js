@@ -2077,7 +2077,8 @@ function goalRefusedOf(saved) {
   const r = saved;
   const line = REFUSAL_LINES.find((x) => x === r?.line);
   const why = REFUSAL_WHYS.find((x) => x === r?.why);
-  return line && why ? { line, why } : null;
+  const unplaced = Array.isArray(r?.unplaced) ? r.unplaced.filter((id) => typeof id === "string") : [];
+  return line && why ? { line, why, ...unplaced.length > 0 ? { unplaced } : {} } : null;
 }
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -2775,17 +2776,21 @@ function hasWorkForGoal(o) {
   const held = new Set(heldSubjects(o).map((s) => s.id));
   return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
 }
-function revisesGoal(o, start, names, toOtherWork) {
+function goalRevision(o, start, named, toOtherWork) {
   const g = o.goal;
   const isFound = g !== null && g.setAt === start.goal?.setAt;
   if (!isFound || g.source !== "inferred" || g.isAwaitingMilestones || isGoalMet(o))
-    return false;
-  const named = new Set(names.map(nameKey));
-  const isCut = start.milestones.some((m) => isOpen(m) && !named.has(nameKey(m.name)));
+    return null;
+  const keys = (status) => new Set(named.filter(status).map((m) => nameKey(m.name)));
+  const kept = keys(isOpen);
+  const finished = keys((m) => m.status === "done");
   const byId = new Map(o.milestones.map((m) => [m.id, m]));
-  const isCarried = (s) => named.has(nameKey(byId.get(o.serves[s.id] ?? "")?.name ?? ""));
+  const isCut = (m) => isOpen(m) && byId.get(m.id)?.status !== "done" && !kept.has(nameKey(m.name)) && !finished.has(nameKey(m.name));
+  const isCarried = (s) => kept.has(nameKey(byId.get(o.serves[s.id] ?? "")?.name ?? ""));
   const held = heldSubjects(o).filter(isOpen);
-  return isCut && held.some(isCarried) && held.every((s) => isCarried(s) || toOtherWork.has(s.id));
+  if (!start.milestones.some(isCut) || !held.some(isCarried))
+    return null;
+  return held.filter((s) => !isCarried(s) && !toOtherWork.has(s.id));
 }
 function refusalOf(o, kind, now) {
   const g = o.goal;
@@ -2937,7 +2942,7 @@ function inferredGoal(o, text, named, now) {
     const id = `m${o.nextMilestoneId + n}`;
     const was = earlier(m.name);
     const isSame = was !== undefined && was.status === m.status;
-    if (was)
+    if (was && isOpen(m))
       carried.set(was.id, id);
     return {
       id,
@@ -2976,7 +2981,7 @@ function inferredGoal(o, text, named, now) {
 }
 function goalLineRefusal(o, op, revisedFrom) {
   const text = clipWords(op.text, DESCRIPTION_KEPT);
-  const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT) }));
+  const milestones = op.milestones.slice(0, MILESTONES_MAX).flatMap((m) => m.status === "dropped" ? [] : [{ name: clipWords(m.name, NAME_KEPT) }]);
   const g = o.goal;
   const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(revisedFrom ?? o, milestones));
   const isPrevious = g?.was != null && restatesGoal(text, g.was);
@@ -2992,11 +2997,11 @@ function applyGoalOp(o, op, now, findSubject, start = o, toOtherWork = []) {
     const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now);
     const milestones = op.kind === "goal" ? op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status })) : [];
     const unlinked = new Set(toOtherWork.flatMap((ref) => findSubject(ref)?.id ?? []));
-    const names = milestones.map((m) => m.name);
-    const isRevision = op.kind === "goal" && revisesGoal(settled, start, names, unlinked);
-    const why = op.kind === "goal" && goalLineRefusal(settled, op, isRevision ? start : null) || (isRevision ? null : goalRefusal(settled, start, op.kind, now));
+    const unplaced = op.kind === "goal" ? goalRevision(settled, start, milestones, unlinked) : null;
+    const why = op.kind === "goal" && goalLineRefusal(settled, op, unplaced === null ? null : start) || (unplaced === null ? goalRefusal(settled, start, op.kind, now) : unplaced.length > 0 ? "work-open" : null);
+    const ids = why === "work-open" && unplaced ? unplaced.map((s) => s.id) : [];
     if (why !== null)
-      return { ...o, goalRefused: { line: op.kind, why } };
+      return { ...o, goalRefused: { line: op.kind, why, ...ids.length > 0 ? { unplaced: ids } : {} } };
     if (op.kind === "retire")
       return withoutGoal(o);
     return inferredGoal(o, clipWords(op.text, DESCRIPTION_KEPT), milestones, now);
@@ -10441,7 +10446,11 @@ function refusedLine(o, now) {
     met: () => "the goal is met. It stays until GOAL sets the next one.",
     "work-open": () => {
       const open = heldSubjects(o).filter(isOpen);
-      return open.length === 0 ? null : `the goal's work is still open: ${open.map((s) => s.name).join(", ")}. In the same answer, close that work with DONE or DROP, or write SERVES to - for work the goal does not need, then write ${line} again.`;
+      const unplaced = open.filter((s) => r.unplaced?.includes(s.id));
+      const revise = r.line === "goal" ? " When the person cut part of the goal's outcome, write GOAL for the new outcome instead: name again in the same words each milestone it keeps, and write SERVES to - for the work of each milestone it leaves out." : "";
+      if (unplaced.length > 0)
+        return `it cuts part of the goal, but leaves this open work with no milestone: ${unplaced.map((s) => s.name).join(", ")}. Write GOAL again with ${unplaced.map((s) => `SERVES: ${s.id} | -`).join(" and ")} in the same answer, or name that work's milestone again in the same words.`;
+      return open.length === 0 ? null : `the goal's work is still open: ${open.map((s) => s.name).join(", ")}. In the same answer, close that work with DONE or DROP, or write SERVES to - for work the goal does not need, then write ${line} again.${revise}`;
     },
     moved: () => goalLeftFor(o, now) !== null ? null : `the work has not left the goal: it moved ${duration(now - lastProgressAt(o, g))} ago. When its outcome happened, write DONE for each open milestone instead, so it is met. Else write ${line} once this line says no work for a time.`,
     "no-work": () => "no open subject is outside the goal, so there is no work for a new one. Write NEW for the new goal's work in the same answer.",

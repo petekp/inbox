@@ -64,9 +64,16 @@ function refusedLine(o: SessionStatus, now: number): string | null {
     met: () => 'the goal is met. It stays until GOAL sets the next one.',
     'work-open': () => {
       const open = heldSubjects(o).filter(isOpen)
+      const unplaced = open.filter(s => r.unplaced?.includes(s.id))
+      const revise =
+        r.line === 'goal'
+          ? " When the person cut part of the goal's outcome, write GOAL for the new outcome instead: name again in the same words each milestone it keeps, and write SERVES to - for the work of each milestone it leaves out."
+          : ''
+      if (unplaced.length > 0)
+        return `it cuts part of the goal, but leaves this open work with no milestone: ${unplaced.map(s => s.name).join(', ')}. Write GOAL again with ${unplaced.map(s => `SERVES: ${s.id} | -`).join(' and ')} in the same answer, or name that work's milestone again in the same words.`
       return open.length === 0
         ? null
-        : `the goal's work is still open: ${open.map(s => s.name).join(', ')}. In the same answer, close that work with DONE or DROP, or write SERVES to - for work the goal does not need, then write ${line} again.`
+        : `the goal's work is still open: ${open.map(s => s.name).join(', ')}. In the same answer, close that work with DONE or DROP, or write SERVES to - for work the goal does not need, then write ${line} again.${revise}`
     },
     moved: () =>
       goalLeftFor(o, now) !== null
