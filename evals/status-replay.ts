@@ -253,7 +253,7 @@ async function statusCall(
   const session =
     answer === null
       ? failedStatus(current, last.text, turns, now)
-      : appliedStatus(current, answer, turns, now, readSetAt)
+      : appliedStatus(current, answer, turns, now, readSetAt, false, input.now)
 
   return { session, log, isFailed: answer === null, readSetAt }
 }

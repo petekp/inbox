@@ -144,6 +144,7 @@ export function demoView(now: number, agent: string): DemoCopy {
         lastLookAt: now - 30 * MIN,
         missedInLastLook: {},
         look: null,
+        lastCallReadAt: null,
         goal: {
           text: 'Pinch ships in the beta',
           setAt: now - 60 * MIN,

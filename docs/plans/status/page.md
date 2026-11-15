@@ -53,7 +53,7 @@ Before any work, the page reads: "What this session's work is for, where each pa
   - the open subjects, each with its id, status, name, text and how long ago it last changed;
   - the names of the last 10 finished subjects, so it does not add one again;
   - each open ask's id, its first 30 words and its linked subject;
-  - the running children, and each delegate that finished since the person last looked while its subject is open, each marked running or finished;
+  - the running children, and each delegate that finished since the last applied Status call read the Status, while its subject is open, each marked running, blocked or finished;
   - the host's task list, where there is one;
   - the person's message, the agent's tool activity and the reply.
 - **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, write the head. Or `UNCHANGED`. `hooks/status.ts` parses the answer, and `hooks/status-ops.ts` applies it.

@@ -180,6 +180,7 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
     lastLookAt: time(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map(s => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
+    lastCallReadAt: time(o.lastCallReadAt),
     ...goal,
   }
 }

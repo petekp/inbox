@@ -82,6 +82,7 @@ var EMPTY_SESSION_STATUS = {
   lastLookAt: null,
   missedInLastLook: {},
   look: null,
+  lastCallReadAt: null,
   goal: null,
   removedGoals: [],
   goalRemoved: null,
@@ -545,6 +546,7 @@ function upgradeStatus(saved) {
     lastLookAt: time2(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
+    lastCallReadAt: time2(o.lastCallReadAt),
     ...goal
   };
 }
@@ -1220,11 +1222,11 @@ function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
-function isFinishedUnseen(c, lastLookAt) {
-  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
+function isFinishedAfter(c, at) {
+  return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
 }
 function isChildShown(c, now, lastLookAt) {
-  return isChildRunning(c, now) || isFinishedUnseen(c, lastLookAt);
+  return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
 }
 function withChild(last, c, now) {
   const o = last ?? EMPTY_SESSION_STATUS;

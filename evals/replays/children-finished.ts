@@ -4,16 +4,24 @@ import { delegate, NO_FACTS, overview, piece, subject } from './builders'
 
 const exportDelegate = delegate('c1', 'Lay out the PDF export', 's1', -50)
 const engineDelegate = delegate('c2', 'Build the sync retry queue', 's3', -40)
+const conflictsDelegate = delegate('c3', 'Build the manual merge for sync conflicts', 's2', -90)
+
+/** The merge or the full check left, not done: "merge left", "merges next", "unmerged", "final check left". */
+const MERGE_LEFT =
+  '\\b(merg(e|es|ing)\\b(?! (done|finished|complete))|unmerged|not (yet )?merged)|\\bchecks? (left|next|pending|to go)'
+/** Checking the delegate's work left, not done: "not checked yet", "unreviewed", "needs a review". */
+const CHECK_LEFT =
+  '\\b(un(checked|reviewed|verified|read|tested)|not (yet )?(checked|reviewed|verified|read|tested))\\b|\\b(check|review|verify|read)(ing)? (left|next|pending|to go)\\b|\\b(needs?|awaits?|awaiting) (a |the )?(check|review|verification|read)'
 
 /**
  * A coordinator whose delegate finished while the subject it served stays working, as the coordinator checks and
  * merges the work, and a subject whose work left is another subject's. Then a delegate finishes while the reply talks
- * about other work.
+ * about other work, and then nothing changes.
  */
 export const childrenFinished: Replay = {
   name: 'children-finished',
   about:
-    'A coordinator. The export delegate finished, and the coordinator runs the checks, then merges. Sync conflicts is built, and cannot merge until the sync engine change another delegate builds lands. Then the engine delegate finishes while the reply talks only about the export merge.',
+    'A coordinator. The export delegate finished, and the coordinator runs the checks, then merges. Sync conflicts is built, and cannot merge until the sync engine change another delegate builds lands. Then the engine delegate finishes while the reply talks only about the export merge, and then the person asks what is open.',
   hasLedgerCalls: false,
   start: {
     ledger: {
@@ -28,6 +36,7 @@ export const childrenFinished: Replay = {
         children: [
           { ...exportDelegate, endedAt: minutes(-5), lastActivityAt: minutes(-5), delegateState: 'finished' },
           engineDelegate,
+          { ...conflictsDelegate, endedAt: minutes(-30), lastActivityAt: minutes(-30), delegateState: 'finished' },
         ],
         lastLookAt: minutes(-60),
       }),
@@ -59,7 +68,10 @@ export const childrenFinished: Replay = {
           stands: 'retry queue being built',
         }),
       ],
-      children: [{ ref: engineDelegate.ref, does: 'builds the sync retry queue', serves: 'engine' }],
+      children: [
+        { ref: engineDelegate.ref, does: 'builds the sync retry queue', serves: 'engine' },
+        { ref: conflictsDelegate.ref, does: 'built the manual merge for sync conflicts', serves: 'conflicts' },
+      ],
     },
   },
   steps: [
@@ -79,7 +91,7 @@ export const childrenFinished: Replay = {
           {
             id: 'export',
             stands: 'PDF layout works, merge left after the full check',
-            left: '\\bmerg(e|ing)\\b',
+            left: MERGE_LEFT,
           },
           {
             id: 'conflicts',
@@ -103,10 +115,21 @@ export const childrenFinished: Replay = {
       facts: {
         pieces: [
           { id: 'export', state: 'done', stands: 'PDF export merged' },
-          { id: 'engine', stands: 'retry queue done, not checked yet', left: 'check|review|unread|not read' },
+          { id: 'engine', stands: 'retry queue done, not checked yet', left: CHECK_LEFT },
         ],
       },
       targets: ['step-left-named', 'marks-true'],
+    },
+    {
+      label: 'The person asks what is open, and nothing changed',
+      at: 15,
+      call: {
+        kind: 'reply',
+        person: 'How many 2.5 features are still open?',
+        activity: [],
+        reply: 'Two: sync conflicts and the sync engine. The PDF export is merged.',
+      },
+      targets: ['no-news-no-move'],
     },
   ],
 }

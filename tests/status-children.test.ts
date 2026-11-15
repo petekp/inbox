@@ -17,7 +17,7 @@ import { delegatesInHerdr } from '../hooks/herdr'
 import type { HerdrAgent, HerdrStatus } from '../hooks/herdr'
 import type { Run } from '../hooks/gh'
 import { CHILD_ROWS } from '../hooks/status-page-parts'
-import type { SessionStatus } from '../types'
+import type { Child, SessionStatus } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
 test('the call reads open subjects with ids and how long ago each changed, finished ones by name, and running children with their links', () => {
@@ -37,29 +37,31 @@ test('the call reads open subjects with ids and how long ago each changed, finis
   expect(runningText(childEnded(closed, 't1', 250), 300)).toBe('')
 })
 
-test('the call reads a delegate that finished until the person looks, while its subject is open', () => {
-  const o = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Docs | being written', 100)
-  const finished = (subjectId: string, look: number | null): SessionStatus => ({
-    ...o!,
-    lastLookAt: look,
-    children: [
-      {
-        id: 'c1',
-        ref: 'herdr:docs',
-        kind: 'delegate',
-        name: 'write the docs',
-        subjectId,
-        startedAt: 110,
-        endedAt: 200,
-        lastActivityAt: 200,
-        delegateState: 'finished',
-      },
-    ],
+test('the call reads a finished delegate until an applied call has read it, whether or not the person looked, while its subject is open', () => {
+  const o = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Docs | being written', 100)!
+  const docs: Child = {
+    id: 'c1',
+    ref: 'herdr:docs',
+    kind: 'delegate',
+    name: 'write the docs',
+    subjectId: 's2',
+    startedAt: 110,
+    endedAt: 200,
+    lastActivityAt: 200,
+    delegateState: 'finished',
+  }
+  const withDocs = (c: Child, readAt: number | null, lookAt: number | null = null): SessionStatus => ({
+    ...o,
+    lastCallReadAt: readAt,
+    lastLookAt: lookAt,
+    children: [c],
   })
 
-  expect(runningText(finished('s2', null), 300)).toBe('c1 | delegate | write the docs | s2 | finished')
-  expect(runningText(finished('s2', 250), 300)).toBe('')
-  expect(runningText(after(finished('s2', null), 'DONE: s2 | written', 260), 300)).toBe('')
+  expect(runningText(withDocs(docs, 150, 250), 300)).toBe('c1 | delegate | write the docs | s2 | finished')
+  expect(runningText(withDocs(docs, 250), 300)).toBe('')
+  expect(runningText(after(withDocs(docs, null), 'DONE: s2 | written', 260), 300)).toBe('')
+  const blocked = withDocs({ ...docs, endedAt: null, delegateState: 'blocked' }, 250)
+  expect(runningText(blocked, 300)).toBe('c1 | delegate | write the docs | s2 | blocked')
 })
 
 test('a child the host reports again keeps its id and link, and old ended children are let go', () => {
