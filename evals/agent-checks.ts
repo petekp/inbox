@@ -20,6 +20,8 @@ type Check =
       count?: number
       min?: number
       max?: number
+      /** Count items instead of calls: recording the same kind and ask again updates that item, so it counts once. */
+      items?: true
     }
   | { reply: string }
   | { notReply: string }
@@ -37,6 +39,8 @@ export type Case = {
   lastActions?: Record<string, LastAction>
   /** Files to put in the folder the agent runs in, by path within it. */
   files?: Record<string, string>
+  /** Scripts for an agent with a shell, by command name, in a folder at the front of its `PATH`. */
+  bin?: Record<string, string>
   prompt: string
   checks: Check[]
   min?: Partial<Record<Agent, number>>
@@ -52,7 +56,25 @@ export type Call = { tool: string; args: Record<string, unknown>; result: string
  * `error`: why the run could not be graded. `model`: the model that answered, as the agent reported it. `raw`: the
  * agent's own output, kept in the results as the evidence for each verdict.
  */
-export type Outcome = { reply: string; calls: Call[]; error: string | null; model: string | null; raw: string }
+export type Outcome = {
+  reply: string
+  calls: Call[]
+  error: string | null
+  model: string | null
+  raw: string
+}
+
+/** The item a call is about: a record's kind and ask. Any other call stands alone. */
+function itemKey(call: Call, n: number): string {
+  const ask =
+    call.tool === 'record'
+      ? String(call.args.ask ?? call.args.title ?? '')
+          .trim()
+          .toLowerCase()
+      : ''
+
+  return ask === '' ? `#${n}` : `${String(call.args.kind)}\n${ask}`
+}
 
 export function failures(o: Outcome, checks: Check[]): string[] {
   const has = (pattern: string, text: string) => new RegExp(pattern, 'i').test(text)
@@ -67,24 +89,23 @@ export function failures(o: Outcome, checks: Check[]): string[] {
       const m = o.reply.match(/\b[if]\d+\b/)
       if (m) out.push(`reply has the id "${m[0]}"`)
     } else {
-      const mine = o.calls.filter(
-        call =>
-          call.tool === c.calls &&
-          (!c.kind || has(`^(?:${c.kind})$`, String(call.args.kind ?? ''))) &&
-          Object.entries(c.match ?? {}).every(([k, p]) => has(p, String(call.args[k] ?? ''))) &&
-          (!c.result || has(c.result, call.result)) &&
-          (c.has ?? []).every(k => {
-            const v = call.args[k]
-            return Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim() !== ''
-          }),
-      )
+      const fits = (call: Call) =>
+        call.tool === c.calls &&
+        (!c.kind || has(`^(?:${c.kind})$`, String(call.args.kind ?? ''))) &&
+        Object.entries(c.match ?? {}).every(([k, p]) => has(p, String(call.args[k] ?? ''))) &&
+        (!c.result || has(c.result, call.result)) &&
+        (c.has ?? []).every(k => {
+          const v = call.args[k]
+          return Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim() !== ''
+        })
+      const mine = new Set(o.calls.flatMap((call, n) => (fits(call) ? [c.items ? itemKey(call, n) : `#${n}`] : [])))
       const label = `${c.calls}${c.kind ? ` ${c.kind}` : ''}${c.match ? ` ${JSON.stringify(c.match)}` : ''}${c.has ? ` with ${c.has.join(', ')}` : ''}${c.result ? ` answered /${c.result}/` : ''}`
       const exact = c.count
       const min = exact ?? c.min ?? (c.max === undefined ? 1 : 0)
       const max = exact ?? c.max ?? Infinity
-      if (mine.length < min || mine.length > max)
+      if (mine.size < min || mine.size > max)
         out.push(
-          `${mine.length} ${label} calls, want ${exact ?? `${min}${max === Infinity ? '+' : `-${max}`}`}; calls: ${
+          `${mine.size} ${label} ${c.items ? 'items' : 'calls'}, want ${exact ?? `${min}${max === Infinity ? '+' : `-${max}`}`}; calls: ${
             o.calls.map(x => `${x.tool}(${JSON.stringify(x.args)}) → ${x.result}`).join(' ') || 'none'
           }`,
         )

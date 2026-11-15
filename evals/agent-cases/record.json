@@ -85,6 +85,12 @@
     "name": "record-fact-question-not-design-choice",
     "about": "A question about a fact only the user knows is recorded without the design-choice mark.",
     "prompt": "Task: deploy the API to staging. The deploy script needs the AWS region of the staging account, and nothing in the repo says which one it is. It is us-east-1 or eu-west-1. Ask me.",
+    "files": {
+      "package.json": "{\n  \"name\": \"api\",\n  \"private\": true,\n  \"scripts\": {\n    \"start\": \"node src/server.js\",\n    \"deploy:staging\": \"sh scripts/deploy-staging.sh\"\n  }\n}\n",
+      "README.md": "# API\n\nThe product API.\n\nDeploy to staging with `npm run deploy:staging`. Set `AWS_REGION` to the staging account's region first.\n",
+      "scripts/deploy-staging.sh": "#!/bin/sh\nset -e\n: \"${AWS_REGION:?Set AWS_REGION to the staging account's region}\"\naws ecs update-service --region \"$AWS_REGION\" --cluster api-staging --service api --force-new-deployment\n",
+      "src/server.js": "require('http').createServer((req, res) => res.end('ok')).listen(process.env.PORT || 3000)\n"
+    },
     "checks": [
       {
         "calls": "record",
@@ -105,7 +111,7 @@
         "count": 0
       },
       {
-        "reply": "region"
+        "reply": "region|us-east-1\\W+or\\W+eu-west-1|eu-west-1\\W+or\\W+us-east-1"
       },
       {
         "noIds": true
@@ -280,21 +286,22 @@
     "ledger": {
       "nextId": 4,
       "overview": {
-        "isCoordinator": false,
-        "state": "on-track",
-        "headline": "Migrating the billing job to the new queue",
-        "status": "Waiting on staging sign-in",
-        "course": "",
-        "queue": [],
-        "works": [],
-        "open": [],
-        "next": [],
-        "since": [],
-        "workstreams": [],
-        "earlier": [],
-        "lastLookAt": null,
-        "look": null,
-        "seen": { "since": [], "course": "" }
+        "head": { "title": "Migrating the billing job to the new queue", "description": "" },
+        "subjects": [
+          {
+            "id": "s1",
+            "name": "Billing job migration",
+            "status": "waits-on-other",
+            "text": "Waiting on staging sign-in",
+            "was": null,
+            "merged": null,
+            "createdAt": 1,
+            "changedAt": 1,
+            "closedAt": null,
+            "into": null
+          }
+        ],
+        "nextId": 2
       },
       "items": [
         {
@@ -313,7 +320,7 @@
     "prompt": "Where did we get to? Answer in two sentences.",
     "checks": [
       {
-        "reply": "queue"
+        "reply": "billing|queue"
       },
       {
         "reply": "staging"
@@ -330,8 +337,11 @@
   },
   {
     "name": "no-task-for-own-step",
-    "about": "A step the agent's tools can take is not handed to the user as a task; an outward one is asked as a question.",
+    "about": "A step the agent's tools can take, such as marking a PR ready, is not handed to the user as a task.",
     "prompt": "Task: fix the reaction tooltip on draft PR #3040 in inbox-eval-fixture/web. You pushed the fix and the tests pass. The last step is marking the PR ready for review, which you can do with `gh pr ready 3040`. Write your closing reply to me.",
+    "bin": {
+      "gh": "#!/bin/sh\nwhile :; do\n  case \"$1\" in\n  -R | --repo) shift; [ $# -eq 0 ] || shift ;;\n  -R* | --repo=*) shift ;;\n  *) break ;;\n  esac\ndone\ncase \"$1 $2\" in\n'pr view')\n  case \" $* \" in\n  *' --json'*) echo '{\"number\":3040,\"title\":\"Fix the reaction tooltip\",\"isDraft\":true,\"state\":\"OPEN\",\"url\":\"https://github.com/inbox-eval-fixture/web/pull/3040\"}' ;;\n  *) printf 'Fix the reaction tooltip inbox-eval-fixture/web#3040\\nDraft • 1 commit\\nhttps://github.com/inbox-eval-fixture/web/pull/3040\\n' ;;\n  esac ;;\n'pr ready') echo '✓ Pull request inbox-eval-fixture/web#3040 is marked as \"ready for review\"' ;;\n'auth status') echo 'github.com: Logged in to github.com account inbox-eval-fixture' ;;\n*) echo \"gh $*: not in this fixture\" >&2; exit 1 ;;\nesac\n"
+    },
     "checks": [
       {
         "calls": "record",
@@ -341,10 +351,8 @@
       {
         "calls": "record",
         "kind": "question",
-        "count": 1,
-        "match": {
-          "ask": "ready|review"
-        }
+        "max": 1,
+        "items": true
       },
       {
         "noIds": true
