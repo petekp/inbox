@@ -1948,7 +1948,6 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 function childStall(c) {
-  if (c.delegateState === "finished") return { text: "finished", tone: "done" };
   if (c.delegateState === "blocked") return { text: "waiting", tone: "needsYou" };
   return null;
 }
