@@ -23,11 +23,6 @@ export function countsByMark(folded: Subject[]): StatusCount[] {
   })
 }
 
-/** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
-export function isFinishedUnseen(c: Child, lastLookAt: number | null): boolean {
-  return c.delegateState === 'finished' && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt)
-}
-
 const DAY_MS = 24 * 60 * 60_000
 
 /**
@@ -48,11 +43,10 @@ function isChildWorking(c: Child): boolean {
 }
 
 /**
- * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone, and
- * "finished", in the done tone. Other work shows none, since its moving mark shows it runs.
+ * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone. Other
+ * work shows none: its moving mark shows it runs, and a finished delegate's ✓ shows it finished.
  */
 function childStall(c: Child): StatusStall | null {
-  if (c.delegateState === 'finished') return { text: 'finished', tone: 'done' }
   if (c.delegateState === 'blocked') return { text: 'waiting', tone: 'needsYou' }
 
   return null

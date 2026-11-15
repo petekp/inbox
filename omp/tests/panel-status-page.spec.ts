@@ -75,7 +75,7 @@ test('on the Status page, the rows under a subject hang from its mark, ├─ fo
 test('on the Status page, a row’s stall word follows its name on the line of its last word, at every width, and running work and work waiting on someone else show none', () => {
   const wide = text(trialChangedScreen(), onPage, 80).split('\n')
   expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting'))).toBe(true)
-  expect(wide.some(l => l.includes('Time the fade-out · finished'))).toBe(true)
+  expect(wide.some(l => l.includes('Time the fade-out') && !l.includes(' · '))).toBe(true)
   expect(wide.some(l => l.includes('Search the pairing errors') && !l.includes(' · '))).toBe(true)
   expect(wide.some(l => l.includes('Glasses trial') && !l.includes(' · '))).toBe(true)
 

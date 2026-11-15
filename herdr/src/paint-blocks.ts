@@ -354,7 +354,7 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
 
 const ruleLine = (t: Theme): Element => div().flex_1().border_t(1).border_color(t.border)
 
-/** A group's heading, its text where its rows' text starts. A label heading starts at the edge and rules the goal's text to its buttons. */
+/** A group's heading. A marked one hangs its mark in the mark column, with its text where its rows' text starts. One with no mark starts at the edge, where its rows' marks do. A label heading starts at the edge and rules the goal's text to its buttons. */
 function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const buttons = h_flex()
@@ -377,7 +377,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
     .pl(EDGE)
     .pr(EDGE)
     .items_center()
-    .child(markEl(b.mark, t))
+    .when(b.mark !== null, e => e.child(markEl(b.mark, t)))
     .child(div().min_w(0).whitespace_normal().font_semibold().child(b.text))
     .when(b.count !== null, e => e.child(div().text_color(t.muted).child(`${SEP}${b.count}`)))
     .child(div().flex_1())

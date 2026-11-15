@@ -16,6 +16,11 @@ export type Piece = {
   stands: string
   /** Parts whose states differ, by part. */
   parts?: Record<string, string>
+  /**
+   * A case-insensitive pattern for the step left in this session, which where it stands names while the piece is
+   * working and every child row under it has finished. It holds only at the step that gives it.
+   */
+  left?: string
   /** The plan the piece's last change replaced, while the person has not seen it. */
   was?: string
   /** The ids of pieces merged into this one. */
@@ -38,10 +43,6 @@ export type MilestoneFact = {
   alsoRight?: SubjectStatus[]
 }
 
-/**
- * The goal as the session holds it, and its milestones. `isLeft` says the work has left it: the page shows it met or
- * shows no goal, and its milestones' states no longer matter.
- */
 /** The note after a goal's text on what the page may show for it. */
 function goalNote(g: GoalFact): string {
   if (g.isDropped) return ' (the person dropped its outcome: the page shows no goal)'
@@ -50,6 +51,10 @@ function goalNote(g: GoalFact): string {
   return g.mayEnd ? ' (the work has paused on it: the page may keep it, or show it met or no goal)' : ''
 }
 
+/**
+ * The goal as the session holds it, and its milestones. `isLeft` says the work has left it: the page shows it met or
+ * shows no goal, and its milestones' states no longer matter.
+ */
 type GoalFact = {
   text: string
   match: string
@@ -64,6 +69,11 @@ type GoalFact = {
   mayEnd?: true
   /** The id of the queued milestone the plan takes up next, when the session made it clear. */
   next?: string
+  /**
+   * A new goal that is also right in this one's place at this step, as when the person changed the outcome. The page's
+   * goal picks which one the step is graded on, in `factsForPage`.
+   */
+  or?: GoalFact
 }
 
 /** An outcome with a finish line that a step makes clear, from the person's words or the work, which a goal set there should match. */
@@ -153,11 +163,13 @@ export function factsAfter(before: Facts, change: FactsChange | undefined): Fact
     if (isChanged) changed.push(p.id)
   }
 
+  const givesLeft = new Set((change?.pieces ?? []).filter(p => p.left !== undefined).map(p => p.id))
+
   return {
     focus: change?.focus ?? before.focus,
     focusMatch: change?.focusMatch ?? before.focusMatch,
     ...((change?.pastMatch ?? before.pastMatch) ? { pastMatch: change?.pastMatch ?? before.pastMatch } : {}),
-    pieces,
+    pieces: pieces.map(({ left, ...p }) => (left !== undefined && givesLeft.has(p.id) ? { ...p, left } : p)),
     asks: change?.asks ?? before.asks,
     notWork: [...before.notWork, ...(change?.notWork ?? [])],
     children: change?.children ?? before.children,
@@ -165,6 +177,21 @@ export function factsAfter(before: Facts, change: FactsChange | undefined): Fact
     goalClear: change?.goalClear ?? null,
     changed,
   }
+}
+
+/**
+ * The facts for the goal the page shows, when they allow two. Once the page's goal matches the `or` goal's pattern,
+ * that goal holds, replaces the facts' own goal, and is the next goal this step made clear. Otherwise the facts' own
+ * goal holds. Either way later steps follow the goal this run chose.
+ */
+export function factsForPage(f: Facts, shown: string | null): Facts {
+  if (!f.goal?.or) return f
+  const { or, ...own } = f.goal
+  const isOr = shown !== null && new RegExp(or.match, 'i').test(shown)
+
+  return isOr
+    ? { ...f, goal: { ...or, replaced: own.text }, goalClear: { text: or.text, match: or.match } }
+    : { ...f, goal: own }
 }
 
 /** The statuses a subject for `p` may have. */

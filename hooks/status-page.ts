@@ -1,12 +1,12 @@
 import type { Item, Ledger, Session, Subject } from '../types'
-import { isChildRunning, isSubjectSeen } from './status-children'
+import { isChildShown, isSubjectSeen } from './status-children'
 import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, oldestAsk } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
-import { childRow, countsByMark, isFinishedUnseen, partRows } from './status-page-parts'
+import { childRow, countsByMark, partRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
@@ -16,10 +16,10 @@ const STATUS_FAILED =
 export type StatusBranch = 'mid' | 'last'
 
 /**
- * The words after a row's name: "waiting" in the needs-you tone while it waits on the person, "finished" in the done
- * tone, or how long an open subject has been idle, muted, as "idle 2d".
+ * The words after a row's name: "waiting" in the needs-you tone while it waits on the person, or how long an open
+ * subject has been idle, muted, as "idle 2d".
  */
-export type StatusStall = { text: string; tone: 'needsYou' | 'done' | 'muted' }
+export type StatusStall = { text: string; tone: 'needsYou' | 'muted' }
 
 /**
  * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
@@ -206,7 +206,7 @@ export function statusPage(
   const isUnneeded = (x: Subject) => servedBy(x) === 'none'
   const isOther = (x: Subject) => isUnneeded(x) || (hasMilestones && milestoneOf(x) === null)
   const running = (o?.children ?? [])
-    .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
+    .filter(c => isChildShown(c, now, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
   const hasChildRow = (x: Subject) => running.some(c => c.subjectId === x.id)
   const unseenClosedOf = (part: Subject[]) =>

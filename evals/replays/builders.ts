@@ -78,6 +78,7 @@ export function overview(o: Pick<SessionStatus, 'head' | 'subjects'> & Partial<S
     lastLookAt: null,
     missedInLastLook: {},
     look: null,
+    lastCallReadAt: null,
     goal: null,
     removedGoals: [],
     goalRemoved: null,

@@ -43,7 +43,7 @@ footer {
   color: var(--text);
   background: var(--hover);
 }
-/* The keys start under the group title, and every description lines up after the widest key. */
+/* The keys are text with no marks, so they keep the text column under their heading, and every description lines up after the widest key. */
 .help-keys {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

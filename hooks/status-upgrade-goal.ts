@@ -22,8 +22,9 @@ function goalRefusedOf(saved: unknown): GoalRefusal | null {
   const r = saved as Partial<Record<keyof GoalRefusal, unknown>> | null
   const line = REFUSAL_LINES.find(x => x === r?.line)
   const why = REFUSAL_WHYS.find(x => x === r?.why)
+  const unplaced = Array.isArray(r?.unplaced) ? r.unplaced.filter(id => typeof id === 'string') : []
 
-  return line && why ? { line, why } : null
+  return line && why ? { line, why, ...(unplaced.length > 0 ? { unplaced } : {}) } : null
 }
 
 function time(value: unknown): number | null {
