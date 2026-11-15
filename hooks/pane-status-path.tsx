@@ -64,7 +64,7 @@ export function paneStatusPath(
         <Box width={FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
         <Box flexDirection="column" flexShrink={0}>
           <Box height={statusFrameEdge + 0.9} />
-          <Box flexGrow={1} width={DESKTOP_HAIR_CELLS} backgroundColor={pal.divider} marginBottom={-statusFrameEdge} />
+          <Box flexGrow={1} width={DESKTOP_HAIR_CELLS} backgroundColor={pal.line} marginBottom={-statusFrameEdge} />
         </Box>
       </Box>
     )
@@ -116,13 +116,13 @@ export function paneStatusPath(
   /** A stretch of the column on desktop: `height` lines, or the rest of the row. */
   const desktopColumn = (key: string, isDrawn: boolean, height: number | null) => (
     <Box key={key} flexDirection="row" {...(height === null ? { flexGrow: 1 } : { height })}>
-      {isDrawn ? <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.divider} /> : null}
+      {isDrawn ? <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.line} /> : null}
     </Box>
   )
   /**
    * A work row's joint in the milestones' mark column: its arm to the row's mark on the first line, and the connector or
    * the path's line beside its lines. The terminal draws the path's own glyph past an arm, since it draws over the line.
-   * On desktop the divider color is translucent, so each point is drawn once: the column's stretches stack, and an arm
+   * On desktop the tree line's color is translucent, so each point is drawn once: the column's stretches stack, and an arm
    * beside the path's own hairline starts a hairline to its right.
    */
   const jointEl = ({ arm, beside }: WorkJoint) => {
@@ -144,11 +144,11 @@ export function paneStatusPath(
           height={DESKTOP_HAIR_LINES}
           width={isBesidePath ? desktopArm - DESKTOP_HAIR_CELLS : desktopArm}
           {...(isBesidePath ? { marginLeft: DESKTOP_HAIR_CELLS } : {})}
-          backgroundColor={pal.divider}
+          backgroundColor={pal.line}
         />
       ) : (
         <Box key="arm" height={DESKTOP_HAIR_LINES} flexDirection="row">
-          {beside === 'connector' ? <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.divider} /> : null}
+          {beside === 'connector' ? <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.line} /> : null}
         </Box>
       )
     return (

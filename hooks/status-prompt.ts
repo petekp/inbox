@@ -29,7 +29,7 @@ Input:
 - <subjects>: the open subjects, one per line: id | status | name | where it stands | how long ago it last changed
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
-- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet
+- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet | why the agent asked it, when it said
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 ${GOAL_INPUT}
 - <person>: what the person just sent

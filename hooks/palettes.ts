@@ -156,7 +156,8 @@ const DESKTOP_PALETTE: Palette = {
   muted: 'inactive',
   age: DESKTOP_AGE,
   key: 'remember',
-  line: 'subtle',
+  // The tree lines. One alpha serves both of the app's themes, about as strong as the Codex tab's and Herdr's tree lines.
+  line: 'rgba(128, 128, 128, 0.45)',
   divider: 'rgba(128, 128, 128, 0.25)',
   tone: { error: 'error' },
   mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },

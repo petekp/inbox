@@ -112,16 +112,17 @@ export function paneRowLines({
         <Text color={color}>{treeText(pos, lead)}</Text>
       </Box>
     )
-  /** A 1 pt line in the divider color on desktop, `across` the pane or `down` it. */
+  /** A 1 pt line on desktop, `across` the pane or `down` it: a rule in the divider color, unless given the tree line's. */
   const desktopHairline = (
     key: string,
     direction: 'across' | 'down',
     box: { marginTop?: number; marginBottom?: number; marginLeft?: number; width?: number } = {},
+    color: string = pal.divider,
   ) => (
     <Box
       key={key}
       {...(direction === 'across' ? { height: DESKTOP_HAIR_LINES } : { width: DESKTOP_HAIR_CELLS })}
-      backgroundColor={pal.divider}
+      backgroundColor={color}
       {...box}
     />
   )

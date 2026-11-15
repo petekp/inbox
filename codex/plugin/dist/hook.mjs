@@ -3362,12 +3362,13 @@ function placed(s, folder, branch) {
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
-function recordPrompt(host, s, text2, isOpen2, sentBy) {
+function recordPrompt(host, s, text2, isOpen2, sentBy, personSource = "prompt") {
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
   const r = promptNotes(host, ledger, { text: text2, isPress: sentBy !== null, isOpen: isOpen2 }, s.told);
-  const person = s.turn.person === null ? text2 : `${s.turn.person}
+  const promptPerson = s.turn.person === null ? text2 : `${s.turn.person}
 
 ${text2}`;
+  const person = personSource === "command" ? s.turn.person : promptPerson;
   return {
     state: {
       ...s,

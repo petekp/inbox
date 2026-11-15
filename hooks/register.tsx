@@ -1065,14 +1065,19 @@ async function notePrompt(
   {
     match = s => ({ state: s, sentBy: null }),
     isTyped = false,
-  }: { match?: (s: Session) => { state: Session; sentBy: SentBy | null }; isTyped?: boolean } = {},
+    personSource = 'prompt',
+  }: {
+    match?: (s: Session) => { state: Session; sentBy: SentBy | null }
+    isTyped?: boolean
+    personSource?: 'prompt' | 'command'
+  } = {},
 ): Promise<string[]> {
   const [now, isShown] = await Promise.all([$.clock.now(), isPaneShown($)])
   await update($, AWAY, a => ({ ...a, lastActiveAt: now, isAway: false }))
   let notes: string[] = []
   await commit($, currentOwner(), s => {
     const matched = match(s)
-    const r = recordPrompt(CLAUDE_CODE, matched.state, text, isShown, matched.sentBy)
+    const r = recordPrompt(CLAUDE_CODE, matched.state, text, isShown, matched.sentBy, personSource)
     notes = r.notes
     return isTyped ? messageTyped(r.state, now) : r.state
   })
@@ -2414,7 +2419,7 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const notes = await notePrompt($, e.text, { isTyped })
+    const notes = await notePrompt($, e.text, { isTyped, personSource: e.command ? 'command' : 'prompt' })
     if (sessionState.carriedFor !== conversation.id) {
       sessionState.carriedFor = conversation.id
       const carry = statusCarryText((await read($, SESSION)).ledger)
