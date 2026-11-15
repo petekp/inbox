@@ -17,6 +17,7 @@ import {
   DESKTOP_REPLY_ROWS,
   fieldRows,
   DESKTOP_ARM_GAP,
+  DESKTOP_TREE_AT,
   FRAME_INSET_PT,
   REPLY_ROWS,
   SELECTED_GAP_PT,
@@ -302,7 +303,7 @@ export function paneRows(
           (all, en) => (en.pos === 'pass' ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
           [],
         )
-      const hungMarkCenter = -0.5
+      const hungMarkCenter = DESKTOP_TREE_AT - 1
       const textAt = DESKTOP_MARK_CELLS
       const line = (en: AskEntry) => (
         <Text key={en.key} wrap="wrap">
@@ -318,7 +319,13 @@ export function paneRows(
         })
 
       return (
-        <Box key={`row-${row.id}`} flexDirection="column" marginY={(2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT}>
+        <Box
+          key={`row-${row.id}`}
+          flexDirection="column"
+          marginY={(2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT}
+          position="relative"
+        >
+          <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />
           {desktopFrame({
             key: `row-${row.id}-title`,
             markCells: DESKTOP_MARK_CELLS,
@@ -327,7 +334,6 @@ export function paneRows(
             fill: pal.selection,
             tree: treeBox(`row-${row.id}-trunk`, 'down', space.rowPad),
             children: [
-              <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
               desktopTitle,
               row.subtitle ?? null,
               row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
@@ -340,7 +346,6 @@ export function paneRows(
               markCells: DESKTOP_MARK_CELLS,
               fill: pal.selection,
               padY: 0,
-              hasSide: false,
               tree: treeBox(`row-${row.id}-${group[0]!.key}-tree`, group[0]!.pos === 'last' ? 'last' : 'mid', 0),
               children: group.map(line),
             }),
@@ -349,7 +354,6 @@ export function paneRows(
             key: `row-${row.id}-keys`,
             markCells: DESKTOP_MARK_CELLS,
             fill: pal.selection,
-            hasSide: false,
             children: [
               status.length > 0 ? (
                 <Box flexDirection="column" marginTop={blankLine}>

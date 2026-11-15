@@ -297,5 +297,19 @@ test('in the terminal and desktop looks, a recommended answer with a description
       texts.some(t => t.startsWith('Flick')),
       look,
     ).toBe(true)
+    if (look === 'terminal') {
+      expect(
+        texts.some(t => t.includes('├')),
+        look,
+      ).toBe(true)
+      expect(
+        texts.some(t => t.includes('└')),
+        look,
+      ).toBe(true)
+    } else {
+      expect(await pane.find({ key: 'row-d11-trunk' }), look).toBeTruthy()
+      expect(await pane.find({ key: 'row-d11-option-0-tree' }), look).toBeTruthy()
+      expect(await pane.find({ key: 'row-d11-holds-up-tree' }), look).toBeTruthy()
+    }
   }
 })
