@@ -129,7 +129,7 @@ export function makeSessionHost(
       const isRunning = newest === null ? null : newest.kind === 'started'
       if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
 
-      return isRunning ? turnStarted(s, null) : turnEnded(s, null)
+      return isRunning ? turnStarted(s, null) : turnEnded(s, null, now())
     })
   }
 

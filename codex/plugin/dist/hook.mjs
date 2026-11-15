@@ -789,10 +789,23 @@ function promptNotes(host, ledger, prompt, told) {
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
 // ../hooks/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
   return pressed2 !== void 0 && pressed2 <= turns.turnsStarted && turns.turnsApplied <= pressed2;
+}
+function repliedAtTurnEnd(lastActions, turns, endedAt) {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, last]) => {
+      const isAnswered = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === void 0 && last.turnsStarted !== void 0 && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
+      return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt) } : last];
+    })
+  );
 }
 function isHandedOff(last, turns) {
   return last?.kind === "handoff" && isAwaitingReply(last, turns);
@@ -1018,11 +1031,6 @@ function inPrOrder(prs, ranked = []) {
   return [...prs].sort(
     (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
   );
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/open-targets.ts
@@ -1646,6 +1654,7 @@ function statusPage(s, now) {
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
+var PR_READ_WAIT_MS = 6e4;
 function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
@@ -1778,6 +1787,9 @@ function pressUnderWaySince(f) {
   if (f?.is === "working" || f?.is === "sending") return f.at;
   return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
 }
+function prTabHoldSince(f) {
+  return f?.is === "working" && f.isHandoff === true ? null : pressUnderWaySince(f);
+}
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
@@ -1793,8 +1805,15 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
   const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
-    return { is: "working", label: working, at: last.at };
+  const isHandoffWorking = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === void 0;
+  const isWorking = last.kind === "talk" || isHandoffWorking;
+  if (isWorking && working && (isAwaiting || isUnreported && !isPastLimit))
+    return {
+      is: "working",
+      label: working,
+      at: last.at,
+      ...last.kind === "handoff" ? { isHandoff: true } : {}
+    };
   if (pending === "sending")
     return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
   if (isUnreported) return { is: "noComparison", at: last.at };
@@ -1825,7 +1844,12 @@ var WORKING_LABELS = {
   discuss: "Discussing\u2026",
   "thread-discuss": "Discussing\u2026",
   "thread-draft": "Drafting a reply\u2026",
-  "pr-rank-again": "Ranking\u2026"
+  "pr-rank-again": "Ranking\u2026",
+  "pr-conflicts": "Resolving conflicts\u2026",
+  "pr-address-all": "Addressing\u2026",
+  "pr-merge": "Merging\u2026",
+  "thread-address": "Addressing\u2026",
+  "check-fix": "Fixing\u2026"
 };
 var DONE_LABELS = {
   address: () => "Handed off",
@@ -1932,12 +1956,24 @@ var PR_FIX_LABELS = {
 };
 var PR_READ_FIRST_LABELS = {
   ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL
+  "check-rerun": RERUN_LABEL,
+  "pr-address-all": "Address all",
+  "pr-merge": "Merge",
+  "thread-address": "Address"
 };
-function lastPressOf(presses, rowId) {
+function isViewBeforeReply(last, fetchedAt) {
+  return last?.repliedAt !== void 0 && fetchedAt !== void 0 && fetchedAt <= last.repliedAt;
+}
+function isAwaitingFreshRead(last, fetchedAt, now) {
+  return isViewBeforeReply(last, fetchedAt) && now - last.repliedAt < PR_READ_WAIT_MS;
+}
+function lastPressOf(presses, rowId, fetchedAt) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+  const pressing = pressOutAction(last, feedback);
+  const out = outAction(last, feedback);
+  const isChecking = last?.kind === "handoff" && pressing === null && isAwaitingFreshRead(last, fetchedAt, presses.now);
+  return isChecking ? { last, pressing: last.action, out: last.action } : { last, pressing, out };
 }
 function withOut(row, actions) {
   return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
@@ -2941,7 +2977,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
   const pressOutSince = earliestOf(
     Object.entries(lastActions).map(
-      ([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, void 0, s.presence, now)) : null
+      ([id, last]) => isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, void 0, s.presence, now)) : null
     )
   );
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
@@ -3369,9 +3405,14 @@ function turnStarted(s, at) {
   const startedAt = s.presence.isTurnRunning ? s.presence.turnStartedAt ?? at : at;
   return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } };
 }
-function turnEnded(s, at) {
+function turnEnded(s, at, clock) {
   const lastReplyAt = at ?? s.presence.lastReplyAt;
-  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
+  const endedAt = at ?? clock;
+  return {
+    ...s,
+    lastActions: endedAt === void 0 ? s.lastActions : repliedAtTurnEnd(s.lastActions, s.presence, endedAt),
+    presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt }
+  };
 }
 function messageTyped(s, at) {
   return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } };
@@ -4803,7 +4844,7 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
-      const endsTurn = (s2) => input.source === "compact" ? s2 : statusChanged(turnEnded(s2, null), (o) => childrenCutOff(o, now()));
+      const endsTurn = (s2) => input.source === "compact" ? s2 : statusChanged(turnEnded(s2, null, now()), (o) => childrenCutOff(o, now()));
       const folder = rolloutPath === null ? null : meta.folder;
       const [branch, withHistory] = await Promise.all([
         folder === null ? null : branchIn(deps.run, folder),

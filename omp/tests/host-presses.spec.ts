@@ -310,7 +310,12 @@ test('in a Herdr app terminal, a look file the look wrote counts the Status subj
   const changedAt = state().ledger.overview.subjects[0].changedAt as number
   const folder = join(appHome, 'inbox/presses/s1')
   mkdirSync(folder, { recursive: true })
-  const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
+  const look = {
+    startedAt: changedAt,
+    endedAt: changedAt + 10_000,
+    shown: { s1: changedAt },
+    drawnWrittenAt: changedAt,
+  }
   writeFileSync(join(folder, 'l1.json'), JSON.stringify({ format: 1, id: 'l1', look }))
 
   for (let waited = 0; existsSync(join(folder, 'l1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)

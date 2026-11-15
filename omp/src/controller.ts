@@ -6,7 +6,7 @@ import { isPressConfirmed } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { showsRunningMark } from '../../hooks/session-view'
 import { READING_TEXT } from '../../hooks/banners'
-import { compareEndsAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
+import { timedChangeAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { INITIAL_UI, drawPanel, holdsOf, isAnimating, noticeFor, tallestTabHeight } from './panel'
@@ -80,7 +80,7 @@ export function createPanel(deps: PanelDeps): Panel {
   let animation: unknown = null
   /** Redraws without reading the session again, since a running mark's frame needs only the clock. */
   let frames: unknown = null
-  let compareEnd: { at: number; timer: unknown } | null = null
+  let timedChange: { at: number; timer: unknown } | null = null
   let version = 0
   let seen: SeenRows = {}
   let isOpening = true
@@ -106,13 +106,13 @@ export function createPanel(deps: PanelDeps): Panel {
       frames = null
     }
     const now = deps.now()
-    const at = screen === null ? null : compareEndsAt(screen.view.lastActions, now)
-    if (compareEnd !== null && compareEnd.at !== at) {
-      timers.stop(compareEnd.timer)
-      compareEnd = null
+    const at = screen === null ? null : timedChangeAt(screen.view.lastActions, now)
+    if (timedChange !== null && timedChange.at !== at) {
+      timers.stop(timedChange.timer)
+      timedChange = null
     }
-    if (at !== null && compareEnd === null)
-      compareEnd = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) }
+    if (at !== null && timedChange === null)
+      timedChange = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) }
   }
 
   /** Draws the session's latest screen. `pressedId` names a row that waited before its press, so the selection may move on from it. */
@@ -214,8 +214,8 @@ export function createPanel(deps: PanelDeps): Panel {
       animation = null
       if (frames !== null) timers.stop(frames)
       frames = null
-      if (compareEnd !== null) timers.stop(compareEnd.timer)
-      compareEnd = null
+      if (timedChange !== null) timers.stop(timedChange.timer)
+      timedChange = null
     },
   }
 }

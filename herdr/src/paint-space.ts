@@ -22,7 +22,7 @@ import type { Paint, Theme } from './paint-theme'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
 /** The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space. */
-const padOf = (b: Block): number => (b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0)
+export const padOf = (b: Block): number => (b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0)
 
 const depthOf = (b: Block): number => ('depth' in b ? b.depth : 0)
 

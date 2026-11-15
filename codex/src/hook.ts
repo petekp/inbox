@@ -129,7 +129,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const root = input.cwd ?? ''
       // Codex runs SessionStart after compacting too, in the middle of a turn.
       const endsTurn = (s: SessionState) =>
-        input.source === 'compact' ? s : statusChanged(turnEnded(s, null), o => childrenCutOff(o, now()))
+        input.source === 'compact' ? s : statusChanged(turnEnded(s, null, now()), o => childrenCutOff(o, now()))
       const folder = rolloutPath === null ? null : meta.folder
       const [branch, withHistory] = await Promise.all([
         folder === null ? null : branchIn(deps.run, folder),
