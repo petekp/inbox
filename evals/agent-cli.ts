@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
-import { EMPTY } from '../hooks/ledger'
+import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { CLAUDE_CODE, guidanceText } from '../hooks/model-text'
 import { statusCarryText, closedText, inboxText } from '../hooks/inbox-text'
 import type { Host } from '../hooks/model-text'
@@ -30,7 +30,7 @@ export function guidance(host: Host): string {
 
 export function message(c: Case, host: Host): string {
   if (!c.ledger) return c.prompt
-  const ledger = { ...EMPTY, ...c.ledger } as Ledger
+  const ledger = upgradeLedger({ ...EMPTY, ...c.ledger } as Ledger)
   const carry = host === CLAUDE_CODE ? statusCarryText(ledger) : null
   const notes = [carry, inboxText(host, ledger, false), closedText(ledger.closed)].filter(Boolean)
 
