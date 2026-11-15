@@ -320,7 +320,9 @@ function GoalSection({ page, lines }: { page: StatusPage; lines: DrawnStatus['go
         )}
       </div>
       <div class="status-head goal" data-motion="goal-head">
-        {isTyping ? <GoalField /> : text}
+        <div class="goal-text" data-motion="goal-text">
+          {isTyping ? <GoalField /> : text}
+        </div>
         {g?.was ? (
           <p class="muted">
             {WAS_PREFIX}
