@@ -1,6 +1,6 @@
 import { isOpen, NAME_WORDS } from '../hooks/status-limits'
 import { isChildRunning, isChildShown } from '../hooks/status-children'
-import { NAMED_FOLD_TEXT, statusListRows } from '../hooks/status-page'
+import { drawnStatusRows, NAMED_FOLD_TEXT, seenSubjectIds, statusListRows } from '../hooks/status-page'
 import { namedFoldMore } from '../hooks/status-page-parts'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
@@ -406,12 +406,18 @@ const FIXED_RULES: Rule[] = [
     id: 'finished-named',
     reads: 'facts',
     property: 10,
-    text: 'Every piece that finished or was dropped since the last look is drawn as a row, or named or counted in the "Also done" or "Also dropped" line.',
+    text: 'Every piece that finished or was dropped since the last look is drawn as a row, named or counted in the "Also done" or "Also dropped" line, or folded under a met goal\'s milestones.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const look = o?.lastLookAt ?? null
-      const rows = statusListRows(result.page)
+      const rows = drawnStatusRows(result.page, () => false)
       const drawn = new Set(rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+      const shown = new Set(rows)
+      const behindMetFold = new Set(
+        statusListRows(result.page)
+          .filter(r => !shown.has(r))
+          .flatMap(seenSubjectIds),
+      )
       /** The names every line for `status` shows, and how many more those lines count, across the parts of the list. */
       const lineOf = (status: 'done' | 'dropped') => {
         const lines = rows.flatMap(r =>
@@ -429,7 +435,7 @@ const FIXED_RULES: Rule[] = [
       const missing = shownOf(o)
         .flatMap(s => (s.status === 'done' || s.status === 'dropped' ? [{ ...s, status: s.status }] : []))
         .filter(s => look === null || s.changedAt > look)
-        .filter(s => !drawn.has(s.id) && !lines[s.status].names.has(s.name))
+        .filter(s => !drawn.has(s.id) && !behindMetFold.has(s.id) && !lines[s.status].names.has(s.name))
       return (['done', 'dropped'] as const).flatMap(status => {
         const left = missing.filter(s => s.status === status)
         const counted = lines[status].hidden

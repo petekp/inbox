@@ -7,6 +7,7 @@ import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
 import { withChild } from '../hooks/status-children'
 import { setTypedGoal } from '../hooks/status-goal-ops'
+import { shownMilestones } from '../hooks/status-goal-page'
 import { statusKeyRows } from '../hooks/status-keys'
 import { unfoldedRows } from '../hooks/status-page-parts'
 import { NO_HOLDS } from '../hooks/timing'
@@ -249,10 +250,9 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
   ).toEqual(['New', 'Remove'])
 })
 
-test('a met goal keeps its milestones drawn while work under them is open, held, running or finished since the last look', () => {
+test('a met goal keeps its milestones drawn while work under them is open or held', () => {
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50, new Set(['i1']))
   const held = page(met, 55, {}, [askItem('i1')])
-  const finished = after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51)
 
   expect(held.goal?.milestonesFold).toBeNull()
   expect(
@@ -260,12 +260,13 @@ test('a met goal keeps its milestones drawn while work under them is open, held,
       .find(t => t.id === 's2')
       ?.keys.map(k => k.label),
   ).toEqual(['View question'])
-  expect(page(finished, 55).goal?.milestonesFold).toBeNull()
 })
 
-test('once its work is seen and finished, a met goal folds its milestones into a line naming the done ones, which f opens, and a fold opened for one met goal starts shut when it is met again', () => {
+test('once its work is closed, before the person looks, a met goal folds its milestones into a line naming them, which f opens, and a fold opened for one met goal starts shut when it is met again', () => {
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
-  const seen = { ...after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51), lastLookAt: 52 }
+  const seen = after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51)
+
+  expect(seen.lastLookAt).toBeNull()
   const fold = page(seen, 55).goal?.milestonesFold
   const milestoneIds = page(seen, 55).goal?.milestones.map(m => m.id) ?? []
 
@@ -282,15 +283,12 @@ test('once its work is seen and finished, a met goal folds its milestones into a
       .find(t => t.id === fold?.id)
       ?.keys.map(k => k.hotkey),
   ).toEqual(['f'])
-  expect(
-    statusKeyRows(page(seen, 55), id => id === fold?.id)
-      .map(t => t.id)
-      .slice(0, 3),
-  ).toEqual(['goal', fold?.id, 'm2'])
+  expect(shownMilestones(page(seen, 55).goal, () => false)).toEqual([])
+  expect(shownMilestones(page(seen, 55).goal, id => id === fold?.id).map(m => m.id)).toEqual(milestoneIds)
 
   const added = after(seen, 'MILESTONE: queued | Docs written | not started', 60)
   const docs = page(added, 61).goal?.milestones.at(-1)?.id ?? ''
-  const again = { ...after(added, `DONE: ${docs} | written`, 70), lastLookAt: 71 }
+  const again = after(added, `DONE: ${docs} | written`, 70)
   const refolded = page(again, 72)
 
   expect(page(added, 61).goal?.milestonesFold).toBeNull()
@@ -300,12 +298,14 @@ test('once its work is seen and finished, a met goal folds its milestones into a
   ).toEqual([])
 })
 
-test("a met goal's fold line names only its done milestones, not one dropped since the last look", () => {
+test('a met goal keeps its milestones drawn while one dropped since the last look is listed, then folds them once the person looks', () => {
   const finished = after(linked(), 'DONE: s1 | parsed\nDONE: s2 | explained', 40)
-  const dropped = { ...after({ ...finished, lastLookAt: 45 }, 'DONE: m2 | explained\nDROP: m3 | cut', 50) }
+  const dropped = after({ ...finished, lastLookAt: 45 }, 'DONE: m2 | explained\nDROP: m3 | cut', 50)
+  const looked = { ...dropped, lastLookAt: 55 }
 
-  expect(page(dropped, 55).goal?.milestones.map(m => m.name)).toContain('Demo script')
-  expect(page(dropped, 55).goal?.milestonesFold?.text).toBe('Parsing works, Errors explained')
+  expect(page(dropped, 52).goal?.milestones.map(m => m.name)).toContain('Demo script')
+  expect(page(dropped, 52).goal?.milestonesFold).toBeNull()
+  expect(page(looked, 56).goal?.milestonesFold?.text).toBe('Parsing works, Errors explained')
 })
 
 test('an ask linked to a milestone names it as what it holds up, and a milestone shows its was line only once it changed after the goal was set and since the last look', () => {

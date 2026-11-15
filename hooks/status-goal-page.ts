@@ -75,6 +75,9 @@ export const GOAL_HEADING = 'Goal'
 export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
 /** What starts the id of the fold a met goal's milestones start in, apart from row and milestone ids. */
 const MILESTONES_FOLD_PREFIX = 'goal-milestones'
+
+export const isMilestonesFold = (id: string) => id.startsWith(`${MILESTONES_FOLD_PREFIX}-`)
+
 const MET_LABEL = 'Goal met'
 
 /** The milestones a look draws: none while the met goal's milestones fold is shut. */
@@ -85,20 +88,21 @@ export function shownMilestones(g: GoalBlock | null, isUnfolded: (id: string) =>
 }
 
 /**
- * The line a met goal's milestones fold into, or null while one of them is open or `isQuiet` says work under it is not
- * all seen and finished, so the fold never hides an ask, running work or what finished since the last look. Its id
- * names the goal and when it was met, so a fold opened for one goal starts shut for the next.
+ * The line a met goal's milestones fold into, naming them, or null while one is not done or `isWorkClosed` says work
+ * under it is open or running. So the fold never hides an ask, running work or a milestone dropped since the last look.
+ * Its id names the goal and when it was met, so a fold opened for one goal starts shut for the next.
  */
 export function metMilestonesFold(
   g: StatusGoal,
   milestones: readonly MilestoneRow[],
-  isQuiet: (m: MilestoneRow) => boolean,
+  isWorkClosed: (m: MilestoneRow) => boolean,
 ): GoalBlock['milestonesFold'] {
-  const isClosed = (m: MilestoneRow) => m.place === 'done' || m.place === 'dropped'
-  const done = milestones.filter(m => m.place === 'done').map(m => m.name)
-  const isFolded = g.metAt !== null && done.length > 0 && milestones.every(m => isClosed(m) && isQuiet(m))
+  const isFolded =
+    g.metAt !== null && milestones.length > 0 && milestones.every(m => m.place === 'done' && isWorkClosed(m))
 
-  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(done) } : null
+  return isFolded
+    ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map(m => m.name)) }
+    : null
 }
 
 /** The oldest open ask linked to `id`, a subject or a milestone. */

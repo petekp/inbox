@@ -1,6 +1,7 @@
 import { Icon, RowActions } from './row-actions'
 import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
+import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusRow } from '../../hooks/status-page'
 import { closingFolds, drafts, sending, statusUnfolded, tabState } from './tab-state'
@@ -59,8 +60,11 @@ function statusKey({ press, label, emphasis }: StatusKey): Key {
 /** The motion key of a done fold's list, apart from the Asks groups' Closed lists. */
 export const foldMotion = (id: string) => `status-${id}`
 
+/** Opens or shuts a Status fold. A met goal's milestones grow in and leave as stepped lines, so that fold just draws. */
 export function toggleStatusFold(id: string) {
-  toggleFold(id, statusUnfolded, foldMotion(id))
+  if (!isMilestonesFold(id)) return toggleFold(id, statusUnfolded, foldMotion(id))
+  if (!statusUnfolded.delete(id)) statusUnfolded.add(id)
+  tabState.draw()
 }
 
 /** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */

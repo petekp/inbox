@@ -1304,11 +1304,9 @@ var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
-function metMilestonesFold(g, milestones, isQuiet) {
-  const isClosed = (m) => m.place === "done" || m.place === "dropped";
-  const done = milestones.filter((m) => m.place === "done").map((m) => m.name);
-  const isFolded = g.metAt !== null && done.length > 0 && milestones.every((m) => isClosed(m) && isQuiet(m));
-  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(done) } : null;
+function metMilestonesFold(g, milestones, isWorkClosed) {
+  const isFolded = g.metAt !== null && milestones.length > 0 && milestones.every((m) => m.place === "done" && isWorkClosed(m));
+  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map((m) => m.name)) } : null;
 }
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
@@ -1612,6 +1610,7 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !loose.some((l) => l.milestoneId === m.id);
   const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
     const rows2 = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
@@ -1628,7 +1627,7 @@ function statusPage(s, now) {
   const g = goalParts.goal;
   const goal = g && {
     ...g,
-    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isAllSeen(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;

@@ -4,7 +4,7 @@ import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
-import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
+import { goalPage, metMilestonesFold, oldestAsk, shownMilestones } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
 import { childRow, countsByMark, namedList, partRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
@@ -349,6 +349,9 @@ export function statusPage(
     ...foldedPart('', top, 0),
     ...(otherRows.length > 0 ? [{ kind: 'part' as const, id: 'other', depth: 0, text: OTHER_WORK }, ...otherRows] : []),
   ]
+  /** Whether every subject under a milestone is closed, seen or not, with no running work under it. */
+  const isWorkClosed = (m: MilestoneRow, p: PartSplit) =>
+    p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !loose.some(l => l.milestoneId === m.id)
   /** Whether every row under a milestone is seen and finished, with no running work under it. */
   const isAllSeen = (m: MilestoneRow, p: PartSplit) =>
     p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some(l => l.milestoneId === m.id)
@@ -374,7 +377,7 @@ export function statusPage(
   const goal = g && {
     ...g,
     milestonesFold: o?.goal
-      ? metMilestonesFold(o.goal, g.milestones, m => isAllSeen(m, underMilestones[g.milestones.indexOf(m)]!))
+      ? metMilestonesFold(o.goal, g.milestones, m => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)]!))
       : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]!)),
   }
@@ -396,11 +399,21 @@ export function seenSubjectIds(row: StatusRow): string[] {
   return row.kind === 'subject' ? [row.id] : row.kind === 'fold' ? row.subjectIds : []
 }
 
+const listRows = (milestones: MilestoneRow[], rows: StatusRow[]) => [
+  ...milestones.flatMap(m => (m.foldId === null ? m.rows : [])),
+  ...rows,
+]
+
 /**
  * Every row of the Status's list in the order the looks draw them: each milestone's rows, then the list after the goal.
- * A milestone folded to its name holds none. Rows behind a met goal's fold count as drawn, since that fold holds only
- * finished work the person has seen.
+ * A milestone folded to its name holds none. The rows of milestones behind a met goal's shut fold are included, which
+ * `drawnStatusRows` leaves out.
  */
 export function statusListRows(page: StatusPage): StatusRow[] {
-  return [...(page.goal?.milestones ?? []).flatMap(m => (m.foldId === null ? m.rows : [])), ...page.rows]
+  return listRows(page.goal?.milestones ?? [], page.rows)
+}
+
+/** The rows of the Status's list a look draws while `isUnfolded` says which folds are open. */
+export function drawnStatusRows(page: StatusPage, isUnfolded: (id: string) => boolean): StatusRow[] {
+  return listRows(shownMilestones(page.goal, isUnfolded), page.rows)
 }
