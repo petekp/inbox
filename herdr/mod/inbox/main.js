@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T23:06:42.127Z. 243047 characters follow.
+// Built at 2026-11-15T23:08:30.604Z. 243158 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1759,7 +1759,7 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
-  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !loose.some((l) => l.milestoneId === m.id);
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
   const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
     const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];

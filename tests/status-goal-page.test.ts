@@ -262,6 +262,41 @@ test('a met goal keeps its milestones drawn while work under them is open or hel
   ).toEqual(['View question'])
 })
 
+test('a met goal keeps its milestones drawn while a delegate under them still runs, wherever it draws, and folds them once it has finished', () => {
+  const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written\nDONE: s1 | parsed\nDONE: s2 | explained', 50)
+  const delegate = (endedAt: number | null, delegateState: 'blocked' | 'finished') =>
+    after(
+      withChild(
+        met,
+        {
+          ref: 'review',
+          kind: 'subagent',
+          name: 'Review bot',
+          startedAt: 52,
+          endedAt,
+          lastActivityAt: 53,
+          delegateState,
+        },
+        54,
+      ),
+      'LINK: c1 | s1',
+      54,
+    )
+  const waiting = page(delegate(null, 'blocked'), 55)
+  const inDoneFold = { ...delegate(null, 'blocked'), lastLookAt: 53 }
+  const finished = { ...delegate(54, 'finished'), lastLookAt: 53 }
+
+  expect(waiting.goal?.milestonesFold).toBeNull()
+  expect(waiting.goal?.milestones.find(m => m.id === 'm2')?.rows.map(r => r.kind)).toContain('child')
+  expect(page(inDoneFold, 55).goal?.milestonesFold).toBeNull()
+  expect(
+    page(finished, 55)
+      .goal?.milestones.find(m => m.id === 'm2')
+      ?.rows.map(r => r.kind),
+  ).toContain('child')
+  expect(page(finished, 55).goal?.milestonesFold).not.toBeNull()
+})
+
 test('once its work is closed, before the person looks, a met goal folds its milestones into a line naming them, which f opens, and a fold opened for one met goal starts shut when it is met again', () => {
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
   const seen = after(met, 'DONE: s1 | parsed\nDONE: s2 | explained', 51)

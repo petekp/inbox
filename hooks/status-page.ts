@@ -1,5 +1,5 @@
 import type { Item, Ledger, Session, Subject } from '../types'
-import { isChildShown, isSubjectSeen } from './status-children'
+import { isChildRunning, isChildShown, isSubjectSeen } from './status-children'
 import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS } from './help'
@@ -349,9 +349,15 @@ export function statusPage(
     ...foldedPart('', top, 0),
     ...(otherRows.length > 0 ? [{ kind: 'part' as const, id: 'other', depth: 0, text: OTHER_WORK }, ...otherRows] : []),
   ]
-  /** Whether every subject under a milestone is closed, seen or not, with no running work under it. */
+  /** Whether every subject under a milestone is closed, seen or not, with no child still running under it. */
   const isWorkClosed = (m: MilestoneRow, p: PartSplit) =>
-    p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !loose.some(l => l.milestoneId === m.id)
+    p.foldedOpen.length === 0 &&
+    !p.shown.some(isOpen) &&
+    !running.some(
+      c =>
+        isChildRunning(c, now) &&
+        (p.shown.some(x => x.id === c.subjectId) || loose.some(l => l.child === c && l.milestoneId === m.id)),
+    )
   /** Whether every row under a milestone is seen and finished, with no running work under it. */
   const isAllSeen = (m: MilestoneRow, p: PartSplit) =>
     p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some(l => l.milestoneId === m.id)

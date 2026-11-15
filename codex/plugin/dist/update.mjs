@@ -2346,7 +2346,9 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
-  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !loose.some((l) => l.milestoneId === m.id);
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some(
+    (c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id))
+  );
   const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
     const rows2 = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
