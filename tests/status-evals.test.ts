@@ -99,6 +99,17 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: GOOD_RUNS['goal-from-work']![0]!.replace(/\nGOAL: [^\n]*/, ''),
     breaks: 'goal-when-clear',
   },
+  'restart-reads-backlog': {
+    at: 0,
+    answer: GOOD_RUNS['restart-reads-backlog']![0]!.replace(/\n(GOAL|SERVES): [^\n]*/g, ''),
+    breaks: 'goal-when-clear',
+  },
+  'chat-states-direction': { at: 0, answer: 'NO CHANGE', breaks: 'goal-when-clear' },
+  'unrelated-ask-reasons': {
+    at: 0,
+    answer: `${GOOD_RUNS['unrelated-ask-reasons']![0]!}\nGOAL: Library pinned | working Tests pass; queued 4.3 adopted`,
+    breaks: 'goal-only-when-clear',
+  },
   'goal-work-left': {
     at: 0,
     answer: GOOD_RUNS['goal-work-left']![0]!.replace(/\nSERVES: [^\n]*/g, ''),

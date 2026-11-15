@@ -93,10 +93,14 @@ function servesText(o: SessionStatus, subjectId: string): string {
   return to === undefined ? '?' : to === 'none' ? '-' : to
 }
 
-/** The open asks as the call reads them, each with the subjects it holds up. */
-export function asksText(o: SessionStatus | null, asks: readonly Pick<Item, 'id' | 'ask'>[]): string {
+/** The open asks as the call reads them, each with the subjects it holds up and, when the agent gave one, why it asked. */
+export function asksText(o: SessionStatus | null, asks: readonly Pick<Item, 'id' | 'ask' | 'context'>[]): string {
   return asks
-    .map(a => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(', ') || '-'}`)
+    .map(a => {
+      const held = `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(', ') || '-'}`
+      const why = a.context ? clipWords(a.context.replaceAll('|', '/'), ASK_READ_WORDS) : ''
+      return why === '' ? held : `${held} | ${why}`
+    })
     .join(NL)
 }
 

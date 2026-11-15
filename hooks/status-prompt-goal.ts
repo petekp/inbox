@@ -28,7 +28,7 @@ export const GOAL_INPUT = `- <goal>: the outcome the session's work is for, when
  * The parts read in this order.
  */
 export const GOAL_PARTS = {
-  'goal-when-clear': `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Never write GOAL from a summary of work that already finished.`,
+  'goal-when-clear': `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   'goal-finish-line': `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   'goal-wait': `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
   'goal-not-again': `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
