@@ -135,8 +135,6 @@ export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' 
  * dock, so omp, which cuts a row's text past that many lines, shows the whole line there too.
  */
 const NAMED_FOLD_NAMES = 2
-/** Whether a look that shows a named fold counts the work in its "+N more" as seen, as it does the work it names. */
-const IS_FOLD_MORE_SEEN = true
 /** What ends a named fold that holds more names than it shows. */
 export const namedFoldMore = (n: number) => `+${n} more`
 
@@ -272,7 +270,7 @@ export function statusPage(
               depth,
               ...SUBJECT_MARKS[status],
               text: `${NAMED_FOLD_TEXT[status]}${shown.join(', ')}`,
-              subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map(x => x.id),
+              subjectIds: closed.map(x => x.id),
             },
           ]
     })

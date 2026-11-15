@@ -566,11 +566,8 @@ export type HostTaskStatus = 'pending' | 'in-progress' | 'done' | 'dropped' | 'b
 export type HostTask = { id: string; text: string; status: HostTaskStatus }
 
 /**
- * Why a Status call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
- * parser refused, and `answer` holds the start of the second answer.
- */
-/**
- * A Status call that wrote nothing. `catchUpsFailed` counts the catch-ups that failed while it stood, and
+ * A Status call that wrote nothing. `cause` is `no-answer` when the call gave no text, or `refused` when it answered
+ * twice with text the parser refused, and then `answer` holds the start of the second answer. `catchUpsFailed` counts the catch-ups that failed while it stood, and
  * `catchUpTurn` is `turnsStarted` at the last of them, so the next catch-up waits longer after each (`needsCatchUp`).
  * Saved failures from before these fields read as none.
  */
