@@ -24,6 +24,8 @@ import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
 import { applyFeedFiles } from '../../hooks/feed'
 import { readFeedFiles } from '../../feed-reader'
+import { feedPathValue } from '../../hooks/feed-path'
+import type { FeedPathSetting } from '../../hooks/feed-path'
 import { readDocument, withDocumentPreview } from '../../hooks/document'
 
 const documentFile = {
@@ -65,7 +67,7 @@ export type ServerDeps = {
   isPluginFolderGone?: () => boolean
   isNextBuild?: boolean
   /** The optional external progress snapshot. */
-  feedPath?: string
+  feedPath?: FeedPathSetting
   /** The page template for a comparison, beside the handler's bundle. */
   comparePage: string
   /**
@@ -168,7 +170,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         await wakeForDone(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
         const sentTab = shownTabOf(args.tab)
-        const feed = await readFeedFiles(deps.feedPath)
+        const feed = await readFeedFiles(await feedPathValue(deps.feedPath))
         const s = await updateState(dir, id, s => {
           const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
           const ledger = feed ? applyFeedFiles(s.ledger, feed.root, feed.files, now()) : s.ledger

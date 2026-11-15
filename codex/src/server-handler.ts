@@ -12,6 +12,7 @@ import { run } from './run'
 import { listHooksTrust } from './hook-trust'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
+import { memoizedFeedPath, resolveInboxFeedPath } from '../../hooks/feed-path'
 
 function devPageIn(dir: string): () => Promise<string | null> {
   let cached: { path: string; mtimeMs: number; html: string } | null = null
@@ -43,6 +44,18 @@ export function createHandler(
   isPluginFolderGone: () => boolean = () => false,
   startUpdate?: (sessionId: string) => void,
 ): ReturnType<typeof makeServer> {
+  const feedPath = memoizedFeedPath(() =>
+    resolveInboxFeedPath(
+      process.env.INBOX_FEED,
+      process.env.HOME || homedir(),
+      {
+        paneId: process.env.HERDR_PANE_ID,
+        binPath: process.env.HERDR_BIN_PATH,
+      },
+      run,
+    ),
+  )
+
   return makeServer({
     dir,
     now: Date.now,
@@ -56,7 +69,7 @@ export function createHandler(
     loadError,
     isPluginFolderGone,
     isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
-    feedPath: process.env.INBOX_FEED,
+    feedPath,
     comparePage: join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
     openCatchUp: startUpdate && {
       codexHome: process.env.CODEX_HOME || join(homedir(), '.codex'),

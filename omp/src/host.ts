@@ -12,6 +12,8 @@ import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { FEED_POLL_MS } from '../../hooks/feed'
+import { feedPathValue, memoizedFeedPath, resolveInboxFeedPath } from '../../hooks/feed-path'
+import type { FeedPathSetting } from '../../hooks/feed-path'
 import { herdrReporter } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
@@ -127,7 +129,7 @@ export type HostDeps = {
   herdrPane: string | null
   /** The value of `INBOX_RECORDED_ITEMS_ONLY`, which `isRecordedItemsOnly` reads. */
   recordedItemsOnly: string | undefined
-  feedPath?: string
+  feedPath?: FeedPathSetting
 }
 
 async function defaultComplete(
@@ -225,6 +227,23 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
+  const configuredFeedPath = typeof deps.feedPath === 'string' ? deps.feedPath : process.env.INBOX_FEED
+  const getFeedPath = memoizedFeedPath(
+    typeof deps.feedPath === 'function'
+      ? deps.feedPath
+      : () =>
+          resolveInboxFeedPath(
+            configuredFeedPath,
+            process.env.HOME || homedir(),
+            {
+              paneId: deps.herdrPane ?? undefined,
+              binPath: process.env.HERDR_BIN_PATH,
+            },
+            run,
+          ),
+  )
+  const runtimeDeps = { ...deps, feedPath: getFeedPath }
+
   /** Sends text to the agent as if the person typed it. Returns why it could not, or null. */
   const sendToAgent = (ctx: ExtensionContext, text: string): string | null => {
     try {
@@ -290,7 +309,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   const context: HostContext = {
-    deps,
+    deps: runtimeDeps,
     dir,
     openPanels: new Map(),
     prepared: new Set(),
@@ -320,7 +339,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   const startSession = async (ctx: ExtensionContext, parentFile?: string) => {
     stopFeedTimer()
     await start(ctx, parentFile)
-    if (!deps.feedPath || isUnattended(ctx)) return
+    if (isUnattended(ctx) || !(await feedPathValue(runtimeDeps.feedPath))) return
     const timer = ctx.setInterval(() => deps.background(inbox.feedWhenDue(ctx)), FEED_POLL_MS)
     stopFeedTimer = () => ctx.clearTimer(timer)
     await inbox.feedWhenDue(ctx)

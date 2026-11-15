@@ -20,6 +20,7 @@ export const SHARED = [
   'ledger-close',
   'ledger-update',
   'feed',
+  'feed-path',
   'reply-parse',
   'host-tasks',
   'status',

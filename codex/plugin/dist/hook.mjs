@@ -3085,6 +3085,7 @@ function herdrOnWrite(env, run2, dir, now) {
 
 // src/hook.ts
 import { resolve as resolve4 } from "node:path";
+import { homedir as homedir2 } from "node:os";
 
 // src/cli.ts
 function namedCli(env) {
@@ -3785,6 +3786,37 @@ async function readFeedFiles(path, io = feedIo) {
 }
 var missing = (error) => !!error && typeof error === "object" && "code" in error && error.code === "ENOENT";
 
+// ../hooks/feed-path.ts
+var HERDR_LOOKUP_TIMEOUT_MS = 5e3;
+function agentNameOf(output) {
+  try {
+    const parsed = JSON.parse(output);
+    if (!parsed || typeof parsed !== "object") return null;
+    const result = parsed.result;
+    if (!result || typeof result !== "object") return null;
+    const agent = result.agent;
+    if (!agent || typeof agent !== "object") return null;
+    const name = agent.name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
+}
+async function resolveInboxFeedPath(explicit, home, identity, run2) {
+  if (explicit !== void 0) return explicit;
+  if (!home || !identity.paneId) return void 0;
+  try {
+    const result = await run2([identity.binPath || "herdr", "agent", "get", identity.paneId], {
+      cwd: home,
+      timeoutMs: HERDR_LOOKUP_TIMEOUT_MS
+    });
+    if (result.code !== 0 || agentNameOf(result.stdout) !== "meta") return void 0;
+    return `${home.replace(/[\\/]+$/, "")}/.local/state/inbox/feeds`;
+  } catch {
+    return void 0;
+  }
+}
+
 // src/hook.ts
 async function handleHook(input, deps) {
   const id = input.session_id;
@@ -3793,7 +3825,13 @@ async function handleHook(input, deps) {
   const meta = await rolloutMeta(input.transcript_path);
   if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null;
   const { update: updateState2, read } = codexStore(dir, id, now, deps.onWrite);
-  const feed = await readFeedFiles(env.INBOX_FEED);
+  const feedPath = await resolveInboxFeedPath(
+    env.INBOX_FEED,
+    env.HOME || homedir2(),
+    { paneId: env.HERDR_PANE_ID, binPath: env.HERDR_BIN_PATH },
+    deps.run
+  );
+  const feed = await readFeedFiles(feedPath);
   const cliPath = namedCli(env);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
@@ -3939,14 +3977,14 @@ async function handleHook(input, deps) {
 }
 
 // src/data-dir.ts
-import { homedir as homedir2 } from "node:os";
+import { homedir as homedir3 } from "node:os";
 import { join as join4 } from "node:path";
 function dataDir(env, pluginRoot) {
   const fromEnv = env.INBOX_DATA || env.PLUGIN_DATA;
   if (fromEnv) return fromEnv;
   const m = pluginRoot.match(/^(.*)\/plugins\/cache\/([^/]+)\/([^/]+)\/[^/]+$/);
   if (m) return `${m[1]}/plugins/data/${m[3]}-${m[2]}`;
-  return join4(homedir2(), ".codex", "inbox-dev");
+  return join4(homedir3(), ".codex", "inbox-dev");
 }
 
 // src/run.ts

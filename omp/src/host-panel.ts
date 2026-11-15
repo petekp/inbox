@@ -13,6 +13,7 @@ import { applyFeedFiles } from '../../hooks/feed'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { readFeedFiles } from '../../feed-reader'
+import { feedPathValue } from '../../hooks/feed-path'
 import type { PanelSource } from './controller'
 import type { PanelScreen } from './panel'
 import { readState } from './state'
@@ -73,9 +74,10 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       fetchPrsWhenDue(ctx)
     },
     feedWhenDue: async ctx => {
-      if (!deps.feedPath) return
+      const feedPath = await feedPathValue(deps.feedPath)
+      if (!feedPath) return
       try {
-        const feed = await readFeedFiles(deps.feedPath)
+        const feed = await readFeedFiles(feedPath)
         if (!feed) return
         const id = sessionIdOf(ctx)
         await change(id, s => {

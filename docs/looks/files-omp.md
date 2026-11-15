@@ -4,7 +4,7 @@ Part of [the look map](../looks.md#files).
 
 | File | Role |
 | --- | --- |
-| `omp/src/host.ts` | omp host. The only file that imports omp's packages. It binds the calls that need omp's types into a `HostContext`, wires omp's events to the `host-*.ts` handlers, polls `INBOX_FEED` for each active session, registers the tools and `/inbox` command, reads recorded reports, supplies pi-tui's native Markdown renderer, and shows the band and panel. |
+| `omp/src/host.ts` | omp host. The only file that imports omp's packages. It binds the calls that need omp's types into a `HostContext`, wires omp's events to the `host-*.ts` handlers, polls the configured feed or the default directory for the Herdr `meta` agent, registers the tools and `/inbox` command, reads recorded reports, supplies pi-tui's native Markdown renderer, and shows the band and panel. |
 | `omp/src/host-context.ts` | omp host. `HostContext`, what `createInbox` holds for the handler files, and `OmpContext`, the part of omp's context they read. |
 | `omp/src/host-sessions.ts` | omp host. The session calls the handler files share: saving a change, omp's `SessionHost` and update host, catching up over the branch, and the PR and Herdr checks when due. |
 | `omp/src/host-turns.ts` | omp host. The handlers for omp's session and turn events: a session's start and shutdown, a prompt's arrival, the reply, and the turn's end. |

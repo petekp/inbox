@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { homedir } from 'node:os'
 
 import {
   childrenCutOff,
@@ -39,6 +40,7 @@ import { turnOf } from './rollout-turns'
 import { rolloutReads, rolloutTail } from './transcript'
 import { applyFeedFiles } from '../../hooks/feed'
 import { readFeedFiles } from '../../feed-reader'
+import { resolveInboxFeedPath } from '../../hooks/feed-path'
 
 export type HookInput = {
   hook_event_name: string
@@ -75,7 +77,13 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   // INBOX_IN_EXEC lets a test drive a whole session through `codex exec`.
   if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null
   const { update: updateState, read } = codexStore(dir, id, now, deps.onWrite)
-  const feed = await readFeedFiles(env.INBOX_FEED)
+  const feedPath = await resolveInboxFeedPath(
+    env.INBOX_FEED,
+    env.HOME || homedir(),
+    { paneId: env.HERDR_PANE_ID, binPath: env.HERDR_BIN_PATH },
+    deps.run,
+  )
+  const feed = await readFeedFiles(feedPath)
   const cliPath = namedCli(env)
   const withCli = (s: SessionState): SessionState => (cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s)
   // A subagent's hook names its own rollout, not the session's.

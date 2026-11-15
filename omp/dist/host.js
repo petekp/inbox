@@ -519,6 +519,52 @@ var sourceUnder = (source, root) => {
 };
 var detailOf = (entry) => entry.state === "blocked" ? `Blocked: ${entry.detail}` : entry.detail;
 
+// ../hooks/feed-path.ts
+var HERDR_LOOKUP_TIMEOUT_MS = 5000;
+function agentNameOf(output) {
+  try {
+    const parsed = JSON.parse(output);
+    if (!parsed || typeof parsed !== "object")
+      return null;
+    const result = parsed.result;
+    if (!result || typeof result !== "object")
+      return null;
+    const agent = result.agent;
+    if (!agent || typeof agent !== "object")
+      return null;
+    const name = agent.name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
+}
+async function resolveInboxFeedPath(explicit, home, identity, run) {
+  if (explicit !== undefined)
+    return explicit;
+  if (!home || !identity.paneId)
+    return;
+  try {
+    const result = await run([identity.binPath || "herdr", "agent", "get", identity.paneId], {
+      cwd: home,
+      timeoutMs: HERDR_LOOKUP_TIMEOUT_MS
+    });
+    if (result.code !== 0 || agentNameOf(result.stdout) !== "meta")
+      return;
+    return `${home.replace(/[\\/]+$/, "")}/.local/state/inbox/feeds`;
+  } catch {
+    return;
+  }
+}
+function memoizedFeedPath(resolve) {
+  let result;
+  return () => result ??= resolve().catch(() => {
+    return;
+  });
+}
+function feedPathValue(path) {
+  return Promise.resolve(typeof path === "function" ? path() : path);
+}
+
 // ../hooks/status-limits.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
@@ -9799,10 +9845,11 @@ function panelCalls(context, sessions) {
       fetchPrsWhenDue(ctx);
     },
     feedWhenDue: async (ctx) => {
-      if (!deps.feedPath)
+      const feedPath = await feedPathValue(deps.feedPath);
+      if (!feedPath)
         return;
       try {
-        const feed = await readFeedFiles(deps.feedPath);
+        const feed = await readFeedFiles(feedPath);
         if (!feed)
           return;
         const id = sessionIdOf(ctx);
@@ -10399,6 +10446,12 @@ function createInbox(pi, deps = defaultDeps) {
       return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
+  const configuredFeedPath = typeof deps.feedPath === "string" ? deps.feedPath : process.env.INBOX_FEED;
+  const getFeedPath = memoizedFeedPath(typeof deps.feedPath === "function" ? deps.feedPath : () => resolveInboxFeedPath(configuredFeedPath, process.env.HOME || homedir(), {
+    paneId: deps.herdrPane ?? undefined,
+    binPath: process.env.HERDR_BIN_PATH
+  }, run));
+  const runtimeDeps = { ...deps, feedPath: getFeedPath };
   const sendToAgent = (ctx, text) => {
     try {
       pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
@@ -10451,7 +10504,7 @@ function createInbox(pi, deps = defaultDeps) {
     return model ? model.name ?? model.id : null;
   };
   const context = {
-    deps,
+    deps: runtimeDeps,
     dir,
     openPanels: new Map,
     prepared: new Set,
@@ -10479,7 +10532,7 @@ function createInbox(pi, deps = defaultDeps) {
   const startSession = async (ctx, parentFile) => {
     stopFeedTimer();
     await start(ctx, parentFile);
-    if (!deps.feedPath || isUnattended(ctx))
+    if (isUnattended(ctx) || !await feedPathValue(runtimeDeps.feedPath))
       return;
     const timer = ctx.setInterval(() => deps.background(inbox.feedWhenDue(ctx)), FEED_POLL_MS);
     stopFeedTimer = () => ctx.clearTimer(timer);

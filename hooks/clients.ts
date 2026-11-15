@@ -24,6 +24,7 @@ export type FeatureId =
   | 'account-pr-list'
   | 'feed-findings'
   | 'meta-active-items'
+  | 'meta-default-feed'
   | 'untracked-work-warning'
   | 'prs-empty-hint'
   | 'gh-signed-out-notice'
@@ -95,6 +96,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'account-pr-list': { kind: 'full' },
       'feed-findings': { kind: 'full' },
       'meta-active-items': { kind: 'full' },
+      'meta-default-feed': { kind: 'full' },
       'untracked-work-warning': { kind: 'full' },
       'prs-empty-hint': { kind: 'full' },
       'gh-signed-out-notice': { kind: 'full' },
@@ -188,6 +190,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'Codex has no idle timer, so it applies the feed at hooks and Inbox tab view requests.',
       },
       'meta-active-items': { kind: 'full' },
+      'meta-default-feed': { kind: 'full' },
       'untracked-work-warning': { kind: 'full' },
       'prs-empty-hint': {
         kind: 'different',
@@ -316,6 +319,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'account-pr-list': { kind: 'full' },
       'feed-findings': { kind: 'full' },
       'meta-active-items': { kind: 'full' },
+      'meta-default-feed': { kind: 'full' },
       'untracked-work-warning': { kind: 'full' },
       'prs-empty-hint': { kind: 'full' },
       'gh-signed-out-notice': { kind: 'full' },

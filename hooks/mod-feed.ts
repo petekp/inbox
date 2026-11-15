@@ -1,4 +1,6 @@
 import { applyFeedFiles, FEED_POLL_MS, MAX_FEED_FILE_BYTES, parseFeed, type FeedFile } from './feed'
+import { resolveInboxFeedPath } from './feed-path'
+import type { Run } from './gh'
 import type { Ledger } from '../types'
 import type { FsStat } from 'claude-code'
 
@@ -10,6 +12,32 @@ type FeedFs = [
   (path: string) => Promise<boolean>,
   (path: string) => Promise<string>,
 ]
+
+export async function startModFeed(
+  env: [
+    Promise<string | null | undefined>,
+    Promise<string | null | undefined>,
+    Promise<string | null | undefined>,
+    Promise<string | null | undefined>,
+  ],
+  run: Run,
+  fs: FeedFs,
+  now: () => Promise<number>,
+  commit: (change: (ledger: Ledger) => Ledger) => Promise<unknown>,
+  sessionId: () => Promise<string>,
+) {
+  const [explicit, home, paneId, binPath] = await Promise.all(env)
+  const path = await resolveInboxFeedPath(
+    explicit ?? undefined,
+    home ?? undefined,
+    { paneId: paneId ?? undefined, binPath: binPath ?? undefined },
+    run,
+  )
+  if (!path) return null
+  const poll = feedPoll(path, fs, now, commit)
+
+  return () => sessionId().then(poll)
+}
 
 export function feedPoll(
   path: string,

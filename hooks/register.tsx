@@ -77,7 +77,7 @@ import { prMarkId, threadSentIn } from './pr-rows'
 import { failingChecks, prRefs, prNeedsYou, waitingThreads } from './prs'
 import { EMPTY, KEPT_SESSIONS, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
-import { FEED_POLL_MS, feedPoll } from './mod-feed'
+import { FEED_POLL_MS, startModFeed } from './mod-feed'
 import { tasksRunBy } from './reply-parse'
 import { CLAUDE_CODE, guidedCloseDescription } from './model-text'
 import { statusCarryText, screenText, type ScreenTab } from './inbox-text'
@@ -1198,7 +1198,7 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   followDelegates($, isShown)
 }
 
-/** Refreshes Herdr delegates once and every `HERDR_CHECK_MS` while Status is visible. */
+/** Tracks Status delegates. */
 function followDelegates($: EngineInterface, isShown: boolean) {
   if (!isShown) {
     paneState.herdrCheckTimer?.cancel()
@@ -2144,16 +2144,15 @@ async function readVersion($: EngineInterface) {
   mod.statusRecordsFolder = mod.isNextBuild ? await recordsFolder($).catch(() => null) : null
 }
 
-async function startFeed($: EngineInterface) {
-  const path = await $.env.get('INBOX_FEED')
-  if (!path) return null
-  const poll = feedPoll(
-    path,
+function startFeed($: EngineInterface) {
+  return startModFeed(
+    [$.env.get('INBOX_FEED'), $.env.get('HOME'), $.env.get('HERDR_PANE_ID'), $.env.get('HERDR_BIN_PATH')],
+    processRun($),
     [p => $.fs.stat(p), p => $.fs.list(p), p => $.fs.exists(p), p => $.fs.read(p)],
     () => $.clock.now(),
     update => commitLedger($, update, currentOwner()),
+    () => $.session.id(),
   )
-  return () => $.session.id().then(poll)
 }
 
 async function initializeInbox($: EngineInterface) {
