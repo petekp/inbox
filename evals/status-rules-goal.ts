@@ -2,10 +2,24 @@ import { parseStatus } from '../hooks/status'
 import { isOpen, MILESTONES_MAX, MILESTONES_MIN, nameKey } from '../hooks/status-limits'
 import { milestonePath } from '../hooks/status-path'
 import { rightStatuses } from './status-facts'
-import { label, milestonesOf, subjectsFor } from './status-rule-helpers'
+import type { MilestoneFact } from './status-facts'
+import { label, milestonesFor, milestonesOf, subjectsFor } from './status-rule-helpers'
+import type { Milestone, SubjectStatus } from '../types'
 import type { Rule, RuleContext } from './status-rules'
 
 const hasCall = ({ step }: RuleContext) => step.call !== undefined
+
+/**
+ * The statuses right for one page milestone that stands for several of the facts' milestones: done once all are done,
+ * working while any is, and working or queued while some are done and the rest wait.
+ */
+function rightForAll(ms: MilestoneFact[]): SubjectStatus[] {
+  const kept = ms.filter(m => m.state !== 'dropped')
+  if (kept.length <= 1) return (kept.length === 1 ? kept : ms).flatMap(rightStatuses)
+  if (kept.every(m => m.state === 'done')) return ['done']
+  if (kept.some(m => m.state === 'working')) return ['working']
+  return kept.some(m => m.state === 'done') ? ['working', 'queued'] : [...new Set(kept.flatMap(rightStatuses))]
+}
 const stripState = (failure: string) => failure.slice(0, failure.lastIndexOf(', and '))
 
 /** The rules for the goal, its milestones and what each subject serves, and for an answer the host can apply. */
@@ -96,11 +110,13 @@ export const GOAL_RULES: Rule[] = [
         return result.readSetAt === o.goal.setAt && !result.isStatusFailed
           ? [`"${o.goal.text}" has no milestones after a call`]
           : []
-      return (result.facts.goal?.milestones ?? []).flatMap(m => {
-        const saved = milestonesOf(o).filter(x => new RegExp(m.match, 'i').test(x.name))
+      const facts = result.facts.goal?.milestones ?? []
+      const standsFor = (x: Milestone) => facts.filter(m => milestonesFor(m, result.facts, o).some(y => y.id === x.id))
+      return facts.flatMap(m => {
+        const saved = milestonesFor(m, result.facts, o)
         if (saved.length === 0) return [`no milestone for ${m.name}`]
         return saved
-          .filter(x => !rightStatuses(m).includes(x.status))
+          .filter(x => !rightForAll(standsFor(x)).includes(x.status))
           .map(x => `"${x.name}" is ${x.status}, and ${m.name} is ${m.state}`)
       })
     },

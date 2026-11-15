@@ -18,7 +18,7 @@ The examples come from one invented session. It adds two-factor sign-in to a web
 
 The head tells the person what the session is focused on now, in the person's own words. Compare it with `Focus now` in the facts.
 
-The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line under the goal. The goal already names the aim, so the `Now:` line names the part of the focus underway now: one piece, one step of a piece, or the next few steps. It passes when that part serves the focus. It fails when it names work outside the focus, or only repeats the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
+The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line under the goal, or, when code leaves that line out, the milestone that reads `← now`. The goal already names the aim, so the `Now:` line names the part of the focus underway now: one piece, one step of a piece, or the next few steps. It passes when that part serves the focus. It fails when it names work outside the focus, or only repeats the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
 
 The head fails when it does any of these:
 
@@ -96,7 +96,7 @@ Each mark on a subject row fits its piece's state in the facts, and every open p
 Judge it in two steps:
 
 1. Check the mark of each row of work against the list of marks above. For a `◆` row, check only that an open ask in the facts holds up that piece. Do not compare a `◆` row's mark with the piece's state.
-2. List the open pieces in the facts that have no row on the page. Leave out each piece whose line says `The goal does not need it.`: Other work's counts line counts those that are under way, and those not started yet or set aside leave the page with no count. The `○ N more` fold accounts for the rest. The check fails when that list is not empty and the page has no `○ N more` fold, or the fold counts fewer pieces than the list holds.
+2. List the open pieces in the facts that have no row on the page. Leave out each piece whose line says `The goal does not need it.`: Other work's counts line counts those that are under way, and those not started yet or set aside leave the page with no count. Leave out, too, a piece not started yet whose whole outcome is an open milestone on the page. The `○ N more` fold accounts for the rest. The check fails when that list is not empty and the page has no `○ N more` fold, or the fold counts fewer pieces than the list holds.
 
 The check fails when any of these is on the page:
 
@@ -252,7 +252,7 @@ Examples:
 
 Milestones are the outcomes the goal needs, in order. Each is something that is either true or not yet, such as `SMS codes work`, never a step or a task such as `Write SMS tests`. The model plans the milestones itself, so their names and number may differ from the facts' `Milestones:` lines. Those lines give the outcomes the goal needs as the case's author sees them. A milestone row may stand for one of them, for a part of one, or for several together.
 
-Judge a milestone's mark by the work it stands for: the facts' milestones it covers, and the pieces of the subject rows under it.
+Judge a milestone's mark by the work it stands for: the facts' milestones it covers, and the pieces of the subject rows under it. A `✓` milestone folded to its name, with ` ▸` after it, draws no rows: judge it by the facts alone.
 
 - `✓` fits when all of that work is delivered.
 - `●` or `◐` fits when any of it is being worked on now.

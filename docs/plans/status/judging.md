@@ -154,7 +154,7 @@ These make no model calls.
 - **The rules catch what they claim.** Each fixed rule runs on a hand-written good page and a bad one.
 - **The replay harness grades a known run.** A recorded good run of each replay passes every rule. A recorded bad run fails at the step and property it was written to break.
 - **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Status call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. A Status answer that lands after a clear writes into the cleared session: #152. When two update processes run their Status calls newer-first, the older answer overwrites the newer one: #153.
-- **Known failing cases.** A rule for a failure that code owns names its issue, as `child-labels` names #149. Until it is built, the rule's failures are listed apart and block nothing. A replay step marks a judge check the same way, with `judgeUntil`: at `mid-turn-activity`'s step, the judge's where-it-stands check waits on the mid-turn wording follow-up.
+- **Known failing cases.** A rule for a failure that code owns names its issue, as `child-labels` names #149. Until it is built, the rule's failures are listed apart and block nothing. A replay step marks one of its targets the same way, rule or judge check, with `until`: its failures at that step are listed apart, with the replay and step, and block nothing. At `mid-turn-activity`'s step, the judge's where-it-stands check waits on the mid-turn wording follow-up.
 
 ### Calls for one release run
 

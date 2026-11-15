@@ -2,7 +2,7 @@ import { isOpen, NAME_WORDS } from '../hooks/status-limits'
 import { NAMED_FOLD_TEXT, namedFoldMore, statusListRows } from '../hooks/status-page'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
-import type { Facts } from './status-facts'
+import type { Facts, Piece } from './status-facts'
 import { GOAL_RULES } from './status-rules-goal'
 import { HOLD_RULES } from './status-holds'
 import type { Step, StepResult } from './status-replay'
@@ -11,6 +11,7 @@ import {
   DATE_WORDS,
   ID_PATTERNS,
   milestoneNames,
+  milestonesAsPiece,
   milestonesOf,
   NUMBERED,
   STATUS_WORDS,
@@ -193,12 +194,15 @@ const FIXED_RULES: Rule[] = [
     id: 'open-pieces-kept',
     reads: 'facts',
     property: 5,
-    text: 'Every open piece in the facts is an open subject, drawn as a row or in the "N more" fold.',
-    failures: ({ result }) =>
-      result.facts.pieces
+    text: 'Every open piece in the facts is an open subject, drawn as a row or in the "N more" fold, or a queued piece that is the whole of an open milestone.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const isMilestoneOnly = (p: Piece) => p.state === 'queued' && milestonesAsPiece(p, result.facts, o).length > 0
+      return result.facts.pieces
         .filter(isOpenPiece)
-        .filter(p => !subjectsFor(p, result.session.ledger.overview).some(isOpen))
-        .map(p => `no open subject for ${p.names[0]}`),
+        .filter(p => !subjectsFor(p, o).some(isOpen) && !isMilestoneOnly(p))
+        .map(p => `no open subject for ${p.names[0]}`)
+    },
   },
   {
     id: 'marks-true',
@@ -249,7 +253,7 @@ const FIXED_RULES: Rule[] = [
     id: 'asks-linked',
     reads: 'facts',
     property: 8,
-    text: 'Each open ask is linked only to subjects it holds up, and an ask that holds up nothing is linked to none.',
+    text: 'Each open ask is linked only to subjects it holds up, or to the milestone a piece it holds up is the whole of, and an ask that holds up nothing is linked to none.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       return result.facts.asks.flatMap(a => {
@@ -258,8 +262,11 @@ const FIXED_RULES: Rule[] = [
         const ids = o?.askSubjects[item.id] ?? []
         const linked = shownOf(o).filter(s => ids.includes(s.id))
         const pieces = result.facts.pieces.filter(p => a.holdsUp.includes(p.id))
+        const heldMilestones = pieces
+          .flatMap(p => milestonesAsPiece(p, result.facts, o))
+          .filter(m => ids.includes(m.id))
         if (pieces.length === 0) return linked.map(s => `"${item.ask}" holds up nothing, and is linked to ${label(s)}`)
-        if (linked.length === 0) return [`"${item.ask}" is linked to no subject`]
+        if (linked.length === 0 && heldMilestones.length === 0) return [`"${item.ask}" is linked to no subject`]
         return linked
           .filter(s => !pieces.some(p => new RegExp(p.match, 'i').test(s.name)))
           .map(s => `"${item.ask}" is linked to ${label(s)}, not ${pieces.map(p => p.names[0]).join(' or ')}`)

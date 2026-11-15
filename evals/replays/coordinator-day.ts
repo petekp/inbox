@@ -7,8 +7,18 @@ const NOTES_25 = {
   text: 'Notes 2.5 in the stores',
   match: '2\\.5',
   milestones: [
-    { id: 'ms-vanish', name: 'Notes stop vanishing', match: 'vanish', state: 'working' as const },
-    { id: 'ms-live25', name: '2.5 live', match: '2\\.5', state: 'queued' as const },
+    {
+      id: 'ms-vanish',
+      name: 'Notes stop vanishing',
+      match: 'vanish|archiv|disappear|notes fixed',
+      state: 'working' as const,
+    },
+    {
+      id: 'ms-live25',
+      name: '2.5 live',
+      match: '2\\.5 (live|out|publish|release|ship)|live in|published|release built',
+      state: 'queued' as const,
+    },
   ],
 }
 
@@ -156,6 +166,7 @@ export const coordinatorDay: Replay = {
         ],
       },
       targets: ['asks-linked', 'held-text', 'not-work'],
+      until: { 'asks-linked': 'the follow-up on the 2.5 ask linked to the fix' },
     },
     {
       label: 'The person answers the ask in the inbox, and reads the page',

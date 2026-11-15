@@ -29,7 +29,7 @@ export type Piece = {
 }
 
 /** One milestone of the goal: an outcome the goal needs, by the fact's own id, not the call's. */
-type MilestoneFact = {
+export type MilestoneFact = {
   id: string
   name: string
   /** A case-insensitive pattern that this milestone's name matches, and no other milestone's. */

@@ -239,7 +239,7 @@ test('a failure left on the page counts once, at the step where it first appears
 const RULE_IDS = new Set<string>(RULES.map(r => r.id))
 const JUDGE_ONLY_IDS = new Set<string>(JUDGE_CHECKS.map(c => c.id).filter(id => !RULE_IDS.has(id)))
 
-test('every replay is well formed: times rise, facts name known pieces, asks open before they close, and each target or known failing judge check is a check its step runs', () => {
+test('every replay is well formed: times rise, facts name known pieces, asks open before they close, each target is a check its step runs, and each check a step expects to fail is one of its targets', () => {
   for (const r of REPLAYS) {
     let facts: Facts = { ...r.start.facts, changed: [] }
     const opened = new Set(r.start.ledger.items?.map(i => i.id) ?? [])
@@ -273,9 +273,9 @@ test('every replay is well formed: times rise, facts name known pieces, asks ope
         const isRun = RULE_IDS.has(t) || (JUDGE_ONLY_IDS.has(t) && step.checkpoint === true)
         expect({ where, target: t, ok: isRun }).toEqual({ where, target: t, ok: true })
       }
-      for (const id of Object.keys(step.judgeUntil ?? {})) {
-        const isJudged = JUDGE_ONLY_IDS.has(id) && step.checkpoint === true
-        expect({ where, judgeUntil: id, ok: isJudged }).toEqual({ where, judgeUntil: id, ok: true })
+      for (const id of Object.keys(step.until ?? {})) {
+        const isTarget = step.targets?.includes(id) === true
+        expect({ where, until: id, ok: isTarget }).toEqual({ where, until: id, ok: true })
       }
     }
   }

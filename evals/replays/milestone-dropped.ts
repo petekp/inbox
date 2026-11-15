@@ -111,6 +111,7 @@ export const milestoneDropped: Replay = {
         ],
       },
       targets: ['serves-linked', 'milestones-true', 'open-pieces-kept'],
+      until: { 'milestones-true': 'the follow-up on a new goal written in place of a DROP' },
     },
   ],
 }

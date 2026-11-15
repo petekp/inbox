@@ -49,7 +49,7 @@ export const JUDGE_CHECKS = [
   },
 ] as const
 
-export type JudgeCheckId = (typeof JUDGE_CHECKS)[number]['id']
+type JudgeCheckId = (typeof JUDGE_CHECKS)[number]['id']
 
 /** `n/a` when the page has nothing the check judges, such as no goal or no was line. */
 type Verdict = 'pass' | 'fail' | 'n/a'
