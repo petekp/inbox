@@ -72,7 +72,7 @@ export function isListInUseSince(input: ListInput | null, at: number, now: numbe
  * What a look holds in place besides the session: the rows replies hold, the rows closed while it shows them, and the
  * person's input on the list, which keeps due rows from folding under it.
  */
-export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince' | 'listInput' | 'undoShown'>
+export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince' | 'listInput' | 'undoShown' | 'undoOut'>
 
 export const NO_HOLDS: Holds = { replies: {}, discarded: {}, shownSince: null, listInput: null }
 
@@ -118,7 +118,7 @@ export function earliestOf(times: (number | null)[]): number | null {
  */
 export type Placing = Pick<
   ViewInput,
-  'shownSince' | 'lastTypedMessageAt' | 'listInput' | 'now' | 'settleWindowMs' | 'undoShown'
+  'shownSince' | 'lastTypedMessageAt' | 'listInput' | 'now' | 'settleWindowMs' | 'undoShown' | 'undoOut'
 > & { pressOutSince: number | null }
 
 /**
