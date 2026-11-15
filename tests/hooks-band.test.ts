@@ -249,7 +249,12 @@ test('in a Herdr app terminal, a look file the look wrote counts the Status subj
   await $.turn.complete({ answer: 'Queue built.', durationMs: 5, isAborted: false, turnId: 't', reason: 'answer' })
   await clock.settle()
   const changedAt = envelope().session.ledger.overview.subjects[0].changedAt as number
-  const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
+  const look = {
+    startedAt: changedAt,
+    endedAt: changedAt + 10_000,
+    drawnWrittenAt: changedAt + 10_000,
+    shown: { s1: changedAt },
+  }
   w.written[lookPath] = JSON.stringify({ format: 1, id: 'l1', look })
   await clock.advance(PRESS_POLL_MS)
   await clock.settle()
