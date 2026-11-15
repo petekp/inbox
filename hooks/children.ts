@@ -207,9 +207,18 @@ export function hasRunningDelegate(o: SessionStatus | null): boolean {
  * Each running delegate after Herdr's `agents`, read at `at`, by agent name. A delegate whose session publishes a focus
  * takes it as its name. A delegate Herdr shows working or blocked takes that state. One Herdr shows ready, or no longer
  * lists, ended then. One that is ready after it worked finished, and its subject changed then, so the subject counts
- * as unseen again. Herdr's `unknown` changes nothing.
+ * as unseen again. Herdr's `unknown` changes nothing. An agent that is a child of the session and works or blocks,
+ * with no running delegate under its name, starts one.
  */
 export function delegatesSettled(
+  o: SessionStatus | null,
+  agents: ReadonlyMap<string, HerdrAgent>,
+  at: number,
+): SessionStatus | null {
+  return delegatesListed(delegatesEnded(o, agents, at), agents, at)
+}
+
+function delegatesEnded(
   o: SessionStatus | null,
   agents: ReadonlyMap<string, HerdrAgent>,
   at: number,
@@ -239,6 +248,22 @@ export function delegatesSettled(
   )
 
   return finished.reduce((x, c) => subjectTouched(x, c.subjectId, at), { ...o, children })
+}
+
+/** Starts a delegate for each child agent that works or blocks and has no running delegate under its name. */
+function delegatesListed(
+  o: SessionStatus | null,
+  agents: ReadonlyMap<string, HerdrAgent>,
+  at: number,
+): SessionStatus | null {
+  return [...agents].reduce((x, [name, agent]) => {
+    const isShownWorking = agent.status === 'working' || agent.status === 'blocked'
+    const ref = delegateRef(name)
+    const isRunning = x?.children.some(c => c.ref === ref && c.endedAt === null) ?? false
+    if (!agent.isChild || !isShownWorking || isRunning) return x
+
+    return childStarted(x, { ref, kind: 'delegate', name: nameInWords(name) }, at, agent.status as DelegateState)
+  }, o)
 }
 
 /**

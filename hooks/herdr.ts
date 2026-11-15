@@ -2,6 +2,7 @@ import type { Dialog, HerdrPressOutcome, Ledger, Session, SessionStatus, StatusH
 import { bandCounts, isMaybeStale } from './band'
 import { MAYBE_STALE_TEXT } from './banners'
 import { hasRunningDelegate, onceEvery } from './children'
+import { delegatesInHc } from './hc-terminals'
 import type { ClientId } from './clients'
 import { emptySession, sessionFile } from './session-files'
 import { UNSTARTABLE_CODE } from './gh'
@@ -57,18 +58,27 @@ export type HerdrStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown'
 
 const HERDR_STATUSES: readonly HerdrStatus[] = ['idle', 'working', 'blocked', 'done', 'unknown']
 
-/** What Herdr shows about an agent: what it does, and the focus its session publishes, if it runs the inbox. */
-export type HerdrAgent = { status: HerdrStatus; focus: string | null }
+/**
+ * What Herdr shows about an agent: what it does, and the focus its session publishes, if it runs the inbox. `isChild`
+ * is set for an agent the host knows started under this session, so a running one gets a row when the Status has none.
+ */
+export type HerdrAgent = { status: HerdrStatus; focus: string | null; isChild?: boolean }
 
 /** How often a host asks Herdr about running delegates while its Status shows. */
 export const HERDR_CHECK_MS = 30_000
 
 /**
- * What Herdr shows about each named agent, asked only while `o` holds a running delegate. Null when none runs, or
- * Herdr gave no answer. Herdr finds its session from the pane's environment, not the folder, so the command runs in
- * `/`, which always exists.
+ * What Herdr shows about each named agent. In a Herdr app terminal it lists the terminal's children through `hc`, every
+ * time, since the session may hold none yet. Otherwise it asks Herdr only while `o` holds a running delegate. Null when
+ * none runs, or Herdr gave no answer. Herdr finds its session from the pane's environment, not the folder, so the
+ * command runs in `/`, which always exists.
  */
-export async function delegatesInHerdr(o: SessionStatus | null, run: Run): Promise<Map<string, HerdrAgent> | null> {
+export async function delegatesInHerdr(
+  o: SessionStatus | null,
+  run: Run,
+  target: HerdrTarget | null = null,
+): Promise<Map<string, HerdrAgent> | null> {
+  if (target?.kind === 'terminal') return delegatesInHc(target, run)
   if (!hasRunningDelegate(o)) return null
   const r = await run(HERDR_AGENT_LIST, { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
 

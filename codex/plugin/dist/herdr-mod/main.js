@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T05:55:24.177Z. 228337 characters follow.
+// Built at 2026-11-15T06:00:19.008Z. 228414 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -254,6 +254,12 @@ function isSubjectSeen(o, s) {
 
 // ../hooks/children.ts
 var ENDED = new Set(["completed", "failed", "killed", "stopped"]);
+
+// ../hooks/gh.ts
+var GH_TIMEOUT_MS = 20000;
+
+// ../hooks/hc-terminals.ts
+var HC_BLOCKED = new Set(["blocked", "error"]);
 
 // ../hooks/ask-match.ts
 function words2(text) {
@@ -2160,9 +2166,6 @@ function feedbackText(f, look) {
       return f.label;
   }
 }
-
-// ../hooks/gh.ts
-var GH_TIMEOUT_MS = 20000;
 
 // ../hooks/pr-fetch.ts
 var MAX_PRS = 12;

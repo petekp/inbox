@@ -10,7 +10,7 @@ import {
 } from '../../hooks/children'
 import { branchIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
-import { delegatesInHerdr } from '../../hooks/herdr'
+import { delegatesInHerdr, herdrTarget } from '../../hooks/herdr'
 import { dialogActivity, toolActivity } from '../../hooks/catch-up-text'
 import { childEnded } from '../../hooks/status-children'
 import { turnReply } from '../../hooks/text'
@@ -237,7 +237,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         rolloutTail(input.transcript_path),
         folder ? branchIn(deps.run, folder) : null,
         before.then(
-          s => delegatesInHerdr(s.ledger.overview, deps.run),
+          s => delegatesInHerdr(s.ledger.overview, deps.run, herdrTarget(env)),
           () => null,
         ),
       ])
