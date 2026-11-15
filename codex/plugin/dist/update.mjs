@@ -1874,6 +1874,7 @@ var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: null };
+var ROW_BAR = "\u258D";
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -1922,6 +1923,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: ROW_BAR,
+    tone: null,
+    isRunning: false,
+    words: "A blue bar at a row's edge marks a row that just arrived. A green, gray or red one marks a row that just closed: done, dismissed or cancelled, or not sent."
   }
 ];
 

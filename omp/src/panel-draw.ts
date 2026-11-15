@@ -154,13 +154,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
   const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now)
   const bar = line.settled?.bar ?? null
-  const edge = bar
-    ? bar === 'muted'
-      ? s.dim(ROW_BAR)
-      : s.tone(bar, ROW_BAR)
-    : newShare > 0
-      ? s.newBar(newShare, ROW_BAR)
-      : ' '
+  const edge = bar ? s.settledBar(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : ' '
   const head = `${edge}${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}`
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width

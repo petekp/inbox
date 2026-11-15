@@ -11,6 +11,7 @@ import {
   HELD_MARK,
   MARK_LEGEND,
   PR_MARKS,
+  ROW_BAR,
   RUNNING_FRAMES,
   SUBJECT_MARKS,
 } from '../hooks/help'
@@ -291,6 +292,7 @@ test('the Help legend explains every mark a row or group title draws, once each'
     ...Object.values(CLOSED_MARKS),
     ...Object.values(FINDING_GROUPS).map(g => g.mark),
     ...Object.values(PR_MARKS).map(m => m.text),
+    ROW_BAR,
   ])
   const explained = MARK_LEGEND.map(m => m.mark)
 

@@ -9,6 +9,7 @@ import {
   LIGHT_BANNER_TINTS,
   LIGHT_DALTONIZED_TONES,
   LIGHT_TONES,
+  MUTED_TEXT,
   THEME_BACKGROUND,
 } from './tones'
 
@@ -56,7 +57,7 @@ const DARK_PALETTE: Palette = {
   tab: '#373737',
   raised: '#4c4c4c',
   selection: '#3b4654',
-  muted: '#bdbdbd',
+  muted: MUTED_TEXT.dark,
   age: '#a3a3a3',
   key: DARK_TONES.key,
   line: '#505050',
@@ -72,7 +73,7 @@ const LIGHT_PALETTE: Palette = {
   tab: '#e6e6e6',
   raised: '#d0d0d0',
   selection: '#b4d5ff',
-  muted: '#595959',
+  muted: MUTED_TEXT.light,
   age: '#666666',
   key: LIGHT_TONES.key,
   line: '#afafaf',

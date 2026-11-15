@@ -4,6 +4,7 @@ import {
   fadedOver,
   LIGHT_BANNER_TINTS,
   LIGHT_TONES,
+  MUTED_TEXT,
   THEME_BACKGROUND,
 } from '../../hooks/tones'
 import type { Style, Tone } from './panel'
@@ -49,5 +50,12 @@ export function styleOf(theme: OmpTheme): Style {
       part === 'line' ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
     newBar: (share, text) =>
       truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? 'light' : 'dark'], share), text),
+    settledBar: (tone, text) =>
+      truecolor(
+        tone === 'muted'
+          ? MUTED_TEXT[theme.isLight ? 'light' : 'dark']
+          : tones[tone === 'error' ? 'errorMark' : 'done'],
+        text,
+      ),
   }
 }

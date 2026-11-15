@@ -89,6 +89,8 @@ export const LIGHT_BANNER_TINTS: Record<BannerTone, BannerTint> = {
 
 /** The backgrounds a terminal theme is drawn for. A terminal does not report its own, so a fade moves toward these. */
 export const THEME_BACKGROUND = { dark: '#1e1e1e', light: '#ffffff' }
+/** Muted text over `THEME_BACKGROUND`, in the terminal's light and dark palettes and in omp's. */
+export const MUTED_TEXT = { dark: '#bdbdbd', light: '#595959' }
 
 /** `hex` at `share` of its strength over `under`, as one opaque color, for a fade a terminal draws in steps. */
 export function fadedOver(hex: string, under: string, share: number): string {

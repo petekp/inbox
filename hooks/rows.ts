@@ -361,9 +361,15 @@ export function settledTone(state: Pick<SettledState, 'delivery' | 'closedAs'>):
   return state.delivery === null && state.closedAs === 'handled' ? 'done' : 'muted'
 }
 
-/** The tone of the bar at a settled row's left edge: its label's tone, or the error tone once a send failed. */
+/**
+ * The tone of the bar at a settled row's left edge, from how the row closed: done once it was answered or done, from
+ * the press on, while its message waits or goes; error once a send failed; muted for a dismissed or lapsed row, and for
+ * a message whose arrival was not confirmed.
+ */
 export function settledBarTone(state: Pick<SettledState, 'delivery' | 'closedAs'>): 'done' | 'muted' | 'error' {
-  return isSendRefused(state.delivery) ? 'error' : settledTone(state)
+  if (isSendRefused(state.delivery)) return 'error'
+
+  return state.closedAs === 'handled' && state.delivery !== 'unconfirmed' ? 'done' : 'muted'
 }
 
 function isSendRefused(delivery: ClosedDelivery): delivery is { error: string; canUndo: boolean } {

@@ -70,6 +70,8 @@ export type Style = {
   banner(tone: BannerTone, part: 'line' | 'fill', s: string): string
   /** A new row's bar at `share` of its strength, faded toward the background. */
   newBar(share: number, s: string): string
+  /** A settled row's bar, in the colors the terminal draws it with. */
+  settledBar(tone: 'done' | 'muted' | 'error', s: string): string
 }
 
 export type PanelUi = {

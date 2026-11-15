@@ -3247,6 +3247,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: ROW_BAR,
+    tone: null,
+    isRunning: false,
+    words: "A blue bar at a row's edge marks a row that just arrived. A green, gray or red one marks a row that just closed: done, dismissed or cancelled, or not sent."
   }
 ];
 var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
@@ -4357,7 +4363,9 @@ function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
 }
 function settledBarTone(state) {
-  return isSendRefused(state.delivery) ? "error" : settledTone(state);
+  if (isSendRefused(state.delivery))
+    return "error";
+  return state.closedAs === "handled" && state.delivery !== "unconfirmed" ? "done" : "muted";
 }
 function isSendRefused(delivery) {
   return delivery !== null && typeof delivery === "object";
@@ -8586,7 +8594,7 @@ function drawLine(line, isSelected, d) {
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now);
   const bar = line.settled?.bar ?? null;
-  const edge = bar ? bar === "muted" ? s.dim(ROW_BAR) : s.tone(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : " ";
+  const edge = bar ? s.settledBar(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : " ";
   const head = `${edge}${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
@@ -11268,6 +11276,7 @@ var LIGHT_BANNER_TINTS = {
   ask: LIGHT_BLUE_TINT
 };
 var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
+var MUTED_TEXT = { dark: "#bdbdbd", light: "#595959" };
 function fadedOver(hex, under, share) {
   const channel = (c, i) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
   const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
@@ -11295,7 +11304,8 @@ function styleOf(theme) {
     underline: theme.underline.bind(theme),
     tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
     banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
-    newBar: (share, text) => truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? "light" : "dark"], share), text)
+    newBar: (share, text) => truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? "light" : "dark"], share), text),
+    settledBar: (tone, text) => truecolor(tone === "muted" ? MUTED_TEXT[theme.isLight ? "light" : "dark"] : tones[tone === "error" ? "errorMark" : "done"], text)
   };
 }
 

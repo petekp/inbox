@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T23:42:22.535Z. 244497 characters follow.
+// Built at 2026-11-15T23:42:38.313Z. 244831 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -1161,6 +1161,7 @@ var HELD_MARK = { mark: "◆", tone: "needsYou" };
 var RUNNING_FRAMES = ["●", "◉", "◎", "◉"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "◐", tone: null };
+var ROW_BAR = "▍";
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "✕",
@@ -1209,6 +1210,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: ROW_BAR,
+    tone: null,
+    isRunning: false,
+    words: "A blue bar at a row's edge marks a row that just arrived. A green, gray or red one marks a row that just closed: done, dismissed or cancelled, or not sent."
   }
 ];
 var HELP_COPY = { open: "Help", close: "✕ Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
@@ -2032,7 +2039,9 @@ function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
 }
 function settledBarTone(state) {
-  return isSendRefused(state.delivery) ? "error" : settledTone(state);
+  if (isSendRefused(state.delivery))
+    return "error";
+  return state.closedAs === "handled" && state.delivery !== "unconfirmed" ? "done" : "muted";
 }
 function isSendRefused(delivery) {
   return delivery !== null && typeof delivery === "object";

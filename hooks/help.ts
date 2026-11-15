@@ -99,6 +99,13 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     isRunning: false,
     words: 'Opportunity: something that could be better',
   },
+  {
+    mark: ROW_BAR,
+    tone: null,
+    isRunning: false,
+    words:
+      "A blue bar at a row's edge marks a row that just arrived. A green, gray or red one marks a row that just closed: done, dismissed or cancelled, or not sent.",
+  },
 ]
 
 export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks', tabs: 'Tabs' } as const
