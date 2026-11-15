@@ -54,6 +54,27 @@ test('a Status answer is written to the ledger after later updates, only a catch
   expect(cleared(failed).overviewFailure).toBeNull()
 })
 
+test('a Status answer clears a saved failure when the conversation cannot be read, since no catch-up will', async () => {
+  let isFirstStatus = true
+  const { host } = fakeHost(async (_prompt, system) => {
+    if (system !== STATUS_SYSTEM) return LEDGER_REPLY
+    const isFirst = isFirstStatus
+    isFirstStatus = false
+
+    return isFirst ? null : 'HEAD: Work offline | Letting the app work without a connection'
+  })
+  const catchUp = async () => ({ kind: 'unreadable' as const })
+  await host.update(s => finishTurn(s, 'Which runtime?'))
+  await runUpdates(host)
+  expect((await host.read()).overviewFailure?.cause).toBe('no-answer')
+  await host.update(s => finishTurn(s, 'Python, then.'))
+  await runUpdates({ ...host, catchUp })
+  const after = await host.read()
+
+  expect(after.ledger.overview?.head?.title).toBe('Work offline')
+  expect(after.overviewFailure).toBeNull()
+})
+
 test('an applied Status answer records when its call read the Status, and a failed one leaves that time', () => {
   const later = withStatus({ ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } })
 
@@ -178,6 +199,29 @@ test('a claimed Status call reads the running turn’s work with no reply and wr
   await host.update(s => turnEnded(s, 1))
   await refreshStatus(host)
   expect(prompts).toHaveLength(1)
+})
+
+test('a Status call stamps its changes when the update applies them, and reports the time before it read the session as its read time', async () => {
+  const { host } = fakeHost(async () => 'NEW: working | Offline mode | queue built')
+  await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
+  let beforeRead = 0
+  let beforeUpdate = 0
+  await refreshStatus({
+    ...host,
+    read: async () => {
+      beforeRead = await host.now()
+      return host.read()
+    },
+    update: async change => {
+      beforeUpdate = await host.now()
+      return host.update(change)
+    },
+  })
+  const o = (await host.read()).ledger.overview
+
+  expect(o?.lastCallReadAt).toBeLessThan(beforeRead)
+  expect(o?.subjects[0]?.changedAt).toBeGreaterThan(beforeUpdate)
+  expect((await host.read()).lastOverviewCallAt).toBeGreaterThan(beforeUpdate)
 })
 
 const writtenOnce = () => {
