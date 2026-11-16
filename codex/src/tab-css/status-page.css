@@ -43,7 +43,7 @@
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--lines);
-  overflow: hidden;
+  overflow: clip;
 }
 .status-page .unbroken {
   white-space: nowrap;
