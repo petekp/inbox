@@ -21,7 +21,6 @@ import type { ModLook, NEEDS_YOU_GROUPS, RowView } from './rows'
 import type { SessionView } from './session-view'
 import type { ShownTab, shownTabs } from './tabs'
 import type { TerminalSpan } from './terminal-text'
-import type { footerStatus } from './view'
 import type { paletteFor, Tone } from './palettes'
 
 type PaneElements = Elements[RenderSurface]
@@ -124,8 +123,7 @@ export type PaneBase = {
   collapsed: ReadonlySet<string>
   isOpenGuarded: boolean
   statusKeyRow: ReturnType<typeof statusSelected>
-  shownStatus: ReturnType<typeof footerStatus>
-  status: string
+  shownError: string | null
   lineNote: RowNote | undefined
   keyList: ReturnType<typeof helpKeys>
   keyColumn: number

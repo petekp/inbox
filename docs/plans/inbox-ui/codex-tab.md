@@ -26,10 +26,10 @@ The tool is split because the tab is already where the person acts. Codex mounts
  Tasks
  • Add API key to .env · 5m ago
  ──────────────────────────────────────────────────────
- [Show demo]                                  Updating…
+ [Show demo]
 ```
 
-The footer holds the status at its right. [Show demo] at its left follows the build settings in section 2.10. A read error or a note takes its own line under the tabs, so the status never moves the tabs. Codex's Activity view already shows which chat waits.
+[Show demo] in the footer follows the build settings in section 2.10. A read error or a note takes its own line under the tabs, so it never moves the tabs. Codex's Activity view already shows which chat waits.
 
 **Tabs.** Asks, Finds and PRs. The PRs tab has the same PR blocks as the pane (2.4). The server runs gh in the session's folder and refetches a view when the last fetch is over 2 minutes old.
 

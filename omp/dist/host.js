@@ -7500,14 +7500,10 @@ function heldLabel(c) {
     return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
-var UPDATING_TEXT = "Updating\u2026";
-var RETRYING_TEXT = "Retrying the last update\u2026";
-var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
-function footerStatus(tab, status, prs, statusPageError) {
+function footerError(tab, status, statusPageError) {
   if (tab === "prs")
-    return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
-  const error = (tab === "overview" ? statusPageError : null) ?? status.error;
-  return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error };
+    return null;
+  return (tab === "overview" ? statusPageError : null) ?? status.error;
 }
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
@@ -7515,9 +7511,9 @@ var FAILED_UPDATE_TEXT = {
   "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
   unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
-function perTurnStatus(isUpdating, recovery) {
+function perTurnStatus(recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
-  return { isUpdating, isRetrying: recovery === "retrying", error };
+  return { isRetrying: recovery === "retrying", error };
 }
 
 // ../hooks/status-page.ts
@@ -7725,7 +7721,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
+    status: perTurnStatus(updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
@@ -9648,9 +9644,6 @@ function tabBar(d) {
 function footer(d, isPageScrolling) {
   const { screen, ui, width, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
-  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
-  if (status.text)
-    out.push(` ${s.dim(status.text)}`);
   const hints = ui.typing !== null ? [
     `\u21B5 ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
     `esc ${ROW_COPY.cancel}`
@@ -9762,10 +9755,10 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const entries = entriesOf(screen, ui, ui.tab, now);
   const selected = resolveSelected(linesOf(entries), ui.selectedId);
   const rule = style.dim("\u2500".repeat(width));
-  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
+  const error = footerError(ui.tab, screen.view.status, screen.view.statusPage.error);
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
   const host = screen.herdrModFailure ? [bannerOf("herdr-mod-failed", screen.herdrModFailure)] : [];
-  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null);
+  const banners = tabBarBanners(host, error, isNoticeShown ? ui.notice : null);
   const head = [
     ...screen.isDemo ? bannerLines(bannerOf("demo", DEMO_NOTICE), width, style) : [],
     rule,

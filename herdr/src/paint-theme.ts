@@ -89,7 +89,6 @@ export function mixInto(c: Color, under: Color, share: number): Color {
 export const TEXT = 13
 export const LINE_HEIGHT = 20
 export const LINE = `${LINE_HEIGHT}px`
-export const SMALL_TEXT = 12
 export const HEAD_TEXT = 15
 export const HEAD_LINE = '24px'
 

@@ -10,7 +10,7 @@ import type { CatchUpReply } from '../hooks/session-host'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { STATUS_SYSTEM } from '../hooks/status-prompt'
 import type { StatusCall } from '../hooks/status-records'
-import { footerStatus } from '../hooks/view'
+import { footerError } from '../hooks/view'
 import type { CallKind, Session } from '../types'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
@@ -168,28 +168,27 @@ test('a dropped reply keeps the warning through later good updates, until a catc
   expect(calls.catchUps).toBe(1)
 })
 
-const NO_PRS = { isFetching: false, hasPrs: false }
-const shownStatus = (s: Session) => footerStatus('needsYou', sessionView(s, 0, 1_000).status, NO_PRS, null)
+const shownError = (s: Session) => footerError('needsYou', sessionView(s, 0, 1_000).status, null)
 
 test('a failed catch-up waits for the next reply, says when a retry fails again, and clears once one applies', async () => {
   const calls = { catchUps: 0, asks: 0 }
   const { host } = fakeHost(async () => null)
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'behind' as const } }))
   await runUpdates({ ...host, ...reading({ kind: 'failed', heard: null }, calls) })
-  expect(shownStatus(await host.read()).error).toBe(
+  expect(shownError(await host.read())).toBe(
     "The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing. It tries again after the next reply.",
   )
 
-  let duringRetry: ReturnType<typeof shownStatus> | null = null
+  let duringRetry: string | null | undefined
   await runUpdates({
     ...host,
     catchUp: async () => {
-      duringRetry = shownStatus(await host.read())
+      duringRetry = shownError(await host.read())
       return { kind: 'failed', heard: null }
     },
   })
-  expect(duringRetry).toEqual({ text: 'Retrying the last update…', error: null })
-  expect(shownStatus(await host.read()).error).toBe(
+  expect(duringRetry).toBeNull()
+  expect(shownError(await host.read())).toBe(
     "The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing. It tries again after the next reply.",
   )
 
@@ -197,7 +196,7 @@ test('a failed catch-up waits for the next reply, says when a retry fails again,
     ...host,
     ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, statusCall: UNANSWERED, heard: null }, calls),
   })
-  expect(shownStatus(await host.read())).toEqual({ text: null, error: null })
+  expect(shownError(await host.read())).toBeNull()
 })
 
 test('a catch-up that cannot read the conversation still promises the next retry, and one that reads it clears the warning', async () => {
@@ -206,7 +205,7 @@ test('a catch-up that cannot read the conversation still promises the next retry
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'failed' as const, failedAttempts: 1 } }))
 
   await runUpdates({ ...host, ...reading({ kind: 'unreadable' }, calls) })
-  expect(shownStatus(await host.read()).error).toBe(
+  expect(shownError(await host.read())).toBe(
     "The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing. It tries again after the next reply.",
   )
 
@@ -216,7 +215,7 @@ test('a catch-up that cannot read the conversation still promises the next retry
   })
   expect(calls.catchUps).toBe(2)
   expect((await host.read()).presence.isConversationUnreadable).toBe(false)
-  expect(shownStatus(await host.read()).error).toBeNull()
+  expect(shownError(await host.read())).toBeNull()
 })
 
 test('a pending exchange is retried on its own, so an unreadable conversation still reads as waiting', async () => {
@@ -224,7 +223,7 @@ test('a pending exchange is retried on its own, so an unreadable conversation st
   await host.update(s => finishTurn(s, 'Which runtime?'))
   await runUpdates({ ...host, catchUp: undefined })
   await host.update(s => ({ ...s, presence: { ...s.presence, isConversationUnreadable: true } }))
-  expect(shownStatus(await host.read()).error).toBe(
+  expect(shownError(await host.read())).toBe(
     "The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing. It tries again after the next reply.",
   )
 })
@@ -236,12 +235,12 @@ test('an update cut off after one failure still reads as waiting to retry, not a
   await host.update(s => ({ ...s, presence: { ...s.presence, isUpdating: true } }))
   await reconcileUpdateStatus(host)
   expect((await host.read()).pending[0]?.failed).toBe(true)
-  expect(shownStatus(await host.read()).error).toMatch(/^The inbox couldn't update from the agent's last reply\./)
+  expect(shownError(await host.read())).toMatch(/^The inbox couldn't update from the agent's last reply\./)
 
   const running = { ...(await host.read()), pending: [] }
   const cutOff = cutOffUpdate({ ...running, presence: { ...running.presence, isUpdating: true } })
   expect(cutOff.presence).toMatchObject({ ledgerState: 'failed', failedAttempts: 1 })
-  expect(shownStatus(cutOff).error).toMatch(/^The inbox couldn't update from the agent's last reply\./)
+  expect(shownError(cutOff)).toMatch(/^The inbox couldn't update from the agent's last reply\./)
 })
 
 test('each model call says which call of the update it is: a first try, the retry of a failed exchange, a Status call asked again after an answer with no operation, and a catch-up', async () => {
