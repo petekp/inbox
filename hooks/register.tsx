@@ -3415,7 +3415,7 @@ export const register: Register = on => {
       branch,
       desktopHairline,
     })
-    const { statusRowLine, statusKeys, statusView, statusTops } = paneStatus(
+    const { statusKeys, statusView, statusTops } = paneStatus(
       {
         e,
         listColumns,
@@ -3462,7 +3462,6 @@ export const register: Register = on => {
       section,
       groupTitle,
       sections,
-      statusRowLine,
     })
 
     const move = (step: number) => {

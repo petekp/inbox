@@ -118,7 +118,8 @@ export type Entry =
   | { kind: 'banner'; banner: BannerView }
   /** A key Help lists, its keys padded to `column`. */
   | { kind: 'key'; key: HelpKey; column: number }
-  | { kind: 'legend'; entry: LegendEntry }
+  /** A mark Help lists, its words starting at cell `textAt`, where the keys' words start. */
+  | { kind: 'legend'; entry: LegendEntry; textAt: number }
 
 export const blankLine = (id: string): Line => ({
   id,

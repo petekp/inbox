@@ -12,7 +12,7 @@ import {
   BUTTON_H,
   CONTROL_GAP,
   EDGE,
-  HELP_KEY_COLUMN,
+  HELP_COLUMN,
   GROUP_GAP,
   HEAD_LINE,
   HEAD_TEXT,
@@ -298,13 +298,17 @@ const wordEl = (s: StatusLine, word: string, t: Theme): Element =>
     )
     .child(div().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word))
 
-/** A Help key in a column at the text's edge, and what it does beside it on the same line. */
+/** A Help line: a key or a mark in the left column, then its words. */
 function keyEl(s: StatusLine, does: string, t: Theme): Element {
   return h_flex()
     .items_start()
-    .pl(TEXT_X)
-    .pr(EDGE)
-    .child(div().flex_none().w(HELP_KEY_COLUMN).font_semibold().child(s.name))
+    .px(EDGE)
+    .child(
+      div()
+        .flex_none()
+        .w(HELP_COLUMN)
+        .child(s.mark ? markEl(s.mark, t) : div().font_semibold().child(s.name)),
+    )
     .child(div().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does))
 }
 
