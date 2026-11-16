@@ -5,7 +5,7 @@ import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_LINE_PT, DESKTOP_MARK_CELLS } from './pane-sizes'
 import { desktopButtonPt, desktopTextPt } from './desktop-metrics'
-import { SECTION_GAP_PT, STATUS_ROW_PAD_PT } from './layout'
+import { ITEM_GAP_PT, LIST_GAP_PT } from './layout'
 import { cellWidth } from './text'
 import {
   DESKTOP_BUTTON_LINES,
@@ -197,11 +197,13 @@ export function paneStatusGoal(
     </Box>
   )
   /**
-   * A blank line in the terminal. On desktop, the space Codex leaves there: `SECTION_GAP_PT` under the goal's text, and
-   * `STATUS_ROW_PAD_PT` between two milestones, so a milestone's work sits closer to its own name than to the next.
+   * A blank line in the terminal. On desktop, the space Codex leaves there: half of `ITEM_GAP_PT` under the goal's text,
+   * and above a milestone the rest of `ITEM_GAP_PT` past the rows' padding, so a milestone's work sits closer to its own
+   * name than to the next.
    */
   const gap = (key: string, isUnderGoalText: boolean): Drawn => {
-    const height = look === 'terminal' ? 1 : (isUnderGoalText ? SECTION_GAP_PT : STATUS_ROW_PAD_PT) / DESKTOP_LINE_PT
+    const pt = isUnderGoalText ? ITEM_GAP_PT / 2 : ITEM_GAP_PT - LIST_GAP_PT
+    const height = look === 'terminal' ? 1 : pt / DESKTOP_LINE_PT
 
     return { el: <Box key={key} height={height} />, lines: exactly(height) }
   }

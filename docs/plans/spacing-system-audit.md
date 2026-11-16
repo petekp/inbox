@@ -1,8 +1,8 @@
 # Spacing audit, 2026-11-16
 
-Status: current as of `78f26fc9`. This is the audit behind [the spacing system plan](spacing-system.md). It lists the spacing values each look draws with today, where each is set and what it separates. Points (pt) are the Herdr panel's and the desktop pane's unit. The Codex tab's CSS pixels are points on macOS. The terminal and omp count whole rows and columns.
+Status: built. This is the audit behind [the spacing system plan](spacing-system.md), taken at `78f26fc9` before the scale was built. It lists the spacing values each look drew with then, where each is set and what it separates. Points (pt) are the Herdr panel's and the desktop pane's unit. The Codex tab's CSS pixels are points on macOS. The terminal and omp count whole rows and columns.
 
-## Rhythm today, side by side
+## Rhythm at the audit, side by side
 
 | Distance | Herdr | Codex tab | Desktop pane | Terminal | omp |
 |---|---|---|---|---|---|
@@ -11,14 +11,14 @@ Status: current as of `78f26fc9`. This is the audit behind [the spacing system p
 | Two one-line Status items | 8, so 28 apart | 9.5 (`--status-row-pad` 4.75 twice) | about 6.75 (see below) | 0 | 0 |
 | Two Status items with detail | 24 (`ITEM_GAP`) | 9.5 | about 6.75 | 0 | 0 |
 | Two closed Asks rows | 16 (`ROW_PAD_PT` 8 twice), so 36 apart | 16, so 36 apart | 16 plus a 1 pt border each, so 37 apart | a 1-row `│ ───` divider | 0 |
-| Above a section heading (Other work, Later) | 16 (`GROUP_GAP / 2`) | 9.5 (`--section-gap`) | 9.5 | 1 blank row | 1 blank row |
+| Above a section heading (Other work, Later) | 32 (a `GROUP_GAP` gap block) | 19 (`--section-gap` and row padding) | about 16.25 (`SECTION_GAP_PT` and row padding) | 1 blank row | 1 blank row |
 | A heading to its first item | 12 (`HEAD_GAP`) | 6 (`.group-title`) plus the row's 8 | 8 | a `│` row | 0 |
 | Between two groups or sections | 32 (`GROUP_GAP`) around a rule | 20 (`section` 10px twice) around a rule | 20 around a hairline | 2 blank rows | 0 |
 
 Five things in this table break the proximity rule or drift between looks:
 
 - Herdr puts 4 pt between a title and its detail. Every other look puts none.
-- Herdr's "Other work" heading sits 16 pt under the item above it, while items sit 24 pt apart. The heading reads as closer to the item above than items are to each other.
+- Herdr's "Other work" heading sits 32 pt under the item above it and 12 pt over its first item. Items sit 24 pt apart, so the heading binds to what it heads, but the steps are larger than the content needs.
 - The desktop Status row's padding is `STATUS_PAD_Y` = 4.75 / 19 (`hooks/pane-sizes.ts:70`), passed to a Box that counts padding in half lines (`desktopSpaceLines`, `hooks/pane-status-tops.ts:71`). So it draws about 2.4 pt per side, not the 4.75 pt `hooks/layout.ts:4` states. Not checked in real pixels.
 - Codex places marks and text at 18 and 44 px with a 14 px right edge. Herdr uses 16, 40 and 16.
 - The terminal leaves 2 blank rows between Asks sections. omp leaves none between groups.
@@ -31,11 +31,11 @@ Five things in this table break the proximity rule or drift between looks:
 |---|---|---|
 | `LINE_HEIGHT` 20, `TEXT` 13, `HEAD_LINE` 24 | paint-theme.ts:90–95 | lines of text; the Status head |
 | `LINE_GAP` 4 | paint-theme.ts:103; paint-blocks.ts:144, 314, 381; paint-space.ts:50 | a title to each line under it; Help rows |
-| `CONTROL_GAP` 8 | paint-theme.ts:105; paint-space.ts:37, 47, 51 | text to buttons; button to button; two one-line items |
+| `CONTROL_GAP` 8 | paint-theme.ts:105; paint-space.ts:36, 46 | text to buttons; button to button; two one-line items |
 | `HEAD_GAP` 12 | paint-theme.ts:107; paint-space.ts:48 | a heading or labelled rule to what it heads |
-| `INSET` 12 | paint-theme.ts:109; paint-space.ts:47 | a nested Status item to the line above; pill and banner side padding; title to age |
+| `INSET` 12 | paint-theme.ts:109; paint-space.ts:39, 46 | a nested Status item to the line above; pill and banner side padding; title to age |
 | `EDGE` 16 | paint-theme.ts:111; paint-space.ts:54 | panel padding; row to row, padding included |
-| `ITEM_GAP` 24 | paint-theme.ts:113; paint-space.ts:38, 53, 92 | two top-level Status items; a row to a heading |
+| `ITEM_GAP` 24 | paint-theme.ts:113; paint-space.ts:37 | two top-level Status items; a row to a heading |
 | `GROUP_GAP` 32, `END_SPACE` 32 | paint-theme.ts:115–116; paint-space.ts:49, 52, 92 | around a rule (16 each side); a line or banner to the next block; under the list |
 | `ROW_PAD_PT` 8 | layout.ts:2; paint-blocks.ts:246, 528; paint-space.ts:26, 175 | inside a row's and a fold's box, above and below |
 | `MARK_W` 24, `TEXT_X` 40, `NEST` 24 | paint-theme.ts:122–124 | mark column; text start; nesting step |

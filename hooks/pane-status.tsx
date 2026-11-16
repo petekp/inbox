@@ -1,6 +1,6 @@
 import type { UiPressArgument } from 'claude-code'
 import { foldKey } from './fold-keys'
-import { SECTION_GAP_PT } from './layout'
+import { ITEM_GAP_PT, LIST_GAP_PT, SECTION_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
 import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import type { KeyAction } from './pane-keys'
@@ -15,6 +15,7 @@ import {
   DESKTOP_MARK_CELLS,
   FRAME_INSET_PT,
   STATUS_PAD_Y,
+  statusPadY,
 } from './pane-sizes'
 import { emptyTab } from './empty-tab'
 import { paneStatusGoal } from './pane-status-goal'
@@ -29,6 +30,7 @@ import {
   exactly,
   inkLines,
   plus,
+  spacedItems,
   stacked,
   stackedIn,
 } from './pane-status-tops'
@@ -166,12 +168,13 @@ export function paneStatus(
   })
   /** A line of text that never wraps, in a Box padded by a frame's edge above and below, as a frame's text sits. */
   const desktopEdgedLine = 1 + 2 * desktopSpaceLines(statusFrameEdge)
-  /** The space above a labeled rule. The terminal draws whole lines, so its space is a blank line. */
+  /**
+   * The space above a labeled rule: `SECTION_GAP_PT` from the row above, less that row's padding and the rule's. The
+   * terminal draws whole lines, so its space is a blank line.
+   */
+  const partAboveLines = (SECTION_GAP_PT - ITEM_GAP_PT / 2 - LIST_GAP_PT / 2) / DESKTOP_LINE_PT
   const gap = (key: string) =>
-    oneLine(
-      <Box key={key} height={look === 'desktop' ? SECTION_GAP_PT / DESKTOP_LINE_PT : 1} />,
-      SECTION_GAP_PT / DESKTOP_LINE_PT,
-    )
+    oneLine(<Box key={key} height={look === 'desktop' ? partAboveLines : 1} />, partAboveLines)
   /**
    * Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. The head's
    * title draws in place of the name, in bold, with its description muted on the line under it, at the same column.
@@ -235,6 +238,7 @@ export function paneStatus(
     content,
     tree = null,
     isSelected = false,
+    padY = STATUS_PAD_Y,
   }: {
     key: string
     depth?: number
@@ -243,6 +247,7 @@ export function paneStatus(
     tree?: JSX.Element | null
     /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
     isSelected?: boolean
+    padY?: number
   }): Drawn => {
     const parts = Array.isArray(content) ? content : [content]
     const children = parts.map(p => p.el)
@@ -252,7 +257,7 @@ export function paneStatus(
           key,
           indent: DESKTOP_MARK_CELLS * (depth * 2),
           isMarkHung: false,
-          padY: STATUS_PAD_Y,
+          padY,
           hasSide: false,
           mark,
           tree,
@@ -284,7 +289,7 @@ export function paneStatus(
 
     const textLines = stacked(parts).lines
 
-    return { el, lines: look === 'desktop' ? plus(textLines, desktopFrameLines(STATUS_PAD_Y)) : textLines }
+    return { el, lines: look === 'desktop' ? plus(textLines, desktopFrameLines(padY)) : textLines }
   }
   /**
    * A key row in a column `width` wide, in cells on the terminal and points on desktop. The terminal knows its lines
@@ -391,8 +396,9 @@ export function paneStatus(
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
   // On desktop a row's first line starts under its frame's border and padding.
-  const firstLine = look === 'desktop' ? desktopSpaceLines(STATUS_PAD_Y) + DESKTOP_HAIR_LINES : 0
-  const seenTops = (r: StatusRow) => seenSubjectIds(r).map(id => [id, exactly(firstLine)] as [string, RowTop])
+  const firstLine = (padY: number) => (look === 'desktop' ? desktopSpaceLines(padY) + DESKTOP_HAIR_LINES : 0)
+  const seenTops = (r: StatusRow, padY = STATUS_PAD_Y) =>
+    seenSubjectIds(r).map(id => [id, exactly(firstLine(padY))] as [string, RowTop])
   const statusRow = (r: StatusRow, n: number) => {
     if (r.kind === 'subject') {
       const mark = statusMark(r)
@@ -419,16 +425,18 @@ export function paneStatus(
           : []),
         ...keysRow({ id: r.id, keys: statusKeyPlan(r) }, statusTextWidth(r.depth)),
       ]
+      const padY = statusPadY(content.length === 1)
       const line = statusRowLine({
         key: `status-${r.id}`,
         depth: r.depth,
         mark,
         content,
-        tree: r.hasChildren && !isFolded ? statusTree(`status-${r.id}-tree`, 'down', r.depth) : null,
+        tree: r.hasChildren && !isFolded ? statusTree(`status-${r.id}-tree`, 'down', r.depth, padY) : null,
         isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
+        padY,
       })
 
-      return { ...line, tops: seenTops(r) }
+      return { ...line, tops: seenTops(r, padY) }
     }
     if (r.kind === 'child') {
       const mark = statusMark(r)
@@ -497,7 +505,13 @@ export function paneStatus(
 
     return { ...fold, tops: seenTops(r) }
   }
-  const statusRows = (rows: StatusRow[]): Drawn[] => unfoldedRows(rows, isUnfolded, isCollapsed).map(statusRow)
+  const statusRows = (rows: StatusRow[]): Drawn[] => {
+    const shown = unfoldedRows(rows, isUnfolded, isCollapsed)
+    const drawn = shown.map(statusRow)
+    if (look === 'desktop' || isInline) return drawn
+
+    return spacedItems(shown, drawn, n => ({ el: <Box key={`gap-${n}`} height={1} />, lines: exactly(1) }))
+  }
   /** The padding a desktop section starts with, above its first part. */
   const desktopSectionPad: Drawn[] =
     look === 'desktop' ? [{ el: <Box key="section-pad" />, lines: exactly(desktopSpaceLines(isInline ? 0 : 1)) }] : []

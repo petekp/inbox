@@ -121,3 +121,14 @@ export function desktopCountsLines(counts: StatusCount[], widthPt: number): Line
 
   return { least: 1, most: desktopWrapLines(widths, 0, widthPt) }
 }
+
+/**
+ * Rows with `blank(n)` before each top-level row that it or the row above draws on more than one line, as the docked
+ * terminal spaces Status items: `ITEM_GAP_PT` rounds to one line there, and the smaller steps to none.
+ */
+export function spacedItems(rows: { depth: number }[], drawn: Drawn[], blank: (n: number) => Drawn): Drawn[] {
+  const isLong = (d: Drawn | undefined) => (d?.lines?.least ?? 0) > 1
+  const isSpaced = (d: Drawn, n: number) => n > 0 && rows[n]?.depth === 0 && (isLong(d) || isLong(drawn[n - 1]))
+
+  return drawn.flatMap((d, n) => (isSpaced(d, n) ? [blank(n), d] : [d]))
+}
