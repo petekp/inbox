@@ -21,6 +21,27 @@ export function namedList(names: readonly string[]): string {
   return [...names.slice(0, LISTED_NAMES), ...(hidden > 0 ? [namedFoldMore(hidden)] : [])].join(', ')
 }
 
+/** What a named fold says before the names it holds. Each closed status gets its own fold, in this order. */
+export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
+
+/** A part's closed work past its rows that the person has not seen, named in one fold for each closed status. */
+export const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRow[] =>
+  (['done', 'dropped'] as const).flatMap(status => {
+    const closed = named.filter(x => x.status === status)
+    return closed.length === 0
+      ? []
+      : [
+          {
+            kind: 'fold' as const,
+            id: `${prefix}also-${status}`,
+            depth,
+            ...SUBJECT_MARKS[status],
+            text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map(x => x.name))}`,
+            subjectIds: closed.map(x => x.id),
+          },
+        ]
+  })
+
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
 

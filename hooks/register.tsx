@@ -808,6 +808,7 @@ async function commit(
     new Set(Object.keys(heldReplies(typing, drafts))),
   )
   if (!isDrawn || after === before) return after
+  if (before.ledger.overview === null && after.ledger.overview !== null) void syncLook($)
   void publishStatus($)
   void followNewRows($).catch(() => undefined)
 
