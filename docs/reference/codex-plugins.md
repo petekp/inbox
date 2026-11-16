@@ -41,7 +41,7 @@ citation prefixes are defined in "How to read the citations".
 3. `Stop` cannot add context for the model; only `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `PreToolUse` and `PostToolUse` can (GH/codex-rs/hooks/schema/generated/).
 4. No public doc says Codex renders plugin UI; the Inbox tab rests on the early-access openai/mcp-extensions repo and this repo's live check (docs/plans/codex-plugin/step-0-and-results.md:65).
 5. Nothing pushes updates to a thread tab, so the tab must poll a tool [live] (docs/plans/codex-plugin/step-0-and-results.md:65; APPSPEC:L489-508).
-6. A tab's `ui/message` arrives as untrusted input, so presses go through `codex queue` and the undocumented, `#[experimental]` `thread/queue/add` [live] (docs/plans/codex-plugin/step-0-and-results.md:66; GH/codex-rs/app-server-protocol/src/protocol/common.rs:630-664).
+6. A tab's `ui/message` arrives as untrusted input, so presses go through `codex queue` and the undocumented, `#[experimental]` `thread/queue/add` [live] (docs/plans/codex-plugin/step-0-and-results.md:66; GH/codex-rs/app-server-protocol/src/protocol/common.rs:630-664). A press sent while the ChatGPT app runs the chat's turn goes in through the app's internal IPC socket instead ([app-socket.md](codex-plugins/app-socket.md)).
 7. Codex calls both the transcript format and app-server unstable, and the inbox depends on both (L/hooks#common-input-fields; L/mcp-server).
 8. `default_tools_approval_mode` in the plugin's `.mcp.json` works live but is documented only in user `config.toml` (docs/plans/codex-plugin/step-0-and-results.md:132; D/build/plugins#bundled-mcp-servers-and-lifecycle-hooks).
 
@@ -97,6 +97,7 @@ Each fact also carries one of these labels when its kind is not obvious:
 - [Plugin UI: the bridge, tool results and messages](codex-plugins/plugin-ui-bridge.md)
 - [Plugin UI: resources, ChatGPT extensions and live updates](codex-plugins/plugin-ui-resources.md)
 - [Session ids and sending a press](codex-plugins/sessions-and-presses.md)
+- [The ChatGPT app's IPC socket: steering a press into a running turn](codex-plugins/app-socket.md)
 - [`codex exec`, attention features and transcripts](codex-plugins/exec-and-transcripts.md)
 - [Checked against Codex 0.163.0, and live checks](codex-plugins/checked-0.163.md)
 - [Checked against Codex 0.164.0](codex-plugins/checked-0.164.md)

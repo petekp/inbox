@@ -164,6 +164,11 @@ threads a root thread and its forks belong to. They differ after a fork.
 | `codex exec resume` | Also reads the queue and delivered the message | :397 |
 | Ephemeral thread | `codex queue` fails | :398 |
 
+- **A running turn in the ChatGPT app.** The queue starts an item only when the
+  thread is idle, so a queued press waits for the running turn to end. When the
+  app runs the chat's turn, the server puts the message into that turn through
+  the app's IPC socket instead, and queues only when that fails
+  ([app-socket.md](app-socket.md), `codex/src/server-host.ts:sendMessage`).
 - **Which binary.** The server uses the CLI path a hook saved, then
   `CODEX_CLI_PATH`, then `CODEX_APP_RUNTIME_CLI_PATH`, then its parent
   process if named `codex`, then `codex` (codex/src/cli.ts `findCli`,

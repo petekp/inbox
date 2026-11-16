@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { steerTurn } from './app-steer'
 import { findCli, queueResumeCheck } from './cli'
 import { makeServer } from './server'
 import { devBuild } from './data-dir'
@@ -61,6 +62,7 @@ export function createHandler(
   const log = herdrLog(dir)
   useQuestionHistory(questionHistoryPlace(process.env, dir))
   const here = dirname(fileURLToPath(import.meta.url))
+  const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex')
   void startCodexInHerdrApp(process.env, run, join(here, 'herdr-mod'), log).catch(() => undefined)
 
   return makeServer({
@@ -71,6 +73,7 @@ export function createHandler(
     fallbackCli: () => findCli(process.env, run, process.ppid),
     hooksTrust: listHooksTrust,
     queueResumes: queueResumeCheck(run),
+    steer: to => steerTurn(codexHome, to),
     devPage: devPageIn(dir),
     build: SERVER_BUILD,
     loadError,
@@ -81,7 +84,7 @@ export function createHandler(
     followHerdrPresses: followHerdrPresses(log),
     herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
     openCatchUp: startUpdate && {
-      codexHome: process.env.CODEX_HOME || join(homedir(), '.codex'),
+      codexHome,
       startUpdate,
     },
   })
