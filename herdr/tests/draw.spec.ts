@@ -129,7 +129,7 @@ test('the Status page draws the goal’s milestones on a path: a seen done one a
   expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
 })
 
-test('a met goal draws a ✓ in the met tone beside its Goal met label, its lines at the text column, and its milestones folded into a line that names them with the chevron after, which opens to the milestones, and its field at the text column', () => {
+test('a met goal draws a ✓ in the done tone beside its Goal met label, its lines at the text column, and its milestones folded into a line that names them with the chevron after, which opens to the milestones, and its field at the text column', () => {
   const s = demoSession(NOW, AGENT)
   const o = s.ledger.overview!
   const met = {
@@ -148,7 +148,7 @@ test('a met goal draws a ✓ in the met tone beside its Goal met label, its line
   const open = tabBlocks(screen, uiOn('overview', { statusUnfolded: [fold.id] }))
   const milestoneIds = view.statusPage.goal!.milestones.map(m => m.id)
 
-  expect(shut.find(b => b.id === 'goal heading')).toMatchObject({ text: 'Goal met', mark: { text: '✓', tone: 'met' } })
+  expect(shut.find(b => b.id === 'goal heading')).toMatchObject({ text: 'Goal met', mark: { text: '✓', tone: 'done' } })
   expect(shut.find(b => b.id === 'goal text')).toMatchObject({ isAtEdge: false })
   expect(shut.find(b => b.id === fold.id)).toMatchObject({
     kind: 'fold',

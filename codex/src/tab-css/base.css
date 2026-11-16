@@ -6,7 +6,7 @@
   --muted: var(--color-text-secondary, #595959);
   /*TONES:light*/
   --needs-you: var(--amber);
-  --issue: var(--amber);
+  --issue: var(--error-mark);
   --sans: var(--font-sans, -apple-system, system-ui, sans-serif);
   --mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
   --raised: color-mix(in srgb, var(--text) 9%, var(--bg));

@@ -93,6 +93,7 @@ async function toneVars() {
       `--findings: ${t.findings};`,
       `--prs: ${t.prs};`,
       `--done: ${t.done};`,
+      `--opportunity: ${t.opportunity};`,
       `--error: ${t.error};`,
       `--error-mark: ${t.errorMark};`,
     ].join(' ')

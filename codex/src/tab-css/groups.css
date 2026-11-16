@@ -32,8 +32,8 @@ section + section::before {
   width: calc(var(--text-x) - var(--mark-x) - 8px);
   text-align: center;
 }
-.group-mark.done {
-  color: var(--done);
+.group-mark.opportunity {
+  color: var(--opportunity);
 }
 .group-mark.issue {
   color: var(--issue);

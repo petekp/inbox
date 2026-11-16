@@ -62,6 +62,7 @@ export function pulseInStep(el: HTMLElement | null) {
 const TONE_CLASS: Record<NonNullable<StatusTone>, string> = {
   needsYou: 'tone-needsYou',
   done: 'done',
+  working: 'working',
 }
 
 export function markClassOf(tone: StatusTone, isRunning: boolean): string {
