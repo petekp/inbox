@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T20:37:34.350Z. 268588 characters follow.
+// Built at 2026-11-16T20:37:53.099Z. 268787 characters follow.
 
 // src/main.ts
 import { View, div as div8 } from "gpui-kit";
@@ -1246,8 +1246,7 @@ var HELP_COPY = {
   name: "Help",
   icon: "?",
   keys: "Keys",
-  marks: "Marks",
-  tabs: "Tabs",
+  indicators: "Indicators",
   version: "Inbox"
 };
 var helpVersionText = (version, isNextBuild) => `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`;
@@ -4056,6 +4055,7 @@ var HEAD_GAP_PT = 2 * SPACE_UNIT;
 var CONTROL_GAP_PT = 2 * SPACE_UNIT;
 var SECTION_GAP_PT = 6 * SPACE_UNIT;
 var EDGE_PT = 4 * SPACE_UNIT;
+var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
 var MARK_PT = 6 * SPACE_UNIT;
 var ROW_PAD_PT = ITEM_GAP_PT / 2;
 var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
@@ -4720,7 +4720,7 @@ function helpBlocks(version) {
       under: [],
       buttons: []
     })),
-    heading("help marks", HELP_COPY.marks),
+    heading("help indicators", HELP_COPY.indicators),
     ...MARK_LEGEND.map((m) => ({
       kind: "status",
       id: `mark ${m.mark}`,
@@ -5858,10 +5858,13 @@ function headingEl(b, p, isInert) {
   return h_flex4().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div7().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div7().text_color(t.muted).child(`${SEP}${b.count}`))).child(div7().flex_1()).when(b.aside !== undefined, (e) => e.child(div7().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
 function emptyEl(b, p, isInert) {
+  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(emptyContentEl(b, p, isInert));
+}
+function emptyContentEl(b, p, isInert) {
   const { t } = p;
   const { empty, under } = b;
   const centred = (text, color = t.foreground) => div7().text_center().whitespace_normal().text_color(color).child(text);
-  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).gap(INSIDE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex4().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div7().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div7()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
+  return v_flex3().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex4().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div7().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div7()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
 }
 function foldEl(b, p, isInert) {
   const { t } = p;

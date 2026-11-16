@@ -121,8 +121,7 @@ export const HELP_COPY = {
   name: 'Help',
   icon: '?',
   keys: 'Keys',
-  marks: 'Marks',
-  tabs: 'Tabs',
+  indicators: 'Indicators',
   version: 'Inbox',
 } as const
 
@@ -131,11 +130,6 @@ export const helpVersionText = (version: string, isNextBuild: boolean): string =
   `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`
 
 export type HelpKey = { keys: string; does: string }
-
-/** The symbol each tab draws where its name does not fit, with its name, in Help's key layout. */
-export function tabLegend(): HelpKey[] {
-  return shownTabs().map(t => ({ keys: t.symbol, does: t.label }))
-}
 
 /** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
 export const UNDO_KEY = 'u'
