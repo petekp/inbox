@@ -105,7 +105,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'fold-all': {
         kind: 'different',
         reason:
-          "A terminal click carries no modifier key, and the engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, and no run has shown that its click reports Option, so the desktop has no known way in.",
+          'A terminal click carries no modifier key, and the engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, and no run has shown that its click reports Option, so the desktop has no known way in.',
       },
       'suggested-goal': { kind: 'full' },
     },
