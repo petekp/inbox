@@ -30,7 +30,7 @@ import { cellWidth, clipLabel } from '../../hooks/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../hooks/rows'
 import { bannerOf, isResumable, stopFix, stopText } from '../../hooks/banners'
 import { emptyTab, type EmptyTab } from '../../hooks/empty-tab'
-import { FINDING_GROUPS, HELP_COPY, helpKeys, helpVersionText, MARK_LEGEND, tabLegend } from '../../hooks/help'
+import { FINDING_GROUPS, HELP_COPY, helpKeys, helpVersionText, MARK_LEGEND } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
@@ -381,11 +381,8 @@ function helpEntries(screen: PanelScreen): Entry[] {
     },
     ...keys.map((key): Entry => ({ kind: 'key', key, at, column })),
     { kind: 'note', text: '' },
-    { kind: 'heading', text: HELP_COPY.marks },
+    { kind: 'heading', text: HELP_COPY.indicators },
     ...MARK_LEGEND.map((entry): Entry => ({ kind: 'legend', entry, at, textAt })),
-    { kind: 'note', text: '' },
-    { kind: 'heading', text: HELP_COPY.tabs },
-    ...tabLegend().map((key): Entry => ({ kind: 'key', key, at, column })),
   ]
 }
 

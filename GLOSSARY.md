@@ -91,6 +91,7 @@ settled PR takes no tint.
 The glyph before a row or a group title that says where its work stands or what
 kind it is, such as ◆, waits on you. Each glyph means one thing wherever a look
 draws it. `MARK_LEGEND` in `hooks/help.ts` lists them all.
+Help calls them Indicators.
 
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
