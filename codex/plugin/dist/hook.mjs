@@ -1210,6 +1210,20 @@ function namedList(names) {
   const hidden = names.length - LISTED_NAMES;
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+  const closed = named.filter((x) => x.status === status);
+  return closed.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}also-${status}`,
+      depth,
+      ...SUBJECT_MARKS[status],
+      text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
+      subjectIds: closed.map((x) => x.id)
+    }
+  ];
+});
 var CHILD_ROWS = 3;
 var CHILD_MARK = SUBJECT_MARKS.working;
 var COUNT_WORDS = {
@@ -2781,6 +2795,9 @@ function isChildRunning(c, now) {
 function isFinishedAfter(c, at) {
   return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
 }
+function isChildSettled(c, now, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && lastLookAt !== null && c.endedAt <= lastLookAt && now - c.endedAt < CHILD_KEPT_MS;
+}
 function isChildShown(c, now, lastLookAt) {
   return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
 }
@@ -2822,7 +2839,6 @@ function isSubjectSeen(o, s) {
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
   const o = s.ledger.overview;
@@ -2891,19 +2907,6 @@ function statusPage(s, now) {
     now
   };
   const foldCtx = { ...ctx, running: [] };
-  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const closed = named.filter((x) => x.status === status);
-    return closed.length === 0 ? [] : [
-      {
-        kind: "fold",
-        id: `${prefix}also-${status}`,
-        depth,
-        ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
-        subjectIds: closed.map((x) => x.id)
-      }
-    ];
-  });
   const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
     {
       kind: "fold",
@@ -2914,19 +2917,23 @@ function statusPage(s, now) {
       subjectIds: []
     }
   ];
-  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
+  const doneFold = (prefix, done, newClosed, depth, settled2) => done.length + settled2.length === 0 ? [] : [
     {
       kind: "done-fold",
       id: `${prefix}done`,
       depth,
-      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
+      text: `${done.length + settled2.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: [
+        ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
+        ...settled2.map((c) => childRow(c, null, depth + 1))
+      ]
     }
   ];
-  const foldedPart = (prefix, p, depth) => [
+  const foldedPart = (prefix, p, depth, settled2 = []) => [
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled2)
   ];
+  const settled = (o?.children ?? []).filter((c) => isChildSettled(c, now, look) && !o?.subjects.some((x) => x.id === c.subjectId)).sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
   const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
     const x = subjects.find((y) => y.id === c.subjectId);
     return { child: c, milestoneId: x === void 0 ? null : milestoneOf2(x) };
@@ -2948,7 +2955,8 @@ function statusPage(s, now) {
       "other-",
       otherFolded.filter((x) => x.status === "done"),
       otherNewClosed,
-      0
+      0,
+      hasMilestones ? settled : []
     )
   ];
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
@@ -2956,7 +2964,7 @@ function statusPage(s, now) {
   const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0),
+    ...foldedPart("", top, 0, hasMilestones ? [] : settled),
     ...otherRows.length > 0 ? [
       { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
       ...otherRows

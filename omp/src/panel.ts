@@ -18,7 +18,7 @@ import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
-import { PAGE_MARK_AT, entriesOf } from './panel-entries'
+import { entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
 import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
@@ -261,15 +261,15 @@ export function drawPanel(
     } else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
     else if (e.kind === 'key')
       body.push(
-        ...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) =>
-          n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l,
+        ...indented(e.key.does, e.at + e.column, width, Infinity, style.dim).map((l, n) =>
+          n === 0 ? `${' '.repeat(e.at)}${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l,
         ),
       )
     else if (e.kind === 'legend') {
       const mark = paintMark(e.entry, now, style)
       body.push(
         ...indented(e.entry.words, e.textAt, width, Infinity, style.dim).map((l, n) =>
-          n === 0 ? `${' '.repeat(PAGE_MARK_AT)}${mark}${' '.repeat(e.textAt - PAGE_MARK_AT - 1)}${l.trimStart()}` : l,
+          n === 0 ? `${' '.repeat(e.at)}${mark}${' '.repeat(e.textAt - e.at - 1)}${l.trimStart()}` : l,
         ),
       )
     } else if (e.kind === 'note')

@@ -115,6 +115,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       const now = deps.now()
       for (const row of ids) rows.set(row, now)
       shownRows.set(id, rows)
+      if (openPanels.get(id) === 'overview') deps.background(change(id, s => withLook(s, true, now, {})))
     },
     fetchPrsWhenDue,
     checkDelegatesWhenDue,

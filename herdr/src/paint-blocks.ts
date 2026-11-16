@@ -13,6 +13,7 @@ import {
   CONTROL_GAP,
   EDGE,
   HELP_COLUMN,
+  HELP_INDENT,
   GROUP_GAP,
   INSET,
   LINE_GAP,
@@ -280,7 +281,9 @@ const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whit
 function keyEl(s: StatusLine, does: string, t: Theme): Element {
   return h_flex()
     .items_start()
-    .px(EDGE)
+    .pl(EDGE + HELP_INDENT)
+    .pr(EDGE)
+    .pb(LINE_GAP)
     .child(
       div()
         .flex_none()

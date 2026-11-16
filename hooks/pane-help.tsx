@@ -17,11 +17,12 @@ export function paneHelp({
   ToneSvg,
   svgCell,
   markGlyph,
+  markWidth,
   section,
   groupTitle,
   sections,
 }: Pick<PaneBase, 'pal' | 'keyList' | 'Box' | 'keyColumn' | 'Text' | 'hasRail'> &
-  Pick<PaneRowLines, 'ToneSvg' | 'svgCell' | 'markGlyph'> &
+  Pick<PaneRowLines, 'ToneSvg' | 'svgCell' | 'markGlyph' | 'markWidth'> &
   Pick<PaneRowParts, 'section' | 'groupTitle' | 'sections'>) {
   /** A legend mark, drawn as rows draw it: the running mark moves, and desktop draws a shape where it has one. */
   const legendMark = (m: LegendEntry) => {
@@ -35,14 +36,15 @@ export function paneHelp({
     )
   }
   /**
-   * Help's one pair of columns, in cells: a key, a mark or a tab's symbol in the first, which starts at `TREE_LINE_AT`, and
-   * its words in the second. A tab's symbol takes two cells, so the column is the wider of that and the keys' column.
+   * Help's one pair of columns, in cells: a key, a mark or a tab's symbol in the first, which starts one mark column under
+   * its section's title, and its words in the second. A tab's symbol takes two cells, so the column is the wider of that and the keys' column.
    */
   const helpColumn = Math.max(keyColumn, 4)
+  const listIndent = TREE_LINE_AT + markWidth
   /** Help's two-column lines: what to press or look for, and what it does or names. */
   const keyRows = (list: readonly HelpKey[], prefix: string) =>
     list.map(k => (
-      <Box key={`${prefix}-${k.keys}`} flexDirection="row" paddingLeft={TREE_LINE_AT}>
+      <Box key={`${prefix}-${k.keys}`} flexDirection="row" paddingLeft={listIndent}>
         <Box width={helpColumn} flexShrink={0}>
           <Text bold>{k.keys}</Text>
         </Box>
@@ -59,7 +61,7 @@ export function paneHelp({
     section([
       groupTitle(HELP_COPY.marks, 0),
       ...MARK_LEGEND.map(m => (
-        <Box key={`help-mark-${m.mark}`} flexDirection="row" paddingLeft={TREE_LINE_AT}>
+        <Box key={`help-mark-${m.mark}`} flexDirection="row" paddingLeft={listIndent}>
           <Box width={helpColumn} flexShrink={0}>
             {legendMark(m)}
           </Box>
@@ -75,7 +77,7 @@ export function paneHelp({
   const helpVersionSection = () =>
     mod.version
       ? section(
-          <Box key="help-version" flexDirection="row" paddingLeft={TREE_LINE_AT + helpColumn}>
+          <Box key="help-version" flexDirection="row" paddingLeft={listIndent + helpColumn}>
             <Text color={pal.muted}>{helpVersionText(mod.version, mod.isNextBuild)}</Text>
           </Box>,
         )

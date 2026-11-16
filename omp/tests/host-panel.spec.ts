@@ -348,3 +348,21 @@ test('every row the agent closes while the panel shows its tab keeps its closed 
   await record({ kind: 'task', ask: 'One more' })
   expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids.slice(2))
 })
+
+test('a Status saved while the panel already shows the Status page starts a look at the next draw of its rows', async () => {
+  const inbox = createInbox(pi(), deps())
+  await prompt('hello')
+  await inbox.openPanel(makeCtx(), w.clock)
+  inbox.showTab(makeCtx(), 'overview', NO_HOLDS)
+  await settle()
+  const saved = state()
+  const overview = { ...EMPTY_SESSION_STATUS, head: { title: 'Ship it', description: 'Shipping the first version' } }
+  writeFileSync(join(w.dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
+  inbox.showRows(makeCtx(), [])
+  await settle()
+  w.clock += LOOK_MIN_MS
+  inbox.showTab(makeCtx(), 'needsYou', NO_HOLDS)
+  await settle()
+
+  expect(state().ledger.overview.lastLookAt).not.toBeNull()
+})

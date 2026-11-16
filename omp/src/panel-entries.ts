@@ -369,17 +369,18 @@ function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: 
 function helpEntries(screen: PanelScreen): Entry[] {
   const keys = helpKeys('omp')
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
-  const textAt = PAGE_MARK_AT + column
+  const at = PAGE_TEXT_AT
+  const textAt = at + column
 
   return [
     { kind: 'heading', text: HELP_COPY.keys },
-    ...keys.map((key): Entry => ({ kind: 'key', key, column })),
+    ...keys.map((key): Entry => ({ kind: 'key', key, at, column })),
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.marks },
-    ...MARK_LEGEND.map((entry): Entry => ({ kind: 'legend', entry, textAt })),
+    ...MARK_LEGEND.map((entry): Entry => ({ kind: 'legend', entry, at, textAt })),
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.tabs },
-    ...tabLegend().map((key): Entry => ({ kind: 'key', key, column })),
+    ...tabLegend().map((key): Entry => ({ kind: 'key', key, at, column })),
     { kind: 'note', text: '' },
     { kind: 'note', text: helpVersionText(screen.version, screen.isNextBuild === true), indent: textAt },
   ]

@@ -10,7 +10,7 @@ import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { NO_HOLDS } from '../../hooks/timing'
-import { ROW_STATE_MS, stepRow } from '../../hooks/row-motion'
+import { ROW_STATE_MS, SLIDE_PX, stepRow } from '../../hooks/row-motion'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 
@@ -80,7 +80,10 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const window = new Window()
   const animate = window.HTMLElement.prototype.animate
+  const slid: string[] = []
   window.HTMLElement.prototype.animate = function (...args: Parameters<typeof animate>) {
+    const [frames] = args
+    if (Array.isArray(frames) && frames.some(f => 'transform' in f)) slid.push(String(frames.at(-1)?.transform))
     const animation = animate.apply(this, args)
     animation.finished.catch(() => {})
     return animation
@@ -272,6 +275,8 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     assert.ok(entry('e2e-mac'))
     assert.ok(line())
     assert.ok(isLineGrowing())
+    assert.ok(slid.includes(`translateY(${-SLIDE_PX}px)`))
+    assert.ok(root.querySelector('[data-motion][style*="pointer-events: none"]'))
     await after(ROW_STATE_MS.leaving + 100)
     assert.deepEqual(groups(), [`Failing checks${DOT}1`])
     assert.equal(entry('e2e'), null)
