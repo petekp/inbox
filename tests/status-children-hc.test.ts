@@ -2,7 +2,11 @@ import { expect, test } from 'claude-code/testing'
 
 import { delegatesSettled } from '../hooks/children'
 import { childEnded, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
-import { delegatesInHerdr, herdrTarget } from '../hooks/herdr'
+import { applyHerdrFile } from '../hooks/herdr-app'
+import { delegatesInHerdr, HERDR_FORMAT, herdrTarget } from '../hooks/herdr'
+import { emptySession } from '../hooks/session-files'
+import type { PressHost } from '../hooks/host-press'
+import type { Session } from '../types'
 import type { Run } from '../hooks/gh'
 import type { SessionStatus } from '../types'
 import { MIN, after, page, shape } from './status-helpers'
@@ -93,4 +97,24 @@ test('a finished delegate no subject holds draws a row until a look ends, then f
 
   expect(shape(rows)).toEqual(['◐ Export: layout next', '› 1 done'])
   expect(rows.flatMap(r => (r.kind === 'done-fold' ? r.rows : [])).map(r => [r.kind, r.depth])).toEqual([['child', 1]])
+})
+
+test('a look file the Herdr look wrote sets the last look on the saved Status', async () => {
+  let saved: Session = {
+    ...emptySession(),
+    ledger: { ...emptySession().ledger, overview: after(null, 'NEW: working | Export | layout next', 10 * MIN) },
+  }
+  const host = {
+    update: async (change: (s: Session) => Session) => void (saved = change(saved)),
+  } as unknown as PressHost<Session>
+  const look = {
+    startedAt: 20 * MIN,
+    endedAt: 20 * MIN + LOOK_MIN_MS,
+    shown: { s1: 20 * MIN + 1 },
+    drawnWrittenAt: 21 * MIN,
+  }
+
+  await applyHerdrFile(host, { format: HERDR_FORMAT, id: 'p1', look })
+
+  expect(saved.ledger.overview?.lastLookAt).toBe(20 * MIN + LOOK_MIN_MS)
 })
