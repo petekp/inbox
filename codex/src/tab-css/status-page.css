@@ -3,19 +3,20 @@
   padding: 0 var(--edge) 0 var(--mark-x);
   overflow-wrap: anywhere;
 }
-/* Each row pads half the gap it keeps from its neighbours: `item` around a row with more than one line, `list` between
-   one-line rows. A milestone's group takes its milestone row's padding, which the path's line reads. */
+/* Each row pads half the gap above it and half the gap below it, which the list sets from `statusRowPads` as
+   `--status-row-pad` and `--status-row-pad-below`. A row with no neighbor pads half of `list`, or half of `item` when
+   it shows more than its name. A milestone's group takes its milestone row's padding, which the path's line reads. */
 .status-page .row,
 .status-page .milestone-group {
-  --status-row-pad: calc(var(--item-gap) / 2);
-}
-.status-page .row:has(> .content > :only-child),
-.status-page .milestone-group:has(> .row.milestone > .content > :only-child) {
   --status-row-pad: calc(var(--list-gap) / 2);
+}
+.status-page .row.long,
+.status-page .milestone-group.long {
+  --status-row-pad: calc(var(--item-gap) / 2);
 }
 .status-page .row {
   padding-top: var(--status-row-pad);
-  padding-bottom: var(--status-row-pad);
+  padding-bottom: var(--status-row-pad-below, var(--status-row-pad));
 }
 .status-page .mark {
   text-align: left;
@@ -97,6 +98,10 @@
   top: calc(var(--status-row-pad) + 0.5lh);
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
+}
+/* A section ends half of `section` under its last row's text, counting the row's padding. */
+.status-page section {
+  padding-bottom: calc(var(--section-gap) / 2 - var(--last-row-pad, 0px));
 }
 .status-page section.unruled::before {
   content: none;
@@ -193,10 +198,11 @@
   transition: --space-above var(--settle);
 }
 .status-page .milestone-group.spaced {
-  --space-above: calc(var(--item-gap) - var(--list-gap));
+  --space-above: var(--space-size, calc(var(--item-gap) - var(--list-gap)));
 }
+/* Later sits half of `section` under the row above, as around a rule. */
 .status-page .milestone-group + .row.part-line {
-  margin-top: var(--status-row-pad);
+  margin-top: calc(var(--section-gap) / 2 - var(--row-above-pad, calc(var(--item-gap) / 2)) - var(--status-row-pad));
 }
 /* A connector fades with the rows it ties together. It fades in as it is drawn, since the rows fade in for `--enter-fade`, and
    out through a leaving class while they leave, for `--fade`. The arm of a row that leaves alone fades through `arm-leaving`,
@@ -227,11 +233,11 @@
   position: absolute;
   left: var(--tree-x);
   top: calc(var(--space-above) + var(--status-row-pad) + 1lh);
-  bottom: calc(-1 * var(--status-row-pad));
+  bottom: calc(-1 * var(--next-row-pad, var(--status-row-pad)));
   border-left: 1px solid var(--tree-line);
 }
 .status-page .milestone-group.gap-under::before {
-  bottom: calc(-2 * var(--status-row-pad));
+  bottom: calc(-1 * var(--next-space, 0px) - var(--next-row-pad, var(--status-row-pad)));
 }
 /* Dashes of whole pixels from the line's top. A dashed border stretches its dashes to fit the line, which blurs their ends. */
 .status-page .milestone-group.path-to-next::before {
@@ -291,15 +297,18 @@
 }
 /* "Other work" at the text column, then a solid rule to the tab's edge. The head's title takes its place, with its
    description under it. It sits `section` under the item above and `head` over the row under it, each side counting the
-   rows' padding. */
+   rows' padding, which the list sets as `--row-above-pad` and `--row-below-pad`. */
 .status-page .row.part-line {
   padding-left: 0;
   padding-right: 0;
-  padding-bottom: calc(var(--head-gap) - var(--item-gap) / 2);
-  margin-top: calc(var(--section-gap) - var(--item-gap) / 2 - var(--list-gap) / 2);
+  padding-bottom: calc(var(--head-gap) - var(--row-below-pad, calc(var(--item-gap) / 2)));
+  margin-top: calc(
+    var(--section-gap) - var(--row-above-pad, calc(var(--item-gap) / 2)) - var(--status-row-pad)
+  );
 }
+/* A part that starts its section sits under the section's own space, without its padding above. */
 .status-page .list > .row.part-line:first-child {
-  margin-top: 0;
+  margin-top: calc(-1 * var(--status-row-pad));
 }
 .status-page .part-rule {
   grid-column: 1 / -1;

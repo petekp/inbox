@@ -1,7 +1,7 @@
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { cellWidth } from './text'
 import { fitTabs, tabName, type TabNaming } from './tabs'
-import { ITEM_GAP_PT, LIST_GAP_PT, ROW_PAD_PT } from './layout'
+import { LIST_GAP_PT, ROW_PAD_PT, SECTION_GAP_PT } from './layout'
 import { TAB_COUNT_GAP } from './tabs-client'
 
 export const REPLY_ROWS = 3
@@ -67,12 +67,17 @@ export const DESKTOP_HAIR_LINES = 1 / DESKTOP_LINE_PT
 export const DESKTOP_TREE_AT = 0.73
 /** The room the tree's arm leaves before a child's mark on desktop, in cells. */
 export const DESKTOP_ARM_GAP = 0.4
-/**
- * A Status row frame's padding on desktop, as written on a Box, which draws half of it: half of `LIST_GAP_PT` drawn above
- * and below a one-line row, and half of `ITEM_GAP_PT` around a longer one.
- */
-export const statusPadY = (isOneLine: boolean) => (isOneLine ? LIST_GAP_PT : ITEM_GAP_PT) / DESKTOP_LINE_PT
-export const STATUS_PAD_Y = statusPadY(true)
+/** `pt` points of padding on desktop, as written on a Box, which draws half of what it is given. */
+export const desktopPad = (pt: number) => (2 * pt) / DESKTOP_LINE_PT
+/** A Status row frame's padding above and below on desktop, from `statusRowPads`. */
+export const desktopPads = (p: { above: number; below: number }) => ({
+  padY: desktopPad(p.above),
+  padBelow: desktopPad(p.below),
+})
+/** The margin on each side of the hairline between two desktop sections: half of `SECTION_GAP_PT`, as written. */
+export const DESKTOP_SECTION_SPACE = desktopPad(SECTION_GAP_PT / 2)
+/** A one-line Status row frame's padding on desktop: half of `LIST_GAP_PT` drawn above and below. */
+export const STATUS_PAD_Y = desktopPad(LIST_GAP_PT / 2)
 /** How far a row frame's transparent border insets its content on each side, in points, measured on app 3.6556.2. */
 export const FRAME_INSET_PT = 17.6
 export const DESKTOP_SIDE_CELLS = 5

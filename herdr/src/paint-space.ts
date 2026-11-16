@@ -62,6 +62,7 @@ const isMilestone = (b: Block): boolean => 'path' in b && b.path?.is === 'milest
 
 /** The space the eye sees between one block's last line and the next block's first. */
 function gapBetween(prev: Block, b: Block): number {
+  if ('gapAbove' in b && b.gapAbove !== undefined) return b.gapAbove
   if (isMilestone(prev)) return isMilestone(b) ? LIST_GAP : HEAD_GAP
   const isLabelled = prev.kind === 'heading' || prev.kind === 'caption' || (prev.kind === 'rule' && prev.text !== null)
   if (isLabelled) return HEAD_GAP

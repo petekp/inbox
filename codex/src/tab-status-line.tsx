@@ -2,6 +2,7 @@ import { Icon, RowActions } from './row-actions'
 import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
 import { unfoldedRows } from '../../hooks/status-folds'
+import { statusRowPads } from '../../hooks/status-gaps'
 import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusRow } from '../../hooks/status-page'
@@ -73,6 +74,30 @@ export function toggleStatusFold(id: string) {
 /** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
 const depthStyle = (row: StatusRow) => ({ '--depth': row.depth })
 
+/** A row's padding as the Status CSS reads it. */
+export type RowPad = Record<string, string>
+
+const px = (pt: number) => `${pt}px`
+
+/**
+ * Each row's padding: half the gap `statusGaps` sets above it and below it. A part also gets the padding of the rows
+ * beside it, which the space above and below its rule counts.
+ */
+export function rowPads(rows: StatusRow[], pads = statusRowPads(rows)): RowPad[] {
+  return pads.map((p, n) => {
+    const own = { '--status-row-pad': px(p.above), '--status-row-pad-below': px(p.below) }
+    const above = pads[n - 1]
+    const below = pads[n + 1]
+    if (rows[n]?.kind !== 'part') return own
+
+    return {
+      ...own,
+      ...(above ? { '--row-above-pad': px(above.below) } : {}),
+      ...(below ? { '--row-below-pad': px(below.above) } : {}),
+    }
+  })
+}
+
 /**
  * A subject's tree line runs down while its rows show, and while they leave or enter as the person folds or opens it.
  * `under` is the motion keys of the rows drawn under it, which a done fold's rows, drawn with their list, leave out.
@@ -84,7 +109,18 @@ function subjectConnector(row: Extract<StatusRow, { kind: 'subject' }>, under: s
   return isParentFolded(row.id) ? null : ''
 }
 
-export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: string; under?: string[] }) {
+export function StatusLine({
+  row,
+  motion,
+  under,
+  pad,
+}: {
+  row: StatusRow
+  motion?: string
+  under?: string[]
+  pad?: RowPad | undefined
+}) {
+  const rowStyle = { ...depthStyle(row), ...pad }
   if (row.kind === 'subject') {
     const connector = subjectConnector(row, under)
     const merged = row.merged
@@ -93,7 +129,7 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
     return (
       <div
         class={['row', connector === null ? '' : 'has-children', connector ?? ''].filter(Boolean).join(' ')}
-        style={depthStyle(row)}
+        style={rowStyle}
         {...{ [SUBJECTS_ATTRIBUTE]: row.id }}
         {...lineMotion(motion)}
       >
@@ -136,7 +172,7 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
     return (
       <div
         class={row.branch ? `row child branch-${row.branch}` : 'row'}
-        style={depthStyle(row)}
+        style={rowStyle}
         {...lineMotion(motion)}
       >
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
@@ -149,7 +185,7 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
     )
   if (row.kind === 'more')
     return (
-      <div class={`row child branch-${row.branch}`} style={depthStyle(row)} {...lineMotion(motion)}>
+      <div class={`row child branch-${row.branch}`} style={rowStyle} {...lineMotion(motion)}>
         <span class="mark" />
         <div class="content tight muted">{row.text}</div>
       </div>
@@ -160,7 +196,7 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
 
     return (
       <>
-        <div class="row fold-row" style={depthStyle(row)} {...lineMotion(motion)}>
+        <div class="row fold-row" style={rowStyle} {...lineMotion(motion)}>
           <button type="button" class="fold" data-fold={fold} onClick={() => toggleStatusFold(row.id)}>
             {row.text}
             <Icon name={isUnfolded ? 'down' : 'right'} />
@@ -168,9 +204,7 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
         </div>
         {isUnfolded || closingFolds.has(fold) ? (
           <div class="fold-rows" data-motion={`closed-${fold}`}>
-            {unfoldedRows(row.rows, () => false, isParentFolded).map(r => (
-              <StatusLine key={r.id} row={r} />
-            ))}
+            <FoldRows rows={unfoldedRows(row.rows, () => false, isParentFolded)} />
           </div>
         ) : null}
       </>
@@ -178,14 +212,14 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
   }
   if (row.kind === 'part')
     return (
-      <div class="row part-line" {...lineMotion(motion)}>
+      <div class="row part-line" style={pad} {...lineMotion(motion)}>
         <div class={row.isTitle ? 'part-rule part-title' : 'part-rule'}>{row.text}</div>
         {row.description ? <div class="muted part-description">{row.description}</div> : null}
       </div>
     )
   if (row.kind === 'counts')
     return (
-      <div class="row" style={depthStyle(row)} {...lineMotion(motion)}>
+      <div class="row" style={rowStyle} {...lineMotion(motion)}>
         <span class="mark" />
         <div class="content tight">
           <div>
@@ -208,7 +242,7 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
   return (
     <div
       class="row"
-      style={depthStyle(row)}
+      style={rowStyle}
       {...(subjects.length > 0 ? { [SUBJECTS_ATTRIBUTE]: subjects.join(' ') } : {})}
       {...lineMotion(motion)}
     >
@@ -217,6 +251,19 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
       </span>
       <div class="content tight muted">{row.text}</div>
     </div>
+  )
+}
+
+/** The rows a done fold opens to, each padded by its neighbors. */
+function FoldRows({ rows }: { rows: StatusRow[] }) {
+  const pads = rowPads(rows)
+
+  return (
+    <>
+      {rows.map((r, n) => (
+        <StatusLine key={r.id} row={r} pad={pads[n]} />
+      ))}
+    </>
   )
 }
 

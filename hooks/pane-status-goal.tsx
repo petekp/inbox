@@ -3,9 +3,10 @@ import type { KeyAction } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
-import { DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_LINE_PT, DESKTOP_MARK_CELLS } from './pane-sizes'
+import { DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_MARK_CELLS, desktopPad } from './pane-sizes'
+import { milestonePadPt, milestoneRowPads } from './status-gaps'
+import { paneMilestoneSpace } from './pane-status-milestone-space'
 import { desktopButtonPt, desktopTextPt } from './desktop-metrics'
-import { ITEM_GAP_PT, LIST_GAP_PT } from './layout'
 import { cellWidth } from './text'
 import {
   DESKTOP_BUTTON_LINES,
@@ -29,10 +30,16 @@ import { STALL_GAP, WAS_PREFIX } from './status-page'
 import { isParentCollapsed, milestoneRows } from './status-folds'
 import type { IsCollapsed } from './status-folds'
 import type { PaneStatusParent } from './pane-status-parent'
-import { isSpacedAbove, LATER_TEXT, workJoints } from './status-path'
+import { workJoints } from './status-path'
 
 /** One line of the Status list, as `paneStatus` draws it, so milestones line up with subjects. */
-type StatusRowLine = (line: { key: string; mark: JSX.Element | null; content: Drawn[]; isSelected?: boolean }) => Drawn
+type StatusRowLine = (line: {
+  key: string
+  mark: JSX.Element | null
+  content: Drawn[]
+  isSelected?: boolean
+  padY?: number
+}) => Drawn
 
 /** The goal and its milestones, and the goal's text field, in the terminal and desktop looks. */
 export function paneStatusGoal(
@@ -84,7 +91,7 @@ export function paneStatusGoal(
     statusRowLine: StatusRowLine
     statusKeys: (t: StatusKeyTarget) => KeyAction[]
     /** Draws rows as given, with no fold opened. */
-    drawRows: (rows: StatusRow[]) => Drawn[]
+    drawRows: (rows: StatusRow[], pads?: { above: number; below: number }[]) => Drawn[]
     keysRow: (t: StatusKeyTarget, width: number) => Drawn[]
     statusPartLine: (id: string, text: string, isFirst: boolean) => Drawn
     isUnfolded: (id: string) => boolean
@@ -196,17 +203,11 @@ export function paneStatusGoal(
       ])}
     </Box>
   )
-  /**
-   * A blank line in the terminal. On desktop, the space Codex leaves there: half of `ITEM_GAP_PT` under the goal's text,
-   * and above a milestone the rest of `ITEM_GAP_PT` past the rows' padding, so a milestone's work sits closer to its own
-   * name than to the next.
-   */
-  const gap = (key: string, isUnderGoalText: boolean): Drawn => {
-    const pt = isUnderGoalText ? ITEM_GAP_PT / 2 : ITEM_GAP_PT - LIST_GAP_PT
-    const height = look === 'terminal' ? 1 : pt / DESKTOP_LINE_PT
-
-    return { el: <Box key={key} height={height} />, lines: exactly(height) }
-  }
+  const { spaceAboveOf, laterLines } = paneMilestoneSpace({ look, Box, statusPartLine, isUnfolded, isCollapsed })
+  /** A milestone frame's padding above and below on desktop: half of its own gap, as a subject with no neighbor pads. */
+  const milestonePad = (m: MilestoneRow) => desktopPad(milestonePadPt(m))
+  /** A frame's padding and 1 pt border above its first line on desktop, where a tree or path line starts. */
+  const edgeOf = (padY: number) => padY + 2 * DESKTOP_HAIR_LINES
   /** The milestone's line: its mark, then its name, or the fold of a done milestone folded to its name. */
   const milestoneLine = (m: MilestoneRow): Drawn => {
     const mark = markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted)
@@ -227,6 +228,7 @@ export function paneStatusGoal(
     return statusRowLine({
       key: `status-${m.id}`,
       mark,
+      padY: milestonePad(m),
       content: [
         m.foldCount > 0
           ? parentName(m.id, name, null, 0, { isCollapsed: isFolded, count: m.foldCount })
@@ -247,12 +249,14 @@ export function paneStatusGoal(
     const joints = workJoints(rows, m.line)
     const line = milestoneLine(m)
     const isConnectorDown = rows.length > 0 && m.line === null
+    const pads = milestoneRowPads(m, rows)
 
     return [
-      isConnectorDown ? path.connectorDown(`goal-${m.id}-down`, line) : line,
-      ...drawRows(rows).map((d, n) => {
+      isConnectorDown ? path.connectorDown(`goal-${m.id}-down`, line, edgeOf(milestonePad(m))) : line,
+      ...drawRows(rows, pads).map((d, n) => {
         const joint = joints[n]
-        return joint ? path.jointed(`goal-${rows[n]?.id}-joint`, d, joint) : d
+        const edge = edgeOf(desktopPad(pads[n]?.above ?? 0))
+        return joint ? path.jointed(`goal-${rows[n]?.id}-joint`, d, joint, edge) : d
       }),
     ]
   }
@@ -261,17 +265,19 @@ export function paneStatusGoal(
    * line runs through it. The Later label sits above the first milestone under Later.
    */
   const milestoneSection = (milestones: MilestoneRow[]): Drawn[] => {
-    const spaceAbove = (n: number) =>
-      isSpacedAbove(milestones, n, isUnfolded, isCollapsed) ? [gap(`goal-${milestones[n]?.id}-gap`, n === 0)] : []
-
     return milestones.flatMap((m, n) => {
       const hasLineAbove = (milestones[n - 1]?.line ?? null) !== null
-      const under = m.line !== null && n + 1 < milestones.length ? spaceAbove(n + 1) : []
+      const isLaterNext = look === 'desktop' && milestones[n + 1]?.startsLater === true
+      const under = m.line !== null && n + 1 < milestones.length && !isLaterNext ? spaceAboveOf(milestones, n + 1) : []
+      const above = m.startsLater
+        ? laterLines(milestones, n, hasLineAbove)
+        : hasLineAbove
+          ? []
+          : spaceAboveOf(milestones, n)
 
       return [
-        ...(hasLineAbove ? [] : spaceAbove(n)),
-        ...(m.startsLater ? [statusPartLine('goal-later', LATER_TEXT, true)] : []),
-        ...path.pathGroup(`goal-${m.id}-path`, m.line, [...milestoneLines(m), ...under]),
+        ...above,
+        ...path.pathGroup(`goal-${m.id}-path`, m.line, [...milestoneLines(m), ...under], edgeOf(milestonePad(m))),
       ]
     })
   }

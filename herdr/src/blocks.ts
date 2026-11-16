@@ -171,6 +171,8 @@ export type StatusLine = {
   buttons: Button[]
   path?: PathSide
   tree?: TreeStroke[]
+  /** In a Status list, the space from the line above, from `statusGaps`. */
+  gapAbove?: number
 }
 
 /** A PR's title line and the line under it: its number and title, where it stands, and its buttons. */
@@ -249,6 +251,7 @@ export type Block =
       mark?: Mark
       path?: PathSide
       tree?: TreeStroke[]
+      gapAbove?: number
     }
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
@@ -270,6 +273,7 @@ export type Block =
       buttons?: Button[]
       path?: PathSide
       tree?: TreeStroke[]
+      gapAbove?: number
     }
   /**
    * The goal's field while the person types a goal, in place of the goal's text: at the panel's edge, or at the text

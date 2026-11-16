@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T05:23:53.025Z. 263154 characters follow.
+// Built at 2026-11-16T06:23:38.814Z. 264293 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -4038,6 +4038,42 @@ function prTabBlocks(screen, selected) {
   return isShown ? blocks : draw(firstSelectable(blocks));
 }
 
+// ../hooks/layout.ts
+var SPACE_UNIT = 4;
+var LINE_PT = 5 * SPACE_UNIT;
+var INSIDE_GAP_PT = 0;
+var LIST_GAP_PT = SPACE_UNIT;
+var ITEM_GAP_PT = 3 * SPACE_UNIT;
+var CHILD_GAP_PT = 2 * SPACE_UNIT;
+var HEAD_GAP_PT = 2 * SPACE_UNIT;
+var CONTROL_GAP_PT = 2 * SPACE_UNIT;
+var SECTION_GAP_PT = 6 * SPACE_UNIT;
+var EDGE_PT = 4 * SPACE_UNIT;
+var MARK_PT = 6 * SPACE_UNIT;
+var ROW_PAD_PT = LIST_GAP_PT / 2;
+var OPEN_ROW_PAD_PT = ITEM_GAP_PT / 2;
+var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
+
+// ../hooks/status-gaps.ts
+function isOneLineStatusRow(r) {
+  if (r.kind !== "subject")
+    return true;
+  return !r.waitsOn && !r.text && !r.merged && !r.was && statusKeyPlan(r).length === 0;
+}
+function statusGaps(rows) {
+  return rows.map((r, n) => {
+    const prev = rows[n - 1];
+    if (prev === undefined || prev.kind === "part" || r.kind === "part")
+      return null;
+    const isPairOneLine = isOneLineStatusRow(prev) && isOneLineStatusRow(r);
+    if (r.depth > 0)
+      return isPairOneLine ? LIST_GAP_PT : CHILD_GAP_PT;
+    const itemStart = rows.findLastIndex((p, k) => k < n && p.depth === 0);
+    return isPairOneLine && itemStart === n - 1 ? LIST_GAP_PT : ITEM_GAP_PT;
+  });
+}
+var LATER_PAD_PT = LIST_GAP_PT / 2;
+
 // src/draw-status.ts
 var MERGED_CELLS = 150;
 var toneOf = (t) => t;
@@ -4148,6 +4184,11 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
       buttons: []
     }
   ];
+}
+var withGap = (b, gap) => gap != null && (b.kind === "status" || b.kind === "note" || b.kind === "fold") ? { ...b, gapAbove: gap } : b;
+function listBlocks(rows, isUnfolded, isCollapsed) {
+  const gaps = statusGaps(rows);
+  return rows.map((r, n) => rowBlocks(r, isUnfolded, isCollapsed).map((b, k) => k === 0 ? withGap(b, gaps[n]) : b));
 }
 function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
   const mark = markOf2(m.mark, m.tone, false);
@@ -4269,7 +4310,7 @@ function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
       ...isSpacedAbove(shown, n, isUnfolded, isCollapsed) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
       ...m.startsLater ? [{ kind: "rule", id: "goal later", text: LATER_TEXT }] : [],
       milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded, isCollapsed),
-      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded, isCollapsed).map((b) => besidePath(b, m.line, joints[k])))
+      ...listBlocks(rows, isUnfolded, isCollapsed).map((bs, k) => bs.map((b) => besidePath(b, m.line, joints[k]))).flat()
     ];
   });
   return [heading, ...lines, ...foldLine, ...milestones];
@@ -4293,7 +4334,7 @@ function statusBlocks(view, ui) {
     return [emptyBlock("overview", empty, parts)];
   }
   const top = goalBlocks(page, ui);
-  const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).flatMap((r) => rowBlocks(r, isUnfolded, isCollapsed));
+  const rows = listBlocks(unfoldedRows(page.rows, isUnfolded, isCollapsed), isUnfolded, isCollapsed).flat();
   const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, { kind: "gap", id: "gap rows" }, ...rows] : [...top, ...rows];
 }
@@ -5121,22 +5162,6 @@ var LIGHT_TONES = {
   key: "#243bf5"
 };
 
-// ../hooks/layout.ts
-var SPACE_UNIT = 4;
-var LINE_PT = 5 * SPACE_UNIT;
-var INSIDE_GAP_PT = 0;
-var LIST_GAP_PT = SPACE_UNIT;
-var ITEM_GAP_PT = 3 * SPACE_UNIT;
-var CHILD_GAP_PT = 2 * SPACE_UNIT;
-var HEAD_GAP_PT = 2 * SPACE_UNIT;
-var CONTROL_GAP_PT = 2 * SPACE_UNIT;
-var SECTION_GAP_PT = 6 * SPACE_UNIT;
-var EDGE_PT = 4 * SPACE_UNIT;
-var MARK_PT = 6 * SPACE_UNIT;
-var ROW_PAD_PT = LIST_GAP_PT / 2;
-var OPEN_ROW_PAD_PT = ITEM_GAP_PT / 2;
-var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
-
 // src/paint-theme.ts
 var TONE_COLORS = {
   needsYou: "ansi3",
@@ -5382,6 +5407,8 @@ function itemGap(prev, b) {
 }
 var isMilestone = (b) => ("path" in b) && b.path?.is === "milestone";
 function gapBetween(prev, b) {
+  if ("gapAbove" in b && b.gapAbove !== undefined)
+    return b.gapAbove;
   if (isMilestone(prev))
     return isMilestone(b) ? LIST_GAP : HEAD_GAP;
   const isLabelled = prev.kind === "heading" || prev.kind === "caption" || prev.kind === "rule" && prev.text !== null;

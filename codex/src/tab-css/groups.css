@@ -16,9 +16,13 @@ section + section::before {
   height: 1px;
   background: var(--soft);
 }
+/* A title sits `head` over its first row's text, counting the row's padding. */
 .group-title {
   position: relative;
-  padding: 0 var(--edge) calc(var(--head-gap) - var(--item-gap) / 2) var(--text-x);
+  padding: 0 var(--edge) calc(var(--head-gap) - var(--row-pad)) var(--text-x);
+}
+.group-title:has(+ .list > .entry:first-child > .row.selected) {
+  padding-bottom: calc(var(--head-gap) - var(--open-row-pad));
 }
 .group-title.unmarked {
   padding-left: var(--mark-x);

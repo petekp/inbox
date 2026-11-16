@@ -19,7 +19,15 @@ import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
 import { goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
 import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
-import { foldMotion, Keys, StatusLine, toggleStatusFold } from './tab-status-line'
+import { foldMotion, Keys, rowPads, StatusLine, toggleStatusFold } from './tab-status-line'
+import type { RowPad } from './tab-status-line'
+import {
+  isOneLineMilestone,
+  milestoneGroupPadBelow,
+  milestonePadPt,
+  milestoneRowPads,
+  milestoneSpacePt,
+} from '../../hooks/status-gaps'
 
 /** The goal's text field, with its submit button and Cancel. It stays open, its buttons out, until the server confirms the goal. */
 function GoalField({ page }: { page: StatusPage }) {
@@ -88,7 +96,12 @@ function Offer({ text, keys }: { text: string; keys: StatusKey[] }) {
 
 function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: string; connector: string | null }) {
   const fold = m.foldId
-  const classes = ['row milestone', connector === null ? '' : 'connector-down', connector ?? '']
+  const classes = [
+    'row milestone',
+    isOneLineMilestone(m) ? '' : 'long',
+    connector === null ? '' : 'connector-down',
+    connector ?? '',
+  ]
   const nameClass = [m.isChanged ? 'changed' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
 
   return (
@@ -138,14 +151,16 @@ function JointedLine({
   motion,
   under,
   column,
+  pad,
 }: {
   row: StatusRow
   joint: WorkJoint | undefined
   motion?: string
   under?: string[]
   column?: 'leaving' | null
+  pad: RowPad | undefined
 }) {
-  const line = <StatusLine row={row} motion={motion} under={under} />
+  const line = <StatusLine row={row} motion={motion} under={under} pad={pad} />
   if (!joint) return line
   const own = motion ? connectorMotion([motion]) : null
   const columnMotion = joint.arm === 'elbow' ? own : joint.beside === 'connector' ? (column ?? null) : null
@@ -157,7 +172,11 @@ function JointedLine({
     joint.beside === 'connector' ? 'beside-connector' : '',
   ]
 
-  return <div class={classes.filter(Boolean).join(' ')}>{line}</div>
+  return (
+    <div class={classes.filter(Boolean).join(' ')} style={pad}>
+      {line}
+    </div>
+  )
 }
 
 /** A milestone and the rows drawn under it, as `stepStatus` steps them, with rows still leaving in their places. */
@@ -185,31 +204,56 @@ function foldConnectorMotion(fold: string | null, motion: string): 'leaving' | n
  * One the line does not leave from draws the nesting connector down to its last work row. A done milestone folded to its
  * name keeps its rows in a fold, as a done fold of subjects does.
  */
-function MilestoneGroup({
-  group: { m, rows },
-  isSpaced,
-  isGapUnder,
-}: {
-  group: MilestoneGroupLines
-  isSpaced: boolean
-  isGapUnder: boolean
-}) {
+/** The rows a milestone's group draws: its work, or a done milestone's work while its fold is open or closing. */
+function shownRows({ m, rows }: MilestoneGroupLines) {
   const fold = m.foldId
   const motion = fold === null ? null : foldMotion(fold)
   const isFoldShown = motion !== null && fold !== null && (statusUnfolded.has(fold) || closingFolds.has(motion))
   const shown = motion === null ? rows : isFoldShown ? unfoldedRows(m.rows, () => false, isParentFolded) : []
+
+  return { fold, motion, isFoldShown, shown }
+}
+
+/** A group's inline spacing: its space above when it stands apart, and the next group's, which its path line crosses. */
+function groupStyle(next: MilestoneRow | undefined, space: number | null, nextSpace: number | null) {
+  return {
+    ...(next ? { '--next-row-pad': `${milestonePadPt(next)}px` } : {}),
+    ...(space === null ? {} : { '--space-size': `${space}px` }),
+    ...(nextSpace === null ? {} : { '--next-space': `${nextSpace}px` }),
+  }
+}
+
+function MilestoneGroup({
+  group,
+  next,
+  isSpaced,
+  isGapUnder,
+  space,
+  nextSpace,
+}: {
+  group: MilestoneGroupLines
+  next: MilestoneRow | undefined
+  isSpaced: boolean
+  isGapUnder: boolean
+  space: number | null
+  nextSpace: number | null
+}) {
+  const { m, rows } = group
+  const { fold, motion, isFoldShown, shown } = shownRows(group)
   const joints = workJoints(shown, m.line)
+  const pads = rowPads(shown, milestoneRowPads(m, shown))
   const connectorState =
     motion === null ? connectorMotion(rows.map(r => goalLineMotion(r.id))) : foldConnectorMotion(fold, motion)
   const classes = [
     'milestone-group',
+    isOneLineMilestone(m) ? '' : 'long',
     isSpaced ? 'spaced' : '',
     m.line ? `path-${m.line}` : '',
     m.line && isGapUnder ? 'gap-under' : '',
   ]
 
   return (
-    <div class={classes.filter(Boolean).join(' ')}>
+    <div class={classes.filter(Boolean).join(' ')} style={groupStyle(next, space, nextSpace)}>
       <MilestoneLine
         m={m}
         motion={goalLineMotion(m.id)}
@@ -224,12 +268,13 @@ function MilestoneGroup({
             motion={goalLineMotion(r.id)}
             under={rowsUnder(rows, n, goalLineMotion)}
             column={connectorState}
+            pad={pads[n]}
           />
         ))
       ) : isFoldShown ? (
         <div class="fold-rows" data-motion={`closed-${motion}`}>
           {shown.map((r, n) => (
-            <JointedLine key={r.id} row={r} joint={joints[n]} />
+            <JointedLine key={r.id} row={r} joint={joints[n]} pad={pads[n]} />
           ))}
         </div>
       ) : null}
@@ -237,17 +282,29 @@ function MilestoneGroup({
   )
 }
 
+/** The Later label's inline spacing: the padding of the group above it and of the milestone under it. */
+function laterStyle(above: MilestoneGroupLines | undefined, m: MilestoneRow) {
+  return {
+    '--row-below-pad': `${milestonePadPt(m)}px`,
+    ...(above ? { '--row-above-pad': `${milestoneGroupPadBelow(above.m, shownRows(above).shown)}px` } : {}),
+  }
+}
+
 function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
   const isUnfolded = (id: string) => statusUnfolded.has(id)
   const groups = milestoneGroups(lines)
   const milestones = groups.map(g => g.m)
+  const spaces = groups.map((g, n) => {
+    const above = groups[n - 1]
+    return above ? milestoneSpacePt(milestoneGroupPadBelow(above.m, shownRows(above).shown), g.m) : null
+  })
 
   return (
     <div class="list">
       {groups.flatMap((group, n) => [
         ...(group.m.startsLater
           ? [
-              <div key="later" class="row part-line">
+              <div key="later" class="row part-line" style={laterStyle(groups[n - 1], group.m)}>
                 <div class="part-rule">{LATER_TEXT}</div>
               </div>,
             ]
@@ -255,8 +312,11 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
         <MilestoneGroup
           key={group.m.id}
           group={group}
+          next={milestones[n + 1]}
           isSpaced={n > 0 && !group.m.startsLater && isSpacedAbove(milestones, n, isUnfolded, isParentFolded)}
           isGapUnder={isSpacedAbove(milestones, n + 1, isUnfolded, isParentFolded) && n + 1 < milestones.length}
+          space={spaces[n] ?? null}
+          nextSpace={spaces[n + 1] ?? null}
         />,
       ])}
     </div>
@@ -309,9 +369,13 @@ function GoalSection({
       <p class="muted">{NO_GOAL_TEXT}</p>
     )
   const mark = g?.mark ?? null
+  const last = milestoneGroups(lines).at(-1)
+  const sectionStyle = last
+    ? { '--last-row-pad': `${milestoneGroupPadBelow(last.m, shownRows(last).shown)}px` }
+    : {}
 
   return (
-    <section>
+    <section style={sectionStyle}>
       <div class={mark ? 'goal-heading marked' : 'goal-heading'} data-motion="goal-heading">
         {mark ? (
           <span class={`${markClassOf(mark.tone, false)} goal-mark`}>
@@ -408,6 +472,7 @@ export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   // The list after a goal draws no line between sections: its heading's own rule sets it apart while the goal shows
   // milestones or the list starts with one, and nothing does while the goal shows none.
   const isUnruledAfterGoal = page.goal !== null || page.rows[0]?.kind === 'part'
+  const pads = rowPads(drawn.rows)
 
   return (
     <main class="status-page">
@@ -421,6 +486,7 @@ export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
                 row={r}
                 motion={statusRowMotion(r.id)}
                 under={rowsUnder(drawn.rows, n, statusRowMotion)}
+                pad={pads[n]}
               />
             ))}
           </div>

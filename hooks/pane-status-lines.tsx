@@ -126,7 +126,7 @@ export function paneStatusLines({
    * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
    * next row, so a row that wraps keeps the line beside each of its lines. `depth` is the subject's.
    */
-  const statusTree = (key: string, shape: 'down' | StatusBranch, depth: number, padY = STATUS_PAD_Y) => {
+  const statusTree = (key: string, shape: 'down' | StatusBranch, depth: number, padY = STATUS_PAD_Y, padBelow = padY) => {
     if (look === 'terminal') {
       const at = statusMarkAt + markWidth * depth
       return shape === 'down' ? branch('pass', 0, at, pal.line, 1, key) : branch(shape, 0, at, pal.line, 0, key)
@@ -135,6 +135,7 @@ export function paneStatusLines({
       at: DESKTOP_MARK_CELLS * 2 * depth + DESKTOP_TREE_AT,
       arm: DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP,
       edge: padY,
+      edgeBelow: padBelow,
     })
   }
 

@@ -1,7 +1,9 @@
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { RUNNING_SVG_CELLS } from './desktop-svg'
 import { DESKTOP_BUTTON_PT, DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_ROW_PT } from './pane-sizes'
-import { STALL_GAP, type StatusCount } from './status-page'
+import { ITEM_GAP_PT } from './layout'
+import { statusGaps } from './status-gaps'
+import { STALL_GAP, type StatusCount, type StatusRow } from './status-page'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
 
@@ -70,8 +72,9 @@ export function desktopTextLines(text: string, widthPt: number): Lines {
 /** A desktop Box's padding, margin or gap of `cells` on one side, in lines: the hooks tree counts them in half lines. */
 export const desktopSpaceLines = (cells: number) => cells / 2
 
-/** The lines a desktop row frame adds around its text: `padY` above and below, and its 1 pt border on each side. */
-export const desktopFrameLines = (padY: number) => exactly(2 * desktopSpaceLines(padY) + 2 * DESKTOP_HAIR_LINES)
+/** The lines a desktop row frame adds around its text: `padY` above, `padBelow` below, and its 1 pt border on each side. */
+export const desktopFrameLines = (padY: number, padBelow = padY) =>
+  exactly(desktopSpaceLines(padY + padBelow) + 2 * DESKTOP_HAIR_LINES)
 
 /** A line of native buttons on desktop: as tall as a button, and at least a line of text. */
 export const DESKTOP_BUTTON_LINES = DESKTOP_BUTTON_PT / DESKTOP_ROW_PT
@@ -123,20 +126,11 @@ export function desktopCountsLines(counts: StatusCount[], widthPt: number): Line
 }
 
 /**
- * Rows with `blank(n)` before each top-level item when it or the item above draws on more than one line, as the docked
- * terminal spaces Status items: `ITEM_GAP_PT` rounds to one line there, and the smaller steps to none. An item is a
- * top-level row with the rows nested under it. A part, such as Other work, keeps its own space, so no blank follows one.
+ * Rows with `blank(n)` above each row that `statusGaps` sets `ITEM_GAP_PT` from the row above, as the docked terminal
+ * spaces Status items: `ITEM_GAP_PT` rounds to one line there, and the smaller steps to none.
  */
-export function spacedItems(rows: { depth: number; kind: string }[], drawn: Drawn[], blank: (n: number) => Drawn): Drawn[] {
-  const isLong = (d: Drawn | undefined) => (d?.lines?.least ?? 0) > 1
-  const isItem = (n: number) => rows[n]?.depth === 0 && rows[n]?.kind !== 'part'
-  const itemStart = (n: number) => rows.findLastIndex((r, k) => k < n && r.depth === 0)
-  const isAboveLong = (n: number, start: number) => n - 1 > start || isLong(drawn[start])
-  const isSpaced = (d: Drawn, n: number) => {
-    const start = itemStart(n)
+export function spacedItems(rows: StatusRow[], drawn: Drawn[], blank: (n: number) => Drawn): Drawn[] {
+  const gaps = statusGaps(rows)
 
-    return isItem(n) && isItem(start) && (isLong(d) || isAboveLong(n, start))
-  }
-
-  return drawn.flatMap((d, n) => (isSpaced(d, n) ? [blank(n), d] : [d]))
+  return drawn.flatMap((d, n) => (gaps[n] === ITEM_GAP_PT ? [blank(n), d] : [d]))
 }
