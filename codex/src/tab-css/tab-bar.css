@@ -13,6 +13,7 @@ nav {
 }
 .tab {
   position: relative;
+  transition: font-weight var(--fade);
   white-space: nowrap;
   padding: calc(var(--item-gap) / 2) calc(3 * var(--unit));
   border-radius: 6px;
@@ -24,6 +25,19 @@ nav {
 .tab.shown {
   background: var(--raised);
   color: var(--text);
+  font-weight: 600;
+}
+/* The word reserves the width of its shown form, so a tab does not widen, and its neighbours do not move, as it turns bold. */
+.tab-word {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+.tab-word::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
   font-weight: 600;
 }
 .help-tab {

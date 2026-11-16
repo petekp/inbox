@@ -281,6 +281,9 @@
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
 }
+.status-page .milestone-name > * {
+  transition: font-weight var(--fade);
+}
 .status-page .milestone-name .changed {
   font-weight: 600;
 }

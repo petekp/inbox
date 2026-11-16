@@ -102,6 +102,7 @@
   min-width: 0;
 }
 .line .text {
+  transition: font-weight var(--fade);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -134,6 +135,8 @@
 .row.selected .line .text,
 .row.closing .line .text {
   display: inline;
+}
+.row.selected .line .text {
   font-weight: 600;
 }
 .row.selected .line .after,

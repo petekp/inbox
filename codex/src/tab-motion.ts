@@ -109,11 +109,21 @@ function glide(el: HTMLElement, size: Size, from: SpringState, to: number, hold 
   glides.set(el, { size, from, to, anim, scalesEdges })
 }
 
-/** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. */
+/**
+ * The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. A title that
+ * is easing to a heavier weight is measured at that weight, since it may wrap there and the glide must end at that height.
+ */
 function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
+  const easing = el
+    .getAnimations({ subtree: true })
+    .filter(a => (a as Partial<CSSTransition>).transitionProperty === 'font-weight')
+  const times = easing.map(a => a.currentTime)
+  easing.forEach(a => (a.currentTime = a.effect?.getComputedTiming().endTime ?? 0))
+  const height = el.getBoundingClientRect().height
+  easing.forEach((a, i) => (a.currentTime = times[i] ?? 0))
 
-  return el.getBoundingClientRect().height
+  return height
 }
 
 /** An element's opacity: full unless an animation fades it. */
