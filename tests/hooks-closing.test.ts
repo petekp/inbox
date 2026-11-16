@@ -79,7 +79,7 @@ test(
     expect(await pane.find({ key: 'row-f3' })).toBeUndefined()
     expect(await pane.find({ text: 'No open issues' })).toBeDefined()
     expect(await pane.find({ text: 'No open opportunities' })).toBeDefined()
-    expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed ▸')
+    expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed ›')
     await pane.press({ key: 'fold-issue' })
     expect(await pane.find({ text: /^README is stale$/ })).toBeDefined()
     expect(await pane.find({ text: /^Closed by Claude: fixed$/ })).toBeDefined()
@@ -146,7 +146,7 @@ test(
     expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
     await clock.advance(FOLD_QUIET_MS)
     expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
-    expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('1 closed ▸')
+    expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('1 closed ›')
     expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
 
     await clock.advance(PRESS_GUARD_MS)
@@ -157,7 +157,7 @@ test(
     expect(await pane.find({ key: 'undo-i2' })).toBeDefined()
     await clock.advance(SETTLED_MS)
     expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
-    expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('2 closed ▸')
+    expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('2 closed ›')
   },
 )
 

@@ -86,7 +86,7 @@ test('a met goal hangs a green ✓ beside Goal met, starts its text at the text 
   expect(drawn(screen, onPage, 60).find(l => strip(l).includes('Goal met'))).toContain(style.tone('done', '✓'))
   const textColumn = heading.indexOf('Goal met')
   expect(lines[lineAt(lines, 'Pilot ready to announce')]!.indexOf('Pilot')).toBe(textColumn)
-  const fold = lines[lineAt(lines, 'Fixes built, Announced ▸')]!
+  const fold = lines[lineAt(lines, 'Fixes built, Announced ›')]!
   expect(fold.indexOf('Fixes')).toBe(textColumn)
   expect(lineAt(lines, '✓ Fixes built')).toBe(-1)
   expect(lineAt(lines, 'Now:')).toBe(-1)
@@ -97,7 +97,7 @@ test('a met goal hangs a green ✓ beside Goal met, starts its text at the text 
   expect(opened.selectedId).toBe(foldId)
   expect(opened.statusUnfolded).toContain(foldId)
   const shown = text(screen, opened, 60).split('\n')
-  expect(shown[lineAt(shown, 'Fixes built, Announced')]).toContain('▾')
+  expect(shown[lineAt(shown, 'Fixes built, Announced')]).toContain('⌄')
   expect(lineAt(shown, '✓ Fixes built')).toBeGreaterThan(lineAt(shown, 'Fixes built, Announced'))
   expect(statusKeyRows(page, id => opened.statusUnfolded.includes(id)).map(t => t.id)[1]).toBe(foldId)
 
@@ -202,7 +202,7 @@ test('with a goal set, subjects that serve none of its milestones draw under the
     '   dismissed glances fade',
   ])
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
-  expect(lineAt(lines, '2 more done ▸')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
+  expect(lineAt(lines, '2 more done ›')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
 })
 
 test('in a short panel, after Remove its New shows, even from a page scrolled past it', () => {

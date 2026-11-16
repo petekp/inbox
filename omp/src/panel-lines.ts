@@ -1,5 +1,6 @@
 import type { GoalPart } from './panel-goal'
 import type { FoldKind } from '../../types'
+import { foldGlyph } from '../../hooks/fold-chevron'
 import type { PrAction } from '../../hooks/pr-press'
 import {
   closedLineAction,
@@ -295,7 +296,7 @@ export function groupEntries(
     line: {
       ...blankLine(foldId(g.kind)),
       lead: g.mark ? null : { text: '', tone: null },
-      title: `${foldLabel(total)} ${isUnfolded ? '▾' : '▸'}`,
+      title: `${foldLabel(total)} ${foldGlyph(isUnfolded)}`,
       isDim: true,
       fold: g.kind,
       isWaiting: false,

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T02:34:19.474Z. 257754 characters follow.
+// Built at 2026-11-16T02:52:10.763Z. 258046 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -1291,6 +1291,11 @@ function helpKeys(look) {
   }
 }
 
+// ../hooks/fold-chevron.ts
+var FOLD_CLOSED_CHEVRON = "›";
+var FOLD_OPEN_CHEVRON = "⌄";
+var foldGlyph = (isOpen) => isOpen ? FOLD_OPEN_CHEVRON : FOLD_CLOSED_CHEVRON;
+
 // ../hooks/status-folds.ts
 function waitingUnderParents(ledger) {
   const o = ledger.overview;
@@ -1309,7 +1314,7 @@ function waitingUnderParents(ledger) {
     })
   ]);
 }
-var parentChevron = (isCollapsed, foldCount) => isCollapsed ? `▸ ${foldCount}` : "▾";
+var parentChevron = (isCollapsed, foldCount) => isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true);
 var NONE_COLLAPSED = () => false;
 function withoutCollapsed(rows, isCollapsed) {
   let hiddenBelow = null;
@@ -5284,6 +5289,8 @@ function spacesOf(blocks, isShut) {
   let section = null;
   for (const b of blocks) {
     if (b.kind === "gap") {
+      if (isShut(b))
+        continue;
       section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : GROUP_GAP;
       continue;
     }
@@ -5573,10 +5580,12 @@ function statusEl(s, p, isInert) {
     return keyEl(s, s.does, t);
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
-  const chevron = s.fold ? [statusPartEl(s.fold.chevron).text_color(t.muted).ml(LINE_GAP)] : [];
-  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)];
   const toggle = s.fold?.toggle;
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex3().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.hover((x) => x.text_color(t.foreground)).on_click((_e, cx) => toggle ? p.press(toggle, cx) : undefined)).child(markEl(s.mark, t)).child(h_flex3().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron).children(word))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  const chevron = s.fold ? [
+    statusPartEl(s.fold.chevron).text_color(t.muted).ml(LINE_GAP).when(toggle !== undefined && !isInert, (e) => e.hover((x) => x.text_color(t.foreground)))
+  ] : [];
+  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)];
+  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex3().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((_e, cx) => toggle ? p.press(toggle, cx) : undefined)).child(markEl(s.mark, t)).child(h_flex3().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron).children(word))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 function prEl(b, p, isInert) {
   const { t } = p;
@@ -5615,7 +5624,7 @@ function foldEl(b, p, isInert) {
     does: { is: "view", change: b.change }
   };
   const mark = b.kind === "fold" ? b.mark : undefined;
-  const chevron = b.kind === "fold" ? b.isOpen ? "▾" : "▸" : null;
+  const chevron = b.kind === "fold" ? foldGlyph(b.isOpen) : null;
   return h_flex3().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div5().min_w(0).whitespace_normal().child(b.text)).when(chevron !== null, (e) => e.child(div5().flex_none().ml(LINE_GAP).child(chevron ?? "")));
 }
 function blockEl(b, p) {

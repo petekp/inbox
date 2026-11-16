@@ -78,7 +78,8 @@ type Space = { block: Block; above: number }
 /**
  * Each drawn block with the space above it, from the last block above it that is not shut. A gap block draws nothing
  * and opens a section's space above the next block, or a milestone step's smaller space. A shut block, one that enters
- * or leaves at no height, has no space.
+ * or leaves at no height, has no space, and a shut gap opens none, so the space a gap held closes in the same glide as the
+ * rows beside it instead of waiting for the gap to leave the list.
  */
 export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[] {
   const out: Space[] = []
@@ -86,6 +87,7 @@ export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[
   let section: number | null = null
   for (const b of blocks) {
     if (b.kind === 'gap') {
+      if (isShut(b)) continue
       section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : GROUP_GAP
       continue
     }

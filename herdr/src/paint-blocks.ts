@@ -1,6 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
+import { foldGlyph } from '../../hooks/fold-chevron'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
@@ -324,9 +325,16 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
     .when(s.isBold, e => e.font_semibold())
     .when(s.isMuted, e => e.text_color(t.muted))
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : []
-  const chevron = s.fold ? [statusPartEl(s.fold.chevron).text_color(t.muted).ml(LINE_GAP)] : []
-  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)]
   const toggle = s.fold?.toggle
+  const chevron = s.fold
+    ? [
+        statusPartEl(s.fold.chevron)
+          .text_color(t.muted)
+          .ml(LINE_GAP)
+          .when(toggle !== undefined && !isInert, e => e.hover(x => x.text_color(t.foreground))),
+      ]
+    : []
+  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)]
 
   return v_flex()
     .pl(EDGE + s.depth * NEST)
@@ -335,9 +343,7 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
       h_flex()
         .id(`fold ${s.id}`)
         .items_start()
-        .when(toggle !== undefined && !isInert, e =>
-          e.hover(x => x.text_color(t.foreground)).on_click((_e, cx) => (toggle ? p.press(toggle, cx) : undefined)),
-        )
+        .when(toggle !== undefined && !isInert, e => e.on_click((_e, cx) => (toggle ? p.press(toggle, cx) : undefined)))
         .child(markEl(s.mark, t))
         .child(
           h_flex()
@@ -510,7 +516,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     does: { is: 'view', change: b.change },
   }
   const mark = b.kind === 'fold' ? b.mark : undefined
-  const chevron = b.kind === 'fold' ? (b.isOpen ? '▾' : '▸') : null
+  const chevron = b.kind === 'fold' ? foldGlyph(b.isOpen) : null
 
   return h_flex()
     .id(`fold ${b.id}`)

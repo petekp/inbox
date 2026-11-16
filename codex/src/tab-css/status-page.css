@@ -152,16 +152,46 @@
 .status-head.goal + .list {
   margin-top: var(--section-gap);
 }
+@property --space-above {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+/* The space above a milestone glides as its class changes, over the time a row's height takes to settle, so it closes with
+   the rows that fold. The path's line reads the same variable, so it follows. */
 .status-page .milestone-group {
   position: relative;
   --space-above: 0px;
+  padding-top: var(--space-above);
+  transition: --space-above var(--settle);
 }
 .status-page .milestone-group.spaced {
   --space-above: var(--status-row-pad);
-  padding-top: var(--space-above);
 }
 .status-page .milestone-group + .row.part-line {
   margin-top: var(--status-row-pad);
+}
+/* A connector fades with the rows it ties together. It fades in as it is drawn, since the rows fade in for `--enter-fade`, and
+   out through a leaving class while they leave, for `--fade`. The arm of a row that leaves alone fades through `arm-leaving`,
+   and the column the row passes beside stays. */
+.status-page .row.milestone.connector-down::before,
+.status-page .work-joint::before,
+.status-page .work-joint::after,
+.status-page .row.has-children::before {
+  transition: opacity var(--enter-fade);
+}
+@starting-style {
+  .status-page .row.milestone.connector-down::before,
+  .status-page .work-joint::before,
+  .status-page .work-joint::after,
+  .status-page .row.has-children::before {
+    opacity: 0;
+  }
+}
+.status-page .connector-leaving::before,
+.status-page .arm-leaving::after {
+  opacity: 0;
+  transition: opacity var(--fade);
 }
 /* The path's line, from under a milestone's mark to the next milestone's mark, through the space above that one. */
 .status-page .milestone-group.path-continues::before,
@@ -290,22 +320,31 @@
 .status-page .fold-row .fold {
   margin: 0 0 0 calc(var(--text-x) - var(--mark-x) - 4px);
 }
-/* A parent's name line takes the click that folds its rows. Its chevron sits after the name, in the muted tone. */
+/* A parent's name line takes the click that folds its rows. Its chevron and count sit after the name, in the muted tone, and
+   brighten while the line is hovered. */
 .status-page .parent-name {
   margin: 0 -4px;
   padding: 0 4px;
   border-radius: 5px;
-  cursor: pointer;
 }
-.status-page .parent-name:hover {
-  background-color: var(--row-hover);
+.status-page .parent-name:hover .parent-chevron {
+  color: var(--text);
 }
-.still .status-page .parent-name:not(:active):hover {
-  background-color: transparent;
+.still .status-page .parent-name:not(:active):hover .parent-chevron {
+  color: var(--muted);
 }
 .status-page .parent-name:focus-visible {
   outline: 1px solid var(--soft);
 }
 .status-page .parent-chevron {
   white-space: nowrap;
+  font-weight: 400;
+}
+.status-page .parent-chevron .icon {
+  width: 12px;
+  height: 12px;
+  vertical-align: -1px;
+}
+.status-page .parent-count {
+  opacity: 0.75;
 }
