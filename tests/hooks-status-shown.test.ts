@@ -115,3 +115,31 @@ test('a look at the terminal Status counts as seen only the subjects whose first
   expect(o.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
   expect(o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.id)).toEqual(inWindow)
 })
+
+test(
+  'a Status created while the pane already shows the Status page records a look once the page is hidden after five seconds',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    w.paneState = { isShown: true, isFocused: true }
+    let seen: unknown = null
+    on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+      seen = (e.value as { ledger: { overview: unknown } }).ledger.overview
+      return next(e)
+    })
+    await $.session.start({ cwd: '/tmp/project', surface: 'desktop', isInteractive: true })
+    const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await pane.post({ tab: 'overview' }, { in: 'tabs' })
+    await clock.settle()
+    w.statusReply = 'NEW: working | Piece 1 | under way'
+    await $.prompt.submit({ text: 'build it', wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer: 'Started.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+    await clock.settle()
+    await clock.advance(LOOK_MIN_MS)
+    await pane.post({ tab: 'needsYou' }, { in: 'tabs' })
+    await clock.settle()
+
+    expect((seen as SessionStatus).lastLookAt).not.toBeNull()
+  },
+)
