@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T03:56:09.156Z. 259120 characters follow.
+// Built at 2026-11-16T04:01:03.979Z. 259305 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -4895,6 +4895,7 @@ var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
 // ../hooks/row-motion.ts
 var ENTER_FADE_MS = 300;
 var FADE_MS = 200;
+var SLIDE_PX = 8;
 var ROW_FADE_MS = {
   entering: ENTER_FADE_MS,
   opening: FADE_MS,
@@ -5446,7 +5447,11 @@ function spacedEls(blocks, p, el) {
     const m = p.motion.get(b.id);
     const isOpen = m?.box === "open" && fitHeight(b, m, p) !== undefined;
     const fade = (e) => m?.box ? e.opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" }) : e;
-    return v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, fade(el(b)), [...contentStrokeEls(b, p.t, fade), ...passes.map((c) => wholeColumnEl(c, p.t))]));
+    const slide = (e) => m?.box ? e.relative().top(isOpen ? 0 : -SLIDE_PX).transition("top", { duration: m.fadeMs, easing: "ease-out" }) : e;
+    return v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
+      ...contentStrokeEls(b, p.t, fade),
+      ...passes.map((c) => wholeColumnEl(c, p.t))
+    ]));
   });
 }
 

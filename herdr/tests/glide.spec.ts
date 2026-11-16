@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import type { Block } from '../src/blocks'
 import { demoSession } from '../../hooks/demo'
 import { sessionView } from '../../hooks/session-view'
+import { SLIDE_PX } from '../../hooks/row-motion'
 import { SETTLED_MS } from '../../hooks/timing'
 
 const { framesOf, jumpsOf } = await import('./frames')
@@ -295,3 +296,22 @@ test.each([1, 0.9])(
     }
   },
 )
+
+test('a block that leaves slides its content up by the slide offset as it fades, and one that enters slides down from it', () => {
+  const some = asks(['d11', 'd12'])
+  const fewer = asks(['d11'])
+  const offsets = (steps: [number, Block[]][]) => new Set(framesOf(steps, 800).slides.flat())
+  expect(
+    offsets([
+      [0, some],
+      [0, fewer],
+    ]),
+  ).toEqual(new Set([0, -SLIDE_PX]))
+  expect(
+    offsets([
+      [0, fewer],
+      [0, some],
+    ]),
+  ).toEqual(new Set([0, -SLIDE_PX]))
+  expect(offsets([[0, some]])).toEqual(new Set())
+})
