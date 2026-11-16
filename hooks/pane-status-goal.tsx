@@ -271,8 +271,8 @@ export function paneStatusGoal(
       mark,
       content: [
         m.foldCount > 0
-          ? parentName(m.id, name, m.stall, 0, { isCollapsed: isFolded, count: m.foldCount })
-          : statusNameLine(`goal-${m.id}-name`, name, m.stall, 0),
+          ? parentName(m.id, name, null, 0, { isCollapsed: isFolded, count: m.foldCount })
+          : statusNameLine(`goal-${m.id}-name`, name, null, 0),
         ...path.pathWord(m, m.foldCount > 0 ? chevron : null),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
         ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),

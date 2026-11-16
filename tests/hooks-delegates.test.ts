@@ -143,7 +143,7 @@ test(
     await clock.advance(HERDR_CHECK_MS)
     await clock.settle()
     expect(childrenOf(w.stored).map(c => [c.endedAt === null, c.delegateState])).toEqual([[true, 'blocked']])
-    expect(await pane.find({ text: /· waiting/ })).toBeDefined()
+    expect(await pane.find({ text: /fixer/ })).toBeDefined()
 
     await pane.press({ key: 'tab-key-needsYou' })
     await clock.advance(HERDR_CHECK_MS)

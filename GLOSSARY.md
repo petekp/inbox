@@ -125,8 +125,8 @@ times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, and the item's Asks row reads "Holds up" and the subject's name.
 Its row then has a View question or View task button, which opens Asks with
-the oldest of those items selected, and a line "waits on you:" with that item's
-own words.
+the oldest of those items selected, and a line under its name, in the needs-you
+tone, with that item's own words.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Goal**:
@@ -172,14 +172,14 @@ its state.
 _Avoid_: subitem, job
 
 **Stall words**:
-The words after a Status row's name when its work waits on the person, has
-finished, or has stalled. A delegate reads "waiting", in the needs-you tone,
-while Herdr shows it at a question or an approval, and so does a subject whose
-only child is a same-named delegate in that state. A subject held by an open
-question or task has no stall word: a line under its name reads "waits on you:"
-and the item's own words. An open subject with no change for a day or more,
-and no child of it running, reads how long it has been idle, as "idle 2d",
-muted. Other rows show no word. The code calls them `stall`.
+The words after a Status subject's name when its work has stalled. An open
+subject with no change for a day or more, and no child of it running, reads
+how long it has been idle, as "idle 2d", muted. Other rows show no word. A
+row that waits on the person, such as a subject held by an open question or
+task, a milestone it holds up, or a delegate at a question or an approval,
+shows the ◆ mark in the needs-you tone, not a word; a held subject also
+draws the item's own words on a line under its name. The code calls the
+words `stall`.
 _Avoid_: age
 
 **Last look**:

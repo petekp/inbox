@@ -390,7 +390,7 @@ test('a subject an open ask holds up draws what it waits on in its own line, and
 
   expect(held.length).toBeGreaterThan(0)
   for (const b of held) {
-    expect(b.waitsOn).toMatch(/^waits on you: \S/)
+    expect(b.waitsOn).toMatch(/^\S/)
     expect(b.stall).toBeNull()
     expect(b.buttons.length).toBeGreaterThan(0)
   }

@@ -28,7 +28,7 @@ function rowText(r: StatusRow): string[] {
     }
     case 'child': {
       const branch = r.branch === null ? '  ' : `${'  '.repeat(r.depth - 1)}  ${r.branch === 'last' ? '└' : '├'} `
-      return [`${branch}${r.mark} ${nameLine(r.name, r.stall)}`]
+      return [`${branch}${r.mark} ${r.name}`]
     }
     case 'more':
       return [`${'  '.repeat(r.depth - 1)}  └ ${r.text}`]
@@ -53,7 +53,7 @@ function milestoneText(m: MilestoneRow): string[] {
 
   return [
     ...(m.startsLater ? [LATER_TEXT] : []),
-    `${m.mark} ${nameLine(m.name, m.stall)}${fold}${word}`,
+    `${m.mark} ${m.name}${fold}${word}`,
     ...(m.text ? [`  ${m.text}`] : []),
     ...milestoneRows(m, () => false).flatMap(rowText),
   ]

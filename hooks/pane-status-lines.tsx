@@ -123,12 +123,11 @@ export function paneStatusLines({
         : terminalSpanLines(spans, statusTextWidth(depth), limit),
       statusTextWidth(depth),
     )
-  /** A row's stall word in the stall's tone, never split by a wrap. */
+  /** A row's stall word, muted, never split by a wrap. */
   const stallSpan = (stall: StatusStall): TerminalSpan => {
     const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
-    const tone = stall.tone === 'needsYou' ? { isNeedsYou: true as const } : { isMuted: true as const }
 
-    return { text, isUnbroken: true, ...tone }
+    return { text, isUnbroken: true, isMuted: true }
   }
   /**
    * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never

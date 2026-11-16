@@ -121,7 +121,7 @@ function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion
         {fold === null ? (
           <div class="milestone-name">
             <ParentName id={m.id} foldCount={m.foldCount} class={nameClass}>
-              <NameLine name={m.name} stall={m.stall} chevron={chevronOf(m)} />
+              <NameLine name={m.name} stall={null} chevron={chevronOf(m)} />
             </ParentName>
             {m.word ? (
               <span class="path-word muted" ref={fitPathWord}>

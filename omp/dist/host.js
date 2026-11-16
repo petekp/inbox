@@ -3390,7 +3390,7 @@ function countsByMark(folded) {
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
-    return { text: "waiting", tone: "needsYou" };
+    return null;
   const idleMs = now - x.changedAt;
   const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS;
   return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS)}d`, tone: "muted" } : null;
@@ -3398,22 +3398,17 @@ function subjectStall(x, isHeld, isWorkRunning, now) {
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
-function childStall(c) {
-  if (c.delegateState === "blocked")
-    return { text: "waiting", tone: "needsYou" };
-  return null;
-}
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
 }
 function carriedByChild(c, isHeld) {
   if (c.delegateState === "blocked")
-    return { ...HELD_MARK, isRunning: false, stall: childStall(c) };
+    return { ...HELD_MARK, isRunning: false };
   if (c.delegateState === "finished" && !isHeld)
-    return { ...SUBJECT_MARKS.done, isRunning: false, stall: null };
+    return { ...SUBJECT_MARKS.done, isRunning: false };
   if (isChildWorking(c) && !isHeld)
-    return { ...SUBJECT_MARKS.working, isRunning: true, stall: null };
+    return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
 }
 function childRow(c, branch, depth) {
@@ -3425,7 +3420,6 @@ function childRow(c, branch, depth) {
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
-    stall: childStall(c),
     branch
   };
 }
@@ -3458,7 +3452,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? carried ? carried.stall : ownStall : null,
+      stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
@@ -3593,7 +3587,6 @@ function milestoneRow(step, o, items) {
     foldId: null,
     foldCount: 0,
     text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
@@ -6986,7 +6979,6 @@ function perTurnStatus(isUpdating, recovery) {
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "was: ";
-var WAITS_ON_PREFIX = "waits on you: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
 var STATUS_TEXT_LINES = 3;
@@ -7631,7 +7623,7 @@ function pageLine(d, indent, mark, name, namePaint, {
   const full = pageRoom(indent, width);
   const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full;
   const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const waits = waitsOn ? pageText(`${WAITS_ON_PREFIX}${waitsOn}`, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
+  const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
   if (chevron)
     names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ""} ${chevron.paint(chevron.text)}`;
   const seconds = [...waits, ...text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []];
@@ -7644,7 +7636,7 @@ function stalledName(name, stall, room, namePaint, s) {
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
   const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
   const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= STATUS_TEXT_LINES));
-  const words = stall.tone === "muted" ? s.dim(stall.text) : s.tone("needsYou", stall.text);
+  const words = s.dim(stall.text);
   return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
 }
 var markAt = (depth) => PAGE_MARK_AT + (PAGE_TEXT_AT - PAGE_MARK_AT) * depth;
@@ -7705,8 +7697,8 @@ function drawPageRow(row, d, isSelected = false) {
   if (row.kind === "child") {
     const mark = paintMark(row, now, s);
     if (!row.branch)
-      return pageLine(d, at, mark, row.name, s.dim, { stall: row.stall });
-    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim, { stall: row.stall });
+      return pageLine(d, at, mark, row.name, s.dim);
+    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim);
     return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s);
   }
   if (row.kind === "more") {
@@ -7824,11 +7816,7 @@ function milestoneLines(m, d, isSelected) {
   }
   const chevron = foldChevron(m, d, isSelected);
   const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged || chevron && isSelected ? s.bold(t) : t);
-  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, {
-    stall: m.stall,
-    text: m.text,
-    chevron
-  });
+  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron });
   const room = width - 1 - visibleLength(first) - cellWidth(m.word ?? "");
   const word = m.word !== null && room >= WORD_GAP ? `${" ".repeat(room)}${s.dim(m.word)}` : "";
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];

@@ -3,7 +3,7 @@ import { goalKeyPlan, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID 
 import type { StatusKey } from '../../hooks/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from '../../hooks/status-goal-page'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
-import { STALL_GAP, WAITS_ON_PREFIX, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
+import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { isParentCollapsed, milestoneRows, parentChevron, unfoldedRows } from '../../hooks/status-folds'
 import { LATER_TEXT, isSpacedAbove, workJoints } from '../../hooks/status-path'
@@ -75,7 +75,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
         isBold: false,
         isMuted: false,
         stall: row.stall,
-        ...(row.waitsOn ? { waitsOn: `${WAITS_ON_PREFIX}${row.waitsOn}` } : {}),
+        ...(row.waitsOn ? { waitsOn: row.waitsOn } : {}),
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
         ...foldOf(row, isCollapsed),
@@ -93,7 +93,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
         name: row.name,
         isBold: false,
         isMuted: true,
-        stall: row.stall,
+        stall: null,
         under: [],
         buttons: [],
         ...(row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}),
@@ -171,7 +171,7 @@ function milestoneBlock(
     name: m.name,
     isBold: m.isChanged,
     isMuted: m.isMuted,
-    stall: m.stall,
+    stall: null,
     ...(m.word === null ? {} : { word: m.word }),
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),

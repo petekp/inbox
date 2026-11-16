@@ -32,7 +32,7 @@ test('a look starts when the Status page shows, the page shows the head and the 
     'Adding a greeting CLIBuilding a CLI that greets by name',
   )
   expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime')
-  expect((await pane.find({ key: 'status-s1-waits-on' }))?.text).toBe('waits on you: Use Node or Python?')
+  expect((await pane.find({ key: 'status-s1-waits-on' }))?.text).toBe('Use Node or Python?')
   expect((await pane.find({ key: 'status-s1-text' }))?.text).toBe('Node or Python')
   expect((await pane.find({ key: 'status-s1' }))?.text).toContain('◆')
   expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')

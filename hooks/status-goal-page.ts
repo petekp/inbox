@@ -31,8 +31,6 @@ export type MilestoneRow = {
   foldCount: number
   /** Where it stands. Null when it says nothing. */
   text: string | null
-  /** "waiting" while an open ask holds it up. */
-  stall: { text: string; tone: 'needsYou' } | null
   /** The plan a change replaced, while the person has not seen it. */
   was: string | null
   /** The oldest open ask that holds it up, which its View button opens. */
@@ -150,7 +148,6 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     foldId: null,
     foldCount: 0,
     text: m.text || null,
-    stall: isHeld ? { text: 'waiting', tone: 'needsYou' } : null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
     rows: [],

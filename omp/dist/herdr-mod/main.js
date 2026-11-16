@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T01:54:05.561Z. 255361 characters follow.
+// Built at 2026-11-16T02:10:40.289Z. 254974 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -1353,7 +1353,7 @@ function countsByMark(folded) {
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
-    return { text: "waiting", tone: "needsYou" };
+    return null;
   const idleMs = now - x.changedAt;
   const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS;
   return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS)}d`, tone: "muted" } : null;
@@ -1361,22 +1361,17 @@ function subjectStall(x, isHeld, isWorkRunning, now) {
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
-function childStall(c) {
-  if (c.delegateState === "blocked")
-    return { text: "waiting", tone: "needsYou" };
-  return null;
-}
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
 }
 function carriedByChild(c, isHeld) {
   if (c.delegateState === "blocked")
-    return { ...HELD_MARK, isRunning: false, stall: childStall(c) };
+    return { ...HELD_MARK, isRunning: false };
   if (c.delegateState === "finished" && !isHeld)
-    return { ...SUBJECT_MARKS.done, isRunning: false, stall: null };
+    return { ...SUBJECT_MARKS.done, isRunning: false };
   if (isChildWorking(c) && !isHeld)
-    return { ...SUBJECT_MARKS.working, isRunning: true, stall: null };
+    return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
 }
 function childRow(c, branch, depth) {
@@ -1388,7 +1383,6 @@ function childRow(c, branch, depth) {
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
-    stall: childStall(c),
     branch
   };
 }
@@ -1421,7 +1415,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? carried ? carried.stall : ownStall : null,
+      stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
@@ -1556,7 +1550,6 @@ function milestoneRow(step, o, items) {
     foldId: null,
     foldCount: 0,
     text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
@@ -3434,7 +3427,6 @@ function withCollapse(s, row, isCollapsed, at) {
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "was: ";
-var WAITS_ON_PREFIX = "waits on you: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " · ";
 var NEW_CLOSED_ROWS = 2;
@@ -4018,7 +4010,7 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
         isBold: false,
         isMuted: false,
         stall: row.stall,
-        ...row.waitsOn ? { waitsOn: `${WAITS_ON_PREFIX}${row.waitsOn}` } : {},
+        ...row.waitsOn ? { waitsOn: row.waitsOn } : {},
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
         ...foldOf(row, isCollapsed),
@@ -4036,7 +4028,7 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
         name: row.name,
         isBold: false,
         isMuted: true,
-        stall: row.stall,
+        stall: null,
         under: [],
         buttons: [],
         ...row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}
@@ -4101,7 +4093,7 @@ function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
     name: m.name,
     isBold: m.isChanged,
     isMuted: m.isMuted,
-    stall: m.stall,
+    stall: null,
     ...m.word === null ? {} : { word: m.word },
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
