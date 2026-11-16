@@ -1,6 +1,7 @@
 import type { ComponentChildren, ComponentProps } from 'preact'
 import { TitleTint } from './tab-title-tint'
 import { ActionButton, Icon } from './row-actions'
+import { NEEDS_YOU_MARKS } from '../../hooks/help'
 import { markShape, mutedMarkShape } from '../../hooks/marks'
 import { DOT, rowMark } from '../../hooks/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
@@ -82,7 +83,7 @@ const CIRCLE_MID = { x: 6, y: 3.25 }
 
 /** A mark's text, or its shape from `mutedMarkShape` where the system font draws it badly. */
 export function MarkGlyph({ text }: { text: string }) {
-  const shape = mutedMarkShape(text, 4, CIRCLE_MID)
+  const shape = text === NEEDS_YOU_MARKS.task.mark ? markShape(text, 4) : mutedMarkShape(text, 4, CIRCLE_MID)
 
   return shape === null ? (
     <>{text}</>
@@ -117,10 +118,9 @@ export function ResultMarkView({
   )
 }
 
-/** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. A title with no mark starts at the mark column, where its rows' marks do. */
-/** A group mark's text, or its larger shape where it has one. */
+/** A group mark's text, or the checked box's shape, which the system font draws too small. */
 function GroupMark({ text }: { text: string }) {
-  const shape = markShape(text, 4)
+  const shape = text === NEEDS_YOU_MARKS.task.mark ? markShape(text, 4) : null
 
   return shape === null ? (
     <>{text}</>
@@ -135,6 +135,7 @@ function GroupMark({ text }: { text: string }) {
   )
 }
 
+/** A group's title hangs its kind's mark in the mark column, since its rows draw none. A title with no mark starts at the mark column, where its rows' marks do. */
 export function GroupTitle({
   title,
   count,

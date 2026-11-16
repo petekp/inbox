@@ -117,7 +117,7 @@ export function paneRowParts(
       </Text>
     )
     const words = aside ? (
-      <Box flexDirection="row">
+      <Box flexDirection="row" flexGrow={1}>
         {titled}
         <Box flexGrow={1} />
         <Text color={pal.muted}>{aside}</Text>

@@ -114,7 +114,6 @@ const checkboxEl = (color: Theme[keyof Theme]): Element =>
     .flex_none()
     .w(CHECKBOX_PX)
     .h(CHECKBOX_PX)
-    .mt(3)
     .border_1()
     .border_color(color)
     .rounded(3)

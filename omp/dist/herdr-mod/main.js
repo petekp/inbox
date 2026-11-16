@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:40:26.793Z. 261422 characters follow.
+// Built at 2026-11-16T04:47:58.173Z. 261416 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -5590,7 +5590,7 @@ var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex4().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
 var CHECKBOX_PX = 11;
 var CHECK_PATH = PathBuilder3.stroke(1.5).move_to("27%", "53%").line_to("43%", "69%").line_to("74%", "31%").build();
-var checkboxEl = (color) => div6().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).mt(3).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
+var checkboxEl = (color) => div6().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div6().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div6().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div6().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
 var trunkEl = (top, height, t) => {

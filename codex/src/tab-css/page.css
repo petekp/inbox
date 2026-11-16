@@ -52,7 +52,7 @@ footer {
 /*
  * Help's sections share one pair of columns. A key or a mark starts at the text column, one step under its section's
  * title, and its words start 12px after the widest key. Each section takes the page's columns as a subgrid, so the
- * keys, the marks, the tabs and the version line all use the same two.
+ * keys, the marks and the tabs all use the same two.
  */
 .help {
   display: grid;

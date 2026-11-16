@@ -39,6 +39,7 @@ section + section::before {
   font-size: 16px;
   font-weight: 600;
   line-height: 1;
+  margin-top: 2px;
 }
 .group-mark.tasks {
   color: var(--tasks);
