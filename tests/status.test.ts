@@ -45,11 +45,19 @@ test('an open row the person has seen keeps where it stands but not its was line
   const p = page({ ...o, lastLookAt: 50 * MIN }, now, { lastReplyAt: now - 2 * MIN }, [askItem('i1')])
 
   expect(p.head?.title).toBe('Work offline')
-  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick · Ask i1?', '○ Docs: outline ready'])
+  expect(shape(p.rows)).toEqual([
+    '== Work offline',
+    '◆ Offline mode: needs a sync pick · Ask i1?',
+    '○ Docs: outline ready',
+  ])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
-  expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick · Ask i1?', '○ Docs: outline ready'])
-  expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
+  expect(shape(seen)).toEqual([
+    '== Work offline',
+    '◆ Offline mode: needs a sync pick · Ask i1?',
+    '○ Docs: outline ready',
+  ])
+  expect(seen[1]).toMatchObject({ kind: 'subject', was: null })
 })
 
 test('the list shows held, working, waiting, queued, then finished rows, newest change first within each, whether or not the person has seen them', () => {

@@ -123,10 +123,11 @@ export function pageRuleCells(width: number, textAt = PAGE_TEXT_AT): number {
  * A section's heading: its name at `at`, then a solid rule. Other work's starts at the text column, and the goal's at
  * the head's column, where the goal's text starts.
  */
-export function partHeading(text: string, width: number, s: Style, at = PAGE_TEXT_AT): string {
+export function partHeading(text: string, width: number, s: Style, at = PAGE_TEXT_AT, isTitle = false): string {
   const label = `${text} `
+  const rule = '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)))
 
-  return `${' '.repeat(at)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`
+  return `${' '.repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`
 }
 
 /**
@@ -218,7 +219,12 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
       chevron: { text: chevron, paint: isSelected ? t => s.tone('accent', t) : s.dim },
     })
   }
-  if (row.kind === 'part') return ['', partHeading(row.text, width, s)]
+  if (row.kind === 'part')
+    return [
+      '',
+      partHeading(row.text, width, s, PAGE_TEXT_AT, row.isTitle),
+      ...(row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []),
+    ]
   if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }

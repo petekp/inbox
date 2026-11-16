@@ -15,21 +15,17 @@ type GoalLine = { id: string; milestone: MilestoneRow } | { id: string; row: Sta
 /** The line a met goal's milestones fold into. */
 type FoldLine = { id: string; fold: NonNullable<GoalBlock['milestonesFold']> }
 
-/** The page's head in its own section, as it draws with no goal or a met one. */
-type HeadLine = { id: string; head: NonNullable<StatusPage['head']> }
-
 /**
  * The Status page's lists as the tab draws them, with the lines still leaving in the places they had: the lines under
- * the goal's text, the line a met goal's milestones fold into, the goal's milestones with their rows, the head in its
- * own section, and the rows after the goal.
+ * the goal's text, the line a met goal's milestones fold into, the goal's milestones with their rows, and the rows
+ * after the goal.
  */
-export type DrawnStatus = { head: TextLine[]; fold: FoldLine[]; goal: GoalLine[]; apart: HeadLine[]; rows: StatusRow[] }
+export type DrawnStatus = { head: TextLine[]; fold: FoldLine[]; goal: GoalLine[]; rows: StatusRow[] }
 
 export const statusRowMotion = (id: string) => `status-${id}`
 export const goalLineMotion = (id: string) => `goal-${id}`
 export const goalHeadMotion = (id: string) => `head-${id}`
 export const metFoldMotion = (id: string) => `met-${id}`
-export const headApartMotion = (id: string) => `apart-${id}`
 
 /** Milestones with the rows each draws, in draw order. */
 const milestoneLines = (milestones: MilestoneRow[]): GoalLine[] =>
@@ -60,13 +56,11 @@ function goalHead(page: StatusPage): TextLine[] {
 export function stepStatus(page: StatusPage, now: number, changed: Set<string>, kept: Set<string>): DrawnStatus {
   const last = tabState.lastStatus
   const fold = page.goal?.milestonesFold ?? null
-  const apart = page.isHeadApart ? page.head : null
 
   return {
     head: stepLines(goalHead(page), last?.head, goalHeadMotion, now, changed, kept),
     fold: stepLines(fold ? [{ id: 'milestones', fold }] : [], last?.fold, metFoldMotion, now, changed, kept),
     goal: stepLines(goalLines(page), last?.goal, goalLineMotion, now, changed, kept),
-    apart: stepLines(apart ? [{ id: 'head', head: apart }] : [], last?.apart, headApartMotion, now, changed, kept),
     rows: stepLines(
       unfoldedRows(page.rows, () => false, isParentFolded),
       last?.rows,

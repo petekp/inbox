@@ -31,7 +31,6 @@ export function milestone(id: string, status: SubjectStatus, name: string, text:
     was: null,
     changedAt: at,
     closedAt: status === 'done' ? at : null,
-    startedAt: status === 'working' ? at : null,
   }
 }
 

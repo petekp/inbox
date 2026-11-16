@@ -220,7 +220,7 @@ test('a GOAL that cuts part of an inferred goal replaces it while its work is op
 
   expect(revised.goal).toMatchObject({ text: 'Notes 2.5 on the web', was: 'Notes 2.5 in the store', setAt: at })
   expect(revised.milestones.map(m => m.name)).toEqual(['Sync fixed', 'Cleanup done', 'Web release live'])
-  expect(cleanup).toMatchObject({ text: 'crash fix in review', startedAt: 20 * MIN })
+  expect(cleanup).toMatchObject({ text: 'crash fix in review' })
   expect(revised.serves).toEqual({ s1: cleanup.id, s2: 'none' })
   expect(after(o, cut, at).goalRefused).toEqual({ line: 'goal', why: 'work-open', unplaced: ['s2'] })
   expect(goalBlock(after(o, cut, at), at)?.split('\n')[1]).toBe(

@@ -91,7 +91,6 @@ export function paneStatusGoal(
     isUnfolded,
     isCollapsed,
     parentName,
-    chevronText,
     path,
   }: {
     statusRowLine: StatusRowLine
@@ -103,7 +102,6 @@ export function paneStatusGoal(
     isUnfolded: (id: string) => boolean
     isCollapsed: IsCollapsed
     parentName: PaneStatusParent['parentName']
-    chevronText: PaneStatusParent['chevronText']
     path: PaneStatusPath
   },
 ) {
@@ -221,7 +219,6 @@ export function paneStatusGoal(
     }
 
     const isFolded = isParentCollapsed(m, isCollapsed)
-    const chevron = chevronText(m.id, { isCollapsed: isFolded, count: m.foldCount })
 
     return statusRowLine({
       key: `status-${m.id}`,
@@ -230,7 +227,6 @@ export function paneStatusGoal(
         m.foldCount > 0
           ? parentName(m.id, name, null, 0, { isCollapsed: isFolded, count: m.foldCount })
           : statusNameLine(`goal-${m.id}-name`, name, null, 0),
-        ...path.pathWord(m, m.foldCount > 0 ? chevron : null),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
         ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),

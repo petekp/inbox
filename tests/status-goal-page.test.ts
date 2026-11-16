@@ -39,7 +39,7 @@ test('a goal shows its milestones as a path, its Edit comes before its milestone
   const p = page(linked(), 40, {}, [askItem('i1')])
 
   expect(p.goal).toMatchObject({ label: 'Goal' })
-  expect(p.goal?.milestones.map(m => m.word)).toEqual([null, 'now', 'next'])
+  expect(p.goal?.milestones.map(m => m.place)).toEqual(['done', 'now', 'next'])
   expect(p.goal?.text).toBe('Import ready to demo')
   expect(p.goal?.now).toBe('Now: Making CSV import ready to demo')
   expect(p.head).not.toBeNull()
@@ -151,7 +151,7 @@ test('while the goal shows milestones, a subject linked to none of them draws un
     '== Other work',
     '◐ Dark mode: toggle drawn',
   ])
-  expect(page(noGoal, 30).rows.some(r => r.kind === 'part')).toBe(false)
+  expect(page(noGoal, 30).rows.some(r => r.kind === 'part' && !r.isTitle)).toBe(false)
 })
 
 test('under Other work, a queued subject an ask holds up stays a row, seen queued work the goal needs folds as it did above Other work, and seen queued work the goal does not need leaves the page with no count', () => {
@@ -224,7 +224,7 @@ test('a queued milestone draws as worked on once work that serves it is working,
   })
 })
 
-test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met with a done check and its head apart', () => {
+test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met with a done check and its head heading the list after it', () => {
   const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45)
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
 
@@ -241,8 +241,8 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     now: null,
     mark: { mark: SUBJECT_MARKS.done.mark, tone: 'success' },
   })
-  expect(page(met, 55).isHeadApart).toBe(true)
-  expect(page(linked(), 40).isHeadApart).toBe(false)
+  expect(page(met, 55).rows[0]).toMatchObject({ kind: 'part', id: 'head', isTitle: true })
+  expect(page(linked(), 40).rows.some(r => r.kind === 'part' && r.isTitle)).toBe(false)
   expect(page(linked(), 40).goal).toMatchObject({ mark: null, milestonesFold: null })
   expect(
     statusKeyRows(page(met, 55))
@@ -449,10 +449,10 @@ test('every milestone with work under it folds by its name before it is done: th
     id => folded.has(id),
   )
 
-  expect(open.map(m => [m.word, m.foldCount > 0])).toEqual([
+  expect(open.map(m => [m.place, m.foldCount > 0])).toEqual([
     ['now', true],
     ['next', true],
-    [null, true],
+    ['later', true],
   ])
   for (const m of open) {
     expect(
