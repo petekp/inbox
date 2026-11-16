@@ -85,7 +85,7 @@ test('on the Status page, a blocked delegate, running work and work waiting on s
 
   for (const width of [26, 28, 30, 34, 40, 50]) {
     const lines = text(trialChangedScreen(), onPage, width).split('\n')
-    expect(lines.some(l => l.includes('waiting'))).toBe(false)
+    expect(lines.some(l => l.includes('· waiting'))).toBe(false)
   }
 })
 

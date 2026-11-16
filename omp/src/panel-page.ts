@@ -34,7 +34,7 @@ const GLUE = '\uE000'
 
 /**
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
- * stall's tone on the line of the name's last word. Then what it waits on, in the needs-you tone, and where it stands, dim.
+ * muted on the line of the name's last word. Then what it waits on, in the needs-you tone, and where it stands, dim.
  */
 export function pageLine(
   d: Draw,

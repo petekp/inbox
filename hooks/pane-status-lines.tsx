@@ -123,7 +123,7 @@ export function paneStatusLines({
         : terminalSpanLines(spans, statusTextWidth(depth), limit),
       statusTextWidth(depth),
     )
-  /** A row's stall word in the stall's tone, never split by a wrap. */
+  /** A row's stall word, muted, never split by a wrap. */
   const stallSpan = (stall: StatusStall): TerminalSpan => {
     const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
 

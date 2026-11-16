@@ -31,7 +31,7 @@ function fitNameLine(el: HTMLElement | null, name: string) {
 }
 
 /**
- * A row's name with its stall word after `STALL_GAP` in the stall's tone, on the line of the name's last word, which a
+ * A row's name with its stall word after `STALL_GAP`, muted, on the line of the name's last word, which a
  * wrap never splits from them.
  */
 export function NameLine({ name, stall }: { name: string; stall: StatusStall | null }) {
