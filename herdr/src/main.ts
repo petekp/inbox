@@ -396,6 +396,7 @@ export default class Inbox extends View {
     const resized = this.heights.takeResized()
     const paint: Paint = {
       t,
+      mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
       press: (b, cx) => this.press(b, cx),
       collapse: (id, isCollapsed, cx) => {
         if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now())) return

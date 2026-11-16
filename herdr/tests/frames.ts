@@ -176,6 +176,7 @@ class Frames {
       tab: 'needsYou',
       timeLeft: new Map(),
       input: () => null,
+      mono: 'Menlo',
       isNarrow: false,
       listRoom: null,
     } as unknown as Paint

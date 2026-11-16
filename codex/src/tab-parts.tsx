@@ -1,7 +1,8 @@
 import type { ComponentChildren, ComponentProps } from 'preact'
 import { TitleTint } from './tab-title-tint'
 import { ActionButton, Icon } from './row-actions'
-import { mutedMarkShape } from '../../hooks/marks'
+import { NEEDS_YOU_MARKS } from '../../hooks/help'
+import { markShape, mutedMarkShape } from '../../hooks/marks'
 import { DOT, rowMark } from '../../hooks/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
@@ -64,6 +65,7 @@ const MARK_TONE_CLASS: Record<ToneName, string> = {
   needsYou: 'tone-needsYou',
   issue: 'issue',
   findings: 'findings',
+  tasks: 'tasks',
   prs: 'prs',
   done: 'done',
   success: 'success',
@@ -81,7 +83,7 @@ const CIRCLE_MID = { x: 6, y: 3.25 }
 
 /** A mark's text, or its shape from `mutedMarkShape` where the system font draws it badly. */
 export function MarkGlyph({ text }: { text: string }) {
-  const shape = mutedMarkShape(text, 4, CIRCLE_MID)
+  const shape = text === NEEDS_YOU_MARKS.task.mark ? markShape(text, 4) : mutedMarkShape(text, 4, CIRCLE_MID)
 
   return shape === null ? (
     <>{text}</>
@@ -116,19 +118,43 @@ export function ResultMarkView({
   )
 }
 
-/** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. A title with no mark starts at the mark column, where its rows' marks do. */
+/** A group mark's text, or the checked box's shape, which the system font draws too small. */
+function GroupMark({ text }: { text: string }) {
+  const shape = text === NEEDS_YOU_MARKS.task.mark ? markShape(text, 4) : null
+
+  return shape === null ? (
+    <>{text}</>
+  ) : (
+    <svg
+      class="group-shape"
+      viewBox="0 0 8 8"
+      role="img"
+      aria-label={text}
+      dangerouslySetInnerHTML={{ __html: shape }}
+    />
+  )
+}
+
+/** A group's title hangs its kind's mark in the mark column, since its rows draw none. A title with no mark starts at the mark column, where its rows' marks do. */
 export function GroupTitle({
   title,
   count,
   mark,
+  aside,
 }: {
   title: string
   count: number
   mark?: { mark: string; tone: Tone }
+  /** Muted monospace text at the title's right end. */
+  aside?: string
 }) {
   return (
     <div class={mark ? 'group-title' : 'group-title unmarked'}>
-      {mark ? <span class={`group-mark ${MARK_TONE_CLASS[mark.tone]}`}>{mark.mark}</span> : null}
+      {mark ? (
+        <span class={`group-mark ${MARK_TONE_CLASS[mark.tone]}`}>
+          <GroupMark text={mark.mark} />
+        </span>
+      ) : null}
       <b>{title}</b>
       {count > 0 ? (
         <span class="count">
@@ -136,6 +162,7 @@ export function GroupTitle({
           {count}
         </span>
       ) : null}
+      {aside ? <span class="group-aside">{aside}</span> : null}
     </div>
   )
 }

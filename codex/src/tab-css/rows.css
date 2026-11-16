@@ -30,6 +30,9 @@
   height: 8px;
   overflow: visible;
 }
+.mark.tasks {
+  color: var(--tasks);
+}
 .mark.issue {
   color: var(--issue);
 }

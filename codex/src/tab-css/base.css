@@ -79,6 +79,9 @@ button {
 .tone-needsYou {
   color: var(--needs-you);
 }
+.tone-tasks {
+  color: var(--tasks);
+}
 .tone-findings {
   color: var(--findings);
 }
