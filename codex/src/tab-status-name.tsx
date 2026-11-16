@@ -28,7 +28,7 @@ function fitNameLine(el: HTMLElement | null, name: string) {
   write(
     nameBeforeStall(name, shown => {
       write(shown)
-      return atEndWeight(flowEl, lineCount) <= STATUS_TEXT_LINES
+      return lineCount() <= STATUS_TEXT_LINES && atEndWeight(flowEl, lineCount) <= STATUS_TEXT_LINES
     }),
   )
 }

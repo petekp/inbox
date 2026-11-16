@@ -1,11 +1,16 @@
 /**
- * Runs `measure` with every running weight transition under `el` at its end, then puts each back. A title eases to a
- * heavier weight and may wrap there, so a height or line count read mid-ease would be for the wrong weight.
+ * Runs `measure` with every running weight transition on `el`, its descendants or its ancestors at its end, then puts each back. A title eases to a
+ * heavier weight and may wrap there, so a height or line count read mid-ease would be for the wrong weight. The first
+ * read flushes style, which starts an ease a class change has just caused.
  */
 export function atEndWeight<T>(el: Element, measure: () => T): T {
-  const easing = el
-    .getAnimations({ subtree: true })
-    .filter(a => (a as Partial<CSSTransition>).transitionProperty === 'font-variation-settings')
+  el.getBoundingClientRect()
+  const easing = (el.ownerDocument.getAnimations?.() ?? []).filter(a => {
+    const target = (a.effect as KeyframeEffect | null)?.target
+    const isWeightEase = (a as Partial<CSSTransition>).transitionProperty === 'font-variation-settings'
+
+    return isWeightEase && !!target && (el.contains(target) || target.contains(el))
+  })
   const times = easing.map(a => a.currentTime)
   easing.forEach(a => (a.currentTime = a.effect?.getComputedTiming().endTime ?? 0))
   const result = measure()
