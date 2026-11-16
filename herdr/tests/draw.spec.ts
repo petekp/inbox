@@ -63,7 +63,12 @@ test('a selected question draws why it came up first under its title, in the Why
 test('the tabs follow the build’s shared tab plan, with their counts', () => {
   for (const isNextBuild of [false, true]) {
     const cells = tabCells(demoScreen(isNextBuild), 'needsYou')
-    expect(cells.map(c => c.label)).toEqual(shownTabs(isNextBuild).map(t => t.label))
+    expect(cells.map(c => c.label)).toEqual(
+      shownTabs(isNextBuild)
+        .filter(t => t.id !== 'timeline')
+        .map(t => t.label),
+    )
+    expect(cells.some(c => c.id === 'timeline')).toBe(false)
     expect(cells.filter(c => c.isSelected).map(c => c.id)).toEqual(['needsYou'])
   }
 })

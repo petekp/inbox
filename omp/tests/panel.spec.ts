@@ -201,9 +201,11 @@ test('the report reader scrolls with arrows and j/k, and b or Escape returns to 
 for (const isNextBuild of [false, true])
   test(`on a ${isNextBuild ? 'next' : 'release'} build, Tab and Shift+Tab cycle through the build's tabs in order, and each digit picks its tab`, () => {
     const screen = screenOf({ isNextBuild })
-    const tabs = shownTabs(isNextBuild)
+    const tabs = shownTabs(isNextBuild, true)
     const ids = tabs.map(t => t.id)
     expect(ids.includes('overview')).toBe(isNextBuild)
+    expect(ids.includes('timeline')).toBe(isNextBuild)
+    if (isNextBuild) expect(ids).toEqual(['overview', 'needsYou', 'findings', 'prs', 'timeline'])
     const start = ids.indexOf(INITIAL_UI.tab)
     const cycled = ids.map((_, n) => keys(screen, INITIAL_UI, ...ids.slice(0, n).map(() => 'tab')).tab)
     expect(cycled).toEqual([...ids.slice(start), ...ids.slice(0, start)])

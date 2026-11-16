@@ -7,6 +7,7 @@ import type { PanelSource } from '../src/controller'
 import { demoSource, demoState } from '../src/demo'
 import { documentLinkTarget, documentMarkdown } from '../src/host'
 import type { PanelPress, Style } from '../src/panel'
+import { taskNode } from './panel-harness'
 
 const style: Style = {
   bold: s => s,
@@ -72,6 +73,44 @@ test('the panel shows a loading line until the first screen arrives', async () =
   expect(panel.render(80).join('\n')).toContain('Reading the inbox…')
   await panel.start()
   expect(panel.render(80).join('\n')).toContain('Asks')
+})
+
+test('the panel restores Timeline navigation and saves selection and branch folds when they change', async () => {
+  const now = 1_700_000_000_000
+  const state = demoState(now)
+  state.taskTree = [
+    taskNode('root', 'Build the panel', 'working', now),
+    taskNode('child', 'Draw the tree', 'queued', now, { parentId: 'root' }),
+  ]
+  const base = demoSource({
+    modelName: 'Claude Sonnet 5.5',
+    now: () => now,
+    after: () => {},
+    settleWindowMs: SETTLED_MS,
+    version: '1.2.3',
+    comparePage: '/omp/dist/compare-page.html',
+  })
+  const saved: { selection: string | null; folded: string[] }[] = []
+  const { panel } = open({
+    screen: async holds => ({
+      ...(await base.screen(holds)),
+      view: sessionView(state, now, SETTLED_MS, holds),
+      isNextBuild: true,
+      timelineSelection: null,
+      timelineFolded: [],
+    }),
+    saveTimelineNavigation: (selection, folded) => saved.push({ selection, folded }),
+  })
+
+  await panel.start()
+  panel.handleInput('5')
+  panel.handleInput('j')
+  panel.handleInput('h')
+  expect(saved).toEqual([
+    { selection: 'root', folded: [] },
+    { selection: 'root', folded: ['root'] },
+  ])
+  expect(panel.render(80).join('\n')).toContain('Build the panel')
 })
 
 test('Read report opens pi-tui Markdown, scrolls, and returns without recording a row press', async () => {

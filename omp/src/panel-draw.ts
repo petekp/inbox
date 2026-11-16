@@ -50,12 +50,18 @@ export function bannerLines(b: BannerView, width: number, s: Style): string[] {
 }
 
 function buttonCell(b: ButtonFace, isFocused: boolean, s: Style, mark = ''): string {
-  if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `))
-  if (b.isOut && !b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `)
-  if (b.isFollowUp || b.isQuiet) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
+  const result =
+    b.result?.state === 'done'
+      ? s.tone('done', ' ✓ Opened')
+      : b.result?.state === 'failed'
+        ? s.tone('error', b.result.parts.find(part => part.error)?.error ?? '')
+        : ''
+  if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `)) + result
+  if (b.isOut && !b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `) + result
+  if (b.isFollowUp || b.isQuiet) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `) + result
   const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark
 
-  return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `
+  return (b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `) + result
 }
 
 /** What `actionLabel` adds to the label, measured on the focused cell, the widest form, alone on a line. */
@@ -67,6 +73,29 @@ function labelMark(b: ButtonFace, room: number, s: Style): string {
 
 function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: Style): string[] {
   return faceLines(line.buttons, focusOf(line, ui), indent, width, s)
+}
+
+function timelineDetailLines(line: Line, ui: PanelUi, indent: number, width: number, s: Style): string[] {
+  const linkStart = line.buttons.findIndex(button => button.press.action === 'pr-open')
+  return (line.body ?? '').split('\n').flatMap(detail => {
+    const head = `${' '.repeat(indent)}└─ `
+    if (detail === 'Links ·' && linkStart >= 0) {
+      const label = `${head}${detail} `
+      const buttons = faceLines(
+        line.buttons.slice(linkStart),
+        focusOf(line, ui) - linkStart,
+        0,
+        width - visibleLength(label),
+        s,
+      )
+      return [
+        fit(`${label}${buttons[0] ?? ''}`, width),
+        ...buttons.slice(1).map(row => `${' '.repeat(visibleLength(label))}${row}`),
+      ]
+    }
+    const lines = indentedLinks(detail, indent + visibleLength('└─ '), width, Infinity, s.dim, s.link)
+    return lines.map((text, index) => (index === 0 ? `${head}${text.slice(indent + visibleLength('└─ '))}` : text))
+  })
 }
 
 /** Buttons laid out in lines from `indent`, the one at `focused` drawn focused. -1 focuses none. */
@@ -98,7 +127,7 @@ export function leadPaint(lead: Lead, text: string, s: Style): string {
 
 /** A lead and the space after it, or nothing for a line with no lead. */
 function leadText(lead: Lead | null, s: Style): string {
-  return lead === null ? '' : `${leadPaint(lead, lead.text.padEnd(2), s)} `
+  return lead === null ? '' : `${leadPaint(lead, lead.padMark === false ? lead.text : lead.text.padEnd(2), s)} `
 }
 
 /** A result mark and the space after it. */
@@ -136,7 +165,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const pad = line.depth * 2
   const out: string[] = []
   const status = line.status
-    ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}`
+    ? `${line.status.separator ?? '  '}${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}`
     : ''
   const statusUnder =
     line.feedback &&
@@ -151,8 +180,8 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     : line.feedback && !statusUnder
       ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(linkedText(line.feedback.text, s.link))}`
       : ''
-  // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
-  const cursor = isSelected ? s.tone('accent', '❯') : ' '
+  // omp marks a selected item with ❯ by default and keeps ▸ and ▾ for expand and collapse.
+  const cursor = isSelected ? s.tone('accent', line.selectionMark ?? '❯') : ' '
   const head = ` ${' '.repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ''}${leadText(line.lead, s)}`
   const titleText = linkedText(line.title, s.link)
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
@@ -182,7 +211,12 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
         ? indentedLinks(recLine, indent, width, 3, s.dim, s.link)
         : [fit(`${' '.repeat(indent)}${s.dim(linkedText(recLine, s.link))}`, width)]),
     )
-  if (line.body && isSelected) out.push(...indentedLinks(line.body, indent, width, BODY_LINES, t => t, s.link))
+  if (line.body && isSelected)
+    out.push(
+      ...(line.selectionMark === '>'
+        ? timelineDetailLines(line, ui, indent, width, s)
+        : indentedLinks(line.body, indent, width, BODY_LINES, t => t, s.link)),
+    )
   if (line.detail && (isSelected || line.isDetailShown))
     out.push(
       ...indentedLinks(
@@ -199,7 +233,14 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   for (const o of line.row?.optionDescriptions ?? [])
     out.push(fit(' '.repeat(indent) + o.label + s.dim(`: ${o.description}`), width))
   // As in the terminal, an open reply field replaces the row's buttons: Enter sends, so no button reads as focused.
-  if (line.buttons.length > 0 && ui.typing !== line.id) out.push(...buttonLines(line, ui, indent - 1, width, s))
+  const hasInlineLinks = line.selectionMark === '>' && line.body?.includes('Links ·') === true
+  const linkStart = hasInlineLinks ? line.buttons.findIndex(button => button.press.action === 'pr-open') : -1
+  if (line.buttons.length > 0 && ui.typing !== line.id)
+    out.push(
+      ...(linkStart < 0
+        ? buttonLines(line, ui, indent - 1, width, s)
+        : faceLines(line.buttons.slice(0, linkStart), focusOf(line, ui), indent - 1, width, s)),
+    )
   if (ui.typing === line.id) {
     const hint = line.row ? replyHint(line.row, AGENT) : 'Your reply'
     const text = ui.drafts[line.id]?.text ?? ''

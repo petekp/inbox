@@ -19,14 +19,14 @@ Part of [the look map](../looks.md#files).
 | `omp/src/omp-messages.ts` | omp host. Reads omp's messages and session branch: a message's text, why a turn stopped, the conversation as turns, and the line under a `record` or `close` call. |
 | `omp/src/tool-calls.ts` | omp host. What an omp tool call and its result say: the call's activity line, an `ask` call's questions from either input shape, and how an `ask` dialog ended. It imports no omp package. |
 | `omp/src/ask-form.ts` | omp host. Reads the questions and options of the HTML form omp's `ask` tool takes from 18.18.3 on, following omp's own form parser. It imports no omp package. |
-| `omp/src/state.ts` | omp host. One JSON file per session under omp's agent folder, with a lock held in the process. `OmpState` extends the shared `Session`. |
+| `omp/src/state.ts` | omp host. One JSON file per session under omp's agent folder, with a lock held in the process. `OmpState` extends the shared `Session` and saves the Timeline selection and folded branches. |
 | `omp/src/commands.ts` | omp host. Opens links and paths for omp's `SessionHost`. |
 | `omp/src/theme.ts` | omp host. Maps the panel's styles onto omp's theme. |
 | `omp/src/texts.ts` | omp host. The `OMP` host names the shared guidance uses. |
 | `omp/src/panel.ts` | omp adapter. The panel's ui state, the screen it draws, and the calls the controller makes: `render`, `drawPanel`, the band, and whether the view animates. It and the `panel-*.ts` files import no omp package. |
 | `omp/src/panel-lines.ts` | omp adapter. The `Line` and `Entry` types, and the lines for rows, buttons and Closed groups, including document previews. |
-| `omp/src/panel-entries.ts` | omp adapter. Each tab's entries: the Asks and Finds groups, the stop line, the PRs tab, the Status page and Help. |
-| `omp/src/panel-keys.ts` | omp adapter. Selection, button focus and `handleKey`, which maps each key to a ui change or a press. Up and down scroll a tall selected detail; j and k move between rows. |
+| `omp/src/panel-entries.ts` | omp adapter. Each tab's entries: the Asks and Finds groups, the stop line, the PRs tab, the Status page, the Timeline tree and Help. |
+| `omp/src/panel-keys.ts` | omp adapter. Selection, button focus and `handleKey`, which maps each key to a ui change or a press. Up and down scroll a tall selected detail; j and k move between rows or visible Timeline tasks, and h and l fold or unfold a Timeline branch. |
 | `omp/src/panel-text.ts` | omp adapter. Measures, cuts and wraps text that holds ANSI and OSC 8 styles, preserving linked labels and paragraph breaks. |
 | `omp/src/panel-draw.ts` | omp adapter. Draws a line with its marks, linked detail and buttons, and a banner in its box. |
 | `omp/src/panel-page.ts` | omp adapter. Draws the Status page's rows: the tree, stall words, rules and buttons. |

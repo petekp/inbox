@@ -1,10 +1,11 @@
 import { isPrPress } from '../../hooks/pr-press'
 import { CLEAR_FINISHED_ID } from '../../hooks/pr-rows'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
-import { shownTabs, isRowTab } from '../../hooks/tabs'
+import { shownTabs } from '../../hooks/tabs'
 import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
 import { UNDO_KEY } from '../../hooks/help'
 import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
+import { timelinePage, moveTimelineSelection, toggleTimelineBranch } from '../../hooks/timeline-page'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
 import { entriesOf } from './panel-entries'
@@ -49,10 +50,11 @@ function withSelection(ui: PanelUi, id: string | null): PanelUi {
 /** Shows `tab`. Its showing starts at `now` unless it already shows, so its settled rows stay. */
 export const withTab = (ui: PanelUi, tab: ShownTab, now: number): PanelUi => ({
   ...withSelection(ui, null),
+  selectedId: tab === 'timeline' ? ui.timelineSelection : null,
   tab,
   document: null,
   pageTop: 0,
-  pageReveal: isRowTab(tab) ? null : true,
+  pageReveal: tab === 'overview' ? true : null,
   shownSince: tab === ui.tab ? ui.shownSince : now,
   isHelpShown: false,
 })
@@ -79,6 +81,24 @@ export function afterHandOff(screen: PanelScreen, ui: PanelUi, id: string, now: 
 function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, now: number): KeyResult {
   const { press } = button
   if (button.isOut) return { ui }
+  if (press.action === 'timeline-select')
+    return {
+      ui: {
+        ...ui,
+        selectedId: press.id,
+        timelineSelection: press.id,
+        detailTop: 0,
+        focus: null,
+      },
+    }
+  if (press.action === 'timeline-toggle')
+    return {
+      ui: {
+        ...ui,
+        timelineFolded: toggleTimelineBranch(ui.timelineFolded, press.id),
+        focus: null,
+      },
+    }
   if (press.action === 'all-options') {
     const index = line.buttons.findIndex(b => b.press === press)
 
@@ -131,7 +151,7 @@ function typingKey(ui: PanelUi, id: string, key: string, now: number, text: stri
 export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: number, text?: string): KeyResult {
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now))
   const selected = resolveSelected(lines, ui.selectedId)
-  const isPage = !isRowTab(ui.tab)
+  const isPage = ui.tab === 'overview'
   // The Status lists no lines, and its selection is a Status row's id.
   const base: PanelUi = isPage ? ui : { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
@@ -142,19 +162,19 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
       return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } }
     return { ui: base }
   }
-  const shown = shownTabs(screen.isNextBuild === true)
+  const shown = shownTabs(screen.isNextBuild === true, true)
   const isTabKey = key === 'tab' || key === 'shift+tab' || shown.some(t => t.hotkey === key)
   if (key === '?' || (base.isHelpShown && key === 'escape'))
     return { ui: { ...base, isHelpShown: key === '?' && !base.isHelpShown, pageTop: 0 } }
   if (key === 'escape') return { ui: base, close: true }
-  if (isPage && !base.isHelpShown) {
+  if ((isPage || ui.tab === 'timeline') && !base.isHelpShown) {
     const page = pageKey(screen, base, key, now)
     if (page) return page
   }
   if (base.isHelpShown && !isTabKey && !isUp && key !== 'down' && key !== 'j') return { ui: base }
   if ((base.isHelpShown || isPage) && (isUp || key === 'down' || key === 'j'))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } }
-  if (!isPage && selected?.detail && base.detailScrollMax > 0 && (key === 'up' || key === 'down'))
+  if (!isPage && (selected?.detail || selected?.body) && base.detailScrollMax > 0 && (key === 'up' || key === 'down'))
     return {
       ui: {
         ...base,
@@ -213,6 +233,29 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
  * target's. View shows Asks, a goal button that types opens the goal's field with its text, and the rest are presses.
  */
 function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): KeyResult | null {
+  if (ui.tab === 'timeline') {
+    const page = timelinePage(screen.view.timeline, ui.timelineSelection, ui.timelineFolded, screen.view.lastActions)
+    const row = page.selected?.row
+    if (!row) return null
+    if (key === 'j' || key === 'k') {
+      const id = moveTimelineSelection(page.rows, ui.timelineSelection, key === 'k' ? -1 : 1)
+      const target = linesOf(entriesOf(screen, ui, ui.tab, now)).find(item => item.id === id)
+      const select = target?.buttons.find(button => button.press.action === 'timeline-select' && button.press.id === id)
+      if (target && select) return activate(screen, ui, target, select, now)
+      // With no saved cursor, the shared page already selects its first row as a fallback; persist that selection.
+      if (!ui.timelineSelection && id === row.task.id)
+        return { ui: { ...withSelection(ui, id), timelineSelection: id } }
+      return null
+    }
+    const line = linesOf(entriesOf(screen, ui, ui.tab, now)).find(item => item.id === row.task.id)
+    if (!line) return null
+    if (key === 'left' || key === 'right') {
+      const index = steppedIndex(focusOf(line, ui), key === 'left' ? -1 : 1, line.buttons.length)
+      return { ui: { ...ui, selectedId: row.task.id, focus: { rowId: line.id, index } } }
+    }
+    const button = key === 'enter' ? line.buttons[focusOf(line, ui)] : line.buttons.find(item => item.key === key)
+    return button ? activate(screen, ui, line, button, now) : null
+  }
   const page = screen.view.statusPage
   const rows = statusKeyRows(page)
   const row = statusSelected(page, ui.selectedId)

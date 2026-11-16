@@ -139,7 +139,7 @@ test('on a Status page taller than the panel, j and k scroll the newly selected 
 test('changing the shown tab starts the Status page at its top', () => {
   const screen = screenOf({ isNextBuild: true })
   const scrolled = { ...onPage, pageTop: 3 }
-  for (const key of ['tab', 'shift+tab', ...shownTabs(true).map(t => t.hotkey)])
+  for (const key of ['tab', 'shift+tab', ...shownTabs(true, true).map(t => t.hotkey)])
     expect(keys(screen, scrolled, key).pageTop).toBe(0)
 })
 
@@ -148,7 +148,7 @@ test('in a short panel, switching to the Status page scrolls its first selected 
   const page = keys(
     screen,
     { ...onPage, tab: 'needsYou' },
-    ...shownTabs(true)
+    ...shownTabs(true, true)
       .filter(t => t.id === 'overview')
       .map(t => t.hotkey),
   )

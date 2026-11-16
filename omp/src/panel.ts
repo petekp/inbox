@@ -8,7 +8,7 @@ import { ago } from '../../hooks/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
 import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt } from '../../hooks/timing'
 import type { ListInput } from '../../hooks/timing'
-import { shownTabs, isRowTab } from '../../hooks/tabs'
+import { shownTabs } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
 import { statusSelected } from '../../hooks/status-keys'
@@ -31,7 +31,9 @@ type ResumePress = { action: 'resume' }
 type HerdrAskPress = { action: 'herdr-ask'; isYes: boolean }
 /** Shows every option of a question whose options fold. The panel handles it, so no host sees it. */
 type OptionsPress = { action: 'all-options'; id: string }
-export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress
+/** A Timeline button changes only panel navigation. */
+type TimelinePress = { action: 'timeline-select'; id: string } | { action: 'timeline-toggle'; id: string }
+export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress | TimelinePress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {
@@ -51,6 +53,8 @@ export type PanelScreen = {
   herdrModFailure?: string | null
   /** The question before omp installs the inbox's Herdr mod, while it shows. */
   herdrAsk?: HerdrAsk | null
+  timelineSelection?: string | null
+  timelineFolded?: string[]
 }
 
 export type Tone = ToneName | 'key' | 'accent' | 'sep'
@@ -88,6 +92,10 @@ export type PanelUi = {
   optionsShown: string[]
   /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
   statusUnfolded: string[]
+  /** The Timeline task the person selected, saved per session. */
+  timelineSelection: string | null
+  /** Timeline branches the person folded, saved per session. */
+  timelineFolded: string[]
   /** A Resume press for the stop that began at `stopAt`. */
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
@@ -127,6 +135,8 @@ export const INITIAL_UI: PanelUi = {
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
+  timelineSelection: null,
+  timelineFolded: [],
   resuming: null,
   opened: null,
   pageTop: 0,
@@ -225,7 +235,7 @@ export function drawPanel(
   const body: string[] = []
   let selectedAt: [number, number] = [0, 0]
   const pageSelected =
-    isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
+    ui.tab !== 'overview' || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
   /** The line each subject a Status row stands for starts on. */
   const subjectAt: [string, number][] = []
@@ -279,18 +289,22 @@ export function drawPanel(
   }
   const roomBeside = (foot: string[]) =>
     height === undefined ? Infinity : Math.max(6, height - head.length - foot.length)
-  const isPage = ui.isHelpShown || !isRowTab(ui.tab)
+  const isPage = ui.isHelpShown || ui.tab === 'overview'
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false))
   const selectedLines = selectedAt[1] - selectedAt[0] + 1
   const isDetailScrolling =
     !isPage &&
-    selected?.detail !== null &&
-    selected?.detail !== undefined &&
+    ((selected?.detail !== null && selected?.detail !== undefined) ||
+      (selected?.body !== null && selected?.body !== undefined)) &&
     selectedLines > roomBeside(footer(d, false)) - 2
   const foot = footer(d, isPageTaller, isDetailScrolling)
   const room = roomBeside(foot)
   const detailScrollMax =
-    !isPage && selected?.detail !== null && selected?.detail !== undefined ? Math.max(0, selectedLines - room + 2) : 0
+    !isPage &&
+    ((selected?.detail !== null && selected?.detail !== undefined) ||
+      (selected?.body !== null && selected?.body !== undefined))
+      ? Math.max(0, selectedLines - room + 2)
+      : 0
   const blanks = (shown: string[]) =>
     Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
   const isOverflowing = body.length > room
@@ -329,7 +343,7 @@ export function tallestTabHeight(
   style: Style,
   height?: number,
 ): number {
-  const heights = shownTabs(screen.isNextBuild === true).map(
+  const heights = shownTabs(screen.isNextBuild === true, true).map(
     t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length,
   )
 

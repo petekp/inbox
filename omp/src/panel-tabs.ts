@@ -112,7 +112,7 @@ export function tabBar(d: Draw): string {
     findings: screen.view.findings.count,
     prs: screen.view.prs.count,
   }
-  const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
+  const tabs: TabCell[] = shownTabs(screen.isNextBuild === true, true).map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
     badge: tabBadge(t.id, counts),
@@ -140,20 +140,22 @@ export function footer(d: Draw, isPageScrolling: boolean, isDetailScrolling = fa
       ? [`↵ ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
       : ui.isHelpShown
         ? [...(isPageScrolling ? ['↑↓ scroll'] : []), 'esc close help']
-        : isRowTab(ui.tab)
-          ? [
-              '←→ pick',
-              '↵ press',
-              ...(isDetailScrolling ? ['↑↓ scroll', 'j k move'] : ['↑↓ move']),
-              'tab switch',
-              '? help',
-            ]
-          : [
-              ...statusHints(screen.view.statusPage, ui.selectedId),
-              ...(isPageScrolling ? ['↑↓ scroll'] : []),
-              'tab switch',
-              '? help',
-            ]
+        : ui.tab === 'timeline'
+          ? ['j k move', 'h l branch', '← → pick', '↵ select / open', '↑↓ scroll', 'tab switch', '? help']
+          : isRowTab(ui.tab)
+            ? [
+                '←→ pick',
+                '↵ press',
+                ...(isDetailScrolling ? ['↑↓ scroll', 'j k move'] : ['↑↓ move']),
+                'tab switch',
+                '? help',
+              ]
+            : [
+                ...statusHints(screen.view.statusPage, ui.selectedId),
+                ...(isPageScrolling ? ['↑↓ scroll'] : []),
+                'tab switch',
+                '? help',
+              ]
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  ${versionLabel(screen.version, screen.isNextBuild === true)} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2

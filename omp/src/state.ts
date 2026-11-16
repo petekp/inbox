@@ -19,22 +19,40 @@ import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
 export type OmpState = Session & {
   version: typeof SESSION_VERSION
   sessionId: string
+  timelineSelection: string | null
+  timelineFolded: string[]
 }
 
 export function emptyState(sessionId: string): OmpState {
-  return { version: SESSION_VERSION, sessionId, ...emptySession() }
+  return { version: SESSION_VERSION, sessionId, timelineSelection: null, timelineFolded: [], ...emptySession() }
 }
 
 export function statePath(dir: string, sessionId: string): string {
   return join(dir, 'sessions', sessionFile(sessionId))
 }
 
-type Saved = SavedSession & Partial<Pick<OmpState, 'version' | 'sessionId'>>
+type Saved = SavedSession & Partial<Pick<OmpState, 'version' | 'sessionId' | 'timelineSelection' | 'timelineFolded'>>
+
+function upgradedTimelineSelection(id: unknown): string | null {
+  return typeof id === 'string' && id.length > 0 ? id : null
+}
+
+function upgradedTimelineFolded(folded: unknown): string[] {
+  return Array.isArray(folded)
+    ? [...new Set(folded.filter((id): id is string => typeof id === 'string' && id.length > 0))]
+    : []
+}
 
 /** State saved by an earlier build, with any field it lacks filled in. */
 function upgraded(saved: Saved, sessionId: string): OmpState {
   checkVersion(saved)
-  return { version: SESSION_VERSION, sessionId, ...upgradeSession(saved) }
+  return {
+    version: SESSION_VERSION,
+    sessionId,
+    ...upgradeSession(saved),
+    timelineSelection: upgradedTimelineSelection(saved.timelineSelection),
+    timelineFolded: upgradedTimelineFolded(saved.timelineFolded),
+  }
 }
 
 async function readSaved(dir: string, sessionId: string): Promise<{ state: OmpState; isSaved: boolean }> {

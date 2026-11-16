@@ -35,6 +35,7 @@ export type Inbox = {
   openPanel(ctx: OmpContext, openedAt: number): Promise<void>
   /** Records the tab an open panel shows. A new tab saves `holds`, with the showing the panel started. */
   showTab(ctx: OmpContext, tab: ShownTab, holds: Holds): void
+  saveTimelineNavigation(ctx: OmpContext, selection: string | null, folded: string[]): void
   closePanel(ctx: OmpContext): void
   /** Notes that the panel has the Status subject rows `ids` on screen now, for the look under way. */
   showRows(ctx: OmpContext, ids: string[]): void
@@ -82,6 +83,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
         stop: s.stop,
         version,
         isNextBuild: deps.isNextBuild,
+        timelineSelection: s.timelineSelection,
+        timelineFolded: s.timelineFolded,
       }
     },
     openPanel: async (ctx, openedAt) => {
@@ -119,6 +122,19 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       }
       if (isChanged && tab === 'overview') checkDelegatesWhenDue(ctx)
       if (isChanged && tab === 'prs') fetchPrsWhenDue(ctx, true)
+    },
+    saveTimelineNavigation: (ctx, selection, folded) => {
+      const id = sessionIdOf(ctx)
+      deps.background(
+        change(id, s => {
+          const sameFolded =
+            s.timelineFolded.length === folded.length &&
+            s.timelineFolded.every((value, index) => value === folded[index])
+          return s.timelineSelection === selection && sameFolded
+            ? s
+            : { ...s, timelineSelection: selection, timelineFolded: folded }
+        }),
+      )
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
@@ -167,6 +183,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
     fetchPrsWhenDue: isTabShown => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
+    saveTimelineNavigation: (selection, folded) => inbox.saveTimelineNavigation(ctx, selection, folded),
     showedRows: ids => inbox.showRows(ctx, ids),
     onChange: listener => inbox.onChange(ctx, listener),
   })

@@ -1,5 +1,5 @@
 import type { GoalPart } from './panel-goal'
-import type { FoldKind } from '../../types'
+import type { FoldKind, LocalResult } from '../../types'
 import type { PrAction } from '../../hooks/pr-press'
 import {
   closedLineAction,
@@ -43,18 +43,27 @@ export type Button = {
   isOut?: boolean
   /** It holds up nothing, so it draws dim until focused. */
   isQuiet?: boolean
+  /** The outcome of a Timeline link's shared Local open action. */
+  result?: LocalResult | null
 }
 
 /** What a button draws. A Status button presses nothing the host runs, so it has a face and no `press`. */
 export type ButtonFace = Omit<Button, 'press'>
 
 /** `dim` draws the lead as the panel's other muted marks. */
-export type Lead = { text: string; tone: Tone | 'dim' | null }
+export type Lead = {
+  text: string
+  tone: Tone | 'dim' | null
+  /** Whether to reserve the usual two-cell mark column before the title. */
+  padMark?: boolean
+}
 
 export type Line = {
   id: string
   /** Extra indent, for the rows under a PR. */
   depth: number
+  /** Selection mark when a look's shared row text specifies another marker. */
+  selectionMark?: string
   /** The mark before the title. An Asks or Finds row has none, so its title starts in the mark's place. */
   lead: Lead | null
   /** A ranked PR's number in the agent's order, drawn dim before the lead. */
@@ -66,7 +75,13 @@ export type Line = {
   titleTone: Tone | null
   isDim: boolean
   /** The status words after a PR's title. */
-  status: { text: string; tone: Tone | null; rest: string } | null
+  status: {
+    text: string
+    tone: Tone | null
+    rest: string
+    /** The space between the title and status, normally two spaces. */
+    separator?: string
+  } | null
   age: number | null
   detail: string | null
   file: string | null

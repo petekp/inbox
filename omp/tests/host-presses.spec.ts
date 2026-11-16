@@ -313,11 +313,12 @@ test('in a Herdr app terminal, a press the look ran itself records its result an
   for (let waited = 0; existsSync(join(folder, 'p1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
   await settle()
 
+  const published = () => JSON.parse(readFileSync(sessionFile, 'utf8'))
+  for (let waited = 0; published().lastPress?.id !== 'p1' && waited < 2000; waited += 10) await Bun.sleep(10)
   expect(existsSync(join(folder, 'p1.json'))).toBe(false)
   expect(w.execCalls.filter(c => c.command === 'open')).toEqual([])
   const screen = await inbox.screen(makeCtx())
   expect(JSON.stringify(screen.view.lastActions[stepPress(1).id]?.result)).toContain('no browser')
-  const published = () => JSON.parse(readFileSync(sessionFile, 'utf8'))
   expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
 
   await record({ kind: 'task', ask: 'Write the notes' })

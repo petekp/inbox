@@ -30,6 +30,16 @@ test('a session nobody saved reads as a new one', async () => {
   const state = await readState(tempDir(), 's1')
   expect(state.sessionId).toBe('s1')
   expect(state.presence.turnsStarted).toBe(0)
+  expect(state.timelineSelection).toBeNull()
+  expect(state.timelineFolded).toEqual([])
+})
+
+test('Timeline selection and folds survive saves, and malformed saved navigation uses defaults', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, timelineSelection: 'task-2', timelineFolded: ['task-1', 'task-1'] }))
+  expect(await readState(dir, 's1')).toMatchObject({ timelineSelection: 'task-2', timelineFolded: ['task-1'] })
+  writeFileSync(statePath(dir, 'bad'), JSON.stringify({ timelineSelection: 7, timelineFolded: ['task-2', 4] }))
+  expect(await readState(dir, 'bad')).toMatchObject({ timelineSelection: null, timelineFolded: ['task-2'] })
 })
 
 test('concurrent updates run one after another and each sees the last one', async () => {

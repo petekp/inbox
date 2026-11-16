@@ -38,6 +38,7 @@ export type PanelSource = {
    * panel holds in place, from when it began showing that tab.
    */
   shown(tab: ShownTab, holds: Holds): void
+  saveTimelineNavigation?(selection: string | null, folded: string[]): void
   /** Tells the session which Status subject rows the panel has on screen now, for the look under way. */
   showedRows(ids: string[]): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
@@ -127,6 +128,13 @@ export function createPanel(deps: PanelDeps): Panel {
       return
     }
     screen = next
+    if (isOpening) {
+      ui = {
+        ...ui,
+        timelineSelection: next.timelineSelection ?? null,
+        timelineFolded: next.timelineFolded ?? [],
+      }
+    }
     const followed = followRows(next, ui, seen, isOpening, deps.now())
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now())
     seen = followed.seen
@@ -160,6 +168,7 @@ export function createPanel(deps: PanelDeps): Panel {
     if (p.action === 'resume') return resume()
     if (p.action === 'herdr-ask') return source.answerHerdr?.(p.isYes).then(() => refresh())
     if (p.action === 'all-options') return
+    if (p.action === 'timeline-select' || p.action === 'timeline-toggle') return
     if (!isPrPress(p) && p.action === 'read-document') return showDocument(p.id)
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
@@ -223,8 +232,14 @@ export function createPanel(deps: PanelDeps): Panel {
     handleInput(key, text) {
       if (screen === null) return
       const now = deps.now()
+      const previous = ui
       const result = handleKey(screen, ui, key, now, text)
       ui = { ...result.ui, listInput: withListInput(ui.listInput, now) }
+      const sameFolded =
+        previous.timelineFolded.length === ui.timelineFolded.length &&
+        previous.timelineFolded.every((value, index) => value === ui.timelineFolded[index])
+      if (previous.timelineSelection !== ui.timelineSelection || !sameFolded)
+        source.saveTimelineNavigation?.(ui.timelineSelection, ui.timelineFolded)
       source.shown(ui.tab, holdsOf(ui))
       if (result.close) deps.close()
       if (result.press) void press(result.press)

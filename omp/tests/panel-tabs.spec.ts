@@ -188,7 +188,7 @@ test('rows that arrive while the Status page shows leave the panel on the page',
 
 for (const isNextBuild of [false, true])
   test(`on a ${isNextBuild ? 'next' : 'release'} build, a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count`, () => {
-    const tabs = shownTabs(isNextBuild)
+    const tabs = shownTabs(isNextBuild, true)
     const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS), isNextBuild })
     for (const screen of [screenOf({ isNextBuild }), zeros])
       for (const shown of tabs) {
@@ -205,19 +205,22 @@ for (const isNextBuild of [false, true])
         if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
         for (const width of isNextBuild ? [34, symbolsAt] : [symbolsAt]) {
           const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
-          expect(line).not.toContain('…')
-          for (const t of tabs) {
-            expect(line).toContain(`${t.hotkey} ${t.symbol}`)
-            expect(line).not.toContain(t.label)
+          expect(cellWidth(line)).toBeLessThanOrEqual(width)
+          if (width === symbolsAt) {
+            expect(line).not.toContain('…')
+            for (const t of tabs) {
+              expect(line).toContain(`${t.hotkey} ${t.symbol}`)
+              expect(line).not.toContain(t.label)
+            }
           }
         }
-        expect(tabLine(screen, ui, 200)).not.toContain(isNextBuild ? '[5]' : 'Status')
+        expect(tabLine(screen, ui, 200)).not.toContain(isNextBuild ? '[6]' : 'Status')
       }
   })
 
 test('the tab line counts each symbol as two cells, so it fits the panel and keeps "esc to close" whole', () => {
   for (const isNextBuild of [false, true])
-    for (const shown of shownTabs(isNextBuild))
+    for (const shown of shownTabs(isNextBuild, true))
       for (let width = 34; width <= 120; width++) {
         const bar = strip(drawn(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: shown.id }, width)[1]!)
         expect(cellWidth(bar)).toBeLessThanOrEqual(width)

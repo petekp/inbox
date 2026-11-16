@@ -333,12 +333,14 @@ export function tabCells(screen: Pick<LookScreen, 'view' | 'isNextBuild'>, tab: 
   const { view } = screen
   const counts = { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count }
 
-  return shownTabs(screen.isNextBuild).map(t => ({
-    id: t.id,
-    label: t.label,
-    badge: tabBadge(t.id, counts),
-    isSelected: t.id === tab,
-  }))
+  return shownTabs(screen.isNextBuild)
+    .filter(t => t.id !== 'timeline')
+    .map(t => ({
+      id: t.id,
+      label: t.label,
+      badge: tabBadge(t.id, counts),
+      isSelected: t.id === tab,
+    }))
 }
 
 /** The banners under the tabs and the status line at the foot, as every look draws them. */
@@ -359,6 +361,7 @@ export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {
     return statusBlocks(screen.view.statusPage, { isUnfolded: id => ui.statusUnfolded.includes(id), goalField })
   }
   if (ui.tab === 'prs') return prTabBlocks(screen, ui.selected)
+  if (ui.tab === 'timeline') return []
 
   return rowTabBlocks(screen, ui, ui.tab)
 }
