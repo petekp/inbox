@@ -3550,7 +3550,7 @@ var FINDING_GROUPS = {
 };
 var NEEDS_YOU_MARKS = {
   question: { mark: "?", tone: "needsYou" },
-  task: { mark: "\u2611", tone: "findings" }
+  task: { mark: "\u2611", tone: "tasks" }
 };
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
@@ -11677,6 +11677,7 @@ var DARK_TONES = {
   needsYou: DARK_AMBER,
   issue: "#ff6b80",
   findings: "#cab0ff",
+  tasks: "#b48cff",
   prs: "#8cc8c0",
   done: "#82c1ff",
   success: "#7ecd8f",
@@ -11691,6 +11692,7 @@ var LIGHT_TONES = {
   needsYou: LIGHT_AMBER,
   issue: "#a5293d",
   findings: "#7b00e8",
+  tasks: "#6a14d9",
   prs: "#006363",
   done: "#0a54a0",
   success: "#25652f",

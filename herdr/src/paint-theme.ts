@@ -1,3 +1,4 @@
+import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
 import type { Context } from 'gpui-kit'
 import type { InputState } from 'gpui-base'
@@ -37,7 +38,7 @@ export type Theme = Record<
  * green, as an opportunity does: the theme's green, which each theme picks to read on its own background. A working mark takes the
  * theme's text color.
  */
-const TONE_COLORS: Record<Exclude<Tone, null>, keyof Theme> = {
+const TONE_COLORS: Record<Exclude<Tone, 'tasks' | null>, keyof Theme> = {
   needsYou: 'ansi3',
   issue: 'ansi1',
   notice: 'ansi4',
@@ -52,7 +53,17 @@ const TONE_COLORS: Record<Exclude<Tone, null>, keyof Theme> = {
   muted: 'muted',
 }
 
-export const colorOf = (t: Theme, tone: Tone): Color => t[tone === null ? 'foreground' : TONE_COLORS[tone]]
+const isLightTheme = (t: Theme) => {
+  const [r, g, b] = [1, 3, 5].map(at => parseInt(t.background.slice(at, at + 2), 16))
+
+  return (r! * 299 + g! * 587 + b! * 114) / 1000 > 128
+}
+
+/** Tasks takes the shared violet of `hooks/tones.ts`, which no Herdr theme names, in the light or dark form the theme's background calls for. */
+export const colorOf = (t: Theme, tone: Tone): Color =>
+  tone === 'tasks'
+    ? ((isLightTheme(t) ? LIGHT_TONES : DARK_TONES).tasks as Color)
+    : t[tone === null ? 'foreground' : TONE_COLORS[tone]]
 
 /** A theme color at a share of its strength, for a banner's fill and border. Tone colors are opaque `#rrggbb`. */
 export const tint = (c: Color, share: number): Color =>

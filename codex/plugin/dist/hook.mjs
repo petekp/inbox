@@ -1125,7 +1125,7 @@ var FINDING_GROUPS = {
 };
 var NEEDS_YOU_MARKS = {
   question: { mark: "?", tone: "needsYou" },
-  task: { mark: "\u2611", tone: "findings" }
+  task: { mark: "\u2611", tone: "tasks" }
 };
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },

@@ -64,6 +64,7 @@ const MARK_TONE_CLASS: Record<ToneName, string> = {
   needsYou: 'tone-needsYou',
   issue: 'issue',
   findings: 'findings',
+  tasks: 'tasks',
   prs: 'prs',
   done: 'done',
   success: 'success',

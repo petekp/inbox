@@ -13,7 +13,7 @@ export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: stri
 /** The mark a group title on the Asks tab leads with, as a Finds group title leads with its kind's mark. */
 export const NEEDS_YOU_MARKS = {
   question: { mark: '?', tone: 'needsYou' },
-  task: { mark: '☑', tone: 'findings' },
+  task: { mark: '☑', tone: 'tasks' },
 } as const
 
 /** A mark's tone on the Status. Null draws it muted. */

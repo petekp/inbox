@@ -91,6 +91,7 @@ async function toneVars() {
       `--key: ${t.key};`,
       `--amber: ${t.needsYou};`,
       `--findings: ${t.findings};`,
+      `--tasks: ${t.tasks};`,
       `--prs: ${t.prs};`,
       `--done: ${t.done};`,
       `--success: ${t.success};`,

@@ -40,8 +40,8 @@ section + section::before {
   font-weight: 600;
   line-height: 1;
 }
-.group-mark.findings {
-  color: var(--findings);
+.group-mark.tasks {
+  color: var(--tasks);
 }
 .group-shape {
   width: 13px;

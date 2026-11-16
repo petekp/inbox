@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:34:43.450Z. 260545 characters follow.
+// Built at 2026-11-16T04:40:26.793Z. 261422 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -1167,7 +1167,7 @@ var FINDING_GROUPS = {
 };
 var NEEDS_YOU_MARKS = {
   question: { mark: "?", tone: "needsYou" },
-  task: { mark: "☑", tone: "findings" }
+  task: { mark: "☑", tone: "tasks" }
 };
 var SUBJECT_MARKS = {
   working: { mark: "●", tone: "working" },
@@ -5058,6 +5058,38 @@ function placeAfter(shown, above) {
   return 0;
 }
 
+// ../hooks/tones.ts
+var DARK_AMBER = "#ffc107";
+var DARK_TONES = {
+  needsYou: DARK_AMBER,
+  issue: "#ff6b80",
+  findings: "#cab0ff",
+  tasks: "#b48cff",
+  prs: "#8cc8c0",
+  done: "#82c1ff",
+  success: "#7ecd8f",
+  opportunity: "#7ecd8f",
+  working: "#ffffff",
+  error: "#ffa3b0",
+  errorMark: "#ff6b80",
+  key: "#b1b9f9"
+};
+var LIGHT_AMBER = "#745417";
+var LIGHT_TONES = {
+  needsYou: LIGHT_AMBER,
+  issue: "#a5293d",
+  findings: "#7b00e8",
+  tasks: "#6a14d9",
+  prs: "#006363",
+  done: "#0a54a0",
+  success: "#25652f",
+  opportunity: "#25652f",
+  working: "#1a1a1a",
+  error: "#a5293d",
+  errorMark: "#a5293d",
+  key: "#243bf5"
+};
+
 // src/paint-theme.ts
 var TONE_COLORS = {
   needsYou: "ansi3",
@@ -5073,7 +5105,11 @@ var TONE_COLORS = {
   error: "ansi1",
   muted: "muted"
 };
-var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
+var isLightTheme = (t) => {
+  const [r, g, b] = [1, 3, 5].map((at) => parseInt(t.background.slice(at, at + 2), 16));
+  return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+};
+var colorOf = (t, tone) => tone === "tasks" ? (isLightTheme(t) ? LIGHT_TONES : DARK_TONES).tasks : t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 function mixInto(c, under, share) {
   const channel = (at) => Math.round(parseInt(c.slice(at, at + 2), 16) * share + parseInt(under.slice(at, at + 2), 16) * (1 - share));
@@ -5552,9 +5588,9 @@ function buttonEl(b, p, isInert = false) {
 }
 var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex4().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var CHECKBOX_PX = 14;
+var CHECKBOX_PX = 11;
 var CHECK_PATH = PathBuilder3.stroke(1.5).move_to("27%", "53%").line_to("43%", "69%").line_to("74%", "31%").build();
-var checkboxEl = (color) => div6().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).mt(2).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
+var checkboxEl = (color) => div6().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).mt(3).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div6().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div6().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div6().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
 var trunkEl = (top, height, t) => {

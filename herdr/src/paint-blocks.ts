@@ -104,7 +104,7 @@ const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false)
     .pl(indent)
     .children(buttons.map(b => buttonEl(b, p, isInert)))
 
-const CHECKBOX_PX = 14
+const CHECKBOX_PX = 11
 const CHECK_PATH = PathBuilder.stroke(1.5).move_to('27%', '53%').line_to('43%', '69%').line_to('74%', '31%').build()
 
 /** The Tasks mark, a checked box drawn as a shape, since the font's ☑ is small beside the other marks. */
@@ -114,7 +114,7 @@ const checkboxEl = (color: Theme[keyof Theme]): Element =>
     .flex_none()
     .w(CHECKBOX_PX)
     .h(CHECKBOX_PX)
-    .mt(2)
+    .mt(3)
     .border_1()
     .border_color(color)
     .rounded(3)

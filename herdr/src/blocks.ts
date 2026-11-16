@@ -12,13 +12,14 @@ import type { EmptyTab, EmptyText } from '../../hooks/empty-tab'
 import type { ShownTab } from '../../hooks/tabs'
 
 /**
- * A color the paint maps onto Herdr's theme. The first nine are the shared tones of `hooks/tones.ts`, so a tone means
+ * A color the paint maps onto Herdr's theme. The first ten are the shared tones of `hooks/tones.ts`, so a tone means
  * the same thing in every look, and done means what it does in Herdr's sidebar.
  */
 export type Tone =
   | 'needsYou'
   | 'issue'
   | 'findings'
+  | 'tasks'
   | 'prs'
   | 'done'
   | 'success'

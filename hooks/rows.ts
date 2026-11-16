@@ -23,7 +23,7 @@ export const NEEDS_YOU_GROUPS: {
   kind: Item['kind']
   title: string
   list: 'questions' | 'tasks'
-  mark: { mark: string; tone: 'needsYou' | 'findings' }
+  mark: { mark: string; tone: 'needsYou' | 'tasks' }
 }[] = [
   { kind: 'question', title: 'Questions', list: 'questions', mark: NEEDS_YOU_MARKS.question },
   { kind: 'task', title: 'Tasks', list: 'tasks', mark: NEEDS_YOU_MARKS.task },
