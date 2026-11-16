@@ -252,6 +252,7 @@ export function publishToHerdr(
             writtenAt: now,
             projectFolder: root,
             isFetchingPrs: session.prViews.isFetching,
+            ...(mod.version ? { version: mod.version, isNextBuild: mod.isNextBuild } : {}),
           },
           session,
           calls.log,

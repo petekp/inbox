@@ -23,18 +23,11 @@ test('the footer puts the inbox model on its own line when it does not fit besid
   expect(none).toContain('no inbox model: set @inbox')
 })
 
-test('the footer shows the version after the inbox model, beside the hints or on the model’s own line', () => {
-  const lastLines = (width: number) => drawn(screenOf(), INITIAL_UI, width).map(strip).slice(-2)
-  const [, wide] = lastLines(140)
-  expect(wide).toContain('tab switch')
-  expect(wide?.trimEnd()).toEndWith('inbox model Claude Sonnet 4.5  v1.2.3')
-  const [hints, named] = lastLines(60)
-  expect(hints).not.toContain('v1.2.3')
-  expect(named?.trimEnd()).toEndWith('inbox model Claude Sonnet 4.5  v1.2.3')
-  const [, marked] = drawn(screenOf({ isNextBuild: true }), INITIAL_UI, 140)
-    .map(strip)
-    .slice(-2)
-  expect(marked?.trimEnd()).toEndWith('inbox model Claude Sonnet 4.5  v1.2.3 · next')
+test('the footer shows no version, and Help names it, with the next-build mark on a next build', () => {
+  expect(text(screenOf(), INITIAL_UI)).not.toContain('v1.2.3')
+  const help = { ...INITIAL_UI, isHelpShown: true }
+  expect(text(screenOf(), help)).toContain('Inbox v1.2.3')
+  expect(text(screenOf({ isNextBuild: true }), help)).toContain('Inbox v1.2.3 · next')
 })
 
 test('the demo says its presses send nothing', () => {

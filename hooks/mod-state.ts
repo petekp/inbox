@@ -68,6 +68,12 @@ class SessionState {
 
 export const sessionState = new SessionState()
 
+export function resetTurn() {
+  sessionState.stepTexts = []
+  sessionState.turnBox = null
+  sessionState.isDialogDismissed = false
+}
+
 class ModState {
   isOn = false
   turningOn: Promise<void> | null = null

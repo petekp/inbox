@@ -116,6 +116,10 @@ export const NARROW_PANE = 280
 export const BUTTON_H = 28
 export const BOX_RADIUS = 10
 export const TAB_RADIUS = 6
+/** The width of the column that holds a Help key, so each key's words line up. */
+export const HELP_KEY_COLUMN = 72
+/** The Help control's circle. */
+export const HELP_ICON = 20
 
 /** The separator between a status and its reasons, and between a heading and its count. */
 export const SEP = ' · '

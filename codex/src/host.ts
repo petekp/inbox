@@ -1,11 +1,14 @@
 import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { isPrFetchRunning, statePath, readState, tryWithLock, updateState, withLock } from './state'
 import type { SessionState } from './state'
 import { viewOf } from './core'
 import { CODEX } from './texts'
 import type { Run } from '../../hooks/gh'
+import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import { herdrReporter, herdrReportKey, herdrTarget, herdrTokens } from '../../hooks/herdr'
 import { publishedSession } from '../../hooks/herdr-app'
 import type { PublishFiles } from '../../hooks/herdr-app'
@@ -119,6 +122,8 @@ export function herdrOnWrite(
             writtenAt: seq,
             projectFolder: s.root,
             isFetchingPrs: isPrFetchRunning(s),
+            version: VERSION,
+            isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
           },
           s,
           log,

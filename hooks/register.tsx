@@ -196,6 +196,7 @@ import {
   focusHintFor,
   focusKeys,
   followUpPresses,
+  HELP_TOGGLE,
   type KeyAction,
   openedField,
   openFields,
@@ -253,7 +254,7 @@ import {
   type LoadedBy,
   withoutRowActions,
 } from './mod-sessions'
-import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
+import { cancelUndoScroll, mod, paneState, resetTurn, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import {
   arrivedSelection,
@@ -325,12 +326,6 @@ const ORDER_TOOL = 'mcp__inbox__order_prs'
 const PERSON_LINES = atom({ plugin: 'inbox', key: 'personLines' } as const, {} as Record<string, string>)
 
 const PANE = 'inbox'
-
-function resetTurn() {
-  sessionState.stepTexts = []
-  sessionState.turnBox = null
-  sessionState.isDialogDismissed = false
-}
 
 /** Adds the person's words to the turn, as a shell command row does. */
 function notePerson($: EngineInterface, line: string) {
@@ -2770,6 +2765,7 @@ export const register: Register = on => {
     const shown = isShownTab(data?.tab) ? data.tab : null
     const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
     if (e.element === 'tabs' && shown) await showTab($, shown)
+    else if (e.element === HELP_TOGGLE) await update($, IS_HELP_SHOWN, isShown => !isShown)
     else if (e.element.startsWith('undo-') && followUp && typeof data?.key === 'string')
       followUp({
         plugin: 'inbox',
@@ -3266,7 +3262,7 @@ export const register: Register = on => {
       .map(([, n]) => n)
       .sort((a, b) => b.at - a.at)[0]
 
-    const keyList = helpKeys(look, shownTab, statusPressRows.length > 0)
+    const keyList = helpKeys(look)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
     const { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines } = paneFrame(

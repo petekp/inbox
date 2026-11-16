@@ -52,5 +52,5 @@ Part of [the look map](../looks.md#files).
 | `hooks/fold-keys.ts` | Mod only. The keys a fold line draws under, for an Asks group's Closed fold and a Status done fold, which a desktop click and hover come back with, and the upgrade of the saved Asks folds. |
 | `hooks/fold-client.tsx` | Mod only. A Client region for a desktop fold line: "N closed" on Asks and "N done" on the Status. |
 | `hooks/links-client.tsx` | Mod only. A Client region for an open row's follow-ups on desktop. |
-| `hooks/undo-client.tsx` | Mod only. A Client region for Undo on desktop, whose fill drains while Undo lasts. |
+| `hooks/press-client.tsx` | Mod only. A Client region that takes a click over its whole shape and tints under the pointer. Undo and the Help icon use it on desktop. |
 | `hooks/desktop-metrics.ts` | Mod only. How wide the desktop pane draws text: characters per column, each character's width in points, a Button's padding, and line wrapping. |

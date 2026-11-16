@@ -358,10 +358,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: "omp's panel takes keys only, so a row due to fold waits on keys.",
       },
-      'version-label': {
-        kind: 'different',
-        reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
-      },
+      'version-label': { kind: 'full' },
       'status-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
       'host-task-list': { kind: 'full' },
