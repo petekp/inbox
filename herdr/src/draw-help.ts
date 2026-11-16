@@ -2,13 +2,13 @@ import { HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
 import type { Block } from './blocks'
 
 /**
- * The Help page, the same over every tab: the keys the look takes, then every mark with what it means, then which
- * inbox build the host runs, when the host says. The look names its tabs in words at every width, so it lists no tab
- * symbols.
+ * The Help page, the same over every tab: the keys the look takes, then every mark with what it means. Which inbox
+ * build the host runs, when the host says, sits at the right end of the Keys title. The look names its tabs in words
+ * at every width, so it lists no tab symbols.
  */
 export function helpBlocks(version: string | null): Block[] {
   const keys = helpKeys('herdr')
-  const heading = (id: string, text: string): Block => ({
+  const heading = (id: string, text: string, aside?: string): Block => ({
     kind: 'heading',
     id,
     text,
@@ -16,10 +16,11 @@ export function helpBlocks(version: string | null): Block[] {
     mark: null,
     buttons: [],
     isLabel: false,
+    ...(aside === undefined ? {} : { aside }),
   })
 
   return [
-    heading('help keys', HELP_COPY.keys),
+    heading('help keys', HELP_COPY.keys, version ?? undefined),
     ...keys.map((k): Block => ({
       kind: 'status',
       id: `key ${k.keys}`,
@@ -47,22 +48,5 @@ export function helpBlocks(version: string | null): Block[] {
       under: [],
       buttons: [],
     })),
-    ...(version === null
-      ? []
-      : [
-          {
-            kind: 'status',
-            id: 'help version',
-            depth: 0,
-            mark: null,
-            name: '',
-            isBold: false,
-            isMuted: true,
-            stall: null,
-            does: version,
-            under: [],
-            buttons: [],
-          } satisfies Block,
-        ]),
   ]
 }

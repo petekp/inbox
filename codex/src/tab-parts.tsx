@@ -1,7 +1,7 @@
 import type { ComponentChildren, ComponentProps } from 'preact'
 import { TitleTint } from './tab-title-tint'
 import { ActionButton, Icon } from './row-actions'
-import { mutedMarkShape } from '../../hooks/marks'
+import { markShape, mutedMarkShape } from '../../hooks/marks'
 import { DOT, rowMark } from '../../hooks/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
@@ -117,18 +117,42 @@ export function ResultMarkView({
 }
 
 /** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. A title with no mark starts at the mark column, where its rows' marks do. */
+/** A group mark's text, or its larger shape where it has one. */
+function GroupMark({ text }: { text: string }) {
+  const shape = markShape(text, 4)
+
+  return shape === null ? (
+    <>{text}</>
+  ) : (
+    <svg
+      class="group-shape"
+      viewBox="0 0 8 8"
+      role="img"
+      aria-label={text}
+      dangerouslySetInnerHTML={{ __html: shape }}
+    />
+  )
+}
+
 export function GroupTitle({
   title,
   count,
   mark,
+  aside,
 }: {
   title: string
   count: number
   mark?: { mark: string; tone: Tone }
+  /** Muted monospace text at the title's right end. */
+  aside?: string
 }) {
   return (
     <div class={mark ? 'group-title' : 'group-title unmarked'}>
-      {mark ? <span class={`group-mark ${MARK_TONE_CLASS[mark.tone]}`}>{mark.mark}</span> : null}
+      {mark ? (
+        <span class={`group-mark ${MARK_TONE_CLASS[mark.tone]}`}>
+          <GroupMark text={mark.mark} />
+        </span>
+      ) : null}
       <b>{title}</b>
       {count > 0 ? (
         <span class="count">
@@ -136,6 +160,7 @@ export function GroupTitle({
           {count}
         </span>
       ) : null}
+      {aside ? <span class="group-aside">{aside}</span> : null}
     </div>
   )
 }

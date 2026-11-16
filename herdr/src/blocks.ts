@@ -226,6 +226,8 @@ export type Block =
       mark: Mark | null
       buttons: Button[]
       isLabel: boolean
+      /** Muted monospace text at the heading's right end, such as Help's inbox version. */
+      aside?: string
     }
   /** What a tab shows when it has nothing in it, centred: the text `emptyTab` gives, then its `under`, drawn. */
   | { kind: 'empty'; id: string; empty: EmptyText; under: EmptyUnderParts | null }

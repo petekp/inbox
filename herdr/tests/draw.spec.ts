@@ -400,6 +400,6 @@ test('Help names the build the host published, with the next-build mark, and nam
   expect(helpVersionOf({ version: '1.2.3' })).toBe('Inbox v1.2.3')
   expect(helpVersionOf({ version: '1.2.3', isNextBuild: true })).toBe('Inbox v1.2.3 · next')
   expect(helpVersionOf({})).toBeNull()
-  expect(helpBlocks('Inbox v1.2.3').at(-1)).toMatchObject({ does: 'Inbox v1.2.3' })
-  expect(helpBlocks(null).some(b => b.kind === 'status' && b.id === 'help version')).toBe(false)
+  expect(helpBlocks('Inbox v1.2.3')[0]).toMatchObject({ kind: 'heading', text: 'Keys', aside: 'Inbox v1.2.3' })
+  expect(helpBlocks(null)[0]).not.toHaveProperty('aside')
 })

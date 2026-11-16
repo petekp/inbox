@@ -100,15 +100,30 @@ export function paneRowParts(
         })
       : treeRow('last', null, <Text color={pal.muted}>{`  ${groupEmptyText(title)}`}</Text>, `empty-${title}`)
   /**
-   * A Finds group's title leads with its kind's mark, since its rows draw none. A title with no mark starts at the edge on desktop,
+   * A Finds group's title leads with its kind's mark, since its rows draw none. `aside` is muted text at the title's right end. A title with no mark starts at the edge on desktop,
    * except under a PR, whose title starts at the text column.
    */
-  const groupTitle = (title: string, count: number, mark?: { mark: string; tone: Tone }, isUnderPr = false) => {
-    const words = (
+  const groupTitle = (
+    title: string,
+    count: number,
+    mark?: { mark: string; tone: Tone },
+    isUnderPr = false,
+    aside?: string,
+  ) => {
+    const titled = (
       <Text>
         <Text bold>{title}</Text>
         {count > 0 ? <Text color={pal.muted}>{`${DOT}${count}`}</Text> : null}
       </Text>
+    )
+    const words = aside ? (
+      <Box flexDirection="row">
+        {titled}
+        <Box flexGrow={1} />
+        <Text color={pal.muted}>{aside}</Text>
+      </Box>
+    ) : (
+      titled
     )
     const lead = mark ? (
       <Box width={RESULT_MARK_CELLS} flexShrink={0}>

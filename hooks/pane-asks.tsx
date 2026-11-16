@@ -220,7 +220,7 @@ export function paneAskTabs(
 
       return [
         section([
-          groupTitle(g.title, waitingCount(g.rows.map(r => r.view))),
+          groupTitle(g.title, waitingCount(g.rows.map(r => r.view)), g.mark),
           ...titleGap(),
           ...(open.length > 0 ? open : [groupEmpty(g.title)]),
           ...tail,

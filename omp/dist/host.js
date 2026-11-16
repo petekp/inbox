@@ -3548,6 +3548,10 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
+var NEEDS_YOU_MARKS = {
+  question: { mark: "?", tone: "needsYou" },
+  task: { mark: "\u2611", tone: "findings" }
+};
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
@@ -3587,6 +3591,18 @@ var MARK_LEGEND = [
     words: "Waits on something other than you, such as a build or a review"
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  {
+    mark: NEEDS_YOU_MARKS.question.mark,
+    tone: NEEDS_YOU_MARKS.question.tone,
+    isRunning: false,
+    words: "A question the agent asked you"
+  },
+  {
+    mark: NEEDS_YOU_MARKS.task.mark,
+    tone: NEEDS_YOU_MARKS.task.tone,
+    isRunning: false,
+    words: "A step only you can do"
+  },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
@@ -4521,8 +4537,8 @@ var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var DOT = "\u2007\xB7\u2002";
 var NEEDS_YOU_GROUPS = [
-  { kind: "question", title: "Questions", list: "questions" },
-  { kind: "task", title: "Tasks", list: "tasks" }
+  { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
+  { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
 var CLOSED_SHOWN = 3;
 function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
@@ -8717,6 +8733,7 @@ function rowEntries(screen, ui, tab) {
   const groups = tab === "needsYou" ? NEEDS_YOU_GROUPS.map((g) => ({
     kind: g.kind,
     title: g.title,
+    mark: { text: g.mark.mark, tone: g.mark.tone },
     rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, ui.shownSince)),
     closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
   })) : Object.keys(FINDING_GROUPS).map((kind) => ({
@@ -8951,16 +8968,18 @@ function helpEntries(screen) {
   const at = PAGE_TEXT_AT;
   const textAt = at + column;
   return [
-    { kind: "heading", text: HELP_COPY.keys },
+    {
+      kind: "heading",
+      text: HELP_COPY.keys,
+      ...screen.version ? { aside: helpVersionText(screen.version, screen.isNextBuild === true) } : {}
+    },
     ...keys.map((key) => ({ kind: "key", key, at, column })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.marks },
     ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry, at, textAt })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.tabs },
-    ...tabLegend().map((key) => ({ kind: "key", key, at, column })),
-    { kind: "note", text: "" },
-    { kind: "note", text: helpVersionText(screen.version, screen.isNextBuild === true), indent: textAt }
+    ...tabLegend().map((key) => ({ kind: "key", key, at, column }))
   ];
 }
 function entriesOf(screen, ui, tab, now) {
@@ -9523,9 +9542,10 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   let pageSelectedAt = null;
   const subjectAt = [];
   for (const e of entries) {
-    if (e.kind === "heading")
-      body.push(` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
-    else if (e.kind === "page" || e.kind === "goal") {
+    if (e.kind === "heading") {
+      const title = ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`;
+      body.push(e.aside ? spread(title, `${style.dim(e.aside)} `, width) : title);
+    } else if (e.kind === "page" || e.kind === "goal") {
       const start = body.length;
       if (e.kind === "page")
         subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));

@@ -6,7 +6,7 @@ import { capitalized } from './press-labels'
 import type { HelpStep } from './help-steps'
 import type { RowPress } from './presses'
 import { offersUndo } from './pressed'
-import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK } from './help'
+import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS } from './help'
 import { canUndoClose, isUndoLeft } from './timing'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
@@ -19,9 +19,14 @@ export const OPTION_LABEL_CHARS = 32
  */
 export const DOT = '\u2007·\u2002'
 
-export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'questions' | 'tasks' }[] = [
-  { kind: 'question', title: 'Questions', list: 'questions' },
-  { kind: 'task', title: 'Tasks', list: 'tasks' },
+export const NEEDS_YOU_GROUPS: {
+  kind: Item['kind']
+  title: string
+  list: 'questions' | 'tasks'
+  mark: { mark: string; tone: 'needsYou' | 'findings' }
+}[] = [
+  { kind: 'question', title: 'Questions', list: 'questions', mark: NEEDS_YOU_MARKS.question },
+  { kind: 'task', title: 'Tasks', list: 'tasks', mark: NEEDS_YOU_MARKS.task },
 ]
 
 export const CLOSED_SHOWN = 3

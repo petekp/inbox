@@ -245,11 +245,10 @@ export function drawPanel(
   /** The line each subject a Status row stands for starts on. */
   const subjectAt: [string, number][] = []
   for (const e of entries) {
-    if (e.kind === 'heading')
-      body.push(
-        ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
-      )
-    else if (e.kind === 'page' || e.kind === 'goal') {
+    if (e.kind === 'heading') {
+      const title = ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`
+      body.push(e.aside ? spread(title, `${style.dim(e.aside)} `, width) : title)
+    } else if (e.kind === 'page' || e.kind === 'goal') {
       const start = body.length
       if (e.kind === 'page') subjectAt.push(...seenSubjectIds(e.row).map(id => [id, start] as [string, number]))
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)

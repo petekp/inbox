@@ -329,7 +329,7 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
     return NEEDS_YOU_GROUPS.map(g => ({
       kind: g.kind,
       title: g.title,
-      mark: null,
+      mark: { text: g.mark.mark, tone: g.mark.tone, isRunning: false },
       rows: view.needsYou[g.list].filter(r => isDrawnInPlace(r, shownSince)),
       closed: view.needsYou.closed[g.list].map(d => ({ ...d, title: d.ask })),
     }))

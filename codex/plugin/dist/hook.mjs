@@ -1123,6 +1123,10 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
+var NEEDS_YOU_MARKS = {
+  question: { mark: "?", tone: "needsYou" },
+  task: { mark: "\u2611", tone: "findings" }
+};
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
@@ -1162,6 +1166,18 @@ var MARK_LEGEND = [
     words: "Waits on something other than you, such as a build or a review"
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  {
+    mark: NEEDS_YOU_MARKS.question.mark,
+    tone: NEEDS_YOU_MARKS.question.tone,
+    isRunning: false,
+    words: "A question the agent asked you"
+  },
+  {
+    mark: NEEDS_YOU_MARKS.task.mark,
+    tone: NEEDS_YOU_MARKS.task.tone,
+    isRunning: false,
+    words: "A step only you can do"
+  },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
@@ -1541,6 +1557,10 @@ var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var DOT = "\u2007\xB7\u2002";
+var NEEDS_YOU_GROUPS = [
+  { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
+  { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
+];
 function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
   const canUndoAnswer = isPressedAnswer && delivery === "held" && isUndoLeft(at, now, settleWindowMs);
   return {

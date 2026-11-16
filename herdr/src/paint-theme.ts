@@ -136,6 +136,8 @@ export const SEP = ' · '
 /** What a paint needs besides the blocks: the theme, the look's handlers, each row's move, and the open field. */
 export type Paint = {
   t: Theme
+  /** The theme's code font. */
+  mono: string
   press: (b: Button, cx: Context) => void
   select: (id: string, cx: Context) => void
   /** Collapses row `id`, or expands and selects it. */

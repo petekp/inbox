@@ -10,6 +10,12 @@ export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: stri
   opportunity: { title: 'Opportunities', mark: '✦', tone: 'opportunity' },
 }
 
+/** The mark a group title on the Asks tab leads with, as a Finds group title leads with its kind's mark. */
+export const NEEDS_YOU_MARKS = {
+  question: { mark: '?', tone: 'needsYou' },
+  task: { mark: '☑', tone: 'findings' },
+} as const
+
 /** A mark's tone on the Status. Null draws it muted. */
 export type StatusTone = 'needsYou' | 'done' | 'success' | 'working' | null
 
@@ -72,6 +78,18 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     words: 'Waits on something other than you, such as a build or a review',
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
+  {
+    mark: NEEDS_YOU_MARKS.question.mark,
+    tone: NEEDS_YOU_MARKS.question.tone,
+    isRunning: false,
+    words: 'A question the agent asked you',
+  },
+  {
+    mark: NEEDS_YOU_MARKS.task.mark,
+    tone: NEEDS_YOU_MARKS.task.tone,
+    isRunning: false,
+    words: 'A step only you can do',
+  },
   { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords('dropped work') },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: 'Dismissed by you' },

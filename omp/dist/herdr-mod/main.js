@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:02:34.788Z. 259505 characters follow.
+// Built at 2026-11-16T04:34:43.450Z. 260545 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -1165,6 +1165,10 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "▲", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "✦", tone: "opportunity" }
 };
+var NEEDS_YOU_MARKS = {
+  question: { mark: "?", tone: "needsYou" },
+  task: { mark: "☑", tone: "findings" }
+};
 var SUBJECT_MARKS = {
   working: { mark: "●", tone: "working" },
   queued: { mark: "○", tone: null },
@@ -1204,6 +1208,18 @@ var MARK_LEGEND = [
     words: "Waits on something other than you, such as a build or a review"
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  {
+    mark: NEEDS_YOU_MARKS.question.mark,
+    tone: NEEDS_YOU_MARKS.question.tone,
+    isRunning: false,
+    words: "A question the agent asked you"
+  },
+  {
+    mark: NEEDS_YOU_MARKS.task.mark,
+    tone: NEEDS_YOU_MARKS.task.tone,
+    isRunning: false,
+    words: "A step only you can do"
+  },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
@@ -1817,8 +1833,8 @@ var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var DOT = " · ";
 var NEEDS_YOU_GROUPS = [
-  { kind: "question", title: "Questions", list: "questions" },
-  { kind: "task", title: "Tasks", list: "tasks" }
+  { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
+  { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
 var CLOSED_SHOWN = 3;
 function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
@@ -4442,7 +4458,7 @@ function groupsOf(view, tab, shownSince) {
     return NEEDS_YOU_GROUPS.map((g) => ({
       kind: g.kind,
       title: g.title,
-      mark: null,
+      mark: { text: g.mark.mark, tone: g.mark.tone, isRunning: false },
       rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, shownSince)),
       closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
     }));
@@ -4595,17 +4611,18 @@ function follow(where, tab, last) {
 // src/draw-help.ts
 function helpBlocks(version) {
   const keys = helpKeys("herdr");
-  const heading = (id, text) => ({
+  const heading = (id, text, aside) => ({
     kind: "heading",
     id,
     text,
     count: null,
     mark: null,
     buttons: [],
-    isLabel: false
+    isLabel: false,
+    ...aside === undefined ? {} : { aside }
   });
   return [
-    heading("help keys", HELP_COPY.keys),
+    heading("help keys", HELP_COPY.keys, version ?? undefined),
     ...keys.map((k) => ({
       kind: "status",
       id: `key ${k.keys}`,
@@ -4632,22 +4649,7 @@ function helpBlocks(version) {
       does: m.words,
       under: [],
       buttons: []
-    })),
-    ...version === null ? [] : [
-      {
-        kind: "status",
-        id: "help version",
-        depth: 0,
-        mark: null,
-        name: "",
-        isBold: false,
-        isMuted: true,
-        stall: null,
-        does: version,
-        under: [],
-        buttons: []
-      }
-    ]
+    }))
   ];
 }
 
@@ -5234,7 +5236,7 @@ class Heights {
 }
 
 // src/paint-blocks.ts
-import { div as div6 } from "gpui-kit";
+import { PathBuilder as PathBuilder3, div as div6 } from "gpui-kit";
 import { Input, h_flex as h_flex4, v_flex as v_flex3 } from "gpui-base";
 
 // ../hooks/layout.ts
@@ -5550,7 +5552,10 @@ function buttonEl(b, p, isInert = false) {
 }
 var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex4().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t, tint = null) => div6().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
+var CHECKBOX_PX = 14;
+var CHECK_PATH = PathBuilder3.stroke(1.5).move_to("27%", "53%").line_to("43%", "69%").line_to("74%", "31%").build();
+var checkboxEl = (color) => div6().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).mt(2).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
+var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div6().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div6().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div6().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
 var trunkEl = (top, height, t) => {
   const el = div6().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t));
@@ -5647,7 +5652,7 @@ function headingEl(b, p, isInert) {
   const buttons = h_flex4().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
     return h_flex4().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex4().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
-  return h_flex4().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div6().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div6().text_color(t.muted).child(`${SEP}${b.count}`))).child(div6().flex_1()).child(buttons);
+  return h_flex4().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div6().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div6().text_color(t.muted).child(`${SEP}${b.count}`))).child(div6().flex_1()).when(b.aside !== undefined, (e) => e.child(div6().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
 function emptyEl(b, p, isInert) {
   const { t } = p;
@@ -6420,6 +6425,7 @@ class Inbox extends View {
     const resized = this.heights.takeResized();
     const paint = {
       t,
+      mono: theme().typography?.mono ?? "Menlo",
       press: (b, cx) => this.press(b, cx),
       collapse: (id, isCollapsed, cx) => {
         if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now()))
