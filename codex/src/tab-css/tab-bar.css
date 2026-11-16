@@ -26,6 +26,25 @@ nav {
   color: var(--text);
   font-weight: 600;
 }
+/* The word reserves the width of its shown form, so a tab does not widen, and its neighbours do not move, as it turns bold. */
+.tab-word {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  font-variation-settings: 'wght' 400;
+  transition: font-variation-settings var(--fade);
+}
+.tab.shown .tab-word {
+  font-variation-settings: 'wght' 600;
+}
+.tab-word::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
+  font-variation-settings: 'wght' 600;
+}
 .help-tab {
   display: inline-flex;
   align-items: center;

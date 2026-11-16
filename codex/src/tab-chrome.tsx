@@ -143,7 +143,9 @@ export function TabBar({ v }: { v: View }) {
             <span class="tab-symbol" aria-hidden="true">
               {t.symbol}
             </span>
-            <span class="tab-word">{t.label}</span>
+            <span class="tab-word" data-label={t.label}>
+              {t.label}
+            </span>
             {badgeOf(t.id) === null ? null : (
               <span class={isRowTab(t.id) ? `count tone-${t.id}` : 'count'}>{badgeOf(t.id)}</span>
             )}

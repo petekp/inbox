@@ -1,3 +1,4 @@
+import { atEndWeight } from './weight-ease'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import * as layout from '../../hooks/layout'
 import { ENTER_FADE_MS, FADE_MS, isMoving, ROW_STATE_MS, slideOffset } from '../../hooks/row-motion'
@@ -109,11 +110,11 @@ function glide(el: HTMLElement, size: Size, from: SpringState, to: number, hold 
   glides.set(el, { size, from, to, anim, scalesEdges })
 }
 
-/** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. */
+/** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. Measured at the end weights. */
 function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
 
-  return el.getBoundingClientRect().height
+  return atEndWeight(el, () => el.getBoundingClientRect().height)
 }
 
 /** An element's opacity: full unless an animation fades it. */
