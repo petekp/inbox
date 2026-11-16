@@ -8948,16 +8948,17 @@ function pageEntries(view, typing, isSuggestionOpen, isUnfolded) {
 function helpEntries(screen) {
   const keys = helpKeys("omp");
   const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
-  const textAt = PAGE_MARK_AT + column;
+  const at = PAGE_TEXT_AT;
+  const textAt = at + column;
   return [
     { kind: "heading", text: HELP_COPY.keys },
-    ...keys.map((key) => ({ kind: "key", key, column })),
+    ...keys.map((key) => ({ kind: "key", key, at, column })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.marks },
-    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry, textAt })),
+    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry, at, textAt })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.tabs },
-    ...tabLegend().map((key) => ({ kind: "key", key, column })),
+    ...tabLegend().map((key) => ({ kind: "key", key, at, column })),
     { kind: "note", text: "" },
     { kind: "note", text: helpVersionText(screen.version, screen.isNextBuild === true), indent: textAt }
   ];
@@ -9536,10 +9537,10 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     } else if (e.kind === "banner")
       body.push(...bannerLines(e.banner, width, style));
     else if (e.kind === "key")
-      body.push(...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) => n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l));
+      body.push(...indented(e.key.does, e.at + e.column, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(e.at)}${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l));
     else if (e.kind === "legend") {
       const mark = paintMark(e.entry, now, style);
-      body.push(...indented(e.entry.words, e.textAt, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark}${" ".repeat(e.textAt - PAGE_MARK_AT - 1)}${l.trimStart()}` : l));
+      body.push(...indented(e.entry.words, e.textAt, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(e.at)}${mark}${" ".repeat(e.textAt - e.at - 1)}${l.trimStart()}` : l));
     } else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : e.isPlain ? (text) => text : style.dim));
     else {

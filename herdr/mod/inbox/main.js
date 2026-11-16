@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T03:21:42.339Z. 258710 characters follow.
+// Built at 2026-11-16T03:24:06.010Z. 258805 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -5097,7 +5097,9 @@ var NARROW_PANE = 280;
 var BUTTON_H = 28;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
-var HELP_COLUMN = MARK_W * 2;
+var HELP_INDENT = NEST;
+var HELP_KEY_W = 32;
+var HELP_COLUMN = HELP_KEY_W + CONTROL_GAP;
 var HELP_ICON = 14;
 var HELP_ICON_TEXT = 10;
 var SEP = " · ";
@@ -5590,7 +5592,7 @@ function panelEl(r, m, p, isLeaving) {
 }
 var statusPartEl = (text) => div6().min_w(0).max_w_full().whitespace_normal().child(text);
 function keyEl(s, does, t) {
-  return h_flex4().items_start().px(EDGE).child(div6().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div6().font_semibold().child(s.name))).child(div6().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LINE_GAP).child(div6().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div6().font_semibold().child(s.name))).child(div6().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;
