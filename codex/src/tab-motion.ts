@@ -136,6 +136,7 @@ function fade(el: HTMLElement, from: number, to: number, ms: number, hold = fals
   fades.get(el)?.anim.cancel()
   if (slide) slides.add(el)
   const isSliding = slides.has(el)
+  if (isSliding) el.style.pointerEvents = to === 0 ? 'none' : ''
   const anim = play(el, [frameOf(from, isSliding), frameOf(to, isSliding)], {
     duration: ms,
     easing: FADE_EASING,
@@ -215,11 +216,18 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
       return true
     case 'leaving':
       glide(el, 'height', from, 0, true, true)
-      fade(el, opacityOf(el), 0, FADE_MS, true, true)
+      fade(el, opacityOf(el), 0, FADE_MS, true, !isInsideLeaving(el))
       return true
     default:
       return false
   }
+}
+
+/** Whether an element that leaves sits in one that leaves too, as a PR group's last row does: the outer one slides. */
+function isInsideLeaving(el: HTMLElement): boolean {
+  const outer = el.parentElement?.closest<HTMLElement>('[data-motion]')
+
+  return outer !== null && outer !== undefined && drawnRows.get(outer.dataset.motion!)?.track.state === 'leaving'
 }
 
 /**

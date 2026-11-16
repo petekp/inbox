@@ -276,6 +276,7 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     assert.ok(line())
     assert.ok(isLineGrowing())
     assert.ok(slid.includes(`translateY(${-SLIDE_PX}px)`))
+    assert.ok(root.querySelector('[data-motion][style*="pointer-events: none"]'))
     await after(ROW_STATE_MS.leaving + 100)
     assert.deepEqual(groups(), [`Failing checks${DOT}1`])
     assert.equal(entry('e2e'), null)
