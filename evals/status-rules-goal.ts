@@ -166,7 +166,7 @@ export const GOAL_RULES: Rule[] = [
       const o = result.session.ledger.overview
       const fact = result.facts.goal?.milestones.find(m => m.id === result.facts.goal?.next)
       if (!o?.goal || o.goal.isAwaitingMilestones || fact === undefined) return []
-      const next = milestonePath(milestonesOf(o), 0).find(s => s.place === 'next')?.milestone
+      const next = milestonePath(milestonesOf(o)).find(s => s.place === 'next')?.milestone
       if (next === undefined) return [`no milestone reads next, and ${fact.name} comes next`]
       return new RegExp(fact.match, 'i').test(next.name)
         ? []

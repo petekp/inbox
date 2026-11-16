@@ -363,7 +363,6 @@ function milestoneOf(saved) {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
-    startedAt: time(m.startedAt),
     ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
@@ -1312,21 +1311,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
 }
 
 // ../hooks/status-path.ts
-var NOW_WORD = "now";
-var NEXT_WORD = "next";
-var UNDER_WAY_TIME_AFTER_MS = 60 * 6e4;
-var HOUR_MS = 60 * 6e4;
-var DAY_HOURS = 24;
-var HOURS_SHOWN = 48;
-function underWayTime(ms) {
-  const hours = Math.floor(ms / HOUR_MS);
-  return hours < HOURS_SHOWN ? `${hours}h` : `${Math.floor(hours / DAY_HOURS)}d`;
-}
-function nowWord(m, now) {
-  const ran = m.startedAt === null ? 0 : now - m.startedAt;
-  return ran >= UNDER_WAY_TIME_AFTER_MS ? `${NOW_WORD} \xB7 ${underWayTime(ran)}` : NOW_WORD;
-}
-function milestonePath(shown, now) {
+function milestonePath(shown) {
   const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
   const underWay = shown.filter((m) => m.status === "working" || m.status === "waits-on-other");
   const [next, ...later] = shown.filter((m) => m.status === "queued");
@@ -1336,14 +1321,12 @@ function milestonePath(shown, now) {
   const pathSteps = onPath.map((m, n) => ({
     milestone: m,
     place: m === next ? "next" : m.status === "done" ? "done" : "now",
-    word: m === next ? NEXT_WORD : m.status === "working" ? nowWord(m, now) : null,
     line: lineBelow(n),
     startsLater: false
   }));
   const afterPath = [...later, ...dropped].map((m, n) => ({
     milestone: m,
     place: m.status === "dropped" ? "dropped" : "later",
-    word: null,
     line: null,
     startsLater: n === 0 && later.length > 0
   }));
@@ -1388,7 +1371,6 @@ function milestoneRow(step, o, items) {
     ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
-    word: step.word,
     line: step.line,
     startsLater: step.startsLater,
     isChanged,
@@ -1401,7 +1383,7 @@ function milestoneRow(step, o, items) {
     rows: []
   };
 }
-function goalPage(o, items, now) {
+function goalPage(o, items) {
   const g = o?.goal ?? null;
   const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal;
   if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null, suggestedGoal };
@@ -1415,7 +1397,7 @@ function goalPage(o, items, now) {
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
-  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown).map((step) => milestoneRow(step, o, items));
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
@@ -2852,7 +2834,7 @@ function statusPage(s, now) {
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items, now);
+  const goalParts = goalPage(o, s.ledger.items);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : void 0;
   const milestoneOf2 = (x) => {
@@ -2969,10 +2951,21 @@ function statusPage(s, now) {
       0
     )
   ];
-  const rows = [
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  const g = goalParts.goal;
+  const isHeadApart = head !== null && (g === null || g.isMet);
+  const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0),
-    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
+    ...otherRows.length > 0 ? [
+      { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
+      ...otherRows
+    ] : []
+  ];
+  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const rows = [
+    ...headPart,
+    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some(
     (c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id))
@@ -2995,17 +2988,14 @@ function statusPage(s, now) {
       foldCount: rows2.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
     };
   };
-  const g = goalParts.goal;
   const goal = g && {
     ...g,
     milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
-    isHeadApart: goal === null || goal.isMet,
     ...goalParts,
     goal,
     rows,

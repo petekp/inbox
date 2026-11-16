@@ -202,7 +202,7 @@ test('on the Status page, a done milestone’s fold opening and closing, a work 
     m.id === 'm2'
       ? { ...m, status: 'done', closedAt: NOW }
       : m.id === 'm3'
-        ? { ...m, status: 'working', startedAt: NOW }
+        ? { ...m, status: 'working' }
         : m,
   )
   const moves: [string, Block[], Block[]][] = [

@@ -170,9 +170,9 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     )
     assert.equal(shownTab(), 'Status')
     assert.equal(sentTabs[0], 'overview')
-    assert.equal(root.querySelector('.status-head h1')?.textContent, 'Shipping the Status tab')
+    assert.equal(root.querySelector('.part-title')?.textContent, 'Shipping the Status tab')
     assert.deepEqual(
-      [...root.querySelectorAll('main .row')].map(r => [
+      [...root.querySelectorAll('main .row:not(.part-line)')].map(r => [
         r.querySelector('.mark')?.className,
         r.querySelector('.mark')?.textContent,
         [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
@@ -334,11 +334,9 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       [...root.querySelectorAll('.milestone-group')].map(e => e.className),
       ['milestone-group path-to-next', 'milestone-group'],
     )
-    assert.equal(root.querySelector('.path-word')?.textContent, 'next')
-    assert.notEqual(root.querySelector('.status-head:not(.goal)'), null)
     context.mock.timers.tick(ROW_STATE_MS.leaving + 100)
     await new Promise<void>(resolve => setImmediate(resolve))
-    assert.equal(root.querySelector('.status-head:not(.goal)'), null)
+    assert.equal(root.querySelector('.part-title'), null)
     assert.deepEqual(buttons(), ['Edit', 'Remove'])
     await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')

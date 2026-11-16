@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T02:34:19.474Z. 257754 characters follow.
+// Built at 2026-11-16T02:59:55.112Z. 256765 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -480,7 +480,6 @@ function milestoneOf(saved) {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
-    startedAt: time(m.startedAt),
     ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
@@ -1448,22 +1447,8 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
 }
 
 // ../hooks/status-path.ts
-var NOW_WORD = "now";
-var NEXT_WORD = "next";
 var LATER_TEXT = "Later";
-var UNDER_WAY_TIME_AFTER_MS = 60 * 60000;
-var HOUR_MS = 60 * 60000;
-var DAY_HOURS = 24;
-var HOURS_SHOWN = 48;
-function underWayTime(ms) {
-  const hours = Math.floor(ms / HOUR_MS);
-  return hours < HOURS_SHOWN ? `${hours}h` : `${Math.floor(hours / DAY_HOURS)}d`;
-}
-function nowWord(m, now) {
-  const ran = m.startedAt === null ? 0 : now - m.startedAt;
-  return ran >= UNDER_WAY_TIME_AFTER_MS ? `${NOW_WORD} · ${underWayTime(ran)}` : NOW_WORD;
-}
-function milestonePath(shown, now) {
+function milestonePath(shown) {
   const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
   const underWay = shown.filter((m) => m.status === "working" || m.status === "waits-on-other");
   const [next, ...later] = shown.filter((m) => m.status === "queued");
@@ -1473,14 +1458,12 @@ function milestonePath(shown, now) {
   const pathSteps = onPath.map((m, n) => ({
     milestone: m,
     place: m === next ? "next" : m.status === "done" ? "done" : "now",
-    word: m === next ? NEXT_WORD : m.status === "working" ? nowWord(m, now) : null,
     line: lineBelow(n),
     startsLater: false
   }));
   const afterPath = [...later, ...dropped].map((m, n) => ({
     milestone: m,
     place: m.status === "dropped" ? "dropped" : "later",
-    word: null,
     line: null,
     startsLater: n === 0 && later.length > 0
   }));
@@ -1548,7 +1531,6 @@ function milestoneRow(step, o, items) {
     ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
-    word: step.word,
     line: step.line,
     startsLater: step.startsLater,
     isChanged,
@@ -1561,7 +1543,7 @@ function milestoneRow(step, o, items) {
     rows: []
   };
 }
-function goalPage(o, items, now) {
+function goalPage(o, items) {
   const g = o?.goal ?? null;
   const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal;
   if (o === null || g === null)
@@ -1574,7 +1556,7 @@ function goalPage(o, items, now) {
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
-  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown).map((step) => milestoneRow(step, o, items));
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
@@ -3450,7 +3432,7 @@ function withCollapse(s, row, isCollapsed, at) {
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
-var WAS_PREFIX = "was: ";
+var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " · ";
 var NEW_CLOSED_ROWS = 2;
@@ -3469,7 +3451,7 @@ function statusPage(s, now) {
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items, now);
+  const goalParts = goalPage(o, s.ledger.items);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
   const milestoneOf = (x) => {
@@ -3572,10 +3554,21 @@ function statusPage(s, now) {
     ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
     ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
   ];
-  const rows = [
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  const g = goalParts.goal;
+  const isHeadApart = head !== null && (g === null || g.isMet);
+  const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0),
-    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
+    ...otherRows.length > 0 ? [
+      { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
+      ...otherRows
+    ] : []
+  ];
+  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const rows = [
+    ...headPart,
+    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
@@ -3596,17 +3589,14 @@ function statusPage(s, now) {
       foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
     };
   };
-  const g = goalParts.goal;
   const goal = g && {
     ...g,
     milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
-    isHeadApart: goal === null || goal.isMet,
     ...goalParts,
     goal,
     rows,
@@ -4073,7 +4063,8 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
   if (row.kind === "part")
     return [
       { kind: "gap", id: `gap ${row.id}` },
-      { kind: "rule", id: row.id, text: row.text }
+      { kind: "rule", id: row.id, text: row.text, ...row.isTitle ? { isTitle: true } : {} },
+      ...row.description ? [note2(`${row.id} description`, row.description, "muted")] : []
     ];
   if (row.kind === "counts")
     return [{ ...note2(row.id, row.counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP), "muted"), depth: row.depth }];
@@ -4128,7 +4119,6 @@ function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
     isBold: m.isChanged,
     isMuted: m.isMuted,
     stall: null,
-    ...m.word === null ? {} : { word: m.word },
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
     ...foldOf(m, isCollapsed),
@@ -4245,12 +4235,7 @@ function statusBlocks(view, ui) {
     };
     return [emptyBlock("overview", empty, parts)];
   }
-  const description = page.head?.description;
-  const head = page.isHeadApart && page.head ? [
-    headTitle("head title", page.head.title),
-    ...description ? [headNote("head text", description, "muted")] : []
-  ] : [];
-  const top = [...goalBlocks(page, ui), ...head.length > 0 ? [{ kind: "gap", id: "gap head" }, ...head] : []];
+  const top = goalBlocks(page, ui);
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).flatMap((r) => rowBlocks(r, isUnfolded, isCollapsed));
   const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, { kind: "gap", id: "gap rows" }, ...rows] : [...top, ...rows];
@@ -5472,7 +5457,7 @@ var ruleLine = (t) => div4().flex_1().border_t(1).border_color(t.border);
 function ruleEl(b, t) {
   if (b.text === null)
     return h_flex2().pl(EDGE).pr(EDGE).child(ruleLine(t));
-  return h_flex2().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div4().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
+  return h_flex2().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div4().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t) {
   const text = div4().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
@@ -5562,8 +5547,6 @@ function panelEl(r, m, p, isLeaving) {
   ];
 }
 var statusPartEl = (text) => div5().min_w(0).max_w_full().whitespace_normal().child(text);
-var nameLineOf = (s) => [s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name, s.fold?.chevron].filter((x) => x !== undefined).join(STALL_GAP);
-var wordEl = (s, word, t) => h_flex3().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(nameLineOf(s)).invisible().when(s.isBold, (e) => e.font_semibold())).child(div5().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
 function keyEl(s, does, t) {
   return h_flex3().items_start().px(EDGE).child(div5().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div5().font_semibold().child(s.name))).child(div5().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
@@ -5574,9 +5557,8 @@ function statusEl(s, p, isInert) {
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
   const chevron = s.fold ? [statusPartEl(s.fold.chevron).text_color(t.muted).ml(LINE_GAP)] : [];
-  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)];
   const toggle = s.fold?.toggle;
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex3().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.hover((x) => x.text_color(t.foreground)).on_click((_e, cx) => toggle ? p.press(toggle, cx) : undefined)).child(markEl(s.mark, t)).child(h_flex3().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron).children(word))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex3().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.hover((x) => x.text_color(t.foreground)).on_click((_e, cx) => toggle ? p.press(toggle, cx) : undefined)).child(markEl(s.mark, t)).child(h_flex3().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 function prEl(b, p, isInert) {
   const { t } = p;

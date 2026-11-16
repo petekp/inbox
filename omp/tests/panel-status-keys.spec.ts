@@ -229,6 +229,5 @@ test('on the Status page, f folds a milestone’s rows behind its name, keeps it
   const folded = text(foldedScreen(screen, milestone.id), onMilestone).split('\n')
   const first = folded.find(l => l.includes(milestone.name))!
   expect(first).toContain(`▸ ${milestone.foldCount}`)
-  if (milestone.word) expect(first.trimEnd().endsWith(milestone.word)).toBe(true)
   expect(folded.length).toBeLessThan(before.length)
 })

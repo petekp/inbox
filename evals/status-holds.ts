@@ -15,7 +15,7 @@ const hold = (r: Pick<Rule, 'id' | 'property' | 'text' | 'failures'>): Rule => (
 
 /** The ids of the subject rows the page draws after the goal, above Other work and under it. */
 function listIds(page: StatusPage): { main: string[]; other: string[] } {
-  const start = page.rows.findIndex(r => r.kind === 'part')
+  const start = page.rows.findIndex(r => r.kind === 'part' && r.id === 'other')
   const ids = (rows: StatusPage['rows']) => rows.flatMap(r => (r.kind === 'subject' ? [r.id] : []))
 
   return start < 0

@@ -23,7 +23,7 @@ import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
-import { goalHeadMotion, goalLineMotion, headApartMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
+import { goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
 import { lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
 import { foldMotion, Keys, StatusLine, toggleStatusFold } from './tab-status-line'
@@ -92,40 +92,6 @@ function Suggestion({ text }: { text: string }) {
   )
 }
 
-/** The boxes of the text under `el`, one per line of each text node, without the boxes of the elements that hold it. */
-function textRects(el: Element): DOMRect[] {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-  const rects: DOMRect[] = []
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    const range = document.createRange()
-    range.selectNodeContents(n)
-    rects.push(...range.getClientRects())
-  }
-
-  return rects
-}
-
-function placePathWord(word: HTMLElement, name: Element, box: Element) {
-  const rects = textRects(name)
-  const firstTop = Math.min(...rects.map(r => r.top))
-  const firstRight = Math.max(...rects.filter(r => Math.abs(r.top - firstTop) < 2).map(r => r.right))
-  word.hidden = false
-  word.hidden = firstRight + PATH_WORD_GAP_PX + word.offsetWidth > box.getBoundingClientRect().right
-}
-const PATH_WORD_GAP_PX = 12
-const fittedWords = new WeakSet<HTMLElement>()
-
-/** Shows a milestone's word only where it fits at the right of its name's first line, again whenever the name's box resizes. */
-function fitPathWord(word: HTMLElement | null) {
-  const name = word?.previousElementSibling
-  const box = word?.parentElement
-  if (!word || !name || !box) return
-  placePathWord(word, name, box)
-  if (fittedWords.has(word)) return
-  fittedWords.add(word)
-  new ResizeObserver(() => placePathWord(word, name, box)).observe(box)
-}
-
 function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion: string; isConnectorDown: boolean }) {
   const fold = m.foldId
   const nameClass = [m.isChanged ? 'changed' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
@@ -141,11 +107,6 @@ function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion
             <ParentName id={m.id} foldCount={m.foldCount} class={nameClass}>
               <NameLine name={m.name} stall={null} chevron={chevronOf(m)} />
             </ParentName>
-            {m.word ? (
-              <span class="path-word muted" ref={fitPathWord}>
-                {m.word}
-              </span>
-            ) : null}
           </div>
         ) : (
           <button
@@ -400,22 +361,13 @@ export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
         {empty.under?.is === 'set-goal' ? <SetGoal page={page} {...empty.under} /> : null}
       </EmptyState>
     )
-  const head = drawn.apart.map(({ id, head: h }) => (
-    <section key={id} {...lineMotion(headApartMotion(id))}>
-      <div class="status-head">
-        <h1>{h.title}</h1>
-        {h.description ? <p class="muted">{h.description}</p> : null}
-      </div>
-    </section>
-  ))
-  // The list after a goal draws no line between sections: Other work's own rule sets it apart while the goal shows
-  // milestones, and nothing does while it shows none.
-  const isUnruledAfterGoal = page.goal !== null
+  // The list after a goal draws no line between sections: its heading's own rule sets it apart while the goal shows
+  // milestones or the list starts with one, and nothing does while the goal shows none.
+  const isUnruledAfterGoal = page.goal !== null || page.rows[0]?.kind === 'part'
 
   return (
     <main class="status-page">
       <GoalSection page={page} head={drawn.head} fold={drawn.fold} lines={drawn.goal} />
-      {head}
       {drawn.rows.length > 0 ? (
         <section class={isUnruledAfterGoal ? 'unruled' : undefined}>
           <div class="list">

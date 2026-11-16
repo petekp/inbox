@@ -218,16 +218,6 @@
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
 }
-/* The milestone's word, at the right of its name's first line. `fitPathWord` hides it where it does not fit. */
-.status-page .milestone-name {
-  position: relative;
-}
-.status-page .path-word {
-  position: absolute;
-  top: 0;
-  right: 0;
-  white-space: nowrap;
-}
 .status-page .milestone-name .changed {
   font-weight: 600;
 }
@@ -242,7 +232,8 @@
 .status-page .milestone-fold .icon {
   margin-left: 0;
 }
-/* "Other work" at the text column, then a solid rule to the tab's edge. */
+/* "Other work" at the text column, then a solid rule to the tab's edge. The head's title takes its place, with its
+   description under it. */
 .status-page .row.part-line {
   padding-left: 0;
   padding-right: 0;
@@ -258,6 +249,15 @@
   gap: 8px;
   margin-left: var(--text-x);
   color: var(--muted);
+}
+.status-page .part-rule.part-title {
+  color: var(--text);
+  font-weight: 600;
+}
+.status-page .part-description {
+  grid-column: 1 / -1;
+  margin-left: var(--text-x);
+  padding-right: 14px;
 }
 .status-page .part-rule::after {
   content: '';

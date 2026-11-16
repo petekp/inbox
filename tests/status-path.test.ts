@@ -9,9 +9,8 @@ import { milestoneRows } from '../hooks/status-folds'
 import { workJoints } from '../hooks/status-path'
 import { goalBlocks } from '../hooks/status-prompt-goal'
 import type { SessionStatus } from '../types'
-import { after, MIN, opsOf, page, shape } from './status-helpers'
+import { after, opsOf, page, shape } from './status-helpers'
 
-const HOUR = 60 * MIN
 const START = [
   'HEAD: Import | Making CSV import ready to demo',
   'NEW: working | CSV import | bad rows skipped',
@@ -25,15 +24,15 @@ const planned = (): SessionStatus =>
   after(after(after(null, START, 10), GOAL, 20), 'SERVES: s1 | m2\nSERVES: s2 | m4\nSERVES: s3 | m4', 30)
 
 const path = (o: SessionStatus, now: number) =>
-  page(o, now).goal?.milestones.map(m => [m.name, m.place, m.word, m.line, m.startsLater])
+  page(o, now).goal?.milestones.map(m => [m.name, m.place, m.line, m.startsLater])
 
-test('a goal draws its milestones as one path: done, the one under way reading now, the first queued reading next, then the rest under Later with no line', () => {
+test('a goal draws its milestones as one path: done, the one under way, the first queued one next, then the rest under Later with no line', () => {
   expect(path(planned(), 40)).toEqual([
-    ['Parsing works', 'done', null, 'continues', false],
-    ['Errors explained', 'now', 'now', 'to-next', false],
-    ['Demo script', 'next', 'next', null, false],
-    ['Docs page', 'later', null, null, true],
-    ['Release notes', 'later', null, null, false],
+    ['Parsing works', 'done', 'continues', false],
+    ['Errors explained', 'now', 'to-next', false],
+    ['Demo script', 'next', null, false],
+    ['Docs page', 'later', null, true],
+    ['Release notes', 'later', null, false],
   ])
   expect(page(planned(), 40).goal?.milestones.map(m => m.isMuted)).toEqual([false, false, false, true, true])
 })
@@ -43,9 +42,9 @@ test('NEXT moves a queued milestone ahead of the other queued ones, so it reads 
   const p = page(replanned, 45)
 
   expect(path(replanned, 45)?.slice(2)).toEqual([
-    ['Release notes', 'next', 'next', null, false],
-    ['Demo script', 'later', null, null, true],
-    ['Docs page', 'later', null, null, false],
+    ['Release notes', 'next', null, false],
+    ['Demo script', 'later', null, true],
+    ['Docs page', 'later', null, false],
   ])
   expect(p.goal?.milestones.filter(m => m.isChanged).map(m => m.name)).toEqual(['Release notes'])
   expect(after(replanned, 'NEXT: m2', 50).milestones).toEqual(replanned.milestones)
@@ -67,17 +66,9 @@ test('with nothing under Later, a dropped milestone follows the path with no Lat
   const dropped = after({ ...planned(), lastLookAt: 35 }, 'DROP: m4 | not needed\nDROP: m5 | not needed', 40)
 
   expect(path(dropped, 45)?.slice(3)).toEqual([
-    ['Docs page', 'dropped', null, null, false],
-    ['Release notes', 'dropped', null, null, false],
+    ['Docs page', 'dropped', null, false],
+    ['Release notes', 'dropped', null, false],
   ])
-})
-
-test('a working milestone reads how long it has run once it has run an hour, in hours, then in days past two', () => {
-  const word = (now: number) => page(planned(), now).goal?.milestones[1]?.word
-
-  expect(word(20 + 59 * MIN)).toBe('now')
-  expect(word(20 + 3 * HOUR)).toBe('now · 3h')
-  expect(word(20 + 50 * HOUR)).toBe('now · 2d')
 })
 
 test('the goal leaves out its Now line when it only names the milestone that reads now, and keeps it when it says more', () => {
