@@ -1,5 +1,12 @@
 import { Icon, RowActions } from './row-actions'
-import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
+import {
+  mergedLine,
+  seenSubjectIds,
+  STATUS_TEXT_LINES,
+  STALL_GAP,
+  WAITS_ON_PREFIX,
+  WAS_PREFIX,
+} from '../../hooks/status-page'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
 import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
@@ -87,6 +94,12 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
         </span>
         <div class="content tight">
           <NameLine name={row.name} stall={row.stall} />
+          {row.waitsOn ? (
+            <div class="tone-needsYou clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
+              {WAITS_ON_PREFIX}
+              {row.waitsOn}
+            </div>
+          ) : null}
           {row.text ? (
             <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
               {row.text}

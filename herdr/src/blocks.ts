@@ -152,6 +152,8 @@ export type StatusLine = {
   /** A child or a plain line, or a milestone that waits or was dropped, whose name draws quiet. */
   isMuted: boolean
   stall: { text: string; tone: StatusStall['tone'] } | null
+  /** What a subject waits on, in the needs-you tone, as its first line under the name. */
+  waitsOn?: string
   /**
    * A Help line's words, in the column that starts after `HELP_COLUMN`. The left column holds the line's key, in `name`, or
    * its mark, or nothing for the version line. Such a line has nothing under it.

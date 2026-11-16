@@ -212,7 +212,7 @@ test('the page lists running work linked to no subject first, then each subject 
 
   expect(shape(rows)).toEqual([
     '● Review loose',
-    '◆ Sync: needs a pick · waiting',
+    '◆ Sync: needs a pick · waits on you: Ask i1?',
     '● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
@@ -271,12 +271,15 @@ test('a subject an ask holds up or that changed since the last look never folds,
   const draw = (o: SessionStatus) => shape(page(o, 20 * MIN, {}, asks.map(askItem)).rows)
 
   expect(draw(changedOne)).toEqual([
-    '◆ Part 7: step 7 · waiting',
+    '◆ Part 7: step 7 · waits on you: Ask i1?',
     ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
     '○ Part 8: started over',
     '○ 3 more',
   ])
-  expect(draw(heldSeven)).toEqual([...[6, 5, 4, 3, 2, 1, 0].map(n => `◆ Part ${n}: step ${n} · waiting`), '○ 2 more'])
+  expect(draw(heldSeven)).toEqual([
+    ...[6, 5, 4, 3, 2, 1, 0].map(n => `◆ Part ${n}: step ${n} · waits on you: Ask i${n + 1}?`),
+    '○ 2 more',
+  ])
   expect(draw(openSubjects(9)).filter(r => r.includes('Part'))).toHaveLength(9)
   expect(draw(openSubjects(9)).some(r => r.includes('more'))).toBe(false)
 })

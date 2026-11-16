@@ -45,10 +45,10 @@ test('an open row the person has seen keeps where it stands but not its was line
   const p = page({ ...o, lastLookAt: 50 * MIN }, now, { lastReplyAt: now - 2 * MIN }, [askItem('i1')])
 
   expect(p.head?.title).toBe('Work offline')
-  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '○ Docs: outline ready'])
+  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick · waits on you: Ask i1?', '○ Docs: outline ready'])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
-  expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '○ Docs: outline ready'])
+  expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick · waits on you: Ask i1?', '○ Docs: outline ready'])
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
 })
 
@@ -68,8 +68,8 @@ test('the list shows held, working, waiting, queued, then finished rows, newest 
   const rows = page({ ...o, lastLookAt: 50 * MIN }, 86 * MIN, {}, [askItem('i1'), askItem('i2')]).rows
 
   expect(shape(rows)).toEqual([
-    '◆ Flick: needs a pick · waiting',
-    '◆ Seen queue: later · waiting',
+    '◆ Flick: needs a pick · waits on you: Ask i1?',
+    '◆ Seen queue: later · waits on you: Ask i2?',
     '◐ Sync: step two',
     '◐ Export: step one',
     '◌ Review: sent for review',
@@ -79,7 +79,7 @@ test('the list shows held, working, waiting, queued, then finished rows, newest 
   ])
 })
 
-test('only a subject an open ask holds up reads waiting, in the needs-you tone, with no time, and one waiting on someone else shows no word until it idles', () => {
+test('only a subject an open ask holds up says what it waits on, and one waiting on someone else shows no word until it idles', () => {
   const o = after(
     null,
     'NEW: waits-on-other | Review | sent for review\nNEW: working | Sync | needs a pick\nNEW: queued | Docs | not started\nLINK: i1 | s2\nLINK: i2 | s2',
@@ -90,9 +90,14 @@ test('only a subject an open ask holds up reads waiting, in the needs-you tone, 
     { ...askItem('i1'), at: 20 * MIN },
     { ...askItem('i2'), at: 10 * MIN },
   ]
-  const stalls = (now: number) => page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? r.stall : r.kind))
+  const stalls = (now: number) =>
+    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? [r.waitsOn, r.stall] : r.kind))
 
-  const waiting = [{ text: 'waiting', tone: 'needsYou' }, null, null]
+  const waiting = [
+    ['Ask i2?', null],
+    [null, null],
+    [null, null],
+  ]
   expect(stalls(20 * MIN)).toEqual(waiting)
   expect(stalls(2 * 60 * MIN)).toEqual(waiting)
   expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[1]).toBe('◌ Review: sent for review')
@@ -117,12 +122,16 @@ test('an open subject unchanged for a day reads how long it has been idle, in wh
   const running = { ...withChild(o, child, 0), children: [{ ...withChild(o, child, 0).children[0]!, subjectId: 's2' }] }
   const stalls = (now: number, turn = false) =>
     page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows.flatMap(r =>
-      r.kind === 'subject' ? [`${r.name}: ${r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`] : [],
+      r.kind === 'subject'
+        ? [
+            `${r.name}: ${r.waitsOn ? `waits on you: ${r.waitsOn}` : (r.stall?.text ?? '-')}${r.stall ? ` (${r.stall.tone})` : ''}`,
+          ]
+        : [],
     )
 
-  expect(stalls(DAY - MIN)).toEqual(['Sync: waiting (needsYou)', 'Search: -', 'Review: -', 'Docs: -'])
+  expect(stalls(DAY - MIN)).toEqual(['Sync: waits on you: Ask i1?', 'Search: -', 'Review: -', 'Docs: -'])
   expect(stalls(2 * DAY + 5 * 60 * MIN)).toEqual([
-    'Sync: waiting (needsYou)',
+    'Sync: waits on you: Ask i1?',
     'Search: -',
     'Review: idle 2d (muted)',
     'Docs: -',

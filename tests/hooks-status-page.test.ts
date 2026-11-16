@@ -31,11 +31,12 @@ test('a look starts when the Status page shows, the page shows the head and the 
   expect((await pane.find({ key: 'status-head' }))?.text).toBe(
     'Adding a greeting CLIBuilding a CLI that greets by name',
   )
-  expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime · waiting')
+  expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime')
+  expect((await pane.find({ key: 'status-s1-waits-on' }))?.text).toBe('waits on you: Use Node or Python?')
   expect((await pane.find({ key: 'status-s1-text' }))?.text).toBe('Node or Python')
   expect((await pane.find({ key: 'status-s1' }))?.text).toContain('◆')
   expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
-  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeUndefined()
   const rowKeys = async () =>
     (await pane.findAll({ type: 'Button' }))
       .map(b => b.key ?? '')

@@ -14,8 +14,6 @@ import {
   EDGE,
   HELP_COLUMN,
   GROUP_GAP,
-  HEAD_LINE,
-  HEAD_TEXT,
   INSET,
   LINE,
   LINE_GAP,
@@ -34,6 +32,7 @@ import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
 import { markTintOf, titleColorOf } from './paint-title-tint'
+import { noteEl, ruleEl, ruleLine } from './paint-notes'
 
 /**
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
@@ -330,6 +329,7 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         .child(markEl(s.mark, t))
         .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word)),
     )
+    .when(s.waitsOn !== undefined, e => e.child(lineEl(s.waitsOn ?? '', colorOf(t, 'needsYou'))))
     .children(s.under.map(l => lineEl(l, t.muted)))
     .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)))
 }
@@ -401,8 +401,6 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
     .when(b.under !== null, e => e.child(lineEl(b.under ?? '', t.muted, 0)))
     .when(b.feedback !== null, e => e.child(lineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)))
 }
-
-const ruleLine = (t: Theme): Element => div().flex_1().border_t(1).border_color(t.border)
 
 /** A group's heading. A marked one hangs its mark in the mark column, with its text where its rows' text starts. One with no mark starts at the edge, where its rows' marks do. A label heading starts at the edge and rules the goal's text to its buttons. */
 function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: boolean): Element {
@@ -512,35 +510,6 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
  * A rule from edge to edge, between two groups or two PRs, so the marks of the group below sit inside the break. A
  * labelled one starts its label where text after a mark starts.
  */
-function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
-  if (b.text === null) return h_flex().pl(EDGE).pr(EDGE).child(ruleLine(t))
-
-  return h_flex()
-    .pl(TEXT_X)
-    .pr(EDGE)
-    .gap(CONTROL_GAP)
-    .items_center()
-    .child(div().flex_none().text_color(t.muted).child(b.text))
-    .child(ruleLine(t))
-}
-
-function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
-  const text = div()
-    .min_w(0)
-    .when(b.isStrong, e => e.font_semibold())
-    .text_color(b.isStrong ? t.foreground : colorOf(t, b.tone))
-    .child(b.text)
-
-  return h_flex()
-    .flex_wrap()
-    .items_baseline()
-    .pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST)
-    .pr(EDGE)
-    .whitespace_normal()
-    .when(b.isStrong, e => e.text_size(HEAD_TEXT).line_height(HEAD_LINE))
-    .child(text)
-}
-
 export function blockEl(b: Block, p: Paint): Element {
   const { t } = p
   const isLeaving = p.motion.get(b.id)?.state === 'leaving'

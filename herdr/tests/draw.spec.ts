@@ -385,6 +385,18 @@ test('a held line that ends with its age keeps counting it', () => {
   expect(agedText(aged, NOW + 60_000)).not.toBe(agedText(aged, NOW))
 })
 
+test('a subject an open ask holds up draws what it waits on in its own line, and no stall word', () => {
+  const blocks = tabBlocks(demoScreen(), uiOn('overview'))
+  const held = blocks.flatMap(b => (b.kind === 'status' && b.waitsOn !== undefined ? [b] : []))
+
+  expect(held.length).toBeGreaterThan(0)
+  for (const b of held) {
+    expect(b.waitsOn).toMatch(/^waits on you: \S/)
+    expect(b.stall).toBeNull()
+    expect(b.buttons.length).toBeGreaterThan(0)
+  }
+})
+
 test('Help names the build the host published, with the next-build mark, and names none for a file without one', () => {
   const o = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW }, queue: { outs: [], notes: {}, lines: {} } }
   const followed: Followed = { is: 'session', terminal: 't1', sessionId: 's1' }

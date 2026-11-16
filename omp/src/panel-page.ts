@@ -1,7 +1,14 @@
 import { cellWidth, cutForEllipsis } from '../../hooks/text'
 import { statusKeyPlan } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
-import { mergedLine, nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
+import {
+  mergedLine,
+  nameBeforeStall,
+  STATUS_TEXT_LINES,
+  STALL_GAP,
+  WAITS_ON_PREFIX,
+  WAS_PREFIX,
+} from '../../hooks/status-page'
 import type { StatusBranch, StatusRow, StatusStall } from '../../hooks/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
@@ -34,7 +41,7 @@ const GLUE = '\uE000'
 
 /**
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
- * stall's tone on the line of the name's last word. Then where it stands, dim.
+ * stall's tone on the line of the name's last word. Then what it waits on, in the needs-you tone, and where it stands, dim.
  */
 export function pageLine(
   d: Draw,
@@ -42,7 +49,11 @@ export function pageLine(
   mark: string,
   name: string,
   namePaint: (t: string) => string,
-  { stall = null, text = null }: { stall?: StatusStall | null; text?: string | null } = {},
+  {
+    stall = null,
+    waitsOn = null,
+    text = null,
+  }: { stall?: StatusStall | null; waitsOn?: string | null; text?: string | null } = {},
 ): string[] {
   const { width, style: s } = d
   const textAt = indent + 2
@@ -50,7 +61,10 @@ export function pageLine(
   const names = stall
     ? stalledName(name, stall, room, namePaint, s)
     : pageText(name, room, STATUS_TEXT_LINES, namePaint)
-  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []
+  const waits = waitsOn
+    ? pageText(`${WAITS_ON_PREFIX}${waitsOn}`, room, STATUS_TEXT_LINES, t => s.tone('needsYou', t))
+    : []
+  const seconds = [...waits, ...(text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [])]
 
   return [
     `${' '.repeat(indent)}${mark} ${names[0] ?? ''}`,
@@ -143,7 +157,7 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   const textAt = at + PAGE_TEXT_AT - PAGE_MARK_AT
   if (row.kind === 'subject') {
     const mark = paintMark(row, now, s)
-    const out = pageLine(d, at, mark, row.name, t => t, { stall: row.stall, text: row.text })
+    const out = pageLine(d, at, mark, row.name, t => t, { stall: row.stall, waitsOn: row.waitsOn, text: row.text })
     const room = pageRoom(at, width)
     if (row.merged)
       out.push(

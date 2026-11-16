@@ -62,7 +62,7 @@ test('work that serves a milestone draws under it one step in, and work the goal
 
   expect(p.goal?.milestones.map(m => shape(m.rows))).toEqual([
     [],
-    ['◆ Error copy: not started · waiting', '◐ CSV import: bad rows skipped'],
+    ['◆ Error copy: not started · waits on you: Ask i1?', '◐ CSV import: bad rows skipped'],
     [],
   ])
   expect(shape(p.rows)).toEqual(['== Other work', '● 1 working'])
@@ -77,10 +77,16 @@ test('finished work under a milestone shows as a row until the person looks, the
   const finished = after({ ...linked(), lastLookAt: 35 }, 'DONE: s1 | import ships', 50, new Set(['i1']))
   const rowsOf = (o: SessionStatus) => page(o, 80, {}, [askItem('i1')]).goal?.milestones[1]?.rows ?? []
 
-  expect(shape(rowsOf(finished))).toEqual(['◆ Error copy: not started · waiting', '✓ CSV import: import ships'])
-  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · waiting', '▸ 1 done'])
+  expect(shape(rowsOf(finished))).toEqual([
+    '◆ Error copy: not started · waits on you: Ask i1?',
+    '✓ CSV import: import ships',
+  ])
+  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual([
+    '◆ Error copy: not started · waits on you: Ask i1?',
+    '▸ 1 done',
+  ])
   expect(shape(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true))).toEqual([
-    '◆ Error copy: not started · waiting',
+    '◆ Error copy: not started · waits on you: Ask i1?',
     '▸ 1 done',
     '✓ CSV import',
   ])
@@ -120,7 +126,7 @@ test('under a milestone and under Other work, closed work past two rows that the
   const p = page(closed, 80, {}, [askItem('i1')])
 
   expect(shape(p.goal?.milestones[1]?.rows ?? [])).toEqual([
-    '◆ Error copy: not started · waiting',
+    '◆ Error copy: not started · waits on you: Ask i1?',
     '✓ Sniffer: sniffs',
     '✓ Parser: parses',
     '✓ Also done: CSV import',
@@ -169,8 +175,8 @@ test('under Other work, a queued subject an ask holds up stays a row, seen queue
 
   expect(shape(page({ ...held, lastLookAt: 40 }, 45, {}, asks).rows)).toEqual([
     '== Other work',
-    '◆ Error copy: not started · waiting',
-    '◆ Logo refresh: not started · waiting',
+    '◆ Error copy: not started · waits on you: Ask i2?',
+    '◆ Logo refresh: not started · waits on you: Ask i1?',
     '○ Release notes: not started',
   ])
   expect(shape(page({ ...held, lastLookAt: 40 }, 45).rows)).toEqual([
