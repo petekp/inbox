@@ -66,6 +66,13 @@ export function stepStatus(page: StatusPage, now: number, changed: Set<string>, 
     fold: stepLines(fold ? [{ id: 'milestones', fold }] : [], last?.fold, metFoldMotion, now, changed, kept),
     goal: stepLines(goalLines(page), last?.goal, goalLineMotion, now, changed, kept),
     apart: stepLines(apart ? [{ id: 'head', head: apart }] : [], last?.apart, headApartMotion, now, changed, kept),
-    rows: stepLines(unfoldedRows(page.rows, () => false, isParentFolded), last?.rows, statusRowMotion, now, changed, kept),
+    rows: stepLines(
+      unfoldedRows(page.rows, () => false, isParentFolded),
+      last?.rows,
+      statusRowMotion,
+      now,
+      changed,
+      kept,
+    ),
   }
 }

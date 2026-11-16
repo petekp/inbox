@@ -378,7 +378,11 @@ export function statusPage(
           foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
           rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1),
         }
-      : { ...m, rows, foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter(l => l.milestoneId === m.id).length }
+      : {
+          ...m,
+          rows,
+          foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter(l => l.milestoneId === m.id).length,
+        }
   }
   const g = goalParts.goal
   const goal = g && {

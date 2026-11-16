@@ -14,10 +14,7 @@ test('a Status parent draws a chevron after its name that folds its rows away an
   const milestone = screen.view.statusPage.goal!.milestones.find(m => m.foldCount > 0)!
   const underS1 = rows.filter(r => r.kind === 'child' && r.id.startsWith('c') && r.depth > s1.depth).map(r => r.id)
   const open = tabBlocks(screen, uiOn('overview'))
-  const folded = tabBlocks(
-    { ...screen, view: { ...screen.view, collapsed: ['s1', milestone.id] } },
-    uiOn('overview'),
-  )
+  const folded = tabBlocks({ ...screen, view: { ...screen.view, collapsed: ['s1', milestone.id] } }, uiOn('overview'))
   const statusOf = (blocks: Block[], id: string) => {
     const b = blocks.find(x => x.id === id)
     return b?.kind === 'status' ? b : undefined

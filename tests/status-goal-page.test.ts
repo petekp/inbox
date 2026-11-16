@@ -361,7 +361,15 @@ const withDelegate = (o: SessionStatus, delegateState: 'working' | 'blocked') =>
   after(
     withChild(
       o,
-      { ref: 'review', kind: 'subagent', name: 'Review bot', startedAt: 32, endedAt: null, lastActivityAt: 33, delegateState },
+      {
+        ref: 'review',
+        kind: 'subagent',
+        name: 'Review bot',
+        startedAt: 32,
+        endedAt: null,
+        lastActivityAt: 33,
+        delegateState,
+      },
       34,
     ),
     'LINK: c1 | s1',
@@ -386,7 +394,13 @@ test('a milestone or a subject with rows under it folds by its name, which hides
   expect(m2?.foldCount).toBe(2)
   expect(s1).toMatchObject({ kind: 'subject', foldCount: 1 })
   expect(milestoneRows(m2!, () => false, isCollapsed)).toEqual([])
-  expect(unfoldedRows(m2!.rows, () => false, id => id === 's1').map(r => r.id)).toEqual(['s2', 's1'])
+  expect(
+    unfoldedRows(
+      m2!.rows,
+      () => false,
+      id => id === 's1',
+    ).map(r => r.id),
+  ).toEqual(['s2', 's1'])
   expect(statusKeyRows(p).map(t => t.id)).toEqual(['goal', 'm2', 's2', 's1'])
   expect(statusKeyRows(p, () => false, isCollapsed).map(t => [t.id, t.keys.map(k => k.press)])).toEqual([
     ['goal', [{ action: 'type-goal', text: 'Import ready to demo' }, { action: 'remove-goal' }]],
@@ -419,7 +433,8 @@ test('a fold made while a delegate waits opens when that delegate waits again, a
 })
 
 test('every milestone with work under it folds by its name before it is done: the one under way, the next and one under Later', () => {
-  const goal = 'GOAL: Import ready to demo | done Parsing works; working Errors explained; queued Demo script; queued Docs written'
+  const goal =
+    'GOAL: Import ready to demo | done Parsing works; working Errors explained; queued Demo script; queued Docs written'
   const o = after(
     after(after(null, START, 10), goal, 20),
     'SERVES: s1 | m2\nSERVES: s2 | m3\nSERVES: s4 | m4\nSERVES: s3 | -',
@@ -428,7 +443,11 @@ test('every milestone with work under it folds by its name before it is done: th
   const p = page(o, 40)
   const open = (p.goal?.milestones ?? []).filter(m => m.mark !== '✓')
   const folded = new Set(open.map(m => m.id))
-  const targets = statusKeyRows(p, () => false, id => folded.has(id))
+  const targets = statusKeyRows(
+    p,
+    () => false,
+    id => folded.has(id),
+  )
 
   expect(open.map(m => [m.word, m.foldCount > 0])).toEqual([
     ['now', true],
@@ -436,7 +455,13 @@ test('every milestone with work under it folds by its name before it is done: th
     [null, true],
   ])
   for (const m of open) {
-    expect(milestoneRows(m, () => false, id => folded.has(id))).toEqual([])
+    expect(
+      milestoneRows(
+        m,
+        () => false,
+        id => folded.has(id),
+      ),
+    ).toEqual([])
     expect(targets.find(t => t.id === m.id)?.keys.map(k => k.press)).toContainEqual(foldPress(m.id))
   }
 })

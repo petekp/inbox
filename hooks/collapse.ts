@@ -43,7 +43,9 @@ function newsByRow({ ledger, prViews, lastActions }: CollapseSource): Map<string
         return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)] as const
       }),
     ),
-    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }] as const),
+    ...[...waitingUnderParents(ledger)].map(
+      ([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }] as const,
+    ),
   ])
 }
 
@@ -96,7 +98,11 @@ export function withCollapse<S extends CollapseSource>(
   const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)))
   const untimedUrl = news.get(row)?.untimedUrl ?? null
   const waiting = news.get(row)?.waiting ?? []
-  const collapse: RowCollapse = { at, ...(untimedUrl !== null && { untimedUrl }), ...(waiting.length > 0 && { waiting }) }
+  const collapse: RowCollapse = {
+    at,
+    ...(untimedUrl !== null && { untimedUrl }),
+    ...(waiting.length > 0 && { waiting }),
+  }
 
   return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept }
 }

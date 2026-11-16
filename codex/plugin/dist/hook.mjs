@@ -2057,7 +2057,9 @@ function newsByRow({ ledger, prViews, lastActions }) {
         return [id, timed(latest(c.finishedAt, pressed2(id)), untimedUrl)];
       })
     ),
-    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }])
+    ...[...waitingUnderParents(ledger)].map(
+      ([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }]
+    )
   ]);
 }
 var isUnchanged = (news, c) => news !== void 0 && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null) && news.waiting.every((id) => c.waiting?.includes(id));
@@ -2980,7 +2982,11 @@ function statusPage(s, now) {
       isMuted: true,
       foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
       rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
-    } : { ...m, rows: rows2, foldCount: rows2.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length };
+    } : {
+      ...m,
+      rows: rows2,
+      foldCount: rows2.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
+    };
   };
   const g = goalParts.goal;
   const goal = g && {

@@ -13,7 +13,9 @@ export function waitingUnderParents(ledger: Pick<Ledger, 'overview' | 'items'>):
   const o = ledger.overview
   if (!o) return new Map()
   const blockedOf = (subjectId: string) =>
-    o.children.filter(c => c.subjectId === subjectId && c.endedAt === null && c.delegateState === 'blocked').map(c => c.id)
+    o.children
+      .filter(c => c.subjectId === subjectId && c.endedAt === null && c.delegateState === 'blocked')
+      .map(c => c.id)
   const asksOf = (subjectId: string) =>
     ledger.items.filter(i => o.askSubjects[i.id]?.includes(subjectId)).map(i => i.id)
   const subjects = o.subjects.filter(x => x.into === null)
@@ -57,7 +59,9 @@ export function unfoldedRows(
   isUnfolded: (id: string) => boolean,
   isCollapsed: IsCollapsed = NONE_COLLAPSED,
 ): StatusRow[] {
-  return withoutCollapsed(rows, isCollapsed).flatMap(r => (r.kind === 'done-fold' && isUnfolded(r.id) ? [r, ...r.rows] : [r]))
+  return withoutCollapsed(rows, isCollapsed).flatMap(r =>
+    r.kind === 'done-fold' && isUnfolded(r.id) ? [r, ...r.rows] : [r],
+  )
 }
 
 /** Whether a subject's or milestone's rows are folded behind its name. */

@@ -190,7 +190,10 @@ test('on the Status page, j reaches a subject with rows under it, f folds them b
   if (parent.kind !== 'subject') throw new Error('expected a subject')
   const rows = screen.view.statusPage.rows
   const after = rows.slice(rows.indexOf(parent) + 1)
-  const under = after.slice(0, after.findIndex(r => r.depth <= parent.depth))
+  const under = after.slice(
+    0,
+    after.findIndex(r => r.depth <= parent.depth),
+  )
   expect(under.length).toBeGreaterThan(0)
   expect(text(screen, onPage)).toContain(`${labelOf(parent)} ▾`)
   expect(text(screen, onPage)).not.toContain('Fold')

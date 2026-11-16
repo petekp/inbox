@@ -5354,7 +5354,11 @@ function withCollapse(s, row, isCollapsed, at) {
   const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
   const untimedUrl = news.get(row)?.untimedUrl ?? null;
   const waiting = news.get(row)?.waiting ?? [];
-  const collapse = { at, ...untimedUrl !== null && { untimedUrl }, ...waiting.length > 0 && { waiting } };
+  const collapse = {
+    at,
+    ...untimedUrl !== null && { untimedUrl },
+    ...waiting.length > 0 && { waiting }
+  };
   return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
 }
 
@@ -7124,7 +7128,11 @@ function statusPage(s, now) {
       isMuted: true,
       foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
       rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
-    } : { ...m, rows, foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length };
+    } : {
+      ...m,
+      rows,
+      foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
+    };
   };
   const g = goalParts.goal;
   const goal = g && {

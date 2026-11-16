@@ -440,11 +440,7 @@ export function paneStatus(
             key: `status-${r.id}`,
             depth: r.depth,
             mark: null,
-            content: plainText(
-              foldButton(key, r.text, isUnfolded(r.id), toggle),
-              r.text,
-              r.depth,
-            ),
+            content: plainText(foldButton(key, r.text, isUnfolded(r.id), toggle), r.text, r.depth),
             isSelected: r.id === statusKeyRow?.id,
           })
     }
