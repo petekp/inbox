@@ -16,7 +16,8 @@ import {
 const NEEDS_YOU = 'warning'
 const OPPORTUNITY = 'success'
 const DONE = 'suggestion'
-const WORKING = 'text'
+/** The theme key of the text color, which a working mark draws in. */
+export const WORKING = 'text'
 const ISSUE = 'error'
 const FINDINGS = 'autoAccept'
 const PRS = 'planMode'
@@ -118,7 +119,8 @@ const LIGHT_ANSI_PALETTE: Palette = {
   line: 'userMessageBackground',
   divider: 'userMessageBackground',
   tone: {},
-  // Red, magenta, blue, green and red: the theme's yellow and cyan fall under 3:1 on bright white.
+  // Red, magenta, blue, green and text: the theme's yellow and cyan fall under 3:1 on bright white, so a wait and an issue
+  // share red here.
   mark: {
     needsYou: 'error',
     issue: ISSUE,
