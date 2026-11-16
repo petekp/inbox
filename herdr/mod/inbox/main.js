@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T15:43:44.014Z. 207683 characters follow.
+// Built at 2026-11-16T01:54:07.361Z. 210483 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -879,6 +879,84 @@ function upgradeHostTasks(saved) {
     const status = STATUSES2[String(t.status)];
     return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
   });
+}
+
+// ../hooks/task-tree.ts
+var TASK_NOTES_LIMIT = 40;
+var TASK_NOTE_LENGTH = 2000;
+function notesOf(notes) {
+  return notes.slice(0, TASK_NOTES_LIMIT).map((note) => note.slice(0, TASK_NOTE_LENGTH));
+}
+function taskTreeFromStatus(status) {
+  if (!status)
+    return [];
+  const goalId = status.goal && !status.goal.isAwaitingMilestones ? `goal-${status.goal.setAt}` : undefined;
+  const milestones = status.milestones.map((milestone) => {
+    const node = {
+      id: milestone.id,
+      parentId: null,
+      status: milestone.status,
+      weight: 1,
+      title: milestone.name,
+      detail: milestone.text,
+      notes: notesOf(milestone.was ? [milestone.was] : []),
+      createdAt: milestone.changedAt,
+      updatedAt: milestone.closedAt ?? milestone.changedAt,
+      history: [{ at: milestone.changedAt, source: "status", kind: "imported" }],
+      ...goalId ? { goalId } : {}
+    };
+    if (milestone.closedAt !== null) {
+      node.history = [
+        ...node.history,
+        {
+          at: milestone.closedAt,
+          source: "status",
+          kind: milestone.status === "done" ? "completed" : "updated",
+          detail: milestone.status
+        }
+      ];
+    }
+    return node;
+  });
+  const milestoneIds = new Set(milestones.map((node) => node.id));
+  const subjectIds = new Set(status.subjects.map((subject) => subject.id));
+  const subjects = status.subjects.map((subject) => {
+    const served = status.serves[subject.id];
+    const milestoneId = typeof served === "string" && served !== "none" && milestoneIds.has(served) ? served : null;
+    const mergedIntoId = subject.into && subjectIds.has(subject.into) ? subject.into : undefined;
+    const parentId = milestoneId;
+    const notes = notesOf([subject.was, subject.merged].filter((note) => note !== null));
+    const node = {
+      id: subject.id,
+      parentId,
+      status: subject.status,
+      weight: 1,
+      title: subject.name,
+      detail: subject.text,
+      notes,
+      createdAt: subject.createdAt,
+      updatedAt: subject.closedAt ?? subject.changedAt,
+      history: [
+        { at: subject.createdAt, source: "status", kind: "created" },
+        { at: subject.changedAt, source: "status", kind: "imported" }
+      ],
+      ...goalId && milestoneId ? { goalId } : {},
+      ...mergedIntoId ? { mergedIntoId } : {}
+    };
+    if (subject.closedAt !== null) {
+      node.history = [
+        ...node.history,
+        {
+          at: subject.closedAt,
+          source: "status",
+          kind: subject.status === "done" ? "completed" : "updated",
+          detail: subject.status
+        }
+      ];
+    }
+    return node;
+  });
+  return [...milestones, ...subjects];
 }
 
 // ../hooks/pr-checks.ts
@@ -2527,6 +2605,7 @@ var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
     ledger: EMPTY,
+    taskTree: [],
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -2582,8 +2661,10 @@ function upgradeSession(saved) {
 }
 function sessionFields(saved, views) {
   const base = emptySession();
+  const ledger = saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger;
   return {
-    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
+    ledger,
+    taskTree: Array.isArray(saved.taskTree) ? saved.taskTree : taskTreeFromStatus(ledger.overview),
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },

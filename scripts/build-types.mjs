@@ -33,6 +33,7 @@ const types = [
     'items.d.ts',
     'press.d.ts',
     'ledger.d.ts',
+    'task-tree.d.ts',
     'session.d.ts',
     'claude-code.d.ts',
     'tool-inputs.d.ts',

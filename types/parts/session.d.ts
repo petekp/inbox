@@ -2,6 +2,7 @@ import type { Place } from './status'
 import type { TurnDialogQuestion } from './items'
 import type { LastAction, RowNote } from './press'
 import type { Ledger, PrView } from './ledger'
+import type { TaskTree } from './task-tree'
 
 /** Why the session halted outside the conversation, from the error Claude Code classified it with. */
 export type Stop = {
@@ -201,6 +202,8 @@ export type HerdrPressOutcome = { id: string; outcome: 'applied' | 'stale' }
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
+  /** Durable work copied from Status subjects and milestones; order is the saved tree order. */
+  taskTree: TaskTree
   /** What the turn running now gathered for the per-reply update. */
   turn: {
     person: string | null

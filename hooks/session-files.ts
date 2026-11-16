@@ -2,6 +2,7 @@ import { EMPTY, KEPT_SESSIONS, upgradeLedger } from './ledger'
 import { TOLD_NOTHING } from './inbox-text'
 import { upgradeLastActions } from './last-actions'
 import { upgradeHostTasks } from './host-tasks'
+import { taskTreeFromStatus } from './task-tree'
 import { withCheckKeys } from './saved-check-keys'
 import type { PrView, PrViews, Session, Told, ToolFields, TurnDialogQuestion } from '../types'
 
@@ -15,6 +16,7 @@ export const NO_TURN: Session['turn'] = { person: null, trigger: null, activity:
 export function emptySession(): Session {
   return {
     ledger: EMPTY,
+    taskTree: [],
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -120,11 +122,13 @@ export function upgradeSession(saved: SavedSession): Session {
 
 function sessionFields(saved: SavedSession, views: Record<string, PrView>): Session {
   const base = emptySession()
+  const ledger = saved.ledger
+    ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) }
+    : base.ledger
 
   return {
-    ledger: saved.ledger
-      ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) }
-      : base.ledger,
+    ledger,
+    taskTree: Array.isArray(saved.taskTree) ? saved.taskTree : taskTreeFromStatus(ledger.overview),
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },

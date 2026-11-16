@@ -2,8 +2,11 @@ import { expect, mock, test } from 'claude-code/testing'
 import { SESSION_VERSION } from '../hooks/session-version'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { statusPage } from '../hooks/status-page'
+import { taskTreeFromStatus } from '../hooks/task-tree'
+import type { Session } from '../types'
 import { w, world } from './hooks-world'
 import { PANE, selectRow, SAVED_SESSION } from './hooks-helpers'
+import { savedTaskSession } from './task-tree-fixtures'
 
 test('a session saved with no version, mid-turn, by a process that ended loads with no turn running, its Done message goes, and its next save writes the session version', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -40,6 +43,41 @@ test('a session saved with no version, mid-turn, by a process that ended loads w
   await clock.advance(SETTLED_MS)
   expect(w.sent).toEqual(['Done: Sign in to npm'])
   expect(JSON.parse(w.stored.get('s:session-1')!).version).toBe(SESSION_VERSION)
+})
+
+test('the Claude mod upgrades a legacy task tree save when it loads it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Session | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, event, next) => {
+    session = event.value as Session
+    return next(event)
+  })
+  const oldSave = { ...SAVED_SESSION, ...savedTaskSession() }
+  w.stored.set('s:session-1', JSON.stringify(oldSave))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  expect(session!.taskTree).toEqual(taskTreeFromStatus(oldSave.ledger.overview))
+})
+
+test('the Claude mod keeps a task tree already present in its saved session', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Session | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, event, next) => {
+    session = event.value as Session
+    return next(event)
+  })
+  const status = savedTaskSession().ledger.overview
+  const migratedTree = taskTreeFromStatus(status)
+  w.stored.set('s:session-1', JSON.stringify({ ...SAVED_SESSION, ...savedTaskSession(migratedTree) }))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  expect(session!.taskTree).toEqual(migratedTree)
 })
 
 test('resuming a session waits for its in-flight save before loading it', async ($, on) => {

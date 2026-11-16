@@ -476,6 +476,33 @@ export type Ledger = {
   updates: number
 }
 
+export type TaskStatus = 'working' | 'queued' | 'waits-on-other' | 'done' | 'dropped'
+
+export type TaskHistoryEvent = {
+  at: number
+  source: string
+  kind: 'created' | 'updated' | 'moved' | 'completed' | 'note' | 'imported'
+  detail?: string
+}
+
+export type TaskNode = {
+  id: string
+  parentId: string | null
+  status: TaskStatus
+  weight: number
+  title: string
+  detail: string
+  notes: string[]
+  createdAt: number
+  updatedAt: number
+  history: TaskHistoryEvent[]
+  goalId?: string
+  streamId?: string
+  mergedIntoId?: string
+}
+
+export type TaskTree = TaskNode[]
+
 /** Why the session halted outside the conversation, from the error Claude Code classified it with. */
 export type Stop = {
   kind: 'sign-in' | 'billing' | 'usage-limit' | 'api-error'
@@ -674,6 +701,8 @@ export type HerdrPressOutcome = { id: string; outcome: 'applied' | 'stale' }
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
+  /** Durable work copied from Status subjects and milestones; order is the saved tree order. */
+  taskTree: TaskTree
   /** What the turn running now gathered for the per-reply update. */
   turn: {
     person: string | null
