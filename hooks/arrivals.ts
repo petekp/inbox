@@ -2,7 +2,7 @@ import { cancelledChecks, failingChecks } from './pr-checks'
 import { waitingThreads } from './prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-rows'
 import type { DrawnPr } from './pr-views'
-import { closedShown, NEEDS_YOU_GROUPS, rowResultMark, settledRowIds } from './rows'
+import { closedShown, closedTitleTone, NEEDS_YOU_GROUPS, rowResultMark, settledRowIds } from './rows'
 import { FINDING_GROUPS } from './help'
 import { ROW_TABS } from './tabs'
 import type { InboxView } from './view'
@@ -131,7 +131,7 @@ export function isPrsTabEmpty(drawnCount: number, isFetching: boolean): boolean 
   return drawnCount === 0 && !isFetching
 }
 
-/** How long a new row's bar shows at full strength once its tab is shown, then how long it fades, in ms. */
+/** How long a new row's title tint shows at full strength once its tab is shown, then how long it fades, in ms. */
 export const NEW_HOLD_MS = 1500
 export const NEW_FADE_MS = 3000
 /** The colors a look that redraws on a timer steps the fade through. */
@@ -150,7 +150,7 @@ export function addNewRows(rows: NewRows, added: Partial<Record<string, readonly
   return next
 }
 
-/** `rows` as a look draws `tab` at `now`: that tab's rows start their clock, and rows whose bar has gone are dropped. */
+/** `rows` as a look draws `tab` at `now`: that tab's rows start their clock, and rows whose tint has gone are dropped. */
 export function showNewRows(rows: NewRows, tab: string, now: number): NewRows {
   const next = new Map<string, NewRow>()
   for (const [id, row] of rows) {
@@ -172,7 +172,7 @@ export function newRowIn(rows: NewRows, id: string, tab: string): NewRow | undef
 }
 
 /**
- * The strength of a row's bar at `now`, from 1 to 0: full until its tab is shown, then full for `NEW_HOLD_MS`, then an
+ * The strength of a row's tint before `TITLE_TINT` at `now`, from 1 to 0: full until its tab is shown, then full for `NEW_HOLD_MS`, then an
  * ease to 0 over `NEW_FADE_MS`. 0 for a row not new.
  */
 export function newRowShare(row: NewRow | undefined, now: number): number {
@@ -194,32 +194,49 @@ export function steppedShare(row: NewRow | undefined, now: number, steps = NEW_S
   return newRowShare(row, row.shownAt + NEW_HOLD_MS + Math.floor(faded / step) * step)
 }
 
+/** How much of its tone a title takes at the start of its hold: a tint, not the tone's full color. */
+export const TITLE_TINT = 0.65
+
+/** When a look first drew each closed row, keyed `${id}:${closedAt}`, so a row closed again after Undo gets a new clock. */
+export type ClosedSeen = Map<string, number>
+
 /**
- * The clock of a settled row's bar: the same hold and fade as a new row's, running from `at`, when the row closed,
- * whatever the row does after. The row's mark and label carry its state once the bar has gone.
+ * The clock of a closed row's title tint: the same hold and fade as a new row's, from when a look first drew the row
+ * closed, so a look that learns of the close late never starts mid-fade. Undefined once the tint has gone, and for a
+ * row closed longer ago than the tint lasts when the look first draws it.
  */
-export function settledBarClock(at: number): NewRow {
-  return { tab: '', shownAt: at }
+export function closedTitleClock(seen: ClosedSeen, id: string, closedAt: number, now: number): NewRow | undefined {
+  const key = `${id}:${closedAt}`
+  const total = NEW_HOLD_MS + NEW_FADE_MS
+  let shownAt = seen.get(key)
+  if (shownAt === undefined) {
+    if (now - closedAt >= total) return undefined
+    shownAt = now
+    seen.set(key, shownAt)
+  }
+
+  return now - shownAt < total ? { tab: '', shownAt } : undefined
 }
 
-/** The settled rows' bar clocks in `v`, for a look that redraws on a timer while any bar fades. */
-function settledBarClocks(v: InboxView): NewRow[] {
-  const rows = [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]
-
-  return rows.flatMap(r => (r.state.is === 'settled' ? [settledBarClock(r.state.at)] : []))
+/** How far a title takes its tone at `now`, from 0 to `TITLE_TINT`, in the steps a look that redraws on a timer draws. */
+export function steppedTitleTint(clock: NewRow | undefined, now: number): number {
+  return steppedShare(clock, now) * TITLE_TINT
 }
 
-/** Whether a shown row's bar still moves, so a look that redraws on a timer keeps redrawing. */
-export function isNewRowFading(rows: NewRows, now: number): boolean {
-  return isBarFading([...rows.values()], now)
-}
+/**
+ * When the next title tint in `rows` and in `v`'s closed rows ends, or null when none is left, so a look redraws until
+ * then. A new row whose tab is not yet shown has no end. A closed row no look has drawn yet counts as ending a whole
+ * tint from now, since its clock starts at its first draw, which this does not start.
+ */
+export function titleTintEndsAt(rows: NewRows, v: InboxView, seen: ClosedSeen, now: number): number | null {
+  const total = NEW_HOLD_MS + NEW_FADE_MS
+  const ends = [...rows.values()].flatMap(r => (r.shownAt === null ? [] : [r.shownAt + total]))
+  for (const r of [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]) {
+    if (r.state.is !== 'settled' || closedTitleTone(r.state) === 'muted') continue
+    const shownAt = seen.get(`${r.id}:${r.state.at}`) ?? (now - r.state.at < total ? now : undefined)
+    if (shownAt !== undefined) ends.push(shownAt + total)
+  }
+  const next = Math.min(...ends.filter(at => at > now), Infinity)
 
-/** Whether a new row's bar or a settled row's in `v` is still shown, so a look that redraws on a timer keeps redrawing. */
-export function areBarsFading(rows: NewRows, v: InboxView, now: number): boolean {
-  return isNewRowFading(rows, now) || isBarFading(settledBarClocks(v), now)
-}
-
-/** Whether any of `clocks` is a bar that is shown and not yet gone. */
-export function isBarFading(clocks: readonly NewRow[], now: number): boolean {
-  return clocks.some(r => r.shownAt !== null && newRowShare(r, now) > 0)
+  return next === Infinity ? null : next
 }

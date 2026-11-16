@@ -1,6 +1,6 @@
 import type { Timer } from 'claude-code'
 import type { Tab } from '../types'
-import type { NewRows, RowRecord } from './arrivals'
+import type { ClosedSeen, NewRows, RowRecord } from './arrivals'
 import type { PendingUndoScroll } from './pane-selection'
 import type { ModLook } from './rows'
 import type { ListInput } from './timing'
@@ -9,6 +9,7 @@ import type { HerdrAsk } from './herdr-ask'
 class PaneState {
   recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
   newRows: NewRows = new Map()
+  closedSeen: ClosedSeen = new Map()
   /** Counts each time the row record starts over, so a record begun before that records nothing. */
   rowRecordCount = 0
   isInlinePane = false
@@ -28,6 +29,8 @@ class PaneState {
   undoEnds = new Set<number>()
   isUndoLoopRunning = false
   timedRedrawAt: number | null = null
+  /** The end of the title tint the desktop look last scheduled a redraw for. */
+  tintRedrawAt: number | null = null
   /** The person's latest run of input on the pane's list, which keeps a row due to fold in place. */
   listInput: ListInput | null = null
   foldRedrawAt: number | null = null

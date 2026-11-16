@@ -144,7 +144,7 @@ function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
   return id === null ? recorded : withSelected(recorded, id)
 }
 
-/** `ui` as the look shows its tab `at`: the tab's new rows start their bar's clock, and ended bars are dropped. */
+/** `ui` as the look shows its tab `at`: the tab's new rows start their tint's clock, and ended tints are dropped. */
 function withShownNewRows(ui: LookUi, at: number): LookUi {
   const newRows = showNewRows(ui.newRows, ui.tab, at)
   const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row)

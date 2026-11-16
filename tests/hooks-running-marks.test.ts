@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { RUNNING_FRAME_MS, SETTLED_MS, runningMark } from '../hooks/timing'
-import { IDLE_MARK, ROW_BAR, RUNNING_FRAMES } from '../hooks/help'
+import { IDLE_MARK, RUNNING_FRAMES } from '../hooks/help'
 import { NEW_FADE_MS, NEW_HOLD_MS } from '../hooks/arrivals'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
@@ -53,7 +53,7 @@ test(
   },
 )
 
-test('a row that arrives while the pane is open gets a bar in the terminal and on desktop, and no redraw after its fade brings it back', async ($, on) => {
+test('a row that arrives while the pane is open gets a tinted title in the terminal and on desktop, and no redraw after its fade brings it back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -68,25 +68,27 @@ test('a row that arrives while the pane is open gets a bar in the terminal and o
     await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
     await clock.settle()
   }
-  const bars = async (id: string) => [
-    (await pane.find({ key: `new-${id}` }))?.text?.split('\n')[0] ?? null,
-    ((await desktop.find({ key: `new-${id}` })) ?? null) !== null,
-  ]
+  const tints = async (id: string) => {
+    const title = (await pane.find({ key: `title-${id}` }))?.children?.[0] as { props?: { color?: string } } | undefined
+    const client = (await desktop.find({ key: `select-${id}` }))?.props as { props?: { titleColor?: string | null } }
+
+    return [title?.props?.color ?? null, client?.props?.titleColor ?? null]
+  }
 
   await turn('add a greeting cli', 't1')
-  expect(await bars('i2')).toEqual([ROW_BAR, true])
+  expect(await tints('i2')).toEqual(['remember', 'remember'])
   await clock.advance(NEW_HOLD_MS + NEW_FADE_MS)
   await pane.redraw()
   await desktop.redraw()
-  expect(await bars('i2')).toEqual([null, false])
+  expect(await tints('i2')).toEqual([null, null])
 
   w.ledgerReply = 'NEW: decide | 3 | Print in color? | yes / no | no'
   await turn('add color', 't2')
-  expect(await bars('i3')).toEqual([ROW_BAR, true])
-  expect(await bars('i2')).toEqual([null, false])
+  expect(await tints('i3')).toEqual(['remember', 'remember'])
+  expect(await tints('i2')).toEqual([null, null])
 })
 
-test('a row that arrives while the pane is closed gets no bar once the pane shows', async ($, on) => {
+test('a row that arrives while the pane is closed gets no tint once the pane shows', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: false, isFocused: false }
@@ -101,7 +103,7 @@ test('a row that arrives while the pane is closed gets no bar once the pane show
   await pane.redraw()
 
   expect((await pane.find({ key: 'row-i2' })) ?? null).not.toBe(null)
-  expect((await pane.find({ key: 'new-i2' })) ?? null).toBe(null)
+  expect(((await pane.find({ key: 'title-i2' }))?.children ?? []).length).toBe(0)
 })
 
 test('a working subject’s mark on the Status moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {

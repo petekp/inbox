@@ -33,7 +33,7 @@ import { PATH_X, lineColor, panelId, restId, sizeEl, titleEl } from './paint-spa
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
-import { newBarEls, settledBarEls } from './paint-new-bar'
+import { markTintOf, titleColorOf } from './paint-title-tint'
 
 /**
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
@@ -104,11 +104,11 @@ const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false)
     .children(buttons.map(b => buttonEl(b, p, isInert)))
 
 /** A mark, at the start of the column that hangs before the text, so a tab's first marks sit on the panel's edge. */
-const markEl = (m: Mark | null, t: Theme): Element =>
+const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null = null): Element =>
   div()
     .w(MARK_W)
     .flex_none()
-    .text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone))
+    .text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone)))
     .when(m?.isRunning === true, e => e.loop('opacity', { from: 1, to: 0.3, period: RUNNING_PULSE_MS }))
     .child(m?.text ?? '')
 
@@ -186,12 +186,12 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .items_start()
     .when(isPressable && isOpen, e => e.on_click((_e, cx) => p.collapse(r.id, true, cx)))
     .when(hasTree, e => e.relative().child(trunkEl(LINE_HEIGHT, null, t)))
-    .child(markEl(r.mark, t))
+    .child(markEl(r.mark, t, markTintOf(r, p)))
     .child(
       div()
         .flex_1()
         .min_w(0)
-        .text_color(r.isDim ? t.muted : t.foreground)
+        .text_color(titleColorOf(r, p))
         .when(!isWrapped, e => e.truncate())
         .when(isOpen, e => e.font_semibold())
         .child(r.title),
@@ -222,7 +222,6 @@ function rowEl(r: RowBlock, p: Paint): Element {
         .hover(s => s.bg(t.hover))
         .on_click((_e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))),
     )
-    .children(r.settled ? settledBarEls(r, p) : newBarEls(r, p))
     .child(titleEl(r, p, line))
     .child(
       sizeEl(

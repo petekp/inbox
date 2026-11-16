@@ -5,7 +5,7 @@ import {
   LIGHT_BANNER_TINTS,
   LIGHT_TONES,
   MUTED_TEXT,
-  THEME_BACKGROUND,
+  THEME_TEXT,
 } from '../../hooks/tones'
 import type { Style, Tone } from './panel'
 
@@ -35,6 +35,7 @@ function truecolorFill(hex: string, text: string): string {
 /** Maps the panel's styles onto omp's theme. The separator and the accent follow the theme; the tones follow `hooks/tones.ts`. */
 export function styleOf(theme: OmpTheme): Style {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES
+  const mode = theme.isLight ? 'light' : 'dark'
   const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS
 
   return {
@@ -48,15 +49,19 @@ export function styleOf(theme: OmpTheme): Style {
         : truecolor(tones[name], text),
     banner: (tone, part, text) =>
       part === 'line' ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
-    newBar: (share, text) =>
-      truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? 'light' : 'dark'], share), text),
-    settledBar: (tone, share, text) =>
+    tint: (tone, share, text, rest = null) =>
       truecolor(
         fadedOver(
-          tone === 'muted'
-            ? MUTED_TEXT[theme.isLight ? 'light' : 'dark']
-            : tones[tone === 'error' ? 'errorMark' : 'done'],
-          THEME_BACKGROUND[theme.isLight ? 'light' : 'dark'],
+          tone === 'key'
+            ? tones.key
+            : tone === 'muted'
+              ? MUTED_TEXT[mode]
+              : tones[tone === 'error' ? 'errorMark' : 'done'],
+          rest === 'dim'
+            ? MUTED_TEXT[mode]
+            : rest && rest !== 'sep' && rest !== 'accent'
+              ? tones[rest]
+              : THEME_TEXT[mode],
           share,
         ),
         text,

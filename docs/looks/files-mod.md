@@ -13,7 +13,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-ask-tree.tsx` | Mod only. An open question's or task's context, option lines and Holds up line, hung on one connector in the terminal, and the entries desktop draws on its own lines. |
 | `hooks/pane-desktop-tree.tsx` | Mod only. A desktop tree line drawn from 1 pt pieces in a frame's mark column, for the Status tree and an open question's tree. |
 | `hooks/pane-rows.tsx` | Mod only. `listRow`, which draws one list row, selected or not, in both looks. |
-| `hooks/pane-new-bar.tsx` | Mod only. `newBar`, the bar at a new row's left edge, in both looks. |
+| `hooks/pane-title-tint.ts` | Mod only. `newTitleTint` and `closedTitleTint`, the color a row's title takes while its tint lasts, in both looks. |
 | `hooks/title-client.tsx` | Mod only. The desktop pane's open row title, as a Client, so a click anywhere on the title collapses the row. It draws its own hover and pressed colors. |
 | `hooks/pane-row-lines.tsx` | Mod only. The parts a row's lines are drawn from: marks, tree lines, ages, feedback labels, an unselected row's line, and the props of the desktop row Client. |
 | `hooks/pane-row-keys.tsx` | Mod only. A row's buttons: keyed buttons, the desktop follow-up links, the terminal's action lines and a reply field's actions. |

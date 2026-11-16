@@ -5,7 +5,7 @@ import type { PrPress } from '../../hooks/pr-press'
 import { isPressConfirmed } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { showsRunningMark } from '../../hooks/session-view'
-import { areBarsFading, showNewRows } from '../../hooks/arrivals'
+import { showNewRows, titleTintEndsAt } from '../../hooks/arrivals'
 import { READING_TEXT } from '../../hooks/banners'
 import { timedChangeAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
@@ -76,7 +76,7 @@ type Panel = {
  */
 export function createPanel(deps: PanelDeps): Panel {
   const { source, style, timers } = deps
-  let ui: PanelUi = { ...INITIAL_UI, shownSince: deps.openedAt }
+  let ui: PanelUi = { ...INITIAL_UI, closedSeen: new Map(), shownSince: deps.openedAt }
   let screen: PanelScreen | null = null
   let animation: unknown = null
   /** Redraws without reading the session again, since a running mark's frame needs only the clock. */
@@ -95,7 +95,7 @@ export function createPanel(deps: PanelDeps): Panel {
   const syncFrames = () => {
     const hasFrames =
       screen !== null &&
-      (areBarsFading(ui.newRows, screen.view, deps.now()) ||
+      (titleTintEndsAt(ui.newRows, screen.view, ui.closedSeen, deps.now()) !== null ||
         showsRunningMark(screen.view, ui.tab, ui.isHelpShown, kind => ui.unfolded.includes(kind)))
     if (hasFrames && frames === null) frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS)
     if (!hasFrames && frames !== null) {

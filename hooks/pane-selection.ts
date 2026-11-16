@@ -136,7 +136,7 @@ export function rowRecorder() {
 type RowRecordArgs = { isDemo: boolean; view: SessionView; isPrsFetching: boolean; isOpening: boolean }
 
 /**
- * The PRs tab records nothing while `isPrsFetching`. Only rows that arrive while the pane `isShown` get a new row's bar.
+ * The PRs tab records nothing while `isPrsFetching`. Only rows that arrive while the pane `isShown` get a new row's title tint.
  * An opening, and a switch between the demo and the inbox, start the record over.
  */
 function newRows({ isDemo, view, isPrsFetching, isOpening }: RowRecordArgs, isShown: boolean): Record<Tab, string[]> {
@@ -153,5 +153,7 @@ function newRows({ isDemo, view, isPrsFetching, isOpening }: RowRecordArgs, isSh
 export function forgetRows() {
   paneState.recordedRows = null
   paneState.newRows = new Map()
+  paneState.closedSeen = new Map()
+  paneState.tintRedrawAt = null
   paneState.rowRecordCount++
 }
