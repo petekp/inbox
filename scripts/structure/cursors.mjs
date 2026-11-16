@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const CODEX_CSS = 'codex/src/tab-css'
@@ -10,6 +10,7 @@ const POINTER_HERDR = /cursor_pointer\s*\(/
 /** Every inbox control uses the default cursor, and hover states show what is clickable. */
 export function checkCursors(root, errors) {
   const scan = (dir, extension, pattern, found) => {
+    if (!existsSync(join(root, dir))) return
     for (const name of readdirSync(join(root, dir)).filter(n => n.endsWith(extension)))
       readFileSync(join(root, dir, name), 'utf8')
         .split('\n')
