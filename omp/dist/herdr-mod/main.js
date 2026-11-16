@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T05:32:12.712Z. 266315 characters follow.
+// Built at 2026-11-16T05:54:44.865Z. 266321 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -5179,9 +5179,9 @@ function placeAfter(shown, above) {
 }
 
 // ../hooks/tones.ts
-var DARK_AMBER = "#ffc107";
+var DARK_ORANGE = "#ffae42";
 var DARK_TONES = {
-  needsYou: DARK_AMBER,
+  needsYou: DARK_ORANGE,
   issue: "#ff6b80",
   findings: "#cab0ff",
   tasks: "#b48cff",
@@ -5194,9 +5194,9 @@ var DARK_TONES = {
   errorMark: "#ff6b80",
   key: "#b1b9f9"
 };
-var LIGHT_AMBER = "#745417";
+var LIGHT_ORANGE = "#844100";
 var LIGHT_TONES = {
-  needsYou: LIGHT_AMBER,
+  needsYou: LIGHT_ORANGE,
   issue: "#a5293d",
   findings: "#7b00e8",
   tasks: "#6a14d9",
@@ -5212,7 +5212,6 @@ var LIGHT_TONES = {
 
 // src/paint-theme.ts
 var TONE_COLORS = {
-  needsYou: "ansi3",
   issue: "ansi1",
   notice: "ansi4",
   warning: "ansi3",
@@ -5229,7 +5228,7 @@ var isLightTheme = (t) => {
   const [r, g, b] = [1, 3, 5].map((at) => parseInt(t.background.slice(at, at + 2), 16));
   return (r * 299 + g * 587 + b * 114) / 1000 > 128;
 };
-var colorOf = (t, tone) => tone === "tasks" ? (isLightTheme(t) ? LIGHT_TONES : DARK_TONES).tasks : t[tone === null ? "foreground" : TONE_COLORS[tone]];
+var colorOf = (t, tone) => tone === "tasks" || tone === "needsYou" ? (isLightTheme(t) ? LIGHT_TONES : DARK_TONES)[tone] : t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 function mixInto(c, under, share) {
   const channel = (at) => Math.round(parseInt(c.slice(at, at + 2), 16) * share + parseInt(under.slice(at, at + 2), 16) * (1 - share));
