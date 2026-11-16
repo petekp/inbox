@@ -456,7 +456,7 @@ export default class Inbox extends View {
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
     const nextFrame = isStarting ? now + NEXT_FRAME_MS : null
-    const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, now)])
+    const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, moved.blocks, now)])
     const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter(
       at => at !== null,
     )

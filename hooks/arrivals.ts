@@ -194,7 +194,32 @@ export function steppedShare(row: NewRow | undefined, now: number, steps = NEW_S
   return newRowShare(row, row.shownAt + NEW_HOLD_MS + Math.floor(faded / step) * step)
 }
 
+/**
+ * The clock of a settled row's bar: the same hold and fade as a new row's, running from `at`, when the row closed,
+ * whatever the row does after. The row's mark and label carry its state once the bar has gone.
+ */
+export function settledBarClock(at: number): NewRow {
+  return { tab: '', shownAt: at }
+}
+
+/** The settled rows' bar clocks in `v`, for a look that redraws on a timer while any bar fades. */
+function settledBarClocks(v: InboxView): NewRow[] {
+  const rows = [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]
+
+  return rows.flatMap(r => (r.state.is === 'settled' ? [settledBarClock(r.state.at)] : []))
+}
+
 /** Whether a shown row's bar still moves, so a look that redraws on a timer keeps redrawing. */
 export function isNewRowFading(rows: NewRows, now: number): boolean {
-  return [...rows.values()].some(r => r.shownAt !== null && newRowShare(r, now) > 0)
+  return isBarFading([...rows.values()], now)
+}
+
+/** Whether a new row's bar or a settled row's in `v` is still shown, so a look that redraws on a timer keeps redrawing. */
+export function areBarsFading(rows: NewRows, v: InboxView, now: number): boolean {
+  return isNewRowFading(rows, now) || isBarFading(settledBarClocks(v), now)
+}
+
+/** Whether any of `clocks` is a bar that is shown and not yet gone. */
+export function isBarFading(clocks: readonly NewRow[], now: number): boolean {
+  return clocks.some(r => r.shownAt !== null && newRowShare(r, now) > 0)
 }

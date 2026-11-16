@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T00:03:56.913Z. 248645 characters follow.
+// Built at 2026-11-16T00:16:38.775Z. 249165 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -2826,6 +2826,9 @@ function newRowShare(row, now) {
     return 1;
   return (1 + Math.cos(Math.PI * p)) / 2;
 }
+function settledBarClock(at) {
+  return { tab: "", shownAt: at };
+}
 
 // ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
@@ -3733,7 +3736,7 @@ function settledPr(d) {
     title: pr.title,
     age: `#${pr.number}`,
     feedback: null,
-    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted", bar: null },
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted", bar: null, at: state.at },
     isDim: true,
     isSelectable: false,
     isSelected: false,
@@ -4227,7 +4230,8 @@ function rowBlock(row, ui, selected, screen) {
     settled: isSettled ? {
       label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
-      bar: settledBarTone(state)
+      bar: settledBarTone(state),
+      at: state.at
     } : null,
     isDim: isSettled,
     isSelectable: !isSettled,
@@ -5246,8 +5250,10 @@ function nextStepAt(row, now) {
     return fadeAt;
   return Math.min(endAt, fadeAt + (Math.floor((now - fadeAt) / FADE_STEP_MS) + 1) * FADE_STEP_MS);
 }
-function newRowsNextAt(rows, now) {
-  const at = [...rows.values()].map((r) => nextStepAt(r, now)).filter((a) => a !== null);
+function newRowsNextAt(rows, blocks, now) {
+  const settled = blocks.flatMap((b) => b.kind === "row" && b.settled?.bar ? [settledBarClock(b.settled.at)] : []);
+  const clocks = [...rows.values(), ...settled];
+  const at = clocks.map((r) => nextStepAt(r, now)).filter((a) => a !== null);
   return at.length > 0 ? Math.min(...at) : null;
 }
 function newBarEls(r, p) {
@@ -5259,10 +5265,17 @@ function newBarEls(r, p) {
   return [bar.transition("opacity", { duration: at - p.now, easing: "linear" })];
 }
 function settledBarEls(r, p) {
-  return r.settled?.bar ? [barEl(r, `settled ${r.id}`).bg(colorOf(p.t, r.settled.bar))] : [];
+  if (!r.settled?.bar)
+    return [];
+  const row = settledBarClock(r.settled.at);
+  const at = nextStepAt(row, p.now);
+  if (at === null)
+    return [];
+  const bar = barEl(r, `settled ${r.id}`).bg(colorOf(p.t, r.settled.bar)).opacity(newRowShare(row, at));
+  return [bar.transition("opacity", { duration: at - p.now, easing: "linear" })];
 }
 function barEl(r, id) {
-  return div4().id(id).absolute().left(EDGE + r.depth * NEST - BAR_GAP - BAR_W).top(ROW_PAD_PT - 2).w(BAR_W).h(LINE_HEIGHT + 4).rounded(BAR_W / 2);
+  return div4().id(id).absolute().left(EDGE + r.depth * NEST - BAR_GAP - BAR_W).top(ROW_PAD_PT).bottom(ROW_PAD_PT).w(BAR_W).rounded(BAR_W / 2);
 }
 
 // src/paint-blocks.ts
@@ -6205,7 +6218,7 @@ class Inbox extends View {
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
     const nextFrame = isStarting ? now + NEXT_FRAME_MS : null;
-    const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, now)]);
+    const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, moved.blocks, now)]);
     const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());

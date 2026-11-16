@@ -83,7 +83,7 @@ export type RowBlock = {
   feedback: { text: string; tone: Tone; source: Feedback | null; aged?: Aged } | null
   /** Shown once the row has closed, until it folds. */
   /** `bar` is the tone of the bar at the row's left edge, or null for a PR, which draws none. */
-  settled: { label: string; tone: Tone; bar: 'done' | 'muted' | 'error' | null } | null
+  settled: { label: string; tone: Tone; bar: 'done' | 'muted' | 'error' | null; at: number } | null
   isDim: boolean
   /** Whether the person can select it to see its body and buttons. */
   isSelectable: boolean

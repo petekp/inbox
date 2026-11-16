@@ -4,7 +4,7 @@ import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
-import { newRowIn, steppedShare } from '../../hooks/arrivals'
+import { newRowIn, settledBarClock, steppedShare } from '../../hooks/arrivals'
 import { ROW_BAR, UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
@@ -155,7 +155,13 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
   const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now)
   const bar = line.settled?.bar ?? null
-  const edge = bar ? s.settledBar(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : ' '
+  const settledShare = line.settled ? steppedShare(settledBarClock(line.settled.at), now) : 0
+  const edge =
+    bar && settledShare > 0
+      ? s.settledBar(bar, settledShare, ROW_BAR)
+      : newShare > 0
+        ? s.newBar(newShare, ROW_BAR)
+        : ' '
   const head = `${edge}${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}`
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width
@@ -170,7 +176,9 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
         ? s.bold(shownTitle)
         : shownTitle
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
-  if (line.settled || isShut(line, ui)) return out
+  /** The bar runs down the row's first column, so each later line takes it in place of its leading space. */
+  const barred = () => out.map((l, i) => (i > 0 && edge !== ' ' && l.startsWith(' ') ? edge + l.slice(1) : l))
+  if (line.settled || isShut(line, ui)) return barred()
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   const holdsUp = line.row?.holdsUpLine
   const tree = isOpen ? askTreeLines(line, pad, width, s, ui.optionsShown.includes(line.id)) : []
@@ -178,7 +186,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))
   if (line.body && isOpen) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
   if (line.detail && (isOpen || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
-  if (!isOpen) return out
+  if (!isOpen) return barred()
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
   // As in the terminal, an open reply field replaces the row's buttons: Enter sends, so no button reads as focused.
   if (line.buttons.length > 0 && ui.typing !== line.id) out.push(...buttonLines(line, ui, indent - 1, width, s))
@@ -201,5 +209,5 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     if (first !== undefined) out.push(' '.repeat(indent) + mark + first.slice(indent + markCells), ...rest)
   }
 
-  return out
+  return barred()
 }

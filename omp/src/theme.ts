@@ -50,11 +50,15 @@ export function styleOf(theme: OmpTheme): Style {
       part === 'line' ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
     newBar: (share, text) =>
       truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? 'light' : 'dark'], share), text),
-    settledBar: (tone, text) =>
+    settledBar: (tone, share, text) =>
       truecolor(
-        tone === 'muted'
-          ? MUTED_TEXT[theme.isLight ? 'light' : 'dark']
-          : tones[tone === 'error' ? 'errorMark' : 'done'],
+        fadedOver(
+          tone === 'muted'
+            ? MUTED_TEXT[theme.isLight ? 'light' : 'dark']
+            : tones[tone === 'error' ? 'errorMark' : 'done'],
+          THEME_BACKGROUND[theme.isLight ? 'light' : 'dark'],
+          share,
+        ),
         text,
       ),
   }

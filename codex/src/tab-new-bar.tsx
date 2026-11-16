@@ -5,11 +5,11 @@ import { reducedMotion } from './tab-motion'
 const EASE_IN_OUT_SINE = 'cubic-bezier(0.37, 0, 0.63, 1)'
 
 /**
- * The bar at a new row's left edge. It shows at full strength until the row's tab is shown, holds for `NEW_HOLD_MS`,
+ * The bar at a new row's left edge, or with another `className`, a settled row's, on the clock of `row`. It shows at full strength until the row's tab is shown, holds for `NEW_HOLD_MS`,
  * then fades over `NEW_FADE_MS`. It starts at the clock's point, so a row drawn again mid-fade does not start over. With
  * reduced motion it holds for the whole time, then goes in one step.
  */
-export function NewBar({ row }: { row: NewRow | undefined }) {
+export function NewBar({ row, className = 'new-bar' }: { row: NewRow | undefined; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null)
   const shownAt = row?.shownAt ?? null
   useLayoutEffect(() => {
@@ -25,5 +25,5 @@ export function NewBar({ row }: { row: NewRow | undefined }) {
     return () => fade.cancel()
   }, [shownAt])
 
-  return row ? <span ref={ref} class="new-bar" aria-hidden="true" /> : null
+  return row ? <span ref={ref} class={className} aria-hidden="true" /> : null
 }

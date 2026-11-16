@@ -119,7 +119,7 @@ export function paneRows(
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
 ) {
-  const { newBar } = paneNewBar({ look, elements, Box, Text, pal, now, shownTab })
+  const { newBar } = paneNewBar({ look, elements, Box, Text, pal, now, shownTab, space })
   const { askTree, askEntries, hasTree, treeTextIndent } = paneAskTree(
     { look, Box, Text, pal, optionsShown, blankLine },
     { branch },
