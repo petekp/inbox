@@ -6,7 +6,7 @@ import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hoo
 import { SETTLED_MS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
-import { newRowIn, showNewRows } from '../../hooks/arrivals'
+import { newRowIn, newRowShare, settledBarClock, showNewRows } from '../../hooks/arrivals'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
 import { stepRow } from '../../hooks/row-motion'
@@ -321,11 +321,15 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
   const { state } = r
   if (state.is !== 'settled') return null
   const start = tabState.seen.get(r.id) ?? Date.now()
+  const clock = settledBarClock(state.at)
   const error = errors.get(r.id)
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
-      <span class={`settled-bar ${settledBarTone(state)}`} aria-hidden="true" />
+      <NewBar
+        row={newRowShare(clock, Date.now()) > 0 ? clock : undefined}
+        className={`settled-bar ${settledBarTone(state)}`}
+      />
       <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">

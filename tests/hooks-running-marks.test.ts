@@ -69,7 +69,7 @@ test('a row that arrives while the pane is open gets a bar in the terminal and o
     await clock.settle()
   }
   const bars = async (id: string) => [
-    (await pane.find({ key: `new-${id}` }))?.text ?? null,
+    (await pane.find({ key: `new-${id}` }))?.text?.split('\n')[0] ?? null,
     ((await desktop.find({ key: `new-${id}` })) ?? null) !== null,
   ]
 

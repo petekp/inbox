@@ -221,6 +221,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
           label: settledLabel(state.label, state.delivery, state.reply),
           tone: settledTone(state),
           bar: settledBarTone(state),
+          at: state.at,
         }
       : null,
     isDim: isSettled,

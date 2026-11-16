@@ -1,3 +1,4 @@
+import { ROW_BAR } from './help'
 import { desktopLines, desktopTextPt } from './desktop-metrics'
 import { cutForEllipsis } from './text'
 import { DOT } from './rows'
@@ -49,6 +50,8 @@ export const LEADING_DOT = new RegExp(`^${DOT}`)
 export type TreePos = 'mid' | 'last' | 'pass'
 const TREE_DEPTH = 200
 export const SELECTION_BAR = Array<string>(TREE_DEPTH).fill('▌').join('\n')
+/** A row's bar, `ROW_BAR` on every line the Box that holds it shows. */
+export const ROW_BARS = Array<string>(TREE_DEPTH).fill(ROW_BAR).join('\n')
 const treeTexts = new Map<string, string>()
 
 export function treeText(pos: TreePos, lead: number): string {

@@ -378,9 +378,9 @@ textarea {
 .settled-bar {
   position: absolute;
   left: calc(var(--mark-x) - 9px);
-  top: calc(var(--row-pad) - 2px);
+  top: var(--row-pad);
+  bottom: var(--row-pad);
   width: 3px;
-  height: calc(1lh + 4px);
   border-radius: 2px;
   background-color: var(--key);
   pointer-events: none;

@@ -5,7 +5,7 @@ import type { PrPress } from '../../hooks/pr-press'
 import { isPressConfirmed } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { showsRunningMark } from '../../hooks/session-view'
-import { isNewRowFading, showNewRows } from '../../hooks/arrivals'
+import { areBarsFading, showNewRows } from '../../hooks/arrivals'
 import { READING_TEXT } from '../../hooks/banners'
 import { timedChangeAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
@@ -95,7 +95,7 @@ export function createPanel(deps: PanelDeps): Panel {
   const syncFrames = () => {
     const hasFrames =
       screen !== null &&
-      (isNewRowFading(ui.newRows, deps.now()) ||
+      (areBarsFading(ui.newRows, screen.view, deps.now()) ||
         showsRunningMark(screen.view, ui.tab, ui.isHelpShown, kind => ui.unfolded.includes(kind)))
     if (hasFrames && frames === null) frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS)
     if (!hasFrames && frames !== null) {

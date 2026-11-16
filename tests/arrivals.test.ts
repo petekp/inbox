@@ -1,11 +1,13 @@
 import { expect, test } from 'claude-code/testing'
 import {
   addNewRows,
+  isBarFading,
   isNewRowFading,
   NEW_FADE_MS,
   NEW_HOLD_MS,
   newRowIn,
   newRowShare,
+  settledBarClock,
   showNewRows,
   steppedShare,
 } from '../hooks/arrivals'
@@ -31,6 +33,15 @@ test("a new row's bar stays full until its tab shows, holds, fades, and is gone 
   expect(showNewRows(shown, 'findings', endAt).size).toBe(0)
   expect(addNewRows(shown, { findings: ['f1'] }).get('f1')).toBe(row)
   expect(steppedShare(showNewRows(added, 'findings', 0).get('f1'), NEW_HOLD_MS + 1)).toBe(1)
+})
+
+test("a settled row's bar holds and fades on the clock of a new row's bar, from the moment the row closed", () => {
+  const clock = settledBarClock(5000)
+  expect(newRowShare(clock, 5000 + NEW_HOLD_MS)).toBe(1)
+  expect(Math.abs(newRowShare(clock, 5000 + NEW_HOLD_MS + NEW_FADE_MS / 2) - 0.5) < 1e-9).toBe(true)
+  expect(newRowShare(clock, 5000 + NEW_HOLD_MS + NEW_FADE_MS)).toBe(0)
+  expect(isBarFading([clock], 5000 + NEW_HOLD_MS)).toBe(true)
+  expect(isBarFading([clock], 5000 + NEW_HOLD_MS + NEW_FADE_MS)).toBe(false)
 })
 
 test("a new row's bar draws only in the tab that recorded it", () => {

@@ -72,7 +72,11 @@ line shows what happened. A bar at its left edge shows how it closed, from
 the press on. It is in the done tone once the row was handled (answered, done,
 or closed by the agent), at every step of its message's way. It is muted once
 the row was dismissed or lapsed, and in the error tone once a message failed to
-send (`settledBarTone`). A settled PR draws no bar.
+send (`settledBarTone`). The bar spans the row from the top of its first line
+to the bottom of its last, and holds then fades on the clock of a new row's
+bar, from the moment the row closed (`settledBarClock`), whatever the row does
+after. Its mark and label carry the state from then on. A settled PR draws no
+bar.
 
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what

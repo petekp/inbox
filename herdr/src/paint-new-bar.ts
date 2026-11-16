@@ -1,10 +1,10 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
-import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS, newRowIn, newRowShare } from '../../hooks/arrivals'
+import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS, newRowIn, newRowShare, settledBarClock } from '../../hooks/arrivals'
 import type { NewRow, NewRows } from '../../hooks/arrivals'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import type { RowBlock } from './blocks'
-import { colorOf, EDGE, LINE_HEIGHT, NEST } from './paint-theme'
+import type { Block, RowBlock } from './blocks'
+import { colorOf, EDGE, NEST } from './paint-theme'
 import type { Paint } from './paint-theme'
 
 const FADE_STEP_MS = NEW_FADE_MS / NEW_STEPS
@@ -23,9 +23,11 @@ function nextStepAt(row: NewRow, now: number): number | null {
   return Math.min(endAt, fadeAt + (Math.floor((now - fadeAt) / FADE_STEP_MS) + 1) * FADE_STEP_MS)
 }
 
-/** When the look draws again for a new row's bar, or null when no bar moves. */
-export function newRowsNextAt(rows: NewRows, now: number): number | null {
-  const at = [...rows.values()].map(r => nextStepAt(r, now)).filter(a => a !== null)
+/** When the look draws again for a new row's bar or a settled row's, or null when no bar moves. */
+export function newRowsNextAt(rows: NewRows, blocks: readonly Block[], now: number): number | null {
+  const settled = blocks.flatMap(b => (b.kind === 'row' && b.settled?.bar ? [settledBarClock(b.settled.at)] : []))
+  const clocks = [...rows.values(), ...settled]
+  const at = clocks.map(r => nextStepAt(r, now)).filter(a => a !== null)
 
   return at.length > 0 ? Math.min(...at) : null
 }
@@ -44,19 +46,25 @@ export function newBarEls(r: RowBlock, p: Paint): Element[] {
   return [bar.transition('opacity', { duration: at - p.now, easing: 'linear' })]
 }
 
-/** A settled row's bar, in the tone of why it closed, held while the row stays in place. */
+/** A settled row's bar, in the tone of why it closed, on the clock of a new row's bar from the moment the row closed. */
 export function settledBarEls(r: RowBlock, p: Paint): Element[] {
-  return r.settled?.bar ? [barEl(r, `settled ${r.id}`).bg(colorOf(p.t, r.settled.bar))] : []
+  if (!r.settled?.bar) return []
+  const row = settledBarClock(r.settled.at)
+  const at = nextStepAt(row, p.now)
+  if (at === null) return []
+  const bar = barEl(r, `settled ${r.id}`).bg(colorOf(p.t, r.settled.bar)).opacity(newRowShare(row, at))
+
+  return [bar.transition('opacity', { duration: at - p.now, easing: 'linear' })]
 }
 
-/** A bar at a row's left edge, before its mark. */
+/** A bar at a row's left edge, before its mark, from the top of the row's first line to the bottom of its last. */
 function barEl(r: RowBlock, id: string) {
   return div()
     .id(id)
     .absolute()
     .left(EDGE + r.depth * NEST - BAR_GAP - BAR_W)
-    .top(ROW_PAD_PT - 2)
+    .top(ROW_PAD_PT)
+    .bottom(ROW_PAD_PT)
     .w(BAR_W)
-    .h(LINE_HEIGHT + 4)
     .rounded(BAR_W / 2)
 }

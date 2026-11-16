@@ -151,7 +151,7 @@ import {
   ARRIVAL_TABS,
   closedGroups,
   followTo,
-  isNewRowFading,
+  areBarsFading,
   isPrsTabEmpty,
   isTabEmpty,
   openRowIds,
@@ -2991,7 +2991,7 @@ export const register: Register = on => {
     if (look === 'terminal')
       animateRunningMarks(
         showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)) ||
-          isNewRowFading(paneState.newRows, now),
+          areBarsFading(paneState.newRows, view, now),
         now,
         (ms, fn) => $.clock.every(ms, fn),
         () => void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined),
