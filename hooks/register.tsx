@@ -117,7 +117,7 @@ import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf } from './banners'
-import { comparePagePath, readIsNextBuild } from './mod-plugin-files'
+import { comparePagePath, nextBuildMarkPath } from './mod-plugin-files'
 import { bandCounts, isMaybeStale, noCountsText } from './band'
 import {
   drawnLists,
@@ -780,7 +780,7 @@ function sessionHost(
       noteMissing: opts.onGhMissing,
     },
     settleWindowMs: opts.settleWindowMs,
-    comparePage: comparePagePath($),
+    comparePage: comparePagePath($.plugin.root),
     compareInBackground: isCompareInBackground('claude-code'),
     newId: () => crypto.randomUUID(),
   }
@@ -1841,7 +1841,7 @@ async function runDemoPress(
       p,
       now,
       { settleWindowMs: SETTLED_MS, holds },
-      { comparePage: comparePagePath($), compareInBackground: isCompareInBackground('claude-code') },
+      { comparePage: comparePagePath($.plugin.root), compareInBackground: isCompareInBackground('claude-code') },
     )
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
@@ -2007,6 +2007,10 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
   await syncLook($, true)
   if ((await read($, TAB)) === 'prs') await findPrs($)
   await followNewRows($, true)
+}
+
+function readIsNextBuild($: EngineInterface): Promise<boolean> {
+  return $.fs.exists(nextBuildMarkPath($.plugin.root)).catch(() => false)
 }
 
 function registerInboxCommand($: EngineInterface) {

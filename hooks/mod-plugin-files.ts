@@ -1,13 +1,12 @@
-import type { EngineInterface } from 'claude-code'
-
 import { NEXT_BUILD_MARK } from './banners'
 import { COMPARE_PAGE_FILE } from './press-messages'
 
-/** The page template for a comparison, as the mod ships it. */
-export function comparePagePath($: EngineInterface): string {
-  return `${$.plugin.root}/hooks/${COMPARE_PAGE_FILE}`
+/** The page template for a comparison, as the mod in folder `root` ships it. */
+export function comparePagePath(root: string): string {
+  return `${root}/hooks/${COMPARE_PAGE_FILE}`
 }
 
-export function readIsNextBuild($: EngineInterface): Promise<boolean> {
-  return $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
+/** The next-build mark's path in the mod's folder `root`. */
+export function nextBuildMarkPath(root: string): string {
+  return `${root}/${NEXT_BUILD_MARK}`
 }
