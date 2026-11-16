@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T06:48:52.873Z. 268419 characters follow.
+// Built at 2026-11-16T06:56:26.849Z. 268591 characters follow.
 
 // src/main.ts
 import { View, div as div8 } from "gpui-kit";
@@ -5764,14 +5764,14 @@ var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex4().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div7().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div7().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div7().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
-var trunkEl = (top, height, t) => {
-  const el = div7().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, t.selected));
+var trunkEl = (top, height, t, isSelected) => {
+  const el = div7().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   return height === null ? el.bottom(0) : el.h(height);
 };
-var bodyLineEl = (l, t) => {
+var bodyLineEl = (l, t, isSelected) => {
   const armAt = INSIDE_GAP + LINE_HEIGHT / 2;
-  const arm = div7().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, t.selected));
-  const strokes = l.tree === "trunk" ? [trunkEl(0, null, t)] : l.tree === "tee" ? [trunkEl(0, null, t), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t), arm] : [];
+  const arm = div7().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
+  const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
   return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes);
 };
 function fieldEl(f, p, indent, isInert = false) {
@@ -5790,14 +5790,14 @@ function rowEl(r, p) {
   const isWrapped = isOpen || m?.isWrapHeld === true;
   const isPressable = r.isSelectable && !isLeaving;
   const hasTree = (m?.closing ?? r).body.some((l) => l.tree !== undefined);
-  const line = h_flex4().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t))).child(markEl(r.mark, t, markTintOf(r, p))).child(div7().flex_1().min_w(0).text_color(titleColorOf(r, p)).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div7().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex4().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t, r.isSelected))).child(markEl(r.mark, t, markTintOf(r, p))).child(div7().flex_1().min_w(0).text_color(titleColorOf(r, p)).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div7().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
   return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(rowPadEl(r, "top", p)).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
-    const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t);
+    const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t, r.isSelected);
     return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
   })).children(panelEl(r, m, p, isLeaving)))).child(rowPadEl(r, "bottom", p));
 }
@@ -5807,10 +5807,10 @@ function panelEl(r, m, p, isLeaving) {
   const isInert = isLeaving || from !== r;
   const under = from === r && isStatusUnder(r) ? r.feedback : null;
   const parts = [
-    ...from.body.map((l) => bodyLineEl(l, t)),
+    ...from.body.map((l) => bodyLineEl(l, t, r.isSelected)),
     ...from.buttons.length > 0 ? [buttonsEl(from.buttons, p, MARK_W, isInert)] : [],
     ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : [],
-    ...under ? [bodyLineEl(under, t)] : []
+    ...under ? [bodyLineEl(under, t, r.isSelected)] : []
   ];
   if (parts.length === 0)
     return [];
