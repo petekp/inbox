@@ -5,6 +5,15 @@ export const ENTER_FADE_MS = 300
 export const FADE_MS = 200
 
 /**
+ * How far a row's content sits above its place when it is fully faded out, in px. A row that leaves slides up to this
+ * offset as it fades, and one that enters slides down from it, so the offset is always its share of the fade.
+ */
+export const SLIDE_PX = 8
+
+/** The vertical offset of content at `opacity`: none when shown, `SLIDE_PX` above its place when faded out. */
+export const slideOffset = (opacity: number): number => -SLIDE_PX * (1 - Math.min(1, Math.max(0, opacity)))
+
+/**
  * A row's state. The resting states draw one form: `closed` its line, `open` its line and panel, `settled` its
  * settled line, `undoing` that line while an Undo press is out. The moving states animate toward a form, and each
  * keeps what it moves away from drawn: `closing` keeps the panel, `settling` keeps the last open panel under the

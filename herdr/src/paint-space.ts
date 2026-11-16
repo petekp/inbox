@@ -19,6 +19,7 @@ import {
   mixInto,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
+import { SLIDE_PX } from '../../hooks/row-motion'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
 /** The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space. */
@@ -348,6 +349,13 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const isOpen = m?.box === 'open' && fitHeight(b, m, p) !== undefined
     const fade = (e: Element): Element =>
       m?.box ? e.opacity(isOpen ? 1 : 0).transition('opacity', { duration: m.fadeMs, easing: 'ease-out' }) : e
+    const slide = (e: Element): Element =>
+      m?.box
+        ? e
+            .relative()
+            .top(isOpen ? 0 : -SLIDE_PX)
+            .transition('top', { duration: m.fadeMs, easing: 'ease-out' })
+        : e
 
     return v_flex()
       .id(`box ${b.id}`)
@@ -360,7 +368,10 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
         ),
       )
       .child(
-        contentEl(b, m, p, fade(el(b)), [...contentStrokeEls(b, p.t, fade), ...passes.map(c => wholeColumnEl(c, p.t))]),
+        contentEl(b, m, p, slide(fade(el(b))), [
+          ...contentStrokeEls(b, p.t, fade),
+          ...passes.map(c => wholeColumnEl(c, p.t)),
+        ]),
       )
   })
 }
