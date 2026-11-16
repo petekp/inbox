@@ -11,6 +11,7 @@ import {
   props,
   readTextFile,
   run,
+  settings,
   spaces,
   terminals,
   theme,
@@ -56,7 +57,7 @@ import type { LinesAbove } from './held-line'
 import { NO_TRACKS, moveRows } from './motion'
 import { nextDrawAt } from './wake'
 import type { Tracks } from './motion'
-import { Heights } from './heights'
+import { Heights, atZoomOne, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
 import type { SentText } from './out'
@@ -77,6 +78,9 @@ type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; qu
 const { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile })
 
 type Timer = { cancel(): void }
+
+/** A size the app reported, at zoom 1, the scale every size the look sets is in. */
+const unzoomed = (size: { width: number; height: number }) => atZoomOne(size, zoomOf(settings()))
 
 export default class Inbox extends View {
   tab: string | null = null
@@ -423,7 +427,7 @@ export default class Inbox extends View {
       heights: this.heights,
       isAtOnce: key => isFirst || resized.has(key),
       measure: (key, size, cx) => {
-        if (this.heights.measure(key, size)) cx.notify()
+        if (this.heights.measure(key, unzoomed(size))) cx.notify()
       },
       now,
       newRows: this.ui.newRows,
@@ -442,7 +446,7 @@ export default class Inbox extends View {
       .text_color(t.foreground)
       .text_size(TEXT)
       .line_height(LINE)
-      .on_size_change(onSize(this, 'isNarrow', s => s.width < NARROW_PANE))
+      .on_size_change(onSize(this, 'isNarrow', s => unzoomed(s).width < NARROW_PANE))
     if (screen.is === 'message') {
       this.timeLeft = new Map()
       this.tracksOf = ''
@@ -491,7 +495,7 @@ export default class Inbox extends View {
               .overflow_y_scroll()
               .pt(EDGE)
               .pb(END_SPACE)
-              .on_size_change(onSize(this, 'listRoom', s => Math.max(0, s.height - EDGE - END_SPACE)))
+              .on_size_change(onSize(this, 'listRoom', s => Math.max(0, unzoomed(s).height - EDGE - END_SPACE)))
               .on_click((_e, _cx) => {
                 const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null
                 if (field) field.state.focus()

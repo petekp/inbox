@@ -1,8 +1,21 @@
-/** A measured box's size, in logical px, as gpui-kit's size callback reports it. */
+/** A box's size in px. */
 type Size = { width: number; height: number }
 
+/** The app's zoom from its `settings()`, 1 when unset. */
+export function zoomOf(settings: Record<string, unknown>): number {
+  const zoom = settings.zoom
+
+  return typeof zoom === 'number' && zoom > 0 ? zoom : 1
+}
+
 /**
- * The size each list block and each row's panel last measured, by key. A block's box draws at its measured height so
+ * A size gpui-kit's size callback reported, at zoom 1. The callback reports a size the app's zoom has already scaled,
+ * while a size set on an element, as `h`, is at zoom 1 and the app scales it.
+ */
+export const atZoomOne = (size: Size, zoom: number): Size => ({ width: size.width / zoom, height: size.height / zoom })
+
+/**
+ * The size each list block and each row's panel last measured, by key, at zoom 1. A block's box draws at its measured height so
  * a change to its content glides from the old height to the new one. A size stays after its block leaves, for when the
  * block comes back at that size, since gpui-kit may not report a size that did not change.
  */

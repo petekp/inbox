@@ -264,3 +264,34 @@ test('folding a milestone down to its name takes the list’s height down on eve
   expect(opens.end).toBeGreaterThan(opens.start)
   expect(opens.stalled).toBe(0)
 })
+
+const { allOf, openPanel, setZoom } = await import('./gpui-stand-in')
+const { layout } = await import('./frames')
+
+test.each([1, 0.9])(
+  'at zoom %p, once the app reports sizes scaled by the zoom, no box in any tab is drawn shorter than its content',
+  async zoom => {
+    setZoom(zoom)
+    const { paint, click, measure } = await openPanel()
+    const laidOut = () => {
+      const root = paint()
+      const list = allOf(root).find(n => n.id === 'inbox-list')!
+      return { root, ...layout(list, () => undefined, LINE_HEIGHT) }
+    }
+    const cutsIn = (tab: string) => {
+      click(allOf(paint()).find(n => n.label?.startsWith(tab))!)
+      for (let i = 0; i < 3; i++) {
+        const { root, placed } = laidOut()
+        const heightOf = (n: Parameters<typeof placed.get>[0]) =>
+          n.id === 'inbox-list' ? 100_000 : (placed.get(n)?.height ?? 0)
+        measure(n => ({ width: 300 * zoom, height: heightOf(n) * zoom }), root)
+      }
+      return laidOut().cuts
+    }
+    try {
+      for (const tab of ['Asks', 'Status', 'Finds', 'PRs']) expect({ tab, cuts: cutsIn(tab) }).toEqual({ tab, cuts: [] })
+    } finally {
+      setZoom(1)
+    }
+  },
+)

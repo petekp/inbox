@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T03:24:06.010Z. 258805 characters follow.
+// Built at 2026-11-16T03:56:09.156Z. 259120 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -14,6 +14,7 @@ import {
   props,
   readTextFile,
   run,
+  settings,
   spaces,
   terminals,
   theme,
@@ -5193,6 +5194,12 @@ function nextDrawAt(now, ui, screen, moved) {
 }
 
 // src/heights.ts
+function zoomOf(settings) {
+  const zoom = settings.zoom;
+  return typeof zoom === "number" && zoom > 0 ? zoom : 1;
+}
+var atZoomOne = (size, zoom) => ({ width: size.width / zoom, height: size.height / zoom });
+
 class Heights {
   sizes = new Map;
   resized = new Set;
@@ -6109,6 +6116,7 @@ async function writeLook(io, appHome, ended) {
 
 // src/main.ts
 var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
+var unzoomed = (size) => atZoomOne(size, zoomOf(settings()));
 
 class Inbox extends View {
   tab = null;
@@ -6424,7 +6432,7 @@ class Inbox extends View {
       heights: this.heights,
       isAtOnce: (key) => isFirst || resized.has(key),
       measure: (key, size, cx) => {
-        if (this.heights.measure(key, size))
+        if (this.heights.measure(key, unzoomed(size)))
           cx.notify();
       },
       now,
@@ -6436,7 +6444,7 @@ class Inbox extends View {
       isNarrow: this.isNarrow,
       listRoom: this.listRoom
     };
-    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "isNarrow", (s) => s.width < NARROW_PANE));
+    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "isNarrow", (s) => unzoomed(s).width < NARROW_PANE));
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
@@ -6459,7 +6467,7 @@ class Inbox extends View {
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, unzoomed(s).height - EDGE - END_SPACE))).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
