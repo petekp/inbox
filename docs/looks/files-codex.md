@@ -49,7 +49,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/background.ts` | Codex host. `makeBackground`, which tracks the work the server starts and does not wait for, such as a PR fetch's state update, so `settled` can wait for it. |
 | `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, the tool fields of the last list it gave, and the readers of a call's session, turn and arguments. |
 | `codex/src/server-herdr.ts` | Codex host. `followCodexPresses`: in a Herdr app terminal, the MCP server watches the presses folder and applies the presses for the Codex sessions this terminal publishes. |
-| `codex/src/server-host.ts` | Codex host. The bindings `hooks/session-host.ts` runs on for presses, opening, `codex queue` and the session's background PR fetch. Also the tab view each answer carries. |
+| `codex/src/server-host.ts` | Codex host. The bindings `hooks/session-host.ts` runs on for presses, opening, sending a press's message and the session's background PR fetch. Also the tab view each answer carries. |
+| `codex/src/app-steer.ts` | Codex host. Puts a press's message into a turn the ChatGPT app runs, through the app's IPC socket. The only code that speaks that socket. |
 | `codex/src/server-trust.ts` | Codex host. Whether Codex runs the inbox's hooks in a chat's folder. The server asks Codex in the background and caches the answer. |
 | `codex/src/server-catch-up.ts` | Codex host. When the inbox has not seen a chat, the chat's first view copies a fork's ledger and starts a catch-up. |
 | `codex/src/server-demo.ts` | Codex host. The demo session and its presses. |

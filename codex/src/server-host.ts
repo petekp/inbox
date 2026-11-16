@@ -32,7 +32,8 @@ import { pageName } from './server-tools'
 import { SETTLE_WINDOW_MS } from './settle'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
-import { newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
+import { hasUserMessageSince, newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
+import { isAppSession } from './rollout-rows'
 import { reconcileUpdateStatus } from './update'
 
 const ROLLOUT_LOOKUP_MS = 60_000
@@ -77,6 +78,23 @@ export function makeSessionHost(
     }
   }
 
+  /**
+   * Puts the message into the running turn when the ChatGPT app runs the chat, and otherwise queues it. A steer that
+   * failed queues only when the rollout does not show the message, since a window can time out on a steer that still
+   * lands.
+   */
+  async function sendMessage(s: SessionState, message: string, resolvedCli?: string): Promise<SendOutcome> {
+    const canSteer = deps.steer && s.presence.isTurnRunning && (await isAppSession(s.transcriptPath))
+    if (canSteer) {
+      const since = now()
+      const r = await deps.steer!({ threadId: s.sessionId, text: message, cwd: s.root || '/' })
+      const isInTurn = r.kind === 'steered' || (await hasUserMessageSince(s.transcriptPath, message, since))
+      if (isInTurn) return { state: 'accepted', queuedId: null, isInTurn: true }
+    }
+
+    return queueMessage(s, message, resolvedCli)
+  }
+
   const hostFor = (id: string): Omit<SessionHost<SessionState>, 'ask'> => {
     let preparedCli: string | undefined
     return {
@@ -84,7 +102,7 @@ export function makeSessionHost(
       prepare: async s => {
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },
-      deliver: (s, message) => queueMessage(s, message, preparedCli),
+      deliver: (s, message) => sendMessage(s, message, preparedCli),
       perform: async (s, e) => (e.kind === 'copy' ? null : open(s, e.target)),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true)),
       gh: {

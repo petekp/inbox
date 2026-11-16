@@ -148,7 +148,9 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
     `{"accepted":true}` at once and leaves no request open, and
     `item/tool/requestUserInput` belongs to the blocking user-input tool.
   - So the inbox sends its answer to a question linked to a dialog in this
-    form, through `codex queue` (`codex/src/dialogs.ts:dialogReply`,
+    form, as it sends any press: into the running turn through the app's IPC
+    socket when it can, else through `codex queue` ([app-socket.md](app-socket.md);
+    `codex/src/dialogs.ts:dialogReply`,
     `hooks/dialogs.ts:linkDialogs`). An answer press first links the
     dialogs of the rollout's newest turn, so an answer pressed while the
     dialog's turn runs is linked too (`codex/src/server-host.ts:linkRunningDialogs`).
@@ -160,6 +162,10 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
     message as a question-and-answer bubble, not as raw tags. Codex passes the
     text unchanged to `UserPromptSubmit`'s `prompt`, so the press's delivery
     reads arrived. The agent took it as the answer both times.
+  - [live 2026-11-16, ChatGPT 26.1111.21308 in the inbox-ui VM] The same form
+    steered into the dialog's running turn through the app's IPC socket closed
+    the dialog at once, and that turn replied with the answer
+    ([app-socket.md](app-socket.md)).
 - **Still plain JSONL** [live 2026-10-08]: 146 files in three days, none
   compressed, although `local_thread_store_compression` is on.
 - **Compression and file names** [live 2026-10-23, source 0.164.0]. Codex

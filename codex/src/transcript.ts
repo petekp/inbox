@@ -4,7 +4,8 @@ import { readdir, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 import { bytesBefore, canReadZstd } from './rollout-file'
-import { forkedFromId, isExecMeta, readSessionMeta } from './rollout-rows'
+import { contentText, forkedFromId, isExecMeta, readSessionMeta } from './rollout-rows'
+import type { TranscriptLine } from './rollout-rows'
 import { rolloutOfLines, turnEventOf, turnOf, turnRowsOf } from './rollout-turns'
 import type { Rollout, TurnEvent, TurnRow, TurnRows } from './rollout-turns'
 
@@ -203,6 +204,23 @@ export async function turnIn(path: string | null, turnId: string | undefined): P
 /** The last few megabytes of a rollout, as lines. Empty when the file cannot be read. */
 export async function rolloutTail(path: string | null): Promise<string[]> {
   return path === null ? [] : tailLines(path, TAIL_BYTES).catch(() => [])
+}
+
+/** Whether the rollout saved a user message whose whole text is `text` at or after `since`, in ms. */
+export async function hasUserMessageSince(path: string | null, text: string, since: number): Promise<boolean> {
+  return (await rolloutTail(path)).some(line => {
+    let row: TranscriptLine & { timestamp?: unknown }
+    try {
+      row = JSON.parse(line) as typeof row
+    } catch {
+      return false
+    }
+    const p = row.payload
+    const isUserMessage = row.type === 'response_item' && p?.type === 'message' && p.role === 'user'
+    const at = typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : NaN
+
+    return isUserMessage && at >= since && contentText(p.content) === text.trim()
+  })
 }
 
 const ROLLOUT_BYTES = 8 * 1024 * 1024

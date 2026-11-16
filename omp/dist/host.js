@@ -7829,8 +7829,7 @@ function completedAttempt(state, deliveryId, outcome) {
   let lastActions = text === attempt.text ? state.lastActions : delivered.reduce((actions, [id, action]) => withRewrite(actions, [id], action.at, attempt.text, text, deliveryId), state.lastActions);
   const earlierUnknown = state.sent.slice(0, index).some((s) => s.text === text && (s.phase === "attempting" || s.phase === "uncertain"));
   if (outcome.state === "accepted" && !earlierUnknown) {
-    for (const [id, action] of delivered)
-      lastActions = withAcceptedSend(lastActions, [id], action.at, text, deliveryId);
+    lastActions = outcome.isInTurn ? withArrival(lastActions, text, undefined, deliveryId) : delivered.reduce((actions, [id, action]) => withAcceptedSend(actions, [id], action.at, text, deliveryId), lastActions);
   }
   if (outcome.state === "accepted" && earlierUnknown)
     lastActions = withUnconfirmed(lastActions, text, undefined, deliveryId);

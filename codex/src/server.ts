@@ -36,6 +36,7 @@ import { pruneSessions, readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
 import type { CodexHerdrAsk } from './server-herdr'
+import type { SteerResult, SteerTarget } from './app-steer'
 
 export type ServerDeps = {
   dir: string
@@ -50,6 +51,8 @@ export type ServerDeps = {
    * Without it, the tab does not say when Codex is not running the inbox's hooks.
    */
   hooksTrust?: (cli: string, folder: string) => Promise<HooksTrust | 'trusted' | null>
+  /** Puts a press's message into a running turn the ChatGPT app owns. Without it, every press queues. */
+  steer?: (to: SteerTarget) => Promise<SteerResult>
   /** Whether `codex queue` on a binary takes `--resume`. Without it, a press never passes `--resume`. */
   queueResumes?: (cli: string) => Promise<boolean>
   build?: string

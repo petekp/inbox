@@ -51,6 +51,11 @@ export function isExecMeta(meta: SessionMeta | null): boolean {
   return meta?.payload?.originator === 'codex_exec' || meta?.payload?.source === 'exec'
 }
 
+/** Whether the ChatGPT app started the session. A turn it runs is usually owned by one of the app's windows. */
+export async function isAppSession(path: string | null): Promise<boolean> {
+  return path !== null && (await readSessionMeta(path))?.payload?.originator === 'Codex Desktop'
+}
+
 /**
  * The session a forked chat was forked from, from `forked_from_id` in the rollout's first row. A fork's rollout also
  * holds the parent's own `session_meta` later on, so only the first row counts.

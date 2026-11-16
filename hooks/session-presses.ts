@@ -9,7 +9,7 @@ import { itemPrSteps, tabPrs } from './pr-fetch'
 import { withOrderStatuses } from './pr-order'
 import type { Applied, PrPress } from './pr-press'
 import { actionId } from './press-labels'
-import { applyPress, withAcceptedSend, withRewrite, withUnconfirmed } from './press-reducer'
+import { applyPress, withAcceptedSend, withArrival, withRewrite, withUnconfirmed } from './press-reducer'
 import type { PressTexts } from './press-messages'
 import type { RowPress } from './presses'
 import { toolAnswer } from './tools'
@@ -80,8 +80,11 @@ export function pressOn(
 }
 
 export type SendOutcome =
-  /** `entered` is the text the agent got, when another plugin changed the message on its way. */
-  | { state: 'accepted'; queuedId: string | null; entered?: string }
+  /**
+   * `entered` is the text the agent got, when another plugin changed the message on its way. `isInTurn` says the host
+   * put the message into the running turn, so it has arrived and waits in no queue.
+   */
+  | { state: 'accepted'; queuedId: string | null; entered?: string; isInTurn?: boolean }
   | { state: 'rejected'; reason: string }
   | { state: 'unconfirmed'; reason: string }
 
@@ -105,7 +108,12 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
     .slice(0, index)
     .some(s => s.text === text && (s.phase === 'attempting' || s.phase === 'uncertain'))
   if (outcome.state === 'accepted' && !earlierUnknown) {
-    for (const [id, action] of delivered) lastActions = withAcceptedSend(lastActions, [id], action.at, text, deliveryId)
+    lastActions = outcome.isInTurn
+      ? withArrival(lastActions, text, undefined, deliveryId)
+      : delivered.reduce(
+          (actions, [id, action]) => withAcceptedSend(actions, [id], action.at, text, deliveryId),
+          lastActions,
+        )
   }
   if (outcome.state === 'accepted' && earlierUnknown)
     lastActions = withUnconfirmed(lastActions, text, undefined, deliveryId)
