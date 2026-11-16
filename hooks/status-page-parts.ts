@@ -69,6 +69,33 @@ function childStall(c: Child): StatusStall | null {
   return null
 }
 
+/** A name as `isNamedLikeSubject` compares it: lower case, with no spaces, hyphens or underscores. */
+const comparableName = (name: string) => name.toLowerCase().replace(/[\s\-_]+/g, '')
+
+/**
+ * Whether `c` is the only child of `x` and has the same name, so the subject's row says what the session says and
+ * draws no row for it.
+ */
+function isNamedLikeSubject(x: Subject, under: readonly Child[]): boolean {
+  return under.length === 1 && comparableName(under[0]!.name) === comparableName(x.name)
+}
+
+/**
+ * What the one child that is named like its subject gives the subject's row: a moving mark while it works, the
+ * needs-you mark and "waiting" while it is blocked, and ✓ once it finished, unless an open ask holds the subject up,
+ * which keeps its own mark and words.
+ */
+function carriedByChild(
+  c: Child,
+  isHeld: boolean,
+): Pick<StatusRow & { kind: 'subject' }, 'mark' | 'tone' | 'isRunning' | 'stall'> | null {
+  if (c.delegateState === 'blocked') return { ...HELD_MARK, isRunning: false, stall: childStall(c) }
+  if (c.delegateState === 'finished' && !isHeld) return { ...SUBJECT_MARKS.done, isRunning: false, stall: null }
+  if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true, stall: null }
+
+  return null
+}
+
 export function childRow(c: Child, branch: StatusBranch | null, depth: number): StatusRow {
   const marks =
     c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
@@ -85,11 +112,22 @@ export function childRow(c: Child, branch: StatusBranch | null, depth: number): 
   }
 }
 
+/** The words of the item `ask` names, on one line, or null when it names none or has no words. */
+function askWords(items: readonly Item[], ask: { id: string } | null): string | null {
+  const words = items
+    .find(i => i.id === ask?.id)
+    ?.ask.replace(/\s+/g, ' ')
+    .trim()
+
+  return words || null
+}
+
 /** What every part of the list reads to place and draw a subject. */
 export type ListContext = {
   isNew: (x: Subject) => boolean
   isHeld: (x: Subject) => boolean
   oldestAskOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
+  items: readonly Item[]
   running: Child[]
   isTurnRunning: boolean
   now: number
@@ -116,23 +154,30 @@ export function partRows(
     const isRunning = x.status === 'working' && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking))
     const isIdle = x.status === 'working' && !isRunning
     const isWorkRunning = isRunning || under.some(ch => ch.endedAt === null)
+    const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0]! : null
+    const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null
+    const waitsOn = askWords(c.items, c.oldestAskOf(x))
+    const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now)
     rows.push({
       kind: 'subject',
       id: x.id,
       depth,
       ...(c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
       isRunning,
+      ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: subjectStall(x, c.isHeld(x), isWorkRunning, c.now),
+      stall: waitsOn === null ? (carried?.stall ?? ownStall) : null,
+      waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
+      hasChildren: under.length > 0 && lone === null,
       ask: c.oldestAskOf(x),
     })
-    rows.push(
-      ...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid', depth + 1)),
-    )
+    if (lone === null)
+      rows.push(
+        ...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid', depth + 1)),
+      )
     const hidden = under.slice(CHILD_ROWS)
     const isEveryHiddenRunning = hidden.every(ch => ch.delegateState !== 'finished')
     if (isMore)

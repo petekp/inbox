@@ -34,7 +34,15 @@ import {
 import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import { mergedLine, seenSubjectIds, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
+import {
+  mergedLine,
+  seenSubjectIds,
+  STALL_GAP,
+  type StatusCount,
+  type StatusRow,
+  WAITS_ON_PREFIX,
+  WAS_PREFIX,
+} from './status-page'
 import { unfoldedRows } from './status-page-parts'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
@@ -343,6 +351,15 @@ export function paneStatus(
       const mark = statusMark(r)
       const content = [
         statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, r.depth),
+        ...(r.waitsOn
+          ? [
+              statusPageText(
+                `status-${r.id}-waits-on`,
+                [{ text: `${WAITS_ON_PREFIX}${r.waitsOn}`, isNeedsYou: true }],
+                r.depth,
+              ),
+            ]
+          : []),
         ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], r.depth)] : []),
         ...(r.merged
           ? [

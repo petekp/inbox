@@ -1215,6 +1215,16 @@ function childStall(c) {
   if (c.delegateState === "blocked") return { text: "waiting", tone: "needsYou" };
   return null;
 }
+var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
+function isNamedLikeSubject(x, under) {
+  return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
+}
+function carriedByChild(c, isHeld) {
+  if (c.delegateState === "blocked") return { ...HELD_MARK, isRunning: false, stall: childStall(c) };
+  if (c.delegateState === "finished" && !isHeld) return { ...SUBJECT_MARKS.done, isRunning: false, stall: null };
+  if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true, stall: null };
+  return null;
+}
 function childRow(c, branch, depth) {
   const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
@@ -1228,6 +1238,10 @@ function childRow(c, branch, depth) {
     branch
   };
 }
+function askWords(items, ask) {
+  const words3 = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
+  return words3 || null;
+}
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -1239,23 +1253,30 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
     const isIdle = x.status === "working" && !isRunning;
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
+    const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
+    const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
+    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
       ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning,
+      ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: subjectStall(x, c.isHeld(x), isWorkRunning, c.now),
+      stall: waitsOn === null ? carried?.stall ?? ownStall : null,
+      waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
+      hasChildren: under.length > 0 && lone === null,
       ask: c.oldestAskOf(x)
     });
-    rows.push(
-      ...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1))
-    );
+    if (lone === null)
+      rows.push(
+        ...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1))
+      );
     const hidden = under.slice(CHILD_ROWS);
     const isEveryHiddenRunning = hidden.every((ch) => ch.delegateState !== "finished");
     if (isMore)
@@ -1559,6 +1580,7 @@ function statusPage(s, now) {
     isNew,
     isHeld,
     oldestAskOf,
+    items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning,
     now

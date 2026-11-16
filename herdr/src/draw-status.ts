@@ -3,7 +3,7 @@ import { goalKeyPlan, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID 
 import type { StatusKey } from '../../hooks/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from '../../hooks/status-goal-page'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
-import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
+import { STALL_GAP, WAITS_ON_PREFIX, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { unfoldedRows } from '../../hooks/status-page-parts'
 import { LATER_TEXT, isSpacedAbove, milestoneRows, workJoints } from '../../hooks/status-path'
@@ -57,6 +57,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         isBold: false,
         isMuted: false,
         stall: row.stall,
+        ...(row.waitsOn ? { waitsOn: `${WAITS_ON_PREFIX}${row.waitsOn}` } : {}),
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
         ...(row.hasChildren ? { tree: [{ depth: row.depth, is: 'down' as const }] } : {}),

@@ -122,7 +122,8 @@ times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, and the item's Asks row reads "Holds up" and the subject's name.
 Its row then has a View question or View task button, which opens Asks with
-the oldest of those items selected.
+the oldest of those items selected, and a line "waits on you:" with that item's
+own words.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Goal**:
@@ -161,17 +162,21 @@ Herdr delegate. A background command or Monitor task is not one: it is how the
 agent watches work, and the work it watches has its own row. A child shows under
 its subject while it runs, and leaves when it ends. A delegate that finished stays, reading
 "finished", until the person has seen the Status. Code follows it from the
-host's events and from Herdr. The inbox model only links it to a subject.
+host's events and from Herdr. The inbox model only links it to a subject. When
+a subject's only child has the same name, ignoring case, spaces, hyphens and
+underscores, the Status draws no row for the child, and the subject's row shows
+its state.
 _Avoid_: subitem, job
 
 **Stall words**:
 The words after a Status row's name when its work waits on the person, has
-finished, or has stalled. A subject held by an open question or task reads
-"waiting", in the needs-you tone, and so does a delegate while Herdr shows it at
-a question or an approval. A finished delegate reads "finished". An open subject
-with no change for a day or more, and no child of it running, reads how long it
-has been idle, as "idle 2d", muted. Other rows show no word. The code calls them
-`stall`.
+finished, or has stalled. A delegate reads "waiting", in the needs-you tone,
+while Herdr shows it at a question or an approval, and so does a subject whose
+only child is a same-named delegate in that state. A subject held by an open
+question or task has no stall word: a line under its name reads "waits on you:"
+and the item's own words. An open subject with no change for a day or more,
+and no child of it running, reads how long it has been idle, as "idle 2d",
+muted. Other rows show no word. The code calls them `stall`.
 _Avoid_: age
 
 **Last look**:

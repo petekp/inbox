@@ -315,6 +315,7 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         .child(markEl(s.mark, t))
         .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word)),
     )
+    .when(s.waitsOn !== undefined, e => e.child(lineEl(s.waitsOn ?? '', colorOf(t, 'needsYou'))))
     .children(s.under.map(l => lineEl(l, t.muted)))
     .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)))
 }

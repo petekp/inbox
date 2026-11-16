@@ -380,3 +380,15 @@ test('a held line that ends with its age keeps counting it', () => {
   expect(rowsOf(later.blocks)[0]?.heldLine?.text).toBe(agedText(aged, NOW + 60_000))
   expect(agedText(aged, NOW + 60_000)).not.toBe(agedText(aged, NOW))
 })
+
+test('a subject an open ask holds up draws what it waits on in its own line, and no stall word', () => {
+  const blocks = tabBlocks(demoScreen(), uiOn('overview'))
+  const held = blocks.flatMap(b => (b.kind === 'status' && b.waitsOn !== undefined ? [b] : []))
+
+  expect(held.length).toBeGreaterThan(0)
+  for (const b of held) {
+    expect(b.waitsOn).toMatch(/^waits on you: \S/)
+    expect(b.stall).toBeNull()
+    expect(b.buttons.length).toBeGreaterThan(0)
+  }
+})

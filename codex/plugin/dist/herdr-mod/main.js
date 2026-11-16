@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T00:03:56.913Z. 248645 characters follow.
+// Built at 2026-11-16T00:21:45.772Z. 249976 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -1323,6 +1323,19 @@ function childStall(c) {
     return { text: "waiting", tone: "needsYou" };
   return null;
 }
+var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
+function isNamedLikeSubject(x, under) {
+  return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
+}
+function carriedByChild(c, isHeld) {
+  if (c.delegateState === "blocked")
+    return { ...HELD_MARK, isRunning: false, stall: childStall(c) };
+  if (c.delegateState === "finished" && !isHeld)
+    return { ...SUBJECT_MARKS.done, isRunning: false, stall: null };
+  if (isChildWorking(c) && !isHeld)
+    return { ...SUBJECT_MARKS.working, isRunning: true, stall: null };
+  return null;
+}
 function childRow(c, branch, depth) {
   const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
@@ -1336,6 +1349,10 @@ function childRow(c, branch, depth) {
     branch
   };
 }
+function askWords(items, ask) {
+  const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
+  return words || null;
+}
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -1348,21 +1365,28 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
     const isIdle = x.status === "working" && !isRunning;
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
+    const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
+    const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
+    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
       ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning,
+      ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: subjectStall(x, c.isHeld(x), isWorkRunning, c.now),
+      stall: waitsOn === null ? carried?.stall ?? ownStall : null,
+      waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
+      hasChildren: under.length > 0 && lone === null,
       ask: c.oldestAskOf(x)
     });
-    rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1)));
+    if (lone === null)
+      rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1)));
     const hidden = under.slice(CHILD_ROWS);
     const isEveryHiddenRunning = hidden.every((ch) => ch.delegateState !== "finished");
     if (isMore)
@@ -1645,6 +1669,7 @@ function isPressConfirmed(outcome) {
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "was: ";
+var WAITS_ON_PREFIX = "waits on you: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " · ";
 var NEW_CLOSED_ROWS = 2;
@@ -1709,6 +1734,7 @@ function statusPage(s, now) {
     isNew,
     isHeld,
     oldestAskOf,
+    items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning,
     now
@@ -3920,6 +3946,7 @@ function rowBlocks(row, isUnfolded) {
         isBold: false,
         isMuted: false,
         stall: row.stall,
+        ...row.waitsOn ? { waitsOn: `${WAITS_ON_PREFIX}${row.waitsOn}` } : {},
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
         ...row.hasChildren ? { tree: [{ depth: row.depth, is: "down" }] } : {}
@@ -5354,7 +5381,7 @@ function statusEl(s, p, isInert) {
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
   const word = s.word === undefined ? [] : [wordEl(s, s.word, t)];
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 function prEl(b, p, isInert) {
   const { t } = p;

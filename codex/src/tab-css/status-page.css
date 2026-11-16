@@ -46,6 +46,10 @@
   --tree-x: calc(var(--mark-x) + var(--mark-middle));
   --tree-line: color-mix(in srgb, var(--text) 20%, var(--bg));
 }
+/* A row sets its own translucent --tree-line for the Asks tab's trees. On the Status the row takes the list's, so every stroke is one color. */
+.status-page .row {
+  --tree-line: inherit;
+}
 .status-page .row.has-children,
 .status-page .row.branch-mid,
 .status-page .row.branch-last {

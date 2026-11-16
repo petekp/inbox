@@ -3363,6 +3363,19 @@ function childStall(c) {
     return { text: "waiting", tone: "needsYou" };
   return null;
 }
+var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
+function isNamedLikeSubject(x, under) {
+  return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
+}
+function carriedByChild(c, isHeld) {
+  if (c.delegateState === "blocked")
+    return { ...HELD_MARK, isRunning: false, stall: childStall(c) };
+  if (c.delegateState === "finished" && !isHeld)
+    return { ...SUBJECT_MARKS.done, isRunning: false, stall: null };
+  if (isChildWorking(c) && !isHeld)
+    return { ...SUBJECT_MARKS.working, isRunning: true, stall: null };
+  return null;
+}
 function childRow(c, branch, depth) {
   const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
@@ -3376,6 +3389,10 @@ function childRow(c, branch, depth) {
     branch
   };
 }
+function askWords(items, ask) {
+  const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
+  return words || null;
+}
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -3388,21 +3405,28 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
     const isIdle = x.status === "working" && !isRunning;
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
+    const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
+    const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
+    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
       ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning,
+      ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: subjectStall(x, c.isHeld(x), isWorkRunning, c.now),
+      stall: waitsOn === null ? carried?.stall ?? ownStall : null,
+      waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
+      hasChildren: under.length > 0 && lone === null,
       ask: c.oldestAskOf(x)
     });
-    rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1)));
+    if (lone === null)
+      rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1)));
     const hidden = under.slice(CHILD_ROWS);
     const isEveryHiddenRunning = hidden.every((ch) => ch.delegateState !== "finished");
     if (isMore)
@@ -3964,6 +3988,7 @@ function textMark(mark) {
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "was: ";
+var WAITS_ON_PREFIX = "waits on you: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
 var STATUS_TEXT_LINES = 3;
@@ -4034,6 +4059,7 @@ function statusPage(s, now) {
     isNew,
     isHeld,
     oldestAskOf,
+    items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning,
     now
@@ -7496,12 +7522,17 @@ function pageText(text, room, maxLines, paint) {
   return lines.map(paint);
 }
 var GLUE = "\uE000";
-function pageLine(d, indent, mark, name, namePaint, { stall = null, text = null } = {}) {
+function pageLine(d, indent, mark, name, namePaint, {
+  stall = null,
+  waitsOn = null,
+  text = null
+} = {}) {
   const { width, style: s } = d;
   const textAt = indent + 2;
   const room = pageRoom(indent, width);
   const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [];
+  const waits = waitsOn ? pageText(`${WAITS_ON_PREFIX}${waitsOn}`, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
+  const seconds = [...waits, ...text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []];
   return [
     `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
     ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
@@ -7544,7 +7575,7 @@ function drawPageRow(row, d, isSelected = false) {
   const textAt = at + PAGE_TEXT_AT - PAGE_MARK_AT;
   if (row.kind === "subject") {
     const mark = paintMark(row, now, s);
-    const out = pageLine(d, at, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
+    const out = pageLine(d, at, mark, row.name, (t) => t, { stall: row.stall, waitsOn: row.waitsOn, text: row.text });
     const room = pageRoom(at, width);
     if (row.merged)
       out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), textAt, width, STATUS_TEXT_LINES, s.dim));

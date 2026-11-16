@@ -39,8 +39,10 @@ export type StatusRow = {
       name: string
       /** Where it stands. Null for a finished row the person has seen, as in a done fold. */
       text: string | null
-      /** "waiting" while an open ask holds it up, else how long it has been idle, past `IDLE_AFTER_MS`. */
+      /** "waiting" while its child waits on the person, else "idle 2d". Null while `waitsOn` is set. */
       stall: StatusStall | null
+      /** The oldest open ask that holds it up. */
+      waitsOn: string | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
@@ -123,6 +125,7 @@ export type StatusPage = GoalParts & {
 const OTHER_WORK = 'Other work'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
+export const WAITS_ON_PREFIX = 'waits on you: '
 const MERGED_PREFIX = 'merged in: '
 /** What separates a row's name from its stall word. */
 export const STALL_GAP = ' · '
@@ -255,6 +258,7 @@ export function statusPage(
     isNew,
     isHeld,
     oldestAskOf,
+    items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning,
     now,

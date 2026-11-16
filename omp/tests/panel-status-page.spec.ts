@@ -46,8 +46,10 @@ test('the Status page shows the head’s title and description, then its rows in
   const withWas = subjects.filter(r => r.was !== null && r.text !== null)
   expect(withWas.length).toBeGreaterThan(0)
   for (const row of withWas) {
-    expect(lines[at(row.name) + 1]).toContain(row.text!)
-    expect(lines[at(row.name) + 2]).toContain(`was: ${row.was}`)
+    const first = at(row.name) + (row.waitsOn ? 2 : 1)
+    if (row.waitsOn) expect(lines[at(row.name) + 1]).toContain(`waits on you: ${row.waitsOn}`)
+    expect(lines[first]).toContain(row.text!)
+    expect(lines[first + 1]).toContain(`was: ${row.was}`)
   }
 })
 
@@ -151,4 +153,15 @@ test('no line on the Status page is wider than the panel', () => {
   const screen = screenOf()
   for (const width of [30, 50, 60, 80, 120])
     for (const line of drawn(screen, onPage, width)) expect(cellWidth(strip(line))).toBeLessThanOrEqual(width)
+})
+
+test('on the Status page, a subject an open ask holds up draws what it waits on under its name, with no stall word', () => {
+  const screen = noGoalScreen()
+  const held = screen.view.statusPage.rows.flatMap(r => (r.kind === 'subject' && r.waitsOn ? [r] : []))
+  expect(held.length).toBeGreaterThan(0)
+  const drawnText = text(screen, onPage)
+  for (const row of held) {
+    expect(drawnText).toContain(`waits on you: ${row.waitsOn}`)
+    expect(row.stall).toBeNull()
+  }
 })
