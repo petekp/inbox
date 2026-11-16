@@ -1,4 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import type { Engine, MockClock } from 'claude-code/testing'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'

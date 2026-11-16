@@ -9,7 +9,7 @@ import { failedSibling, isSameRun, runOf } from './pr-checks'
 import { checkKey } from './prs'
 import { PR_READ_WAIT_MS } from './timing'
 
-/** Fetches every PR the session tracks, so the row reads "Refreshing PRs…". */
+/** Fetches every PR the session tracks. */
 export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
 
 export type PrPress =

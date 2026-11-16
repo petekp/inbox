@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { endTurn, notePrompt, turnEnded, turnStarted } from '../hooks/session-turns'

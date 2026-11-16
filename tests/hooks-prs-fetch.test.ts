@@ -1,4 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import type { TabsProps } from '../hooks/tabs-client'
 import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { w, world } from './hooks-world'

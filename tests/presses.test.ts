@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import type { Run } from '../hooks/gh'
 import { openTarget } from '../hooks/open-targets'

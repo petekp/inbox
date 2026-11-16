@@ -14,9 +14,9 @@ type ToneSet = Record<ToneName, string> & {
   key: string
 }
 
-const DARK_AMBER = '#ffc107'
+const DARK_ORANGE = '#ffae42'
 export const DARK_TONES: ToneSet = {
-  needsYou: DARK_AMBER,
+  needsYou: DARK_ORANGE,
   issue: '#ff6b80',
   findings: '#cab0ff',
   tasks: '#b48cff',
@@ -30,9 +30,9 @@ export const DARK_TONES: ToneSet = {
   key: '#b1b9f9',
 }
 
-const LIGHT_AMBER = '#745417'
+const LIGHT_ORANGE = '#844100'
 export const LIGHT_TONES: ToneSet = {
-  needsYou: LIGHT_AMBER,
+  needsYou: LIGHT_ORANGE,
   issue: '#a5293d',
   findings: '#7b00e8',
   tasks: '#6a14d9',
@@ -46,9 +46,9 @@ export const LIGHT_TONES: ToneSet = {
   key: '#243bf5',
 }
 
-const DARK_DALTONIZED_AMBER = '#ffcc00'
+const DARK_DALTONIZED_ORANGE = '#ffb04a'
 export const DARK_DALTONIZED_TONES: ToneSet = {
-  needsYou: DARK_DALTONIZED_AMBER,
+  needsYou: DARK_DALTONIZED_ORANGE,
   issue: '#ff6666',
   findings: '#cab0ff',
   tasks: '#b48cff',
@@ -62,9 +62,9 @@ export const DARK_DALTONIZED_TONES: ToneSet = {
   key: '#99ccff',
 }
 
-const LIGHT_DALTONIZED_AMBER = '#7a4900'
+const LIGHT_DALTONIZED_ORANGE = '#784000'
 export const LIGHT_DALTONIZED_TONES: ToneSet = {
-  needsYou: LIGHT_DALTONIZED_AMBER,
+  needsYou: LIGHT_DALTONIZED_ORANGE,
   issue: '#ad0000',
   findings: '#7400db',
   tasks: '#6400c8',

@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { EMPTY_STATUS_TEXT, emptyTab, prsEmptyHint } from '../hooks/empty-tab'
 import { GH_MISSING_TEXT, GH_SIGNED_OUT_TEXT } from '../hooks/pr-rows'

@@ -102,6 +102,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
       'collapse-rows': { kind: 'full' },
+      'fold-all': {
+        kind: 'different',
+        reason:
+          'The engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, so it reads an Option-click on a fold: the Claude app reports `alt` on a click, which a VM run showed. The engine types say the pointer event of a Client carries the modifier keys the terminal reported held, and no terminal run has shown an Option-click folding all there.',
+      },
       'suggested-goal': { kind: 'full' },
     },
   },
@@ -269,6 +274,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere.",
       },
       'collapse-rows': { kind: 'full' },
+      'fold-all': { kind: 'full' },
       'suggested-goal': {
         kind: 'different',
         reason: 'Clicks only, as for the goal: the Codex Status has no row selection.',
@@ -368,6 +374,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
       'collapse-rows': { kind: 'full' },
+      'fold-all': {
+        kind: 'different',
+        reason: 'The panel takes keys only, so the w key folds every fold or opens them all, and no click does.',
+      },
       'suggested-goal': { kind: 'full' },
     },
   },

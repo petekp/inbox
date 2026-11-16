@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { latestBatch } from '../hooks/inbox-text'
 import { EMPTY } from '../hooks/ledger'

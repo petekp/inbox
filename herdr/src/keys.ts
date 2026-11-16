@@ -1,7 +1,7 @@
 import { drawnLists, latestUndo, openOnArrival, rowAfterClose, steppedIndex, tabUndos } from '../../hooks/action-plan'
 import type { RowWait } from '../../hooks/action-plan'
 import { addNewRows, showNewRows } from '../../hooks/arrivals'
-import { COLLAPSE_KEY, UNDO_KEY } from '../../hooks/help'
+import { COLLAPSE_KEY, FOLD_ALL_KEY, UNDO_KEY } from '../../hooks/help'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session-view'
@@ -20,6 +20,7 @@ type KeyMove =
   | { is: 'tab'; tab: ShownTab }
   | { is: 'select'; id: string }
   | { is: 'collapse'; id: string; isCollapsed: boolean }
+  | { is: 'fold-all' }
   | { is: 'press'; button: Button }
   | { is: 'leave' }
   | { is: 'close' }
@@ -94,6 +95,7 @@ export function keyMove(
     const id = stepRow(blocks, key === 'j' ? 1 : -1)
     return id ? { is: 'select', id } : null
   }
+  if (key === FOLD_ALL_KEY) return { is: 'fold-all' }
   if (key === UNDO_KEY) {
     const button = undo ? undoButton(blocks, undo) : null
     return button ? { is: 'press', button } : null

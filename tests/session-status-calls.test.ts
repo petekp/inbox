@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { EMPTY } from '../hooks/ledger'
 import { withChild } from '../hooks/status-children'
@@ -30,7 +31,7 @@ import {
   writeStatusRecord,
 } from '../hooks/status-records'
 import type { StatusRecord, RecordFiles } from '../hooks/status-records'
-import { footerStatus } from '../hooks/view'
+import { footerError } from '../hooks/view'
 import { NO_HOLDS } from '../hooks/timing'
 import { fakeHost } from './session-fake-host'
 import { LEDGER_REPLY, finishTurn, answer } from './session-helpers'
@@ -366,10 +367,9 @@ test('a failed Status call shows in the status line on the Status tab, in place 
     900,
   )
   const v = sessionView(failed, 1000, 1000, NO_HOLDS)
-  const prs = { isFetching: false, hasPrs: false }
 
   expect(v.statusPage.error).not.toBeNull()
-  expect(footerStatus('overview', v.status, prs, v.statusPage.error).error).toBe(v.statusPage.error)
-  expect(footerStatus('needsYou', v.status, prs, v.statusPage.error).error).toBe(v.status.error)
-  expect(footerStatus('prs', v.status, prs, v.statusPage.error).error).toBeNull()
+  expect(footerError('overview', v.status, v.statusPage.error)).toBe(v.statusPage.error)
+  expect(footerError('needsYou', v.status, v.statusPage.error)).toBe(v.status.error)
+  expect(footerError('prs', v.status, v.statusPage.error)).toBeNull()
 })

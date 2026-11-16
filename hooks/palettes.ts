@@ -194,6 +194,11 @@ const THEME_KEY_PALETTE: Palette = {
 // Theme keys resolve to the app's colors, so the desktop pane draws text in theme keys.
 // The app refuses an hsl() alpha or color-mix() color.
 const DESKTOP_AGE = '#85837e'
+/**
+ * Needs-you text in the app's own `warning` key draws amber, so a count would not match the orange mark beside it. The
+ * app resolves a hex the same in both its themes, so one orange serves: 4.7:1 on the dark page, 3.7:1 on white.
+ */
+const DESKTOP_NEEDS_YOU = '#cf6a00'
 const DESKTOP_PALETTE: Palette = {
   raised: 'rgba(128, 120, 105, 0.14)',
   raisedText: 'text',
@@ -204,7 +209,7 @@ const DESKTOP_PALETTE: Palette = {
   // The tree lines. One alpha serves both of the app's themes, about as strong as the Codex tab's and Herdr's tree lines.
   line: 'rgba(128, 128, 128, 0.45)',
   divider: 'rgba(128, 128, 128, 0.25)',
-  tone: { error: 'error' },
+  tone: { error: 'error', needsYou: DESKTOP_NEEDS_YOU },
   mark: {
     needsYou: NEEDS_YOU,
     issue: ISSUE,

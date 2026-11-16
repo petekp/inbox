@@ -1,5 +1,6 @@
 import type { Timer } from 'claude-code'
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import type { EnvelopeSource } from '../hooks/herdr'
 import { pressDrainer, publishedText, PUBLISH_LIMIT_BYTES } from '../hooks/herdr-app'
 import type { PressFiles } from '../hooks/herdr-app'

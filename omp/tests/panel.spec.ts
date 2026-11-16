@@ -294,3 +294,22 @@ test('the Herdr install question sits above the Asks rows, and its buttons answe
   expect(text(saving, onAsk)).toContain('Saving the answer…')
   expect(handleKey(saving, onAsk, 'enter', NOW).press?.action).not.toBe('herdr-ask')
 })
+
+test('the w key folds every fold of the shown tab, then opens them all, and saves each row it collapses', () => {
+  const screen = screenOf()
+  const ids = [...screen.view.needsYou.questions, ...screen.view.needsYou.tasks]
+    .filter(r => r.state.is !== 'settled')
+    .map(r => r.id)
+  expect(ids.length).toBeGreaterThan(1)
+  const folded = handleKey(screen, { ...INITIAL_UI, selectedId: ids[0]! }, 'w', NOW)
+  expect(folded.press).toEqual({
+    action: 'collapse-all',
+    changes: expect.arrayContaining(ids.map(id => ({ id, isCollapsed: true }))),
+  })
+  const collapsed = { ...screen, view: { ...screen.view, collapsed: ids } }
+  const opened = handleKey(collapsed, folded.ui, 'w', NOW)
+  expect(opened.press).toEqual({
+    action: 'collapse-all',
+    changes: expect.arrayContaining(ids.map(id => ({ id, isCollapsed: false }))),
+  })
+})

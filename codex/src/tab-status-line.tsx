@@ -12,6 +12,7 @@ import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName, toggleParentFold } from './tab-status-fold'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
+import { clickFold } from './tab-fold-all'
 import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
@@ -197,7 +198,12 @@ export function StatusLine({
     return (
       <>
         <div class="row fold-row" style={rowStyle} {...lineMotion(motion)}>
-          <button type="button" class="fold" data-fold={fold} onClick={() => toggleStatusFold(row.id)}>
+          <button
+            type="button"
+            class="fold"
+            data-fold={fold}
+            onClick={e => clickFold(e, isUnfolded, () => toggleStatusFold(row.id))}
+          >
             {row.text}
             <Icon name={isUnfolded ? 'down' : 'right'} />
           </button>

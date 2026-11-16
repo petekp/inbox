@@ -242,11 +242,15 @@ export async function openPanel() {
   panel.render(cx as never)
   await settle()
   const paint = () => nodeOf(panel.render(cx as never)) as Painted
+  const PLAIN_CLICK = {
+    click_count: 1,
+    modifiers: { shift: false, control: false, alt: false, platform: false, function: false },
+  }
   const click = (target: Painted) => {
     cx.isStopped = false
     for (let at: Painted | null = target; at !== null && !cx.isStopped; at = at.parent) {
       at.field?.focus()
-      at.click?.(null, cx)
+      at.click?.(PLAIN_CLICK, cx)
     }
   }
 

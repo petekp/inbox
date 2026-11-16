@@ -86,7 +86,6 @@ Done and Dismiss are Marks, recorded by the server, with Undo. Claude learns of 
 | Server gone, card already mounted | `The inbox server is not running. Restart Claude to bring it back.` Rows stay muted, with no buttons. |
 | Lost track of the chat | `New inbox for this chat` |
 | Superseded | `Moved to a newer card below` |
-| Status | None. `Updating…` never shows. |
 
 **If the view does not render.** The person sees only the tool's text content. It lists the count and each open row on one line.
 

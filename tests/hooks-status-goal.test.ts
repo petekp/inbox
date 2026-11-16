@@ -1,5 +1,6 @@
 import type { On } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import type { Engine } from 'claude-code/testing'
 import { w, world } from './hooks-world'
 import { PANE, replyField, replyKey } from './hooks-helpers'

@@ -19,7 +19,6 @@ import {
   INSET,
   INSIDE_GAP,
   SMALL_GAP,
-  SMALL_TEXT,
   TAB_RADIUS,
   colorOf,
   tint,
@@ -52,11 +51,11 @@ const helpIconEl = (t: Theme): Element =>
     .child(HELP_COPY.icon)
 
 /**
- * The tab row: the tabs with their counts, then the status line and Help at its right end, inside the panel's padding.
+ * The tab row: the tabs with their counts, then Help at its right end, inside the panel's padding.
  * A tab is a pill of a button's size, and only the selected tab's label is bold. Herdr's pane header names the pane,
  * so the look draws no title.
  */
-export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: boolean, p: Paint): Element {
+export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element {
   const { t } = p
   const help = helpButton(isHelpShown)
 
@@ -94,17 +93,6 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
       ),
     )
     .child(div().flex_1())
-    .when(status !== null, e =>
-      e.child(
-        div()
-          .min_w(0)
-          .whitespace_normal()
-          .px(SMALL_GAP)
-          .text_size(SMALL_TEXT)
-          .text_color(t.muted)
-          .child(status ?? ''),
-      ),
-    )
     .child(
       h_flex()
         .id('help')

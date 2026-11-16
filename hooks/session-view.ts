@@ -100,7 +100,7 @@ export function sessionView(
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
+    status: perTurnStatus(updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,

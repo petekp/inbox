@@ -151,15 +151,19 @@ function openAfterClose(v: View, id: string) {
   later(revealSelected, 0)
 }
 
-/** A click on a row's title: it opens a closed row, and collapses or expands the open one. */
-export function pressTitle(t: Tab, rows: Row[], index: number) {
+/**
+ * A click on a row's title: it opens a closed row, and collapses or expands the open one. `foldAll` takes the place of
+ * that collapse or expand, and is told whether the click opens.
+ */
+export function pressTitle(t: Tab, rows: Row[], index: number, foldAll?: (isOpening: boolean) => void) {
   const v = tabState.view
   const row = rows[index]
   if (!v || !row) return
   const isOpen = openRowId(rows, t, v) === row.id
   if (isOpen && isOpenGuarded()) return
-  if (isOpen || v.collapsed.includes(row.id)) toggleCollapse(t, row.id, index)
-  else select(t, rows, index)
+  if (!isOpen && !v.collapsed.includes(row.id)) select(t, rows, index)
+  else if (foldAll) foldAll(!isOpen)
+  else toggleCollapse(t, row.id, index)
 }
 
 /** The collapse key: collapses or expands the row the cursor is on. */
@@ -184,21 +188,29 @@ function toggleCollapse(t: Tab, id: string, index: number) {
   pressCollapse(id, isCollapsed)
 }
 
-/** Saves that the row `id` is collapsed or not, and draws it so at once, ahead of the server's answer. */
-export function pressCollapse(id: string, isCollapsed: boolean) {
+/**
+ * Saves that the row `id` is collapsed or not, and draws it so at once, ahead of the server's answer. The save waits for
+ * `after`, and the returned promise settles when its answer is applied.
+ */
+export function pressCollapse(id: string, isCollapsed: boolean, after?: Promise<unknown>): Promise<unknown> {
   const v = tabState.view
-  if (!v) return
+  if (!v) return after ?? Promise.resolve()
   const seq = ++tabState.requested
   tabState.shown = seq
   tabState.view = { ...v, collapsed: isCollapsed ? [...v.collapsed, id] : v.collapsed.filter(x => x !== id) }
   tabState.draw()
   const generation = tabState.viewGeneration
-  void callTool<PressReply>('inbox_press', {
+  const request = {
     press: { action: 'collapse', id, isCollapsed },
     thread: v.thread,
     demo: tabState.isDemo,
     ...holds(),
-  })
+  }
+  return (
+    after
+      ? after.then(() => callTool<PressReply>('inbox_press', request))
+      : callTool<PressReply>('inbox_press', request)
+  )
     .then(r => {
       if (!tabState.isDisposed && generation === tabState.viewGeneration && r.view) applyView(r.view, seq)
     })

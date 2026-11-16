@@ -142,6 +142,11 @@ export function tabLegend(): HelpKey[] {
 export const UNDO_KEY = 'u'
 /** Collapses the selected row, or expands it once collapsed. */
 export const COLLAPSE_KEY = 'z'
+/**
+ * Folds every fold on the tab, or opens every one. It is not Shift+z because the engine binds a hotkey by its letter and
+ * ignores Shift, so the terminal cannot tell the two apart.
+ */
+export const FOLD_ALL_KEY = 'w'
 
 /** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prClearActions` bind from any row of the tab. */
 const PR_TAB_HELP_KEYS: HelpKey[] = [
@@ -160,6 +165,7 @@ export function helpKeys(look: Look): HelpKey[] {
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   const undoKey = { keys: UNDO_KEY, does: 'Undo the last close' }
   const collapseKey = { keys: COLLAPSE_KEY, does: 'Collapse or expand the selected row' }
+  const foldAllKey = { keys: FOLD_ALL_KEY, does: 'Fold every fold on the tab, or open them all' }
   switch (look) {
     case 'desktop':
       return []
@@ -168,6 +174,7 @@ export function helpKeys(look: Look): HelpKey[] {
         switchTabs,
         { keys: 'j k', does: 'Select the next or previous row' },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
@@ -177,6 +184,7 @@ export function helpKeys(look: Look): HelpKey[] {
         switchTabs,
         { keys: 'j k ↑ ↓', does: 'Select the next or previous row' },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: '?', does: 'Open or close help' },
@@ -190,6 +198,7 @@ export function helpKeys(look: Look): HelpKey[] {
         { keys: '↵', does: 'Press the picked button' },
         { keys: 't', does: 'Reply to the selected row' },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: '?', does: 'Open or close help' },
@@ -200,6 +209,7 @@ export function helpKeys(look: Look): HelpKey[] {
         { keys: '← →', does: 'Switch tabs' },
         { keys: 'j k', does: 'Select the next or previous row' },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: 'esc', does: "Move focus back to the agent's terminal" },

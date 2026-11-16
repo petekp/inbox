@@ -65,4 +65,5 @@ export type FeatureId =
   | 'status-idle-age'
   | 'question-back-stays-open'
   | 'collapse-rows'
+  | 'fold-all'
   | 'suggested-goal'

@@ -13,22 +13,20 @@ The field replaces every other row action and its keys with [Send] and [Cancel].
 
 ### 2.6 Status
 
-The UI reads one status record for items and one for PRs. The status shows only work under way and errors, at the right end of the footer line. When the list last changed is not shown: it would not change what the person does.
+The UI reads one status record for items. It shows errors only, under the tabs. Work under way, such as an update or a PR refresh, shows nowhere in the footer. When the list last changed is not shown: it would not change what the person does.
 
 | Field | Shown as |
 |---|---|
-| `isUpdating`, optional | `Updating…` |
 | `error`, optional, with the source's own text | The text in red, under the tabs |
-| PR `isFetching` | `Refreshing PRs…` |
 
-The PRs tab shows the PR status. The other tabs show the item status. `hooks/view.ts:footerStatus` picks between them for every look. The Codex tab shows its status at the footer's right. While polls fail it shows `Last read 1m ago · retrying` there instead, muted, and red after a minute.
+`hooks/view.ts:footerError` picks the error for the shown tab in every look. The PRs tab shows none. While polls fail, the Codex tab shows `Last read 1m ago · retrying` at the footer's right, muted, and red after a minute.
 
 The UI names the result, not the model call or tool. `updateRecovery` in `hooks/session-view.ts` reads where a failed ledger stands from saved state, and `perTurnStatus` in `hooks/view.ts` gives its text:
 
 | State | When | Text |
 | --- | --- | --- |
 | Waiting | The ledger failed once, and the host can retry | `Last update failed. Items from that reply may be missing. The inbox tries again after the agent's next reply.` |
-| Retrying | An update runs while the ledger is failed | `Retrying the last update…` in the status line, in place of `Updating…`, with no error |
+| Retrying | An update runs while the ledger is failed | No error text while it runs |
 | Failed again | `presence.failedAttempts`, which counts retries too, is 2 or more | `Last update failed, and its retry failed too. Items from recent replies may be missing. The inbox tries again after the agent's next reply.` |
 | Unreadable | Nothing is pending, and the last catch-up could not read the conversation | `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing. The inbox tries again after the agent's next reply.` |
 

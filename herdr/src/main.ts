@@ -51,6 +51,7 @@ import {
 } from './keys'
 import type { LastWaits } from './keys'
 import { withCollapses, writeCollapse } from './collapse'
+import { foldAllIn, foldClickOpens } from './fold-all'
 import type { Collapses } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
 import type { LinesAbove } from './held-line'
@@ -328,11 +329,13 @@ export default class Inbox extends View {
     return true
   }
 
-  press(b: Button, cx: Context): void {
+  press(b: Button, cx: Context, isAll = false): void {
     const now = Date.now()
     this.listInput = withListInput(this.listInput, now)
     const d = b.does
-    if (d.is === 'view') this.change(d.change)
+    const opening = isAll ? foldClickOpens(d, this.ui) : null
+    if (opening !== null) foldAllIn(this, opening, cx)
+    else if (d.is === 'view') this.change(d.change)
     else if (d.is === 'collapse') this.collapse(d.id, d.isCollapsed, cx)
     else if (d.is === 'press') {
       this.ui = afterPress(this.ui, d.press)
@@ -344,12 +347,12 @@ export default class Inbox extends View {
   }
 
   /** Collapses or expands row `id`. The look draws it at once, and a host that saves collapses saves it. */
-  collapse(id: string, isCollapsed: boolean, cx: Context): void {
+  collapse(id: string, isCollapsed: boolean, cx: Context, isSelecting = true): void {
     const read = this.read?.is === 'read' ? this.read : null
     if (this.sessionId === null || read === null) return
     const c = { isCollapsed, at: Date.now() }
     this.collapses = { ...this.collapses, [id]: c }
-    this.ui = withCollapsed(this.ui, id, isCollapsed)
+    if (isSelecting) this.ui = withCollapsed(this.ui, id, isCollapsed)
     this.closeStaleField()
     const to = { appHome: appHome(), sessionId: this.sessionId }
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c))
@@ -364,6 +367,7 @@ export default class Inbox extends View {
     else if (move.is === 'tab') this.showTab(move.tab)
     else if (move.is === 'select') this.ui = withSelected(this.ui, move.id)
     else if (move.is === 'collapse') this.collapse(move.id, move.isCollapsed, cx)
+    else if (move.is === 'fold-all') foldAllIn(this, null, cx)
     else if (move.is === 'press') return this.press(move.button, cx)
     else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
     this.listInput = withListInput(this.listInput, Date.now())
@@ -397,8 +401,9 @@ export default class Inbox extends View {
     const paint: Paint = {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
-      press: (b, cx) => this.press(b, cx),
-      collapse: (id, isCollapsed, cx) => {
+      press: (b, cx, isAll) => this.press(b, cx, isAll),
+      collapse: (id, isCollapsed, cx, isAll) => {
+        if (isAll) return foldAllIn(this, !isCollapsed, cx)
         if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now())) return
         if (!isCollapsed) this.clickedOpenAt = Date.now()
         this.collapse(id, isCollapsed, cx)
@@ -462,7 +467,7 @@ export default class Inbox extends View {
     return root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(fitEl('tabs', paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint)))
+      .child(fitEl('tabs', paint, tabsEl(screen.tabs, this.isHelpShown, paint)))
       .child(
         fitEl(
           'chrome',

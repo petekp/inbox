@@ -1,4 +1,4 @@
-import { PathBuilder, div } from 'gpui-kit'
+import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS } from '../../hooks/help'
@@ -27,6 +27,7 @@ import {
   TEXT_X,
   colorOf,
 } from './paint-theme'
+import { checkboxEl } from './paint-checkbox'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
@@ -88,9 +89,9 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
         ? styled.hover(s => s.bg(t.hover)).active(s => s.bg(t.selected))
         : styled.hover(s => s.text_color(t.foreground)).active(s => s.text_color(t.foreground).opacity(0.7))
 
-  return live.on_click((_e, cx) => {
+  return live.on_click((e, cx) => {
     cx.stop_propagation()
-    p.press(b, cx)
+    p.press(b, cx, e.modifiers.alt)
   })
 }
 
@@ -104,28 +105,6 @@ const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false)
     .pt(CONTROL_GAP)
     .pl(indent)
     .children(buttons.map(b => buttonEl(b, p, isInert)))
-
-const CHECKBOX_PX = 11
-const CHECK_PATH = PathBuilder.stroke(1.5).move_to('27%', '53%').line_to('43%', '69%').line_to('74%', '31%').build()
-
-/** The Tasks mark, a checked box drawn as a shape, since the font's ☑ is small beside the other marks. */
-const checkboxEl = (color: Theme[keyof Theme]): Element =>
-  div()
-    .relative()
-    .flex_none()
-    .w(CHECKBOX_PX)
-    .h(CHECKBOX_PX)
-    .border_1()
-    .border_color(color)
-    .rounded(3)
-    .child(
-      window
-        .paint_path(CHECK_PATH, color)
-        .absolute()
-        .top(0)
-        .left(0)
-        .size(`${CHECKBOX_PX - 2}px`),
-    )
 
 /** A mark, at the start of the column that hangs before the text, so a tab's first marks sit on the panel's edge. */
 const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null = null): Element =>
@@ -213,7 +192,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
   const line = h_flex()
     .id(`title ${r.id}`)
     .items_start()
-    .when(isPressable && isOpen, e => e.on_click((_e, cx) => p.collapse(r.id, true, cx)))
+    .when(isPressable && isOpen, e => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt)))
     .when(hasTree, e => e.relative().child(trunkEl(LINE_HEIGHT, null, t)))
     .child(markEl(r.mark, t, markTintOf(r, p)))
     .child(
@@ -249,7 +228,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .when(isPressable && !isOpen, e =>
       e
         .hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))),
+        .on_click((e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))),
     )
     .child(rowPadEl(r, 'top', p))
     .child(titleEl(r, p, line))
@@ -349,7 +328,9 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
       h_flex()
         .id(`fold ${s.id}`)
         .items_start()
-        .when(toggle !== undefined && !isInert, e => e.on_click((_e, cx) => (toggle ? p.press(toggle, cx) : undefined)))
+        .when(toggle !== undefined && !isInert, e =>
+          e.on_click((e, cx) => (toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)),
+        )
         .child(markEl(s.mark, t))
         .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
     )
@@ -532,7 +513,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .items_start()
     .text_color(t.muted)
     .accessibility_label(b.text)
-    .when(!isInert, e => e.on_click((_e, cx) => p.press(press, cx)))
+    .when(!isInert, e => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(div().min_w(0).whitespace_normal().child(b.text))
     .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))

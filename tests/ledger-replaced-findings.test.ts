@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { closeItem, closedState, reopenFinding } from '../hooks/ledger-close'
