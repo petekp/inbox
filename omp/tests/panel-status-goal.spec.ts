@@ -97,7 +97,7 @@ test('a met goal hangs a green ✓ beside Goal met, starts its text at the text 
   expect(opened.selectedId).toBe(foldId)
   expect(opened.statusUnfolded).toContain(foldId)
   const shown = text(screen, opened, 60).split('\n')
-  expect(shown[lineAt(shown, 'Fixes built, Announced')]).toContain('⌄')
+  expect(shown[lineAt(shown, 'Fixes built, Announced')]).toContain('Announced v')
   expect(lineAt(shown, '✓ Fixes built')).toBeGreaterThan(lineAt(shown, 'Fixes built, Announced'))
   expect(statusKeyRows(page, id => opened.statusUnfolded.includes(id)).map(t => t.id)[1]).toBe(foldId)
 

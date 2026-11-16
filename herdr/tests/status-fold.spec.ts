@@ -21,15 +21,16 @@ test('a Status parent draws a chevron after its name that folds its rows away an
   }
 
   expect(statusOf(open, 's1')?.fold).toMatchObject({
-    chevron: '⌄',
+    isFolded: false,
     toggle: { does: { is: 'collapse', id: 's1', isCollapsed: true } },
   })
   expect(statusOf(folded, 's1')?.fold).toMatchObject({
-    chevron: `› ${s1.foldCount}`,
+    isFolded: true,
+    count: s1.foldCount,
     toggle: { does: { is: 'collapse', id: 's1', isCollapsed: false } },
   })
-  expect(statusOf(open, milestone.id)?.fold?.chevron).toBe('⌄')
-  expect(statusOf(folded, milestone.id)?.fold?.chevron).toBe(`› ${milestone.foldCount}`)
+  expect(statusOf(open, milestone.id)?.fold).toMatchObject({ isFolded: false })
+  expect(statusOf(folded, milestone.id)?.fold).toMatchObject({ isFolded: true, count: milestone.foldCount })
   expect(underS1.length).toBeGreaterThan(0)
   expect(underS1.every(id => open.some(b => b.id === id))).toBe(true)
   expect(underS1.some(id => folded.some(b => b.id === id))).toBe(false)

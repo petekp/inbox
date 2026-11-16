@@ -233,7 +233,7 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   expect(await pane.find({ key: 'status-s2' })).toBeUndefined()
   await pane.press({ key: 'fold-status-done' })
   await clock.settle()
-  expect(await foldLabel()).toBe('1 done ⌄')
+  expect(await foldLabel()).toBe('1 done v')
   expect((await pane.find({ key: 'status-s2' }))?.text).toBe('✓Plan')
   await pane.press({ key: 'fold-status-done' })
   await clock.settle()
@@ -243,7 +243,7 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   await clock.settle()
   await pane.press({ key: 'toggle-fold-done-key' })
   await clock.settle()
-  expect(await foldLabel()).toBe('1 done ⌄')
+  expect(await foldLabel()).toBe('1 done v')
   expect(await pane.find({ key: 'status-s2' })).toBeDefined()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })

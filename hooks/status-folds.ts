@@ -32,7 +32,7 @@ export function waitingUnderParents(ledger: Pick<Ledger, 'overview' | 'items'>):
   ])
 }
 
-/** What follows a parent's name: ⌄ while its rows show, else › and how many rows of work its fold hides. */
+/** What follows a parent's name: v while its rows show, else › and how many rows of work its fold hides. */
 export const parentChevron = (isCollapsed: boolean, foldCount: number) =>
   isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true)
 
