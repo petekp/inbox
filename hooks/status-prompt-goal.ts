@@ -1,7 +1,7 @@
 import type { GoalRefusal, SessionStatus } from '../types'
 import { NL } from './ledger-prompt'
 import { goalLeftFor, heldSubjects, lastProgressAt } from './status-goal-gate'
-import { isOpen, MILESTONES_MAX, MILESTONES_MIN, NAME_WORDS, TEXT_WORDS } from './status-limits'
+import { isOpen, MILESTONE_SUBJECTS, MILESTONES_MAX, MILESTONES_MIN, NAME_WORDS, TEXT_WORDS } from './status-limits'
 import { hasRunningGoal } from './status-suggest'
 import { duration } from './text'
 
@@ -9,6 +9,8 @@ import { duration } from './text'
 const NO_WORK_LINKED = 'no work linked'
 /** The mark on the milestone line the work takes up after the one under way. */
 const NEXT_MARK = 'next'
+/** The mark on a milestone line `tooBigMilestones` names, with how many subjects serve it and how many milestones the goal has room for. */
+const tooBigMark = (count: number, room: number) => `too big, ${count} subjects, room for ${room}`
 
 /** The lines the Status call writes for the goal, after the lines it writes for subjects. */
 export const GOAL_LINES = `GOAL: outcome | status name; status name
@@ -21,7 +23,7 @@ GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in o
 
 /** The input blocks the goal adds, as the system text describes them. */
 export const GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it or took the suggested goal, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
-- <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
+- <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it, and with | ${tooBigMark(9, 2)} when more than ${MILESTONE_SUBJECTS} subjects serve it, open or done, two or more of them are open, and the goal has room for more milestones. Room for 2 means the goal can take 2 more.
 - <removed>: goals the person removed, as their key words, one per line
 - <suggested>: the goal offered to the person, while no goal is set or the goal is met
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`
@@ -41,6 +43,7 @@ export const GOAL_PARTS = {
   'goal-work-left': `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open, unless the person says its outcome changed, as when they cut part of it. Then write GOAL for the new outcome, and name again in the same words each milestone it keeps, so that milestone's work moves with it. Write SERVES to - for the work of each milestone it leaves out. When a milestone is cut and the goal's text still holds, write DROP for that milestone instead. New work or an added outcome is a MILESTONE line, never a new goal.`,
   'milestones-are-outcomes': `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
   'next-milestone': `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next. Name a milestone this answer adds by its name, since it has no id yet. Leave it out when the milestone marked ${NEXT_MARK} in <milestones> is right.`,
+  'milestone-split': `A milestone marked too big holds more work than the person can read as one outcome: split it by theme. Write MILESTONE for each outcome its open subjects are for, named by theme, such as "Status page polish" or "Herdr drawing fixed", and never more than the room the mark gives: code drops a MILESTONE line past it. Then write SERVES to move each of its open subjects to the new milestone its work is part of, or to - when the goal does not need it. Its done subjects stay with it and get no SERVES line. When the split leaves none of its subjects open, write DONE for it in the same answer, with where it ended, or DROP with why when none of them is done. A split changes milestones only, so it applies to a goal marked (typed) too, and the goal's words stay.`,
   'milestone-no-work': `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
   'milestones-for-new-goal': `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
   'serves-every-subject': `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,
@@ -93,6 +96,27 @@ function refusedLine(o: SessionStatus, now: number): string | null {
   return text === null ? null : `${line} refused: ${text}`
 }
 
+/**
+ * The open milestones the call is asked to split, each with how many subjects serve it, open or done: more than
+ * `MILESTONE_SUBJECTS`, at least two of them open, so a split moves more than one piece of work, while the goal has room
+ * for another milestone. None while a typed goal waits for its milestones, which still belong to the goal before it.
+ */
+export function tooBigMilestones(o: SessionStatus | null): Map<string, number> {
+  const g = o?.goal
+  if (!o || !g || g.isAwaitingMilestones) return new Map()
+  const kept = o.milestones.filter(m => m.status !== 'dropped')
+  const serving = (id: string) => o.subjects.filter(s => s.status !== 'dropped' && o.serves[s.id] === id)
+  if (kept.length >= MILESTONES_MAX) return new Map()
+
+  return new Map(
+    kept.flatMap(m => {
+      const work = serving(m.id)
+      const hasWorkToSplit = work.filter(isOpen).length >= 2
+      return isOpen(m) && work.length > MILESTONE_SUBJECTS && hasWorkToSplit ? [[m.id, work.length] as const] : []
+    }),
+  )
+}
+
 /** The goal's input blocks at `now`: the goal and its milestones, the removed goals and the suggested goal. */
 export function goalBlocks(o: SessionStatus | null, now: number): string[] {
   if (o === null) return []
@@ -109,11 +133,18 @@ export function goalBlocks(o: SessionStatus | null, now: number): string[] {
   const state = marks.length > 0 ? ` (${marks.join(', ')})` : ''
   const served = new Set(Object.values(o.serves))
   const next = g?.isAwaitingMilestones ? undefined : o.milestones.find(m => m.status === 'queued')
+  const tooBig = tooBigMilestones(o)
+  const room = MILESTONES_MAX - o.milestones.filter(m => m.status !== 'dropped').length
   const milestones = o.milestones
     .filter(m => m.status !== 'dropped')
     .map(m => {
       const isUnserved = m.status !== 'done' && !served.has(m.id)
-      const marks = [...(m === next ? [NEXT_MARK] : []), ...(isUnserved ? [NO_WORK_LINKED] : [])]
+      const serving = tooBig.get(m.id)
+      const marks = [
+        ...(m === next ? [NEXT_MARK] : []),
+        ...(isUnserved ? [NO_WORK_LINKED] : []),
+        ...(serving === undefined ? [] : [tooBigMark(serving, room)]),
+      ]
       return [`${m.id} | ${m.status} | ${m.name} | ${m.text || '-'}`, ...marks].join(' | ')
     })
   const block = (tag: string, body: string) => `<${tag}>${NL}${body}${NL}</${tag}>`

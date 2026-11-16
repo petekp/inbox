@@ -20,6 +20,12 @@ export const FINISHED_READ = 10
 /** The most milestones a goal keeps, and the fewest a GOAL line needs. */
 export const MILESTONES_MAX = 5
 export const MILESTONES_MIN = 2
+/**
+ * The most subjects, open or done, one open milestone should serve, as many as the open subjects the page keeps. Past it
+ * the milestone collects whatever work comes along instead of naming one outcome, and the Status call is asked to split
+ * it by theme.
+ */
+export const MILESTONE_SUBJECTS = 6
 /** How long an inferred goal with no open linked work goes without moving forward before the work counts as having left it. */
 export const GOAL_LEFT_MS = 30 * 60_000
 /** How many removed goals the call is told not to set again. */

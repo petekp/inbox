@@ -1,5 +1,6 @@
 import { parseStatus } from '../hooks/status'
-import { isOpen, MILESTONES_MAX, MILESTONES_MIN, nameKey } from '../hooks/status-limits'
+import { isOpen, MILESTONE_SUBJECTS, MILESTONES_MAX, MILESTONES_MIN, nameKey } from '../hooks/status-limits'
+import { tooBigMilestones } from '../hooks/status-prompt-goal'
 import { milestonePath } from '../hooks/status-path'
 import { rightStatuses } from './status-facts'
 import type { MilestoneFact } from './status-facts'
@@ -155,6 +156,25 @@ export const GOAL_RULES: Rule[] = [
         ...kept.filter(m => subjects.has(nameKey(m.name))).map(m => `milestone "${m.name}" is named after a subject`),
       ]
     },
+  },
+  {
+    id: 'milestone-size',
+    reads: 'facts',
+    opportunity: hasCall,
+    property: 15,
+    text: `A milestone the call read marked too big still has more than ${MILESTONE_SUBJECTS} subjects after the step only when none of them is open.`,
+    failures: ({ result, before }) => {
+      const o = result.session.ledger.overview
+      const read = tooBigMilestones(before.overview)
+      return milestonesOf(o)
+        .filter(m => read.has(m.id) && isOpen(m))
+        .flatMap(m => {
+          const work = o!.subjects.filter(s => s.status !== 'dropped' && o!.serves[s.id] === m.id)
+          const isStillTooBig = work.length > MILESTONE_SUBJECTS && work.some(isOpen)
+          return isStillTooBig ? [`"${m.name}" serves ${work.length} subjects`] : []
+        })
+    },
+    key: failure => failure.slice(0, failure.lastIndexOf(' serves ')),
   },
   {
     id: 'milestone-next',
