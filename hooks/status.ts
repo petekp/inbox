@@ -22,12 +22,14 @@ export type Op =
   | { kind: 'serves'; subject: string; milestone: string | null }
   /** Names the queued milestone the work takes up after the one under way. */
   | { kind: 'next'; ref: string }
+  /** The goal offered to the person while none runs, or null for none. */
+  | { kind: 'suggest'; text: string | null }
 
 /** What the Status call answered: nothing to change, or the changes to make. */
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
 const LINE =
-  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES|NEXT)\s*(?::\s*(.*))?$/i
+  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES|NEXT|SUGGEST)\s*(?::\s*(.*))?$/i
 
 function fields(value: string): string[] {
   return value.split('|').map(f => f.trim())
@@ -93,6 +95,11 @@ function opOf(key: string, f: string[]): Op | null {
     return f[0] && f[1] ? { kind: 'serves', subject: f[0], milestone: isNone ? null : f[1] } : null
   }
   if (key === 'NEXT') return f[0] ? { kind: 'next', ref: f[0] } : null
+  if (key === 'SUGGEST') {
+    const isNone = f[0] === '-' || f[0]?.toLowerCase() === 'none'
+
+    return f[0] ? { kind: 'suggest', text: isNone ? null : f[0] } : null
+  }
 
   return null
 }

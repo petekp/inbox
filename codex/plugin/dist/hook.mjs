@@ -91,7 +91,8 @@ var EMPTY_SESSION_STATUS = {
   milestones: [],
   nextMilestoneId: 1,
   serves: {},
-  goalRefused: null
+  goalRefused: null,
+  suggestedGoal: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -415,7 +416,8 @@ function goalFields(o, subjects) {
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
-    goalRefused: goalRefusedOf(o.goalRefused)
+    goalRefused: goalRefusedOf(o.goalRefused),
+    suggestedGoal: nonEmpty(o.suggestedGoal)
   };
 }
 
@@ -1086,6 +1088,9 @@ function capitalized(text2) {
 }
 var ISSUE_LABEL = "File issue";
 
+// ../hooks/status-suggest.ts
+var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
+
 // ../hooks/banners.ts
 var NEXT_BUILD_MARK = ".next-build";
 var MAYBE_STALE_TEXT = "May be out of date";
@@ -1398,7 +1403,8 @@ function milestoneRow(step, o, items) {
 }
 function goalPage(o, items, now) {
   const g = o?.goal ?? null;
-  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
+  const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal;
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null, suggestedGoal };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter(
@@ -1423,7 +1429,8 @@ function goalPage(o, items, now) {
       milestonesFold: null,
       milestones
     },
-    canRestoreGoal: false
+    canRestoreGoal: false,
+    suggestedGoal
   };
 }
 

@@ -1,8 +1,15 @@
 import { Icon } from './row-actions'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan } from '../../hooks/status-keys'
+import {
+  GOAL_FIELD,
+  GOAL_KEYS_ID,
+  goalKeys,
+  goalSubmitLabel,
+  isSuggestionShown,
+  milestoneKeyPlan,
+} from '../../hooks/status-keys'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
@@ -21,8 +28,8 @@ import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
 import { foldMotion, Keys, StatusLine, toggleStatusFold } from './tab-status-line'
 
-/** The goal's text field, with Save and Cancel. It stays open, its buttons out, until the server confirms the goal. */
-function GoalField() {
+/** The goal's text field, with its submit button and Cancel. It stays open, its buttons out, until the server confirms the goal. */
+function GoalField({ page }: { page: StatusPage }) {
   const draft = () => drafts.get(GOAL_KEYS_ID)?.text ?? ''
   const isOut = sending.has(GOAL_KEYS_ID)
 
@@ -37,6 +44,7 @@ function GoalField() {
           const sent = drafts.get(GOAL_KEYS_ID)
           void act(GOAL_KEYS_ID, { action: 'type', id: GOAL_KEYS_ID, text }, () => {
             if (tabState.typing === GOAL_KEYS_ID) tabState.typing = null
+            tabState.isSuggestionOpen = false
             if (drafts.get(GOAL_KEYS_ID) === sent) drafts.delete(GOAL_KEYS_ID)
           })
         }}
@@ -55,7 +63,7 @@ function GoalField() {
         />
         <span class="field-keys">
           <button type="submit" class={isOut ? 'key primary out' : 'key primary'} disabled={isOut}>
-            {GOAL_FIELD.submit}
+            {goalSubmitLabel(page)}
           </button>
           <button
             type="button"
@@ -70,6 +78,16 @@ function GoalField() {
           </button>
         </span>
       </form>
+    </div>
+  )
+}
+
+/** The goal the Status call offers, in the goal text's style under a muted label. */
+function Suggestion({ text }: { text: string }) {
+  return (
+    <div class="suggested">
+      <p class="muted">{SUGGESTED_GOAL_LABEL}</p>
+      <h1>{text}</h1>
     </div>
   )
 }
@@ -326,7 +344,14 @@ function GoalSection({
 }) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
-  const text = g ? <h1>{g.text}</h1> : <p class="muted">{NO_GOAL_TEXT}</p>
+  const isSuggesting = isSuggestionShown(page, tabState.isSuggestionOpen)
+  const text = isSuggesting ? (
+    <Suggestion text={page.suggestedGoal ?? ''} />
+  ) : g ? (
+    <h1>{g.text}</h1>
+  ) : (
+    <p class="muted">{NO_GOAL_TEXT}</p>
+  )
   const mark = g?.mark ?? null
 
   return (
@@ -341,7 +366,7 @@ function GoalSection({
         <span class="goal-rule" />
         {isTyping ? null : (
           <span class="goal-actions">
-            {goalKeyPlan(page).flatMap((k, n) => [
+            {goalKeys(page, tabState.isSuggestionOpen).flatMap((k, n) => [
               ...(n > 0 ? [<span class="muted">·</span>] : []),
               <Keys key={k.label} keys={[k]} />,
             ])}
@@ -350,7 +375,7 @@ function GoalSection({
       </div>
       <div class={mark ? 'status-head goal marked' : 'status-head goal'} data-motion="goal-head">
         <div class="goal-text" data-motion="goal-text">
-          {isTyping ? <GoalField /> : text}
+          {isTyping ? <GoalField page={page} /> : text}
         </div>
         {head.map(l => (
           <p key={l.id} class="muted" {...lineMotion(goalHeadMotion(l.id))}>
@@ -367,11 +392,28 @@ function GoalSection({
   )
 }
 
-/** New, or the field it opened, under the empty page's centred text. */
-function SetGoal({ keys, isFieldOpen }: { keys: StatusKey[]; isFieldOpen: boolean }) {
+/** New, the suggested goal, or the field New opened, under the empty page's centred text. */
+function SetGoal({
+  page,
+  keys,
+  isFieldOpen,
+  suggestion,
+}: {
+  page: StatusPage
+  keys: StatusKey[]
+  isFieldOpen: boolean
+  suggestion: string | null
+}) {
   return (
     <div class="status-head">
-      {isFieldOpen ? <GoalField /> : <Keys keys={keys} />}
+      {isFieldOpen ? (
+        <GoalField page={page} />
+      ) : (
+        <>
+          {suggestion === null ? null : <Suggestion text={suggestion} />}
+          <Keys keys={keys} />
+        </>
+      )}
       <GoalError />
     </div>
   )
@@ -398,9 +440,17 @@ function rowsUnder(rows: StatusRow[], n: number, motion: (id: string) => string)
 
 export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   const page = v.statusPage
-  const empty = emptyTab(v, { tab: 'overview', isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID })
+  const empty = emptyTab(v, {
+    tab: 'overview',
+    isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID,
+    isSuggestionOpen: tabState.isSuggestionOpen,
+  })
   if (empty)
-    return <EmptyState empty={empty}>{empty.under?.is === 'set-goal' ? <SetGoal {...empty.under} /> : null}</EmptyState>
+    return (
+      <EmptyState empty={empty}>
+        {empty.under?.is === 'set-goal' ? <SetGoal page={page} {...empty.under} /> : null}
+      </EmptyState>
+    )
   const head = drawn.apart.map(({ id, head: h }) => (
     <section key={id} {...lineMotion(headApartMotion(id))}>
       <div class="status-head">

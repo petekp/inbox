@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T02:44:22.395Z. 255302 characters follow.
+// Built at 2026-11-16T02:52:10.763Z. 258046 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -153,7 +153,8 @@ var EMPTY_SESSION_STATUS = {
   milestones: [],
   nextMilestoneId: 1,
   serves: {},
-  goalRefused: null
+  goalRefused: null,
+  suggestedGoal: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -527,7 +528,8 @@ function goalFields(o, subjects) {
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
-    goalRefused: goalRefusedOf(o.goalRefused)
+    goalRefused: goalRefusedOf(o.goalRefused),
+    suggestedGoal: nonEmpty(o.suggestedGoal)
   };
 }
 
@@ -1152,6 +1154,9 @@ function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
 
+// ../hooks/status-suggest.ts
+var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
+
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "▲", tone: "issue" },
@@ -1514,6 +1519,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
+var SUGGESTED_GOAL_LABEL = "Suggested";
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -1562,8 +1568,9 @@ function milestoneRow(step, o, items) {
 }
 function goalPage(o, items, now) {
   const g = o?.goal ?? null;
+  const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal;
   if (o === null || g === null)
-    return { goal: null, canRestoreGoal: o?.goalRemoved != null };
+    return { goal: null, canRestoreGoal: o?.goalRemoved != null, suggestedGoal };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
@@ -1585,7 +1592,8 @@ function goalPage(o, items, now) {
       milestonesFold: null,
       milestones
     },
-    canRestoreGoal: false
+    canRestoreGoal: false,
+    suggestedGoal
   };
 }
 
@@ -1632,8 +1640,8 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
-var newGoal = (emphasis) => ({
-  press: { action: "type-goal", text: "" },
+var newGoal = (page, emphasis) => ({
+  press: page.suggestedGoal === null ? { action: "type-goal", text: "" } : { action: "show-suggestion" },
   label: "New",
   hotkey: "n",
   kind: "view",
@@ -1642,15 +1650,27 @@ var newGoal = (emphasis) => ({
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal(page, "quiet")];
   if (g.isMet)
-    return [newGoal("normal"), REMOVE_GOAL];
+    return [newGoal(page, "normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
   ];
 }
-var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
+function suggestionKeyPlan(suggested) {
+  return [
+    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
+    { press: { action: "hide-suggestion" }, label: "Cancel", hotkey: "c", kind: "view", emphasis: "quiet" }
+  ];
+}
+var isSuggestionShown = (page, isSuggestionOpen) => isSuggestionOpen && page.suggestedGoal !== null;
+function goalKeys(page, isSuggestionOpen) {
+  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal) : goalKeyPlan(page);
+}
+var GOAL_FIELD = { placeholder: "An outcome to work toward" };
+var goalSubmitLabel = (page) => page.goal === null || page.goal.isMet ? "Set" : "Save";
 
 // ../hooks/pressed.ts
 function offersUndo(c) {
@@ -3693,9 +3713,11 @@ function emptyTab(view, look) {
     const page = view.statusPage;
     if (!page.isEmpty)
       return null;
+    const isSuggestionOpen = look.isSuggestionOpen ?? false;
+    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
+      under: { is: "set-goal", keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion }
     };
   }
   if (look.tab === "prs") {
@@ -3988,6 +4010,10 @@ function doesOf(k) {
     return { is: "view", change: { toggleFold: p.foldId } };
   if (p.action === "toggle-collapse")
     return { is: "nothing" };
+  if (p.action === "show-suggestion")
+    return { is: "view", change: { isSuggestionOpen: true } };
+  if (p.action === "hide-suggestion")
+    return { is: "view", change: { isSuggestionOpen: false } };
   if (p.action === "type-goal")
     return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
   return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
@@ -4153,27 +4179,34 @@ var headTitle = (id, text) => ({
   isAtEdge: true,
   isStrong: true
 });
-function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
+function goalBlocks(page, { isUnfolded, isCollapsed, isSuggestionOpen, goalField }) {
   const g = page.goal;
+  const isSuggested = goalField === null && isSuggestionShown(page, isSuggestionOpen);
   const heading = {
     kind: "heading",
     id: "goal heading",
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
+    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page, isSuggested)),
     isLabel: true
   };
   const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
-  if (g === null)
-    return [heading, ...goalField ? field : [headNote("goal text", NO_GOAL_TEXT, "muted")]];
+  const suggestion = [
+    headNote("goal suggested", SUGGESTED_GOAL_LABEL, "muted"),
+    headTitle("goal text", page.suggestedGoal ?? "")
+  ];
+  if (g === null) {
+    const empty = isSuggested ? suggestion : [headNote("goal text", NO_GOAL_TEXT, "muted")];
+    return [heading, ...goalField ? field : empty];
+  }
   const atText = (b) => g.mark && b.kind === "note" ? { ...b, isAtEdge: false } : b;
-  const lines = goalField ? field : [
+  const lines = goalField ? field : (isSuggested ? suggestion : [
     headTitle("goal text", g.text),
     ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
     ...g.now ? [headNote("goal now", g.now, "muted")] : [],
     ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
-  ].map(atText);
+  ]).map(atText);
   const fold = g.milestonesFold;
   const foldLine = fold ? [
     {
@@ -4201,12 +4234,16 @@ function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
 function statusBlocks(view, ui) {
   const page = view.statusPage;
   const { isUnfolded, isCollapsed } = ui;
-  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: ui.goalField !== null });
+  const empty = emptyTab(view, {
+    tab: "overview",
+    isGoalFieldOpen: ui.goalField !== null,
+    isSuggestionOpen: ui.isSuggestionOpen
+  });
   if (empty) {
     const setGoal = empty.under?.is === "set-goal" ? empty.under : null;
     const parts = setGoal && {
       id: GOAL_KEYS_ID,
-      text: null,
+      text: setGoal.suggestion === null ? null : `${SUGGESTED_GOAL_LABEL}: ${setGoal.suggestion}`,
       buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
       feedback: null,
       field: setGoal.isFieldOpen ? ui.goalField : null
@@ -4233,6 +4270,7 @@ var freshUi = (tab) => ({
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
+  isSuggestionOpen: false,
   typing: null,
   newRows: new Map,
   closedSeen: new Map
@@ -4477,10 +4515,11 @@ function chrome(screen, tab) {
 }
 function tabBlocks(screen, ui) {
   if (ui.tab === "overview") {
-    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null;
+    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, goalSubmitLabel(screen.view.statusPage)) : null;
     return statusBlocks(screen.view, {
       isUnfolded: (id) => ui.statusUnfolded.includes(id),
       isCollapsed: (id) => screen.view.collapsed.includes(id),
+      isSuggestionOpen: ui.isSuggestionOpen,
       goalField
     });
   }
@@ -4702,14 +4741,21 @@ function withShownNewRows(ui, at) {
   const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
   return isSame ? ui : { ...ui, newRows };
 }
-function withDrawnRows(ui, last, rows, at, isTabShown) {
+function withDrawnRows(ui, last, rows, at, isTabShown, page) {
   const lastRows = last.tab === ui.tab ? last.rows : null;
   const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
-  return isTabShown ? withShownNewRows(arrived, at) : arrived;
+  const shown = isTabShown ? withShownNewRows(arrived, at) : arrived;
+  return page ? withoutStaleSuggestion(shown, page) : shown;
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
-var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null } : ui;
+function afterPress(ui, press) {
+  if (press.action === "take-goal")
+    return { ...ui, isSuggestionOpen: false };
+  return "id" in press && press.action === "undo" ? withSelected(ui, press.id) : ui;
+}
+var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null, ...rowId === GOAL_KEYS_ID && { isSuggestionOpen: false } } : ui;
+var withoutStaleSuggestion = (ui, page) => ui.isSuggestionOpen && page.suggestedGoal === null ? { ...ui, isSuggestionOpen: false } : ui;
 function withoutConfirmed(drafts, confirmed, typing, pending) {
   const current = confirmed.filter((c) => !pending.some((p) => p.rowId === c.rowId && p.pressId > c.pressId));
   const done = current.filter((c) => c.rowId !== typing);
@@ -4729,6 +4775,8 @@ function withChange(ui, c) {
     return { ...ui, closedAll: [...ui.closedAll, c.earlier] };
   if ("toggleFold" in c)
     return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) };
+  if ("isSuggestionOpen" in c)
+    return { ...ui, isSuggestionOpen: c.isSuggestionOpen };
   return withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
 }
 
@@ -5020,42 +5068,6 @@ function placeAfter(shown, above) {
   return 0;
 }
 
-// src/heights.ts
-class Heights {
-  sizes = new Map;
-  resized = new Set;
-  get(key) {
-    return this.sizes.get(key)?.height;
-  }
-  measure(key, size) {
-    const was = this.sizes.get(key);
-    this.sizes.set(key, { width: size.width, height: size.height });
-    const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
-    if (isRewrapped)
-      this.resized.add(key);
-    return was?.height !== size.height;
-  }
-  takeResized() {
-    const resized = this.resized;
-    this.resized = new Set;
-    return resized;
-  }
-  clear() {
-    this.sizes.clear();
-    this.resized.clear();
-  }
-}
-
-// src/paint-blocks.ts
-import { div as div5 } from "gpui-kit";
-import { Input, h_flex as h_flex3, v_flex as v_flex3 } from "gpui-base";
-
-// ../hooks/layout.ts
-var ROW_PAD_PT = 8;
-var STATUS_ROW_PAD_PT = 19 / 4;
-var SECTION_GAP_PT = 19 / 2;
-var BANNER_PAD_Y_PT = 8;
-
 // src/paint-theme.ts
 var TONE_COLORS = {
   needsYou: "ansi3",
@@ -5110,6 +5122,123 @@ var onSize = (view, key, read) => (size, cx) => {
   view[key] = value;
   cx.notify();
 };
+
+// src/paint-title-tint.ts
+var FADE_STEP_MS = NEW_FADE_MS / NEW_STEPS;
+function nextStepAt(row, now) {
+  if (row.shownAt === null)
+    return null;
+  const fadeAt = row.shownAt + NEW_HOLD_MS;
+  const endAt = fadeAt + NEW_FADE_MS;
+  if (now >= endAt)
+    return null;
+  if (now < fadeAt)
+    return fadeAt;
+  return Math.min(endAt, fadeAt + (Math.floor((now - fadeAt) / FADE_STEP_MS) + 1) * FADE_STEP_MS);
+}
+function titleTintNextAt(rows, blocks, seen, now) {
+  const closed = blocks.flatMap((b) => b.kind === "row" && b.settled?.tint ? [closedTitleClock(seen, b.id, b.settled.at, now)] : []);
+  const at = [...rows.values(), ...closed].flatMap((r) => r ? [nextStepAt(r, now)] : []).filter((a) => a !== null);
+  return at.length > 0 ? Math.min(...at) : null;
+}
+function tintOf(r, p) {
+  const { t } = p;
+  const clock = r.settled ? closedTitleClock(p.closedSeen, r.id, r.settled.at, p.now) : newRowIn(p.newRows, r.id, p.tab);
+  const tone = r.settled ? r.settled.tint ? colorOf(t, r.settled.tint) : null : t.ansi4;
+  const share = steppedTitleTint(clock, p.now);
+  return tone && share > 0 ? { tone, share } : null;
+}
+function titleColorOf(r, p) {
+  const own = r.isDim ? p.t.muted : p.t.foreground;
+  const tint = tintOf(r, p);
+  return tint ? mixInto(tint.tone, own, tint.share) : own;
+}
+function markTintOf(r, p) {
+  const tint = tintOf(r, p);
+  if (!tint)
+    return null;
+  const own = r.mark === null || r.mark.tone === null ? p.t.muted : colorOf(p.t, r.mark.tone);
+  return mixInto(tint.tone, own, tint.share);
+}
+
+// src/time-left.ts
+function timeLeftShare(runsOutAt, now) {
+  return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
+}
+var TIME_LEFT_STEP_MS = 250;
+function timeLeftOf(b, drawn, now) {
+  if (b.runsOutAt === undefined || b.isHidden)
+    return null;
+  const was = drawn.get(b.id);
+  if (b.isOut)
+    return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
+  return b.runsOutAt > now ? { is: "emptying" } : null;
+}
+var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined && !b.isHidden);
+function timeLeftDraws(blocks, drawn, now) {
+  return new Map(timedButtons(blocks).flatMap((b) => {
+    const left = timeLeftOf(b, drawn, now);
+    return left ? [[b.id, left]] : [];
+  }));
+}
+function timeLeftNextAt(blocks, now) {
+  const ends = timedButtons(blocks).filter((b) => !b.isOut && (b.runsOutAt ?? 0) > now).map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS));
+  return ends.length > 0 ? Math.min(...ends) : null;
+}
+
+// src/wake.ts
+function nextDrawAt(now, ui, screen, moved) {
+  const isStarting = [...moved.motion.values()].some((m) => m.isStart);
+  const timed = earliestOf([
+    timeLeftNextAt(moved.blocks, now),
+    titleTintNextAt(ui.newRows, moved.blocks, ui.closedSeen, now)
+  ]);
+  const wakeAt = [
+    isStarting ? now + NEXT_FRAME_MS : null,
+    moved.nextAt,
+    screen.foldAt,
+    screen.undoPlaceEndsAt,
+    screen.timedChangeAt,
+    timed
+  ].filter((at) => at !== null);
+  return wakeAt.length === 0 ? null : Math.min(...wakeAt);
+}
+
+// src/heights.ts
+class Heights {
+  sizes = new Map;
+  resized = new Set;
+  get(key) {
+    return this.sizes.get(key)?.height;
+  }
+  measure(key, size) {
+    const was = this.sizes.get(key);
+    this.sizes.set(key, { width: size.width, height: size.height });
+    const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
+    if (isRewrapped)
+      this.resized.add(key);
+    return was?.height !== size.height;
+  }
+  takeResized() {
+    const resized = this.resized;
+    this.resized = new Set;
+    return resized;
+  }
+  clear() {
+    this.sizes.clear();
+    this.resized.clear();
+  }
+}
+
+// src/paint-blocks.ts
+import { div as div5 } from "gpui-kit";
+import { Input, h_flex as h_flex3, v_flex as v_flex3 } from "gpui-base";
+
+// ../hooks/layout.ts
+var ROW_PAD_PT = 8;
+var STATUS_ROW_PAD_PT = 19 / 4;
+var SECTION_GAP_PT = 19 / 2;
+var BANNER_PAD_Y_PT = 8;
 
 // src/paint-space.ts
 import { div } from "gpui-kit";
@@ -5334,33 +5463,6 @@ function scrollFadeEl(t, edge) {
 
 // src/paint-timer.ts
 import { div as div3 } from "gpui-kit";
-
-// src/time-left.ts
-function timeLeftShare(runsOutAt, now) {
-  return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
-}
-var TIME_LEFT_STEP_MS = 250;
-function timeLeftOf(b, drawn, now) {
-  if (b.runsOutAt === undefined || b.isHidden)
-    return null;
-  const was = drawn.get(b.id);
-  if (b.isOut)
-    return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
-  return b.runsOutAt > now ? { is: "emptying" } : null;
-}
-var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined && !b.isHidden);
-function timeLeftDraws(blocks, drawn, now) {
-  return new Map(timedButtons(blocks).flatMap((b) => {
-    const left = timeLeftOf(b, drawn, now);
-    return left ? [[b.id, left]] : [];
-  }));
-}
-function timeLeftNextAt(blocks, now) {
-  const ends = timedButtons(blocks).filter((b) => !b.isOut && (b.runsOutAt ?? 0) > now).map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS));
-  return ends.length > 0 ? Math.min(...ends) : null;
-}
-
-// src/paint-timer.ts
 var TIMED_W = 64;
 function timeLeftEl(id, left, runsOutAt, now, t) {
   const cut = div3().id(`time left ${id}`).absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div3().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover));
@@ -5368,44 +5470,6 @@ function timeLeftEl(id, left, runsOutAt, now, t) {
     return cut.w(left.share * TIMED_W);
   const step = Math.min(TIME_LEFT_STEP_MS, Math.max(0, runsOutAt - now));
   return cut.w(timeLeftShare(runsOutAt, now + step) * TIMED_W).transition("width", { duration: step, easing: "linear" });
-}
-
-// src/paint-title-tint.ts
-var FADE_STEP_MS = NEW_FADE_MS / NEW_STEPS;
-function nextStepAt(row, now) {
-  if (row.shownAt === null)
-    return null;
-  const fadeAt = row.shownAt + NEW_HOLD_MS;
-  const endAt = fadeAt + NEW_FADE_MS;
-  if (now >= endAt)
-    return null;
-  if (now < fadeAt)
-    return fadeAt;
-  return Math.min(endAt, fadeAt + (Math.floor((now - fadeAt) / FADE_STEP_MS) + 1) * FADE_STEP_MS);
-}
-function titleTintNextAt(rows, blocks, seen, now) {
-  const closed = blocks.flatMap((b) => b.kind === "row" && b.settled?.tint ? [closedTitleClock(seen, b.id, b.settled.at, now)] : []);
-  const at = [...rows.values(), ...closed].flatMap((r) => r ? [nextStepAt(r, now)] : []).filter((a) => a !== null);
-  return at.length > 0 ? Math.min(...at) : null;
-}
-function tintOf(r, p) {
-  const { t } = p;
-  const clock = r.settled ? closedTitleClock(p.closedSeen, r.id, r.settled.at, p.now) : newRowIn(p.newRows, r.id, p.tab);
-  const tone = r.settled ? r.settled.tint ? colorOf(t, r.settled.tint) : null : t.ansi4;
-  const share = steppedTitleTint(clock, p.now);
-  return tone && share > 0 ? { tone, share } : null;
-}
-function titleColorOf(r, p) {
-  const own = r.isDim ? p.t.muted : p.t.foreground;
-  const tint = tintOf(r, p);
-  return tint ? mixInto(tint.tone, own, tint.share) : own;
-}
-function markTintOf(r, p) {
-  const tint = tintOf(r, p);
-  if (!tint)
-    return null;
-  const own = r.mark === null || r.mark.tone === null ? p.t.muted : colorOf(p.t, r.mark.tone);
-  return mixInto(tint.tone, own, tint.share);
 }
 
 // src/paint-notes.ts
@@ -6202,7 +6266,7 @@ class Inbox extends View {
     if (text === "")
       return;
     const isGoal = rowId === GOAL_KEYS_ID;
-    const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send;
+    const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send;
     const isSent = this.send({ action: "type", id: rowId, text }, [], label, cx, isGoal ? undefined : text);
     this.ui = afterSend(this.ui, rowId, isSent);
     this.closeStaleField();
@@ -6246,8 +6310,7 @@ class Inbox extends View {
     else if (d.is === "collapse")
       this.collapse(d.id, d.isCollapsed, cx);
     else if (d.is === "press") {
-      if ("id" in d.press && d.press.action === "undo")
-        this.ui = withSelected(this.ui, d.press.id);
+      this.ui = afterPress(this.ui, d.press);
       this.send(d.press, d.effects, b.label, cx);
     } else if (d.is === "type")
       this.type(d);
@@ -6302,11 +6365,12 @@ class Inbox extends View {
       queue: this.queue
     });
     let screen = screenFor(this.ui);
-    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === "inbox" ? screen.waits : null, now, !this.isHelpShown);
+    const inbox = screen.is === "inbox" ? screen : null;
+    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, inbox?.view.statusPage);
     if (ui !== this.ui)
       screen = screenFor(this.ui = ui);
-    this.lastWaits = { tab: this.ui.tab, rows: screen.is === "inbox" ? screen.waits : null };
-    this.view = screen.is === "inbox" ? screen.view : null;
+    this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null };
+    this.view = inbox?.view ?? null;
     this.drawTimer?.cancel();
     this.drawTimer = null;
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`;
@@ -6366,17 +6430,11 @@ class Inbox extends View {
     const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
     const room = moved.nextAt === null ? this.listRoom : null;
     this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
-    const isStarting = [...moved.motion.values()].some((m) => m.isStart);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
-    const nextFrame = isStarting ? now + NEXT_FRAME_MS : null;
-    const timed = earliestOf([
-      timeLeftNextAt(moved.blocks, now),
-      titleTintNextAt(this.ui.newRows, moved.blocks, this.ui.closedSeen, now)
-    ]);
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter((at) => at !== null);
-    if (wakeAt.length > 0)
-      this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
+    const wakeAt = nextDrawAt(now, this.ui, screen, moved);
+    if (wakeAt !== null)
+      this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
     return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div6().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;

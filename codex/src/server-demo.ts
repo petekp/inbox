@@ -1,5 +1,5 @@
 import type { PrPress } from '../../hooks/pr-press'
-import { isCompareInBackground } from '../../hooks/clients'
+import { isCompareInBackground } from '../../hooks/press-messages'
 import { withCollapse } from '../../hooks/collapse'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/press-effects'
 import type { RowPress } from '../../hooks/presses'

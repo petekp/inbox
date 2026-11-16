@@ -17,7 +17,7 @@ import { ROW_COPY } from '../../hooks/rows'
 import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../hooks/tabs'
 import { footerStatus } from '../../hooks/view'
 import { openOnArrival } from '../../hooks/action-plan'
-import { GOAL_FIELD, GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
+import { GOAL_KEYS_ID, goalSubmitLabel, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { IsCollapsed } from '../../hooks/status-folds'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab, TabNaming } from '../../hooks/tabs'
@@ -138,7 +138,10 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
   if (status.text) out.push(` ${s.dim(status.text)}`)
   const hints =
     ui.typing !== null
-      ? [`↵ ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
+      ? [
+          `↵ ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
+          `esc ${ROW_COPY.cancel}`,
+        ]
       : ui.isHelpShown
         ? [...(isPageScrolling ? ['↑↓ scroll'] : []), 'esc close help']
         : isRowTab(ui.tab)
@@ -149,6 +152,7 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
                 ui.selectedId,
                 id => ui.statusUnfolded.includes(id),
                 collapsedIn(screen.view),
+                ui.isSuggestionOpen,
               ),
               ...(isPageScrolling ? ['↑↓ scroll'] : []),
               'tab switch',
@@ -206,9 +210,10 @@ function statusHints(
   selectedId: string | null,
   isUnfolded: (id: string) => boolean,
   isCollapsed: IsCollapsed,
+  isSuggestionOpen: boolean,
 ): string[] {
-  if (statusKeyRows(page, isUnfolded, isCollapsed).length === 0) return []
-  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed)
+  if (statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen).length === 0) return []
+  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen)
   const fold = selected?.keys.find(k => k.press.action === 'toggle-collapse')
   const isPicking = (selected ? drawnKeys(selected).length : 0) > 1
 

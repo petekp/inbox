@@ -11,6 +11,7 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 Every source file in `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the six parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
 
 - [Shared modules](looks/files-shared.md)
+- [Shared modules for the Status](looks/files-shared-status.md)
 - [Shared modules for Herdr](looks/files-shared-herdr.md)
 - [The mod](looks/files-mod.md)
 - [Codex](looks/files-codex.md)

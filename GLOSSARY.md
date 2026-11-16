@@ -146,6 +146,13 @@ has moved on.
 A goal the person typed in the goal's field, or an inferred goal they edited.
 It stays until it is met.
 
+**Suggested goal**:
+The goal the inbox model offers while no goal is set or the goal is met, and
+the next goal is not clear enough to set. It shows only when the person presses
+the goal's New, in the goal's place, with Set, Edit and Cancel. Set makes it an
+inferred goal. Edit opens the goal's field holding its words, and that field's
+Cancel shows the suggestion again.
+
 **Removed goal**:
 A goal the person cleared with the goal's Remove button. The inbox model does not set it
 again, in the same words or in other words.

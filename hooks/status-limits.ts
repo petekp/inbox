@@ -70,6 +70,7 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   nextMilestoneId: 1,
   serves: {},
   goalRefused: null,
+  suggestedGoal: null,
 }
 
 export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>

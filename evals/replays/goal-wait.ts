@@ -2,7 +2,10 @@ import { minutes } from '../status-replay'
 import type { Replay } from '../status-replay'
 import { goal, milestone, NO_FACTS, overview, piece, subject } from './builders'
 
-/** A met goal, and small unrelated asks that make no next goal clear: no goal is set, and the met goal stays. */
+/**
+ * A met goal, and small unrelated asks that make no next goal clear: no goal is set, and the met goal stays. The share
+ * sheet fix is the outcome the open work leads to, so it is the suggested goal.
+ */
 export const goalWait: Replay = {
   name: 'goal-wait',
   about:
@@ -90,8 +93,9 @@ export const goalWait: Replay = {
             stands: 'loading attachments lazily',
           }),
         ],
+        goalSuggested: { text: 'The share sheet opens without loading every attachment', match: 'share' },
       },
-      targets: ['goal-only-when-clear', 'milestones-true', 'goal-kept'],
+      targets: ['goal-only-when-clear', 'milestones-true', 'goal-kept', 'goal-suggested'],
     },
   ],
 }

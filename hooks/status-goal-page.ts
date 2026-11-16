@@ -4,6 +4,7 @@ import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
 import { namedList } from './status-page-parts'
 import { milestonePath, namesOnlyMilestoneUnderWay } from './status-path'
+import { hasRunningGoal } from './status-suggest'
 import type { PathLine, PathPlace, PathStep } from './status-path'
 
 /** A milestone under the goal, in the goal's path. A change draws its name in bold until the person looks. */
@@ -69,6 +70,8 @@ export type GoalParts = {
   goal: GoalBlock | null
   /** Whether Undo can bring back the goal the person removed. */
   canRestoreGoal: boolean
+  /** The goal the Status call offers while no goal is set or the goal is met, which New shows. Null when none is. */
+  suggestedGoal: string | null
 }
 
 const AWAITING_TEXT = 'Milestones after the next reply'
@@ -76,6 +79,8 @@ const AWAITING_TEXT = 'Milestones after the next reply'
 export const GOAL_HEADING = 'Goal'
 /** The dim line under the goal's heading while no goal is set. */
 export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
+/** The dim label above the suggested goal's text while it shows in the goal's place. */
+export const SUGGESTED_GOAL_LABEL = 'Suggested'
 /** What starts the id of the fold a met goal's milestones start in, apart from row and milestone ids. */
 const MILESTONES_FOLD_PREFIX = 'goal-milestones'
 
@@ -157,7 +162,8 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
 /** The goal block with its Now line and its milestones in path order, from the saved Status and the open asks at `now`. */
 export function goalPage(o: SessionStatus | null, items: readonly Item[], now: number): GoalParts {
   const g = o?.goal ?? null
-  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null }
+  const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null, suggestedGoal }
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt)
   const kept = o.milestones.filter(m => m.status !== 'dropped')
   const shown = o.milestones.filter(
@@ -184,5 +190,6 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[], now: n
       milestones,
     },
     canRestoreGoal: false,
+    suggestedGoal,
   }
 }

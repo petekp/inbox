@@ -24,6 +24,7 @@ import {
   settleGoal,
   withRestatedGoalAsMilestones,
 } from './status-goal-ops'
+import { withSuggestion } from './status-suggest'
 
 function isUnderWay(s: Pick<Subject, 'status'>): boolean {
   return s.status === 'working' || s.status === 'waits-on-other'
@@ -112,6 +113,7 @@ const OP_ORDER: Record<Op['kind'], number> = {
   link: 4,
   serves: 4,
   next: 4,
+  suggest: 4,
 }
 
 /**
@@ -195,7 +197,7 @@ export function applyOps(
     .map((op, n) => ({ op, n }))
     .sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op, n } of ordered) {
-    if (op.kind === 'none') continue
+    if (op.kind === 'none' || op.kind === 'suggest') continue
     if (op.kind === 'next') {
       markNamed(findMilestone(o, op.ref), n)
       nextRef = op.ref
@@ -281,7 +283,7 @@ export function applyOps(
 
   const settled = settleGoal(o, now, readSetAt, named)
 
-  return nextRef === null ? settled : withNextMilestone(settled, nextRef, now)
+  return withSuggestion(nextRef === null ? settled : withNextMilestone(settled, nextRef, now), ops)
 }
 
 /**
