@@ -25,7 +25,16 @@ import { bannerMotion, lineMotion, stepLines } from './tab-line-steps'
 import type { BannerLine, TextLine } from './tab-line-steps'
 import { tabBanners } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
-import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
+import {
+  feedbackLabel,
+  noteOf,
+  isFeedbackShown,
+  markClassOf,
+  MarkGlyph,
+  pulseInStep,
+  ResultMarkView,
+  UndoPlace,
+} from './tab-parts'
 import { TitleTint } from './tab-title-tint'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
@@ -170,7 +179,7 @@ export function ListRow({
   const isTreeHung = row.hasTree && (isSelected || isClosing)
   const handle = (
     <span
-      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}${isTreeHung ? ' has-tree' : ''}`}
+      class={`${markClassOf(row.handleTone ?? null, row.isHandleRunning ?? false)}${isTreeHung ? ' has-tree' : ''}`}
       ref={row.isHandleRunning && !isTreeHung ? pulseInStep : undefined}
     >
       <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
@@ -199,9 +208,11 @@ export function ListRow({
   // A closing row also draws its closed line, hidden, so that collapse() measures the height it comes to rest at.
   const closed = isClosing ? lineForm(false) : null
   const afterTone = !isPressing && isFailure(row.feedback) ? 'error' : undefined
-  const after = (form: LineForm, only = '') =>
+  const after = (form: LineForm, only?: 'open' | 'closed') =>
     form.last ? (
-      <span class={`after ${afterTone ? `tone-${afterTone}` : ''}${only}`}>
+      <span
+        class={`after ${afterTone ? `tone-${afterTone}` : ''}${only === 'open' ? ' open-only' : only === 'closed' ? ' closed-only' : ''}`}
+      >
         {form.isOpen ? `${DOT}${form.last}` : form.last}
       </span>
     ) : null
@@ -232,8 +243,8 @@ export function ListRow({
             </TitleTint>
           </span>
           {row.meta ? <span class="meta">{row.meta}</span> : null}
-          {after(drawn, closed ? ' open-only' : '')}
-          {closed ? after(closed, ' closed-only') : null}
+          {after(drawn, closed ? 'open' : undefined)}
+          {closed ? after(closed, 'closed') : null}
           {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>

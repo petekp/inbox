@@ -12,7 +12,7 @@ import { tabState, selection, drawnRows } from './tab-state'
 import { switchTab, drawnTab } from './tab-selection'
 import { swapPage } from './tab-swap'
 import { read } from './tab-read'
-import { pulseInStep, MarkGlyph, legendMarkClass, GroupTitle, Banner } from './tab-parts'
+import { pulseInStep, MarkGlyph, markClassOf, GroupTitle, Banner } from './tab-parts'
 import { HerdrAskBanner } from './tab-herdr-ask'
 import { bannerMotion, lineMotion } from './tab-line-steps'
 import type { BannerLine } from './tab-line-steps'
@@ -50,7 +50,11 @@ export function HelpPage({ version }: { version: string }) {
         <GroupTitle title={HELP_COPY.marks} count={0} />
         <div class="help-marks">
           {MARK_LEGEND.flatMap(m => [
-            <span key={`${m.mark}-mark`} class={legendMarkClass(m)} ref={m.isRunning ? pulseInStep : undefined}>
+            <span
+              key={`${m.mark}-mark`}
+              class={markClassOf(m.tone, m.isRunning)}
+              ref={m.isRunning ? pulseInStep : undefined}
+            >
               <MarkGlyph text={m.mark} />
             </span>,
             <span key={`${m.mark}-words`} class="muted">
