@@ -18,9 +18,10 @@ export type RowTop = Lines | 'unknown'
 /**
  * A part of the Status as the pane draws it, with the lines it takes, or null when they are not counted. `tops` holds
  * each subject row it draws, by id, with the row's first line in the part. Every drawing function returns its element
- * and its lines together, so a part that draws a line counts it.
+ * and its lines together, so a part that draws a line counts it. `isSelected` marks a part the terminal draws on the
+ * selection color, so a connector beside it draws on that color too.
  */
-export type Drawn = { el: JSX.Element; lines: Lines | null; tops?: [string, RowTop][] }
+export type Drawn = { el: JSX.Element; lines: Lines | null; tops?: [string, RowTop][]; isSelected?: boolean }
 
 export const exactly = (n: number): Lines => ({ least: n, most: n })
 

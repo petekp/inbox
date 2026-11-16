@@ -246,8 +246,14 @@ export function paneStatusGoal(
     const line = milestoneLine(m)
     const isConnectorDown = rows.length > 0 && m.line === null
 
+    const shown = isConnectorDown
+      ? path.connectorDown(`goal-${m.id}-down`, line)
+      : m.line !== null
+        ? path.lineBeside(`goal-${m.id}-line`, m.line, line)
+        : line
+
     return [
-      isConnectorDown ? path.connectorDown(`goal-${m.id}-down`, line) : line,
+      shown,
       ...drawRows(rows).map((d, n) => {
         const joint = joints[n]
         return joint ? path.jointed(`goal-${rows[n]?.id}-joint`, d, joint) : d
@@ -264,7 +270,11 @@ export function paneStatusGoal(
 
     return milestones.flatMap((m, n) => {
       const hasLineAbove = (milestones[n - 1]?.line ?? null) !== null
-      const under = m.line !== null && n + 1 < milestones.length ? spaceAbove(n + 1) : []
+      const pathLine = m.line
+      const under =
+        pathLine !== null && n + 1 < milestones.length
+          ? spaceAbove(n + 1).map(g => path.lineBeside(`goal-${m.id}-under`, pathLine, g, 0))
+          : []
 
       return [
         ...(hasLineAbove ? [] : spaceAbove(n)),
