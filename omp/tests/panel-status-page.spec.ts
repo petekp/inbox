@@ -7,11 +7,11 @@ import { STATUS_TEXT_LINES } from '../../hooks/status-page'
 import { EMPTY_STATUS_TEXT } from '../../hooks/empty-tab'
 import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
+import { PAGE_MARK_AT, PAGE_TEXT_AT } from '../src/panel-entries'
 import { render } from '../src/panel'
 import type { Style } from '../src/panel'
 import { demoState } from '../src/demo'
 import { emptyState } from '../src/state'
-import { PAGE_TEXT_AT } from '../src/panel-entries'
 import { drawn, ESC, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 const toneNamed: Style = { ...style, tone: (name, s) => `<${name}>${s}</${name}>` }
@@ -31,25 +31,30 @@ function trialChangedScreen() {
   return screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
-test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that', () => {
+test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks at the left edge, where it stands under its name and its Prev line under that', () => {
   const screen = noGoalScreen()
   const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const order = [page.head!.title, page.head!.description!, ...page.rows.map(labelOf)].map(at)
+  const order = [
+    page.head!.title,
+    page.head!.description!,
+    ...page.rows.filter(r => !(r.kind === 'part' && r.isTitle)).map(labelOf),
+  ].map(at)
   expect(order.every(n => n >= 0)).toBe(true)
   expect(order).toEqual([...order].sort((a, b) => a - b))
   const headAt = lines[at(page.head!.title)]!.search(/\S/)
-  expect(lines[at(page.head!.description!)]!.search(/\S/)).toBe(headAt)
+  expect(headAt).toBe(PAGE_TEXT_AT)
+  expect(lines[at(page.head!.description!)]!.search(/\S/)).toBe(PAGE_TEXT_AT)
   const subjects = page.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
-  for (const row of subjects) expect(lines[at(row.name)]!.search(/\S/)).toBe(headAt)
+  for (const row of subjects) expect(lines[at(row.name)]!.search(/\S/)).toBe(PAGE_MARK_AT)
   const withWas = subjects.filter(r => r.was !== null && r.text !== null)
   expect(withWas.length).toBeGreaterThan(0)
   for (const row of withWas) {
     const first = at(row.name) + (row.waitsOn ? 2 : 1)
     if (row.waitsOn) expect(lines[at(row.name) + 1]).toContain(row.waitsOn!)
     expect(lines[first]).toContain(row.text!)
-    expect(lines[first + 1]).toContain(`was: ${row.was}`)
+    expect(lines[first + 1]).toContain(`Prev: ${row.was}`)
   }
 })
 

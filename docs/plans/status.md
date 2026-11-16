@@ -30,7 +30,7 @@ From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Last look,
 
 - **Status call:** the inbox model call after the ledger call. It reads the open subjects and the new exchange, and answers with edits.
 - **Where it stands:** the few words on the line under a subject's name.
-- **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
+- **Was line:** a line under a subject that names the plan a change replaced, as "Prev: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
 - **Link:** the Status call's tie from an open ask or a child to the subject it belongs to.
 - **Fold:** one line that stands for several rows: "○ 2 more", or a done fold, "▸ 3 done", which a press opens to list them.
 - **Last changed:** when a subject's status or meaning last changed. It sets whether a row changed since the last look, and its place among rows of the same status.

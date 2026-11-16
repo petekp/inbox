@@ -87,8 +87,11 @@ export type StatusRow = {
    * step in, as `unfoldedRows` gives them.
    */
   | { kind: 'done-fold'; id: string; text: string; rows: StatusRow[] }
-  /** Where the work the goal does not need starts, under its own rule. */
-  | { kind: 'part'; id: string; text: string }
+  /**
+   * Where the work the goal does not need starts, under its own rule: "Other work", or the head's title with its
+   * description under it while the head is apart from the goal (`StatusPage.head`).
+   */
+  | { kind: 'part'; id: string; text: string; description: string | null; isTitle: boolean }
   /**
    * Seen open rows of the work the goal does not need, folded into a count for each mark that is under way, as "● 5
    * working · ◌ 8 waiting". Folded queued rows get no count.
@@ -102,13 +105,12 @@ export type StatusCount = { mark: string; tone: StatusTone; text: string }
 /** What the Status page shows. Every look draws it as it is. */
 export type StatusPage = GoalParts & {
   isEmpty: boolean
-  /** What the session is focused on now. The description is null until the Status call writes one. */
-  head: { title: string; description: string | null } | null
   /**
-   * Whether looks draw the head in its own section after the goal's: while no goal is set, and once the goal is met,
-   * since the work no longer serves it. Otherwise the goal draws its Now line in the head's place.
+   * What the session is focused on now. The description is null until the Status call writes one. While a goal is
+   * open, the goal draws it as its Now line. While no goal is set, and once the goal is met, since the work no longer
+   * serves it, it is the heading of `rows`, as their first `part` row.
    */
-  isHeadApart: boolean
+  head: { title: string; description: string | null } | null
   /**
    * The list after the goal. Rows under a milestone are its `rows`. While the goal shows milestones, every other row
    * sits under Other work, so only milestones and their rows draw between the goal and Other work. Otherwise work not
@@ -120,8 +122,8 @@ export type StatusPage = GoalParts & {
 }
 
 const OTHER_WORK = 'Other work'
-/** What a subject's was line starts with, before the plan it replaces. */
-export const WAS_PREFIX = 'was: '
+/** What a line starts with before the text it replaced: a subject's plan, a milestone's text, the goal before. */
+export const WAS_PREFIX = 'Prev: '
 const MERGED_PREFIX = 'merged in: '
 /** What separates a row's name from its stall word. */
 export const STALL_GAP = ' · '
@@ -188,7 +190,7 @@ export function statusPage(
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
     STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt
-  const goalParts = goalPage(o, s.ledger.items, now)
+  const goalParts = goalPage(o, s.ledger.items)
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map(m => m.id))
   const servedBy = (x: Subject) => (o?.goal ? o.serves[x.id] : undefined)
   /** The milestone the page draws `x` under: one it serves that the goal shows. */
@@ -340,10 +342,26 @@ export function statusPage(
       hasMilestones ? settled : [],
     ),
   ]
-  const rows: StatusRow[] = [
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
+  const g = goalParts.goal
+  const isHeadApart = head !== null && (g === null || g.isMet)
+  const listRows: StatusRow[] = [
     ...(hasMilestones ? [] : looseRows(null, 0)),
     ...foldedPart('', top, 0, hasMilestones ? [] : settled),
-    ...(otherRows.length > 0 ? [{ kind: 'part' as const, id: 'other', depth: 0, text: OTHER_WORK }, ...otherRows] : []),
+    ...(otherRows.length > 0
+      ? [
+          { kind: 'part' as const, id: 'other', depth: 0, text: OTHER_WORK, description: null, isTitle: false },
+          ...otherRows,
+        ]
+      : []),
+  ]
+  const headPart: StatusRow[] =
+    isHeadApart && head
+      ? [{ kind: 'part', id: 'head', depth: 0, text: head.title, description: head.description, isTitle: true }]
+      : []
+  const rows: StatusRow[] = [
+    ...headPart,
+    ...(headPart.length > 0 && listRows[0]?.id === 'other' ? listRows.slice(1) : listRows),
   ]
   /** Whether every subject under a milestone is closed, seen or not, with no child still running under it. */
   const isWorkClosed = (m: MilestoneRow, p: PartSplit) =>
@@ -380,7 +398,6 @@ export function statusPage(
           foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter(l => l.milestoneId === m.id).length,
         }
   }
-  const g = goalParts.goal
   const goal = g && {
     ...g,
     milestonesFold: o?.goal
@@ -388,12 +405,10 @@ export function statusPage(
       : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]!)),
   }
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
 
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
-    isHeadApart: goal === null || goal.isMet,
     ...goalParts,
     goal,
     rows,

@@ -2463,7 +2463,6 @@ function milestoneOf(saved) {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
-    startedAt: time(m.startedAt),
     ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
@@ -3250,8 +3249,6 @@ function moveMilestone(o, m, op, now) {
     const isReworded = m.status === op.status && hasSameWords(m.text, op.text);
     if (isReworded)
       return;
-    if (op.status === "working" && m.status !== "working")
-      m.startedAt = now;
     m.status = op.status;
     m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = null;
@@ -3314,8 +3311,7 @@ function addMilestone(o, op, now) {
     text: clipWords(op.text, TEXT_KEPT),
     was: null,
     changedAt: now,
-    closedAt: op.status === "done" || op.status === "dropped" ? now : null,
-    startedAt: op.status === "working" ? now : null
+    closedAt: op.status === "done" || op.status === "dropped" ? now : null
   };
   return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] };
 }
@@ -3353,8 +3349,7 @@ function inferredGoal(o, text, named, now) {
       text: isSame ? was.text : "",
       was: null,
       changedAt: now,
-      closedAt: isOpen(m) ? null : now,
-      startedAt: m.status !== "working" ? null : isSame ? was.startedAt : now
+      closedAt: isOpen(m) ? null : now
     };
   });
   const goal = {
@@ -3861,22 +3856,8 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
 }
 
 // ../hooks/status-path.ts
-var NOW_WORD = "now";
-var NEXT_WORD = "next";
 var LATER_TEXT = "Later";
-var UNDER_WAY_TIME_AFTER_MS = 60 * 60000;
-var HOUR_MS = 60 * 60000;
-var DAY_HOURS = 24;
-var HOURS_SHOWN = 48;
-function underWayTime(ms) {
-  const hours = Math.floor(ms / HOUR_MS);
-  return hours < HOURS_SHOWN ? `${hours}h` : `${Math.floor(hours / DAY_HOURS)}d`;
-}
-function nowWord(m, now) {
-  const ran = m.startedAt === null ? 0 : now - m.startedAt;
-  return ran >= UNDER_WAY_TIME_AFTER_MS ? `${NOW_WORD} \xB7 ${underWayTime(ran)}` : NOW_WORD;
-}
-function milestonePath(shown, now) {
+function milestonePath(shown) {
   const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
   const underWay = shown.filter((m) => m.status === "working" || m.status === "waits-on-other");
   const [next, ...later] = shown.filter((m) => m.status === "queued");
@@ -3886,14 +3867,12 @@ function milestonePath(shown, now) {
   const pathSteps = onPath.map((m, n) => ({
     milestone: m,
     place: m === next ? "next" : m.status === "done" ? "done" : "now",
-    word: m === next ? NEXT_WORD : m.status === "working" ? nowWord(m, now) : null,
     line: lineBelow(n),
     startsLater: false
   }));
   const afterPath = [...later, ...dropped].map((m, n) => ({
     milestone: m,
     place: m.status === "dropped" ? "dropped" : "later",
-    word: null,
     line: null,
     startsLater: n === 0 && later.length > 0
   }));
@@ -3961,7 +3940,6 @@ function milestoneRow(step, o, items) {
     ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
-    word: step.word,
     line: step.line,
     startsLater: step.startsLater,
     isChanged,
@@ -3974,7 +3952,7 @@ function milestoneRow(step, o, items) {
     rows: []
   };
 }
-function goalPage(o, items, now) {
+function goalPage(o, items) {
   const g = o?.goal ?? null;
   const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal;
   if (o === null || g === null)
@@ -3987,7 +3965,7 @@ function goalPage(o, items, now) {
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
-  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown).map((step) => milestoneRow(step, o, items));
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
@@ -7378,7 +7356,7 @@ function perTurnStatus(isUpdating, recovery) {
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
-var WAS_PREFIX = "was: ";
+var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
 var STATUS_TEXT_LINES = 3;
@@ -7402,7 +7380,7 @@ function statusPage(s, now) {
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items, now);
+  const goalParts = goalPage(o, s.ledger.items);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
   const milestoneOf = (x) => {
@@ -7496,10 +7474,21 @@ function statusPage(s, now) {
     ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
     ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0, hasMilestones ? settled : [])
   ];
-  const rows = [
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  const g = goalParts.goal;
+  const isHeadApart = head !== null && (g === null || g.isMet);
+  const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
-    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
+    ...otherRows.length > 0 ? [
+      { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
+      ...otherRows
+    ] : []
+  ];
+  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const rows = [
+    ...headPart,
+    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
@@ -7520,17 +7509,14 @@ function statusPage(s, now) {
       foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
     };
   };
-  const g = goalParts.goal;
   const goal = g && {
     ...g,
     milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
-    isHeadApart: goal === null || goal.isMet,
     ...goalParts,
     goal,
     rows,
@@ -8044,9 +8030,10 @@ function withTree(lines, at, first, rest, s) {
 function pageRuleCells(width, textAt = PAGE_TEXT_AT) {
   return Math.max(0, width - textAt - 1);
 }
-function partHeading(text, width, s, at = PAGE_TEXT_AT) {
+function partHeading(text, width, s, at = PAGE_TEXT_AT, isTitle = false) {
   const label = `${text} `;
-  return `${" ".repeat(at)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`;
+  const rule = "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)));
+  return `${" ".repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`;
 }
 function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
   const faces = target.keys.map((k) => ({
@@ -8109,7 +8096,11 @@ function drawPageRow(row, d, isSelected = false) {
     });
   }
   if (row.kind === "part")
-    return ["", partHeading(row.text, width, s)];
+    return [
+      "",
+      partHeading(row.text, width, s, PAGE_TEXT_AT, row.isTitle),
+      ...row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
+    ];
   if (row.kind === "counts")
     return countLines(row.counts, textAt, width, s);
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
@@ -8215,7 +8206,6 @@ function foldedNameLines(d, mark, name, foldId, isSelected) {
   const [namePaint, chevronPaint] = isSelected ? [s.bold, (t) => s.tone("accent", t)] : [s.dim, s.dim];
   return pageLine(d, PAGE_MARK_AT, mark, `${name} ${chevron}`, (t) => t.endsWith(chevron) ? namePaint(t.slice(0, -chevron.length)) + chevronPaint(chevron) : namePaint(t));
 }
-var WORD_GAP = 2;
 function milestoneLines(m, d, isSelected) {
   const { width, now, style: s } = d;
   const mark = paintMark({ ...m, isRunning: false }, now, s);
@@ -8229,11 +8219,9 @@ function milestoneLines(m, d, isSelected) {
   const chevron = foldChevron(m, d, isSelected);
   const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged || chevron && isSelected ? s.bold(t) : t);
   const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron });
-  const room = width - 1 - visibleLength(first) - cellWidth(m.word ?? "");
-  const word = m.word !== null && room >= WORD_GAP ? `${" ".repeat(room)}${s.dim(m.word)}` : "";
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
-  return [`${first}${word}`, ...withPathLine(after, column, s)];
+  return [first, ...withPathLine(after, column, s)];
 }
 function headingLines(part, d, isSelected) {
   const { width, now, style: s } = d;
@@ -8952,15 +8940,7 @@ function pageEntries(view, typing, isSuggestionOpen, isUnfolded) {
   });
   if (empty)
     return emptyEntries(empty, empty.under?.is === "set-goal" ? setGoal(empty.under) : []);
-  const description = page.head?.description;
-  const head = page.isHeadApart && page.head ? [
-    { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
-    ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
-  ] : [];
-  const top = [
-    ...goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed),
-    ...head.length > 0 ? [blank, ...head] : []
-  ];
+  const top = goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed);
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row) => ({ kind: "page", row }));
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
@@ -9899,8 +9879,7 @@ function demoView(now, agent) {
             text: "",
             was: null,
             changedAt: now - 5 * 60 * MIN,
-            closedAt: now - 5 * 60 * MIN,
-            startedAt: null
+            closedAt: now - 5 * 60 * MIN
           },
           {
             id: "m1",
@@ -9909,8 +9888,7 @@ function demoView(now, agent) {
             text: "",
             was: null,
             changedAt: now - 40 * MIN,
-            closedAt: now - 40 * MIN,
-            startedAt: null
+            closedAt: now - 40 * MIN
           },
           {
             id: "m2",
@@ -9919,8 +9897,7 @@ function demoView(now, agent) {
             text: "tuning pinch pressure",
             was: null,
             changedAt: now - 35 * MIN,
-            closedAt: null,
-            startedAt: now - 95 * MIN
+            closedAt: null
           },
           {
             id: "m3",
@@ -9929,8 +9906,7 @@ function demoView(now, agent) {
             text: "waits on your pick",
             was: null,
             changedAt: now - 5 * MIN,
-            closedAt: null,
-            startedAt: null
+            closedAt: null
           },
           {
             id: "m5",
@@ -9939,8 +9915,7 @@ function demoView(now, agent) {
             text: "after the glasses trial",
             was: null,
             changedAt: now - 60 * MIN,
-            closedAt: null,
-            startedAt: null
+            closedAt: null
           }
         ],
         nextMilestoneId: 6,

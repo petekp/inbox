@@ -28,8 +28,8 @@ test('a look starts when the Status page shows, the page shows the head and the 
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(lookOf()).not.toBeNull()
-  expect((await pane.find({ key: 'status-head' }))?.text).toBe(
-    'Adding a greeting CLIBuilding a CLI that greets by name',
+  expect((await pane.find({ key: 'status-head' }))?.text).toMatch(
+    /^Adding a greeting CLI ─+Building a CLI that greets by name$/,
   )
   expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime')
   expect((await pane.find({ key: 'status-s1-waits-on' }))?.text).toBe('Use Node or Python?')
@@ -143,8 +143,8 @@ test('a release build, with no next-build mark, keys Status, Asks, Finds and PRs
   const pane = await $.ui.mount(PANE)
   await clock.settle()
   expect(w.files).toEqual([])
-  expect((await pane.find({ key: 'status-head' }))?.text).toBe(
-    'Adding a greeting CLIBuilding a CLI that greets by name',
+  expect((await pane.find({ key: 'status-head' }))?.text).toMatch(
+    /^Adding a greeting CLI ─+Building a CLI that greets by name$/,
   )
   expect(await pane.find({ key: 'answer-i1-0' })).toBeUndefined()
   const tabKeys = (await pane.findAll({ type: 'Button' }))

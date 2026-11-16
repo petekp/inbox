@@ -5,7 +5,6 @@ import { ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
-import { parentChevron } from '../../hooks/status-folds'
 import { isOpenRow } from './blocks'
 import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
 import {
@@ -16,7 +15,6 @@ import {
   HELP_COLUMN,
   GROUP_GAP,
   INSET,
-  LINE,
   LINE_GAP,
   LINE_HEIGHT,
   MARK_W,
@@ -278,33 +276,6 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
  */
 const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
 
-/** A status line's name, its stall word and its fold's chevron, as one run of text. */
-const nameLineOf = (s: StatusLine): string =>
-  [s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name, s.fold && parentChevron(s.fold.isFolded, s.fold.count)]
-    .filter(x => x !== undefined)
-    .join(STALL_GAP)
-
-/**
- * A milestone's word over its name's line. gpui-kit cannot measure text, so a hidden copy of the name and stall lays
- * out beside the word in a box one line tall: when they do not fit on one line, the word wraps out of the box and does
- * not show.
- */
-const wordEl = (s: StatusLine, word: string, t: Theme): Element =>
-  h_flex()
-    .absolute()
-    .top(0)
-    .left(0)
-    .w_full()
-    .h(LINE)
-    .overflow_hidden()
-    .flex_wrap()
-    .child(
-      statusPartEl(nameLineOf(s))
-        .invisible()
-        .when(s.isBold, e => e.font_semibold()),
-    )
-    .child(div().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word))
-
 /** A Help line: a key or a mark in the left column, then its words. */
 function keyEl(s: StatusLine, does: string, t: Theme): Element {
   return h_flex()
@@ -336,7 +307,6 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         }),
       ]
     : []
-  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)]
 
   return v_flex()
     .pl(EDGE + s.depth * NEST)
@@ -347,17 +317,7 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         .items_start()
         .when(toggle !== undefined && !isInert, e => e.on_click((_e, cx) => (toggle ? p.press(toggle, cx) : undefined)))
         .child(markEl(s.mark, t))
-        .child(
-          h_flex()
-            .relative()
-            .flex_1()
-            .min_w(0)
-            .flex_wrap()
-            .child(name)
-            .children(stall)
-            .children(chevron)
-            .children(word),
-        ),
+        .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
     )
     .when(s.waitsOn !== undefined, e => e.child(lineEl(s.waitsOn ?? '', colorOf(t, 'needsYou'))))
     .children(s.under.map(l => lineEl(l, t.muted)))

@@ -30,7 +30,7 @@ async function statusShown($: Engine, on: On, reply = INFERRING) {
   return { clock, pane }
 }
 
-test('a goal the Status call writes shows at once under the Goal heading with its milestones and the one that reads next, Edit and Remove draw at the right end of the heading row, the head draws as its Now line, and nothing is sent', async ($, on) => {
+test('a goal the Status call writes shows at once under the Goal heading with its milestones and no word beside them, Edit and Remove draw at the right end of the heading row, the head draws as its Now line, and nothing is sent', async ($, on) => {
   const { pane } = await statusShown($, on)
 
   expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+e: Edit · r: Remove$/)
@@ -38,7 +38,6 @@ test('a goal the Status call writes shows at once under the Goal heading with it
   expect((await pane.find({ key: 'remove-goal-goal' }))?.text).toBe('r: Remove')
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
   expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
-  expect((await pane.find({ key: 'goal-m2-word' }))?.text).toBe('next')
   expect((await pane.find({ key: 'goal-now' }))?.text).toBe('Now: Shipping the pilot')
   expect(await pane.find({ key: 'status-head' })).toBeUndefined()
   expect(w.sent).toEqual([])

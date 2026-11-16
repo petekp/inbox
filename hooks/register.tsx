@@ -3384,7 +3384,6 @@ export const register: Register = on => {
       look,
       listColumns,
       terminalText,
-      desktopFrame,
       desktopColumnPt,
       markWidth,
       branch,

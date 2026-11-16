@@ -68,7 +68,6 @@ export function paneStatus(
     desktopBlockWidth,
     fitsStatusLine,
     statusTree,
-    statusHead,
     markWidth,
     keyLines,
     terminalKeyCells,
@@ -116,7 +115,6 @@ export function paneStatus(
       | 'desktopBlockWidth'
       | 'fitsStatusLine'
       | 'statusTree'
-      | 'statusHead'
     > &
     Pick<PaneRowLines, 'markWidth' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
@@ -141,7 +139,7 @@ export function paneStatus(
   const { updateSuggestionOpen } = handlers
   const isUnfolded = (id: string) => statusUnfolded.includes(id)
   const isCollapsed = (id: string) => view.collapsed.includes(id)
-  const { parentName, chevronText } = paneStatusParent(
+  const { parentName } = paneStatusParent(
     {
       // Rebuilt in each branch so TypeScript keeps `hasClient` paired with `elements`.
       ...(hasClient ? { hasClient, elements } : { hasClient, elements }),
@@ -178,34 +176,60 @@ export function paneStatus(
       <Box key={key} height={look === 'desktop' ? SECTION_GAP_PT / DESKTOP_LINE_PT : 1} />,
       SECTION_GAP_PT / DESKTOP_LINE_PT,
     )
-  /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
-  const statusPartLine = (id: string, text: string, isFirst: boolean) => {
+  /**
+   * Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. The head's
+   * title draws in place of the name, in bold, with its description muted on the line under it, at the same column.
+   */
+  const statusPartLine = (id: string, text: string, isFirst: boolean, title?: { description: string | null }) => {
     const above = isFirst ? [] : [gap('part-above')]
     const line = oneLine(
       look === 'desktop' ? (
         <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
           <Box flexShrink={0} paddingRight={1}>
-            <Text color={pal.muted}>{text}</Text>
+            <Text color={title ? undefined : pal.muted} bold={!!title}>
+              {text}
+            </Text>
           </Box>
           <Box flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />
         </Box>
       ) : (
         <Box flexDirection="row">
           <Box width={statusRuleAt} flexShrink={0} />
-          <Text color={pal.muted}>{`${text} `}</Text>
+          <Text color={title ? undefined : pal.muted} bold={!!title}>{`${text} `}</Text>
           <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
         </Box>
       ),
       desktopEdgedLine,
     )
 
+    const description = title?.description ? [statusPartDescription(id, title.description)] : []
+
     return stackedIn(
       <Box key={`status-${id}`} flexDirection="column">
         {above.map(p => p.el)}
         {line.el}
+        {description.map(p => p.el)}
       </Box>,
-      [...above, line],
+      [...above, line, ...description],
     )
+  }
+  /** The head's description under its title's rule, wrapped at the text column. */
+  const statusPartDescription = (id: string, text: string): Drawn => {
+    const lines =
+      look === 'desktop'
+        ? desktopTextLines(text, desktopBlockWidth - desktopStatusRuleLeft * DESKTOP_CELL_PT)
+        : inkLines(text, statusTextWidth(0))
+
+    return {
+      el: (
+        <Box key={`status-${id}-description`} paddingLeft={look === 'desktop' ? desktopStatusRuleLeft : statusRuleAt}>
+          <Text wrap="wrap" color={pal.muted}>
+            {text}
+          </Text>
+        </Box>
+      ),
+      lines,
+    }
   }
   /** One line of the Status tab's list: a mark and its text, `depth` steps in. Each step sits under the text of the row it hangs from. */
   const statusRowLine = ({
@@ -372,7 +396,6 @@ export function paneStatus(
       isUnfolded,
       isCollapsed,
       parentName,
-      chevronText,
       path: paneStatusPath(
         { look, Box, Text, pal, statusMarkAt, statusFrameEdge, statusTextWidth, foldRow, foldButton, desktopFoldLines },
         { isUnfolded, toggleFold },
@@ -461,7 +484,8 @@ export function paneStatus(
             isSelected: r.id === statusKeyRow?.id,
           })
     }
-    if (r.kind === 'part') return statusPartLine(r.id, r.text, n === 0)
+    if (r.kind === 'part')
+      return statusPartLine(r.id, r.text, n === 0, r.isTitle ? { description: r.description } : undefined)
     if (r.kind === 'counts')
       return statusRowLine({
         key: `status-${r.id}`,
@@ -507,17 +531,16 @@ export function paneStatus(
         tops: new Map(),
       }
     }
-    const head = page.isHeadApart && page.head ? [statusHead(page.head)] : []
     const rows = page.rows.length > 0 ? statusRows(page.rows) : []
-    const shown = [goalSection(page), head, rows]
+    const shown = [goalSection(page), rows]
       .filter(lines => lines.length > 0)
       .map(lines => stackedIn(section(lines.map(p => p.el)), [...desktopSectionPad, ...lines]))
     // A hairline between two desktop sections sits a margin under the one above.
     const sectionGap = look === 'desktop' ? DESKTOP_HAIR_LINES + desktopSpaceLines(1) : terminalSectionGap
     // The goal's section and the list after it draw no hairline between them: Other work's own rule sets that list
-    // apart while the goal shows milestones, and nothing does while it shows none. A met goal's head sits between them,
-    // after a hairline, as it does with no goal.
-    const isUnruledAfterGoal = page.goal !== null && rows.length > 0
+    // apart while the goal shows milestones, and nothing does while it shows none. With no goal, a heading's own rule
+    // sets the list apart.
+    const isUnruledAfterGoal = (page.goal !== null || page.rows[0]?.kind === 'part') && rows.length > 0
 
     return {
       el: sections(

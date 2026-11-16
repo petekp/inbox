@@ -151,7 +151,6 @@ function withGoal(s: Scene) {
     was: null,
     changedAt: minutes(0),
     closedAt: null,
-    startedAt: null,
   })
   s.after.goal = {
     text: 'Offline sync in both stores',

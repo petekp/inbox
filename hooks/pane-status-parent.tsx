@@ -152,7 +152,7 @@ export function paneStatusParent(
       : terminalName(id, name, stall, depth, chevron)
   }
 
-  return { parentName, chevronText }
+  return { parentName }
 }
 
 export type PaneStatusParent = ReturnType<typeof paneStatusParent>

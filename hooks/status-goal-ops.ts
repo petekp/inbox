@@ -85,7 +85,6 @@ export function moveMilestone(
   if (op.kind === 'set') {
     const isReworded = m.status === op.status && hasSameWords(m.text, op.text)
     if (isReworded) return
-    if (op.status === 'working' && m.status !== 'working') m.startedAt = now
     m.status = op.status
     m.text = clipWords(op.text, TEXT_KEPT)
     m.closedAt = null
@@ -149,7 +148,6 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
     was: null,
     changedAt: now,
     closedAt: op.status === 'done' || op.status === 'dropped' ? now : null,
-    startedAt: op.status === 'working' ? now : null,
   }
 
   return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] }
@@ -213,7 +211,6 @@ function inferredGoal(
       was: null,
       changedAt: now,
       closedAt: isOpen(m) ? null : now,
-      startedAt: m.status !== 'working' ? null : isSame ? was.startedAt : now,
     }
   })
   const goal: StatusGoal = {

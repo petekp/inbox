@@ -81,7 +81,6 @@ function milestoneOf(saved: unknown): Milestone | null {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === 'done' || status === 'dropped' ? changedAt : null),
-    startedAt: time(m.startedAt),
     ...(madeNextAt === null ? {} : { madeNextAt }),
   }
 }

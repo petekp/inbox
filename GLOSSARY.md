@@ -114,7 +114,9 @@ what the session is focused on now, and one line under it on what the session
 is doing about it. The inbox model writes it, and checks it at each update
 against the open and finished subjects, so it moves on when the work does,
 even across many small exchanges. When the work it names is done and nothing
-else is working, it stays.
+else is working, it stays. While a goal runs, it is the goal's Now line. While
+no goal is set, or once the goal is met, it is the heading of the list after the
+goal, in the place of "Other work", with its one line under it.
 
 **Subject**:
 One part of the session's work on the Status, such as a feature, a fix or a
@@ -134,6 +136,10 @@ The one outcome the session's work is for, with a finish line someone could
 check, such as "2.5 in the store". It has 2 to 5 milestones. The Status draws
 it above the head, and the head becomes its Now line. It is met once every
 milestone it keeps is done, and a met goal stays until the next one is set.
+When a new goal replaces one, the old goal's text shows under the new one as
+"Prev: ...", until the person has seen it. A milestone the plan changed shows
+its old text the same way. A milestone shows no word or age beside its name:
+its mark says whether it is done, under way or waiting.
 _Avoid_: target, objective
 
 **Inferred goal**:
@@ -193,7 +199,7 @@ _Avoid_: age
 The last time the person left the Status after it showed for at least five
 seconds. A shorter pass through the tab counts nothing. A row counts as seen
 when the last look that showed it came after its last change. A seen row leaves
-out its merged and was lines. A seen done row folds into its part's done fold,
+out its merged and Prev lines. A seen done row folds into its part's done fold,
 and so does a seen finished delegate no subject holds,
 a seen dropped row leaves the page, and a seen open row may fold into "○ N
 more". Under Other work, a seen open row the goal does not need folds into the
