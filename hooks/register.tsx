@@ -151,7 +151,6 @@ import {
   ARRIVAL_TABS,
   closedGroups,
   followTo,
-  areBarsFading,
   isPrsTabEmpty,
   isTabEmpty,
   openRowIds,
@@ -168,6 +167,7 @@ import {
   TAB_PAD,
 } from './pane-sizes'
 import { lookOf, paletteFor } from './palettes'
+import { endOfTints } from './pane-title-tint'
 import { animateRunningMarks } from './running-mark-timer'
 import { glued, type TerminalSpan, unbroken } from './terminal-text'
 import {
@@ -2988,10 +2988,10 @@ export const register: Register = on => {
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
     const tabList = shownTabs()
     if (!isHelpShown) paneState.newRows = showNewRows(paneState.newRows, shownTab, now)
+    const tintEnd = endOfTints(look, view, now, ms => later($, ms, () => redraw($)))
     if (look === 'terminal')
       animateRunningMarks(
-        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)) ||
-          areBarsFading(paneState.newRows, view, now),
+        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)) || tintEnd !== null,
         now,
         (ms, fn) => $.clock.every(ms, fn),
         () => void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined),

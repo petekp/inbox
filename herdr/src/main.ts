@@ -56,7 +56,7 @@ import type { Tracks } from './motion'
 import { Heights } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws, timeLeftNextAt } from './time-left'
-import { newRowsNextAt } from './paint-new-bar'
+import { titleTintNextAt } from './paint-title-tint'
 import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
@@ -422,6 +422,7 @@ export default class Inbox extends View {
       },
       now,
       newRows: this.ui.newRows,
+      closedSeen: this.ui.closedSeen,
       tab: this.ui.tab,
       timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
@@ -457,7 +458,10 @@ export default class Inbox extends View {
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
     const nextFrame = isStarting ? now + NEXT_FRAME_MS : null
-    const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, moved.blocks, now)])
+    const timed = earliestOf([
+      timeLeftNextAt(moved.blocks, now),
+      titleTintNextAt(this.ui.newRows, moved.blocks, this.ui.closedSeen, now),
+    ])
     const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter(
       at => at !== null,
     )

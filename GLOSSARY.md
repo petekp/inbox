@@ -68,15 +68,14 @@ stays past that time while its message is on its way to the agent, and while
 a press is under way on a row of its tab. It also waits while the person is
 using the list, until `FOLD_QUIET_MS` after their last press, key, scroll or
 pointer move. A refused or unconfirmed message does not hold it: its Closed
-line shows what happened. A bar at its left edge shows how it closed, from
-the press on. It is in the done tone once the row was handled (answered, done,
-or closed by the agent), at every step of its message's way. It is muted once
-the row was dismissed or lapsed, and in the error tone once a message failed to
-send (`settledBarTone`). The bar spans the row from the top of its first line
-to the bottom of its last, and holds then fades on the clock of a new row's
-bar, from the moment the row closed (`settledBarClock`), whatever the row does
-after. Its mark and label carry the state from then on. A settled PR draws no
-bar.
+line shows what happened. Its title and mark take a tint that shows how it closed, from
+the press on. The tint is in the done tone once the row was handled (answered,
+done, or closed by the agent), at every step of its message's way. There is
+none once the row was dismissed or lapsed, and it is in the error tone once a message
+failed to send (`closedTitleTone`). It holds then fades back to the title's own
+color on the clock of a new row's tint, from when a look first draws the row
+closed (`closedTitleClock`). Its mark and label carry the state from then on. A
+settled PR takes no tint.
 
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what
@@ -238,7 +237,9 @@ followed by its count, as "🔍 4". `symbol` in `TAB_NAMES` in `hooks/tabs.ts`.
 **New row**:
 A row a look lists for the first time since it last recorded its rows. A
 look showing an empty tab can move to a tab where rows arrived. A row that
-arrives above the open row stays closed. Codex animates its entry.
+arrives above the open row stays closed. Codex animates its entry. Its title
+and mark take a tint of the key color, which holds for `NEW_HOLD_MS` once its tab is
+shown, then fades back to the title's own color over `NEW_FADE_MS`.
 
 **Last action**:
 What an item or PR in the inbox says after the person presses one of its

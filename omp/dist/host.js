@@ -3202,7 +3202,6 @@ var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: null };
-var ROW_BAR = "\u258D";
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -3251,12 +3250,6 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
-  },
-  {
-    mark: ROW_BAR,
-    tone: null,
-    isRunning: false,
-    words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
 var HELP_COPY = {
@@ -4422,7 +4415,7 @@ function canUndoRefused(delivery) {
 function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
 }
-function settledBarTone(state) {
+function closedTitleTone(state) {
   if (isSendRefused(state.delivery))
     return "error";
   return state.closedAs === "handled" ? "done" : "muted";
@@ -6598,21 +6591,34 @@ function steppedShare(row, now, steps = NEW_STEPS) {
   const faded = Math.max(0, now - row.shownAt - NEW_HOLD_MS);
   return newRowShare(row, row.shownAt + NEW_HOLD_MS + Math.floor(faded / step) * step);
 }
-function settledBarClock(at) {
-  return { tab: "", shownAt: at };
+var TITLE_TINT = 0.65;
+function closedTitleClock(seen, id, closedAt, now) {
+  const key = `${id}:${closedAt}`;
+  const total = NEW_HOLD_MS + NEW_FADE_MS;
+  let shownAt = seen.get(key);
+  if (shownAt === undefined) {
+    if (now - closedAt >= total)
+      return;
+    shownAt = now;
+    seen.set(key, shownAt);
+  }
+  return now - shownAt < total ? { tab: "", shownAt } : undefined;
 }
-function settledBarClocks(v) {
-  const rows = [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
-  return rows.flatMap((r) => r.state.is === "settled" ? [settledBarClock(r.state.at)] : []);
+function steppedTitleTint(clock, now) {
+  return steppedShare(clock, now) * TITLE_TINT;
 }
-function isNewRowFading(rows, now) {
-  return isBarFading([...rows.values()], now);
-}
-function areBarsFading(rows, v, now) {
-  return isNewRowFading(rows, now) || isBarFading(settledBarClocks(v), now);
-}
-function isBarFading(clocks, now) {
-  return clocks.some((r) => r.shownAt !== null && newRowShare(r, now) > 0);
+function titleTintEndsAt(rows, v, seen, now) {
+  const total = NEW_HOLD_MS + NEW_FADE_MS;
+  const ends = [...rows.values()].flatMap((r) => r.shownAt === null ? [] : [r.shownAt + total]);
+  for (const r of [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]) {
+    if (r.state.is !== "settled" || closedTitleTone(r.state) === "muted")
+      continue;
+    const shownAt = seen.get(`${r.id}:${r.state.at}`) ?? (now - r.state.at < total ? now : undefined);
+    if (shownAt !== undefined)
+      ends.push(shownAt + total);
+  }
+  const next = Math.min(...ends.filter((at) => at > now), Infinity);
+  return next === Infinity ? null : next;
 }
 
 // ../hooks/action-plan.ts
@@ -8029,7 +8035,7 @@ function lineOfRow(row, isAllShown) {
     settled: state.is === "settled" ? {
       label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
-      bar: settledBarTone(state),
+      tint: closedTitleTone(state) === "muted" ? null : closedTitleTone(state),
       undo: undo ? undo.press : null,
       at: state.at
     } : null,
@@ -8269,7 +8275,7 @@ function prEntries(screen, ui, now) {
           settled: {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
-            bar: null,
+            tint: null,
             undo: state.canUndo ? { action: "pr-undo", ref: pr.ref } : null,
             at: state.at
           }
@@ -8683,12 +8689,17 @@ function faceLines(buttons, focused, indent, width, s, between = "") {
 function leadPaint(lead, text, s) {
   return lead.tone === "dim" ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text;
 }
-function leadText(lead, s) {
-  return lead === null ? "" : `${leadPaint(lead, lead.text.padEnd(2), s)} `;
+function leadText(lead, s, tint) {
+  if (lead === null)
+    return "";
+  const text = lead.text.padEnd(2);
+  return `${tint ? s.tint(tint.tone, tint.share, text, lead.tone) : leadPaint(lead, text, s)} `;
 }
-function markText(mark, now, s) {
+function markText(mark, now, s, tint) {
   if (mark === null)
     return "";
+  if (tint)
+    return `${s.tint(tint.tone, tint.share, resultGlyph(mark, now), mark.tone ?? "dim")} `;
   return `${feedbackPaint(mark.tone ?? null, s)(resultGlyph(mark, now))} `;
 }
 function feedbackPaint(tone, s) {
@@ -8716,22 +8727,22 @@ function drawLine(line, isSelected, d) {
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isOpen) ? line.feedback : null;
-  const mark = markText(line.mark, now, s);
+  const clock = line.settled ? closedTitleClock(ui.closedSeen, line.id, line.settled.at, now) : line.isPrHead ? undefined : newRowIn(ui.newRows, line.id, ui.tab);
+  const tintTone = line.settled ? line.settled.tint : "key";
+  const tintShare = steppedTitleTint(clock, now);
+  const tint = tintTone && tintShare > 0 ? { tone: tintTone, share: tintShare } : undefined;
+  const mark = markText(line.mark, now, s, line.settled ? tint : undefined);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
-  const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now);
-  const bar = line.settled?.bar ?? null;
-  const settledShare = line.settled ? steppedShare(settledBarClock(line.settled.at), now) : 0;
-  const edge = bar && settledShare > 0 ? s.settledBar(bar, settledShare, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : " ";
-  const head = `${edge}${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
+  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s, tint)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
   const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
-  const title = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isOpen ? s.bold(shownTitle) : shownTitle;
+  const ownTitle = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isOpen ? s.bold(shownTitle) : shownTitle;
+  const title = tint ? s.tint(tint.tone, tint.share, ownTitle) : ownTitle;
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width));
-  const barred = () => out.map((l, i) => i > 0 && edge !== " " && l.startsWith(" ") ? edge + l.slice(1) : l);
   if (line.settled || isShut(line, ui))
-    return barred();
+    return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const holdsUp = line.row?.holdsUpLine;
   const tree = isOpen ? askTreeLines(line, pad, width, s, ui.optionsShown.includes(line.id)) : [];
@@ -8744,7 +8755,7 @@ function drawLine(line, isSelected, d) {
   if (line.detail && (isOpen || line.isDetailShown))
     out.push(...indented(line.detail, indent, width, 4, s.dim));
   if (!isOpen)
-    return barred();
+    return out;
   if (line.file)
     out.push(" ".repeat(indent) + s.tone("accent", line.file));
   if (line.buttons.length > 0 && ui.typing !== line.id)
@@ -8762,7 +8773,7 @@ function drawLine(line, isSelected, d) {
     if (first !== undefined)
       out.push(" ".repeat(indent) + mark + first.slice(indent + markCells), ...rest);
   }
-  return barred();
+  return out;
 }
 
 // src/panel-tabs.ts
@@ -8902,7 +8913,8 @@ var INITIAL_UI = {
   shownSince: 0,
   isHelpShown: false,
   listInput: null,
-  newRows: new Map
+  newRows: new Map,
+  closedSeen: new Map
 };
 function holdsOf(ui) {
   return {
@@ -9022,7 +9034,7 @@ var ANIMATION_MS = 200;
 var collapsedAfter = (collapsed, p) => p.isCollapsed ? [...collapsed.filter((id) => id !== p.id), p.id] : collapsed.filter((id) => id !== p.id);
 function createPanel(deps) {
   const { source, style, timers } = deps;
-  let ui = { ...INITIAL_UI, shownSince: deps.openedAt };
+  let ui = { ...INITIAL_UI, closedSeen: new Map, shownSince: deps.openedAt };
   let screen = null;
   let animation = null;
   let frames = null;
@@ -9033,7 +9045,7 @@ function createPanel(deps) {
   let heldHeight = null;
   const stops = [];
   const syncFrames = () => {
-    const hasFrames = screen !== null && (areBarsFading(ui.newRows, screen.view, deps.now()) || showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind)));
+    const hasFrames = screen !== null && (titleTintEndsAt(ui.newRows, screen.view, ui.closedSeen, deps.now()) !== null || showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind)));
     if (hasFrames && frames === null)
       frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS);
     if (!hasFrames && frames !== null) {
@@ -9792,8 +9804,10 @@ var CLIENTS = {
       "compare-in-background": { kind: "full" },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
-      "new-row-bar": { kind: "different", reason: "The terminal steps the fade in 6 colors. Desktop fades an Svg." },
-      "settled-row-bar": { kind: "full" },
+      "title-tint": {
+        kind: "different",
+        reason: "The terminal steps the fade in 6 colors. Desktop holds the tint, then drops it."
+      },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -9902,8 +9916,7 @@ var CLIENTS = {
       },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
-      "new-row-bar": { kind: "full" },
-      "settled-row-bar": { kind: "full" },
+      "title-tint": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": { kind: "full" },
@@ -10018,8 +10031,7 @@ var CLIENTS = {
       "compare-in-background": { kind: "full" },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
-      "new-row-bar": { kind: "different", reason: "Steps the fade in 6 colors." },
-      "settled-row-bar": { kind: "full" },
+      "title-tint": { kind: "different", reason: "Steps the fade in 6 colors." },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -11422,7 +11434,7 @@ var LIGHT_BANNER_TINTS = {
   notice: LIGHT_BLUE_TINT,
   ask: LIGHT_BLUE_TINT
 };
-var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
+var THEME_TEXT = { dark: "#ececec", light: "#1b1b1b" };
 var MUTED_TEXT = { dark: "#bdbdbd", light: "#595959" };
 function fadedOver(hex, under, share) {
   const channel = (c, i) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
@@ -11443,6 +11455,7 @@ function truecolorFill(hex, text) {
 }
 function styleOf(theme) {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
+  const mode = theme.isLight ? "light" : "dark";
   const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
   return {
     bold: theme.bold.bind(theme),
@@ -11451,8 +11464,7 @@ function styleOf(theme) {
     underline: theme.underline.bind(theme),
     tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
     banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
-    newBar: (share, text) => truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? "light" : "dark"], share), text),
-    settledBar: (tone, share, text) => truecolor(fadedOver(tone === "muted" ? MUTED_TEXT[theme.isLight ? "light" : "dark"] : tones[tone === "error" ? "errorMark" : "done"], THEME_BACKGROUND[theme.isLight ? "light" : "dark"], share), text)
+    tint: (tone, share, text, rest = null) => truecolor(fadedOver(tone === "key" ? tones.key : tone === "muted" ? MUTED_TEXT[mode] : tones[tone === "error" ? "errorMark" : "done"], rest === "dim" ? MUTED_TEXT[mode] : rest && rest !== "sep" && rest !== "accent" ? tones[rest] : THEME_TEXT[mode], share), text)
   };
 }
 

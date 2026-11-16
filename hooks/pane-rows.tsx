@@ -3,7 +3,7 @@ import { isStatusUnderActions } from './feedback'
 import { paneState } from './mod-state'
 import { type AskEntry, paneAskTree } from './pane-ask-tree'
 import { paneDesktopTree } from './pane-desktop-tree'
-import { paneNewBar } from './pane-new-bar'
+import { newTitleTint } from './pane-title-tint'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { fieldKey, openFields } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
@@ -119,7 +119,8 @@ export function paneRows(
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
 ) {
-  const { newBar } = paneNewBar({ look, elements, Box, Text, pal, now, shownTab, space })
+  const newTitleColor = newTitleTint({ look, pal, now, shownTab })
+  const handleTint = (row: Row) => newTitleColor(row.id, row.handleTone ? pal.mark[row.handleTone] : pal.muted)
   const { askTree, askEntries, hasTree, treeTextIndent } = paneAskTree(
     { look, Box, Text, pal, optionsShown, blankLine },
     { branch },
@@ -145,8 +146,10 @@ export function paneRows(
               paddingLeft={(FRAME_INSET_PT - DESKTOP_CELL_PT) / DESKTOP_CELL_PT}
               paddingTop={space.rowPad}
             >
-              {gutter ?? toned(row) ?? (
-                <Text color={row.handleTone ? pal.mark[row.handleTone] : undefined}>{row.handle}</Text>
+              {gutter ?? toned(row, handleTint(row)) ?? (
+                <Text color={handleTint(row) ?? (row.handleTone ? pal.mark[row.handleTone] : undefined)}>
+                  {row.handle}
+                </Text>
               )}
             </Box>
           ) : null}
@@ -155,16 +158,19 @@ export function paneRows(
               key={`select-${row.id}`}
               module="./row-client.tsx"
               width="100%"
-              props={rowClientProps(row, desktopRowTextPt)}
+              props={rowClientProps(row, desktopRowTextPt, newTitleColor(row.id))}
             />
           </Box>
-          {newBar(row)}
         </Box>
       )
     }
     const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
     const handleText =
-      row.handle && !row.isHandleRunning ? <Text color={pal.muted}>{row.handle}</Text> : row.handle || ' '
+      row.handle && !row.isHandleRunning ? (
+        <Text color={handleTint(row) ?? pal.muted}>{row.handle}</Text>
+      ) : (
+        row.handle || ' '
+      )
     const isTyping = Input !== null && !!row.typeHint && typing === row.id
     const textWidth = listColumns - 1 - columns.textAt
     const submitLabel = look === 'desktop' ? ROW_COPY.send : 'send'
@@ -285,6 +291,7 @@ export function paneRows(
         width="100%"
         props={{
           title: row.title,
+          titleColor: newTitleColor(row.id) ?? null,
           after: desktopAfter,
           colors: {
             muted: pal.muted,
@@ -296,7 +303,9 @@ export function paneRows(
       />
     ) : (
       <Text wrap="wrap">
-        <Text bold>{row.title}</Text>
+        <Text bold color={newTitleColor(row.id)}>
+          {row.title}
+        </Text>
         {desktopAfter ? <Text color={pal.muted}>{desktopAfter}</Text> : null}
       </Text>
     )
@@ -368,7 +377,6 @@ export function paneRows(
               keysBlock,
             ],
           })}
-          {newBar(row)}
         </Box>
       )
     }
@@ -380,9 +388,9 @@ export function paneRows(
             markCells: DESKTOP_MARK_CELLS,
             mark: row.view
               ? gutterMark(row)
-              : (toned(row) ??
+              : (toned(row, handleTint(row)) ??
                 (row.handleTone ? (
-                  <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
+                  <Text color={handleTint(row) ?? pal.mark[row.handleTone]}>{row.handle}</Text>
                 ) : (
                   <Text>{row.handle}</Text>
                 ))),
@@ -407,7 +415,6 @@ export function paneRows(
               keysBlock,
             ],
           })}
-          {newBar(row, { top: selectedGapY })}
         </Box>
       )
 
@@ -428,7 +435,7 @@ export function paneRows(
             paddingY={isSelected ? space.rowPad : 0}
           >
             {row.handleTone ? (
-              <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
+              <Text color={handleTint(row) ?? pal.mark[row.handleTone]}>{row.handle}</Text>
             ) : look === 'desktop' ? (
               (gutterMark(row) ?? <Text>{row.handle}</Text>)
             ) : isSelected ? (
@@ -448,7 +455,9 @@ export function paneRows(
                   row,
                   <Button plain key={`collapse-${row.id}`} onPress={() => void pressTitle(row.id)}>
                     <Text wrap="wrap">
-                      <Text bold>{row.title}</Text>
+                      <Text bold color={newTitleColor(row.id)}>
+                        {row.title}
+                      </Text>
                       {titleAfter ? (
                         <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
                       ) : null}
@@ -473,7 +482,7 @@ export function paneRows(
           </Box>
         ) : (
           <Box flexShrink={1} flexGrow={1} paddingRight={1}>
-            {unselectedLine(row, () => void pressTitle(row.id), columns.textAt)}
+            {unselectedLine(row, () => void pressTitle(row.id), columns.textAt, newTitleColor(row.id))}
           </Box>
         )}
         {isAgeInSide && !isSelected ? (
@@ -488,9 +497,6 @@ export function paneRows(
           </Box>
         ) : null}
         {isSelected ? branch(tree, blankLine, TREE_LINE_AT, pal.selectionLine ?? pal.line) : branch(tree, 0)}
-        {isCursorMarked && !pal.selection
-          ? null
-          : newBar(row, { top: isSelected ? space.rowPad : 0, isSelected: isSelected || isCursorMarked })}
         {isCursorMarked ? (
           <Box
             key={settledScrollKey(`view-${row.id}`, settledLayout)}

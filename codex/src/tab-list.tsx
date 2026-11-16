@@ -1,12 +1,12 @@
 import { RowActions } from './row-actions'
-import { settledBarTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
+import { closedTitleTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
 import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
-import { newRowIn, newRowShare, settledBarClock, showNewRows } from '../../hooks/arrivals'
+import { closedTitleClock, newRowIn, showNewRows } from '../../hooks/arrivals'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
 import { stepRow } from '../../hooks/row-motion'
@@ -26,7 +26,7 @@ import type { BannerLine, TextLine } from './tab-line-steps'
 import { tabBanners } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
 import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
-import { NewBar } from './tab-new-bar'
+import { TitleTint } from './tab-title-tint'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
@@ -173,13 +173,15 @@ export function ListRow({
       class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}${isTreeHung ? ' has-tree' : ''}`}
       ref={row.isHandleRunning && !isTreeHung ? pulseInStep : undefined}
     >
-      {isTreeHung ? (
-        <span class="glyph" ref={row.isHandleRunning ? pulseInStep : undefined}>
+      <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
+        {isTreeHung ? (
+          <span class="glyph" ref={row.isHandleRunning ? pulseInStep : undefined}>
+            <MarkGlyph text={row.handle} />
+          </span>
+        ) : (
           <MarkGlyph text={row.handle} />
-        </span>
-      ) : (
-        <MarkGlyph text={row.handle} />
-      )}
+        )}
+      </TitleTint>
     </span>
   )
 
@@ -217,7 +219,6 @@ export function ListRow({
       onClick={isSelected ? undefined : onSelect}
     >
       {handle}
-      <NewBar row={newRowIn(tabState.newRows, row.id, drawnTab())} />
       <div class="content">
         <button type="button" class="line" aria-expanded={isSelected} onClick={isSelected ? onSelect : undefined}>
           <span class="text">
@@ -226,7 +227,9 @@ export function ListRow({
                 <span class="lead">{row.lead}</span>{' '}
               </>
             ) : null}
-            {row.title}
+            <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
+              {row.title}
+            </TitleTint>
           </span>
           {row.meta ? <span class="meta">{row.meta}</span> : null}
           {after(drawn, closed ? ' open-only' : '')}
@@ -321,20 +324,21 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
   const { state } = r
   if (state.is !== 'settled') return null
   const start = tabState.seen.get(r.id) ?? Date.now()
-  const clock = settledBarClock(state.at)
+  const tone = closedTitleTone(state)
+  const clock = tone === 'muted' ? undefined : closedTitleClock(tabState.closedSeen, r.id, state.at, Date.now())
   const error = errors.get(r.id)
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
-      <NewBar
-        row={newRowShare(clock, Date.now()) > 0 ? clock : undefined}
-        className={`settled-bar ${settledBarTone(state)}`}
-      />
-      <ResultMarkView mark={settledMark(state)} />
+      <ResultMarkView mark={settledMark(state)} tint={{ row: clock, tone }} />
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">
-            <span class="what">{r.title}</span>
+            <span class="what">
+              <TitleTint row={clock} tone={tone}>
+                {r.title}
+              </TitleTint>
+            </span>
             <span class="muted">{DOT}</span>
             <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
             {error ? (

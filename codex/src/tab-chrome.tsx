@@ -191,6 +191,7 @@ export async function toggleDemo() {
   tabState.seen = new Map()
   tabState.rowsSeen = {}
   tabState.newRows = new Map()
+  tabState.closedSeen = new Map()
   drawnRows.clear()
   tabState.lastLists = null
   selection.needsYou = null
