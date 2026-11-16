@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T03:33:51.068Z. 258990 characters follow.
+// Built at 2026-11-16T04:02:34.788Z. 259505 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -14,6 +14,7 @@ import {
   props,
   readTextFile,
   run,
+  settings,
   spaces,
   terminals,
   theme,
@@ -5104,6 +5105,10 @@ var HELP_COLUMN = HELP_KEY_W + CONTROL_GAP;
 var HELP_ICON = 14;
 var HELP_ICON_TEXT = 10;
 var SEP = " · ";
+var paneFit = (reported, zoom) => ({
+  isNarrow: reported.paneWidth / zoom < NARROW_PANE,
+  listRoom: reported.listHeight === null ? null : Math.max(0, reported.listHeight / zoom - EDGE - END_SPACE)
+});
 var onSize = (view, key, read) => (size, cx) => {
   const value = read(size);
   if (value === view[key])
@@ -5194,19 +5199,28 @@ function nextDrawAt(now, ui, screen, moved) {
 }
 
 // src/heights.ts
+function zoomOf(settings) {
+  const zoom = settings.zoom;
+  return typeof zoom === "number" && zoom > 0 ? zoom : 1;
+}
+
 class Heights {
   sizes = new Map;
   resized = new Set;
+  zoom = null;
   get(key) {
     return this.sizes.get(key)?.height;
   }
-  measure(key, size) {
+  measure(key, reported, zoom) {
+    const size = { width: reported.width / zoom, height: reported.height / zoom };
+    const isZoomChanged = this.zoom !== null && this.zoom !== zoom;
+    this.zoom = zoom;
     const was = this.sizes.get(key);
     this.sizes.set(key, { width: size.width, height: size.height });
     const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
     if (isRewrapped)
       this.resized.add(key);
-    return was?.height !== size.height;
+    return was?.height !== size.height || isZoomChanged;
   }
   takeResized() {
     const resized = this.resized;
@@ -6125,8 +6139,8 @@ class Inbox extends View {
   ui = freshUi("needsYou");
   shownSince = Date.now();
   isHelpShown = false;
-  isNarrow = false;
-  listRoom = null;
+  paneWidth = Infinity;
+  listHeight = null;
   drafts = {};
   left = {};
   confirmed = [];
@@ -6429,7 +6443,7 @@ class Inbox extends View {
       heights: this.heights,
       isAtOnce: (key) => isFirst || resized.has(key),
       measure: (key, size, cx) => {
-        if (this.heights.measure(key, size))
+        if (this.heights.measure(key, size, zoomOf(settings())))
           cx.notify();
       },
       now,
@@ -6438,10 +6452,9 @@ class Inbox extends View {
       tab: this.ui.tab,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
-      isNarrow: this.isNarrow,
-      listRoom: this.listRoom
+      ...paneFit(this, zoomOf(settings()))
     };
-    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "isNarrow", (s) => s.width < NARROW_PANE));
+    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
@@ -6456,7 +6469,7 @@ class Inbox extends View {
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
     const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
-    const room = moved.nextAt === null ? this.listRoom : null;
+    const room = moved.nextAt === null ? paint.listRoom : null;
     this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
@@ -6464,7 +6477,7 @@ class Inbox extends View {
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

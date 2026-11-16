@@ -113,7 +113,7 @@ export const TEXT_X = EDGE + MARK_W
 export const NEST = MARK_W
 
 /** Under this pane width, a PR's number moves from the end of its title line to the start of its status line. */
-export const NARROW_PANE = 280
+const NARROW_PANE = 280
 
 /** A button's and a tab's height, and the corner of a box such as a banner or the goal's input. */
 export const BUTTON_H = 28
@@ -165,6 +165,15 @@ export type Paint = {
   /** The list's height inside its padding, from its last measure, which an empty tab's block fills. Null until measured. */
   listRoom: number | null
 }
+
+/**
+ * Whether the pane is narrow and the list's room, at zoom 1, from the pane's width and the list's height as the app
+ * reported them, which its zoom has already scaled.
+ */
+export const paneFit = (reported: { paneWidth: number; listHeight: number | null }, zoom: number) => ({
+  isNarrow: reported.paneWidth / zoom < NARROW_PANE,
+  listRoom: reported.listHeight === null ? null : Math.max(0, reported.listHeight / zoom - EDGE - END_SPACE),
+})
 
 /** A size callback that keeps what `read` takes from a box's size as `view[key]`, and draws again when that changed. */
 export const onSize =
