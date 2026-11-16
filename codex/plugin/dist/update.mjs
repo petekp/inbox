@@ -332,11 +332,14 @@ function matchOpen(items, a, sameBatch = /* @__PURE__ */ new Set()) {
     (i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask)
   );
 }
-function repeatsClosed(closed, a, since, closedFindings = []) {
+function repeatsClosed(closed, a, since, isPersonsAnswer2, closedFindings = []) {
   const context = closed.slice(-CLOSED_CONTEXT_LIMIT);
   const recent = context.filter((c) => c.at >= since && !isAskedForChoices(c));
-  const settled = context.filter((c) => c.at < since && c.how !== "expired");
+  const settled = context.filter((c) => c.at < since && !canAskAgain(c, isPersonsAnswer2));
   return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a)) || dismissedFindingOf(closedFindings, a.ask) !== void 0;
+}
+function canAskAgain(c, isPersonsAnswer2) {
+  return c.how === "expired" || c.how === "claude" || c.how === "update" && !isPersonsAnswer2(c.outcome);
 }
 function dismissedFindingOf(closedFindings, ask) {
   return closedFindings.findLast((f) => f.how === "dismissed" && raisesOnly(f.title, ask));
@@ -515,11 +518,14 @@ function readKind(kind) {
 }
 var NEEDS_PERSON = /(?:^|[\s;&|])(?:login|logout|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen)(?=[\s:]|$)|\binit --interactive\b/i;
 var PERSON_ONLY_REASON = /credential|password|passphrase|secret|\btoken|\b2fa\b|\bmfa\b|\bdevice\b|phone|android|tablet|account|sign(?:ed)?[- ]?in|log(?:ged)?[- ]?in|only you|you hold|your (?:mac|machine|laptop|computer|keychain)|\bsudo\b/i;
-function recordedAsksOnly(u, isPersonsAnswer2) {
+function recordedAsksOnly(u, ledger, isPersonsAnswer2) {
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
+  const recorded = new Set(ledger.items.filter((i) => i.from === "record").map((i) => i.id));
   return {
     ...u,
-    closed: u.closed.filter((c) => (!/^i\d+$/.test(c.id) || isPersonsAnswer2(c.outcome)) && !stillAsked.has(c.id)),
+    closed: u.closed.filter(
+      (c) => (!/^i\d+$/.test(c.id) || !recorded.has(c.id) && isPersonsAnswer2(c.outcome)) && !stillAsked.has(c.id)
+    ),
     added: [],
     updated: []
   };
@@ -745,7 +751,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
     const isQuestionBackOutcome = outcome !== void 0 && item.kind === "question" && isQuestionBack(outcome, item.options);
-    const isClosing = outcome !== void 0 && !isQuestionBackOutcome && (item.from !== "record" || isPersonsAnswer(outcome));
+    const isClosing = outcome !== void 0 && !isQuestionBackOutcome && item.from !== "record";
     if (isClosing) closed.push(closedRecord(item, { outcome, how: "update" }, now));
     else items.push(withUpdate({ ...item, helps }, u.updated));
   }
@@ -761,7 +767,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       addedIds.push(null);
       continue;
     }
-    if (repeatsClosed(ledger.closed, a, promptAt, ledger.closedFindings)) {
+    if (repeatsClosed(ledger.closed, a, promptAt, isPersonsAnswer, ledger.closedFindings)) {
       addedIds.push(null);
       continue;
     }
@@ -794,7 +800,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       options: ["Proceed", "Not yet"],
       rec: null
     };
-    const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => !f.feedOwned && restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
+    const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => !f.feedOwned && restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt, isPersonsAnswer);
     if (isKnown) continue;
     items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update" });
     nextId += 1;
@@ -1175,7 +1181,7 @@ function systemText(host, instructions = null) {
   const system = `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
-- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
+- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design | origin
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items and findings the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again in other words.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
@@ -1186,7 +1192,7 @@ Input:
 Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
 
 NONE: nothing in the exchange changes the ledger. Write it alone.
-CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
+CLOSED: <id> | the outcome, at most 8 words, in one of three forms. Use CLOSED only for an item whose origin is update. Never write CLOSED for an agent-recorded item, even when the person answered it; the agent's close tool closes it when appropriate. When the person answered an update-origin item in <person>, write their answer. Otherwise write "done: <what the agent did>" when its work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each update-origin item in <open> the reply or <activity> shows is done or no longer applies, or the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers). A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
   For a finding in <findings> that a NEW line or an item in <open> asks the person about. item: "new N" for the Nth NEW line in your answer, or an id from <open>. The item takes the finding's place, so the person sees it once.
@@ -1222,7 +1228,7 @@ ${personInstructionsBlock(instructions)}`;
 }
 function ledgerBlocks(ledger) {
   const open2 = ledger.items.filter((i) => !i.sourceManaged).map(
-    (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
+    (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"} | ${i.from === "record" ? "record" : "update"}`
   ).join(NL4);
   const findings = ledger.findings.filter((f) => !f.feedOwned).map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
   const closed = ledger.closed.slice(-CLOSED_CONTEXT_LIMIT).filter((d) => d.how !== "expired" && !isAskedForChoices(d)).slice(-MAX_CLOSED).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
@@ -1248,9 +1254,20 @@ function personText(person, trigger) {
   return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
 }
 function outcomeText(d) {
-  if (d.how === "dismissed") return "dismissed by the user";
-  if (d.how === "expired") return "expired before the user answered";
-  return d.outcome;
+  switch (d.how) {
+    case "answered":
+      return `answered by the user: ${d.outcome}`;
+    case "done":
+      return `marked done by the user: ${d.outcome}`;
+    case "dismissed":
+      return "dismissed by the user";
+    case "expired":
+      return "expired before the user answered";
+    case "claude":
+      return `closed by the agent: ${d.outcome.replace(/^closed by [^:]+:\s*/i, "")}`;
+    case "update":
+      return `closed by the inbox: ${d.outcome}`;
+  }
 }
 
 // ../hooks/inbox-text.ts
@@ -4609,7 +4626,7 @@ async function askOverConversation(host, names, s, screen, conversation) {
 }
 async function runUpdates(host) {
   let canCatchUp = host.catchUp !== void 0;
-  const kept = (u) => u && host.recordedItemsOnly ? recordedAsksOnly(u, isPersonsAnswer) : u;
+  const kept = (u, ledger) => u && host.recordedItemsOnly ? recordedAsksOnly(u, ledger, isPersonsAnswer) : u;
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
@@ -4633,7 +4650,7 @@ async function runUpdates(host) {
                 await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
-              const parsed2 = kept(reply.kind === "reply" ? parseReply(reply.text, reply.source) : null);
+              const parsed2 = kept(reply.kind === "reply" ? parseReply(reply.text, reply.source) : null, s.ledger);
               const at = await host.now();
               const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed2 !== null, at) : x;
               const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed2, at));
@@ -4651,7 +4668,7 @@ async function runUpdates(host) {
               systemText(host.names, instructions),
               kind
             );
-            const parsed = kept(parsedReply(next.ex, asked.text));
+            const parsed = kept(parsedReply(next.ex, asked.text), s.ledger);
             let isApplied = false;
             const after = await host.update(async (current) => {
               const at = await host.now();

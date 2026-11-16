@@ -4,10 +4,36 @@ import { latestBatch } from '../hooks/inbox-text'
 import { EMPTY } from '../hooks/ledger'
 import { closeItem } from '../hooks/ledger-close'
 import { addAgentItem, applyUpdate } from '../hooks/ledger-update'
-import { parseReply } from '../hooks/reply-parse'
+import { isPersonsAnswer } from '../hooks/ledger-update'
+import { parseReply, recordedAsksOnly } from '../hooks/reply-parse'
+import { CLAUDE_CODE } from '../hooks/model-text'
+import { recordItem } from '../hooks/tools'
 import { REPLY } from './ledger-helpers'
 
 describe('applyUpdate', () => {
+  test('a ledger close never closes agent-recorded questions in either mode or language form', () => {
+    for (const recordedOnly of [false, true])
+      for (const outcome of ['done: 回答待ちのまま変更なし', '回答待ちのまま変更なし']) {
+        let ledger = EMPTY
+        for (let n = 1; n <= 7; n++)
+          ledger = recordItem(
+            CLAUDE_CODE,
+            ledger,
+            { kind: 'question', ask: `Which option should question ${n} use?`, options: ['A', 'B'] },
+            n,
+          ).ledger
+        const update = parseReply(Array.from({ length: 7 }, (_, n) => `CLOSED: i${n + 1} | ${outcome}`).join('\n'))!
+        const applied = applyUpdate(
+          ledger,
+          recordedOnly ? recordedAsksOnly(update, ledger, isPersonsAnswer) : update,
+          100,
+          1,
+        )
+        expect(applied.items.map(i => i.id)).toEqual(Array.from({ length: 7 }, (_, n) => `i${n + 1}`))
+        expect(applied.closed).toEqual([])
+      }
+  })
+
   test('numbers new items, closes answered ones, and remembers the batch', () => {
     const first = applyUpdate({ ...EMPTY, turn: 1 }, parseReply(REPLY)!, 1000, 1)
     expect(first.items.map(i => i.id)).toEqual(['i1', 'i2', 'i3'])
@@ -52,6 +78,27 @@ describe('applyUpdate', () => {
 
     expect(oldAgain.items.map(i => i.ask)).toEqual(['Task 1'])
     expect(recentAgain.items).toEqual([])
+  })
+
+  test('a NEW line can record again an item closed by the inbox, agent or expiry', () => {
+    const opened = addAgentItem(
+      EMPTY,
+      {
+        kind: 'question',
+        ask: 'Which cache should the API use?',
+        options: ['Redis', 'Memcached'],
+        rec: null,
+        helps: [],
+      },
+      1,
+    ).ledger
+    const reply = parseReply('NEW: decide | - | Which cache should the API use? | Redis / Memcached | -')!
+    for (const how of ['update', 'claude', 'expired'] as const) {
+      const outcome = how === 'update' ? 'done: no answer yet' : 'no answer yet'
+      const closed = closeItem(opened, 'i1', { how, outcome }, 2)
+      const next = applyUpdate({ ...closed, turn: 2 }, reply, 4, 2, 3)
+      expect(next.items).toMatchObject([{ id: 'i2', from: 'update' }])
+    }
   })
 
   test('unanswered questions and tasks stay open past the old expiry age and a full list', () => {

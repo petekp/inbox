@@ -679,9 +679,20 @@ function checkVersion(saved) {
 // ../hooks/ledger-prompt.ts
 var NL2 = "\n";
 function outcomeText(d) {
-  if (d.how === "dismissed") return "dismissed by the user";
-  if (d.how === "expired") return "expired before the user answered";
-  return d.outcome;
+  switch (d.how) {
+    case "answered":
+      return `answered by the user: ${d.outcome}`;
+    case "done":
+      return `marked done by the user: ${d.outcome}`;
+    case "dismissed":
+      return "dismissed by the user";
+    case "expired":
+      return "expired before the user answered";
+    case "claude":
+      return `closed by the agent: ${d.outcome.replace(/^closed by [^:]+:\s*/i, "")}`;
+    case "update":
+      return `closed by the inbox: ${d.outcome}`;
+  }
 }
 
 // ../hooks/inbox-text.ts

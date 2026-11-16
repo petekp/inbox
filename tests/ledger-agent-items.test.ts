@@ -33,13 +33,43 @@ describe('items the agent recorded', () => {
     })
   })
 
-  test("a CLOSED line closes one only with the person's answer", () => {
+  test('a ledger CLOSED line never closes a recorded item, while an update-origin item keeps its behavior', () => {
     for (const outcome of ['done: picked Redis', 'no longer applies: cache dropped', 'no longer applies', 'moot', ''])
       expect(applyUpdate(recorded(), parseReply(`CLOSED: i1 | ${outcome}`)!, 2000, 1).items.map(i => i.id)).toEqual([
         'i1',
       ])
     const answered = applyUpdate(recorded(), parseReply('CLOSED: i1 | Redis')!, 2000, 1)
-    expect(answered.closed.map(c => [c.id, c.outcome, c.how])).toEqual([['i1', 'Redis', 'update']])
+    expect(answered.items.map(i => i.id)).toEqual(['i1'])
+    expect(answered.closed).toEqual([])
+
+    const fromUpdate = applyUpdate(
+      { ...EMPTY, turn: 1 },
+      parseReply('NEW: decide | - | Which cache should the API use? | Redis / Memcached | -')!,
+      1000,
+      1,
+    )
+    const closed = applyUpdate(fromUpdate, parseReply('CLOSED: i1 | Redis')!, 2000, 2)
+    expect(closed.closed.map(c => [c.id, c.outcome, c.how])).toEqual([['i1', 'Redis', 'update']])
+  })
+
+  test("a person's answer press and the agent's close tool still close a recorded question", () => {
+    const ledger = recorded()
+    const answerPress = pressed(
+      ledger,
+      undefined,
+      { action: 'answer', id: 'i1', option: 'Redis' },
+      { now: 2000, turnsStarted: 2, extraSteps: [], holdMs: 0, comparePage: '', compareInBackground: false },
+    )
+    if ('stale' in answerPress) throw new Error('Expected the recorded answer press to be current.')
+    expect(answerPress.ledger.items).toEqual([])
+    expect(answerPress.ledger.closed).toMatchObject([{ id: 'i1', how: 'answered', outcome: 'Redis' }])
+
+    const closeTool = recordClose(CLAUDE_CODE, ledger, { id: 'i1', answer: 'Redis' }, 2000, {
+      lastActions: {},
+      turnStartedAt: null,
+    })
+    expect(closeTool.ledger.items).toEqual([])
+    expect(closeTool.ledger.closed).toMatchObject([{ id: 'i1', how: 'answered', outcome: 'Redis' }])
   })
 
   test('a question back closes no question, from a CLOSED line or the close tool, while a named option closes it', () => {
@@ -310,7 +340,7 @@ describe('items the agent recorded', () => {
     ).toBe('Closed: Retry loop never backs off')
   })
 
-  test('the agent can record again what it closed, but not what the person or the update closed', () => {
+  test('re-recording reopens agent, inbox and expired closes but refuses user closures', () => {
     const closedByAgent = closeByAgent(
       CLAUDE_CODE,
       recorded(),
@@ -318,11 +348,23 @@ describe('items the agent recorded', () => {
       { reason: 'no longer applies: cache dropped' },
       1500,
     )
-    expect(addAgentItem(closedByAgent.ledger, { ...ask, rec: 'Redis' }, 2000)).toMatchObject({ is: 'added', id: 'i2' })
+    const reopened = recordItem(CLAUDE_CODE, closedByAgent.ledger, ask, 2000, TOOL_FIELDS)
+    expect(reopened.result).toStartWith('Reopened.')
+    expect(reopened.ledger.items).toMatchObject([{ id: 'i2', from: 'record' }])
+
+    for (const how of ['update', 'expired'] as const) {
+      const outcome = how === 'update' ? 'done: 回答待ちのまま変更なし' : '回答待ちのまま変更なし'
+      const closed = closeItem(recorded(), 'i1', { how, outcome }, 1500)
+      const result = recordItem(CLAUDE_CODE, closed, ask, 2000, TOOL_FIELDS)
+      expect(result.result).toStartWith('Reopened.')
+      expect(result.ledger.items).toMatchObject([{ id: 'i2', from: 'record' }])
+    }
+
     const refusals = [
       [{ how: 'answered', outcome: 'Redis' }, 'Not recorded: the user answered it (Redis).'],
+      [{ how: 'update', outcome: 'はい' }, 'Not recorded: the user answered it (はい).'],
+      [{ how: 'done', outcome: 'fixed' }, 'Not recorded: the user marked it done.'],
       [{ how: 'dismissed', outcome: 'dismissed' }, 'Not recorded: the user dismissed it.'],
-      [{ how: 'update', outcome: 'Redis' }, 'Not recorded: the inbox closed it (Redis).'],
     ] as const
     for (const [closing, result] of refusals)
       expect(

@@ -9,6 +9,8 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { noteActivity } from '../../hooks/session-turns'
+import { recordItem } from '../../hooks/tools'
+import { CODEX } from '../src/texts'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
 import { readInboxInstructions, runUpdates as runBothCalls } from '../src/update'
@@ -16,9 +18,16 @@ import { makeServer } from '../src/server'
 import { ledgerOnly, movedRollout, rolloutAt, tempDir } from './helpers'
 import { ex } from './update-fixtures'
 
-const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
+const runUpdates = (
+  dir: string,
+  id: string,
+  ask: (prompt: string) => Promise<string | null>,
+  now: () => number,
+  recordedItemsOnly = false,
+) =>
   runBothCalls(dir, id, ledgerOnly(ask), now, {
     readPersonInstructions: () => readInboxInstructions({ HOME: '/tmp/inbox-codex-test-home' }),
+    recordedItemsOnly,
   })
 
 if (process.env.INBOX_STATUS_WORKER_DIR) {
@@ -228,6 +237,45 @@ test('an Explain exchange keeps its question open while applying the rest of the
     ['Check the build'],
   )
   assert.deepEqual(applied.pending, [])
+})
+
+test('seven Codex-recorded questions stay open after either CLOSED outcome in both modes', async t => {
+  for (const recordedItemsOnly of [false, true])
+    for (const outcome of ['done: 回答待ちのまま変更なし', '回答待ちのまま変更なし']) {
+      const dir = tempDir()
+      t.after(() => rm(dir, { recursive: true, force: true }))
+      const answer = Array.from({ length: 7 }, (_, n) => `CLOSED: i${n + 1} | ${outcome}`).join('\n')
+      await updateState(dir, 's1', s => {
+        let ledger = s.ledger
+        for (let n = 1; n <= 7; n++)
+          ledger = recordItem(
+            CODEX,
+            ledger,
+            {
+              kind: 'question',
+              ask: `Which option should question ${n} use?`,
+              options: ['A', 'B'],
+            },
+            n,
+          ).ledger
+
+        return { ...s, ledger, pending: [{ ex: ex(1, 'The seven questions are still waiting.'), turnsStarted: 1 }] }
+      })
+      await runUpdates(
+        dir,
+        's1',
+        async () => answer,
+        () => 5,
+        recordedItemsOnly,
+      )
+
+      const after = await readState(dir, 's1')
+      assert.deepEqual(
+        after.ledger.items.map(item => item.id),
+        Array.from({ length: 7 }, (_, n) => `i${n + 1}`),
+      )
+      assert.deepEqual(after.ledger.closed, [])
+    }
 })
 
 test('a finished turn gives the inbox model at most forty distinct nonempty activity lines', async () => {

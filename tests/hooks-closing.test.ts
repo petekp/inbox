@@ -114,8 +114,10 @@ test(
       'Not closed: no open item or finding has the id i9.',
     )
     expect((await close({ id: 'i1', reason: 'again' })).result).toBe('Already closed: the user answered it (Deno).')
-    expect((await close({ id: 'i2', answer: 'yes' })).result).toBe('Already closed: you closed it earlier.')
-    expect((await close({ id: 'f3', reason: 'fixed again' })).result).toBe('Already closed: you closed it earlier.')
+    expect((await close({ id: 'i2', answer: 'yes' })).result).toBe('Already closed: the agent closed it earlier.')
+    expect((await close({ id: 'f3', reason: 'fixed again' })).result).toBe(
+      'Already closed: the agent closed it earlier.',
+    )
 
     await clock.advance(9000)
     expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()

@@ -61,7 +61,7 @@ const asRecorded = {
   documentPreview: THRESHOLDS.document_preview,
 }
 
-test('with recordedItemsOnly, an update drops NEW asks, keeps TODOs and recorded asks, adds steps, and closes an ask on the answer', async () => {
+test('with recordedItemsOnly, an update drops NEW asks, keeps TODOs and recorded asks, adds steps, and leaves closes to the person or close tool', async () => {
   let answer = ANSWER
   const { host } = fakeHost(async () => answer)
   await host.update(recordedThenReplied)
@@ -79,8 +79,40 @@ test('with recordedItemsOnly, an update drops NEW asks, keeps TODOs and recorded
   await host.update(s => finishTurn(s, 'Keeping the 5 and 15 USD thresholds.'))
   await runUpdates({ ...host, recordedItemsOnly: true })
   const closed = (await host.read()).ledger
-  expect(closed.items.map(i => i.id)).toEqual(['i2'])
-  expect(closed.closed.map(c => [c.id, c.outcome])).toEqual([['i1', 'Keep 5 and 15 USD']])
+  expect(closed.items.map(i => i.id)).toEqual(['i1', 'i2'])
+  expect(closed.closed).toEqual([])
+})
+
+test('seven agent-recorded questions stay open after either CLOSED outcome in both modes', async () => {
+  for (const recordedItemsOnly of [false, true])
+    for (const outcome of ['done: 回答待ちのまま変更なし', '回答待ちのまま変更なし']) {
+      const answer = Array.from({ length: 7 }, (_, n) => `CLOSED: i${n + 1} | ${outcome}`).join('\n')
+      const { host } = fakeHost(async () => answer)
+      await host.update(s => {
+        let ledger = s.ledger
+        for (let n = 1; n <= 7; n++)
+          ledger = recordItem(
+            CLAUDE_CODE,
+            ledger,
+            {
+              kind: 'question',
+              ask: `Which option should question ${n} use?`,
+              options: ['A', 'B'],
+            },
+            n,
+          ).ledger
+
+        return finishTurn({ ...s, ledger }, 'The seven questions are still waiting.')
+      })
+      await runUpdates({ ...host, recordedItemsOnly })
+
+      const after = (await host.read()).ledger
+      expect(
+        after.items.map(i => i.id),
+        `mode ${recordedItemsOnly}, outcome ${outcome}`,
+      ).toEqual(Array.from({ length: 7 }, (_, n) => `i${n + 1}`))
+      expect(after.closed).toEqual([])
+    }
 })
 
 test('with recordedItemsOnly, a legacy ask survives an unanswered close, TODOs remain, NEW asks drop, and an answer closes the ask', async () => {

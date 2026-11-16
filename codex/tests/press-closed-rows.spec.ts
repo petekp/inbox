@@ -204,7 +204,7 @@ test('Codex closing an item reads as Codex in its outcome', () => {
     lastActions: {},
     turnStartedAt: null,
   })
-  assert.equal(again.result, 'Already closed: you closed it earlier.')
+  assert.equal(again.result, 'Already closed: the agent closed it earlier.')
   assert.equal(again.ledger, closed.ledger)
 })
 

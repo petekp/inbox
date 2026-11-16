@@ -39,7 +39,7 @@ test('a held row keeps its closed record from the agent’s tools and the per-re
 
   assert.deepEqual(
     (await readState(dir, 's1')).ledger.closed.map(c => c.id),
-    ['i1', ...others],
+    ['i1', ...others.slice(0, 7)],
   )
   const r = await call(
     'inbox_press',

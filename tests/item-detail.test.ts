@@ -25,7 +25,7 @@ test('question and task explanations are recorded, replaced, and kept by both up
   for (const recordedOnly of [false, true]) {
     const applied = applyUpdate(
       second.ledger,
-      recordedOnly ? recordedAsksOnly(update, isPersonsAnswer) : update,
+      recordedOnly ? recordedAsksOnly(update, second.ledger, isPersonsAnswer) : update,
       1200,
       1,
     )

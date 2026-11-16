@@ -15,7 +15,7 @@ export function systemText(host: Host, instructions: string | null = null): stri
   const system = `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
-- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
+- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design | origin
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items and findings the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again in other words.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
@@ -26,7 +26,7 @@ Input:
 Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
 
 NONE: nothing in the exchange changes the ledger. Write it alone.
-CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
+CLOSED: <id> | the outcome, at most 8 words, in one of three forms. Use CLOSED only for an item whose origin is update. Never write CLOSED for an agent-recorded item, even when the person answered it; the agent's close tool closes it when appropriate. When the person answered an update-origin item in <person>, write their answer. Otherwise write "done: <what the agent did>" when its work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each update-origin item in <open> the reply or <activity> shows is done or no longer applies, or the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers). A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
   For a finding in <findings> that a NEW line or an item in <open> asks the person about. item: "new N" for the Nth NEW line in your answer, or an id from <open>. The item takes the finding's place, so the person sees it once.
@@ -65,7 +65,7 @@ export function ledgerBlocks(ledger: Ledger): string[] {
     .filter(i => !i.sourceManaged)
     .map(
       i =>
-        `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? '-'} | ${i.ask} | ${i.options.join(' / ') || '-'} | ${i.rec ?? '-'} | ${i.isDesignChoice ? 'design' : '-'}`,
+        `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? '-'} | ${i.ask} | ${i.options.join(' / ') || '-'} | ${i.rec ?? '-'} | ${i.isDesignChoice ? 'design' : '-'} | ${i.from === 'record' ? 'record' : 'update'}`,
     )
     .join(NL)
   const findings = ledger.findings
@@ -107,8 +107,18 @@ export function personText(person: string | null, trigger: string | null): strin
 }
 
 export function outcomeText(d: Pick<Closed, 'how' | 'outcome'>): string {
-  if (d.how === 'dismissed') return 'dismissed by the user'
-  if (d.how === 'expired') return 'expired before the user answered'
-
-  return d.outcome
+  switch (d.how) {
+    case 'answered':
+      return `answered by the user: ${d.outcome}`
+    case 'done':
+      return `marked done by the user: ${d.outcome}`
+    case 'dismissed':
+      return 'dismissed by the user'
+    case 'expired':
+      return 'expired before the user answered'
+    case 'claude':
+      return `closed by the agent: ${d.outcome.replace(/^closed by [^:]+:\s*/i, '')}`
+    case 'update':
+      return `closed by the inbox: ${d.outcome}`
+  }
 }

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE, MAX_TOOL_DESCRIPTION, guidedCloseDescription } from '../hooks/model-text'
-import { answerNote, carryText, questionNumbers } from '../hooks/inbox-text'
-import { ledgerBlocks, buildPrompt } from '../hooks/ledger-prompt'
+import { answerNote, carryText, closedText, questionNumbers } from '../hooks/inbox-text'
+import { ledgerBlocks, buildPrompt, outcomeText, systemText } from '../hooks/ledger-prompt'
 import { CLOSED_CONTEXT_LIMIT } from '../hooks/ask-match'
 import { EMPTY } from '../hooks/ledger'
 import { applyUpdate } from '../hooks/ledger-update'
@@ -87,6 +87,15 @@ describe('questionNumbers', () => {
 })
 
 describe('buildPrompt', () => {
+  test('identifies item origin and limits CLOSED to update-origin items', () => {
+    const recorded = applyUpdate(EMPTY, parseReply('NEW: decide | - | Use Node? | Yes / No | -')!, 1, 1)
+    const ledger = { ...recorded, items: [{ ...recorded.items[0]!, from: 'record' as const }] }
+    const open = ledgerBlocks(ledger)[0]!
+    expect(open).toContain('i1 | decide | - | Use Node? | Yes / No | - | - | record')
+    expect(systemText(CLAUDE_CODE)).toContain('Use CLOSED only for an item whose origin is update.')
+    expect(systemText(CLAUDE_CODE)).toContain("the agent's close tool closes it when appropriate.")
+  })
+
   test('a long reply keeps its opening and its closing question, and long activity keeps its latest lines', () => {
     const reply = `Summary of the work.\n${'Detail line.\n'.repeat(2000)}Ship it now, or wait for review?`
     const activity = Array.from({ length: 400 }, (_, i) => `edited file-${i}.ts`)
@@ -116,6 +125,49 @@ describe('buildPrompt', () => {
     expect(prompt).not.toContain('Problem number 0 →')
     expect(prompt.split('\n').filter(l => l.startsWith('issue: Problem number')).length).toBeLessThan(40)
   })
+})
+
+test('closed inbox text names the closer from the saved how value', () => {
+  const closed = [
+    { id: 'i1', kind: 'question' as const, ask: 'Which cache?', outcome: 'Redis', how: 'answered' as const, at: 1 },
+    { id: 'i2', kind: 'question' as const, ask: 'Ship it?', outcome: 'done', how: 'done' as const, at: 2 },
+    { id: 'i3', kind: 'question' as const, ask: 'Add a flag?', outcome: 'dismissed', how: 'dismissed' as const, at: 3 },
+    {
+      id: 'i4',
+      kind: 'question' as const,
+      ask: 'Wait for review?',
+      outcome: 'expired',
+      how: 'expired' as const,
+      at: 4,
+    },
+    {
+      id: 'i5',
+      kind: 'question' as const,
+      ask: 'Use npm?',
+      outcome: 'closed by codex: no longer applies',
+      how: 'claude' as const,
+      at: 5,
+    },
+    {
+      id: 'i6',
+      kind: 'question' as const,
+      ask: 'Keep the old name?',
+      outcome: 'done: rename completed',
+      how: 'update' as const,
+      at: 6,
+    },
+  ]
+  expect(closed.map(outcomeText)).toEqual([
+    'answered by the user: Redis',
+    'marked done by the user: done',
+    'dismissed by the user',
+    'expired before the user answered',
+    'closed by the agent: no longer applies',
+    'closed by the inbox: done: rename completed',
+  ])
+  expect(closedText(closed)).toContain('"Which cache?" → answered by the user: Redis')
+  expect(closedText(closed)).toContain('"Use npm?" → closed by the agent: no longer applies')
+  expect(closedText(closed)).toContain('"Keep the old name?" → closed by the inbox: done: rename completed')
 })
 
 describe('guidedCloseDescription', () => {

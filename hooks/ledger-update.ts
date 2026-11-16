@@ -5,6 +5,7 @@ import {
   matchOpen,
   raisesOnly,
   CLOSED_CONTEXT_LIMIT,
+  canAskAgain,
   recommendedOption,
   repeatsClosed,
   repeatsSettled,
@@ -115,8 +116,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     const helps = u.helped.filter(h => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps)
     const isQuestionBackOutcome =
       outcome !== undefined && item.kind === 'question' && isQuestionBack(outcome, item.options)
-    const isClosing =
-      outcome !== undefined && !isQuestionBackOutcome && (item.from !== 'record' || isPersonsAnswer(outcome))
+    const isClosing = outcome !== undefined && !isQuestionBackOutcome && item.from !== 'record'
     if (isClosing) closed.push(closedRecord(item, { outcome, how: 'update' }, now))
     else items.push(withUpdate({ ...item, helps }, u.updated))
   }
@@ -135,7 +135,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
       addedIds.push(null)
       continue
     }
-    if (repeatsClosed(ledger.closed, a, promptAt, ledger.closedFindings)) {
+    if (repeatsClosed(ledger.closed, a, promptAt, isPersonsAnswer, ledger.closedFindings)) {
       addedIds.push(null)
       continue
     }
@@ -171,7 +171,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     const isKnown =
       items.some(i => restates(i.ask, work)) ||
       ledger.findings.some(f => !f.feedOwned && restates(f.title, work)) ||
-      repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt)
+      repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt, isPersonsAnswer)
     if (isKnown) continue
     items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: 'update' })
     nextId += 1
@@ -279,7 +279,7 @@ export function addFinding(
 }
 
 type AgentItemResult =
-  | { ledger: Ledger; is: 'added'; id: string; expired: Item | null }
+  | { ledger: Ledger; is: 'added'; id: string; expired: Item | null; reopened?: boolean }
   | { ledger: Ledger; is: 'source-managed'; id: string }
   /** `newRec` is the recommendation the record changed the item to, or null when it kept the item's own. */
   | {
@@ -299,10 +299,10 @@ type AgentItemResult =
 /**
  * Adds a question or task the agent recorded. One that an open item restates adds its steps and its design-choice mark
  * to that item, gives it the recommendation when that names one of the item's options, and stamps its `reportedAt`.
- * One that repeats a closed item is skipped, unless that item expired or the agent closed it. So is one that raises a
+ * One that repeats a closed item is skipped, unless the inbox closed it, it expired or the agent closed it. So is one that raises a
  * finding the person dismissed.
- * Unanswered questions and tasks stay open until they are answered or closed by the person. A finding the new ask
- * restates closes, so one thing shows in one list.
+ * Unanswered questions and tasks stay open until answered by the person, closed by the person's press or the agent's
+ * close tool, or expired. A finding the new ask restates closes, so one thing shows in one list.
  */
 export function addAgentItem(
   ledger: Ledger,
@@ -366,9 +366,10 @@ export function addAgentItem(
       hasNewDocument,
     }
   }
-  const isAskable = (c: Closed) => c.how === 'expired' || c.how === 'claude'
+  const recentClosed = ledger.closed.slice(-CLOSED_CONTEXT_LIMIT)
+  const reopened = recentClosed.findLast(c => canAskAgain(c, isPersonsAnswer) && repeatsSettled(c, candidate))
   const repeated =
-    ledger.closed.slice(-CLOSED_CONTEXT_LIMIT).findLast(c => !isAskable(c) && repeatsSettled(c, candidate)) ??
+    recentClosed.findLast(c => !canAskAgain(c, isPersonsAnswer) && repeatsSettled(c, candidate)) ??
     dismissedFindingOf(ledger.closedFindings, entry.ask)
   if (repeated) return { ledger, is: 'closed', record: repeated }
 
@@ -382,5 +383,5 @@ export function addAgentItem(
     [],
   )
 
-  return { ledger: next, is: 'added', id, expired: null }
+  return { ledger: next, is: 'added', id, expired: null, ...(reopened ? { reopened: true } : {}) }
 }

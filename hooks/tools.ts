@@ -1,6 +1,6 @@
 import { isQuestionBack, recommendedOption } from './ask-match'
 import { closeByAgent, reopenItem } from './ledger-close'
-import { addAgentItem, addFinding } from './ledger-update'
+import { addAgentItem, addFinding, isPersonsAnswer } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import { cutInline } from './inline'
 import type { Host } from './model-text'
@@ -183,7 +183,7 @@ export function recordItem(
       ledger,
       'title' in r.record
         ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.`
-        : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`,
+        : `Not recorded: ${closedHow(r.record, true)}. Ask it again only if they bring it up.`,
     )
   const body = input.kind === 'question' ? questionBody(input, options) : {}
   const before = r.ledger.items.find(i => i.id === r.id)
@@ -207,7 +207,7 @@ export function recordItem(
   return {
     ledger: recorded,
     result:
-      `Recorded. The user sees it in ${host.surface}.` +
+      `${r.reopened ? 'Reopened' : 'Recorded'}. The user sees it in ${host.surface}.` +
       leftOut +
       missingText(after, fields.record) +
       (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : '') +
@@ -250,7 +250,7 @@ function recordFinding(host: Host, ledger: Ledger, input: Record<string, unknown
   }
 }
 
-function closedHow(c: Pick<Closed, 'how' | 'outcome'>): string {
+function closedHow(c: Pick<Closed, 'how' | 'outcome'>, asRecordedAnswer = false): string {
   switch (c.how) {
     case 'answered':
       return `the user answered it (${c.outcome})`
@@ -261,9 +261,11 @@ function closedHow(c: Pick<Closed, 'how' | 'outcome'>): string {
     case 'expired':
       return 'it expired'
     case 'claude':
-      return 'you closed it earlier'
+      return 'the agent closed it earlier'
     case 'update':
-      return `the inbox closed it (${c.outcome})`
+      return asRecordedAnswer && isPersonsAnswer(c.outcome)
+        ? `the user answered it (${c.outcome})`
+        : `the inbox closed it (${c.outcome})`
   }
 }
 

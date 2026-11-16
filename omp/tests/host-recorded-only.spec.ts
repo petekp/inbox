@@ -56,3 +56,25 @@ test('with INBOX_RECORDED_ITEMS_ONLY=1, a legacy ask closes only on an answer wh
     ['i1', 'Keep the current threshold'],
   ])
 })
+
+test('seven omp-recorded questions stay open after both CLOSED outcome forms', async () => {
+  createInbox(pi(), { ...deps(), recordedItemsOnly: '1' })
+  await prompt('Please keep these questions open until they are answered.')
+  for (let n = 1; n <= 7; n++)
+    await record({
+      kind: 'question',
+      ask: `Which option should question ${n} use?`,
+      options: ['A', 'B'],
+    })
+  w.reply = Array.from(
+    { length: 7 },
+    (_, n) => `CLOSED: i${n + 1} | ${n < 4 ? 'done: ' : ''}回答待ちのまま変更なし`,
+  ).join('\n')
+  await endAgent('The seven questions are still waiting.')
+  await settle()
+
+  expect(state().ledger.items.map((item: { id: string }) => item.id)).toEqual(
+    Array.from({ length: 7 }, (_, n) => `i${n + 1}`),
+  )
+  expect(state().ledger.closed).toEqual([])
+})

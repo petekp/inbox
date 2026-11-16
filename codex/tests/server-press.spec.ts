@@ -35,7 +35,10 @@ test('an answer waits out its Undo window, then goes into the tab’s thread wit
   const prompt = notePrompt(s, 'Re "Ship it?": Yes', 200)
   assert.deepEqual(prompt.state.turn.press, { id: 'i1', action: 'answer' })
   assert.deepEqual(prompt.state.sent, [])
-  assert.match(prompt.notes.join('\n'), /Closed since you last read the inbox:\n- "Ship it\?" → Yes/)
+  assert.match(
+    prompt.notes.join('\n'),
+    /Closed since you last read the inbox:\n- "Ship it\?" → answered by the user: Yes/,
+  )
 })
 
 test('a press passes --resume only to a codex whose queue help lists it, and asks each binary once', async () => {
