@@ -1,53 +1,97 @@
-# Earlier answers at ask time
+# Earlier answers on question rows
 
 Status: proposed. Nothing is built. Building it needs the owner's yes.
 
-When an agent records a question, the inbox searches the person's earlier answers in every session and host. It adds the three closest answers, and the new question's close id, to the `record` tool's answer. The agent reads them and decides. If an earlier answer settles the question, the agent closes it with that answer as its reason and goes on. Otherwise it asks as usual.
+When a question reaches the person's inbox, its row shows the closest answer the person gave to a similar question before. The person can answer with that earlier answer in one press, or ignore it. The agent never sees the earlier answer, and nothing closes on its own.
 
-The check needs no model call. It is a keyword search (BM25) over local files.
-
-The question is always recorded first, so the check never refuses an ask. A wrong close does hide one, though. Most earlier answers shown will be near misses, and an agent that closes on one loses a question the person needed. That is the main risk, and the plan tests for it before anything ships.
+The check needs no model call. It is a keyword search (BM25) over local files, run once when the question is added.
 
 ## Why
 
-A measurement of one person's sessions, from 11-07 to 11-16 01:03 UTC, found that 8% to 17% of 2,076 inbox questions repeated one the person had already answered. The figure depends on the labeller. The first labeller found 163 repeats, 7.9% (6.4% to 9.4%). A second labeller's calls give 16.9% (11.4% to 24.4%). A full search of 60 random questions found 12. Every rate clears the 2% floor set before the run.
+A measurement of one person's sessions, from 11-07 to 11-16 01:03 UTC, found that 8% to 17% of 2,076 inbox questions repeated one the person had already answered. The figure depends on the labeller. The first labeller found 163 repeats, 7.9% (6.4% to 9.4%). A second labeller's calls give 16.9% (11.4% to 24.4%). A full search of 60 random questions found 12.
 
-BM25 over earlier questions and answers ranked the earlier answer in its top three for 117 of the first labeller's 163 repeats, 71.8% (64.9% to 79.3%). That is an upper bound, since the full search found repeats the labeller never saw. On the second labeller's repeats it was 84.5% (64.0% to 93.7%), and on the full search's, 7 of 12. The inbox's own test, `restates` in `hooks/ask-match.ts`, caught 6.1% (2.8% to 10.0%). It flagged 5.6% of questions that were not repeats.
-
-110 of the 163 repeats matched an answer from another session. 71 of them matched an answer more than a day old. 104 of the 163 were "covered" repeats, where an earlier answer set a rule for a different case, such as "decide the order yourself". A fixed rule catches none of those, and an agent reading the earlier answer can.
+BM25 over earlier questions and answers ranked the earlier answer first for 82 of the first labeller's 163 repeats, and in its top three for 117. 110 of the 163 matched an answer from another session, and 71 of those 110 matched one more than a day old. 104 were "covered" repeats, where an earlier answer set a rule for a different case, such as "decide the order yourself".
 
 The measurement's limits apply here:
 
 - It left out chat questions, dialogs and Codex sessions. Their effect on the rate is unknown.
 - It left out answers typed in chat and backlog decisions. That lowers the rate.
-- The labellers disagree, mostly on covered repeats. Their agreement, weighted to the population, is a kappa of 0.28.
-- Keyword search ran over answers back to early October. A new history holds less, so recall starts lower.
+- The labellers agree only weakly, mostly on covered repeats: a kappa of 0.28, weighted to the population.
+- Keyword search ran over answers back to early October. A new history holds less, so it matches less at first.
 
-Intervals resample sessions unless marked Wilson. The measurement and its scripts stay outside this repo, because they hold the person's questions.
+Intervals resample sessions. The measurement and its scripts stay outside this repo, because they hold the person's questions.
 
-## What a record-time check can reach
+## Why the person judges, not the agent
 
-88 of the 163 repeats came through an agent's `record` call. The other 75 had no `record` call of their own. The inbox model most likely added them from the agent's reply. A check on `record` never sees those.
+An earlier draft had the agent read the earlier answers and close the question itself. A private test on 80 real questions failed its bar. Opus, given the shipped guidance as its whole prompt and no tools, closed 2 of 40 repeats, against a bar of at least 20. It closed 1 of 40 near misses, and that close was wrong: the person later answered the question the other way. The bar of 20 also needed closes on covered repeats, which the draft wording told the agent not to make.
 
-BM25 ranked the earlier answer in its top three for 61 of the 88. That is 69.3% of record-call repeats (59.0% to 78.0%, Wilson) and 37.4% of all repeats (30.4% to 45.1%, Wilson). It assumes the agent acts on every match shown, so it is an upper bound. Wilson intervals ignore clustering by session, so the true intervals are wider.
+The person's own later answers explain part of it. At least 10 of the 35 labelled repeats with an answer got a different answer from the earlier one. Whether an old answer still holds is often something only the person knows. A row that shows the answer and lets them press it puts that judgment where it belongs.
 
-The same search shows near misses far more often. Of the 1,081 questions agents recorded, the first labeller called 325 follow-ups and 24 "changed". A follow-up builds on an earlier answer and asks the next step. A changed question asks again because the earlier answer deferred it or the situation moved. The earlier answer ranked in the top three for 225 of the follow-ups and 17 of the changed questions. So for every 61 shown repeats the agent should close, it sees 242 shown answers it should not close on. A BM25 score floor does not separate the two groups, so the plan sets none. Every record shows three answers.
+A row also reaches more repeats. An agent's `record` call never saw the 75 repeats the inbox model added from replies. Every question reaches a row, however it was added.
 
-The measurement also found 120 questions asked while an equivalent one was open, 119 in another session. Every one came from a reply, not a `record` call. A record-time check reaches none of them, so they belong to the next step below.
+## What the row shows
+
+The owner picked the design from three mockups of the Codex tab's demo: one quiet line in the open row. When a question row opens, its ask tree shows one more muted line under the context, such as:
+
+```
+You answered Flick 3 days ago, in glasses-app, to "Which gesture should clear a notification card?"
+```
+
+The line shows only on the open row, as the context does today. A folded row looks as it does now, so the rows that carry an earlier answer add nothing to the list. The line names the earlier question as well as the answer, because about 9 in 10 answers are one to five words and mean little alone.
+
+The option buttons stay as they are. When the earlier answer is one of the new question's options, pressing that option answers with it, and the row adds no button. When it is not, the row adds one answer button labelled with the earlier answer, after the agent's options. It sends the agent the same message an option press sends, with the earlier answer as the text.
+
+Today's code refuses that press, so the build changes three places:
+
+- `pressed` in `hooks/pressed.ts` accepts an answer only when it is one of the item's options. It also accepts the item's `earlier` answer.
+- `actionsOf` in `hooks/action-plan.ts` adds the button after the options, with the next choice key. The "All N options" count and the option descriptions count only the agent's options.
+- Undo of that press reopens the question as any answer's Undo does, and the history drops the answer.
+
+Ignoring it costs nothing beyond reading the line. A wrong match never acts unless the person presses it, and a press shows its feedback and closes as any answer does.
+
+### Which rows show one
+
+A line on every question would be noise. In the measurement, every question had some earlier answer, so every row would show one. Only about 1 in 25 would show the earlier answer to a repeat, and about 2 in 3 would relate to nothing. A floor on the top match's BM25 score keeps the line to rows where it is more likely to help:
+
+| Floor | Question rows that show a line | Shown rows that are repeats, top match | Shown rows with a related answer |
+| --- | --- | --- | --- |
+| None | 2,076, all | 82 | 34% |
+| 15 | 1,225, 59% | 73 | 44% |
+| 18 | 777, 37% | 67 | 52% |
+| 20 | 511, 25% | 52 | 57% |
+| 25 | 207, 10% | 23 | 67% |
+
+A related answer is a repeat, a follow-up or a changed question, as labelled. A follow-up builds on an earlier answer. A changed question asks again because the earlier answer put it off or the situation moved. For those, the earlier answer is useful context even when it does not settle the question. The related share counts a labelled match anywhere in the candidates, not only the top one, so it is an upper bound.
+
+A raw floor assumes a full history. Raw BM25 scores grow with the history, so a fixed floor of 18 would show the line on fewer rows at first. The review of this plan found that a history started at build would show it on about 16% of rows, catching 40 repeats instead of 67. So the floor is relative: the top match's score divided by the best score the query could reach. The review found that a relative floor of 0.20 shows the line on 26% to 29% of rows as the history grows, with about the same share of repeats. The build checks that figure on the measurement before it sets the floor.
 
 ## Where it runs
 
-All three hosts already answer `record` through `recorded` in `hooks/session-presses.ts`, which calls `toolAnswer` in `hooks/tools.ts`. The check goes there, so every host gets the same text.
+The search runs once, when a question is added to the ledger: from an agent's `record` call or from the ledger call's update after a reply. Both paths already pass through shared code that every host calls: `recorded` in `hooks/session-presses.ts`, and `applied` in `hooks/session-turns.ts`, which calls `applyExchangeUpdate`.
 
-| Host | Calls `recorded` from | Reads the history |
+Each host reads the history before that step and passes it in. A new shared module, `hooks/earlier-answers.ts`, ranks the history for each question the step added, and stores the top match on the item as `earlier`. The view never searches. It reads `earlier` from the item, so a row's line never changes under the person, and every look shows the same match.
+
+| Host | Reads the history with |
+| --- | --- |
+| The mod, for the terminal and desktop looks | `$.fs.list` and `$.fs.read` |
+| Codex | `node:fs`, in its MCP server and its update process |
+| omp | `node:fs` |
+
+`earlier` is a new optional field on `Item`, so saved state needs no upgrade. It goes in `types/parts/items.d.ts`, and `node scripts/build-types.mjs` rebuilds the types. Closed records copy the item, and the mod keeps every session's records in one store capped at 4 MB, so `earlier` caps each text it holds at 200 characters. No text a model reads includes it today: `inboxText`, `buildPrompt` and the Status prompt each read named item fields and never a whole item. Codex's `inbox` tool, which its model calls, reads `RowView`, so its answer must leave the new line out. A unit test checks that no text a model reads contains the earlier answer.
+
+## Each look
+
+`hooks/view.ts` adds the line to `RowView`, on open rows only, as it does `contextLine`. The added answer button comes from the row's actions in `hooks/action-plan.ts`, so `rowKeyPlan` places it and every look draws the same words and order. Each look draws the line where it draws an open question's context today, in its ask tree.
+
+| Look | Draws the line in | Draws the added answer as |
 | --- | --- | --- |
-| The mod (terminal and desktop looks) | `hooks/mod-sessions.ts` | `$.fs.list` and `$.fs.read` |
-| Codex | `codex/src/server.ts`, in the MCP server | `node:fs` |
-| omp | `omp/src/host.ts` | `node:fs` |
+| Terminal | `hooks/pane-ask-tree.tsx` | A choice key, after the agent's options |
+| Desktop | `hooks/pane-ask-tree.tsx` | A native Button. Hotkeys do nothing there, so the button is the only way |
+| Codex tab | `codex/src/tab-ask-tree.tsx` | A button |
+| omp panel | `omp/src/panel-ask-tree.ts` | A choice key, handled in `omp/src/panel-keys.ts` |
+| Herdr | `herdr/src/draw.ts` | A button. Herdr draws the rows a host publishes, and its presses go back to that host |
 
-`toolAnswer` stays pure. Each host reads the history before it takes the session lock, then passes the earlier answers into `recorded`. A new shared module, `hooks/earlier-answers.ts`, ranks them and writes the lines the agent reads. `recordItem` adds those lines, and the new item's id, after "Recorded.". Today the record answer gives no id, and `close` needs one. The id otherwise reaches the agent only in the `inbox:` text beside the person's next prompt. The eval stand-ins, `evals/probe.ts` and `evals/omp-probe.ts`, pass a case's invented history the same way.
-
-The feature gets a `FeatureId` in `hooks/clients.ts`, marked `full` for `claude-code`, `codex` and `omp`. That file is near its 5,000-token limit, so the entries may need a split. No look draws anything new. The Herdr look draws a session a host publishes, so it changes only as that host's rows change.
+The feature gets a `FeatureId` in `hooks/clients.ts`, marked `full` for `claude-code`, `codex` and `omp`. That file is near its 5,000-token limit, so the entries may need a split. The demo in `hooks/demo.ts` gets a question with an earlier answer, so each look's demo shows the line and the press.
 
 ## What it searches
 
@@ -57,133 +101,93 @@ Today no store reaches far enough. Each session keeps its 12 newest closed items
 
 So the plan adds one folder all three hosts share, `$XDG_STATE_HOME/inbox/questions/`, defaulting to `~/.local/state/inbox/questions/`. It holds one file per session, named by host and session id. Only that session's host writes it, so the files need no lock. The mod can write whole files but not append, and one file per session needs neither.
 
-Each file holds a version number, the session's repository name, the time it was saved, and its questions. The repository name comes from the session folder's Git common directory, so worktrees of one repository share a name. For each question the file keeps the ask, the options, the time it was asked, and the answer and its time. It also records which earlier answers each record was shown, and whether the agent closed the question as answered before. "Shows it works" below reads those.
+Each file holds a version number, the session's repository name, the time it was saved, and its questions. The repository name comes from the session folder's Git common directory, so worktrees of one repository share a name. For each question the file keeps the ask, the options, the time it was asked, and the answer and its time. It also keeps the earlier answer its row showed, and whether the person answered with it. "What shows it works" reads those.
 
-Only questions the person answered count as earlier answers: closed items with `how: 'answered'`. A question closed by an agent, the inbox model, Done, a dismissal or expiry is left out, so an agent's own decision never passes as the person's answer. Dismissed questions stay with today's per-session rule, `repeatsSettled`.
+Only answers the person gave count as earlier answers. Today's closes do not mark that cleanly:
 
-A shared function, `questionHistory(previous, session)`, merges the ledger's answered questions into the session's file. Each host calls it whenever a save changes the ledger's closed list: the mod in its saves, Codex and omp in `updateState`. A question the inbox model added from a reply goes in too, so later searches find its answer. On its first run, each host seeds the folder from the sessions it already keeps, so the history starts with up to 12 answers from each of 40 sessions.
+- An answer press closes the item with `how: 'answered'`.
+- A typed reply leaves the item open. The inbox model closes it later with `how: 'update'`, and its outcome holds the answer. An update close can also mean the question no longer applies.
+- An agent's `close` with an answer is also stored as `answered`. The guidance tells agents to pass the person's answer, but a coordinator may pass its own decision.
 
-The history keeps answers for 180 days. The measurement's pool spans 5.7 weeks, and 15 of the 163 repeats matched an answer more than 14 days old, so older answers still matter. Nothing measured beyond 5.7 weeks. A file of an older version is read through an upgrade function, as session state is today.
+So the history keeps answered and update closes, and stores each one's `how`, with a mark when the close followed a typed reply. The ledger prompt has the inbox model write a close that is not an answer as "done: …" or "no longer applies: …", so update closes in those two forms are left out, as the measurement's extract left them out. Done, dismissed, expired and agent closes with a reason are left out too. The measurement did not record `how`, so how much this set differs from the measured answers is unknown. "What shows it works" splits its counts by `how`, so a later change can drop a kind that misleads.
+
+A shared function, `questionHistory(previous, session)`, merges the ledger's closed questions into the session's file. Each host calls it whenever a save changes the ledger's closed list, and drops an answer whose question was reopened. Codex writes session state from both its MCP server and its update process, so it writes the history under the same session lock. On its first run, each host seeds the folder from the sessions it already keeps, so the history starts with up to 12 answers from each of 40 sessions.
+
+The history keeps answers for 180 days. 15 of the 163 repeats matched an answer more than 14 days old, so older answers still matter. Nothing measured beyond 5.7 weeks. A file of an older version is read through an upgrade function, as session state is today.
 
 ### Privacy
 
-The repo is public. The history lives only under the person's home folder, as each host's store does today. Tests and eval cases use invented questions. No real question, answer or path goes into code, fixtures or docs.
+The repo is public. The history lives only under the person's home folder, as each host's store does today. Tests and the demo use invented questions. No real question, answer or path goes into code, fixtures or docs.
 
-This changes a settled tradeoff. `docs/principles.md` says each session has its own inbox and views across sessions come later. Today every `inbox:` text an agent reads comes from its own session. With this check, a record answer carries answers from other sessions, other projects and other hosts. An answer given in a Claude Code session can then reach Codex's model or omp's provider. The owner decides whether that is acceptable; see "Decisions".
+The owner decided that earlier answers may cross sessions, projects and hosts. The row design narrows what crosses. An earlier answer is drawn on the person's own row and reaches no model. It reaches an agent only when the person presses it, as their answer to that agent's question.
 
-Limiting the search to one repository keeps projects apart. Limiting it to one project folder caught 76 of the 163 repeats instead of 117, because many sessions run in worktrees. Limiting it to one repository falls between those figures and was not measured.
+This still changes a settled tradeoff. `docs/principles.md` says each session has its own inbox and views across sessions come later. A row that shows an answer from another session is the first such view. The principles doc gets a line saying so.
 
 ### The search
 
-The search is BM25 over each earlier question's ask and answer, as measured. The query is the new question's ask and options. It shows the top three. Each earlier answer counts once, so two copies of one answer never take two places.
+The search is BM25 over each earlier question's ask and answer, as measured. The query is the new question's ask and options. Each earlier answer counts once. An answer to the same item never counts.
 
-`restates` stays as it is. Within a session, `matchOpen` and `repeatsSettled` still merge or refuse a repeat before the search runs. The search covers what they let through.
-
-## What the agent sees
-
-The lines follow "Recorded. The user sees it in …". This is a draft. The tests below decide the final wording before anything ships.
-
-```
-Its close id is i35. The user answered similar questions before. Close i35 only when one of these answers this exact question. Use the reason "answered before: <their answer>", act on that answer, and leave the question out of your reply. An answer to an earlier step, a related case, or one the user put off does not settle it: ask as usual.
-- 3 days ago, in shop-api: "Which cache should the product API use?" Answer: "In-memory"
-- 11 days ago, in shop-api: "Which cache size should the product API use?" Answer: "64 MB"
-- 2 hours ago, in inbox: "Decide the queue order yourself?" Answer: "Yes, decide it yourself"
-```
-
-The text leans hard toward asking, because near misses outnumber repeats four to one. The id rule in the guidance, which keeps ids out of replies, still applies.
-
-The agent's close uses `reason`, not `answer`, so the person's row says why it closed. It never reads as an answer the person gave to this question. `close` cuts a reason to 80 characters, which fits a short answer. The row shows for a moment and folds as closed rows do, and the person can reopen it.
-
-The shipped guidance says to close a question "with their answer, or once it no longer applies, and never with an answer of your own". A close that cites an earlier answer is a new kind of close. If the tests show agents refusing it, that sentence changes too, which is a change to `guidanceText`.
-
-Every record adds about 150 tokens to the agent's context. That is no extra model call.
+`restates`, `matchOpen` and `repeatsSettled` in `hooks/ask-match.ts` stay as they are. Within a session, they still merge or refuse a repeat before the search runs.
 
 ## Cost
 
 | Item | Cost |
 | --- | --- |
 | Model calls in use | None. |
-| Agent context | About 150 tokens per record. |
+| Agent context | None. |
 | Search | Measured on the measurement's pool of 8,791 answers: 11 ms to read, 25 ms to index, about 1 ms per search. |
 | Reading files | Measured on 10,000 small files: 12 ms to list them, 100 ms to read them all. Each host caches the index and rereads only files that changed. |
-| Storage | 1.2 MB for 5.7 weeks of answers, about 1,580 a week. 180 days is about 6 MB. |
+| Storage | About 2 MB for 5.7 weeks of answers, about 1,580 a week. 180 days is about 9 MB. |
 
 The file timings come from Bun on one Mac, with the files in memory. The mod reads through the engine's `$.fs`, which was not timed. If reading grows too slow, files of sessions idle for a week can merge into one file per month, under a lock. Build that only if the timing calls for it.
 
 ## Checking it before release
 
-The check makes no model call. The tests below do, and each run needs the owner's yes first.
+No text a model reads changes, so `AGENTS.md` calls for no run of the agent suite, the ledger suite or the Status suite. The owner decided to run the agent suite at build time when the plan changed the `record` answer. This plan leaves that answer alone, so it proposes skipping the run; see "Decisions". The checks below make no model call.
 
-### The near-miss test
-
-This test runs first, because it measures the main risk on real questions. It runs privately, outside the repo, like the measurement. It takes 40 recorded repeats and 40 recorded follow-up or changed questions, drawn at random from the measurement. Each gets its real top three. Claude Code reads each one with the draft text, once, and the test counts its closes.
-
-The bar is set now. The text passes if the agent closes at least 20 of the 40 repeats and at most 1 of the 40 near misses. One wrong close in 40 is about 3%. That rate keeps wrong closes under 1 in 10 of all closes at the measured ratio of 61 repeats to 242 near misses. If the text fails, reword it and run the test once more. A second failure stops the build.
-
-It costs about 80 runs and 150 model calls, about $3 at the measured $0.036 a run.
-
-### The agent suite
-
-Unit tests cover the ranking, the merge into the history and the answer text, using invented questions. `./scripts/check.sh` runs them, with no model call.
-
-Four new cases go in `evals/agent-cases/earlier-answers.json`. Each seeds an invented history in the stand-in inbox.
-
-| Case | The history holds | The agent should |
-| --- | --- | --- |
-| Same question | The same question, answered. | Close it as answered before, act on the answer, and not ask. |
-| Covered by a rule | An answer that set a rule, such as "decide the order yourself". | Close it and decide. |
-| Follow-up | An answer to the step before. | Keep it open and ask. |
-| Deferred | An answer of "not yet, after the release", with the release still ahead. | Keep it open and ask. |
-
-The suite passes a case at 75% of its runs (`MIN` in `evals/agent.ts`). A follow-up case that wrongly closes 1 run in 5 would pass. So the follow-up and deferred cases get their own bar of no wrong close. Adding a per-case bar to the suite is part of the build.
-
-The run counts below assume about 1.9 model calls per run. That is the average of 435 past Claude Code runs of the agent suite, which cost $0.036 each on average. Codex and omp runs bill to their sign-ins, which record no dollar figure.
-
-| Run | Runs | Model calls | Claude Code dollars |
-| --- | --- | --- | --- |
-| The near-miss test, on Claude Code | 80 | About 150 | About $3 |
-| The four new cases, 5 runs each, on Claude Code, Codex and omp | 60 | About 110 | About $0.70 |
-| The whole agent suite, 46 cases, as `AGENTS.md` requires after a tool-answer change and before a release | 690 | About 1,290 | About $8.30 |
-| One rerun of a failing case at three times its runs, on one agent | 15 | About 28 | About $0.54 |
-
-The ledger suite and the Status suite do not apply, because neither `systemText` nor any Status text changes.
-
-Any session that loads the mod under test needs its own `XDG_STATE_HOME`, so it neither reads nor writes the real history. That covers live checks with their own `CLAUDE_CONFIG_DIR` and `claude -p` trials on a copy of the mod. `AGENTS.md` gets that line under "Tests and live checks".
+- Unit tests cover the ranking, the floor, the merge into the history, the row's line and the press's place in `rowKeyPlan`, with invented questions. `./scripts/check.sh` runs them.
+- The demo test in `tests/hooks.test.ts` and `omp/tests/panel.spec.ts` check the press's order in the terminal, desktop and omp looks.
+- Each look gets a live check of the demo question: the line, the press, the press's feedback and the row closing. Any session that loads the mod under test gets its own `XDG_STATE_HOME`, so it neither reads nor writes the real history. `AGENTS.md` gets that line under "Tests and live checks".
 
 ## What shows it works
 
-After two weeks of use, the owner labels every question an agent closed as answered before: right or wrong. A script lists them from the history, with the earlier answer shown and the person's later reply, if any. No model call runs. Counting reopens would miss wrong closes the person never noticed, so the plan uses labels instead.
+People already give the same answer as the top match on some rows with no line at all. The review of this plan found that on about 6.5% of the rows a floor would show. So a raw count of matching answers would pass any low bar by chance. The check compares against a baseline instead.
 
-The expected count is small. In the measured 9 days, 61 shown repeats came through `record`, about 7 a day. The history starts from seeded sessions, so expect at most about 95 closes in two weeks, and likely far fewer.
+The build ships in two stages:
+
+1. For the first week, the hosts search and record matches but draw nothing. That week gives the baseline, and it fills the history.
+2. Then the line shows for two weeks.
+
+The history records, for each question row, the match it found, whether the line was drawn, and the person's answer. A script compares the share of matched rows answered with the matched answer, with the line and without it. It resamples sessions for the interval. No model call runs. The baseline week runs on a younger history than the weeks after it. The relative floor keeps the share of rows with a match about steady as the history grows, so this drift stays small.
 
 These bars are set before any data:
 
-- It works if at most 1 in 10 labelled closes is wrong.
-- It fails if more than 1 in 5 is wrong. Then turn it off, because a wrong close loses a question the person needed.
-- Anything between is inconclusive. Then label two more weeks.
+- It works if the share rises by at least 3 points over the baseline, and the interval's lower end is above zero.
+- It fails if the interval's upper end is under 1 point of rise. Then remove the line, since it costs a glance on about a quarter of rows and helps almost none.
+- Anything between is inconclusive. Then the owner says whether the line helps when it shows.
 
-Each share gets a Wilson interval. With about 30 closes, the interval spans about 15 points either way, so a two-week result may stay inconclusive.
-
-The script also counts records that showed an earlier answer, were asked anyway, and got the same answer from the person. Those are likely missed repeats. Short answers such as "Yes" match by chance, which raises the count. Covered repeats get new words, which lowers it. So this count is a rough guide and sets no bar.
+The script also counts presses of the added button, which only the line offers, split by the history's `how`. A young history shows the line on fewer rows. The review of this plan put two weeks at about 500 to 700 rows with a line, so a rise of a few points may stay inconclusive.
 
 ## The simpler alternatives
 
-Four simpler designs fall short.
+- Let the agent close the question with the earlier answer. The test above failed, and the person's own answers show why.
+- Search only the session's own closed items, which need no new storage. By the labels, 52 of the 163 repeats had an earlier answer in their own session, and only 39 of those were among the 12 closed items a session keeps.
+- Show the line on every question. About 2 in 3 shown answers would relate to nothing.
+- Make a model call per question to judge the match. The person judges it in one glance, and the call adds cost to every question.
+- Search each host's existing stores, which need no shared folder. They keep about 480 answers per host, against 8,791 in the measurement, and reach no other host. 15 of the 163 repeats matched an answer more than 14 days old.
+- Put the earlier answer into the Reply field, ready to edit. That needs a press to open Reply and another to send, where the added button takes one.
 
-- Search only the session's own closed items, which need no new storage. 110 of the 163 repeats came from another session, so this reaches at most 48.
-- Widen `restates` to answered questions in every session and refuse matches. It caught 6.1% and flagged 5.6% of questions that were not repeats. Refusing also blocks the ask.
-- Add guidance alone, such as "check whether the user already answered". The agent cannot see other sessions.
-- Make a model call per record to judge the matches. The asking agent already reads them, so a second judge adds cost without new information.
-
-## Next step, decided apart
-
-Questions the inbox model adds from a reply make up 75 of the 163 repeats and all 120 questions asked while an equivalent one was open. The same search can run when such a question is added. It can search open questions in other sessions too. The person's row would then show the closest earlier answer, or the open copy, with a press that answers both at once. That changes the rows in five looks, so it needs its own mockups and its own yes.
+Open questions in other sessions that ask the same thing are left out. The measurement found 120, but showing one question in two places goes against the principles. It needs its own design.
 
 ## Decisions
 
 Decided by the owner on 11-16:
 
-- Run the near-miss test first, about 150 model calls and $3: yes.
-- Build this, as written, if the near-miss test passes: yes.
-- Let answers cross sessions, projects and hosts, including to Codex's and omp's model providers: yes, across every repository. Every repository catches 117 of the 163 repeats, and one project folder catches 76.
-- Run the agent suite priced above at build time: about 110 model calls for the new cases, then about 1,290 for the whole suite.
+- Let earlier answers cross sessions, projects and hosts: yes, across every repository. Every repository catches 117 of the 163 repeats in the top three, and one project folder catches 76.
+- Show the earlier answer on the person's row instead of letting the agent close the question.
+- The row design: A, one quiet line in the open row, with the option buttons unchanged. The other two mockups marked the matching button, or added a line to the folded row.
+
+Still open:
+
+- Build this, as written, with the week that draws nothing first.
+- Skip the agent suite at build time, since no text a model reads changes. The earlier decision to run it covered a change to the `record` answer, which this plan drops.
