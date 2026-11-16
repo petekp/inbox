@@ -45,7 +45,7 @@ const PLACE = 'session'
 
 const PR_TONE: Record<Exclude<(typeof PR_TONES)[keyof typeof PR_TONES], null>, Tone> = {
   needsYou: 'needsYou',
-  done: 'done',
+  success: 'success',
   findings: 'findings',
   error: 'error',
 }

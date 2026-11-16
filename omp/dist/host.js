@@ -3555,7 +3555,7 @@ function goalPage(o, items, now) {
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
-      mark: isMet ? SUBJECT_MARKS.done : null,
+      mark: isMet ? { mark: SUBJECT_MARKS.done.mark, tone: "success" } : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
@@ -4893,7 +4893,7 @@ function prRowWaits(prs, lastActions, collapsed = []) {
   ]);
 }
 var PR_TONES = {
-  ready: "done",
+  ready: "success",
   blocked: "needsYou",
   waiting: null,
   draft: null,
@@ -11376,6 +11376,7 @@ var DARK_TONES = {
   findings: "#cab0ff",
   prs: "#8cc8c0",
   done: "#82c1ff",
+  success: "#7ecd8f",
   opportunity: "#7ecd8f",
   working: "#ffffff",
   error: "#ffa3b0",
@@ -11389,6 +11390,7 @@ var LIGHT_TONES = {
   findings: "#7b00e8",
   prs: "#006363",
   done: "#0a54a0",
+  success: "#25652f",
   opportunity: "#25652f",
   working: "#1a1a1a",
   error: "#a5293d",

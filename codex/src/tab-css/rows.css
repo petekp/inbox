@@ -16,6 +16,9 @@
 .mark.done {
   color: var(--done);
 }
+.mark.success {
+  color: var(--success);
+}
 .mark.working {
   color: var(--text);
 }

@@ -85,8 +85,8 @@ button {
 .tone-prs {
   color: var(--prs);
 }
-.tone-done {
-  color: var(--done);
+.tone-success {
+  color: var(--success);
 }
 .tone-error {
   color: var(--error);

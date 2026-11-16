@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T00:13:00.042Z. 248684 characters follow.
+// Built at 2026-11-16T00:25:09.468Z. 248748 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -1515,7 +1515,7 @@ function goalPage(o, items, now) {
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
-      mark: isMet ? SUBJECT_MARKS.done : null,
+      mark: isMet ? { mark: SUBJECT_MARKS.done.mark, tone: "success" } : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
@@ -2612,7 +2612,7 @@ function prRowWaits(prs, lastActions, collapsed = []) {
   ]);
 }
 var PR_TONES = {
-  ready: "done",
+  ready: "success",
   blocked: "needsYou",
   waiting: null,
   draft: null,
@@ -3641,7 +3641,7 @@ var LOOK = "herdr";
 var PLACE = "session";
 var PR_TONE = {
   needsYou: "needsYou",
-  done: "done",
+  success: "success",
   findings: "findings",
   error: "error"
 };
@@ -4054,7 +4054,7 @@ function goalBlocks(page, { isUnfolded, goalField }) {
     id: "goal heading",
     text: g?.label ?? GOAL_HEADING,
     count: null,
-    mark: g?.mark ? { text: g.mark.mark, tone: "done", isRunning: false } : null,
+    mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
     isLabel: true
   };
@@ -4933,6 +4933,7 @@ var TONE_COLORS = {
   findings: "ansi5",
   prs: "ansi6",
   done: "done",
+  success: "ansi2",
   opportunity: "ansi2",
   working: "foreground",
   error: "ansi1",

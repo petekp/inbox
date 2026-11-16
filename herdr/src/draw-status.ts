@@ -222,7 +222,7 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
     id: 'goal heading',
     text: g?.label ?? GOAL_HEADING,
     count: null,
-    mark: g?.mark ? { text: g.mark.mark, tone: 'done', isRunning: false } : null,
+    mark: g?.mark ? { text: g.mark.mark, tone: 'success', isRunning: false } : null,
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
     isLabel: true,
   }

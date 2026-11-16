@@ -11,7 +11,7 @@ export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: stri
 }
 
 /** A mark's tone on the Status. Null draws it muted. */
-export type StatusTone = 'needsYou' | 'done' | 'working' | null
+export type StatusTone = 'needsYou' | 'done' | 'success' | 'working' | null
 
 export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
   working: { mark: '●', tone: 'working' },

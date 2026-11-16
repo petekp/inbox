@@ -1,4 +1,9 @@
-export type ToneName = 'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'opportunity' | 'working' | 'error'
+/**
+ * `success` is the green of a met goal and a PR that is ready to merge. It is the same green as `opportunity`, since both
+ * mean something good, and neither shares a mark with the other.
+ */
+export type ToneName =
+  'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'success' | 'opportunity' | 'working' | 'error'
 
 type ToneSet = Record<ToneName, string> & {
   /**
@@ -16,6 +21,7 @@ export const DARK_TONES: ToneSet = {
   findings: '#cab0ff',
   prs: '#8cc8c0',
   done: '#82c1ff',
+  success: '#7ecd8f',
   opportunity: '#7ecd8f',
   working: '#ffffff',
   error: '#ffa3b0',
@@ -30,6 +36,7 @@ export const LIGHT_TONES: ToneSet = {
   findings: '#7b00e8',
   prs: '#006363',
   done: '#0a54a0',
+  success: '#25652f',
   opportunity: '#25652f',
   working: '#1a1a1a',
   error: '#a5293d',
@@ -44,6 +51,7 @@ export const DARK_DALTONIZED_TONES: ToneSet = {
   findings: '#cab0ff',
   prs: '#a3c2c2',
   done: '#82c1ff',
+  success: '#5cf0aa',
   opportunity: '#5cf0aa',
   working: '#ffffff',
   error: '#ffa3a3',
@@ -58,6 +66,7 @@ export const LIGHT_DALTONIZED_TONES: ToneSet = {
   findings: '#7400db',
   prs: '#2d5a5a',
   done: '#005885',
+  success: '#17602b',
   opportunity: '#17602b',
   working: '#1a1a1a',
   error: '#ad0000',
