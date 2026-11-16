@@ -200,6 +200,7 @@ The last time the person left the Status after it showed for at least five
 seconds. A shorter pass through the tab counts nothing. A row counts as seen
 when the last look that showed it came after its last change. A seen row leaves
 out its merged and Prev lines. A seen done row folds into its part's done fold,
+and so does a seen finished delegate no subject holds,
 a seen dropped row leaves the page, and a seen open row may fold into "○ N
 more". Under Other work, a seen open row the goal does not need folds into the
 count of its mark, or leaves the page when it is queued. The code keeps its

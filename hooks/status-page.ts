@@ -1,12 +1,12 @@
-import type { Item, Ledger, Session, Subject } from '../types'
-import { isChildRunning, isChildShown, isSubjectSeen } from './status-children'
+import type { Child, Item, Ledger, Session, Subject } from '../types'
+import { isChildRunning, isChildSettled, isChildShown, isSubjectSeen } from './status-children'
 import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
-import { childRow, countsByMark, namedList, partRows } from './status-page-parts'
+import { childRow, countsByMark, namedFolds, partRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
@@ -132,8 +132,6 @@ export const STALL_GAP = ' · '
 export const STATUS_TEXT_LINES = 3
 /** Closed rows drawn for work that closed since the last look. The fold after them names the rest. */
 const NEW_CLOSED_ROWS = 2
-/** What a named fold says before the names it holds. Each closed status gets its own fold, in this order. */
-export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
 
 /** The order of subjects, from what needs the person to what is finished. */
 const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
@@ -263,23 +261,6 @@ export function statusPage(
   }
   /** A done fold's rows draw no child, since a child of a subject that is not shown draws with no subject above it. */
   const foldCtx: ListContext = { ...ctx, running: [] }
-  /** A part's closed work past its rows that the person has not seen, named in one fold for each closed status. */
-  const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRow[] =>
-    (['done', 'dropped'] as const).flatMap(status => {
-      const closed = named.filter(x => x.status === status)
-      return closed.length === 0
-        ? []
-        : [
-            {
-              kind: 'fold' as const,
-              id: `${prefix}also-${status}`,
-              depth,
-              ...SUBJECT_MARKS[status],
-              text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map(x => x.name))}`,
-              subjectIds: closed.map(x => x.id),
-            },
-          ]
-    })
   /** A part's "○ N more" `depth` steps in, for its folded open work. */
   const openFold = (prefix: string, foldedOpen: Subject[], depth: number): StatusRow[] =>
     foldedOpen.length === 0
@@ -295,26 +276,40 @@ export function statusPage(
           },
         ]
   /**
-   * A part's seen finished work as one done fold `depth` steps in, which holds their rows one step further in. It reads
-   * "N more done" while finished rows still show above it.
+   * A part's seen finished work as one done fold `depth` steps in, which holds their rows one step further in: its
+   * subjects, then the finished delegates the person has seen that no subject holds. It reads "N more done" while
+   * finished rows still show above it.
    */
-  const doneFold = (prefix: string, done: Subject[], newClosed: Subject[], depth: number): StatusRow[] =>
-    done.length === 0
+  const doneFold = (
+    prefix: string,
+    done: Subject[],
+    newClosed: Subject[],
+    depth: number,
+    settled: Child[],
+  ): StatusRow[] =>
+    done.length + settled.length === 0
       ? []
       : [
           {
             kind: 'done-fold',
             id: `${prefix}done`,
             depth,
-            text: `${done.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
-            rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1),
+            text: `${done.length + settled.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
+            rows: [
+              ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
+              ...settled.map(c => childRow(c, null, depth + 1)),
+            ],
           },
         ]
   /** A part's rows `depth` steps in: its work in the page's order with its folds, as the list after the goal folds. */
-  const foldedPart = (prefix: string, p: PartSplit, depth: number): StatusRow[] => [
+  const foldedPart = (prefix: string, p: PartSplit, depth: number, settled: Child[] = []): StatusRow[] => [
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth),
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled),
   ]
+  /** Finished delegates the person has seen that no subject holds, which a subject's own row would otherwise stand for. */
+  const settled = (o?.children ?? [])
+    .filter(c => isChildSettled(c, now, look) && !o?.subjects.some(x => x.id === c.subjectId))
+    .sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0))
   /** Running work linked to no subject the page shows, with the shown milestone its subject serves, if any. */
   const loose = running
     .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
@@ -344,6 +339,7 @@ export function statusPage(
       otherFolded.filter(x => x.status === 'done'),
       otherNewClosed,
       0,
+      hasMilestones ? settled : [],
     ),
   ]
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
@@ -351,7 +347,7 @@ export function statusPage(
   const isHeadApart = head !== null && (g === null || g.isMet)
   const listRows: StatusRow[] = [
     ...(hasMilestones ? [] : looseRows(null, 0)),
-    ...foldedPart('', top, 0),
+    ...foldedPart('', top, 0, hasMilestones ? [] : settled),
     ...(otherRows.length > 0
       ? [
           { kind: 'part' as const, id: 'other', depth: 0, text: OTHER_WORK, description: null, isTitle: false },
