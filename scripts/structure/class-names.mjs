@@ -31,6 +31,22 @@ function constInitializer(source, name) {
   return found
 }
 
+/** Whether a function takes this name as its own `class` prop, as in `{ class: className }`. Each caller's value is checked where the caller writes it. */
+function isClassProp(source, name) {
+  let found = false
+  walk(source, node => {
+    if (
+      ts.isBindingElement(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === name &&
+      node.propertyName &&
+      ['class', 'className'].includes(nameOf(node.propertyName))
+    )
+      found = true
+  })
+  return found
+}
+
 const unwrapped = node =>
   ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node)
     ? unwrapped(node.expression)
@@ -75,6 +91,7 @@ function openParts(source, expr, seen = new Set()) {
     if (isListStep) return openParts(source, callee.expression, seen)
     return []
   }
+  if (ts.isIdentifier(expr) && isClassProp(source, expr.text)) return []
   if (ts.isIdentifier(expr) && !seen.has(expr.text)) {
     const initializer = constInitializer(source, expr.text)
     if (initializer) return openParts(source, initializer, new Set([...seen, expr.text]))
