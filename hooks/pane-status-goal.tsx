@@ -251,8 +251,14 @@ export function paneStatusGoal(
     const isConnectorDown = rows.length > 0 && m.line === null
     const pads = milestoneRowPads(m, rows)
 
+    const shown = isConnectorDown
+      ? path.connectorDown(`goal-${m.id}-down`, line, edgeOf(milestonePad(m)))
+      : m.line !== null
+        ? path.lineBeside(`goal-${m.id}-line`, m.line, line)
+        : line
+
     return [
-      isConnectorDown ? path.connectorDown(`goal-${m.id}-down`, line, edgeOf(milestonePad(m))) : line,
+      shown,
       ...drawRows(rows, pads).map((d, n) => {
         const joint = joints[n]
         const edge = edgeOf(desktopPad(pads[n]?.above ?? 0))
@@ -268,7 +274,11 @@ export function paneStatusGoal(
     return milestones.flatMap((m, n) => {
       const hasLineAbove = (milestones[n - 1]?.line ?? null) !== null
       const isLaterNext = look === 'desktop' && milestones[n + 1]?.startsLater === true
-      const under = m.line !== null && n + 1 < milestones.length && !isLaterNext ? spaceAboveOf(milestones, n + 1) : []
+      const pathLine = m.line
+      const under =
+        pathLine !== null && n + 1 < milestones.length && !isLaterNext
+          ? spaceAboveOf(milestones, n + 1).map(g => path.lineBeside(`goal-${m.id}-under`, pathLine, g, 0))
+          : []
       const above = m.startsLater
         ? laterLines(milestones, n, hasLineAbove)
         : hasLineAbove

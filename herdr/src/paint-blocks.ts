@@ -124,20 +124,20 @@ const lineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W
   div().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text)
 
 /** The trunk of a row's tree under the middle of the row's mark, from `top` to the end of its box or down to `height`. */
-const trunkEl = (top: number, height: number | null, t: Theme): Element => {
+const trunkEl = (top: number, height: number | null, t: Theme, isSelected: boolean): Element => {
   const el = div()
     .absolute()
     .left(PATH_X - EDGE)
     .top(top)
     .w(1)
     .border_l_1()
-    .border_color(lineColor(t))
+    .border_color(lineColor(t, isSelected ? t.selected : t.background))
 
   return height === null ? el.bottom(0) : el.h(height)
 }
 
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
-const bodyLineEl = (l: RowBlock['body'][number], t: Theme): Element => {
+const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean): Element => {
   const armAt = INSIDE_GAP + LINE_HEIGHT / 2
   const arm = div()
     .absolute()
@@ -146,14 +146,14 @@ const bodyLineEl = (l: RowBlock['body'][number], t: Theme): Element => {
     .w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP)
     .h(1)
     .border_t_1()
-    .border_color(lineColor(t))
+    .border_color(lineColor(t, isSelected ? t.selected : t.background))
   const strokes =
     l.tree === 'trunk'
-      ? [trunkEl(0, null, t)]
+      ? [trunkEl(0, null, t, isSelected)]
       : l.tree === 'tee'
-        ? [trunkEl(0, null, t), arm]
+        ? [trunkEl(0, null, t, isSelected), arm]
         : l.tree === 'last'
-          ? [trunkEl(0, armAt + 1, t), arm]
+          ? [trunkEl(0, armAt + 1, t, isSelected), arm]
           : []
 
   return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes)
@@ -193,7 +193,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .id(`title ${r.id}`)
     .items_start()
     .when(isPressable && isOpen, e => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt)))
-    .when(hasTree, e => e.relative().child(trunkEl(LINE_HEIGHT, null, t)))
+    .when(hasTree, e => e.relative().child(trunkEl(LINE_HEIGHT, null, t, r.isSelected)))
     .child(markEl(r.mark, t, markTintOf(r, p)))
     .child(
       div()
@@ -239,7 +239,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
         v_flex()
           .children(
             lines.map(l => {
-              const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, t)
+              const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, t, r.isSelected)
 
               return 'isHidden' in l && l.isHidden ? el.opacity(0) : el
             }),
@@ -261,10 +261,10 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   const isInert = isLeaving || from !== r
   const under = from === r && isStatusUnder(r) ? r.feedback : null
   const parts = [
-    ...from.body.map(l => bodyLineEl(l, t)),
+    ...from.body.map(l => bodyLineEl(l, t, r.isSelected)),
     ...(from.buttons.length > 0 ? [buttonsEl(from.buttons, p, MARK_W, isInert)] : []),
     ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : []),
-    ...(under ? [bodyLineEl(under, t)] : []),
+    ...(under ? [bodyLineEl(under, t, r.isSelected)] : []),
   ]
   if (parts.length === 0) return []
   const key = panelId(r.id)

@@ -223,7 +223,11 @@ export function paneStatus(
 
     const textLines = stacked(parts).lines
 
-    return { el, lines: look === 'desktop' ? plus(textLines, desktopFrameLines(padY, padBelow)) : textLines }
+    return {
+      el,
+      lines: look === 'desktop' ? plus(textLines, desktopFrameLines(padY, padBelow)) : textLines,
+      ...(look !== 'desktop' && isSelected ? { isSelected } : {}),
+    }
   }
   /**
    * A key row in a column `width` wide, in cells on the terminal and points on desktop. The terminal knows its lines
