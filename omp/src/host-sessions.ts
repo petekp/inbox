@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { flattenConversation } from '../../hooks/conversation'
-import { isCompareInBackground } from '../../hooks/clients'
+import { isCompareInBackground } from '../../hooks/press-messages'
 import { screenText } from '../../hooks/inbox-text'
 import type { ScreenTab } from '../../hooks/inbox-text'
 import { ghFinder, ghIn } from '../../hooks/gh'

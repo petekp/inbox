@@ -33,6 +33,7 @@ export const SHARED = [
   'status-limits',
   'status-ops',
   'status-goal-ops',
+  'status-suggest',
   'status-milestone-work',
   'status-goal-gate',
   'status-goal-page',
@@ -96,5 +97,7 @@ export const SHARED = [
   'tabs',
   'status-page',
   'status-page-parts',
+  'status-folds',
+  'fold-chevron',
   'action-plan',
 ]

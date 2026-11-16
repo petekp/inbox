@@ -39,6 +39,7 @@ export type ViewChange =
   | { earlier: FoldKind }
   | { toggleFold: string }
   | { showAsk: string }
+  | { isSuggestionOpen: boolean }
   | { toggleHelp: true }
 
 /**
@@ -49,6 +50,7 @@ export type ViewChange =
  */
 export type Does =
   | { is: 'view'; change: ViewChange }
+  | { is: 'collapse'; id: string; isCollapsed: boolean }
   | { is: 'press'; press: RowPress | PrPress; effects: Effect[] }
   | { is: 'type'; rowId: string; text: string; hint: string }
   | { is: 'send'; rowId: string }
@@ -159,8 +161,11 @@ export type StatusLine = {
    * its mark, or nothing for the version line. Such a line has nothing under it.
    */
   does?: string
-  /** A milestone's "now" or "next", muted at the right of its name's line where the name and it fit on one line. */
-  word?: string
+  /**
+   * A parent's fold: its chevron after its name and stall, and the count of rows it hides while folded, and the press that folds its rows away or opens them, which
+   * the whole name line takes.
+   */
+  fold?: { isFolded: boolean; count: number; toggle: Button }
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */
   under: string[]
   buttons: Button[]
@@ -229,9 +234,8 @@ export type Block =
   | PrBlock
   | LineBlock
   /**
-   * A Closed fold or a Status done fold, which the person opens and shuts. A done milestone folded to its name draws
-   * its `mark` in the mark column and the chevron after its name. `isLabelFirst` draws the chevron after the text with
-   * no mark, as a met goal's folded milestones do.
+   * A Closed fold or a Status done fold, which the person opens and shuts, with its chevron after its label. A done
+   * milestone folded to its name also draws its `mark` in the mark column; any other fold starts at the text column.
    */
   | {
       kind: 'fold'
@@ -241,7 +245,6 @@ export type Block =
       isOpen: boolean
       change: ViewChange
       mark?: Mark
-      isLabelFirst?: true
       path?: PathSide
       tree?: TreeStroke[]
     }
@@ -269,8 +272,8 @@ export type Block =
    * column under a met goal's label.
    */
   | { kind: 'field'; id: string; field: Field; isAtEdge: boolean }
-  /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
-  | { kind: 'rule'; id: string; text: string | null }
+  /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. With `isTitle`, the label is the head's title, in the foreground color and semibold. */
+  | { kind: 'rule'; id: string; text: string | null; isTitle?: true }
   /** A section's space above the block after it, or with `isMilestoneStep` the smaller space between two milestones. */
   | { kind: 'gap'; id: string; isMilestoneStep?: true }
   /** A muted line at the edge that names the blocks under it, as Other PRs. */

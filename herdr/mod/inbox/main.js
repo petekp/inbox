@@ -1,8 +1,8 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T01:20:07.318Z. 251985 characters follow.
+// Built at 2026-11-16T03:11:45.021Z. 258149 characters follow.
 
 // src/main.ts
-import { View, div as div6 } from "gpui-kit";
+import { View, div as div7 } from "gpui-kit";
 import { InputState, Scrollbar, v_flex as v_flex4 } from "gpui-base";
 import {
   appHome,
@@ -153,7 +153,8 @@ var EMPTY_SESSION_STATUS = {
   milestones: [],
   nextMilestoneId: 1,
   serves: {},
-  goalRefused: null
+  goalRefused: null,
+  suggestedGoal: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -479,7 +480,6 @@ function milestoneOf(saved) {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
-    startedAt: time(m.startedAt),
     ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
@@ -527,7 +527,8 @@ function goalFields(o, subjects) {
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
-    goalRefused: goalRefusedOf(o.goalRefused)
+    goalRefused: goalRefusedOf(o.goalRefused),
+    suggestedGoal: nonEmpty(o.suggestedGoal)
   };
 }
 
@@ -1152,6 +1153,9 @@ function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
 
+// ../hooks/status-suggest.ts
+var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
+
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "▲", tone: "issue" },
@@ -1286,6 +1290,50 @@ function helpKeys(look) {
   }
 }
 
+// ../hooks/status-folds.ts
+function waitingUnderParents(ledger) {
+  const o = ledger.overview;
+  if (!o)
+    return new Map;
+  const blockedOf = (subjectId) => o.children.filter((c) => c.subjectId === subjectId && c.endedAt === null && c.delegateState === "blocked").map((c) => c.id);
+  const asksOf = (subjectId) => ledger.items.filter((i) => o.askSubjects[i.id]?.includes(subjectId)).map((i) => i.id);
+  const subjects = o.subjects.filter((x) => x.into === null);
+  const delegating = subjects.filter((x) => o.children.some((c) => c.subjectId === x.id));
+  const milestones = o.goal ? o.milestones.filter((m) => subjects.some((x) => o.serves[x.id] === m.id)) : [];
+  return new Map([
+    ...delegating.map((x) => [x.id, blockedOf(x.id)]),
+    ...milestones.map((m) => {
+      const serving = subjects.filter((x) => o.serves[x.id] === m.id);
+      return [m.id, [...new Set(serving.flatMap((x) => [...asksOf(x.id), ...blockedOf(x.id)]))]];
+    })
+  ]);
+}
+var NONE_COLLAPSED = () => false;
+function withoutCollapsed(rows, isCollapsed) {
+  let hiddenBelow = null;
+  return rows.filter((r) => {
+    if (hiddenBelow !== null && r.depth > hiddenBelow)
+      return false;
+    hiddenBelow = r.kind === "subject" && isParentCollapsed(r, isCollapsed) ? r.depth : null;
+    return true;
+  });
+}
+function unfoldedRows(rows, isUnfolded, isCollapsed = NONE_COLLAPSED) {
+  return withoutCollapsed(rows, isCollapsed).flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
+}
+var isParentCollapsed = (p, isCollapsed) => p.foldCount > 0 && isCollapsed(p.id);
+function milestoneRows(m, isUnfolded, isCollapsed = NONE_COLLAPSED) {
+  const isShut = m.foldId !== null && !isUnfolded(m.foldId) || isParentCollapsed(m, isCollapsed);
+  return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed);
+}
+var listRows = (milestones, rows) => [
+  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
+  ...rows
+];
+function statusListRows(page) {
+  return listRows(page.goal?.milestones ?? [], page.rows);
+}
+
 // ../hooks/status-page-parts.ts
 var LISTED_NAMES = 2;
 var namedFoldMore = (n) => `+${n} more`;
@@ -1308,7 +1356,7 @@ function countsByMark(folded) {
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
-    return { text: "waiting", tone: "needsYou" };
+    return null;
   const idleMs = now - x.changedAt;
   const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS;
   return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS)}d`, tone: "muted" } : null;
@@ -1316,22 +1364,17 @@ function subjectStall(x, isHeld, isWorkRunning, now) {
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
-function childStall(c) {
-  if (c.delegateState === "blocked")
-    return { text: "waiting", tone: "needsYou" };
-  return null;
-}
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
 }
 function carriedByChild(c, isHeld) {
   if (c.delegateState === "blocked")
-    return { ...HELD_MARK, isRunning: false, stall: childStall(c) };
+    return { ...HELD_MARK, isRunning: false };
   if (c.delegateState === "finished" && !isHeld)
-    return { ...SUBJECT_MARKS.done, isRunning: false, stall: null };
+    return { ...SUBJECT_MARKS.done, isRunning: false };
   if (isChildWorking(c) && !isHeld)
-    return { ...SUBJECT_MARKS.working, isRunning: true, stall: null };
+    return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
 }
 function childRow(c, branch, depth) {
@@ -1343,7 +1386,6 @@ function childRow(c, branch, depth) {
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
-    stall: childStall(c),
     branch
   };
 }
@@ -1376,11 +1418,12 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? carried ? carried.stall : ownStall : null,
+      stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
+      foldCount: lone === null ? under.length : 0,
       ask: c.oldestAskOf(x)
     });
     if (lone === null)
@@ -1401,27 +1444,10 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   rows.push(...afterClosed);
   return rows;
 }
-function unfoldedRows(rows, isUnfolded) {
-  return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
-}
 
 // ../hooks/status-path.ts
-var NOW_WORD = "now";
-var NEXT_WORD = "next";
 var LATER_TEXT = "Later";
-var UNDER_WAY_TIME_AFTER_MS = 60 * 60000;
-var HOUR_MS = 60 * 60000;
-var DAY_HOURS = 24;
-var HOURS_SHOWN = 48;
-function underWayTime(ms) {
-  const hours = Math.floor(ms / HOUR_MS);
-  return hours < HOURS_SHOWN ? `${hours}h` : `${Math.floor(hours / DAY_HOURS)}d`;
-}
-function nowWord(m, now) {
-  const ran = m.startedAt === null ? 0 : now - m.startedAt;
-  return ran >= UNDER_WAY_TIME_AFTER_MS ? `${NOW_WORD} · ${underWayTime(ran)}` : NOW_WORD;
-}
-function milestonePath(shown, now) {
+function milestonePath(shown) {
   const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
   const underWay = shown.filter((m) => m.status === "working" || m.status === "waits-on-other");
   const [next, ...later] = shown.filter((m) => m.status === "queued");
@@ -1431,14 +1457,12 @@ function milestonePath(shown, now) {
   const pathSteps = onPath.map((m, n) => ({
     milestone: m,
     place: m === next ? "next" : m.status === "done" ? "done" : "now",
-    word: m === next ? NEXT_WORD : m.status === "working" ? nowWord(m, now) : null,
     line: lineBelow(n),
     startsLater: false
   }));
   const afterPath = [...later, ...dropped].map((m, n) => ({
     milestone: m,
     place: m.status === "dropped" ? "dropped" : "later",
-    word: null,
     line: null,
     startsLater: n === 0 && later.length > 0
   }));
@@ -1451,9 +1475,6 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
     return [...said].every((w) => row.has(w));
   });
 }
-function milestoneRows(m, isUnfolded) {
-  return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded);
-}
 function workJoints(rows, line) {
   const top = Math.min(...rows.map((r) => r.depth));
   const last = rows.findLastIndex((r) => r.depth === top);
@@ -1464,8 +1485,8 @@ function workJoints(rows, line) {
     return { arm, beside: n < last ? "connector" : null };
   });
 }
-function isSpacedAbove(milestones, n, isUnfolded) {
-  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
+function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
+  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded, isCollapsed).length === 0;
   const above = milestones[n - 1];
   const m = milestones[n];
   return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
@@ -1475,6 +1496,7 @@ function isSpacedAbove(milestones, n, isUnfolded) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
+var SUGGESTED_GOAL_LABEL = "Suggested";
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -1508,23 +1530,23 @@ function milestoneRow(step, o, items) {
     ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
-    word: step.word,
     line: step.line,
     startsLater: step.startsLater,
     isChanged,
     isMuted: step.place === "later" || step.place === "dropped",
     foldId: null,
+    foldCount: 0,
     text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
   };
 }
-function goalPage(o, items, now) {
+function goalPage(o, items) {
   const g = o?.goal ?? null;
+  const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal;
   if (o === null || g === null)
-    return { goal: null, canRestoreGoal: o?.goalRemoved != null };
+    return { goal: null, canRestoreGoal: o?.goalRemoved != null, suggestedGoal };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
@@ -1533,7 +1555,7 @@ function goalPage(o, items, now) {
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
-  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown).map((step) => milestoneRow(step, o, items));
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
@@ -1546,7 +1568,8 @@ function goalPage(o, items, now) {
       milestonesFold: null,
       milestones
     },
-    canRestoreGoal: false
+    canRestoreGoal: false,
+    suggestedGoal
   };
 }
 
@@ -1593,8 +1616,8 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
-var newGoal = (emphasis) => ({
-  press: { action: "type-goal", text: "" },
+var newGoal = (page, emphasis) => ({
+  press: page.suggestedGoal === null ? { action: "type-goal", text: "" } : { action: "show-suggestion" },
   label: "New",
   hotkey: "n",
   kind: "view",
@@ -1603,15 +1626,27 @@ var newGoal = (emphasis) => ({
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal(page, "quiet")];
   if (g.isMet)
-    return [newGoal("normal"), REMOVE_GOAL];
+    return [newGoal(page, "normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
   ];
 }
-var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
+function suggestionKeyPlan(suggested) {
+  return [
+    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
+    { press: { action: "hide-suggestion" }, label: "Cancel", hotkey: "c", kind: "view", emphasis: "quiet" }
+  ];
+}
+var isSuggestionShown = (page, isSuggestionOpen) => isSuggestionOpen && page.suggestedGoal !== null;
+function goalKeys(page, isSuggestionOpen) {
+  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal) : goalKeyPlan(page);
+}
+var GOAL_FIELD = { placeholder: "An outcome to work toward" };
+var goalSubmitLabel = (page) => page.goal === null || page.goal.isMet ? "Set" : "Save";
 
 // ../hooks/pressed.ts
 function offersUndo(c) {
@@ -1661,179 +1696,6 @@ function noteText() {
 }
 function isPressConfirmed(outcome) {
   return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
-}
-
-// ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var OTHER_WORK = "Other work";
-var WAS_PREFIX = "was: ";
-var WAITS_ON_PREFIX = "waits on you: ";
-var MERGED_PREFIX = "merged in: ";
-var STALL_GAP = " · ";
-var NEW_CLOSED_ROWS = 2;
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function mergedLine(merged, fits) {
-  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
-}
-function statusPage(s, now) {
-  const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => o === null || !isSubjectSeen(o, x);
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items, now);
-  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
-  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
-  const milestoneOf = (x) => {
-    const to = servedBy(x);
-    return to !== undefined && milestoneIds.has(to) ? to : null;
-  };
-  const hasMilestones = milestoneIds.size > 0;
-  const isUnneeded = (x) => servedBy(x) === "none";
-  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const needed = subjects.filter((x) => !isUnneeded(x));
-  const main = needed.filter((x) => !isOther(x));
-  const other = subjects.filter(isOther);
-  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
-  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
-  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
-  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
-  const foldable = open.filter(canFold);
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
-  const split = (part, isLater = false) => {
-    const unseenClosed = unseenClosedOf(part);
-    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
-    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
-    return {
-      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
-      newClosed,
-      named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter(isFoldedOpen),
-      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
-    };
-  };
-  const top = split(main.filter((x) => milestoneOf(x) === null));
-  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
-  const otherUnseenClosed = unseenClosedOf(other);
-  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
-  const otherFolded = other.filter(isOtherFolded);
-  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
-  const ctx = {
-    isNew,
-    isHeld,
-    oldestAskOf,
-    items: s.ledger.items,
-    running,
-    isTurnRunning: s.presence.isTurnRunning,
-    now
-  };
-  const foldCtx = { ...ctx, running: [] };
-  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const closed = named.filter((x) => x.status === status);
-    return closed.length === 0 ? [] : [
-      {
-        kind: "fold",
-        id: `${prefix}also-${status}`,
-        depth,
-        ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
-        subjectIds: closed.map((x) => x.id)
-      }
-    ];
-  });
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
-    {
-      kind: "fold",
-      id: `${prefix}open`,
-      depth,
-      ...SUBJECT_MARKS.queued,
-      text: `${foldedOpen.length} more`,
-      subjectIds: []
-    }
-  ];
-  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
-    {
-      kind: "done-fold",
-      id: `${prefix}done`,
-      depth,
-      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
-    }
-  ];
-  const foldedPart = (prefix, p, depth) => [
-    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
-  ];
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
-    const x = subjects.find((y) => y.id === c.subjectId);
-    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
-  });
-  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
-  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
-  const afterOtherOpen = [
-    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
-    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
-  ];
-  const otherRows = [
-    ...hasMilestones ? looseRows(null, 0) : [],
-    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
-  ];
-  const rows = [
-    ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0),
-    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
-  ];
-  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
-  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-  const withRows = (m, p) => {
-    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
-    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
-    return isShrunk ? {
-      ...m,
-      text: null,
-      isMuted: true,
-      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
-      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
-    } : { ...m, rows };
-  };
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
-    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
-  };
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
-  return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
-    head,
-    isHeadApart: goal === null || goal.isMet,
-    ...goalParts,
-    goal,
-    rows,
-    error: s.overviewFailure ? STATUS_FAILED : null
-  };
-}
-function seenSubjectIds(row) {
-  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
-}
-var listRows = (milestones, rows) => [
-  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
-  ...rows
-];
-function statusListRows(page) {
-  return listRows(page.goal?.milestones ?? [], page.rows);
 }
 
 // ../hooks/timing.ts
@@ -3531,22 +3393,24 @@ var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t =
 function newsByRow({ ledger, prViews, lastActions }) {
   const pressed = (id) => lastActions[id]?.at;
   const prs = Object.values(prViews.views);
+  const timed = (at, untimedUrl = null) => ({ at, untimedUrl, waiting: [] });
   return new Map([
-    ...ledger.items.map((i) => [i.id, { at: latest(i.reportedAt, pressed(i.id)), untimedUrl: null }]),
-    ...ledger.findings.map((f) => [f.id, { at: latest(f.reopenedAt, pressed(f.id)), untimedUrl: null }]),
+    ...ledger.items.map((i) => [i.id, timed(latest(i.reportedAt, pressed(i.id)))]),
+    ...ledger.findings.map((f) => [f.id, timed(latest(f.reopenedAt, pressed(f.id)))]),
     ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
       const id = prThreadId(pr, t);
       const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
-      return [id, { at: latest(t.reply?.at, pressed(id)), untimedUrl }];
+      return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)];
     })),
     ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
-      return [id, { at: latest(c.finishedAt, pressed(id)), untimedUrl }];
-    }))
+      return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)];
+    })),
+    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }])
   ]);
 }
-var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null);
+var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null) && news.waiting.every((id) => c.waiting?.includes(id));
 function collapsedRows(s) {
   const news = newsByRow(s);
   return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
@@ -3555,8 +3419,191 @@ function withCollapse(s, row, isCollapsed, at) {
   const news = newsByRow(s);
   const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
   const untimedUrl = news.get(row)?.untimedUrl ?? null;
-  const collapse = { at, ...untimedUrl !== null && { untimedUrl } };
+  const waiting = news.get(row)?.waiting ?? [];
+  const collapse = {
+    at,
+    ...untimedUrl !== null && { untimedUrl },
+    ...waiting.length > 0 && { waiting }
+  };
   return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
+}
+
+// ../hooks/status-page.ts
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
+var OTHER_WORK = "Other work";
+var WAS_PREFIX = "Prev: ";
+var MERGED_PREFIX = "merged in: ";
+var STALL_GAP = " · ";
+var NEW_CLOSED_ROWS = 2;
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function mergedLine(merged, fits) {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
+}
+function statusPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => o === null || !isSubjectSeen(o, x);
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const goalParts = goalPage(o, s.ledger.items);
+  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
+  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
+  const milestoneOf = (x) => {
+    const to = servedBy(x);
+    return to !== undefined && milestoneIds.has(to) ? to : null;
+  };
+  const hasMilestones = milestoneIds.size > 0;
+  const isUnneeded = (x) => servedBy(x) === "none";
+  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
+  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
+  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
+  const needed = subjects.filter((x) => !isUnneeded(x));
+  const main = needed.filter((x) => !isOther(x));
+  const other = subjects.filter(isOther);
+  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
+  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
+  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
+  const foldable = open.filter(canFold);
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
+  const split = (part, isLater = false) => {
+    const unseenClosed = unseenClosedOf(part);
+    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
+    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
+    return {
+      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
+      newClosed,
+      named: unseenClosed.slice(NEW_CLOSED_ROWS),
+      foldedOpen: part.filter(isFoldedOpen),
+      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
+    };
+  };
+  const top = split(main.filter((x) => milestoneOf(x) === null));
+  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
+  const otherUnseenClosed = unseenClosedOf(other);
+  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
+  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
+  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
+  const ctx = {
+    isNew,
+    isHeld,
+    oldestAskOf,
+    items: s.ledger.items,
+    running,
+    isTurnRunning: s.presence.isTurnRunning,
+    now
+  };
+  const foldCtx = { ...ctx, running: [] };
+  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+    const closed = named.filter((x) => x.status === status);
+    return closed.length === 0 ? [] : [
+      {
+        kind: "fold",
+        id: `${prefix}also-${status}`,
+        depth,
+        ...SUBJECT_MARKS[status],
+        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
+        subjectIds: closed.map((x) => x.id)
+      }
+    ];
+  });
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}open`,
+      depth,
+      ...SUBJECT_MARKS.queued,
+      text: `${foldedOpen.length} more`,
+      subjectIds: []
+    }
+  ];
+  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
+    {
+      kind: "done-fold",
+      id: `${prefix}done`,
+      depth,
+      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
+    }
+  ];
+  const foldedPart = (prefix, p, depth) => [
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
+  ];
+  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
+    const x = subjects.find((y) => y.id === c.subjectId);
+    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
+  });
+  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
+  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
+  const afterOtherOpen = [
+    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
+    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
+  ];
+  const otherRows = [
+    ...hasMilestones ? looseRows(null, 0) : [],
+    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
+  ];
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  const g = goalParts.goal;
+  const isHeadApart = head !== null && (g === null || g.isMet);
+  const listRows = [
+    ...hasMilestones ? [] : looseRows(null, 0),
+    ...foldedPart("", top, 0),
+    ...otherRows.length > 0 ? [
+      { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
+      ...otherRows
+    ] : []
+  ];
+  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const rows = [
+    ...headPart,
+    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
+  ];
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
+  const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
+  const withRows = (m, p) => {
+    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
+    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
+    return isShrunk ? {
+      ...m,
+      text: null,
+      isMuted: true,
+      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
+      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
+    } : {
+      ...m,
+      rows,
+      foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
+    };
+  };
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
+  return {
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    head,
+    ...goalParts,
+    goal,
+    rows,
+    error: s.overviewFailure ? STATUS_FAILED : null
+  };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
 
 // ../hooks/session-view.ts
@@ -3650,9 +3697,11 @@ function emptyTab(view, look) {
     const page = view.statusPage;
     if (!page.isEmpty)
       return null;
+    const isSuggestionOpen = look.isSuggestionOpen ?? false;
+    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
+      under: { is: "set-goal", keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion }
     };
   }
   if (look.tab === "prs") {
@@ -3943,6 +3992,12 @@ function doesOf(k) {
     return { is: "view", change: { showAsk: p.askId } };
   if (p.action === "toggle-fold")
     return { is: "view", change: { toggleFold: p.foldId } };
+  if (p.action === "toggle-collapse")
+    return { is: "nothing" };
+  if (p.action === "show-suggestion")
+    return { is: "view", change: { isSuggestionOpen: true } };
+  if (p.action === "hide-suggestion")
+    return { is: "view", change: { isSuggestionOpen: false } };
   if (p.action === "type-goal")
     return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
   return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
@@ -3950,7 +4005,18 @@ function doesOf(k) {
 function keyButtons(id, keys) {
   return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)));
 }
-function rowBlocks(row, isUnfolded) {
+function foldOf(p, isCollapsed) {
+  if (p.foldCount === 0)
+    return {};
+  const isFolded = isParentCollapsed(p, isCollapsed);
+  const toggle = button(`${p.id} fold`, isFolded ? "Unfold" : "Fold", "quiet", {
+    is: "collapse",
+    id: p.id,
+    isCollapsed: !isFolded
+  });
+  return { fold: { isFolded, count: p.foldCount, toggle } };
+}
+function rowBlocks(row, isUnfolded, isCollapsed) {
   if (row.kind === "subject") {
     const under = [
       row.text,
@@ -3967,10 +4033,11 @@ function rowBlocks(row, isUnfolded) {
         isBold: false,
         isMuted: false,
         stall: row.stall,
-        ...row.waitsOn ? { waitsOn: `${WAITS_ON_PREFIX}${row.waitsOn}` } : {},
+        ...row.waitsOn ? { waitsOn: row.waitsOn } : {},
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
-        ...row.hasChildren ? { tree: [{ depth: row.depth, is: "down" }] } : {}
+        ...foldOf(row, isCollapsed),
+        ...row.hasChildren && !isCollapsed(row.id) ? { tree: [{ depth: row.depth, is: "down" }] } : {}
       }
     ];
   }
@@ -3984,7 +4051,7 @@ function rowBlocks(row, isUnfolded) {
         name: row.name,
         isBold: false,
         isMuted: true,
-        stall: row.stall,
+        stall: null,
         under: [],
         buttons: [],
         ...row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}
@@ -3995,7 +4062,8 @@ function rowBlocks(row, isUnfolded) {
   if (row.kind === "part")
     return [
       { kind: "gap", id: `gap ${row.id}` },
-      { kind: "rule", id: row.id, text: row.text }
+      { kind: "rule", id: row.id, text: row.text, ...row.isTitle ? { isTitle: true } : {} },
+      ...row.description ? [note2(`${row.id} description`, row.description, "muted")] : []
     ];
   if (row.kind === "counts")
     return [{ ...note2(row.id, row.counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP), "muted"), depth: row.depth }];
@@ -4025,7 +4093,7 @@ function rowBlocks(row, isUnfolded) {
     }
   ];
 }
-function milestoneBlock(m, lineAbove, hasWork, isUnfolded) {
+function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
   const mark = markOf2(m.mark, m.tone, false);
   const path = { is: "milestone", above: lineAbove, below: m.line };
   const tree = hasWork && m.line === null ? { tree: [{ depth: 0, is: "down" }] } : {};
@@ -4049,10 +4117,10 @@ function milestoneBlock(m, lineAbove, hasWork, isUnfolded) {
     name: m.name,
     isBold: m.isChanged,
     isMuted: m.isMuted,
-    stall: m.stall,
-    ...m.word === null ? {} : { word: m.word },
+    stall: null,
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
+    ...foldOf(m, isCollapsed),
     path,
     ...tree
   };
@@ -4095,27 +4163,34 @@ var headTitle = (id, text) => ({
   isAtEdge: true,
   isStrong: true
 });
-function goalBlocks(page, { isUnfolded, goalField }) {
+function goalBlocks(page, { isUnfolded, isCollapsed, isSuggestionOpen, goalField }) {
   const g = page.goal;
+  const isSuggested = goalField === null && isSuggestionShown(page, isSuggestionOpen);
   const heading = {
     kind: "heading",
     id: "goal heading",
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
+    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page, isSuggested)),
     isLabel: true
   };
   const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
-  if (g === null)
-    return [heading, ...goalField ? field : [headNote("goal text", NO_GOAL_TEXT, "muted")]];
+  const suggestion = [
+    headNote("goal suggested", SUGGESTED_GOAL_LABEL, "muted"),
+    headTitle("goal text", page.suggestedGoal ?? "")
+  ];
+  if (g === null) {
+    const empty = isSuggested ? suggestion : [headNote("goal text", NO_GOAL_TEXT, "muted")];
+    return [heading, ...goalField ? field : empty];
+  }
   const atText = (b) => g.mark && b.kind === "note" ? { ...b, isAtEdge: false } : b;
-  const lines = goalField ? field : [
+  const lines = goalField ? field : (isSuggested ? suggestion : [
     headTitle("goal text", g.text),
     ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
     ...g.now ? [headNote("goal now", g.now, "muted")] : [],
     ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
-  ].map(atText);
+  ]).map(atText);
   const fold = g.milestonesFold;
   const foldLine = fold ? [
     {
@@ -4124,45 +4199,43 @@ function goalBlocks(page, { isUnfolded, goalField }) {
       depth: 0,
       text: fold.text,
       isOpen: isUnfolded(fold.id),
-      change: { toggleFold: fold.id },
-      isLabelFirst: true
+      change: { toggleFold: fold.id }
     }
   ] : [];
   const shown = shownMilestones(g, isUnfolded);
   const milestones = shown.flatMap((m, n) => {
-    const rows = milestoneRows(m, isUnfolded);
+    const rows = milestoneRows(m, isUnfolded, isCollapsed);
     const joints = workJoints(rows, m.line);
     return [
-      ...isSpacedAbove(shown, n, isUnfolded) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
+      ...isSpacedAbove(shown, n, isUnfolded, isCollapsed) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
       ...m.startsLater ? [{ kind: "rule", id: "goal later", text: LATER_TEXT }] : [],
-      milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
-      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded).map((b) => besidePath(b, m.line, joints[k])))
+      milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded, isCollapsed),
+      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded, isCollapsed).map((b) => besidePath(b, m.line, joints[k])))
     ];
   });
   return [heading, ...lines, ...foldLine, ...milestones];
 }
 function statusBlocks(view, ui) {
   const page = view.statusPage;
-  const { isUnfolded } = ui;
-  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: ui.goalField !== null });
+  const { isUnfolded, isCollapsed } = ui;
+  const empty = emptyTab(view, {
+    tab: "overview",
+    isGoalFieldOpen: ui.goalField !== null,
+    isSuggestionOpen: ui.isSuggestionOpen
+  });
   if (empty) {
     const setGoal = empty.under?.is === "set-goal" ? empty.under : null;
     const parts = setGoal && {
       id: GOAL_KEYS_ID,
-      text: null,
+      text: setGoal.suggestion === null ? null : `${SUGGESTED_GOAL_LABEL}: ${setGoal.suggestion}`,
       buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
       feedback: null,
       field: setGoal.isFieldOpen ? ui.goalField : null
     };
     return [emptyBlock("overview", empty, parts)];
   }
-  const description = page.head?.description;
-  const head = page.isHeadApart && page.head ? [
-    headTitle("head title", page.head.title),
-    ...description ? [headNote("head text", description, "muted")] : []
-  ] : [];
-  const top = [...goalBlocks(page, ui), ...head.length > 0 ? [{ kind: "gap", id: "gap head" }, ...head] : []];
-  const rows = unfoldedRows(page.rows, isUnfolded).flatMap((r) => rowBlocks(r, isUnfolded));
+  const top = goalBlocks(page, ui);
+  const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).flatMap((r) => rowBlocks(r, isUnfolded, isCollapsed));
   const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, { kind: "gap", id: "gap rows" }, ...rows] : [...top, ...rows];
 }
@@ -4176,6 +4249,7 @@ var freshUi = (tab) => ({
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
+  isSuggestionOpen: false,
   typing: null,
   newRows: new Map,
   closedSeen: new Map
@@ -4420,8 +4494,13 @@ function chrome(screen, tab) {
 }
 function tabBlocks(screen, ui) {
   if (ui.tab === "overview") {
-    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null;
-    return statusBlocks(screen.view, { isUnfolded: (id) => ui.statusUnfolded.includes(id), goalField });
+    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, goalSubmitLabel(screen.view.statusPage)) : null;
+    return statusBlocks(screen.view, {
+      isUnfolded: (id) => ui.statusUnfolded.includes(id),
+      isCollapsed: (id) => screen.view.collapsed.includes(id),
+      isSuggestionOpen: ui.isSuggestionOpen,
+      goalField
+    });
   }
   if (ui.tab === "prs")
     return prTabBlocks(screen, ui.selected);
@@ -4617,6 +4696,10 @@ var withSelected = (ui, id) => ({
   selected: id,
   typing: ui.typing === id ? id : null
 });
+var withCollapsed = (ui, id, isCollapsed) => ({
+  ...ui.tab === "overview" ? ui : withSelected(ui, id),
+  ...isCollapsed && { typing: null }
+});
 function withClosedSelection(ui, last, now) {
   const id = ui.selected;
   const wasWaiting = last.some((r) => r.id === id && r.isWaiting);
@@ -4637,14 +4720,21 @@ function withShownNewRows(ui, at) {
   const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
   return isSame ? ui : { ...ui, newRows };
 }
-function withDrawnRows(ui, last, rows, at, isTabShown) {
+function withDrawnRows(ui, last, rows, at, isTabShown, page) {
   const lastRows = last.tab === ui.tab ? last.rows : null;
   const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
-  return isTabShown ? withShownNewRows(arrived, at) : arrived;
+  const shown = isTabShown ? withShownNewRows(arrived, at) : arrived;
+  return page ? withoutStaleSuggestion(shown, page) : shown;
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
-var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null } : ui;
+function afterPress(ui, press) {
+  if (press.action === "take-goal")
+    return { ...ui, isSuggestionOpen: false };
+  return "id" in press && press.action === "undo" ? withSelected(ui, press.id) : ui;
+}
+var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null, ...rowId === GOAL_KEYS_ID && { isSuggestionOpen: false } } : ui;
+var withoutStaleSuggestion = (ui, page) => ui.isSuggestionOpen && page.suggestedGoal === null ? { ...ui, isSuggestionOpen: false } : ui;
 function withoutConfirmed(drafts, confirmed, typing, pending) {
   const current = confirmed.filter((c) => !pending.some((p) => p.rowId === c.rowId && p.pressId > c.pressId));
   const done = current.filter((c) => c.rowId !== typing);
@@ -4664,6 +4754,8 @@ function withChange(ui, c) {
     return { ...ui, closedAll: [...ui.closedAll, c.earlier] };
   if ("toggleFold" in c)
     return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) };
+  if ("isSuggestionOpen" in c)
+    return { ...ui, isSuggestionOpen: c.isSuggestionOpen };
   return withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
 }
 
@@ -4955,42 +5047,6 @@ function placeAfter(shown, above) {
   return 0;
 }
 
-// src/heights.ts
-class Heights {
-  sizes = new Map;
-  resized = new Set;
-  get(key) {
-    return this.sizes.get(key)?.height;
-  }
-  measure(key, size) {
-    const was = this.sizes.get(key);
-    this.sizes.set(key, { width: size.width, height: size.height });
-    const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
-    if (isRewrapped)
-      this.resized.add(key);
-    return was?.height !== size.height;
-  }
-  takeResized() {
-    const resized = this.resized;
-    this.resized = new Set;
-    return resized;
-  }
-  clear() {
-    this.sizes.clear();
-    this.resized.clear();
-  }
-}
-
-// src/paint-blocks.ts
-import { div as div5 } from "gpui-kit";
-import { Input, h_flex as h_flex3, v_flex as v_flex3 } from "gpui-base";
-
-// ../hooks/layout.ts
-var ROW_PAD_PT = 8;
-var STATUS_ROW_PAD_PT = 19 / 4;
-var SECTION_GAP_PT = 19 / 2;
-var BANNER_PAD_Y_PT = 8;
-
 // src/paint-theme.ts
 var TONE_COLORS = {
   needsYou: "ansi3",
@@ -5046,8 +5102,159 @@ var onSize = (view, key, read) => (size, cx) => {
   cx.notify();
 };
 
+// src/paint-title-tint.ts
+var FADE_STEP_MS = NEW_FADE_MS / NEW_STEPS;
+function nextStepAt(row, now) {
+  if (row.shownAt === null)
+    return null;
+  const fadeAt = row.shownAt + NEW_HOLD_MS;
+  const endAt = fadeAt + NEW_FADE_MS;
+  if (now >= endAt)
+    return null;
+  if (now < fadeAt)
+    return fadeAt;
+  return Math.min(endAt, fadeAt + (Math.floor((now - fadeAt) / FADE_STEP_MS) + 1) * FADE_STEP_MS);
+}
+function titleTintNextAt(rows, blocks, seen, now) {
+  const closed = blocks.flatMap((b) => b.kind === "row" && b.settled?.tint ? [closedTitleClock(seen, b.id, b.settled.at, now)] : []);
+  const at = [...rows.values(), ...closed].flatMap((r) => r ? [nextStepAt(r, now)] : []).filter((a) => a !== null);
+  return at.length > 0 ? Math.min(...at) : null;
+}
+function tintOf(r, p) {
+  const { t } = p;
+  const clock = r.settled ? closedTitleClock(p.closedSeen, r.id, r.settled.at, p.now) : newRowIn(p.newRows, r.id, p.tab);
+  const tone = r.settled ? r.settled.tint ? colorOf(t, r.settled.tint) : null : t.ansi4;
+  const share = steppedTitleTint(clock, p.now);
+  return tone && share > 0 ? { tone, share } : null;
+}
+function titleColorOf(r, p) {
+  const own = r.isDim ? p.t.muted : p.t.foreground;
+  const tint = tintOf(r, p);
+  return tint ? mixInto(tint.tone, own, tint.share) : own;
+}
+function markTintOf(r, p) {
+  const tint = tintOf(r, p);
+  if (!tint)
+    return null;
+  const own = r.mark === null || r.mark.tone === null ? p.t.muted : colorOf(p.t, r.mark.tone);
+  return mixInto(tint.tone, own, tint.share);
+}
+
+// src/time-left.ts
+function timeLeftShare(runsOutAt, now) {
+  return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
+}
+var TIME_LEFT_STEP_MS = 250;
+function timeLeftOf(b, drawn, now) {
+  if (b.runsOutAt === undefined || b.isHidden)
+    return null;
+  const was = drawn.get(b.id);
+  if (b.isOut)
+    return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
+  return b.runsOutAt > now ? { is: "emptying" } : null;
+}
+var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined && !b.isHidden);
+function timeLeftDraws(blocks, drawn, now) {
+  return new Map(timedButtons(blocks).flatMap((b) => {
+    const left = timeLeftOf(b, drawn, now);
+    return left ? [[b.id, left]] : [];
+  }));
+}
+function timeLeftNextAt(blocks, now) {
+  const ends = timedButtons(blocks).filter((b) => !b.isOut && (b.runsOutAt ?? 0) > now).map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS));
+  return ends.length > 0 ? Math.min(...ends) : null;
+}
+
+// src/wake.ts
+function nextDrawAt(now, ui, screen, moved) {
+  const isStarting = [...moved.motion.values()].some((m) => m.isStart);
+  const timed = earliestOf([
+    timeLeftNextAt(moved.blocks, now),
+    titleTintNextAt(ui.newRows, moved.blocks, ui.closedSeen, now)
+  ]);
+  const wakeAt = [
+    isStarting ? now + NEXT_FRAME_MS : null,
+    moved.nextAt,
+    screen.foldAt,
+    screen.undoPlaceEndsAt,
+    screen.timedChangeAt,
+    timed
+  ].filter((at) => at !== null);
+  return wakeAt.length === 0 ? null : Math.min(...wakeAt);
+}
+
+// src/heights.ts
+class Heights {
+  sizes = new Map;
+  resized = new Set;
+  get(key) {
+    return this.sizes.get(key)?.height;
+  }
+  measure(key, size) {
+    const was = this.sizes.get(key);
+    this.sizes.set(key, { width: size.width, height: size.height });
+    const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
+    if (isRewrapped)
+      this.resized.add(key);
+    return was?.height !== size.height;
+  }
+  takeResized() {
+    const resized = this.resized;
+    this.resized = new Set;
+    return resized;
+  }
+  clear() {
+    this.sizes.clear();
+    this.resized.clear();
+  }
+}
+
+// src/paint-blocks.ts
+import { div as div6 } from "gpui-kit";
+import { Input, h_flex as h_flex4, v_flex as v_flex3 } from "gpui-base";
+
+// ../hooks/layout.ts
+var ROW_PAD_PT = 8;
+var STATUS_ROW_PAD_PT = 19 / 4;
+var SECTION_GAP_PT = 19 / 2;
+var BANNER_PAD_Y_PT = 8;
+
+// src/paint-chevron.ts
+import { PathBuilder, div } from "gpui-kit";
+import { h_flex } from "gpui-base";
+var SIZE_PX = 12;
+var STROKE_PX = 1;
+var GRID = 24;
+var CORNERS = {
+  folded: [
+    [9, 18],
+    [15, 12],
+    [9, 6]
+  ],
+  open: [
+    [6, 9],
+    [12, 15],
+    [18, 9]
+  ]
+};
+var pathOf = (isOpen) => {
+  const [first, ...rest] = CORNERS[isOpen ? "open" : "folded"].map(([x, y]) => [`${x / GRID * 100}%`, `${y / GRID * 100}%`]);
+  const path = PathBuilder.stroke(STROKE_PX).move_to(first[0], first[1]);
+  return rest.reduce((p, [x, y]) => p.line_to(x, y), path).build();
+};
+var FOLDED_PATH = pathOf(false);
+var OPEN_PATH = pathOf(true);
+function chevronEl(isOpen, t, isLive) {
+  const path = isOpen ? OPEN_PATH : FOLDED_PATH;
+  const shape = (color) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`);
+  return div().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
+}
+function foldChevronEl(t, fold) {
+  return h_flex().flex_none().items_center().h(LINE_HEIGHT).ml(LINE_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div().ml(LINE_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
+}
+
 // src/paint-space.ts
-import { div } from "gpui-kit";
+import { div as div2 } from "gpui-kit";
 import { v_flex } from "gpui-base";
 var padOf = (b) => b.kind === "row" || b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
 var depthOf = (b) => ("depth" in b) ? b.depth : 0;
@@ -5095,6 +5302,8 @@ function spacesOf(blocks, isShut) {
   let section = null;
   for (const b of blocks) {
     if (b.kind === "gap") {
+      if (isShut(b))
+        continue;
       section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : GROUP_GAP;
       continue;
     }
@@ -5110,7 +5319,7 @@ function spacesOf(blocks, isShut) {
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
 var springBox = (id, height) => springHeight(v_flex().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
-var sizeEl = (key, p, el) => div().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
+var sizeEl = (key, p, el) => div2().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
 function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
@@ -5144,7 +5353,7 @@ function contentEl(b, m, p, el, strokes) {
 }
 function spaceEl(s, p, columns) {
   const id = `space ${s.block.id}`;
-  const box = springHeight(div().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
+  const box = springHeight(div2().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
 var TREE_LINE_SHARE = 0.2;
@@ -5153,12 +5362,12 @@ var PATH_X = EDGE + 4;
 function pathLineEl(line, top, height, t) {
   if (line === null)
     return [];
-  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div2().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
   const sized = height === null ? el.bottom(0) : el.h(height);
   return [line === "to-next" ? sized.border_dashed() : sized];
 }
 var columnEl = (depth, top, height, t) => {
-  const el = div().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div2().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
   return height === null ? el.bottom(0) : el.h(height);
 };
 var pathColumn = (line) => line === null ? [] : [{ depth: 0, isDashed: line === "to-next" }];
@@ -5196,7 +5405,7 @@ function contentStrokeEls(b, t, fade) {
   const armAt = Math.round(top + LINE_HEIGHT / 2);
   const pathEls = (side) => side.is === "work" ? pathLineEl(side.line, 0, null, t) : [...pathLineEl(side.above, 0, top, t), ...pathLineEl(side.below, top + LINE_HEIGHT, null, t)];
   const treeEls = tree.flatMap(({ depth, is }) => {
-    const arm = fade(div().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t)));
+    const arm = fade(div2().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t)));
     if (is === "down")
       return [columnEl(depth, top + LINE_HEIGHT, null, t)];
     if (is === "past")
@@ -5226,8 +5435,8 @@ function spacedEls(blocks, p, el) {
 }
 
 // src/paint-chrome.ts
-import { Background, PathBuilder, div as div2 } from "gpui-kit";
-import { h_flex, v_flex as v_flex2 } from "gpui-base";
+import { Background, PathBuilder as PathBuilder2, div as div3 } from "gpui-kit";
+import { h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
 var helpButton = (isHelpShown) => ({
   id: "help",
   label: isHelpShown ? HELP_COPY.close : HELP_COPY.name,
@@ -5236,24 +5445,24 @@ var helpButton = (isHelpShown) => ({
   hotkey: null,
   does: { is: "view", change: { toggleHelp: true } }
 });
-var helpIconEl = (t) => h_flex().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(t.muted).hover((s) => s.border_color(t.foreground)).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
+var helpIconEl = (t) => h_flex2().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(t.muted).hover((s) => s.border_color(t.foreground)).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
 function tabsEl(tabs, status, isHelpShown, p) {
   const { t } = p;
   const help = helpButton(isHelpShown);
-  return h_flex().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div2().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div2().flex_1()).when(status !== null, (e) => e.child(div2().min_w(0).whitespace_normal().px(LINE_GAP).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(isHelpShown ? help.label : helpIconEl(t)));
+  return h_flex2().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex2().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div3().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div3().flex_1()).when(status !== null, (e) => e.child(div3().min_w(0).whitespace_normal().px(LINE_GAP).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex2().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(isHelpShown ? help.label : helpIconEl(t)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
   const tone = colorOf(t, BANNER_TONES2[b.tone]);
-  const text = v_flex2().flex_1().min_w(0).whitespace_normal().child(div2().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div2().child(b.body ?? "")));
-  const row = h_flex().gap(INSET).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex().flex_none().gap(CONTROL_GAP).children(buttons)));
+  const text = v_flex2().flex_1().min_w(0).whitespace_normal().child(div3().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div3().child(b.body ?? "")));
+  const row = h_flex2().gap(INSET).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(CONTROL_GAP).children(buttons)));
   return v_flex2().mx(EDGE).px(INSET).py(BANNER_PAD_Y_PT).rounded(BOX_RADIUS).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);
 }
-var sessionNoteEl = (text, t) => div2().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text);
+var sessionNoteEl = (text, t) => div3().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text);
 function messageEl(m, t) {
-  return v_flex2().flex_1().justify_center().items_center().p(GROUP_GAP).gap(LINE_GAP).child(div2().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div2().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+  return v_flex2().flex_1().justify_center().items_center().p(GROUP_GAP).gap(LINE_GAP).child(div3().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div3().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
 }
-var FILL = PathBuilder.fill().add_polygon([
+var FILL = PathBuilder2.fill().add_polygon([
   [0, 0],
   ["100%", 0],
   ["100%", "100%"],
@@ -5266,93 +5475,28 @@ function scrollFadeEl(t, edge) {
 }
 
 // src/paint-timer.ts
-import { div as div3 } from "gpui-kit";
-
-// src/time-left.ts
-function timeLeftShare(runsOutAt, now) {
-  return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
-}
-var TIME_LEFT_STEP_MS = 250;
-function timeLeftOf(b, drawn, now) {
-  if (b.runsOutAt === undefined || b.isHidden)
-    return null;
-  const was = drawn.get(b.id);
-  if (b.isOut)
-    return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
-  return b.runsOutAt > now ? { is: "emptying" } : null;
-}
-var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined && !b.isHidden);
-function timeLeftDraws(blocks, drawn, now) {
-  return new Map(timedButtons(blocks).flatMap((b) => {
-    const left = timeLeftOf(b, drawn, now);
-    return left ? [[b.id, left]] : [];
-  }));
-}
-function timeLeftNextAt(blocks, now) {
-  const ends = timedButtons(blocks).filter((b) => !b.isOut && (b.runsOutAt ?? 0) > now).map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS));
-  return ends.length > 0 ? Math.min(...ends) : null;
-}
-
-// src/paint-timer.ts
+import { div as div4 } from "gpui-kit";
 var TIMED_W = 64;
 function timeLeftEl(id, left, runsOutAt, now, t) {
-  const cut = div3().id(`time left ${id}`).absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div3().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover));
+  const cut = div4().id(`time left ${id}`).absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div4().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover));
   if (left.is === "paused")
     return cut.w(left.share * TIMED_W);
   const step = Math.min(TIME_LEFT_STEP_MS, Math.max(0, runsOutAt - now));
   return cut.w(timeLeftShare(runsOutAt, now + step) * TIMED_W).transition("width", { duration: step, easing: "linear" });
 }
 
-// src/paint-title-tint.ts
-var FADE_STEP_MS = NEW_FADE_MS / NEW_STEPS;
-function nextStepAt(row, now) {
-  if (row.shownAt === null)
-    return null;
-  const fadeAt = row.shownAt + NEW_HOLD_MS;
-  const endAt = fadeAt + NEW_FADE_MS;
-  if (now >= endAt)
-    return null;
-  if (now < fadeAt)
-    return fadeAt;
-  return Math.min(endAt, fadeAt + (Math.floor((now - fadeAt) / FADE_STEP_MS) + 1) * FADE_STEP_MS);
-}
-function titleTintNextAt(rows, blocks, seen, now) {
-  const closed = blocks.flatMap((b) => b.kind === "row" && b.settled?.tint ? [closedTitleClock(seen, b.id, b.settled.at, now)] : []);
-  const at = [...rows.values(), ...closed].flatMap((r) => r ? [nextStepAt(r, now)] : []).filter((a) => a !== null);
-  return at.length > 0 ? Math.min(...at) : null;
-}
-function tintOf(r, p) {
-  const { t } = p;
-  const clock = r.settled ? closedTitleClock(p.closedSeen, r.id, r.settled.at, p.now) : newRowIn(p.newRows, r.id, p.tab);
-  const tone = r.settled ? r.settled.tint ? colorOf(t, r.settled.tint) : null : t.ansi4;
-  const share = steppedTitleTint(clock, p.now);
-  return tone && share > 0 ? { tone, share } : null;
-}
-function titleColorOf(r, p) {
-  const own = r.isDim ? p.t.muted : p.t.foreground;
-  const tint = tintOf(r, p);
-  return tint ? mixInto(tint.tone, own, tint.share) : own;
-}
-function markTintOf(r, p) {
-  const tint = tintOf(r, p);
-  if (!tint)
-    return null;
-  const own = r.mark === null || r.mark.tone === null ? p.t.muted : colorOf(p.t, r.mark.tone);
-  return mixInto(tint.tone, own, tint.share);
-}
-
 // src/paint-notes.ts
-import { div as div4 } from "gpui-kit";
-import { h_flex as h_flex2 } from "gpui-base";
-var ruleLine = (t) => div4().flex_1().border_t(1).border_color(t.border);
+import { div as div5 } from "gpui-kit";
+import { h_flex as h_flex3 } from "gpui-base";
+var ruleLine = (t) => div5().flex_1().border_t(1).border_color(t.border);
 function ruleEl(b, t) {
   if (b.text === null)
-    return h_flex2().pl(EDGE).pr(EDGE).child(ruleLine(t));
-  return h_flex2().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div4().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
+    return h_flex3().pl(EDGE).pr(EDGE).child(ruleLine(t));
+  return h_flex3().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div5().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t) {
-  const text = div4().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  return h_flex2().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text);
+  const text = div5().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+  return h_flex3().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text);
 }
 
 // src/paint-blocks.ts
@@ -5361,7 +5505,7 @@ function buttonEl(b, p, isInert = false) {
   const isPill = b.emphasis !== "quiet";
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
-  const base = h_flex3().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(b.label);
+  const base = h_flex4().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(b.label);
   const shaped = isPill && runsOutAt === undefined ? base.px(INSET).rounded(BUTTON_H / 2).border_1() : base;
   if (b.isHidden)
     return shaped.invisible().disabled(true);
@@ -5377,16 +5521,16 @@ function buttonEl(b, p, isInert = false) {
   });
 }
 var CLEAR = "#00000000";
-var buttonsEl = (buttons, p, indent, isInert = false) => h_flex3().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t, tint = null) => div5().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
-var lineEl = (text, color, indent = MARK_W) => div5().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
+var buttonsEl = (buttons, p, indent, isInert = false) => h_flex4().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
+var markEl = (m, t, tint = null) => div6().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
+var lineEl = (text, color, indent = MARK_W) => div6().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
 var trunkEl = (top, height, t) => {
-  const el = div5().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div6().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t));
   return height === null ? el.bottom(0) : el.h(height);
 };
 var bodyLineEl = (l, t) => {
   const armAt = LINE_GAP + LINE_HEIGHT / 2;
-  const arm = div5().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t));
+  const arm = div6().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t));
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t)] : l.tree === "tee" ? [trunkEl(0, null, t), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t), arm] : [];
   return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes);
 };
@@ -5394,7 +5538,7 @@ function fieldEl(f, p, indent, isInert = false) {
   const { t } = p;
   const state = p.input(f.rowId);
   const input = state ? [
-    div5().min_h(BUTTON_H).px(INSET).py(SPACE.xs).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
+    div6().min_h(BUTTON_H).px(INSET).py(SPACE.xs).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
   return v_flex3().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
 }
@@ -5406,7 +5550,7 @@ function rowEl(r, p) {
   const isWrapped = isOpen || m?.isWrapHeld === true;
   const isPressable = r.isSelectable && !isLeaving;
   const hasTree = (m?.closing ?? r).body.some((l) => l.tree !== undefined);
-  const line = h_flex3().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t))).child(markEl(r.mark, t, markTintOf(r, p))).child(div5().flex_1().min_w(0).text_color(titleColorOf(r, p)).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div5().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex4().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t))).child(markEl(r.mark, t, markTintOf(r, p))).child(div6().flex_1().min_w(0).text_color(titleColorOf(r, p)).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div6().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
@@ -5437,10 +5581,9 @@ function panelEl(r, m, p, isLeaving) {
     v_flex3().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];
 }
-var statusPartEl = (text) => div5().min_w(0).max_w_full().whitespace_normal().child(text);
-var wordEl = (s, word, t) => h_flex3().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name).invisible().when(s.isBold, (e) => e.font_semibold())).child(div5().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
+var statusPartEl = (text) => div6().min_w(0).max_w_full().whitespace_normal().child(text);
 function keyEl(s, does, t) {
-  return h_flex3().items_start().px(EDGE).child(div5().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div5().font_semibold().child(s.name))).child(div5().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex4().items_start().px(EDGE).child(div6().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div6().font_semibold().child(s.name))).child(div6().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;
@@ -5448,38 +5591,45 @@ function statusEl(s, p, isInert) {
     return keyEl(s, s.does, t);
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
-  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)];
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex3().items_start().child(markEl(s.mark, t)).child(h_flex3().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  const toggle = s.fold?.toggle;
+  const chevron = s.fold ? [
+    foldChevronEl(t, {
+      isOpen: !s.fold.isFolded,
+      isLive: toggle !== undefined && !isInert,
+      ...s.fold.isFolded ? { count: s.fold.count } : {}
+    })
+  ] : [];
+  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((_e, cx) => toggle ? p.press(toggle, cx) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 function prEl(b, p, isInert) {
   const { t } = p;
-  const title = h_flex3().items_start().child(div5().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div5().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
+  const title = h_flex4().items_start().child(div6().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div6().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
   const hasReasons = b.unlisted.length > 0;
-  const word = h_flex3().items_start().min_w(0).max_w_full().child(div5().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div5().flex_none().text_color(t.muted).child(SEP)));
+  const word = h_flex4().items_start().min_w(0).max_w_full().child(div6().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div6().flex_none().text_color(t.muted).child(SEP)));
   const reasons = b.unlisted.map((u, i) => statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted));
-  const status = h_flex3().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div5().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
+  const status = h_flex4().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div6().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
   return v_flex3().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex3().pl(EDGE).pr(EDGE).child(h_flex3().gap(CONTROL_GAP).items_center().child(div5().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex3().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex3().pl(EDGE).pr(EDGE).child(h_flex4().gap(CONTROL_GAP).items_center().child(div6().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex4().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function headingEl(b, p, isInert) {
   const { t } = p;
-  const buttons = h_flex3().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
+  const buttons = h_flex4().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
-    return h_flex3().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex3().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
-  return h_flex3().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div5().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div5().text_color(t.muted).child(`${SEP}${b.count}`))).child(div5().flex_1()).child(buttons);
+    return h_flex4().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex4().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
+  return h_flex4().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div6().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div6().text_color(t.muted).child(`${SEP}${b.count}`))).child(div6().flex_1()).child(buttons);
 }
 function emptyEl(b, p, isInert) {
   const { t } = p;
   const { empty, under } = b;
-  const centred = (text, color = t.foreground) => div5().text_center().whitespace_normal().text_color(color).child(text);
-  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(GROUP_GAP).gap(LINE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex3().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div5().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div5()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
+  const centred = (text, color = t.foreground) => div6().text_center().whitespace_normal().text_color(color).child(text);
+  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(GROUP_GAP).gap(LINE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex4().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div6().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div6()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
 }
 function foldEl(b, p, isInert) {
   const { t } = p;
-  const fold = {
+  const press = {
     id: b.id,
     label: b.text,
     emphasis: "quiet",
@@ -5487,10 +5637,9 @@ function foldEl(b, p, isInert) {
     hotkey: null,
     does: { is: "view", change: b.change }
   };
-  const mark = b.kind === "fold" ? b.mark : undefined;
-  const chevron = b.kind === "fold" && b.isOpen ? "▾" : "▸";
-  const isChevronAfter = mark !== undefined || b.kind === "fold" && b.isLabelFirst === true;
-  return h_flex3().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold" && !isChevronAfter, (e) => e.child(div5().mr(CONTROL_GAP).child(chevron))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div5().min_w(0).whitespace_normal().child(b.text)).when(isChevronAfter, (e) => e.child(div5().flex_none().ml(LINE_GAP).child(chevron)));
+  const fold = b.kind === "fold" ? b : null;
+  const mark = fold?.mark;
+  return h_flex4().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((_e, cx) => p.press(press, cx))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div6().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -5512,14 +5661,14 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div5().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
+    return div6().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
     return noteEl(b, t);
   if (b.kind === "caption")
-    return div5().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
+    return div6().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
-  return div5();
+  return div6();
 }
 
 // src/out.ts
@@ -6131,7 +6280,7 @@ class Inbox extends View {
     if (text === "")
       return;
     const isGoal = rowId === GOAL_KEYS_ID;
-    const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send;
+    const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send;
     const isSent = this.send({ action: "type", id: rowId, text }, [], label, cx, isGoal ? undefined : text);
     this.ui = afterSend(this.ui, rowId, isSent);
     this.closeStaleField();
@@ -6172,9 +6321,10 @@ class Inbox extends View {
     const d = b.does;
     if (d.is === "view")
       this.change(d.change);
+    else if (d.is === "collapse")
+      this.collapse(d.id, d.isCollapsed, cx);
     else if (d.is === "press") {
-      if ("id" in d.press && d.press.action === "undo")
-        this.ui = withSelected(this.ui, d.press.id);
+      this.ui = afterPress(this.ui, d.press);
       this.send(d.press, d.effects, b.label, cx);
     } else if (d.is === "type")
       this.type(d);
@@ -6190,7 +6340,7 @@ class Inbox extends View {
       return;
     const c = { isCollapsed, at: Date.now() };
     this.collapses = { ...this.collapses, [id]: c };
-    this.ui = { ...withSelected(this.ui, id), ...isCollapsed && { typing: null } };
+    this.ui = withCollapsed(this.ui, id, isCollapsed);
     this.closeStaleField();
     const to = { appHome: appHome(), sessionId: this.sessionId };
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c));
@@ -6229,11 +6379,12 @@ class Inbox extends View {
       queue: this.queue
     });
     let screen = screenFor(this.ui);
-    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === "inbox" ? screen.waits : null, now, !this.isHelpShown);
+    const inbox = screen.is === "inbox" ? screen : null;
+    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, inbox?.view.statusPage);
     if (ui !== this.ui)
       screen = screenFor(this.ui = ui);
-    this.lastWaits = { tab: this.ui.tab, rows: screen.is === "inbox" ? screen.waits : null };
-    this.view = screen.is === "inbox" ? screen.view : null;
+    this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null };
+    this.view = inbox?.view ?? null;
     this.drawTimer?.cancel();
     this.drawTimer = null;
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`;
@@ -6293,19 +6444,13 @@ class Inbox extends View {
     const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
     const room = moved.nextAt === null ? this.listRoom : null;
     this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
-    const isStarting = [...moved.motion.values()].some((m) => m.isStart);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
-    const nextFrame = isStarting ? now + NEXT_FRAME_MS : null;
-    const timed = earliestOf([
-      timeLeftNextAt(moved.blocks, now),
-      titleTintNextAt(this.ui.newRows, moved.blocks, this.ui.closedSeen, now)
-    ]);
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter((at) => at !== null);
-    if (wakeAt.length > 0)
-      this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
+    const wakeAt = nextDrawAt(now, this.ui, screen, moved);
+    if (wakeAt !== null)
+      this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div6().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

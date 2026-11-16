@@ -37,7 +37,6 @@ const withGoal = () =>
         was: null,
         changedAt: NOW - 50 * MIN,
         closedAt: null,
-        startedAt: null,
       },
       {
         id: 'm2',
@@ -47,7 +46,6 @@ const withGoal = () =>
         was: null,
         changedAt: NOW - MIN,
         closedAt: null,
-        startedAt: null,
       },
     ],
     nextMilestoneId: 3,
@@ -72,7 +70,6 @@ const metGoal = () =>
       was: null,
       changedAt: NOW - 50 * MIN,
       closedAt: null,
-      startedAt: null,
     })),
     nextMilestoneId: 3,
   })
@@ -86,7 +83,7 @@ test('a met goal hangs a green ✓ beside Goal met, starts its text at the text 
   expect(drawn(screen, onPage, 60).find(l => strip(l).includes('Goal met'))).toContain(style.tone('done', '✓'))
   const textColumn = heading.indexOf('Goal met')
   expect(lines[lineAt(lines, 'Pilot ready to announce')]!.indexOf('Pilot')).toBe(textColumn)
-  const fold = lines[lineAt(lines, 'Fixes built, Announced ▸')]!
+  const fold = lines[lineAt(lines, 'Fixes built, Announced ›')]!
   expect(fold.indexOf('Fixes')).toBe(textColumn)
   expect(lineAt(lines, '✓ Fixes built')).toBe(-1)
   expect(lineAt(lines, 'Now:')).toBe(-1)
@@ -97,7 +94,7 @@ test('a met goal hangs a green ✓ beside Goal met, starts its text at the text 
   expect(opened.selectedId).toBe(foldId)
   expect(opened.statusUnfolded).toContain(foldId)
   const shown = text(screen, opened, 60).split('\n')
-  expect(shown[lineAt(shown, 'Fixes built, Announced')]).toContain('▾')
+  expect(shown[lineAt(shown, 'Fixes built, Announced')]).toContain('Announced v')
   expect(lineAt(shown, '✓ Fixes built')).toBeGreaterThan(lineAt(shown, 'Fixes built, Announced'))
   expect(statusKeyRows(page, id => opened.statusUnfolded.includes(id)).map(t => t.id)[1]).toBe(foldId)
 
@@ -111,7 +108,7 @@ test('Remove presses the goal by its key and selects the goal’s place, where U
   expect(removed.ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
 })
 
-test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text, the head as its Now line, and its milestones as a path, the next on the line under a done one folded to its name, with the work on the line after the milestone’s text joined to it by a connector, and next at the right edge of its name’s line', () => {
+test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text, the head as its Now line, and its milestones as a path, the next on the line under a done one folded to its name, with the work on the line after the milestone’s text joined to it by a connector', () => {
   const screen = withGoal()
   const page = screen.view.statusPage
   expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit', 'Remove'])
@@ -136,8 +133,6 @@ test('a set goal draws Edit and Remove at the right end of its Goal heading row,
     ' │ after deploy',
   ])
   expect(lines[lineAt(lines, '◌ Glasses trial')]).toMatch(/^ └─ ◌ Glasses trial/)
-  expect(lines[lineAt(lines, '○ Announced')]).toMatch(/ next$/)
-  expect(lines[lineAt(lines, '○ Announced')]!.length).toBe(59)
   expect(lines.slice(at[0]! + 1).some(l => l.includes('Edit'))).toBe(false)
   expect(lineAt(lines, page.head!.title)).toBe(-1)
 })
@@ -166,7 +161,7 @@ test('e on the goal’s Edit opens the field with the goal in it in place of the
 
 test('New is the only button on a page with no goal and no held subject, at the right end of the Goal heading row above the line that says no goal is set, and is selected ahead of the done fold: it is keyed, up and down still scroll, and n opens an empty goal field above the head', () => {
   const screen = screenWith({})
-  expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toEqual(['goal', 'done'])
+  expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toEqual(['goal', 's1', 's2', 'done'])
   const shown = text(screen, onPage).split('\n')
   expect(lineAt(shown, 'Goal ─')).toBe(lineAt(shown, '↵ New'))
   expect(lineAt(shown, '↵ New')).toBeLessThan(lineAt(shown, 'No goal yet.'))
@@ -202,7 +197,7 @@ test('with a goal set, subjects that serve none of its milestones draw under the
     '   dismissed glances fade',
   ])
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
-  expect(lineAt(lines, '▸ 2 more done')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
+  expect(lineAt(lines, '2 more done ›')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
 })
 
 test('in a short panel, after Remove its New shows, even from a page scrolled past it', () => {

@@ -100,6 +100,22 @@ export const GOAL_RULES: Rule[] = [
     },
   },
   {
+    id: 'goal-suggested',
+    reads: 'facts',
+    opportunity: ctx => hasCall(ctx) && !!ctx.result.facts.goalSuggested,
+    property: 14,
+    text: 'While no goal runs, a step whose work most likely leads to an outcome suggests that outcome as the goal.',
+    failures: ({ result }) => {
+      const likely = result.facts.goalSuggested
+      const o = result.session.ledger.overview
+      const isGoalRunning = o?.goal != null && o.goal.metAt === null
+      if (!likely || isGoalRunning) return []
+      const suggested = o?.suggestedGoal ?? null
+      if (suggested !== null && new RegExp(likely.match, 'i').test(suggested)) return []
+      return [suggested === null ? `no suggested goal like /${likely.match}/` : `suggested "${suggested}"`]
+    },
+  },
+  {
     id: 'milestones-true',
     reads: 'facts',
     property: 15,
@@ -150,7 +166,7 @@ export const GOAL_RULES: Rule[] = [
       const o = result.session.ledger.overview
       const fact = result.facts.goal?.milestones.find(m => m.id === result.facts.goal?.next)
       if (!o?.goal || o.goal.isAwaitingMilestones || fact === undefined) return []
-      const next = milestonePath(milestonesOf(o), 0).find(s => s.place === 'next')?.milestone
+      const next = milestonePath(milestonesOf(o)).find(s => s.place === 'next')?.milestone
       if (next === undefined) return [`no milestone reads next, and ${fact.name} comes next`]
       return new RegExp(fact.match, 'i').test(next.name)
         ? []

@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { SUBJECT_MARKS } from '../hooks/help'
 import { EMPTY } from '../hooks/ledger'
+import { collapsedRows, settledCollapses, withCollapse } from '../hooks/collapse'
 import { allRows } from '../hooks/rows'
 import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
@@ -9,7 +10,7 @@ import { withChild } from '../hooks/status-children'
 import { setTypedGoal } from '../hooks/status-goal-ops'
 import { shownMilestones } from '../hooks/status-goal-page'
 import { statusKeyRows } from '../hooks/status-keys'
-import { unfoldedRows } from '../hooks/status-page-parts'
+import { milestoneRows, unfoldedRows } from '../hooks/status-folds'
 import { NO_HOLDS } from '../hooks/timing'
 import type { StatusRow } from '../hooks/status-page'
 import type { SessionStatus } from '../types'
@@ -38,19 +39,19 @@ test('a goal shows its milestones as a path, its Edit comes before its milestone
   const p = page(linked(), 40, {}, [askItem('i1')])
 
   expect(p.goal).toMatchObject({ label: 'Goal' })
-  expect(p.goal?.milestones.map(m => m.word)).toEqual([null, 'now', 'next'])
+  expect(p.goal?.milestones.map(m => m.place)).toEqual(['done', 'now', 'next'])
   expect(p.goal?.text).toBe('Import ready to demo')
   expect(p.goal?.now).toBe('Now: Making CSV import ready to demo')
   expect(p.head).not.toBeNull()
-  expect(p.goal?.milestones.map(m => `${m.mark} ${m.name}${m.stall ? ' · waiting' : ''}`)).toEqual([
+  expect(p.goal?.milestones.map(m => `${m.mark} ${m.name}`)).toEqual([
     '✓ Parsing works',
-    '◆ Errors explained · waiting',
+    '◆ Errors explained',
     '○ Demo script',
   ])
   expect(p.goal?.milestones[1]?.ask).toEqual({ id: 'i1', kind: 'question' })
   expect(statusKeyRows(p).map(t => [t.id, t.keys.map(k => k.label)])).toEqual([
     ['goal', ['Edit', 'Remove']],
-    ['m2', ['View question']],
+    ['m2', ['View question', 'Fold']],
     ['s2', ['View question']],
   ])
 })
@@ -62,7 +63,7 @@ test('work that serves a milestone draws under it one step in, and work the goal
 
   expect(p.goal?.milestones.map(m => shape(m.rows))).toEqual([
     [],
-    ['◆ Error copy: not started · waits on you: Ask i1?', '◐ CSV import: bad rows skipped'],
+    ['◆ Error copy: not started · Ask i1?', '◐ CSV import: bad rows skipped'],
     [],
   ])
   expect(shape(p.rows)).toEqual(['== Other work', '● 1 working'])
@@ -77,17 +78,11 @@ test('finished work under a milestone shows as a row until the person looks, the
   const finished = after({ ...linked(), lastLookAt: 35 }, 'DONE: s1 | import ships', 50, new Set(['i1']))
   const rowsOf = (o: SessionStatus) => page(o, 80, {}, [askItem('i1')]).goal?.milestones[1]?.rows ?? []
 
-  expect(shape(rowsOf(finished))).toEqual([
-    '◆ Error copy: not started · waits on you: Ask i1?',
-    '✓ CSV import: import ships',
-  ])
-  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual([
-    '◆ Error copy: not started · waits on you: Ask i1?',
-    '▸ 1 done',
-  ])
+  expect(shape(rowsOf(finished))).toEqual(['◆ Error copy: not started · Ask i1?', '✓ CSV import: import ships'])
+  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · Ask i1?', '› 1 done'])
   expect(shape(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true))).toEqual([
-    '◆ Error copy: not started · waits on you: Ask i1?',
-    '▸ 1 done',
+    '◆ Error copy: not started · Ask i1?',
+    '› 1 done',
     '✓ CSV import',
   ])
   expect(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true).map(r => r.depth)).toEqual([1, 1, 2])
@@ -126,7 +121,7 @@ test('under a milestone and under Other work, closed work past two rows that the
   const p = page(closed, 80, {}, [askItem('i1')])
 
   expect(shape(p.goal?.milestones[1]?.rows ?? [])).toEqual([
-    '◆ Error copy: not started · waits on you: Ask i1?',
+    '◆ Error copy: not started · Ask i1?',
     '✓ Sniffer: sniffs',
     '✓ Parser: parses',
     '✓ Also done: CSV import',
@@ -149,14 +144,14 @@ test('while the goal shows milestones, a subject linked to none of them draws un
   expect(subjectIds(page(unlinked, 40).goal!.milestones[1]!.rows)).toEqual(['s1'])
   expect(page(unlinked, 40).rows[0]!.kind).toBe('part')
   expect(subjectIds(page(unlinked, 40).rows).sort()).toEqual(['s2', 's3', 's4'])
-  expect(shape(page(typed, 20).rows).filter(l => !l.startsWith('▸'))).toEqual([
+  expect(shape(page(typed, 20).rows).filter(l => !l.startsWith('›'))).toEqual([
     '◐ CSV import: bad rows skipped',
     '○ Error copy: not started',
     '○ Logo refresh: not started',
     '== Other work',
     '◐ Dark mode: toggle drawn',
   ])
-  expect(page(noGoal, 30).rows.some(r => r.kind === 'part')).toBe(false)
+  expect(page(noGoal, 30).rows.some(r => r.kind === 'part' && !r.isTitle)).toBe(false)
 })
 
 test('under Other work, a queued subject an ask holds up stays a row, seen queued work the goal needs folds as it did above Other work, and seen queued work the goal does not need leaves the page with no count', () => {
@@ -175,8 +170,8 @@ test('under Other work, a queued subject an ask holds up stays a row, seen queue
 
   expect(shape(page({ ...held, lastLookAt: 40 }, 45, {}, asks).rows)).toEqual([
     '== Other work',
-    '◆ Error copy: not started · waits on you: Ask i2?',
-    '◆ Logo refresh: not started · waits on you: Ask i1?',
+    '◆ Error copy: not started · Ask i2?',
+    '◆ Logo refresh: not started · Ask i1?',
     '○ Release notes: not started',
   ])
   expect(shape(page({ ...held, lastLookAt: 40 }, 45).rows)).toEqual([
@@ -229,7 +224,7 @@ test('a queued milestone draws as worked on once work that serves it is working,
   })
 })
 
-test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met with a done check and its head apart', () => {
+test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met with a done check and its head heading the list after it', () => {
   const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45)
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
 
@@ -246,8 +241,8 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     now: null,
     mark: { mark: SUBJECT_MARKS.done.mark, tone: 'success' },
   })
-  expect(page(met, 55).isHeadApart).toBe(true)
-  expect(page(linked(), 40).isHeadApart).toBe(false)
+  expect(page(met, 55).rows[0]).toMatchObject({ kind: 'part', id: 'head', isTitle: true })
+  expect(page(linked(), 40).rows.some(r => r.kind === 'part' && r.isTitle)).toBe(false)
   expect(page(linked(), 40).goal).toMatchObject({ mark: null, milestonesFold: null })
   expect(
     statusKeyRows(page(met, 55))
@@ -360,4 +355,113 @@ test('an ask linked to a milestone names it as what it holds up, and a milestone
   const changed = after(o, 'WAS: m2 | demo by hand', 50, new Set(['i1']))
   expect(wasOf(changed)).toEqual([null, 'demo by hand', null])
   expect(wasOf({ ...changed, lastLookAt: 55 })).toEqual([null, null, null])
+})
+
+const withDelegate = (o: SessionStatus, delegateState: 'working' | 'blocked') =>
+  after(
+    withChild(
+      o,
+      {
+        ref: 'review',
+        kind: 'subagent',
+        name: 'Review bot',
+        startedAt: 32,
+        endedAt: null,
+        lastActivityAt: 33,
+        delegateState,
+      },
+      34,
+    ),
+    'LINK: c1 | s1',
+    34,
+    new Set(['i1']),
+  )
+const asked = [askItem('i1')]
+const sessionOf = (status: SessionStatus, items = asked) => ({
+  ...emptySession(),
+  ledger: { ...EMPTY, overview: status, items },
+})
+const foldPress = (id: string) => ({ action: 'toggle-collapse', id })
+
+test('a milestone or a subject with rows under it folds by its name, which hides its rows from the list and from j and k', () => {
+  const o = withDelegate(linked(), 'working')
+  const p = page(o, 40, {}, asked)
+  const m2 = p.goal?.milestones.find(m => m.id === 'm2')
+  const s1 = m2?.rows.find(r => r.id === 's1')
+  const folded = new Set(['m2', 's1'])
+  const isCollapsed = (id: string) => folded.has(id)
+
+  expect(m2?.foldCount).toBe(2)
+  expect(s1).toMatchObject({ kind: 'subject', foldCount: 1 })
+  expect(milestoneRows(m2!, () => false, isCollapsed)).toEqual([])
+  expect(
+    unfoldedRows(
+      m2!.rows,
+      () => false,
+      id => id === 's1',
+    ).map(r => r.id),
+  ).toEqual(['s2', 's1'])
+  expect(statusKeyRows(p).map(t => t.id)).toEqual(['goal', 'm2', 's2', 's1'])
+  expect(statusKeyRows(p, () => false, isCollapsed).map(t => [t.id, t.keys.map(k => k.press)])).toEqual([
+    ['goal', [{ action: 'type-goal', text: 'Import ready to demo' }, { action: 'remove-goal' }]],
+    ['m2', [{ action: 'show-ask', askId: 'i1' }, foldPress('m2')]],
+  ])
+})
+
+test('a parent’s fold opens once something new under it waits on the person, and stays open after it stops waiting', () => {
+  const o = withDelegate(linked(), 'working')
+  const blocked = withDelegate(linked(), 'blocked')
+  const askedAgain = after(o, 'LINK: i2 | s1', 45, new Set(['i1', 'i2']))
+  const collapsed = withCollapse(withCollapse(sessionOf(o), 'm2', true, 41), 's1', true, 41)
+
+  expect(collapsedRows(collapsed).sort()).toEqual(['m2', 's1'])
+  expect(collapsedRows({ ...collapsed, ledger: sessionOf(blocked).ledger })).toEqual([])
+  const reopened = settledCollapses({ ...collapsed, ledger: sessionOf(askedAgain, [...asked, askItem('i2')]).ledger })
+  expect(collapsedRows(reopened)).toEqual(['s1'])
+  expect(collapsedRows({ ...reopened, ledger: sessionOf(o).ledger })).toEqual(['s1'])
+})
+
+test('a fold made while a delegate waits opens when that delegate waits again, and goes once its subject has no work under it', () => {
+  const blocked = withDelegate(linked(), 'blocked')
+  const working = withDelegate(linked(), 'working')
+  const folded = withCollapse(sessionOf(blocked), 's1', true, 41)
+  expect(collapsedRows(folded)).toEqual(['s1'])
+  const unblocked = settledCollapses({ ...folded, ledger: sessionOf(working).ledger })
+  expect(collapsedRows(unblocked)).toEqual(['s1'])
+  expect(collapsedRows({ ...unblocked, ledger: sessionOf(blocked).ledger })).toEqual([])
+  expect(settledCollapses({ ...folded, ledger: sessionOf(linked()).ledger }).collapsed).toEqual({})
+})
+
+test('every milestone with work under it folds by its name before it is done: the one under way, the next and one under Later', () => {
+  const goal =
+    'GOAL: Import ready to demo | done Parsing works; working Errors explained; queued Demo script; queued Docs written'
+  const o = after(
+    after(after(null, START, 10), goal, 20),
+    'SERVES: s1 | m2\nSERVES: s2 | m3\nSERVES: s4 | m4\nSERVES: s3 | -',
+    30,
+  )
+  const p = page(o, 40)
+  const open = (p.goal?.milestones ?? []).filter(m => m.mark !== '✓')
+  const folded = new Set(open.map(m => m.id))
+  const targets = statusKeyRows(
+    p,
+    () => false,
+    id => folded.has(id),
+  )
+
+  expect(open.map(m => [m.place, m.foldCount > 0])).toEqual([
+    ['now', true],
+    ['next', true],
+    ['later', true],
+  ])
+  for (const m of open) {
+    expect(
+      milestoneRows(
+        m,
+        () => false,
+        id => folded.has(id),
+      ),
+    ).toEqual([])
+    expect(targets.find(t => t.id === m.id)?.keys.map(k => k.press)).toContainEqual(foldPress(m.id))
+  }
 })

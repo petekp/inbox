@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { statusListRows } from '../../hooks/status-page'
+import { statusListRows } from '../../hooks/status-folds'
 import { drawPanel } from '../src/panel'
 import { NOW, onPage, screenOf, strip, style } from './panel-harness'
 

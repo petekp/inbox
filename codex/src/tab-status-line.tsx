@@ -1,13 +1,7 @@
 import { Icon, RowActions } from './row-actions'
-import {
-  mergedLine,
-  seenSubjectIds,
-  STATUS_TEXT_LINES,
-  STALL_GAP,
-  WAITS_ON_PREFIX,
-  WAS_PREFIX,
-} from '../../hooks/status-page'
+import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
+import { unfoldedRows } from '../../hooks/status-folds'
 import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusRow } from '../../hooks/status-page'
@@ -15,12 +9,13 @@ import { closingFolds, drafts, sending, statusUnfolded, tabState } from './tab-s
 import type { Key } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
+import { chevronOf, isParentFolded, ParentName, toggleParentFold } from './tab-status-fold'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
 import { pulseInStep, markClassOf, MarkGlyph } from './tab-parts'
-import { lineMotion } from './tab-line-steps'
+import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 
 let measuring: CanvasRenderingContext2D | null | undefined
 
@@ -50,17 +45,28 @@ function openGoalField(text: string) {
   tabState.draw()
 }
 
+function setSuggestionOpen(isOpen: boolean) {
+  tabState.isSuggestionOpen = isOpen
+  tabState.draw()
+}
+
 /** A Status key as a tab key. Remove goal draws out while the goal's press is on its way. */
 function statusKey({ press, label, emphasis }: StatusKey): Key {
   if (press.action === 'show-ask') return { label, emphasis, run: () => showAsk(press.askId) }
   if (press.action === 'toggle-fold') return { label, emphasis, run: () => toggleStatusFold(press.foldId) }
+  if (press.action === 'toggle-collapse') return { label, emphasis, run: () => toggleParentFold(press.id) }
   if (press.action === 'type-goal') return { label, emphasis, run: () => openGoalField(press.text) }
+  if (press.action === 'show-suggestion' || press.action === 'hide-suggestion')
+    return { label, emphasis, run: () => setSuggestionOpen(press.action === 'show-suggestion') }
 
   return {
     label,
     emphasis,
     ...(sending.has(GOAL_KEYS_ID) ? { isOut: true } : {}),
-    run: () => void act(GOAL_KEYS_ID, { action: press.action, id: GOAL_KEYS_ID }),
+    run: () =>
+      void act(GOAL_KEYS_ID, { action: press.action, id: GOAL_KEYS_ID }, () => {
+        if (press.action === 'take-goal') tabState.isSuggestionOpen = false
+      }),
   }
 }
 
@@ -77,14 +83,26 @@ export function toggleStatusFold(id: string) {
 /** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
 const depthStyle = (row: StatusRow) => ({ '--depth': row.depth })
 
-export function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
+/**
+ * A subject's tree line runs down while its rows show, and while they leave or enter as the person folds or opens it.
+ * `under` is the motion keys of the rows drawn under it, which a done fold's rows, drawn with their list, leave out.
+ */
+function subjectConnector(row: Extract<StatusRow, { kind: 'subject' }>, under: string[] | undefined): string | null {
+  if (!row.hasChildren) return null
+  if (under !== undefined && under.length > 0) return connectorClass(connectorMotion(under))
+
+  return isParentFolded(row.id) ? null : ''
+}
+
+export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: string; under?: string[] }) {
   if (row.kind === 'subject') {
+    const connector = subjectConnector(row, under)
     const merged = row.merged
     const keys = statusKeyPlan(row).map(statusKey)
 
     return (
       <div
-        class={row.hasChildren ? 'row has-children' : 'row'}
+        class={['row', connector === null ? '' : 'has-children', connector ?? ''].filter(Boolean).join(' ')}
         style={depthStyle(row)}
         {...{ [SUBJECTS_ATTRIBUTE]: row.id }}
         {...lineMotion(motion)}
@@ -93,10 +111,11 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
           <MarkGlyph text={row.mark} />
         </span>
         <div class="content tight">
-          <NameLine name={row.name} stall={row.stall} />
+          <ParentName id={row.id} foldCount={row.foldCount}>
+            <NameLine name={row.name} stall={row.stall} chevron={chevronOf(row)} />
+          </ParentName>
           {row.waitsOn ? (
             <div class="tone-needsYou clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-              {WAITS_ON_PREFIX}
               {row.waitsOn}
             </div>
           ) : null}
@@ -134,7 +153,7 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
           <MarkGlyph text={row.mark} />
         </span>
         <div class="content tight muted">
-          <NameLine name={row.name} stall={row.stall} />
+          <NameLine name={row.name} stall={null} />
         </div>
       </div>
     )
@@ -153,13 +172,13 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
       <>
         <div class="row fold-row" style={depthStyle(row)} {...lineMotion(motion)}>
           <button type="button" class="fold" data-fold={fold} onClick={() => toggleStatusFold(row.id)}>
-            <Icon name={isUnfolded ? 'down' : 'right'} />
             {row.text}
+            <Icon name={isUnfolded ? 'down' : 'right'} />
           </button>
         </div>
         {isUnfolded || closingFolds.has(fold) ? (
           <div class="fold-rows" data-motion={`closed-${fold}`}>
-            {row.rows.map(r => (
+            {unfoldedRows(row.rows, () => false, isParentFolded).map(r => (
               <StatusLine key={r.id} row={r} />
             ))}
           </div>
@@ -170,7 +189,8 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
   if (row.kind === 'part')
     return (
       <div class="row part-line" {...lineMotion(motion)}>
-        <div class="part-rule">{row.text}</div>
+        <div class={row.isTitle ? 'part-rule part-title' : 'part-rule'}>{row.text}</div>
+        {row.description ? <div class="muted part-description">{row.description}</div> : null}
       </div>
     )
   if (row.kind === 'counts')

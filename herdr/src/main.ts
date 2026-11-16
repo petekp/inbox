@@ -22,8 +22,8 @@ import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr
 import { ROW_COPY } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
-import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
-import { SETTLED_MS, earliestOf, heldReplies, isGuarded, keptDiscards, withListInput } from '../../hooks/timing'
+import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
+import { SETTLED_MS, heldReplies, isGuarded, keptDiscards, withListInput } from '../../hooks/timing'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft } from '../../types'
@@ -36,12 +36,14 @@ import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
 import {
+  afterPress,
   afterSend,
   isFieldDrawn,
   keyMove,
   tabUndo,
   withChange,
   withDrawnRows,
+  withCollapsed,
   withSelected,
   withTab,
   withoutConfirmed,
@@ -51,12 +53,12 @@ import { withCollapses, writeCollapse } from './collapse'
 import type { Collapses } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
 import type { LinesAbove } from './held-line'
-import { NEXT_FRAME_MS, NO_TRACKS, moveRows } from './motion'
+import { NO_TRACKS, moveRows } from './motion'
+import { nextDrawAt } from './wake'
 import type { Tracks } from './motion'
 import { Heights } from './heights'
 import { blockEl } from './paint-blocks'
-import { timeLeftDraws, timeLeftNextAt } from './time-left'
-import { titleTintNextAt } from './paint-title-tint'
+import { timeLeftDraws } from './time-left'
 import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
@@ -272,7 +274,7 @@ export default class Inbox extends View {
     const text = this.input?.state.value().trim() ?? ''
     if (text === '') return
     const isGoal = rowId === GOAL_KEYS_ID
-    const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send
+    const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send
     const isSent = this.send({ action: 'type', id: rowId, text }, [], label, cx, isGoal ? undefined : text)
     this.ui = afterSend(this.ui, rowId, isSent)
     this.closeStaleField()
@@ -330,8 +332,9 @@ export default class Inbox extends View {
     this.listInput = withListInput(this.listInput, now)
     const d = b.does
     if (d.is === 'view') this.change(d.change)
+    else if (d.is === 'collapse') this.collapse(d.id, d.isCollapsed, cx)
     else if (d.is === 'press') {
-      if ('id' in d.press && d.press.action === 'undo') this.ui = withSelected(this.ui, d.press.id)
+      this.ui = afterPress(this.ui, d.press)
       this.send(d.press, d.effects, b.label, cx)
     } else if (d.is === 'type') this.type(d)
     else if (d.is === 'send') this.submit(d.rowId, cx)
@@ -345,7 +348,7 @@ export default class Inbox extends View {
     if (this.sessionId === null || read === null) return
     const c = { isCollapsed, at: Date.now() }
     this.collapses = { ...this.collapses, [id]: c }
-    this.ui = { ...withSelected(this.ui, id), ...(isCollapsed && { typing: null }) }
+    this.ui = withCollapsed(this.ui, id, isCollapsed)
     this.closeStaleField()
     const to = { appHome: appHome(), sessionId: this.sessionId }
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c))
@@ -380,16 +383,18 @@ export default class Inbox extends View {
         queue: this.queue,
       })
     let screen = screenFor(this.ui)
+    const inbox = screen.is === 'inbox' ? screen : null
     const ui = withDrawnRows(
       this.ui,
       this.lastWaits,
-      screen.is === 'inbox' ? screen.waits : null,
+      inbox?.waits ?? null,
       now,
       !this.isHelpShown,
+      inbox?.view.statusPage,
     )
     if (ui !== this.ui) screen = screenFor((this.ui = ui))
-    this.lastWaits = { tab: this.ui.tab, rows: screen.is === 'inbox' ? screen.waits : null }
-    this.view = screen.is === 'inbox' ? screen.view : null
+    this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null }
+    this.view = inbox?.view ?? null
     this.drawTimer?.cancel()
     this.drawTimer = null
     const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
@@ -454,18 +459,10 @@ export default class Inbox extends View {
     const read = drawn.read?.is === 'read' && this.ui.tab === 'overview' && !this.isHelpShown ? drawn.read : null
     const room = moved.nextAt === null ? this.listRoom : null
     this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
-    const isStarting = [...moved.motion.values()].some(m => m.isStart)
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
-    const nextFrame = isStarting ? now + NEXT_FRAME_MS : null
-    const timed = earliestOf([
-      timeLeftNextAt(moved.blocks, now),
-      titleTintNextAt(this.ui.newRows, moved.blocks, this.ui.closedSeen, now),
-    ])
-    const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter(
-      at => at !== null,
-    )
-    if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
+    const wakeAt = nextDrawAt(now, this.ui, screen, moved)
+    if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
     const focus = this.focus
 
     return root

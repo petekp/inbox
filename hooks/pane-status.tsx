@@ -2,7 +2,7 @@ import type { UiPressArgument } from 'claude-code'
 import { foldKey } from './fold-keys'
 import { SECTION_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
-import type { PaneBase, PaneHandlers } from './pane-context'
+import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import type { KeyAction } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
@@ -18,6 +18,7 @@ import {
 } from './pane-sizes'
 import { emptyTab } from './empty-tab'
 import { paneStatusGoal } from './pane-status-goal'
+import { paneStatusParent } from './pane-status-parent'
 import { paneStatusPath } from './pane-status-path'
 import {
   desktopButtonLines,
@@ -34,21 +35,17 @@ import {
 import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import {
-  mergedLine,
-  seenSubjectIds,
-  STALL_GAP,
-  type StatusCount,
-  type StatusRow,
-  WAITS_ON_PREFIX,
-  WAS_PREFIX,
-} from './status-page'
-import { unfoldedRows } from './status-page-parts'
+import { mergedLine, seenSubjectIds, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
+import { isParentCollapsed, unfoldedRows } from './status-folds'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
 
 export function paneStatus(
   {
+    hasClient,
+    elements,
+    terminalText,
+    Button,
     e,
     listColumns,
     look,
@@ -65,12 +62,12 @@ export function paneStatus(
     statusMarkAt,
     statusFrameEdge,
     statusNameLine,
+    nameLineSpans,
     statusPageText,
     statusTextWidth,
     desktopBlockWidth,
     fitsStatusLine,
     statusTree,
-    statusHead,
     markWidth,
     keyLines,
     terminalKeyCells,
@@ -85,34 +82,39 @@ export function paneStatus(
     foldButton,
     desktopFoldLines,
     statusUnfolded,
-  }: Pick<
-    PaneBase,
-    | 'e'
-    | 'listColumns'
-    | 'look'
-    | 'Box'
-    | 'Text'
-    | 'pal'
-    | 'statusKeyRow'
-    | 'view'
-    | 'isInline'
-    | 'Input'
-    | 'typing'
-    | 'drafts'
-    | 'now'
-    | 'statusUnfolded'
-  > &
+    isSuggestionOpen,
+  }: PaneClient &
+    Pick<
+      PaneBase,
+      | 'terminalText'
+      | 'Button'
+      | 'e'
+      | 'listColumns'
+      | 'look'
+      | 'Box'
+      | 'Text'
+      | 'pal'
+      | 'statusKeyRow'
+      | 'view'
+      | 'isInline'
+      | 'Input'
+      | 'typing'
+      | 'drafts'
+      | 'now'
+      | 'statusUnfolded'
+      | 'isSuggestionOpen'
+    > &
     Pick<
       PaneStatusLines,
       | 'statusMarkAt'
       | 'statusFrameEdge'
       | 'statusNameLine'
+      | 'nameLineSpans'
       | 'statusPageText'
       | 'statusTextWidth'
       | 'desktopBlockWidth'
       | 'fitsStatusLine'
       | 'statusTree'
-      | 'statusHead'
     > &
     Pick<PaneRowLines, 'markWidth' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
@@ -129,10 +131,31 @@ export function paneStatus(
     | 'startTyping'
     | 'selectStatusRow'
     | 'updateStatusUnfolded'
+    | 'updateSuggestionOpen'
+    | 'toggleParent'
   >,
 ) {
-  const { showAsk, runPress, startTyping, selectStatusRow, updateStatusUnfolded } = handlers
+  const { showAsk, runPress, startTyping, selectStatusRow, updateStatusUnfolded, toggleParent } = handlers
+  const { updateSuggestionOpen } = handlers
   const isUnfolded = (id: string) => statusUnfolded.includes(id)
+  const isCollapsed = (id: string) => view.collapsed.includes(id)
+  const { parentName } = paneStatusParent(
+    {
+      // Rebuilt in each branch so TypeScript keeps `hasClient` paired with `elements`.
+      ...(hasClient ? { hasClient, elements } : { hasClient, elements }),
+      look,
+      Box,
+      Text,
+      Button,
+      pal,
+      terminalText,
+      statusNameLine,
+      nameLineSpans,
+      statusTextWidth,
+      statusKeyRow,
+    },
+    handlers,
+  )
   const toggleFold = (id: string) =>
     void updateStatusUnfolded(u => (u.includes(id) ? u.filter(k => k !== id) : [...u, id]))
   // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
@@ -153,34 +176,60 @@ export function paneStatus(
       <Box key={key} height={look === 'desktop' ? SECTION_GAP_PT / DESKTOP_LINE_PT : 1} />,
       SECTION_GAP_PT / DESKTOP_LINE_PT,
     )
-  /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
-  const statusPartLine = (id: string, text: string, isFirst: boolean) => {
+  /**
+   * Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. The head's
+   * title draws in place of the name, in bold, with its description muted on the line under it, at the same column.
+   */
+  const statusPartLine = (id: string, text: string, isFirst: boolean, title?: { description: string | null }) => {
     const above = isFirst ? [] : [gap('part-above')]
     const line = oneLine(
       look === 'desktop' ? (
         <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
           <Box flexShrink={0} paddingRight={1}>
-            <Text color={pal.muted}>{text}</Text>
+            <Text color={title ? undefined : pal.muted} bold={!!title}>
+              {text}
+            </Text>
           </Box>
           <Box flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />
         </Box>
       ) : (
         <Box flexDirection="row">
           <Box width={statusRuleAt} flexShrink={0} />
-          <Text color={pal.muted}>{`${text} `}</Text>
+          <Text color={title ? undefined : pal.muted} bold={!!title}>{`${text} `}</Text>
           <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
         </Box>
       ),
       desktopEdgedLine,
     )
 
+    const description = title?.description ? [statusPartDescription(id, title.description)] : []
+
     return stackedIn(
       <Box key={`status-${id}`} flexDirection="column">
         {above.map(p => p.el)}
         {line.el}
+        {description.map(p => p.el)}
       </Box>,
-      [...above, line],
+      [...above, line, ...description],
     )
+  }
+  /** The head's description under its title's rule, wrapped at the text column. */
+  const statusPartDescription = (id: string, text: string): Drawn => {
+    const lines =
+      look === 'desktop'
+        ? desktopTextLines(text, desktopBlockWidth - desktopStatusRuleLeft * DESKTOP_CELL_PT)
+        : inkLines(text, statusTextWidth(0))
+
+    return {
+      el: (
+        <Box key={`status-${id}-description`} paddingLeft={look === 'desktop' ? desktopStatusRuleLeft : statusRuleAt}>
+          <Text wrap="wrap" color={pal.muted}>
+            {text}
+          </Text>
+        </Box>
+      ),
+      lines,
+    }
   }
   /** One line of the Status tab's list: a mark and its text, `depth` steps in. Each step sits under the text of the row it hangs from. */
   const statusRowLine = ({
@@ -190,15 +239,12 @@ export function paneStatus(
     content,
     tree = null,
     isSelected = false,
-    isFold = false,
   }: {
     key: string
     depth?: number
     mark: JSX.Element | null
     content: Drawn | Drawn[]
     tree?: JSX.Element | null
-    /** A fold's line in the terminal, whose control draws its chevron in the mark column and its count at the text column. */
-    isFold?: boolean
     /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
     isSelected?: boolean
   }): Drawn => {
@@ -225,11 +271,9 @@ export function paneStatus(
           backgroundColor={isSelected ? pal.selection : undefined}
         >
           <Box width={statusMarkAt + markWidth * depth} flexShrink={0} />
-          {isFold ? null : (
-            <Box width={markWidth} flexShrink={0}>
-              {mark}
-            </Box>
-          )}
+          <Box width={markWidth} flexShrink={0}>
+            {mark}
+          </Box>
           <Box flexDirection="column" flexShrink={1} flexGrow={1}>
             {children}
           </Box>
@@ -278,13 +322,23 @@ export function paneStatus(
     lines: look === 'desktop' ? desktopTextLines(text, statusTextWidth(depth)) : inkLines(text, statusTextWidth(depth)),
   })
   /**
-   * Removes the goal and selects its Undo, or brings it back and selects Edit, then scrolls to the button and focuses
-   * it. The pressed button is gone, and the terminal would move its focus to the next button drawn.
+   * Removes the goal and selects its Undo, or brings it back or sets the suggested goal and selects Edit, then scrolls
+   * to the button and focuses it. The pressed button is gone, and the terminal would move its focus to the next button
+   * drawn.
    */
-  const pressGoal = async (action: 'remove-goal' | 'restore-goal', surface: UiPressArgument['surface']) => {
+  const pressGoal = async (
+    action: 'remove-goal' | 'restore-goal' | 'take-goal',
+    surface: UiPressArgument['surface'],
+  ) => {
     await runPress({ action, id: GOAL_KEYS_ID }, surface)
+    if (action === 'take-goal') await updateSuggestionOpen(false)
     const next = action === 'remove-goal' ? 'restore-goal' : 'type-goal'
     await selectStatusRow(GOAL_KEYS_ID, `${next}-${GOAL_KEYS_ID}`)
+  }
+  /** Shows the suggested goal and focuses Set, or hides it and focuses New. */
+  const showSuggestion = async (isShown: boolean) => {
+    await updateSuggestionOpen(isShown)
+    await selectStatusRow(GOAL_KEYS_ID, isShown ? `take-goal-${GOAL_KEYS_ID}` : `show-suggestion-${GOAL_KEYS_ID}`)
   }
   /** A target's buttons from its plan. Only the selected target's keys press it, so only that one names its keys. */
   const statusKeys = (t: StatusKeyTarget): KeyAction[] =>
@@ -301,7 +355,11 @@ export function paneStatus(
             ? startTyping(GOAL_KEYS_ID, press.text)
             : press.action === 'toggle-fold'
               ? toggleFold(press.foldId)
-              : pressGoal(press.action, p.surface),
+              : press.action === 'toggle-collapse'
+                ? void toggleParent(press.id)
+                : press.action === 'show-suggestion' || press.action === 'hide-suggestion'
+                  ? showSuggestion(press.action === 'show-suggestion')
+                  : pressGoal(press.action, p.surface),
     }))
   const { goalSection, setGoalBare, markRun, isTypingGoal } = paneStatusGoal(
     {
@@ -326,6 +384,7 @@ export function paneStatus(
       keyRow,
       terminalKeyCells,
       desktopFrame,
+      isSuggestionOpen,
     },
     handlers,
     {
@@ -335,6 +394,8 @@ export function paneStatus(
       statusKeys,
       statusPartLine,
       isUnfolded,
+      isCollapsed,
+      parentName,
       path: paneStatusPath(
         { look, Box, Text, pal, statusMarkAt, statusFrameEdge, statusTextWidth, foldRow, foldButton, desktopFoldLines },
         { isUnfolded, toggleFold },
@@ -349,16 +410,13 @@ export function paneStatus(
   const statusRow = (r: StatusRow, n: number) => {
     if (r.kind === 'subject') {
       const mark = statusMark(r)
+      const isFolded = isParentCollapsed(r, isCollapsed)
       const content = [
-        statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, r.depth),
+        r.foldCount > 0
+          ? parentName(r.id, { text: r.name }, r.stall, r.depth, { isCollapsed: isFolded, count: r.foldCount })
+          : statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, r.depth),
         ...(r.waitsOn
-          ? [
-              statusPageText(
-                `status-${r.id}-waits-on`,
-                [{ text: `${WAITS_ON_PREFIX}${r.waitsOn}`, isNeedsYou: true }],
-                r.depth,
-              ),
-            ]
+          ? [statusPageText(`status-${r.id}-waits-on`, [{ text: r.waitsOn, isNeedsYou: true }], r.depth)]
           : []),
         ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], r.depth)] : []),
         ...(r.merged
@@ -380,7 +438,7 @@ export function paneStatus(
         depth: r.depth,
         mark,
         content,
-        tree: r.hasChildren ? statusTree(`status-${r.id}-tree`, 'down', r.depth) : null,
+        tree: r.hasChildren && !isFolded ? statusTree(`status-${r.id}-tree`, 'down', r.depth) : null,
         isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
       })
 
@@ -393,7 +451,7 @@ export function paneStatus(
         key: `status-${r.id}`,
         depth: r.depth,
         mark,
-        content: statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, r.depth),
+        content: statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, null, r.depth),
         tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1) : null,
       })
     }
@@ -422,16 +480,12 @@ export function paneStatus(
             key: `status-${r.id}`,
             depth: r.depth,
             mark: null,
-            content: plainText(
-              foldButton(key, r.text, isUnfolded(r.id), toggle, ' '.repeat(Math.max(1, markWidth - 1))),
-              r.text,
-              r.depth,
-            ),
+            content: plainText(foldButton(key, r.text, isUnfolded(r.id), toggle), r.text, r.depth),
             isSelected: r.id === statusKeyRow?.id,
-            isFold: true,
           })
     }
-    if (r.kind === 'part') return statusPartLine(r.id, r.text, n === 0)
+    if (r.kind === 'part')
+      return statusPartLine(r.id, r.text, n === 0, r.isTitle ? { description: r.description } : undefined)
     if (r.kind === 'counts')
       return statusRowLine({
         key: `status-${r.id}`,
@@ -457,16 +511,16 @@ export function paneStatus(
 
     return { ...fold, tops: seenTops(r) }
   }
-  const statusRows = (rows: StatusRow[]): Drawn[] => unfoldedRows(rows, isUnfolded).map(statusRow)
+  const statusRows = (rows: StatusRow[]): Drawn[] => unfoldedRows(rows, isUnfolded, isCollapsed).map(statusRow)
   /** The padding a desktop section starts with, above its first part. */
   const desktopSectionPad: Drawn[] =
     look === 'desktop' ? [{ el: <Box key="section-pad" />, lines: exactly(desktopSpaceLines(isInline ? 0 : 1)) }] : []
   /** The Status page, and each subject row's first line from the page's top. */
   const drawStatus = (): { el: JSX.Element; tops: Map<string, RowTop> } => {
     const page = view.statusPage
-    const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: isTypingGoal })
+    const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: isTypingGoal, isSuggestionOpen })
     if (empty) {
-      const below = empty.under?.is === 'set-goal' ? setGoalBare(empty.under).map(p => p.el) : []
+      const below = empty.under?.is === 'set-goal' ? setGoalBare(empty.under, page).map(p => p.el) : []
 
       return {
         el: (
@@ -477,17 +531,16 @@ export function paneStatus(
         tops: new Map(),
       }
     }
-    const head = page.isHeadApart && page.head ? [statusHead(page.head)] : []
     const rows = page.rows.length > 0 ? statusRows(page.rows) : []
-    const shown = [goalSection(page), head, rows]
+    const shown = [goalSection(page), rows]
       .filter(lines => lines.length > 0)
       .map(lines => stackedIn(section(lines.map(p => p.el)), [...desktopSectionPad, ...lines]))
     // A hairline between two desktop sections sits a margin under the one above.
     const sectionGap = look === 'desktop' ? DESKTOP_HAIR_LINES + desktopSpaceLines(1) : terminalSectionGap
     // The goal's section and the list after it draw no hairline between them: Other work's own rule sets that list
-    // apart while the goal shows milestones, and nothing does while it shows none. A met goal's head sits between them,
-    // after a hairline, as it does with no goal.
-    const isUnruledAfterGoal = page.goal !== null && rows.length > 0
+    // apart while the goal shows milestones, and nothing does while it shows none. With no goal, a heading's own rule
+    // sets the list apart.
+    const isUnruledAfterGoal = (page.goal !== null || page.rows[0]?.kind === 'part') && rows.length > 0
 
     return {
       el: sections(

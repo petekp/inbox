@@ -50,9 +50,9 @@ const ARMS = { mid: '├ ', last: '└ ' } as const
 export const shape = (rows: StatusRow[]) =>
   rows.map(r =>
     r.kind === 'subject'
-      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''}${r.waitsOn ? ` · waits on you: ${r.waitsOn}` : r.stall ? ` · ${r.stall.text}` : ''}${r.hasChildren ? ' ┐' : ''}`
+      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''}${r.waitsOn ? ` · ${r.waitsOn}` : r.stall ? ` · ${r.stall.text}` : ''}${r.hasChildren ? ' ┐' : ''}`
       : r.kind === 'child'
-        ? `${r.branch ? ARMS[r.branch] : ''}${r.mark} ${r.name}${r.stall ? ` · ${r.stall.text}` : ''}`
+        ? `${r.branch ? ARMS[r.branch] : ''}${r.mark} ${r.name}`
         : r.kind === 'more'
           ? `${ARMS[r.branch]}${r.text}`
           : r.kind === 'part'
@@ -60,6 +60,6 @@ export const shape = (rows: StatusRow[]) =>
             : r.kind === 'counts'
               ? r.counts.map(c => `${c.mark} ${c.text}`).join(' · ')
               : r.kind === 'done-fold'
-                ? `▸ ${r.text}`
+                ? `› ${r.text}`
                 : `${r.mark} ${r.text}`,
   )

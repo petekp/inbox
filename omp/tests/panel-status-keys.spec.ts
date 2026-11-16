@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { SETTLED_MS, NO_HOLDS, PRESS_GUARD_MS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { statusKeyPlan, statusKeyRows } from '../../hooks/status-keys'
-import { statusListRows } from '../../hooks/status-page'
+import { statusListRows } from '../../hooks/status-folds'
 import type { StatusRow } from '../../hooks/status-page'
 import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
@@ -59,7 +59,7 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   const screen = goallessScreen()
   const page = screen.view.statusPage
   const held = page.rows.filter(r => r.kind === 'subject' && statusKeyPlan(r).length > 0)
-  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's3', 'done'])
+  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's3', 's1', 'done'])
   const lines = text(screen, onPage).split('\n')
   const nameAt = (row: StatusRow) => lines.findIndex(l => l.includes(labelOf(row)))
   const buttonAt = (row: StatusRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('View '))
@@ -80,8 +80,8 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   const moved = text(screen, second).split('\n')
   expect(moved[buttonAt(held[0]!)]).not.toContain('↵')
   expect(moved[buttonAt(held[1]!)]).toContain('↵ View question')
-  expect(keys(screen, second, 'j').selectedId).toBe('done')
-  expect(keys(screen, second, 'j', 'j').selectedId).toBe('goal')
+  expect(keys(screen, second, 'j').selectedId).toBe('s1')
+  expect(keys(screen, second, 'j', 'j', 'j').selectedId).toBe('goal')
   expect(keys(screen, onPage, 'k').selectedId).toBe('goal')
   expect(text(screen, onPage).split('\n').at(-1)).toContain('j k select')
   expect(text(unheldScreen(), onPage)).not.toContain('View ')
@@ -158,23 +158,76 @@ test('in a short panel, switching to the Status page scrolls its first selected 
   expect(lines.some(l => l.includes('↵ View'))).toBe(true)
 })
 
-test('on the Status page, j reaches the done fold after the rows with buttons, Enter lists its finished rows one step in under ▾, and f folds them again', () => {
+test('on the Status page, j reaches the done fold after the rows with buttons, Enter lists its finished rows in the label column under v, and f folds them again', () => {
   const screen = goallessScreen()
   const fold = screen.view.statusPage.rows.find(r => r.kind === 'done-fold')!
   const finished = fold.kind === 'done-fold' ? fold.rows : []
-  const onFold = keys(screen, onPage, 'j', 'j')
+  const onFold = keys(screen, onPage, 'j', 'j', 'j')
   expect(onFold.selectedId).toBe(fold.id)
   const folded = text(screen, onFold).split('\n')
-  expect(folded.filter(l => l.includes(`▸ ${labelOf(fold)}`))).toHaveLength(1)
+  expect(folded.filter(l => l.includes(`${labelOf(fold)} ›`))).toHaveLength(1)
   expect(finished.length).toBeGreaterThan(0)
 
   const unfolded = keys(screen, onFold, 'enter')
   const lines = text(screen, unfolded).split('\n')
-  const foldAt = lines.findIndex(l => l.includes(`▾ ${labelOf(fold)}`))
+  const foldAt = lines.findIndex(l => l.includes(`${labelOf(fold)} v`))
   expect(foldAt).toBeGreaterThan(-1)
   expect(lines.slice(foldAt + 1, foldAt + 1 + finished.length).map(l => l.trim())).toEqual(
     finished.map(r => `✓ ${labelOf(r)}`),
   )
-  expect(lines[foldAt + 1]!.indexOf('✓')).toBe(lines[foldAt]!.indexOf('▾') + 2)
+  expect(lines[foldAt + 1]!.indexOf('✓')).toBe(lines[foldAt]!.indexOf(labelOf(fold)))
   expect(text(screen, keys(screen, unfolded, 'f'))).toBe(text(screen, onFold))
+})
+
+const foldedScreen = (screen: ReturnType<typeof screenOf>, ...ids: string[]) => ({
+  ...screen,
+  view: { ...screen.view, collapsed: ids },
+})
+
+test('on the Status page, j reaches a subject with rows under it, f folds them behind › and their count and a second f opens them, with no Fold button drawn', () => {
+  const screen = goallessScreen()
+  const parent = screen.view.statusPage.rows.find(r => r.kind === 'subject' && r.foldCount > 0 && r.hasChildren)!
+  if (parent.kind !== 'subject') throw new Error('expected a subject')
+  const rows = screen.view.statusPage.rows
+  const after = rows.slice(rows.indexOf(parent) + 1)
+  const under = after.slice(
+    0,
+    after.findIndex(r => r.depth <= parent.depth),
+  )
+  expect(under.length).toBeGreaterThan(0)
+  expect(text(screen, onPage)).toContain(`${labelOf(parent)} v`)
+  expect(text(screen, onPage)).not.toContain('Fold')
+  const onParent = { ...onPage, selectedId: parent.id }
+  expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toContain(parent.id)
+
+  const pressed = handleKey(screen, onParent, 'f', NOW)
+  expect(pressed.press).toEqual({ action: 'collapse', id: parent.id, isCollapsed: true })
+
+  const folded = foldedScreen(screen, parent.id)
+  const lines = text(folded, onParent).split('\n')
+  expect(lines.some(l => l.includes(`${labelOf(parent)} › ${parent.foldCount}`))).toBe(true)
+  for (const row of under) expect(text(folded, onParent)).not.toContain(labelOf(row))
+  const parentAt = lines.findIndex(l => l.includes(labelOf(parent)))
+  expect(lines[parentAt + 1]).not.toMatch(/^ │/)
+  expect(handleKey(folded, onParent, 'f', NOW).press).toEqual({ action: 'collapse', id: parent.id, isCollapsed: false })
+  expect(text(foldedScreen(screen), onParent)).toBe(text(screen, onParent))
+  expect(text(folded, onParent, 28)).toContain(`› ${parent.foldCount}`)
+  expect(text(folded, onParent)).toContain('f unfold')
+})
+
+test('on the Status page, f folds a milestone’s rows behind its name, keeps its word at the right edge, and j reaches it', () => {
+  const screen = screenOf()
+  const milestone = screen.view.statusPage.goal!.milestones.find(m => m.foldId === null && m.foldCount > 0)!
+  expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toContain(milestone.id)
+  const onMilestone = { ...onPage, selectedId: milestone.id }
+  expect(handleKey(screen, onMilestone, 'f', NOW).press).toEqual({
+    action: 'collapse',
+    id: milestone.id,
+    isCollapsed: true,
+  })
+  const before = text(screen, onMilestone).split('\n')
+  const folded = text(foldedScreen(screen, milestone.id), onMilestone).split('\n')
+  const first = folded.find(l => l.includes(milestone.name))!
+  expect(first).toContain(`› ${milestone.foldCount}`)
+  expect(folded.length).toBeLessThan(before.length)
 })

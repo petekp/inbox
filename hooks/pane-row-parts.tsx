@@ -1,9 +1,10 @@
 import type { UiPressArgument } from 'claude-code'
 import type { FoldKind } from '../types'
 import { groupEmptyText } from './banners'
-import { chevronSvg, RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
+import { foldSpacerSvg, RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
 import { closedTitleTint } from './pane-title-tint'
 import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
+import { foldGlyph } from './fold-chevron'
 import type { FoldProps } from './fold-client'
 import { ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
@@ -21,6 +22,7 @@ import {
   DESKTOP_MARK_CELLS,
   DESKTOP_ROW_PAD,
   FRAME_INSET_PT,
+  ROW_COLUMNS,
   TERMINAL_SIDE_CELLS,
   TREE_LINE_AT,
   UNDO_CELLS,
@@ -63,7 +65,6 @@ export function paneRowParts(
     isInline,
     space,
     now,
-    foldHover,
     Button,
     settledLayout,
     desktopFrame,
@@ -84,7 +85,6 @@ export function paneRowParts(
       | 'isInline'
       | 'space'
       | 'now'
-      | 'foldHover'
       | 'Button'
       | 'settledLayout'
     > &
@@ -260,35 +260,18 @@ export function paneRowParts(
           `closed-${d.id}`,
           1,
         )
-  /** The terminal's fold control: a chevron, `gap` and `label`, one Button, or `label` first when `isLabelFirst`. */
-  const foldButton = (
-    key: string,
-    label: string,
-    isUnfolded: boolean,
-    toggle: () => void,
-    gap = ' ',
-    isLabelFirst = false,
-  ) => {
-    const chevron = isUnfolded ? '▾' : '▸'
-
-    return (
-      <Button
-        plain
-        dimColor
-        key={`fold-${key}`}
-        label={isLabelFirst ? `${label}${gap}${chevron}` : `${chevron}${gap}${label}`}
-        onPress={toggle}
-      />
-    )
-  }
+  /** The terminal's fold control: `label`, a space and the chevron, one Button. */
+  const foldButton = (key: string, label: string, isUnfolded: boolean, toggle: () => void) => (
+    <Button plain dimColor key={`fold-${key}`} label={`${label} ${foldGlyph(isUnfolded)}`} onPress={toggle} />
+  )
   // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
-  /** A fold's line: a chevron, then `label`. Desktop posts its click and hover under `fold-` and `key`. */
+  /** A fold's line: `label`, then the chevron. Desktop posts its click under `fold-` and `key`. */
   const foldRow = (key: string, label: string, isUnfolded: boolean, toggle: () => void) =>
     hasClient ? (
       <Box key={`fold-row-${key}`} flexDirection="row" overflow="hidden">
         {'Svg' in elements ? (
           <elements.Svg
-            source={chevronSvg(isUnfolded, foldHover === key)}
+            source={foldSpacerSvg()}
             alt={isUnfolded ? 'Unfolded' : 'Folded'}
             width={FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT}
             height={2 * ROW_PAD_PT + DESKTOP_LINE_PT}
@@ -304,6 +287,7 @@ export function paneRowParts(
                 markCells: DESKTOP_MARK_CELLS,
                 label,
                 isUnfolded,
+                chevron: foldGlyph(isUnfolded),
                 padY: DESKTOP_ROW_PAD,
                 colors: {
                   rest: isInline ? null : (pal.card ?? null),
@@ -321,6 +305,8 @@ export function paneRowParts(
         null,
         <Box flexDirection="row">{foldButton(key, label, isUnfolded, toggle)}</Box>,
         `fold-row-${key}`,
+        0,
+        ROW_COLUMNS.tree.textAt,
       )
     )
   /** The lines a desktop fold row takes: its chevron's height, in the pane's scroll rows. */

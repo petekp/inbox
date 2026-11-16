@@ -42,7 +42,7 @@ import {
 } from './session-turns'
 import { emptySession, upgradeSession, type SavedSession } from './session-files'
 import { pressOn, pruned, type SendOutcome } from './session-presses'
-import { isCompareInBackground } from './clients'
+import { isCompareInBackground } from './press-messages'
 import { sessionView, showsRunningMark, type SessionView } from './session-view'
 import {
   childrenCutOff,
@@ -157,7 +157,8 @@ import {
   prRowIds,
   showNewRows,
 } from './arrivals'
-import { parseInline } from './inline'
+import { paneText } from './pane-text'
+import { PARENT_PREFIX } from './pane-status-parent'
 import {
   DESKTOP_OFFSET_ROUNDING,
   DESKTOP_ROW_PAD,
@@ -169,7 +170,7 @@ import {
 import { lookOf, paletteFor } from './palettes'
 import { endOfTints } from './pane-title-tint'
 import { animateRunningMarks } from './running-mark-timer'
-import { glued, type TerminalSpan, unbroken } from './terminal-text'
+import { glued, unbroken } from './terminal-text'
 import {
   lastUndoEnd,
   NO_CURSOR,
@@ -307,9 +308,9 @@ const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
 const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
+const SUGGESTION_OPEN = atom({ plugin: 'inbox', key: 'suggestionOpen' } as const, false)
 /** The Closed folds whose earlier lines the person opened. */
 const CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
-const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as string | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 /** Switching tabs or closing the pane closes Help. */
 const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
@@ -864,10 +865,21 @@ async function toggleRow($: EngineInterface, id: string | null) {
       update($, SELECTION, s => pinnedOn(s, tab, row, index)),
       update($, TYPING, t => (t === row ? null : t)),
     ])
-  const at = await $.clock.now()
-  if (await read($, DEMO)) await update($, DEMO, d => d && withCollapse(d, row, isCollapsed, at))
-  else await commit($, currentOwner(), s => withCollapse(s, row, isCollapsed, at))
+  await saveCollapse($, row, isCollapsed)
   if (!isCollapsed) await select($, tab, row, index)
+}
+
+/** Saves row `id` collapsed or open, in the sample copy while the sample shows. */
+async function saveCollapse($: EngineInterface, id: string, isCollapsed: boolean) {
+  const at = await $.clock.now()
+  if (await read($, DEMO)) await update($, DEMO, d => d && withCollapse(d, id, isCollapsed, at))
+  else await commit($, currentOwner(), s => withCollapse(s, id, isCollapsed, at))
+}
+
+/** A press on a Status parent's name or its Fold key. */
+async function toggleParent($: EngineInterface, id: string) {
+  const { view } = await drawnState($)
+  await saveCollapse($, id, !view.collapsed.includes(id))
 }
 
 async function openLeftRows($: EngineInterface) {
@@ -1529,10 +1541,6 @@ async function setFold($: EngineInterface, key: string, isUnfolded: unknown) {
   await ('kind' in fold
     ? update($, UNFOLDED, u => withFold(u, fold.kind, isUnfolded))
     : update($, STATUS_UNFOLDED, u => withFold(u, fold.statusId, isUnfolded)))
-}
-
-async function setFoldHover($: EngineInterface, key: string, isHover: boolean) {
-  if (foldOf(key)) await update($, FOLD_HOVER, hovered => (isHover ? key : hovered === key ? null : hovered))
 }
 
 async function unlessGuarded($: EngineInterface, rowId: string, press: UiPressArgument, onPress: Action['onPress']) {
@@ -2252,6 +2260,7 @@ async function forgetRowState($: EngineInterface) {
     update($, TYPING, () => null),
     update($, UNFOLDED, () => []),
     update($, STATUS_UNFOLDED, () => []),
+    update($, SUGGESTION_OPEN, () => false),
     update($, CLOSED_ALL, () => []),
     update($, OPTIONS_SHOWN, () => []),
     update($, DRAFTS, () => ({})),
@@ -2757,7 +2766,6 @@ export const register: Register = on => {
     const data = e.data as {
       tab?: unknown
       isUnfolded?: unknown
-      hover?: unknown
       key?: unknown
       isPointer?: unknown
     } | null
@@ -2786,8 +2794,7 @@ export const register: Register = on => {
         surface: e.surface,
       })
     } else if (/^(select|collapse)-/.test(e.element)) await toggleRow($, e.element.replace(/^\w+-/, ''))
-    else if (e.element.startsWith('fold-') && typeof data?.hover === 'boolean')
-      await setFoldHover($, e.element.slice('fold-'.length), data.hover)
+    else if (e.element.startsWith(PARENT_PREFIX)) await toggleParent($, e.element.slice(PARENT_PREFIX.length))
     else if (e.element.startsWith('fold-')) await setFold($, e.element.slice('fold-'.length), data?.isUnfolded)
 
     return r
@@ -2799,7 +2806,6 @@ export const register: Register = on => {
     void syncShown($, { isOpen: false }).then(() => syncLook($, false))
     paneHasKeys.clear()
     await update($, TYPING, () => null)
-    await update($, FOLD_HOVER, () => null)
     await update($, IS_HELP_SHOWN, () => false)
 
     return r
@@ -2957,13 +2963,13 @@ export const register: Register = on => {
       typing,
       drafts,
       unfolded,
-      foldHover,
       isHelpShown,
       optionsShown,
       termProgram,
       statusSelection,
       statusUnfolded,
       closedAll,
+      isSuggestionOpen,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -2973,13 +2979,13 @@ export const register: Register = on => {
       read($, TYPING),
       read($, DRAFTS),
       read($, UNFOLDED),
-      read($, FOLD_HOVER),
       read($, IS_HELP_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
       read($, STATUS_SELECTION),
       read($, STATUS_UNFOLDED),
       read($, CLOSED_ALL),
+      read($, SUGGESTION_OPEN),
       // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
       look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
@@ -3017,47 +3023,7 @@ export const register: Register = on => {
     const settledLayout = settledLayoutId(tab, view, shownPrs, lastActions, notes, now, paneState.terminalInlineSize)
     const prViews = shownPrs.map(x => x.pr)
     const pal = paletteFor(theme, look)
-    const inlineText = (text: string) =>
-      parseInline(text).map((s, n) => (
-        <Text key={String(n)}>
-          <Text
-            bold={s.bold}
-            italic={s.italic}
-            strikethrough={s.strike}
-            underline={s.link ? true : undefined}
-            color={s.code ? 'permission' : undefined}
-          >
-            {s.text}
-          </Text>
-          {s.link ? <Text color={pal.muted}>{` ${s.link}`}</Text> : null}
-        </Text>
-      ))
-    const terminalText = (lines: TerminalSpan[][]) =>
-      lines.flatMap((line, n) => [
-        ...(n > 0 ? ['\n'] : []),
-        ...line.map((span, i) => (
-          <Text
-            key={`${n}-${i}`}
-            bold={span.bold}
-            italic={span.italic}
-            strikethrough={span.strike}
-            underline={span.link ? true : undefined}
-            color={
-              span.isNeedsYou
-                ? (pal.tone.needsYou ?? pal.mark.needsYou)
-                : span.isDone
-                  ? (pal.tone.done ?? pal.mark.done)
-                  : span.isLinkAddress || span.isMuted
-                    ? pal.muted
-                    : span.code
-                      ? 'permission'
-                      : undefined
-            }
-          >
-            {span.text}
-          </Text>
-        )),
-      ])
+    const { inlineText, terminalText } = paneText({ Text, pal })
     const raise = {
       dimColor: false,
       backgroundColor: pal.raised,
@@ -3083,6 +3049,8 @@ export const register: Register = on => {
       updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
       updateUnfolded: fn => update($, UNFOLDED, fn),
       updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
+      updateSuggestionOpen: isOpen => update($, SUGGESTION_OPEN, () => isOpen),
+      toggleParent: id => toggleParent($, id),
       updateClosedAll: fn => update($, CLOSED_ALL, fn),
       runPress: (p, surface) => runPress($, p, surface),
       readAgain: () => readAgain($),
@@ -3143,8 +3111,15 @@ export const register: Register = on => {
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
     const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
-    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded) : null
-    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage, isStatusUnfolded) : []
+    const isStatusCollapsed = (id: string) => view.collapsed.includes(id)
+    const statusKeyRow = isStatusShown
+      ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded, isStatusCollapsed, isSuggestionOpen)
+      : null
+    const statusPressRows = isStatusShown
+      ? statusKeyRows(view.statusPage, isStatusUnfolded, isStatusCollapsed, isSuggestionOpen)
+      : []
+    if (isSuggestionOpen && view.statusPage.suggestedGoal === null)
+      later($, 0, () => update($, SUGGESTION_OPEN, () => false))
 
     const {
       desktopColumnPt,
@@ -3321,7 +3296,6 @@ export const register: Register = on => {
         isInline,
         space,
         now,
-        foldHover,
         Button,
         settledLayout,
         desktopFrame,
@@ -3409,7 +3383,6 @@ export const register: Register = on => {
       look,
       listColumns,
       terminalText,
-      desktopFrame,
       desktopColumnPt,
       markWidth,
       branch,
@@ -3417,6 +3390,9 @@ export const register: Register = on => {
     })
     const { statusKeys, statusView, statusTops } = paneStatus(
       {
+        ...client,
+        terminalText,
+        Button,
         e,
         listColumns,
         look,
@@ -3445,6 +3421,7 @@ export const register: Register = on => {
         foldButton,
         desktopFoldLines,
         statusUnfolded,
+        isSuggestionOpen,
       },
       handlers,
     )

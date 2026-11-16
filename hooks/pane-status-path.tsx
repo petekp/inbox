@@ -1,4 +1,4 @@
-import { desktopLines, desktopTextPt } from './desktop-metrics'
+import { foldGlyph } from './fold-chevron'
 import { foldKey } from './fold-keys'
 import type { PaneBase } from './pane-context'
 import type { PaneRowParts } from './pane-row-parts'
@@ -12,13 +12,10 @@ import {
   FRAME_INSET_PT,
 } from './pane-sizes'
 import type { PaneStatusLines } from './pane-status-lines'
-import { exactly, inkLines, stackedIn } from './pane-status-tops'
+import { inkLines, stackedIn } from './pane-status-tops'
 import type { Drawn } from './pane-status-tops'
 import type { MilestoneRow } from './status-goal-page'
-import { STALL_GAP } from './status-page'
 import type { PathLine, WorkJoint } from './status-path'
-import { terminalSpanLines } from './terminal-text'
-import { cellWidth } from './text'
 
 /** More lines than a milestone and its work take. The milestone's Box clips the rest. */
 const PATH_LINES = 200
@@ -26,12 +23,10 @@ const pathTexts: Record<NonNullable<PathLine>, string> = {
   continues: Array<string>(PATH_LINES).fill('│').join('\n'),
   'to-next': Array<string>(PATH_LINES).fill('┆').join('\n'),
 }
-/** The cells, or spaces' width on desktop, between the end of a name's first line and its word. */
-const WORD_GAP = '  '
 
 /**
- * The goal's path in the terminal and desktop looks: the line in the milestones' mark column, the word at the right of a
- * name's first line, and a done milestone folded to its name.
+ * The goal's path in the terminal and desktop looks: the line in the milestones' mark column, and a done milestone
+ * folded to its name.
  */
 export function paneStatusPath(
   {
@@ -175,33 +170,10 @@ export function paneStatusPath(
             </Box>
           ),
         }
-  /** Whether the word fits at the right of the name's first line, which it never shortens or pushes to more lines. */
-  const wordFits = (m: MilestoneRow, word: string) => {
-    const width = statusTextWidth(0)
-    const name = m.stall ? `${m.name}${STALL_GAP}${m.stall.text}` : m.name
-    if (look === 'desktop') return desktopTextPt(`${desktopLines(name, width)[0] ?? ''}${WORD_GAP}${word}`) <= width
-    const first = (terminalSpanLines([{ text: name }], width)[0] ?? []).map(s => s.text).join('')
-
-    return cellWidth(`${first}${WORD_GAP}${word}`) <= width
-  }
-  /** The milestone's word, muted at the right of its name's first line, where it fits. It takes no line of its own. */
-  const pathWord = (m: MilestoneRow): Drawn[] =>
-    m.word === null || !wordFits(m, m.word)
-      ? []
-      : [
-          {
-            el: (
-              <Box key={`goal-${m.id}-word`} position="absolute" top={0} right={0}>
-                <Text color={pal.muted}>{m.word}</Text>
-              </Box>
-            ),
-            lines: exactly(0),
-          },
-        ]
   /**
    * A done milestone folded to its name, or a met goal's milestones folded into the line that names them. The terminal
-   * draws the name muted with the fold's chevron after it, as one button. Desktop draws a fold line, whose chevron takes
-   * the mark's place, since only a `Client` takes a click across the line.
+   * draws the name muted with the fold's chevron after it, as one button. Desktop draws a fold line, since only a
+   * `Client` takes a click across the line.
    */
   const foldedName = (m: Pick<MilestoneRow, 'id' | 'name'> & { foldId: string }) => {
     const toggle = () => toggleFold(m.foldId)
@@ -211,12 +183,12 @@ export function paneStatusPath(
       return { el: <Box key={`status-${m.id}`}>{foldRow(key, m.name, isOpen, toggle)}</Box>, lines: desktopFoldLines }
 
     return {
-      el: <Box key={`goal-${m.id}-fold`}>{foldButton(key, m.name, isOpen, toggle, ' ', true)}</Box>,
-      lines: inkLines(`${m.name} ▸`, statusTextWidth(0)),
+      el: <Box key={`goal-${m.id}-fold`}>{foldButton(key, m.name, isOpen, toggle)}</Box>,
+      lines: inkLines(`${m.name} ${foldGlyph(false)}`, statusTextWidth(0)),
     }
   }
 
-  return { pathGroup, connectorDown, jointed, pathWord, foldedName }
+  return { pathGroup, connectorDown, jointed, foldedName }
 }
 
 export type PaneStatusPath = ReturnType<typeof paneStatusPath>

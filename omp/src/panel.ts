@@ -25,7 +25,7 @@ import type { HerdrAsk } from '../../hooks/herdr-ask'
 import { drawGoalPart, goalPartId, workRowLines } from './panel-goal'
 import { drawPageRow } from './panel-page'
 import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
-import { fit, indented, spread } from './panel-text'
+import { collapsedIn, fit, indented, spread } from './panel-text'
 
 type ResumePress = { action: 'resume' }
 /** An answer to the question before omp installs the inbox's Herdr mod. */
@@ -96,6 +96,8 @@ export type PanelUi = {
   optionsShown: string[]
   /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
   statusUnfolded: string[]
+  /** Whether the person opened the suggested goal. It shows only while the page still has one. */
+  isSuggestionOpen: boolean
   /** A Resume press for the stop that began at `stopAt`. */
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
@@ -133,6 +135,7 @@ export const INITIAL_UI: PanelUi = {
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
+  isSuggestionOpen: false,
   resuming: null,
   opened: null,
   pageTop: 0,
@@ -231,7 +234,13 @@ export function drawPanel(
   const pageSelected =
     isRowTab(ui.tab) || ui.typing !== null
       ? null
-      : statusSelected(screen.view.statusPage, ui.selectedId, id => ui.statusUnfolded.includes(id))
+      : statusSelected(
+          screen.view.statusPage,
+          ui.selectedId,
+          id => ui.statusUnfolded.includes(id),
+          collapsedIn(screen.view),
+          ui.isSuggestionOpen,
+        )
   let pageSelectedAt: number[] | null = null
   /** The line each subject a Status row stands for starts on. */
   const subjectAt: [string, number][] = []

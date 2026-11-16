@@ -14,6 +14,8 @@ export type RowPress =
   | { action: 'remove-goal'; id: string }
   /** Undo of Remove goal: brings back the goal the person removed. `id` is `GOAL_KEYS_ID`. */
   | { action: 'restore-goal'; id: string }
+  /** Set on the suggested goal: makes it the goal. `id` is `GOAL_KEYS_ID`. */
+  | { action: 'take-goal'; id: string }
 
 export type PrActionId =
   | 'thread-address'

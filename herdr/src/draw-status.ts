@@ -1,17 +1,25 @@
 import type { StatusTone } from '../../hooks/help'
-import { goalKeyPlan, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
+import {
+  goalKeys,
+  isSuggestionShown,
+  milestoneKeyPlan,
+  statusKeyPlan,
+  GOAL_FIELD,
+  GOAL_KEYS_ID,
+} from '../../hooks/status-keys'
 import type { StatusKey } from '../../hooks/status-keys'
-import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL, shownMilestones } from '../../hooks/status-goal-page'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
-import { STALL_GAP, WAITS_ON_PREFIX, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
+import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { unfoldedRows } from '../../hooks/status-page-parts'
-import { LATER_TEXT, isSpacedAbove, milestoneRows, workJoints } from '../../hooks/status-path'
+import { isParentCollapsed, milestoneRows, unfoldedRows } from '../../hooks/status-folds'
+import { LATER_TEXT, isSpacedAbove, workJoints } from '../../hooks/status-path'
 import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { cellWidth } from '../../hooks/text'
 import { button, emptyBlock } from './blocks'
 import { emptyTab } from '../../hooks/empty-tab'
 import type { SessionView } from '../../hooks/session-view'
+import type { IsCollapsed } from '../../hooks/status-folds'
 import type { Block, Button, Does, Field, Mark, PathSide, Tone, TreeStroke } from './blocks'
 
 /** The most cells a merged line holds before it cuts its names: three lines of the pane at its usual width. */
@@ -29,6 +37,9 @@ function doesOf(k: StatusKey): Does {
   const p = k.press
   if (p.action === 'show-ask') return { is: 'view', change: { showAsk: p.askId } }
   if (p.action === 'toggle-fold') return { is: 'view', change: { toggleFold: p.foldId } }
+  if (p.action === 'toggle-collapse') return { is: 'nothing' }
+  if (p.action === 'show-suggestion') return { is: 'view', change: { isSuggestionOpen: true } }
+  if (p.action === 'hide-suggestion') return { is: 'view', change: { isSuggestionOpen: false } }
   if (p.action === 'type-goal') return { is: 'type', rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder }
 
   return { is: 'press', press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] }
@@ -39,7 +50,23 @@ function keyButtons(id: string, keys: StatusKey[]): Button[] {
   return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)))
 }
 
-function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[] {
+/** A parent's fold, drawn after its name and stall. Null for a row with nothing under it. */
+function foldOf(
+  p: { id: string; foldCount: number },
+  isCollapsed: IsCollapsed,
+): Pick<Extract<Block, { kind: 'status' }>, 'fold'> {
+  if (p.foldCount === 0) return {}
+  const isFolded = isParentCollapsed(p, isCollapsed)
+  const toggle = button(`${p.id} fold`, isFolded ? 'Unfold' : 'Fold', 'quiet', {
+    is: 'collapse',
+    id: p.id,
+    isCollapsed: !isFolded,
+  })
+
+  return { fold: { isFolded, count: p.foldCount, toggle } }
+}
+
+function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollapsed: IsCollapsed): Block[] {
   if (row.kind === 'subject') {
     const under = [
       row.text,
@@ -57,10 +84,11 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         isBold: false,
         isMuted: false,
         stall: row.stall,
-        ...(row.waitsOn ? { waitsOn: `${WAITS_ON_PREFIX}${row.waitsOn}` } : {}),
+        ...(row.waitsOn ? { waitsOn: row.waitsOn } : {}),
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
-        ...(row.hasChildren ? { tree: [{ depth: row.depth, is: 'down' as const }] } : {}),
+        ...foldOf(row, isCollapsed),
+        ...(row.hasChildren && !isCollapsed(row.id) ? { tree: [{ depth: row.depth, is: 'down' as const }] } : {}),
       },
     ]
   }
@@ -74,7 +102,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         name: row.name,
         isBold: false,
         isMuted: true,
-        stall: row.stall,
+        stall: null,
         under: [],
         buttons: [],
         ...(row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}),
@@ -85,7 +113,8 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
-      { kind: 'rule', id: row.id, text: row.text },
+      { kind: 'rule', id: row.id, text: row.text, ...(row.isTitle ? { isTitle: true as const } : {}) },
+      ...(row.description ? [note(`${row.id} description`, row.description, 'muted')] : []),
     ]
   if (row.kind === 'counts')
     return [{ ...note(row.id, row.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP), 'muted'), depth: row.depth }]
@@ -126,6 +155,7 @@ function milestoneBlock(
   lineAbove: PathLine,
   hasWork: boolean,
   isUnfolded: (id: string) => boolean,
+  isCollapsed: IsCollapsed,
 ): Block {
   const mark = markOf(m.mark, m.tone, false)
   const path: PathSide = { is: 'milestone', above: lineAbove, below: m.line }
@@ -151,10 +181,10 @@ function milestoneBlock(
     name: m.name,
     isBold: m.isChanged,
     isMuted: m.isMuted,
-    stall: m.stall,
-    ...(m.word === null ? {} : { word: m.word }),
+    stall: null,
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
+    ...foldOf(m, isCollapsed),
     path,
     ...tree,
   }
@@ -210,37 +240,53 @@ const headTitle = (id: string, text: string): Block => ({
 })
 
 /** What the Status page draws besides the shared page: the done folds the person opened, and the goal's open field. */
-type StatusUi = { isUnfolded: (id: string) => boolean; goalField: Field | null }
+type StatusUi = {
+  isUnfolded: (id: string) => boolean
+  isCollapsed: IsCollapsed
+  isSuggestionOpen: boolean
+  goalField: Field | null
+}
 
 /**
  * The goal's section: its heading with the goal's buttons, its text and the lines under it, then each milestone on the
  * path and its work, with the Later rule before the first milestone that waits under it.
  */
-function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Block[] {
+function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, isSuggestionOpen, goalField }: StatusUi): Block[] {
   const g = page.goal
+  const isSuggested = goalField === null && isSuggestionShown(page, isSuggestionOpen)
   const heading: Block = {
     kind: 'heading',
     id: 'goal heading',
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: 'success', isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
+    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page, isSuggested)),
     isLabel: true,
   }
   const field: Block[] = goalField
     ? [{ kind: 'field', id: 'goal field', field: goalField, isAtEdge: g?.mark == null }]
     : []
-  if (g === null) return [heading, ...(goalField ? field : [headNote('goal text', NO_GOAL_TEXT, 'muted')])]
+  const suggestion: Block[] = [
+    headNote('goal suggested', SUGGESTED_GOAL_LABEL, 'muted'),
+    headTitle('goal text', page.suggestedGoal ?? ''),
+  ]
+  if (g === null) {
+    const empty = isSuggested ? suggestion : [headNote('goal text', NO_GOAL_TEXT, 'muted')]
+    return [heading, ...(goalField ? field : empty)]
+  }
   /** A met goal's lines start at the text column, under its heading's label. */
   const atText = (b: Block): Block => (g.mark && b.kind === 'note' ? { ...b, isAtEdge: false } : b)
   const lines = goalField
     ? field
-    : [
-        headTitle('goal text', g.text),
-        ...(g.was ? [headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
-        ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
-        ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
-      ].map(atText)
+    : (isSuggested
+        ? suggestion
+        : [
+            headTitle('goal text', g.text),
+            ...(g.was ? [headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
+            ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
+            ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
+          ]
+      ).map(atText)
   const fold = g.milestonesFold
   const foldLine: Block[] = fold
     ? [
@@ -251,22 +297,21 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
           text: fold.text,
           isOpen: isUnfolded(fold.id),
           change: { toggleFold: fold.id },
-          isLabelFirst: true,
         },
       ]
     : []
   const shown = shownMilestones(g, isUnfolded)
   const milestones = shown.flatMap((m, n): Block[] => {
-    const rows = milestoneRows(m, isUnfolded)
+    const rows = milestoneRows(m, isUnfolded, isCollapsed)
     const joints = workJoints(rows, m.line)
 
     return [
-      ...(isSpacedAbove(shown, n, isUnfolded)
+      ...(isSpacedAbove(shown, n, isUnfolded, isCollapsed)
         ? [{ kind: 'gap', id: `gap ${m.id}`, ...(n > 0 ? { isMilestoneStep: true as const } : {}) } as const]
         : []),
       ...(m.startsLater ? [{ kind: 'rule', id: 'goal later', text: LATER_TEXT } as const] : []),
-      milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded),
-      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded).map(b => besidePath(b, m.line, joints[k]))),
+      milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded, isCollapsed),
+      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded, isCollapsed).map(b => besidePath(b, m.line, joints[k]))),
     ]
   })
 
@@ -276,13 +321,17 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
 /** The Status page as the look draws it, in the shared page's order. */
 export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
   const page = view.statusPage
-  const { isUnfolded } = ui
-  const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: ui.goalField !== null })
+  const { isUnfolded, isCollapsed } = ui
+  const empty = emptyTab(view, {
+    tab: 'overview',
+    isGoalFieldOpen: ui.goalField !== null,
+    isSuggestionOpen: ui.isSuggestionOpen,
+  })
   if (empty) {
     const setGoal = empty.under?.is === 'set-goal' ? empty.under : null
     const parts = setGoal && {
       id: GOAL_KEYS_ID,
-      text: null,
+      text: setGoal.suggestion === null ? null : `${SUGGESTED_GOAL_LABEL}: ${setGoal.suggestion}`,
       buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
       feedback: null,
       field: setGoal.isFieldOpen ? ui.goalField : null,
@@ -290,16 +339,8 @@ export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
 
     return [emptyBlock('overview', empty, parts)]
   }
-  const description = page.head?.description
-  const head =
-    page.isHeadApart && page.head
-      ? [
-          headTitle('head title', page.head.title),
-          ...(description ? [headNote('head text', description, 'muted')] : []),
-        ]
-      : []
-  const top = [...goalBlocks(page, ui), ...(head.length > 0 ? [{ kind: 'gap', id: 'gap head' } as const, ...head] : [])]
-  const rows = unfoldedRows(page.rows, isUnfolded).flatMap(r => rowBlocks(r, isUnfolded))
+  const top = goalBlocks(page, ui)
+  const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).flatMap(r => rowBlocks(r, isUnfolded, isCollapsed))
 
   const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== 'part'
 

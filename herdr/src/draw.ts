@@ -46,7 +46,7 @@ import { prTabBlocks } from './draw-prs'
 import { prRowWaits } from '../../hooks/pr-rows'
 import { openPrViews } from '../../hooks/pr-views'
 import { statusBlocks } from './draw-status'
-import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
+import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
 
 /** The look's name for its texts, which follow the desktop look's words, not the terminal's. */
 const LOOK = 'herdr'
@@ -62,6 +62,8 @@ export type LookUi = {
   closedAll: FoldKind[]
   optionsShown: string[]
   statusUnfolded: string[]
+  /** Whether the person opened the suggested goal. It shows only while the page still offers one. */
+  isSuggestionOpen: boolean
   typing: string | null
   /** The rows that arrived while their tab showed, whose bar shows until it fades. */
   newRows: NewRows
@@ -75,6 +77,7 @@ export const freshUi = (tab: ShownTab): LookUi => ({
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
+  isSuggestionOpen: false,
   typing: null,
   newRows: new Map(),
   closedSeen: new Map(),
@@ -411,8 +414,14 @@ export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView
 
 export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {
   if (ui.tab === 'overview') {
-    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null
-    return statusBlocks(screen.view, { isUnfolded: id => ui.statusUnfolded.includes(id), goalField })
+    const goalField =
+      ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, goalSubmitLabel(screen.view.statusPage)) : null
+    return statusBlocks(screen.view, {
+      isUnfolded: id => ui.statusUnfolded.includes(id),
+      isCollapsed: id => screen.view.collapsed.includes(id),
+      isSuggestionOpen: ui.isSuggestionOpen,
+      goalField,
+    })
   }
   if (ui.tab === 'prs') return prTabBlocks(screen, ui.selected)
 

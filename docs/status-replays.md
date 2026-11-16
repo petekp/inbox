@@ -33,8 +33,8 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | 1 | The person asks for offline sync, shipped in 2.5. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The goal is set, and each piece links to a milestone. The head names the aim. Four pieces: the three planned, and the 2.5 release. |
 | 2 | The engine works. The agent fixes a lint error, runs two review subagents and asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine. ◆ on conflicts, from the ledger's new ask. Each piece links to its milestone. |
 | 3 | The person answers "manual merge" | The ask closes, ◆ clears, and the conflicts row shows the choice |
-| 4 | The person reverses: last-write-wins with a backup copy | Checkpoint. A was line on conflicts, and no new piece |
-| 5 | Conflicts progress. The person sets the toggle aside and asks for an offline banner first. | The toggle is ○ and keeps its link. The banner links to a milestone. No new was line. |
+| 4 | The person reverses: last-write-wins with a backup copy | Checkpoint. A Prev line on conflicts, and no new piece |
+| 5 | Conflicts progress. The person sets the toggle aside and asks for an offline banner first. | The toggle is ○ and keeps its link. The banner links to a milestone. No new Prev line. |
 | 6 | The person asks how the backup copy is named and why the plan changed. Nothing is decided. | Nothing moves |
 | 7 | The banner shows on phones, and the agent asks whether it shows on web too | ◆ on the banner, from the ledger's new ask |
 | 8 | The person dismisses the web question. Device tests: Android syncs, and iOS loses edits after a crash. | Checkpoint. The ask closes as dismissed, and ◆ clears. The banner closes as ✓. The engine row keeps both states, or splits. |
@@ -58,7 +58,7 @@ The person's "speed up search on large libraries" at steps 1 and 2 is a directio
 | `removed-goal` | 5 | The Status call set "Import ready to demo". The person presses the goal's Remove, then says "Let's get the import demo-ready." | No goal is set: not the removed one in other words, nor another. |
 | `milestone-work-done` | 3 | A goal with three milestones. Step 1: a reply about one milestone's work, while another's work all finished and a third's subject sits under Other work. Step 2: the person finds more work on the finished one. | Step 1: code closes the finished milestone, the other stays open, and the stray subject links to its milestone. Step 2: the milestone opens again, with the new work linked to it. |
 | `goal-met-next` | 3 | Step 1: the last milestone's work ships. Step 2: the person asks for 2.6 with widgets and a dark theme. | Step 1: the goal is met and no next goal is set. Step 2: the 2.6 goal is set with no press, and every new piece links to it. |
-| `goal-wait` | 3 | A met goal. The person asks for a typo fix and a look at a slow share sheet. | No goal is set, and the met goal stays. |
+| `goal-wait` | 3 | A met goal. The person asks for a typo fix and a look at a slow share sheet. | No goal is set, and the met goal stays. The share sheet fix is the suggested goal. |
 | `no-goal-yet` | 3 | No goal. Step 1: one small fix. Step 2: a question about the code. Step 3: a coordinator reports three unrelated items. | No goal at any step. |
 | `goal-from-work` | 3 | No goal. The person says "Keep going", and the agent plans the rest of export for 3.2. | A goal is set from the work, and every piece links to it. |
 | `goal-work-left` | 3 | An inferred goal with its last work queued. Step 1: the person shelves it for search in 3.1. Step 2: a side fix parks the search work. Step 3: the person returns to search. | Step 1: the old goal's work closes and the search goal replaces it. Steps 2 and 3: the search goal stays. |

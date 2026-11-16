@@ -129,8 +129,8 @@ function GroupEnd({
                 toggleFold(group, unfolded)
               }}
             >
-              <Icon name={isUnfolded ? 'down' : 'right'} />
               {foldLabel(total)}
+              <Icon name={isUnfolded ? 'down' : 'right'} />
             </button>
           ) : null}
         </div>

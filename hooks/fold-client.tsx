@@ -4,6 +4,8 @@ export type FoldProps = {
   markCells: number
   label: string
   isUnfolded: boolean
+  /** The fold's chevron, from `foldGlyph`. */
+  chevron: string
   /** Lines of padding above and below the text. */
   padY: number
   /** A null color is the theme's own. */
@@ -19,7 +21,6 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
   const set = (next: State) => {
     if (next.hover === (surface.state?.hover ?? false)) return
     surface.setState(next)
-    surface.post({ hover: next.hover })
   }
   surface.onPointer(e => {
     if (e.type === 'leave') return set({ hover: false })
@@ -44,7 +45,7 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
     ...(background ? { backgroundColor: background } : {}),
     children: [
       Box({ width: props.markCells, flexShrink: 0 }),
-      Text({ ...(color ? { color } : {}), children: props.label }),
+      Text({ ...(color ? { color } : {}), children: `${props.label} ${props.chevron}` }),
     ],
   })
 }

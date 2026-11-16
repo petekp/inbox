@@ -4,18 +4,16 @@ import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
 import { closeItem } from '../../hooks/ledger-close'
 import { parseStatus } from '../../hooks/status'
-import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { applyStatus } from '../../hooks/status-ops'
 import { goalPressed } from '../../hooks/goal-press'
+import { withCollapse } from '../../hooks/collapse'
 import { NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import type { RowPress } from '../../hooks/presses'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/tabs'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
-import { lookOnView, viewOf } from '../src/core'
-import type { SessionState } from '../src/state'
-import { noteShownRows, rowsInView, takeShownRows } from '../src/tab-shown'
+import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { ROW_STATE_MS } from '../../hooks/row-motion'
@@ -31,7 +29,7 @@ window.HTMLElement.prototype.animate = function (...args: Parameters<typeof anim
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its milestones as a path with the next one’s word, its Now line and the field Edit opens draw in place', async context => {
+test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its milestones as a path with the next one’s word, its Now line and the field Edit opens draw in place, and a subject with rows under it folds them by its name and opens them again', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -127,6 +125,9 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       const press = request.params.arguments.press
       presses.push(press)
       const at = Date.now()
+      const collapse = press as unknown as { action: string; id: string; isCollapsed: boolean }
+      if (collapse.action === 'collapse')
+        Object.assign(state, withCollapse(state, collapse.id, collapse.isCollapsed, at))
       const r = goalPressed(state.ledger, press, kind => ({ kind, action: press.action, text: '', at }), at)
       if ('ledger' in r) state.ledger = r.ledger
       result = { structuredContent: { view: viewNow(), error: null, note: null } }
@@ -169,15 +170,15 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     )
     assert.equal(shownTab(), 'Status')
     assert.equal(sentTabs[0], 'overview')
-    assert.equal(root.querySelector('.status-head h1')?.textContent, 'Shipping the Status tab')
+    assert.equal(root.querySelector('.part-title')?.textContent, 'Shipping the Status tab')
     assert.deepEqual(
-      [...root.querySelectorAll('main .row')].map(r => [
+      [...root.querySelectorAll('main .row:not(.part-line)')].map(r => [
         r.querySelector('.mark')?.className,
         r.querySelector('.mark')?.textContent,
         [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
       ]),
       [
-        ['mark tone-needsYou', '◆', ['Label', 'waits on you: Which label?', 'pick one', 'View question']],
+        ['mark tone-needsYou', '◆', ['Label', 'Which label?', 'pick one', 'View question']],
         ['mark working running', '●', ['omp panel', 'reading the draw code']],
         ['mark done', '✓', ['Page', 'built']],
       ],
@@ -260,6 +261,53 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.equal(root.querySelector('.goal-heading .actions')?.textContent, 'New')
     assert.equal(root.querySelector('.status-head.goal p')?.textContent, NO_GOAL_TEXT)
 
+    const unsuggested = state.ledger
+    const pressLabel = async (label: string) => {
+      ;([...root.querySelectorAll('main button')].find(b => b.textContent === label) as HTMLElement).click()
+      await new Promise<void>(resolve => setImmediate(resolve))
+      await new Promise<void>(resolve => setImmediate(resolve))
+    }
+    const labels = () => [...root.querySelectorAll('main button')].map(b => b.textContent)
+    const goalHead = () => root.querySelector('.status-head.goal')?.textContent
+    state.ledger = {
+      ...state.ledger,
+      overview: { ...state.ledger.overview!, suggestedGoal: 'Ship 0.5.0 to the store' },
+    }
+    await afterPoll()
+    assert.deepEqual(labels(), ['New'])
+    await pressLabel('New')
+    assert.equal(root.querySelector('.suggested')?.textContent, 'SuggestedShip 0.5.0 to the store')
+    assert.deepEqual(labels(), ['Set', 'Edit', 'Cancel'])
+    await pressLabel('Edit')
+    assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Ship 0.5.0 to the store')
+    assert.deepEqual(labels(), ['Set', 'Cancel'])
+    await pressLabel('Cancel')
+    assert.equal(root.querySelector('#type-goal'), null)
+    assert.deepEqual(labels(), ['Set', 'Edit', 'Cancel'])
+    assert.match(goalHead() ?? '', /^SuggestedShip 0.5.0 to the store/)
+    await pressLabel('Cancel')
+    assert.equal(root.querySelector('.suggested'), null)
+    assert.deepEqual(labels(), ['New'])
+    await pressLabel('New')
+    await pressLabel('Set')
+    assert.deepEqual(presses.at(-1), { action: 'take-goal', id: 'goal' })
+    assert.equal(root.querySelector('.suggested'), null)
+    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Ship 0.5.0 to the store')
+    assert.deepEqual(labels(), ['Edit', 'Remove'])
+    await pressLabel('Edit')
+    assert.equal(
+      [...root.querySelectorAll('main button')].find(b => b.className.includes('primary'))?.textContent,
+      'Save',
+    )
+    await pressLabel('Cancel')
+    state.ledger = unsuggested
+    await afterPoll()
+    await pressLabel('New')
+    assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, '')
+    assert.equal(root.querySelector('.key.primary')?.textContent, 'Set')
+    await pressLabel('Cancel')
+    assert.deepEqual(labels(), ['New'])
+
     const withGoal = applyStatus(
       state.ledger.overview,
       parseStatus(
@@ -286,11 +334,9 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       [...root.querySelectorAll('.milestone-group')].map(e => e.className),
       ['milestone-group path-to-next', 'milestone-group'],
     )
-    assert.equal(root.querySelector('.path-word')?.textContent, 'next')
-    assert.notEqual(root.querySelector('.status-head:not(.goal)'), null)
     context.mock.timers.tick(ROW_STATE_MS.leaving + 100)
     await new Promise<void>(resolve => setImmediate(resolve))
-    assert.equal(root.querySelector('.status-head:not(.goal)'), null)
+    assert.equal(root.querySelector('.part-title'), null)
     assert.deepEqual(buttons(), ['Edit', 'Remove'])
     await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')
@@ -299,6 +345,48 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped')
+
+    state.ledger = {
+      ...state.ledger,
+      overview: {
+        ...state.ledger.overview!,
+        children: [
+          {
+            id: 'c1',
+            ref: 'c1',
+            kind: 'subagent',
+            name: 'Read the draw code',
+            subjectId: 's4',
+            startedAt: now,
+            endedAt: null,
+            lastActivityAt: now,
+            delegateState: null,
+          },
+        ],
+      },
+    }
+    await afterPoll()
+    const rowNames = () => [...root.querySelectorAll('main .row .content')].map(c => c.firstElementChild?.textContent)
+    const parentName = () => root.querySelector('.parent-name') as HTMLElement
+    assert.match(parentName().textContent ?? '', /^Status page\s*$/)
+    assert.ok(rowNames().includes('Read the draw code'))
+    parentName().click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.deepEqual(presses.at(-1), { action: 'collapse', id: 's4', isCollapsed: true })
+    assert.match(parentName().textContent ?? '', /^Status page\s+1$/)
+    assert.ok(root.querySelector('.row.has-children.connector-leaving'))
+    context.mock.timers.tick(ROW_STATE_MS.leaving + 100)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.ok(!rowNames().includes('Read the draw code'))
+    assert.equal(root.querySelector('.row.has-children'), null)
+    await afterPoll()
+    assert.match(parentName().textContent ?? '', /^Status page\s+1$/)
+    parentName().click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.deepEqual(presses.at(-1), { action: 'collapse', id: 's4', isCollapsed: false })
+    assert.match(parentName().textContent ?? '', /^Status page\s*$/)
+    assert.ok(rowNames().includes('Read the draw code'))
+    assert.ok(root.querySelector('.row.has-children'))
 
     await click('Edit')
     const field = window.document.querySelector('#type-goal')!
@@ -323,80 +411,4 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       else Reflect.deleteProperty(globalThis, key)
     }
   }
-})
-
-test('a look starts when the tab shows the Status, ends when it shows another tab, ends at the last request when the pane closed, and counts once it lasted five seconds', () => {
-  const state = emptyState('look')
-  state.ledger = {
-    ...EMPTY,
-    overview: applyStatus(
-      null,
-      parseStatus('HEAD: Ship it | Shipping the first version\nNEW: queued | Docs | after the code')!,
-      500,
-      new Set(),
-    ),
-  }
-  state.tabSeenAt = 1000
-  const open = lookOnView(state, 'overview', 2000, {})
-  assert.equal(open.ledger.overview?.look?.startedAt, 2000)
-
-  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS, {})
-  assert.equal(seen.ledger.overview?.look, null)
-  assert.equal(seen.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
-
-  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000, {})
-  assert.equal(passed.ledger.overview?.look, null)
-  assert.equal(passed.ledger.overview?.lastLookAt, null)
-
-  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000, {})
-  assert.equal(closed.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
-
-  const never = lookOnView(state, 'needsYou', 2000, {})
-  assert.equal(never.ledger.overview?.lastLookAt, null)
-})
-
-test('a look counts as seen only the Status subjects the tab reported on screen, across its requests and when the pane closed, and not rows a later showing reported', () => {
-  const state = emptyState('look-rows')
-  state.ledger = {
-    ...EMPTY,
-    overview: applyStatus(
-      null,
-      parseStatus(
-        'NEW: working | Sync | under way\nNEW: working | Search | under way\nNEW: queued | Docs | after the code',
-      )!,
-      500,
-      new Set(),
-    ),
-  }
-  const seenOf = (s: SessionState) => {
-    const o = s.ledger.overview!
-    return o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.name)
-  }
-  const open = lookOnView({ ...state, tabSeenAt: 1000 }, 'overview', 1000, { s1: 1000 })
-  const scrolled = lookOnView({ ...open, tabSeenAt: 4000 }, 'overview', 4000, { s2: 3500 })
-  const ended = lookOnView({ ...scrolled, tabSeenAt: 7000 }, 'needsYou', 7000, {})
-  assert.deepEqual(seenOf(ended), ['Sync', 'Search'])
-  assert.deepEqual(ended.lookRows, {})
-
-  const reopened = lookOnView({ ...ended, tabSeenAt: 7000 }, 'overview', 8000, { s3: 8000 })
-  const afterClose = lookOnView({ ...reopened, tabSeenAt: 8000 + LOOK_MIN_MS }, 'overview', 90_000, { s1: 90_000 })
-  assert.deepEqual(seenOf(afterClose), ['Sync', 'Search', 'Docs'])
-  assert.deepEqual(afterClose.lookRows, { s1: 90_000 })
-})
-
-test('the tab reports as on screen the subjects of the rows whose first line is inside its window, each subject a named fold stands for among them, each with when it last was, until its next request', () => {
-  const rows = [
-    { subjects: 's1', top: -40 },
-    { subjects: 's2', top: 0 },
-    { subjects: 's5 s6 s7', top: 300 },
-    { subjects: 's3', top: 599 },
-    { subjects: 's4', top: 600 },
-  ]
-  assert.deepEqual(rowsInView(rows, 600), ['s2', 's5', 's6', 's7', 's3'])
-
-  takeShownRows()
-  noteShownRows(['s2', 's3'], 100)
-  noteShownRows(['s3', 's4'], 200)
-  assert.deepEqual(takeShownRows(), { s2: 100, s3: 200, s4: 200 })
-  assert.deepEqual(takeShownRows(), {})
 })

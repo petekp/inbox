@@ -86,8 +86,6 @@ export type Milestone = {
   was: string | null
   changedAt: number
   closedAt: number | null
-  /** When its status last turned `working` from another, so the page can say how long it has been under way. Null in a Status an earlier build saved. */
-  startedAt: number | null
   /** When a NEXT line last moved it ahead of the other queued milestones. It marks the milestone changed, but is no progress, so `changedAt` keeps its time. */
   madeNextAt?: number
 }
@@ -152,6 +150,11 @@ export type SessionStatus = {
   serves: Record<string, Serves>
   /** Why the last applied answer's GOAL or RETIRE line was not applied. Null when it was, or when the answer wrote none. */
   goalRefused: GoalRefusal | null
+  /**
+   * The goal the Status call offers while no goal is set or the goal is met, which the person sees after New and takes
+   * with Set. Null when the call offers none, and once a goal is set.
+   */
+  suggestedGoal: string | null
 
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null
@@ -516,9 +519,10 @@ export type Cursor = { id: string | null; index: number; openedAt: number }
 
 /**
  * A row's collapse: when, and the address of the row's newest entry GitHub gave no time, as it was then. A new such
- * entry has another address, so it counts as new.
+ * entry has another address, so it counts as new. A Status parent, a subject or a milestone, also keeps the ids of the
+ * asks and delegates under it that waited on the person then, so one that starts waiting after counts as new.
  */
-export type RowCollapse = { at: number; untimedUrl?: string }
+export type RowCollapse = { at: number; untimedUrl?: string; waiting?: string[] }
 
 export type PrViews = {
   views: Record<string, PrView>
@@ -734,8 +738,9 @@ export type Session = {
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**
-   * The rows the person collapsed, each with when, by row id. A row stays collapsed until something new arrives on it,
-   * as `hooks/collapse.ts:collapsedRows` decides.
+   * The rows the person collapsed, each with when, by row id: rows of the Asks, Finds and PRs tabs, and Status parents
+   * folded by their name. A row stays collapsed until something new arrives on it, as
+   * `hooks/collapse.ts:collapsedRows` decides.
    */
   collapsed: Record<string, RowCollapse>
   /**
@@ -810,6 +815,8 @@ declare module 'claude-code' {
       closedAll: FoldKind[]
       /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
       statusUnfolded: string[]
+      /** Whether the person opened the suggested goal with New. Pressing Set, sending the goal's field or Cancel closes it. */
+      suggestionOpen: boolean
       /** The fold under the pointer on desktop: an Asks fold's kind, or `status-` and a Status fold's id. */
       foldHover: string | null
       /** The questions whose every option shows, by the row's id. */

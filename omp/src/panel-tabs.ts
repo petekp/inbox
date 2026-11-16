@@ -17,14 +17,15 @@ import { ROW_COPY } from '../../hooks/rows'
 import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../hooks/tabs'
 import { footerStatus } from '../../hooks/view'
 import { openOnArrival } from '../../hooks/action-plan'
-import { GOAL_FIELD, GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
+import { GOAL_KEYS_ID, goalSubmitLabel, statusKeyRows, statusSelected } from '../../hooks/status-keys'
+import type { IsCollapsed } from '../../hooks/status-folds'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab, TabNaming } from '../../hooks/tabs'
 import type { Draw } from './panel-draw'
 import { entriesOf } from './panel-entries'
-import { withTab } from './panel-keys'
+import { drawnKeys, withTab } from './panel-keys'
 import { linesOf, waitsOf } from './panel-lines'
-import { fit, spread, visibleLength } from './panel-text'
+import { collapsedIn, fit, spread, visibleLength } from './panel-text'
 import type { PanelScreen, PanelUi, Style } from './panel'
 
 export type SeenRows = RowRecord<Tab>
@@ -137,13 +138,22 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
   if (status.text) out.push(` ${s.dim(status.text)}`)
   const hints =
     ui.typing !== null
-      ? [`↵ ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
+      ? [
+          `↵ ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
+          `esc ${ROW_COPY.cancel}`,
+        ]
       : ui.isHelpShown
         ? [...(isPageScrolling ? ['↑↓ scroll'] : []), 'esc close help']
         : isRowTab(ui.tab)
           ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch', '? help']
           : [
-              ...statusHints(screen.view.statusPage, ui.selectedId, id => ui.statusUnfolded.includes(id)),
+              ...statusHints(
+                screen.view.statusPage,
+                ui.selectedId,
+                id => ui.statusUnfolded.includes(id),
+                collapsedIn(screen.view),
+                ui.isSuggestionOpen,
+              ),
               ...(isPageScrolling ? ['↑↓ scroll'] : []),
               'tab switch',
               '? help',
@@ -195,9 +205,22 @@ export function scrolled(body: string[], selectedAt: number[], room: number, s: 
 }
 
 /** The Status's key hints: j and k while a target has buttons, and ←→ while the selected one has more than one. */
-function statusHints(page: StatusPage, selectedId: string | null, isUnfolded: (id: string) => boolean): string[] {
-  if (statusKeyRows(page, isUnfolded).length === 0) return []
-  const isPicking = (statusSelected(page, selectedId, isUnfolded)?.keys.length ?? 0) > 1
+function statusHints(
+  page: StatusPage,
+  selectedId: string | null,
+  isUnfolded: (id: string) => boolean,
+  isCollapsed: IsCollapsed,
+  isSuggestionOpen: boolean,
+): string[] {
+  if (statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen).length === 0) return []
+  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen)
+  const fold = selected?.keys.find(k => k.press.action === 'toggle-collapse')
+  const isPicking = (selected ? drawnKeys(selected).length : 0) > 1
 
-  return ['j k select', ...(isPicking ? ['←→ pick'] : []), '↵ press']
+  return [
+    'j k select',
+    ...(isPicking ? ['←→ pick'] : []),
+    '↵ press',
+    ...(fold ? [`${fold.hotkey} ${fold.label.toLowerCase()}`] : []),
+  ]
 }

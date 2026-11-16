@@ -136,7 +136,8 @@ var EMPTY_SESSION_STATUS = {
   milestones: [],
   nextMilestoneId: 1,
   serves: {},
-  goalRefused: null
+  goalRefused: null,
+  suggestedGoal: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -355,6 +356,331 @@ function repeatsSettled(c, a) {
   return c.id === a.label || sameAsk(c.ask, a.ask) || c.kind === a.kind && repeatsSubject(c.ask, a.ask);
 }
 
+// ../hooks/clients.ts
+var CLIENTS = {
+  "claude-code": {
+    support: {
+      "catch-up": { kind: "full" },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": { kind: "full" },
+      "dialog-outcome": { kind: "full" },
+      "dialog-answer": {
+        kind: "different",
+        reason: "The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
+      },
+      "dialog-answer-closes-copy": { kind: "full" },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": { kind: "full" },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": { kind: "full" },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": { kind: "full" },
+      "band-and-stop-rows": { kind: "full" },
+      "exchange-trigger": { kind: "full" },
+      "settle-window": { kind: "full" },
+      "fold-on-typed-message": { kind: "full" },
+      "fold-waits-for-list-use": {
+        kind: "different",
+        reason: "The terminal reports no pointer, so a row due to fold waits only on presses, keys and scrolls. On desktop a settled row is drawn as text, which reports no pointer, so a row waits on presses and on pointer moves over open rows."
+      },
+      "version-label": { kind: "full" },
+      "status-tab": { kind: "full" },
+      "turn-working": { kind: "full" },
+      "host-task-list": { kind: "full" },
+      "hooks-need-trust": {
+        kind: "unsupported",
+        reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust."
+      },
+      "compare-in-background": { kind: "full" },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "title-tint": {
+        kind: "different",
+        reason: "The terminal steps the fade in 6 colors. Desktop holds the tint, then drops it."
+      },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": {
+        kind: "different",
+        reason: "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it."
+      },
+      "herdr-sidebar": { kind: "full" },
+      "herdr-look": { kind: "full" },
+      "herdr-open": { kind: "full" },
+      "herdr-install": { kind: "full" },
+      "status-children": { kind: "full" },
+      "child-names": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
+      "asks-context-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": { kind: "full" },
+      "ran-call-delegates": { kind: "full" },
+      "tool-result-line": { kind: "full" },
+      "status-call-records": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "pr-fetch-notice": { kind: "full" },
+      "help-page": {
+        kind: "different",
+        reason: "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks."
+      },
+      "status-view-ask": { kind: "full" },
+      "status-goal": { kind: "full" },
+      "status-done-fold": { kind: "full" },
+      "status-named-fold": { kind: "full" },
+      "status-parent-fold": { kind: "full" },
+      "seen-on-screen": { kind: "full" },
+      "status-idle-age": { kind: "full" },
+      "question-back-stays-open": { kind: "full" },
+      "collapse-rows": { kind: "full" },
+      "suggested-goal": { kind: "full" }
+    }
+  },
+  codex: {
+    support: {
+      "catch-up": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed. A chat whose ledger failed or fell behind, such as an archived chat that runs no hooks, also catches up when its tab opens, once until the ledger or the chat moves on."
+      },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A resumed chat is marked behind when its Inbox tab opens, and at the hook its next message runs if the tab stays closed."
+      },
+      "dialog-outcome": {
+        kind: "different",
+        reason: "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded."
+      },
+      "dialog-answer": { kind: "full" },
+      "dialog-answer-closes-copy": {
+        kind: "different",
+        reason: "Codex's dialog tool returns before the person answers, so the inbox sees no answer when the dialog ends. The copy stays open until the person's reply in the dialog's form arrives, and the agent closes it then."
+      },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": {
+        kind: "different",
+        reason: "Codex runs no hook for a long command's output, so the inbox reads the turn's shell commands from the rollout at Stop. A PR that `gh pr create` opened is linked when the turn ends, not when the command finishes."
+      },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": {
+        kind: "different",
+        reason: "The Codex app calls a conversation a chat, so its hint says chat where the mod says session."
+      },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A fork takes its parent's ledger when its Inbox tab opens, and at the hook its first message runs if the tab stays closed."
+      },
+      "band-and-stop-rows": {
+        kind: "unsupported",
+        reason: "Codex has no line above its prompt, and shows no stops."
+      },
+      "exchange-trigger": {
+        kind: "different",
+        reason: "A Codex hook names no source for a turn that has no prompt, so the exchange reads unknown. The mod reads the prompt origin."
+      },
+      "settle-window": {
+        kind: "different",
+        reason: "The tab only learns of a close at its next poll, so the server offers Undo for two polls longer."
+      },
+      "fold-on-typed-message": { kind: "full" },
+      "fold-waits-for-list-use": { kind: "full" },
+      "version-label": { kind: "full" },
+      "status-tab": { kind: "full" },
+      "turn-working": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened, and a turn whose app-server dies has no end row in the rollout. So after Codex's app-server dies during a turn, Working\u2026 stays and Done messages wait until the next message. Quitting the app, even with SIGKILL, ends the turn in the rollout."
+      },
+      "host-task-list": {
+        kind: "different",
+        reason: "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Status call. The tool is not offered by default in `codex exec`, and the app is not checked."
+      },
+      "hooks-need-trust": { kind: "full" },
+      "compare-in-background": {
+        kind: "different",
+        reason: "When a Codex subagent ends, Codex queues its result for the main agent and starts no turn for it. So a result that arrives after the agent's turn has ended does not reach the chat on its own, and the Compare message asks for the comparison in the agent's own turn."
+      },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "title-tint": { kind: "full" },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": { kind: "full" },
+      "herdr-sidebar": {
+        kind: "different",
+        reason: "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay."
+      },
+      "herdr-look": {
+        kind: "different",
+        reason: "Codex runs no hook when a session ends, so its published file stays."
+      },
+      "herdr-open": {
+        kind: "unsupported",
+        reason: "The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app. A `$inbox` skill that has the model call an MCP tool could open the Herdr look, but only after a model turn, so the press could not show what it did at once. It is left as an option."
+      },
+      "herdr-install": {
+        kind: "different",
+        reason: "The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. So the app's tab asks when the Herdr app's settings folder exists, and Codex has no `/inbox herdr`. At start, Codex updates an installed inbox build, installs after a saved yes, and logs a failure only."
+      },
+      "status-children": {
+        kind: "different",
+        reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
+      },
+      "child-names": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
+      "asks-context-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": {
+        kind: "different",
+        reason: "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked. In a code-mode script that ends on a declined command, the error does not name the command, so the declined one is the only command with no row while the script ran. When more than one has none, as when another still runs, every line stays. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches."
+      },
+      "ran-call-delegates": {
+        kind: "different",
+        reason: "Codex runs PreToolUse before a call is approved, so a herdr command's delegate rows show from then. Stop, and the tool call that claims a Status call during the turn, take back the rows of each command the rollout shows was declined or blocked. In a code-mode script that ends on a declined command, that is the only command with no row while the script ran. When more than one has none, every row stays. A code-mode call whose script catches the block keeps its rows."
+      },
+      "tool-result-line": {
+        kind: "unsupported",
+        reason: "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone."
+      },
+      "status-call-records": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "pr-fetch-notice": { kind: "full" },
+      "help-page": { kind: "full" },
+      "status-view-ask": {
+        kind: "different",
+        reason: "Pete's choice: View takes clicks only, with no key. The Codex Status has no row selection and is used by clicking."
+      },
+      "status-goal": {
+        kind: "different",
+        reason: "The goal's buttons take clicks only, as View does: the Codex Status has no row selection and is used by clicking."
+      },
+      "status-done-fold": {
+        kind: "different",
+        reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
+      },
+      "status-named-fold": { kind: "full" },
+      "status-parent-fold": {
+        kind: "different",
+        reason: "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection."
+      },
+      "seen-on-screen": { kind: "full" },
+      "status-idle-age": { kind: "full" },
+      "question-back-stays-open": {
+        kind: "different",
+        reason: "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere."
+      },
+      "collapse-rows": { kind: "full" },
+      "suggested-goal": {
+        kind: "different",
+        reason: "Clicks only, as for the goal: the Codex Status has no row selection."
+      }
+    }
+  },
+  omp: {
+    support: {
+      "catch-up": { kind: "full" },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": { kind: "full" },
+      "dialog-outcome": { kind: "full" },
+      "dialog-answer": {
+        kind: "different",
+        reason: "The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
+      },
+      "dialog-answer-closes-copy": { kind: "full" },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": { kind: "full" },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": { kind: "full" },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": { kind: "full" },
+      "band-and-stop-rows": {
+        kind: "different",
+        reason: "omp's band cannot take keys, so Resume is a button in the panel. omp classes a stop from the request's HTTP status and message, so it never names billing or a reset time."
+      },
+      "exchange-trigger": {
+        kind: "different",
+        reason: "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else."
+      },
+      "settle-window": { kind: "full" },
+      "fold-on-typed-message": { kind: "full" },
+      "fold-waits-for-list-use": {
+        kind: "different",
+        reason: "omp's panel takes keys only, so a row due to fold waits on keys."
+      },
+      "version-label": { kind: "full" },
+      "status-tab": { kind: "full" },
+      "turn-working": { kind: "full" },
+      "host-task-list": { kind: "full" },
+      "hooks-need-trust": {
+        kind: "unsupported",
+        reason: "omp runs an installed extension's events without asking anyone to trust them."
+      },
+      "compare-in-background": { kind: "full" },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "title-tint": { kind: "different", reason: "Steps the fade in 6 colors." },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": {
+        kind: "different",
+        reason: "The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing."
+      },
+      "herdr-sidebar": { kind: "full" },
+      "herdr-look": { kind: "full" },
+      "herdr-open": { kind: "full" },
+      "herdr-install": { kind: "full" },
+      "status-children": {
+        kind: "different",
+        reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show."
+      },
+      "child-names": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
+      "asks-context-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": { kind: "full" },
+      "ran-call-delegates": { kind: "full" },
+      "tool-result-line": { kind: "full" },
+      "status-call-records": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "pr-fetch-notice": { kind: "full" },
+      "help-page": {
+        kind: "different",
+        reason: "The panel takes keys only, so `?` opens Help, and no button does."
+      },
+      "status-view-ask": { kind: "full" },
+      "status-goal": { kind: "full" },
+      "status-done-fold": { kind: "full" },
+      "status-named-fold": { kind: "full" },
+      "status-parent-fold": { kind: "full" },
+      "seen-on-screen": { kind: "full" },
+      "status-idle-age": { kind: "full" },
+      "question-back-stays-open": { kind: "full" },
+      "collapse-rows": { kind: "full" },
+      "suggested-goal": { kind: "full" }
+    }
+  }
+};
+
 // ../hooks/press-messages.ts
 function findingBody(finding) {
   return [
@@ -404,6 +730,9 @@ ${asks.map((a) => `- ${a}`).join(`
 `);
   }
 };
+function isCompareInBackground(client) {
+  return CLIENTS[client].support["compare-in-background"].kind === "full";
+}
 
 // ../hooks/pr-checks.ts
 function failingChecks(pr) {
@@ -1153,6 +1482,8 @@ function pressText(p) {
       return "Remove";
     case "restore-goal":
       return "Undo";
+    case "take-goal":
+      return "Set";
     default:
       return capitalized(p.action);
   }
@@ -2129,7 +2460,6 @@ function milestoneOf(saved) {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
-    startedAt: time(m.startedAt),
     ...madeNextAt === null ? {} : { madeNextAt }
   };
 }
@@ -2177,7 +2507,8 @@ function goalFields(o, subjects) {
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
-    goalRefused: goalRefusedOf(o.goalRefused)
+    goalRefused: goalRefusedOf(o.goalRefused),
+    suggestedGoal: nonEmpty(o.suggestedGoal)
   };
 }
 
@@ -2915,8 +3246,6 @@ function moveMilestone(o, m, op, now) {
     const isReworded = m.status === op.status && hasSameWords(m.text, op.text);
     if (isReworded)
       return;
-    if (op.status === "working" && m.status !== "working")
-      m.startedAt = now;
     m.status = op.status;
     m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = null;
@@ -2979,8 +3308,7 @@ function addMilestone(o, op, now) {
     text: clipWords(op.text, TEXT_KEPT),
     was: null,
     changedAt: now,
-    closedAt: op.status === "done" || op.status === "dropped" ? now : null,
-    startedAt: op.status === "working" ? now : null
+    closedAt: op.status === "done" || op.status === "dropped" ? now : null
   };
   return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] };
 }
@@ -3018,8 +3346,7 @@ function inferredGoal(o, text, named, now) {
       text: isSame ? was.text : "",
       was: null,
       changedAt: now,
-      closedAt: isOpen(m) ? null : now,
-      startedAt: m.status !== "working" ? null : isSame ? was.startedAt : now
+      closedAt: isOpen(m) ? null : now
     };
   });
   const goal = {
@@ -3160,7 +3487,28 @@ function setTypedGoal(o, text, now) {
     isAwaitingMilestones: true,
     source: "typed"
   };
-  return { ...o, goal, goalRemoved: null, goalRefused: null, serves: {} };
+  return { ...o, goal, goalRemoved: null, goalRefused: null, serves: {}, suggestedGoal: null };
+}
+
+// ../hooks/status-suggest.ts
+var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
+function restatesKnownGoal(o, text) {
+  const known = [o.goal?.text, o.goal?.was, ...o.removedGoals].filter((t) => typeof t === "string");
+  return known.some((goal) => restatesGoal(text, goal));
+}
+function withSuggestion(o, ops) {
+  const line = ops.flatMap((op) => op.kind === "suggest" ? [op] : []).at(-1);
+  const text = line ? line.text && clipWords(line.text, DESCRIPTION_KEPT) : o.suggestedGoal;
+  const isKept = text !== null && text !== "" && !hasRunningGoal(o) && !restatesKnownGoal(o, text);
+  const suggestedGoal = isKept ? text : null;
+  return suggestedGoal === o.suggestedGoal ? o : { ...o, suggestedGoal };
+}
+function takeSuggestedGoal(o, now) {
+  const text = o.suggestedGoal;
+  if (text === null || hasRunningGoal(o))
+    return o;
+  const set = setTypedGoal(o, text, now);
+  return set.goal === null ? o : { ...set, goal: { ...set.goal, source: "inferred" }, suggestedGoal: null };
 }
 
 // ../hooks/goal-press.ts
@@ -3177,6 +3525,12 @@ function goalPressed(ledger, p, record, now) {
     if (restored === o)
       return { stale: true };
     return { ledger: { ...ledger, overview: restored }, last: record("mark"), effects: [] };
+  }
+  if (p.action === "take-goal") {
+    const taken = takeSuggestedGoal(o, now);
+    if (taken === o)
+      return { stale: true };
+    return { ledger: { ...ledger, overview: taken }, last: record("mark"), effects: [] };
   }
   if (p.action !== "type")
     return { stale: true };
@@ -3323,6 +3677,56 @@ function helpKeys(look) {
   }
 }
 
+// ../hooks/fold-chevron.ts
+var FOLD_CLOSED_CHEVRON = "\u203A";
+var FOLD_OPEN_CHEVRON = "v";
+var foldGlyph = (isOpen) => isOpen ? FOLD_OPEN_CHEVRON : FOLD_CLOSED_CHEVRON;
+
+// ../hooks/status-folds.ts
+function waitingUnderParents(ledger) {
+  const o = ledger.overview;
+  if (!o)
+    return new Map;
+  const blockedOf = (subjectId) => o.children.filter((c) => c.subjectId === subjectId && c.endedAt === null && c.delegateState === "blocked").map((c) => c.id);
+  const asksOf = (subjectId) => ledger.items.filter((i) => o.askSubjects[i.id]?.includes(subjectId)).map((i) => i.id);
+  const subjects = o.subjects.filter((x) => x.into === null);
+  const delegating = subjects.filter((x) => o.children.some((c) => c.subjectId === x.id));
+  const milestones = o.goal ? o.milestones.filter((m) => subjects.some((x) => o.serves[x.id] === m.id)) : [];
+  return new Map([
+    ...delegating.map((x) => [x.id, blockedOf(x.id)]),
+    ...milestones.map((m) => {
+      const serving = subjects.filter((x) => o.serves[x.id] === m.id);
+      return [m.id, [...new Set(serving.flatMap((x) => [...asksOf(x.id), ...blockedOf(x.id)]))]];
+    })
+  ]);
+}
+var parentChevron = (isCollapsed, foldCount) => isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true);
+var NONE_COLLAPSED = () => false;
+function withoutCollapsed(rows, isCollapsed) {
+  let hiddenBelow = null;
+  return rows.filter((r) => {
+    if (hiddenBelow !== null && r.depth > hiddenBelow)
+      return false;
+    hiddenBelow = r.kind === "subject" && isParentCollapsed(r, isCollapsed) ? r.depth : null;
+    return true;
+  });
+}
+function unfoldedRows(rows, isUnfolded, isCollapsed = NONE_COLLAPSED) {
+  return withoutCollapsed(rows, isCollapsed).flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
+}
+var isParentCollapsed = (p, isCollapsed) => p.foldCount > 0 && isCollapsed(p.id);
+function milestoneRows(m, isUnfolded, isCollapsed = NONE_COLLAPSED) {
+  const isShut = m.foldId !== null && !isUnfolded(m.foldId) || isParentCollapsed(m, isCollapsed);
+  return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed);
+}
+var listRows = (milestones, rows) => [
+  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
+  ...rows
+];
+function statusListRows(page) {
+  return listRows(page.goal?.milestones ?? [], page.rows);
+}
+
 // ../hooks/status-page-parts.ts
 var LISTED_NAMES = 2;
 var namedFoldMore = (n) => `+${n} more`;
@@ -3345,7 +3749,7 @@ function countsByMark(folded) {
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
-    return { text: "waiting", tone: "needsYou" };
+    return null;
   const idleMs = now - x.changedAt;
   const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS;
   return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS)}d`, tone: "muted" } : null;
@@ -3353,22 +3757,17 @@ function subjectStall(x, isHeld, isWorkRunning, now) {
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
-function childStall(c) {
-  if (c.delegateState === "blocked")
-    return { text: "waiting", tone: "needsYou" };
-  return null;
-}
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
 }
 function carriedByChild(c, isHeld) {
   if (c.delegateState === "blocked")
-    return { ...HELD_MARK, isRunning: false, stall: childStall(c) };
+    return { ...HELD_MARK, isRunning: false };
   if (c.delegateState === "finished" && !isHeld)
-    return { ...SUBJECT_MARKS.done, isRunning: false, stall: null };
+    return { ...SUBJECT_MARKS.done, isRunning: false };
   if (isChildWorking(c) && !isHeld)
-    return { ...SUBJECT_MARKS.working, isRunning: true, stall: null };
+    return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
 }
 function childRow(c, branch, depth) {
@@ -3380,7 +3779,6 @@ function childRow(c, branch, depth) {
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
-    stall: childStall(c),
     branch
   };
 }
@@ -3413,11 +3811,12 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? carried ? carried.stall : ownStall : null,
+      stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
+      foldCount: lone === null ? under.length : 0,
       ask: c.oldestAskOf(x)
     });
     if (lone === null)
@@ -3438,27 +3837,10 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   rows.push(...afterClosed);
   return rows;
 }
-function unfoldedRows(rows, isUnfolded) {
-  return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
-}
 
 // ../hooks/status-path.ts
-var NOW_WORD = "now";
-var NEXT_WORD = "next";
 var LATER_TEXT = "Later";
-var UNDER_WAY_TIME_AFTER_MS = 60 * 60000;
-var HOUR_MS = 60 * 60000;
-var DAY_HOURS = 24;
-var HOURS_SHOWN = 48;
-function underWayTime(ms) {
-  const hours = Math.floor(ms / HOUR_MS);
-  return hours < HOURS_SHOWN ? `${hours}h` : `${Math.floor(hours / DAY_HOURS)}d`;
-}
-function nowWord(m, now) {
-  const ran = m.startedAt === null ? 0 : now - m.startedAt;
-  return ran >= UNDER_WAY_TIME_AFTER_MS ? `${NOW_WORD} \xB7 ${underWayTime(ran)}` : NOW_WORD;
-}
-function milestonePath(shown, now) {
+function milestonePath(shown) {
   const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
   const underWay = shown.filter((m) => m.status === "working" || m.status === "waits-on-other");
   const [next, ...later] = shown.filter((m) => m.status === "queued");
@@ -3468,14 +3850,12 @@ function milestonePath(shown, now) {
   const pathSteps = onPath.map((m, n) => ({
     milestone: m,
     place: m === next ? "next" : m.status === "done" ? "done" : "now",
-    word: m === next ? NEXT_WORD : m.status === "working" ? nowWord(m, now) : null,
     line: lineBelow(n),
     startsLater: false
   }));
   const afterPath = [...later, ...dropped].map((m, n) => ({
     milestone: m,
     place: m.status === "dropped" ? "dropped" : "later",
-    word: null,
     line: null,
     startsLater: n === 0 && later.length > 0
   }));
@@ -3488,9 +3868,6 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
     return [...said].every((w) => row.has(w));
   });
 }
-function milestoneRows(m, isUnfolded) {
-  return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded);
-}
 function workJoints(rows, line) {
   const top = Math.min(...rows.map((r) => r.depth));
   const last = rows.findLastIndex((r) => r.depth === top);
@@ -3501,8 +3878,8 @@ function workJoints(rows, line) {
     return { arm, beside: n < last ? "connector" : null };
   });
 }
-function isSpacedAbove(milestones, n, isUnfolded) {
-  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
+function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
+  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded, isCollapsed).length === 0;
   const above = milestones[n - 1];
   const m = milestones[n];
   return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
@@ -3512,6 +3889,7 @@ function isSpacedAbove(milestones, n, isUnfolded) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
+var SUGGESTED_GOAL_LABEL = "Suggested";
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -3545,23 +3923,23 @@ function milestoneRow(step, o, items) {
     ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
-    word: step.word,
     line: step.line,
     startsLater: step.startsLater,
     isChanged,
     isMuted: step.place === "later" || step.place === "dropped",
     foldId: null,
+    foldCount: 0,
     text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
   };
 }
-function goalPage(o, items, now) {
+function goalPage(o, items) {
   const g = o?.goal ?? null;
+  const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal;
   if (o === null || g === null)
-    return { goal: null, canRestoreGoal: o?.goalRemoved != null };
+    return { goal: null, canRestoreGoal: o?.goalRemoved != null, suggestedGoal };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
@@ -3570,7 +3948,7 @@ function goalPage(o, items, now) {
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
-  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown).map((step) => milestoneRow(step, o, items));
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
@@ -3583,7 +3961,8 @@ function goalPage(o, items, now) {
       milestonesFold: null,
       milestones
     },
-    canRestoreGoal: false
+    canRestoreGoal: false,
+    suggestedGoal
   };
 }
 
@@ -3634,8 +4013,8 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
-var newGoal = (emphasis) => ({
-  press: { action: "type-goal", text: "" },
+var newGoal = (page, emphasis) => ({
+  press: page.suggestedGoal === null ? { action: "type-goal", text: "" } : { action: "show-suggestion" },
   label: "New",
   hotkey: "n",
   kind: "view",
@@ -3644,34 +4023,63 @@ var newGoal = (emphasis) => ({
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal(page, "quiet")];
   if (g.isMet)
-    return [newGoal("normal"), REMOVE_GOAL];
+    return [newGoal(page, "normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
   ];
 }
-var rowTarget = (r) => ({ id: r.id, keys: statusKeyPlan(r) });
-function statusKeyRows(page, isUnfolded = () => false) {
-  const fold = page.goal?.milestonesFold ?? null;
+function suggestionKeyPlan(suggested) {
   return [
-    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
+    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
+    { press: { action: "hide-suggestion" }, label: "Cancel", hotkey: "c", kind: "view", emphasis: "quiet" }
+  ];
+}
+var isSuggestionShown = (page, isSuggestionOpen) => isSuggestionOpen && page.suggestedGoal !== null;
+function goalKeys(page, isSuggestionOpen) {
+  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal) : goalKeyPlan(page);
+}
+function parentFoldKeys(p, isCollapsed) {
+  if (p.foldCount === 0)
+    return [];
+  return [
+    {
+      press: { action: "toggle-collapse", id: p.id },
+      label: isParentCollapsed(p, isCollapsed) ? "Unfold" : "Fold",
+      hotkey: "f",
+      kind: "view",
+      emphasis: "quiet"
+    }
+  ];
+}
+var rowTarget = (isCollapsed) => (r) => ({
+  id: r.id,
+  keys: [...statusKeyPlan(r), ...r.kind === "subject" ? parentFoldKeys(r, isCollapsed) : []]
+});
+function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false, isSuggestionOpen = false) {
+  const fold = page.goal?.milestonesFold ?? null;
+  const toTarget = rowTarget(isCollapsed);
+  return [
+    { id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) },
     ...fold === null ? [] : [{ id: fold.id, keys: milestonesFoldKeyPlan(page.goal) }],
     ...shownMilestones(page.goal, isUnfolded).flatMap((m) => [
-      { id: m.id, keys: milestoneKeyPlan(m) },
-      ...m.rows.map(rowTarget)
+      { id: m.id, keys: [...milestoneKeyPlan(m), ...parentFoldKeys(m, isCollapsed)] },
+      ...milestoneRows(m, isUnfolded, isCollapsed).map(toTarget)
     ]),
-    ...page.rows.map(rowTarget)
+    ...unfoldedRows(page.rows, isUnfolded, isCollapsed).map(toTarget)
   ].filter((t) => t.keys.length > 0);
 }
-function statusSelected(page, selectedId, isUnfolded = () => false) {
-  const targets = statusKeyRows(page, isUnfolded);
+function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed = () => false, isSuggestionOpen = false) {
+  const targets = statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen);
   const opensAsk = (t) => t.keys.some((k) => k.press.action === "show-ask");
-  const isFold = (t) => t.keys.some((k) => k.press.action === "toggle-fold");
+  const isFold = (t) => t.keys.every((k) => k.press.action === "toggle-fold" || k.press.action === "toggle-collapse");
   return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets.find((t) => !isFold(t)) ?? targets[0] ?? null;
 }
-var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
+var GOAL_FIELD = { placeholder: "An outcome to work toward" };
+var goalSubmitLabel = (page) => page.goal === null || page.goal.isMet ? "Set" : "Save";
 
 // ../hooks/pressed.ts
 function offersUndo(c) {
@@ -3977,185 +4385,6 @@ function reopenOnFailure(ledger, id, at) {
 // ../hooks/marks.ts
 function textMark(mark) {
   return mark === CLOSED_MARKS.lapsed ? "\u2298" : mark;
-}
-
-// ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var OTHER_WORK = "Other work";
-var WAS_PREFIX = "was: ";
-var WAITS_ON_PREFIX = "waits on you: ";
-var MERGED_PREFIX = "merged in: ";
-var STALL_GAP = " \xB7 ";
-var STATUS_TEXT_LINES = 3;
-var NEW_CLOSED_ROWS = 2;
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function mergedLine(merged, fits) {
-  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
-}
-function nameBeforeStall(name, fits) {
-  const words = name.split(" ");
-  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
-  return cuts.find(fits) ?? cuts.at(-1);
-}
-function statusPage(s, now) {
-  const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => o === null || !isSubjectSeen(o, x);
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items, now);
-  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
-  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
-  const milestoneOf = (x) => {
-    const to = servedBy(x);
-    return to !== undefined && milestoneIds.has(to) ? to : null;
-  };
-  const hasMilestones = milestoneIds.size > 0;
-  const isUnneeded = (x) => servedBy(x) === "none";
-  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const needed = subjects.filter((x) => !isUnneeded(x));
-  const main = needed.filter((x) => !isOther(x));
-  const other = subjects.filter(isOther);
-  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
-  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
-  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
-  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
-  const foldable = open.filter(canFold);
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
-  const split = (part, isLater = false) => {
-    const unseenClosed = unseenClosedOf(part);
-    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
-    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
-    return {
-      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
-      newClosed,
-      named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter(isFoldedOpen),
-      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
-    };
-  };
-  const top = split(main.filter((x) => milestoneOf(x) === null));
-  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
-  const otherUnseenClosed = unseenClosedOf(other);
-  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
-  const otherFolded = other.filter(isOtherFolded);
-  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
-  const ctx = {
-    isNew,
-    isHeld,
-    oldestAskOf,
-    items: s.ledger.items,
-    running,
-    isTurnRunning: s.presence.isTurnRunning,
-    now
-  };
-  const foldCtx = { ...ctx, running: [] };
-  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const closed = named.filter((x) => x.status === status);
-    return closed.length === 0 ? [] : [
-      {
-        kind: "fold",
-        id: `${prefix}also-${status}`,
-        depth,
-        ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
-        subjectIds: closed.map((x) => x.id)
-      }
-    ];
-  });
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
-    {
-      kind: "fold",
-      id: `${prefix}open`,
-      depth,
-      ...SUBJECT_MARKS.queued,
-      text: `${foldedOpen.length} more`,
-      subjectIds: []
-    }
-  ];
-  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
-    {
-      kind: "done-fold",
-      id: `${prefix}done`,
-      depth,
-      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
-    }
-  ];
-  const foldedPart = (prefix, p, depth) => [
-    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
-  ];
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
-    const x = subjects.find((y) => y.id === c.subjectId);
-    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
-  });
-  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
-  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
-  const afterOtherOpen = [
-    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
-    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
-  ];
-  const otherRows = [
-    ...hasMilestones ? looseRows(null, 0) : [],
-    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
-  ];
-  const rows = [
-    ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0),
-    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
-  ];
-  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
-  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-  const withRows = (m, p) => {
-    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
-    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
-    return isShrunk ? {
-      ...m,
-      text: null,
-      isMuted: true,
-      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
-      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
-    } : { ...m, rows };
-  };
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
-    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
-  };
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
-  return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
-    head,
-    isHeadApart: goal === null || goal.isMet,
-    ...goalParts,
-    goal,
-    rows,
-    error: s.overviewFailure ? STATUS_FAILED : null
-  };
-}
-function seenSubjectIds(row) {
-  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
-}
-var listRows = (milestones, rows) => [
-  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
-  ...rows
-];
-function statusListRows(page) {
-  return listRows(page.goal?.milestones ?? [], page.rows);
 }
 
 // ../hooks/timing.ts
@@ -5428,6 +5657,66 @@ function herdrPanelOpener() {
   return (calls, target) => pending ??= open(calls, target).finally(() => {
     pending = null;
   });
+}
+
+// ../hooks/collapse.ts
+var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
+function newsByRow({ ledger, prViews, lastActions }) {
+  const pressed = (id) => lastActions[id]?.at;
+  const prs = Object.values(prViews.views);
+  const timed = (at, untimedUrl = null) => ({ at, untimedUrl, waiting: [] });
+  return new Map([
+    ...ledger.items.map((i) => [i.id, timed(latest(i.reportedAt, pressed(i.id)))]),
+    ...ledger.findings.map((f) => [f.id, timed(latest(f.reopenedAt, pressed(f.id)))]),
+    ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
+      const id = prThreadId(pr, t);
+      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+      return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)];
+    })),
+    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
+      const id = prCheckId(pr, c);
+      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
+      return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)];
+    })),
+    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }])
+  ]);
+}
+var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null) && news.waiting.every((id) => c.waiting?.includes(id));
+function collapsedRows(s) {
+  const news = newsByRow(s);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
+}
+function settledCollapses(s) {
+  if (s.collapsed === undefined)
+    return s;
+  const news = newsByRow(s);
+  let isChanged = false;
+  const kept = Object.entries(s.collapsed).flatMap(([id, c]) => {
+    const n = news.get(id);
+    if (!isUnchanged(n, c)) {
+      isChanged = true;
+      return [];
+    }
+    const waiting = c.waiting?.filter((w) => n?.waiting.includes(w)) ?? [];
+    if (waiting.length === (c.waiting?.length ?? 0))
+      return [[id, c]];
+    isChanged = true;
+    const settled = { at: c.at, ...c.untimedUrl !== undefined && { untimedUrl: c.untimedUrl } };
+    return [[id, waiting.length > 0 ? { ...settled, waiting } : settled]];
+  });
+  return isChanged ? { ...s, collapsed: Object.fromEntries(kept) } : s;
+}
+function withCollapse(s, row, isCollapsed, at) {
+  const news = newsByRow(s);
+  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
+  const untimedUrl = news.get(row)?.untimedUrl ?? null;
+  const waiting = news.get(row)?.waiting ?? [];
+  const collapse = {
+    at,
+    ...untimedUrl !== null && { untimedUrl },
+    ...waiting.length > 0 && { waiting }
+  };
+  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
 }
 
 // ../hooks/catch-up-text.ts
@@ -7047,37 +7336,188 @@ function perTurnStatus(isUpdating, recovery) {
   return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
-// ../hooks/collapse.ts
-var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
-function newsByRow({ ledger, prViews, lastActions }) {
-  const pressed = (id) => lastActions[id]?.at;
-  const prs = Object.values(prViews.views);
-  return new Map([
-    ...ledger.items.map((i) => [i.id, { at: latest(i.reportedAt, pressed(i.id)), untimedUrl: null }]),
-    ...ledger.findings.map((f) => [f.id, { at: latest(f.reopenedAt, pressed(f.id)), untimedUrl: null }]),
-    ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
-      const id = prThreadId(pr, t);
-      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
-      return [id, { at: latest(t.reply?.at, pressed(id)), untimedUrl }];
-    })),
-    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
-      const id = prCheckId(pr, c);
-      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
-      return [id, { at: latest(c.finishedAt, pressed(id)), untimedUrl }];
-    }))
-  ]);
+// ../hooks/status-page.ts
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
+var OTHER_WORK = "Other work";
+var WAS_PREFIX = "Prev: ";
+var MERGED_PREFIX = "merged in: ";
+var STALL_GAP = " \xB7 ";
+var STATUS_TEXT_LINES = 3;
+var NEW_CLOSED_ROWS = 2;
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function mergedLine(merged, fits) {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
 }
-var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null);
-function collapsedRows(s) {
-  const news = newsByRow(s);
-  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
+function nameBeforeStall(name, fits) {
+  const words = name.split(" ");
+  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
+  return cuts.find(fits) ?? cuts.at(-1);
 }
-function withCollapse(s, row, isCollapsed, at) {
-  const news = newsByRow(s);
-  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
-  const untimedUrl = news.get(row)?.untimedUrl ?? null;
-  const collapse = { at, ...untimedUrl !== null && { untimedUrl } };
-  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
+function statusPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => o === null || !isSubjectSeen(o, x);
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const goalParts = goalPage(o, s.ledger.items);
+  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
+  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
+  const milestoneOf = (x) => {
+    const to = servedBy(x);
+    return to !== undefined && milestoneIds.has(to) ? to : null;
+  };
+  const hasMilestones = milestoneIds.size > 0;
+  const isUnneeded = (x) => servedBy(x) === "none";
+  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
+  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
+  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
+  const needed = subjects.filter((x) => !isUnneeded(x));
+  const main = needed.filter((x) => !isOther(x));
+  const other = subjects.filter(isOther);
+  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
+  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
+  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
+  const foldable = open.filter(canFold);
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
+  const split = (part, isLater = false) => {
+    const unseenClosed = unseenClosedOf(part);
+    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
+    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
+    return {
+      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
+      newClosed,
+      named: unseenClosed.slice(NEW_CLOSED_ROWS),
+      foldedOpen: part.filter(isFoldedOpen),
+      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
+    };
+  };
+  const top = split(main.filter((x) => milestoneOf(x) === null));
+  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
+  const otherUnseenClosed = unseenClosedOf(other);
+  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
+  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
+  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
+  const ctx = {
+    isNew,
+    isHeld,
+    oldestAskOf,
+    items: s.ledger.items,
+    running,
+    isTurnRunning: s.presence.isTurnRunning,
+    now
+  };
+  const foldCtx = { ...ctx, running: [] };
+  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+    const closed = named.filter((x) => x.status === status);
+    return closed.length === 0 ? [] : [
+      {
+        kind: "fold",
+        id: `${prefix}also-${status}`,
+        depth,
+        ...SUBJECT_MARKS[status],
+        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
+        subjectIds: closed.map((x) => x.id)
+      }
+    ];
+  });
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}open`,
+      depth,
+      ...SUBJECT_MARKS.queued,
+      text: `${foldedOpen.length} more`,
+      subjectIds: []
+    }
+  ];
+  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
+    {
+      kind: "done-fold",
+      id: `${prefix}done`,
+      depth,
+      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
+    }
+  ];
+  const foldedPart = (prefix, p, depth) => [
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
+  ];
+  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
+    const x = subjects.find((y) => y.id === c.subjectId);
+    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
+  });
+  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
+  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
+  const afterOtherOpen = [
+    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
+    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
+  ];
+  const otherRows = [
+    ...hasMilestones ? looseRows(null, 0) : [],
+    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
+  ];
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  const g = goalParts.goal;
+  const isHeadApart = head !== null && (g === null || g.isMet);
+  const listRows = [
+    ...hasMilestones ? [] : looseRows(null, 0),
+    ...foldedPart("", top, 0),
+    ...otherRows.length > 0 ? [
+      { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
+      ...otherRows
+    ] : []
+  ];
+  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const rows = [
+    ...headPart,
+    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
+  ];
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
+  const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
+  const withRows = (m, p) => {
+    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
+    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
+    return isShrunk ? {
+      ...m,
+      text: null,
+      isMuted: true,
+      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
+      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
+    } : {
+      ...m,
+      rows,
+      foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
+    };
+  };
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
+  return {
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    head,
+    ...goalParts,
+    goal,
+    rows,
+    error: s.overviewFailure ? STATUS_FAILED : null
+  };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
 
 // ../hooks/session-view.ts
@@ -7257,11 +7697,11 @@ function rowsInPlace(s) {
 function pruned(s) {
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
-  return {
+  return settledCollapses({
     ...s,
     ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
-  };
+  });
 }
 function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = null, unread = {}) {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
@@ -7450,6 +7890,7 @@ function indented(text, indent, width, maxLines, paint) {
     shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
 }
+var collapsedIn = (view) => (id) => view.collapsed.includes(id);
 
 // src/panel-ask-tree.ts
 var TRUNK = "\u2502  ";
@@ -7505,9 +7946,11 @@ function emptyTab(view, look) {
     const page = view.statusPage;
     if (!page.isEmpty)
       return null;
+    const isSuggestionOpen = look.isSuggestionOpen ?? false;
+    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
+      under: { is: "set-goal", keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion }
     };
   }
   if (look.tab === "prs") {
@@ -7547,13 +7990,17 @@ var GLUE = "\uE000";
 function pageLine(d, indent, mark, name, namePaint, {
   stall = null,
   waitsOn = null,
-  text = null
+  text = null,
+  chevron = null
 } = {}) {
   const { width, style: s } = d;
   const textAt = indent + 2;
-  const room = pageRoom(indent, width);
+  const full = pageRoom(indent, width);
+  const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full;
   const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const waits = waitsOn ? pageText(`${WAITS_ON_PREFIX}${waitsOn}`, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
+  const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
+  if (chevron)
+    names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ""} ${chevron.paint(chevron.text)}`;
   const seconds = [...waits, ...text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []];
   return [
     `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
@@ -7564,7 +8011,7 @@ function stalledName(name, stall, room, namePaint, s) {
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
   const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
   const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= STATUS_TEXT_LINES));
-  const words = stall.tone === "muted" ? s.dim(stall.text) : s.tone("needsYou", stall.text);
+  const words = s.dim(stall.text);
   return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
 }
 var markAt = (depth) => PAGE_MARK_AT + (PAGE_TEXT_AT - PAGE_MARK_AT) * depth;
@@ -7576,9 +8023,10 @@ function withTree(lines, at, first, rest, s) {
 function pageRuleCells(width, textAt = PAGE_TEXT_AT) {
   return Math.max(0, width - textAt - 1);
 }
-function partHeading(text, width, s, at = PAGE_TEXT_AT) {
+function partHeading(text, width, s, at = PAGE_TEXT_AT, isTitle = false) {
   const label = `${text} `;
-  return `${" ".repeat(at)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`;
+  const rule = "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)));
+  return `${" ".repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`;
 }
 function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
   const faces = target.keys.map((k) => ({
@@ -7591,26 +8039,42 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between =
   const focused = isSelected ? pageFocus(target, d.ui) : -1;
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : [];
 }
+function foldChevron(p, d, isSelected) {
+  if (p.foldCount === 0)
+    return null;
+  const { screen, style: s } = d;
+  return {
+    text: parentChevron(isParentCollapsed(p, collapsedIn(screen.view)), p.foldCount),
+    paint: isSelected ? (t) => s.tone("accent", t) : s.dim
+  };
+}
 function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
   const at = markAt(row.depth);
   const textAt = at + PAGE_TEXT_AT - PAGE_MARK_AT;
   if (row.kind === "subject") {
     const mark = paintMark(row, now, s);
-    const out = pageLine(d, at, mark, row.name, (t) => t, { stall: row.stall, waitsOn: row.waitsOn, text: row.text });
+    const chevron = foldChevron(row, d, isSelected);
+    const isFolded = isParentCollapsed(row, collapsedIn(d.screen.view));
+    const out = pageLine(d, at, mark, row.name, chevron && isSelected ? s.bold : (t) => t, {
+      stall: row.stall,
+      waitsOn: row.waitsOn,
+      text: row.text,
+      chevron
+    });
     const room = pageRoom(at, width);
     if (row.merged)
       out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), textAt, width, STATUS_TEXT_LINES, s.dim));
     if (row.was)
       out.push(...indented(`${WAS_PREFIX}${row.was}`, textAt, width, STATUS_TEXT_LINES, s.dim));
     out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, textAt));
-    return row.hasChildren ? withTree(out, at, null, "\u2502", s) : out;
+    return row.hasChildren && !isFolded ? withTree(out, at, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
     const mark = paintMark(row, now, s);
     if (!row.branch)
-      return pageLine(d, at, mark, row.name, s.dim, { stall: row.stall });
-    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim, { stall: row.stall });
+      return pageLine(d, at, mark, row.name, s.dim);
+    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim);
     return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s);
   }
   if (row.kind === "more") {
@@ -7619,11 +8083,17 @@ function drawPageRow(row, d, isSelected = false) {
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s);
   }
   if (row.kind === "done-fold") {
-    const chevron = d.ui.statusUnfolded.includes(row.id) ? "\u25BE" : "\u25B8";
-    return isSelected ? pageLine(d, at, s.tone("accent", chevron), row.text, s.bold) : pageLine(d, at, s.dim(chevron), row.text, s.dim);
+    const chevron = foldGlyph(d.ui.statusUnfolded.includes(row.id));
+    return pageLine(d, at, " ", row.text, isSelected ? s.bold : s.dim, {
+      chevron: { text: chevron, paint: isSelected ? (t) => s.tone("accent", t) : s.dim }
+    });
   }
   if (row.kind === "part")
-    return ["", partHeading(row.text, width, s)];
+    return [
+      "",
+      partHeading(row.text, width, s, PAGE_TEXT_AT, row.isTitle),
+      ...row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
+    ];
   if (row.kind === "counts")
     return countLines(row.counts, textAt, width, s);
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
@@ -7658,20 +8128,27 @@ function goalPartId(part) {
   return part.is === "keys" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
-function goalSection(page, typing, isUnfolded) {
+function goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed) {
   const isTyping = typing === GOAL_KEYS_ID;
+  const suggestion = !isTyping && isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
   const g = page.goal;
   const milestones = shownMilestones(g, isUnfolded);
   const fold = g?.milestonesFold ?? null;
   return [
-    goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING, mark: g?.mark ?? null, page: isTyping ? null : page }),
-    goalEntry({ is: "title", goal: g, isTyping }),
+    goalEntry({
+      is: "heading",
+      text: g?.label ?? GOAL_HEADING,
+      mark: g?.mark ?? null,
+      page: isTyping ? null : page,
+      isSuggestionOpen: suggestion !== null
+    }),
+    goalEntry({ is: "title", goal: g, isTyping, suggestion }),
     ...fold === null ? [] : [goalEntry({ is: "fold", fold })],
     ...milestones.flatMap((row, n) => {
-      const rows = milestoneRows(row, isUnfolded);
+      const rows = milestoneRows(row, isUnfolded, isCollapsed);
       const joints = workJoints(rows, row.line);
       return [
-        ...isSpacedAbove(milestones, n, isUnfolded) ? [goalEntry({ is: "gap", line: milestones[n - 1]?.line ?? null })] : [],
+        ...isSpacedAbove(milestones, n, isUnfolded, isCollapsed) ? [goalEntry({ is: "gap", line: milestones[n - 1]?.line ?? null })] : [],
         ...row.startsLater ? [goalEntry({ is: "later" })] : [],
         goalEntry({ is: "milestone", row }),
         ...rows.map((r, n) => ({ kind: "page", row: r, joint: joints[n] ?? { arm: null, beside: null } }))
@@ -7695,8 +8172,17 @@ function withJoint(lines, joint, s) {
     return g === null ? l : drawn(l, g);
   });
 }
-function setGoal(setGoal) {
-  return [goalEntry(setGoal.isFieldOpen ? { is: "field" } : { is: "keys", keys: setGoal.keys })];
+function setGoal(under) {
+  if (under.isFieldOpen)
+    return [goalEntry({ is: "field" })];
+  return [
+    ...under.suggestion === null ? [] : [goalEntry({ is: "suggestion", text: under.suggestion })],
+    goalEntry({ is: "keys", keys: under.keys })
+  ];
+}
+function suggestionLines(text, d, at) {
+  const { width, style: s } = d;
+  return [" ".repeat(at) + s.dim(SUGGESTED_GOAL_LABEL), ...indented(text, at, width, Infinity, s.bold)];
 }
 function fieldLines(d, at) {
   const { ui, width, style: s } = d;
@@ -7709,31 +8195,30 @@ function fieldLines(d, at) {
 }
 function foldedNameLines(d, mark, name, foldId, isSelected) {
   const s = d.style;
-  const chevron = d.ui.statusUnfolded.includes(foldId) ? "\u25BE" : "\u25B8";
+  const chevron = foldGlyph(d.ui.statusUnfolded.includes(foldId));
   const [namePaint, chevronPaint] = isSelected ? [s.bold, (t) => s.tone("accent", t)] : [s.dim, s.dim];
   return pageLine(d, PAGE_MARK_AT, mark, `${name} ${chevron}`, (t) => t.endsWith(chevron) ? namePaint(t.slice(0, -chevron.length)) + chevronPaint(chevron) : namePaint(t));
 }
-var WORD_GAP = 2;
 function milestoneLines(m, d, isSelected) {
   const { width, now, style: s } = d;
   const mark = paintMark({ ...m, isRunning: false }, now, s);
-  const hasWork = milestoneRows(m, (id) => d.ui.statusUnfolded.includes(id)).length > 0;
+  const isCollapsed = collapsedIn(d.screen.view);
+  const hasWork = milestoneRows(m, (id) => d.ui.statusUnfolded.includes(id), isCollapsed).length > 0;
   const column = m.line ?? (hasWork ? "continues" : null);
   if (m.foldId !== null) {
     const [name = "", ...wrapped] = foldedNameLines(d, mark, m.name, m.foldId, isSelected);
     return [name, ...withPathLine(wrapped, column, s)];
   }
-  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged ? s.bold(t) : t);
-  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { stall: m.stall, text: m.text });
-  const room = width - 1 - visibleLength(first) - cellWidth(m.word ?? "");
-  const word = m.word !== null && room >= WORD_GAP ? `${" ".repeat(room)}${s.dim(m.word)}` : "";
+  const chevron = foldChevron(m, d, isSelected);
+  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged || chevron && isSelected ? s.bold(t) : t);
+  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron });
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
-  return [`${first}${word}`, ...withPathLine(after, column, s)];
+  return [first, ...withPathLine(after, column, s)];
 }
 function headingLines(part, d, isSelected) {
   const { width, now, style: s } = d;
-  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1, s.dim("\xB7")) : [];
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeys(part.page, part.isSuggestionOpen) }, d, isSelected, 1, s.dim("\xB7")) : [];
   const right = width - 1;
   const { mark } = part;
   const at = mark === null ? PAGE_MARK_AT : PAGE_TEXT_AT;
@@ -7762,8 +8247,8 @@ function drawGoalPart(part, d, isSelected) {
   if (part.is === "later")
     return [partHeading(LATER_TEXT, width, s)];
   if (part.is === "title") {
-    const g = part.goal;
-    const text = part.isTyping ? fieldLines(d, textAt) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
+    const g = part.suggestion === null ? part.goal : null;
+    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? suggestionLines(part.suggestion, d, textAt) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
     return [
       ...text,
       ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
@@ -7773,6 +8258,8 @@ function drawGoalPart(part, d, isSelected) {
   }
   if (part.is === "milestone")
     return milestoneLines(part.row, d, isSelected);
+  if (part.is === "suggestion")
+    return suggestionLines(part.text, d, PAGE_MARK_AT);
   if (part.is === "keys")
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT);
   return fieldLines(d, PAGE_MARK_AT);
@@ -8113,8 +8600,8 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
     kind: "row",
     line: {
       ...blankLine(foldId(g.kind)),
-      lead: { text: isUnfolded ? "\u25BE" : "\u25B8", tone: "sep" },
-      title: foldLabel(total),
+      lead: g.mark ? null : { text: "", tone: null },
+      title: `${foldLabel(total)} ${foldGlyph(isUnfolded)}`,
       isDim: true,
       fold: g.kind,
       isWaiting: false
@@ -8435,19 +8922,19 @@ function orderEntries(screen, order, now) {
 var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
-function pageEntries(view, typing, isUnfolded) {
+function pageEntries(view, typing, isSuggestionOpen, isUnfolded) {
+  const isCollapsed = collapsedIn(view);
   const page = view.statusPage;
   const blank = { kind: "note", text: "" };
-  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: typing === GOAL_KEYS_ID });
+  const empty = emptyTab(view, {
+    tab: "overview",
+    isGoalFieldOpen: typing === GOAL_KEYS_ID,
+    isSuggestionOpen
+  });
   if (empty)
     return emptyEntries(empty, empty.under?.is === "set-goal" ? setGoal(empty.under) : []);
-  const description = page.head?.description;
-  const head = page.isHeadApart && page.head ? [
-    { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
-    ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
-  ] : [];
-  const top = [...goalSection(page, typing, isUnfolded), ...head.length > 0 ? [blank, ...head] : []];
-  const rows = unfoldedRows(page.rows, isUnfolded).map((row) => ({ kind: "page", row }));
+  const top = goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed);
+  const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row) => ({ kind: "page", row }));
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
 }
@@ -8472,7 +8959,7 @@ function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
     return helpEntries(screen);
   if (!isRowTab(tab))
-    return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id));
+    return pageEntries(screen.view, ui.typing, ui.isSuggestionOpen, (id) => ui.statusUnfolded.includes(id));
   const collapsed = new Set(screen.view.collapsed);
   const entries = tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
   return entries.map((e) => e.kind === "row" && collapsed.has(e.line.id) ? { ...e, line: { ...e.line, isCollapsed: true } } : e);
@@ -8554,7 +9041,8 @@ function typingKey(ui, id, key, now, text) {
   if (key === "enter") {
     if (draft.text.trim() === "")
       return { ui };
-    return { ui: { ...ui, typing: null }, press: { action: "type", id, text: draft.text } };
+    const closed = id === GOAL_KEYS_ID ? { ...ui, typing: null, isSuggestionOpen: false } : { ...ui, typing: null };
+    return { ui: closed, press: { action: "type", id, text: draft.text } };
   }
   if (key === "backspace")
     return edit([...draft.text].slice(0, -1).join(""));
@@ -8632,8 +9120,9 @@ function handleKey(screen, ui, key, now, text) {
 function pageKey(screen, ui, key, now) {
   const page = screen.view.statusPage;
   const isUnfolded = (id) => ui.statusUnfolded.includes(id);
-  const rows = statusKeyRows(page, isUnfolded);
-  const row = statusSelected(page, ui.selectedId, isUnfolded);
+  const isCollapsed = collapsedIn(screen.view);
+  const rows = statusKeyRows(page, isUnfolded, isCollapsed, ui.isSuggestionOpen);
+  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed, ui.isSuggestionOpen);
   if (!row)
     return null;
   if (key === "j" || key === "k") {
@@ -8641,15 +9130,24 @@ function pageKey(screen, ui, key, now) {
     const to = rows[steppedIndex(at, key === "k" ? -1 : 1, rows.length)].id;
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
   }
-  const { keys } = row;
-  if (key === "left" || key === "right") {
-    const index = steppedIndex(pageFocus(row, ui), key === "left" ? -1 : 1, keys.length);
+  const keys = drawnKeys(row);
+  const fold = row.keys.find((k) => k.press.action === "toggle-collapse");
+  if (fold && (key === fold.hotkey || key === "enter" && keys.length === 0))
+    return {
+      ui: { ...ui, selectedId: row.id, focus: null, pageReveal: row.id },
+      press: { action: "collapse", id: row.id, isCollapsed: !isCollapsed(row.id) }
+    };
+  const drawn = { id: row.id, keys };
+  if ((key === "left" || key === "right") && keys.length > 0) {
+    const index = steppedIndex(pageFocus(drawn, ui), key === "left" ? -1 : 1, keys.length);
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
   }
-  const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
+  const pressed = key === "enter" ? keys[pageFocus(drawn, ui)] : keys.find((k) => k.hotkey === key);
   if (!pressed)
     return null;
   const { press } = pressed;
+  if (press.action === "toggle-collapse")
+    return null;
   if (press.action === "show-ask")
     return { ui: { ...withTab(ui, "needsYou", now), selectedId: press.askId, openedAt: now } };
   if (press.action === "toggle-fold") {
@@ -8662,11 +9160,25 @@ function pageKey(screen, ui, key, now) {
     const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } };
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } };
   }
+  if (press.action === "show-suggestion")
+    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: true, focus: { rowId: GOAL_KEYS_ID, index: 0 } } };
+  if (press.action === "hide-suggestion") {
+    const index = Math.max(0, goalKeys(page, false).findIndex((k) => k.press.action === "show-suggestion"));
+    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: { rowId: GOAL_KEYS_ID, index } } };
+  }
+  if (press.action === "take-goal")
+    return {
+      ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: null, pageReveal: GOAL_KEYS_ID },
+      press: { action: "take-goal", id: GOAL_KEYS_ID }
+    };
+  if (press.action !== "remove-goal" && press.action !== "restore-goal")
+    return null;
   return {
     ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
     press: { action: press.action, id: GOAL_KEYS_ID }
   };
 }
+var drawnKeys = (target) => target.keys.filter((k) => k.press.action !== "toggle-collapse");
 var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
 
 // src/panel-draw.ts
@@ -8874,8 +9386,11 @@ function footer(d, isPageScrolling) {
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
-  const hints = ui.typing !== null ? [`\u21B5 ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
-    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id)),
+  const hints = ui.typing !== null ? [
+    `\u21B5 ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
+    `esc ${ROW_COPY.cancel}`
+  ] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
+    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view), ui.isSuggestionOpen),
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
     "? help"
@@ -8917,11 +9432,18 @@ function scrolled(body, selectedAt, room, s) {
     clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
   return clip;
 }
-function statusHints(page, selectedId, isUnfolded) {
-  if (statusKeyRows(page, isUnfolded).length === 0)
+function statusHints(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen) {
+  if (statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen).length === 0)
     return [];
-  const isPicking = (statusSelected(page, selectedId, isUnfolded)?.keys.length ?? 0) > 1;
-  return ["j k select", ...isPicking ? ["\u2190\u2192 pick"] : [], "\u21B5 press"];
+  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen);
+  const fold = selected?.keys.find((k) => k.press.action === "toggle-collapse");
+  const isPicking = (selected ? drawnKeys(selected).length : 0) > 1;
+  return [
+    "j k select",
+    ...isPicking ? ["\u2190\u2192 pick"] : [],
+    "\u21B5 press",
+    ...fold ? [`${fold.hotkey} ${fold.label.toLowerCase()}`] : []
+  ];
 }
 
 // src/panel.ts
@@ -8937,6 +9459,7 @@ var INITIAL_UI = {
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
+  isSuggestionOpen: false,
   resuming: null,
   opened: null,
   pageTop: 0,
@@ -8988,7 +9511,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
-  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id));
+  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view), ui.isSuggestionOpen);
   let pageSelectedAt = null;
   const subjectAt = [];
   for (const e of entries) {
@@ -9116,6 +9639,8 @@ function createPanel(deps) {
       return;
     }
     screen = next;
+    if (ui.isSuggestionOpen && next.view.statusPage.suggestedGoal === null)
+      ui = { ...ui, isSuggestionOpen: false };
     const followed = followRows(next, ui, seen, isOpening, deps.now());
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now());
     seen = followed.seen;
@@ -9347,8 +9872,7 @@ function demoView(now, agent) {
             text: "",
             was: null,
             changedAt: now - 5 * 60 * MIN,
-            closedAt: now - 5 * 60 * MIN,
-            startedAt: null
+            closedAt: now - 5 * 60 * MIN
           },
           {
             id: "m1",
@@ -9357,8 +9881,7 @@ function demoView(now, agent) {
             text: "",
             was: null,
             changedAt: now - 40 * MIN,
-            closedAt: now - 40 * MIN,
-            startedAt: null
+            closedAt: now - 40 * MIN
           },
           {
             id: "m2",
@@ -9367,8 +9890,7 @@ function demoView(now, agent) {
             text: "tuning pinch pressure",
             was: null,
             changedAt: now - 35 * MIN,
-            closedAt: null,
-            startedAt: now - 95 * MIN
+            closedAt: null
           },
           {
             id: "m3",
@@ -9377,8 +9899,7 @@ function demoView(now, agent) {
             text: "waits on your pick",
             was: null,
             changedAt: now - 5 * MIN,
-            closedAt: null,
-            startedAt: null
+            closedAt: null
           },
           {
             id: "m5",
@@ -9387,13 +9908,13 @@ function demoView(now, agent) {
             text: "after the glasses trial",
             was: null,
             changedAt: now - 60 * MIN,
-            closedAt: null,
-            startedAt: null
+            closedAt: null
           }
         ],
         nextMilestoneId: 6,
         serves: { s1: "m2", s3: "m3", s4: "m1", s5: "m5", s6: "m4", s7: "none" },
-        goalRefused: null
+        goalRefused: null,
+        suggestedGoal: null
       },
       items: [
         {
@@ -9796,322 +10317,6 @@ function demoView(now, agent) {
   };
 }
 
-// ../hooks/clients.ts
-var CLIENTS = {
-  "claude-code": {
-    support: {
-      "catch-up": { kind: "full" },
-      "failed-update-recovery": { kind: "full" },
-      "ledger-behind-state": { kind: "full" },
-      "dialog-outcome": { kind: "full" },
-      "dialog-answer": {
-        kind: "different",
-        reason: "The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
-      },
-      "dialog-answer-closes-copy": { kind: "full" },
-      "dialog-descriptions": { kind: "full" },
-      "tool-output-urls": { kind: "full" },
-      "pr-link-from-output": { kind: "full" },
-      "pr-arrivals": { kind: "full" },
-      "prs-empty-hint": { kind: "full" },
-      "gh-signed-out-notice": { kind: "full" },
-      "link-open-rule": { kind: "full" },
-      "fork-ledger": { kind: "full" },
-      "band-and-stop-rows": { kind: "full" },
-      "exchange-trigger": { kind: "full" },
-      "settle-window": { kind: "full" },
-      "fold-on-typed-message": { kind: "full" },
-      "fold-waits-for-list-use": {
-        kind: "different",
-        reason: "The terminal reports no pointer, so a row due to fold waits only on presses, keys and scrolls. On desktop a settled row is drawn as text, which reports no pointer, so a row waits on presses and on pointer moves over open rows."
-      },
-      "version-label": { kind: "full" },
-      "status-tab": { kind: "full" },
-      "turn-working": { kind: "full" },
-      "host-task-list": { kind: "full" },
-      "hooks-need-trust": {
-        kind: "unsupported",
-        reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust."
-      },
-      "compare-in-background": { kind: "full" },
-      "compare-page": { kind: "full" },
-      "running-marks": { kind: "full" },
-      "title-tint": {
-        kind: "different",
-        reason: "The terminal steps the fade in 6 colors. Desktop holds the tint, then drops it."
-      },
-      "pending-answer-mark": { kind: "full" },
-      "tab-symbols": { kind: "full" },
-      "dim-pressed-button": {
-        kind: "different",
-        reason: "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it."
-      },
-      "herdr-sidebar": { kind: "full" },
-      "herdr-look": { kind: "full" },
-      "herdr-open": { kind: "full" },
-      "herdr-install": { kind: "full" },
-      "status-children": { kind: "full" },
-      "child-names": { kind: "full" },
-      "status-failed-warning": { kind: "full" },
-      "asks-holds-up-line": { kind: "full" },
-      "asks-tree": { kind: "full" },
-      "asks-context-line": { kind: "full" },
-      "status-mid-turn-refresh": { kind: "full" },
-      "ran-call-activity": { kind: "full" },
-      "ran-call-delegates": { kind: "full" },
-      "tool-result-line": { kind: "full" },
-      "status-call-records": { kind: "full" },
-      "pr-order": { kind: "full" },
-      "pr-rank-again": { kind: "full" },
-      "clear-merged-and-closed-prs": { kind: "full" },
-      "pr-check-rerun": { kind: "full" },
-      "pr-fetch-notice": { kind: "full" },
-      "help-page": {
-        kind: "different",
-        reason: "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks."
-      },
-      "status-view-ask": { kind: "full" },
-      "status-goal": { kind: "full" },
-      "status-done-fold": { kind: "full" },
-      "status-named-fold": { kind: "full" },
-      "seen-on-screen": { kind: "full" },
-      "status-idle-age": { kind: "full" },
-      "question-back-stays-open": { kind: "full" },
-      "collapse-rows": { kind: "full" }
-    }
-  },
-  codex: {
-    support: {
-      "catch-up": {
-        kind: "different",
-        reason: "Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed. A chat whose ledger failed or fell behind, such as an archived chat that runs no hooks, also catches up when its tab opens, once until the ledger or the chat moves on."
-      },
-      "failed-update-recovery": { kind: "full" },
-      "ledger-behind-state": {
-        kind: "different",
-        reason: "Codex runs no hook when a chat is opened. A resumed chat is marked behind when its Inbox tab opens, and at the hook its next message runs if the tab stays closed."
-      },
-      "dialog-outcome": {
-        kind: "different",
-        reason: "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded."
-      },
-      "dialog-answer": { kind: "full" },
-      "dialog-answer-closes-copy": {
-        kind: "different",
-        reason: "Codex's dialog tool returns before the person answers, so the inbox sees no answer when the dialog ends. The copy stays open until the person's reply in the dialog's form arrives, and the agent closes it then."
-      },
-      "dialog-descriptions": { kind: "full" },
-      "tool-output-urls": { kind: "full" },
-      "pr-link-from-output": {
-        kind: "different",
-        reason: "Codex runs no hook for a long command's output, so the inbox reads the turn's shell commands from the rollout at Stop. A PR that `gh pr create` opened is linked when the turn ends, not when the command finishes."
-      },
-      "pr-arrivals": { kind: "full" },
-      "prs-empty-hint": {
-        kind: "different",
-        reason: "The Codex app calls a conversation a chat, so its hint says chat where the mod says session."
-      },
-      "gh-signed-out-notice": { kind: "full" },
-      "link-open-rule": { kind: "full" },
-      "fork-ledger": {
-        kind: "different",
-        reason: "Codex runs no hook when a chat is opened. A fork takes its parent's ledger when its Inbox tab opens, and at the hook its first message runs if the tab stays closed."
-      },
-      "band-and-stop-rows": {
-        kind: "unsupported",
-        reason: "Codex has no line above its prompt, and shows no stops."
-      },
-      "exchange-trigger": {
-        kind: "different",
-        reason: "A Codex hook names no source for a turn that has no prompt, so the exchange reads unknown. The mod reads the prompt origin."
-      },
-      "settle-window": {
-        kind: "different",
-        reason: "The tab only learns of a close at its next poll, so the server offers Undo for two polls longer."
-      },
-      "fold-on-typed-message": { kind: "full" },
-      "fold-waits-for-list-use": { kind: "full" },
-      "version-label": { kind: "full" },
-      "status-tab": { kind: "full" },
-      "turn-working": {
-        kind: "different",
-        reason: "Codex runs no hook when a chat is opened, and a turn whose app-server dies has no end row in the rollout. So after Codex's app-server dies during a turn, Working\u2026 stays and Done messages wait until the next message. Quitting the app, even with SIGKILL, ends the turn in the rollout."
-      },
-      "host-task-list": {
-        kind: "different",
-        reason: "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Status call. The tool is not offered by default in `codex exec`, and the app is not checked."
-      },
-      "hooks-need-trust": { kind: "full" },
-      "compare-in-background": {
-        kind: "different",
-        reason: "When a Codex subagent ends, Codex queues its result for the main agent and starts no turn for it. So a result that arrives after the agent's turn has ended does not reach the chat on its own, and the Compare message asks for the comparison in the agent's own turn."
-      },
-      "compare-page": { kind: "full" },
-      "running-marks": { kind: "full" },
-      "title-tint": { kind: "full" },
-      "pending-answer-mark": { kind: "full" },
-      "tab-symbols": { kind: "full" },
-      "dim-pressed-button": { kind: "full" },
-      "herdr-sidebar": {
-        kind: "different",
-        reason: "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay."
-      },
-      "herdr-look": {
-        kind: "different",
-        reason: "Codex runs no hook when a session ends, so its published file stays."
-      },
-      "herdr-open": {
-        kind: "unsupported",
-        reason: "The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app. A `$inbox` skill that has the model call an MCP tool could open the Herdr look, but only after a model turn, so the press could not show what it did at once. It is left as an option."
-      },
-      "herdr-install": {
-        kind: "different",
-        reason: "The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. So the app's tab asks when the Herdr app's settings folder exists, and Codex has no `/inbox herdr`. At start, Codex updates an installed inbox build, installs after a saved yes, and logs a failure only."
-      },
-      "status-children": {
-        kind: "different",
-        reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
-      },
-      "child-names": { kind: "full" },
-      "status-failed-warning": { kind: "full" },
-      "asks-holds-up-line": { kind: "full" },
-      "asks-tree": { kind: "full" },
-      "asks-context-line": { kind: "full" },
-      "status-mid-turn-refresh": { kind: "full" },
-      "ran-call-activity": {
-        kind: "different",
-        reason: "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked. In a code-mode script that ends on a declined command, the error does not name the command, so the declined one is the only command with no row while the script ran. When more than one has none, as when another still runs, every line stays. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches."
-      },
-      "ran-call-delegates": {
-        kind: "different",
-        reason: "Codex runs PreToolUse before a call is approved, so a herdr command's delegate rows show from then. Stop, and the tool call that claims a Status call during the turn, take back the rows of each command the rollout shows was declined or blocked. In a code-mode script that ends on a declined command, that is the only command with no row while the script ran. When more than one has none, every row stays. A code-mode call whose script catches the block keeps its rows."
-      },
-      "tool-result-line": {
-        kind: "unsupported",
-        reason: "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone."
-      },
-      "status-call-records": { kind: "full" },
-      "pr-order": { kind: "full" },
-      "pr-rank-again": { kind: "full" },
-      "clear-merged-and-closed-prs": { kind: "full" },
-      "pr-check-rerun": { kind: "full" },
-      "pr-fetch-notice": { kind: "full" },
-      "help-page": { kind: "full" },
-      "status-view-ask": {
-        kind: "different",
-        reason: "Pete's choice: View takes clicks only, with no key. The Codex Status has no row selection and is used by clicking."
-      },
-      "status-goal": {
-        kind: "different",
-        reason: "The goal's buttons take clicks only, as View does: the Codex Status has no row selection and is used by clicking."
-      },
-      "status-done-fold": {
-        kind: "different",
-        reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
-      },
-      "status-named-fold": { kind: "full" },
-      "seen-on-screen": { kind: "full" },
-      "status-idle-age": { kind: "full" },
-      "question-back-stays-open": {
-        kind: "different",
-        reason: "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere."
-      },
-      "collapse-rows": { kind: "full" }
-    }
-  },
-  omp: {
-    support: {
-      "catch-up": { kind: "full" },
-      "failed-update-recovery": { kind: "full" },
-      "ledger-behind-state": { kind: "full" },
-      "dialog-outcome": { kind: "full" },
-      "dialog-answer": {
-        kind: "different",
-        reason: "The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
-      },
-      "dialog-answer-closes-copy": { kind: "full" },
-      "dialog-descriptions": { kind: "full" },
-      "tool-output-urls": { kind: "full" },
-      "pr-link-from-output": { kind: "full" },
-      "pr-arrivals": { kind: "full" },
-      "prs-empty-hint": { kind: "full" },
-      "gh-signed-out-notice": { kind: "full" },
-      "link-open-rule": { kind: "full" },
-      "fork-ledger": { kind: "full" },
-      "band-and-stop-rows": {
-        kind: "different",
-        reason: "omp's band cannot take keys, so Resume is a button in the panel. omp classes a stop from the request's HTTP status and message, so it never names billing or a reset time."
-      },
-      "exchange-trigger": {
-        kind: "different",
-        reason: "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else."
-      },
-      "settle-window": { kind: "full" },
-      "fold-on-typed-message": { kind: "full" },
-      "fold-waits-for-list-use": {
-        kind: "different",
-        reason: "omp's panel takes keys only, so a row due to fold waits on keys."
-      },
-      "version-label": { kind: "full" },
-      "status-tab": { kind: "full" },
-      "turn-working": { kind: "full" },
-      "host-task-list": { kind: "full" },
-      "hooks-need-trust": {
-        kind: "unsupported",
-        reason: "omp runs an installed extension's events without asking anyone to trust them."
-      },
-      "compare-in-background": { kind: "full" },
-      "compare-page": { kind: "full" },
-      "running-marks": { kind: "full" },
-      "title-tint": { kind: "different", reason: "Steps the fade in 6 colors." },
-      "pending-answer-mark": { kind: "full" },
-      "tab-symbols": { kind: "full" },
-      "dim-pressed-button": {
-        kind: "different",
-        reason: "The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing."
-      },
-      "herdr-sidebar": { kind: "full" },
-      "herdr-look": { kind: "full" },
-      "herdr-open": { kind: "full" },
-      "herdr-install": { kind: "full" },
-      "status-children": {
-        kind: "different",
-        reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show."
-      },
-      "child-names": { kind: "full" },
-      "status-failed-warning": { kind: "full" },
-      "asks-holds-up-line": { kind: "full" },
-      "asks-tree": { kind: "full" },
-      "asks-context-line": { kind: "full" },
-      "status-mid-turn-refresh": { kind: "full" },
-      "ran-call-activity": { kind: "full" },
-      "ran-call-delegates": { kind: "full" },
-      "tool-result-line": { kind: "full" },
-      "status-call-records": { kind: "full" },
-      "pr-order": { kind: "full" },
-      "pr-rank-again": { kind: "full" },
-      "clear-merged-and-closed-prs": { kind: "full" },
-      "pr-check-rerun": { kind: "full" },
-      "pr-fetch-notice": { kind: "full" },
-      "help-page": {
-        kind: "different",
-        reason: "The panel takes keys only, so `?` opens Help, and no button does."
-      },
-      "status-view-ask": { kind: "full" },
-      "status-goal": { kind: "full" },
-      "status-done-fold": { kind: "full" },
-      "status-named-fold": { kind: "full" },
-      "seen-on-screen": { kind: "full" },
-      "status-idle-age": { kind: "full" },
-      "question-back-stays-open": { kind: "full" },
-      "collapse-rows": { kind: "full" }
-    }
-  }
-};
-function isCompareInBackground(client) {
-  return CLIENTS[client].support["compare-in-background"].kind === "full";
-}
-
 // ../hooks/press-effects.ts
 function finishedResult(pending, errors, at) {
   const parts = pending.parts.map((part, n) => ({ ...part, error: errors[n] ?? null }));
@@ -10419,7 +10624,8 @@ var OP_ORDER = {
   was: 3,
   link: 4,
   serves: 4,
-  next: 4
+  next: 4,
+  suggest: 4
 };
 function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
   let o = {
@@ -10476,7 +10682,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   const servesLines = ops.flatMap((op) => op.kind === "serves" ? [op] : []);
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op, n } of ordered) {
-    if (op.kind === "none")
+    if (op.kind === "none" || op.kind === "suggest")
       continue;
     if (op.kind === "next") {
       markNamed(findMilestone(o, op.ref), n);
@@ -10573,7 +10779,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: "" } };
   const settled = settleGoal(o, now, readSetAt, named);
-  return nextRef === null ? settled : withNextMilestone(settled, nextRef, now);
+  return withSuggestion(nextRef === null ? settled : withNextMilestone(settled, nextRef, now), ops);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last;
@@ -10675,7 +10881,7 @@ function appliedCatchUp(s, begun, parsed, now) {
 }
 
 // ../hooks/status.ts
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES|NEXT)\s*(?::\s*(.*))?$/i;
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES|NEXT|SUGGEST)\s*(?::\s*(.*))?$/i;
 function fields(value) {
   return value.split("|").map((f) => f.trim());
 }
@@ -10736,6 +10942,10 @@ function opOf(key, f) {
   }
   if (key === "NEXT")
     return f[0] ? { kind: "next", ref: f[0] } : null;
+  if (key === "SUGGEST") {
+    const isNone = f[0] === "-" || f[0]?.toLowerCase() === "none";
+    return f[0] ? { kind: "suggest", text: isNone ? null : f[0] } : null;
+  }
   return null;
 }
 function standingRef(op) {
@@ -10769,18 +10979,21 @@ var NO_WORK_LINKED = "no work linked";
 var NEXT_MARK = "next";
 var GOAL_LINES = `GOAL: outcome | status name; status name
 RETIRE: why the goal no longer fits the work
+SUGGEST: outcome, or - for none
 MILESTONE: status | name | where it stands
 NEXT: milestone id or name
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
 GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
-var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
+var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it or took the suggested goal, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
 - <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
 - <removed>: goals the person removed, as their key words, one per line
+- <suggested>: the goal offered to the person, while no goal is set or the goal is met
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
 var GOAL_PARTS = {
   "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
+  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it only when they ask for a new goal, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
@@ -10843,7 +11056,8 @@ function goalBlocks(o, now) {
   return [
     ...g ? [block("goal", `${g.text}${state}${refused === null ? "" : `${NL5}${refused}`}`)] : [],
     ...g && milestones.length > 0 ? [block("milestones", milestones.join(NL5))] : [],
-    ...o.removedGoals.length > 0 ? [block("removed", o.removedGoals.join(NL5))] : []
+    ...o.removedGoals.length > 0 ? [block("removed", o.removedGoals.join(NL5))] : [],
+    ...o.suggestedGoal !== null && !hasRunningGoal(o) ? [block("suggested", o.suggestedGoal)] : []
   ];
 }
 
@@ -12306,6 +12520,7 @@ var PRESS_TARGETS = {
   step: "id",
   "remove-goal": "id",
   "restore-goal": "id",
+  "take-goal": "id",
   "thread-address": "ref",
   "thread-draft": "ref",
   "thread-discuss": "ref",

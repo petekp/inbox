@@ -1,21 +1,16 @@
 import { cellWidth, cutForEllipsis } from '../../hooks/text'
 import { statusKeyPlan } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
-import {
-  mergedLine,
-  nameBeforeStall,
-  STATUS_TEXT_LINES,
-  STALL_GAP,
-  WAITS_ON_PREFIX,
-  WAS_PREFIX,
-} from '../../hooks/status-page'
+import { mergedLine, nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusBranch, StatusRow, StatusStall } from '../../hooks/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { PAGE_CHILD_AT, PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
 import { pageFocus } from './panel-keys'
 import type { ButtonFace } from './panel-lines'
-import { indented, wrapText } from './panel-text'
+import { collapsedIn, indented, wrapText } from './panel-text'
+import { foldGlyph } from '../../hooks/fold-chevron'
+import { isParentCollapsed, parentChevron } from '../../hooks/status-folds'
 import type { Style } from './panel'
 
 const TREE_ARMS: Record<StatusBranch, { first: string; rest: string }> = {
@@ -41,7 +36,8 @@ const GLUE = '\uE000'
 
 /**
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
- * stall's tone on the line of the name's last word. Then what it waits on, in the needs-you tone, and where it stands, dim.
+ * muted on the line of the name's last word, then a parent's fold chevron. Then what it waits on, in the needs-you tone,
+ * and where it stands, dim.
  */
 export function pageLine(
   d: Draw,
@@ -53,17 +49,23 @@ export function pageLine(
     stall = null,
     waitsOn = null,
     text = null,
-  }: { stall?: StatusStall | null; waitsOn?: string | null; text?: string | null } = {},
+    chevron = null,
+  }: {
+    stall?: StatusStall | null
+    waitsOn?: string | null
+    text?: string | null
+    chevron?: { text: string; paint: (t: string) => string } | null
+  } = {},
 ): string[] {
   const { width, style: s } = d
   const textAt = indent + 2
-  const room = pageRoom(indent, width)
+  const full = pageRoom(indent, width)
+  const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full
   const names = stall
     ? stalledName(name, stall, room, namePaint, s)
     : pageText(name, room, STATUS_TEXT_LINES, namePaint)
-  const waits = waitsOn
-    ? pageText(`${WAITS_ON_PREFIX}${waitsOn}`, room, STATUS_TEXT_LINES, t => s.tone('needsYou', t))
-    : []
+  const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, t => s.tone('needsYou', t)) : []
+  if (chevron) names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ''} ${chevron.paint(chevron.text)}`
   const seconds = [...waits, ...(text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [])]
 
   return [
@@ -83,7 +85,7 @@ function stalledName(
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(' ', GLUE)
   const wrapped = (shown: string) => wrapText(`${shown}${tail}`, room)
   const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= STATUS_TEXT_LINES))
-  const words = stall.tone === 'muted' ? s.dim(stall.text) : s.tone('needsYou', stall.text)
+  const words = s.dim(stall.text)
 
   return lines.map(l =>
     l.endsWith(tail)
@@ -121,10 +123,11 @@ export function pageRuleCells(width: number, textAt = PAGE_TEXT_AT): number {
  * A section's heading: its name at `at`, then a solid rule. Other work's starts at the text column, and the goal's at
  * the head's column, where the goal's text starts.
  */
-export function partHeading(text: string, width: number, s: Style, at = PAGE_TEXT_AT): string {
+export function partHeading(text: string, width: number, s: Style, at = PAGE_TEXT_AT, isTitle = false): string {
   const label = `${text} `
+  const rule = '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)))
 
-  return `${' '.repeat(at)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`
+  return `${' '.repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`
 }
 
 /**
@@ -150,6 +153,21 @@ export function pageButtonLines(
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : []
 }
 
+/** A parent's fold chevron, dim, or in the accent while its name is selected. */
+export function foldChevron(
+  p: { id: string; foldCount: number },
+  d: Draw,
+  isSelected: boolean,
+): { text: string; paint: (t: string) => string } | null {
+  if (p.foldCount === 0) return null
+  const { screen, style: s } = d
+
+  return {
+    text: parentChevron(isParentCollapsed(p, collapsedIn(screen.view)), p.foldCount),
+    paint: isSelected ? t => s.tone('accent', t) : s.dim,
+  }
+}
+
 /** A line on the Status page, laid out as the shared row says. */
 export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
   const { width, now, style: s } = d
@@ -157,7 +175,14 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   const textAt = at + PAGE_TEXT_AT - PAGE_MARK_AT
   if (row.kind === 'subject') {
     const mark = paintMark(row, now, s)
-    const out = pageLine(d, at, mark, row.name, t => t, { stall: row.stall, waitsOn: row.waitsOn, text: row.text })
+    const chevron = foldChevron(row, d, isSelected)
+    const isFolded = isParentCollapsed(row, collapsedIn(d.screen.view))
+    const out = pageLine(d, at, mark, row.name, chevron && isSelected ? s.bold : t => t, {
+      stall: row.stall,
+      waitsOn: row.waitsOn,
+      text: row.text,
+      chevron,
+    })
     const room = pageRoom(at, width)
     if (row.merged)
       out.push(
@@ -172,12 +197,12 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
     if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, textAt, width, STATUS_TEXT_LINES, s.dim))
     out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, textAt))
 
-    return row.hasChildren ? withTree(out, at, null, '│', s) : out
+    return row.hasChildren && !isFolded ? withTree(out, at, null, '│', s) : out
   }
   if (row.kind === 'child') {
     const mark = paintMark(row, now, s)
-    if (!row.branch) return pageLine(d, at, mark, row.name, s.dim, { stall: row.stall })
-    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim, { stall: row.stall })
+    if (!row.branch) return pageLine(d, at, mark, row.name, s.dim)
+    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim)
 
     return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s)
   }
@@ -188,13 +213,18 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s)
   }
   if (row.kind === 'done-fold') {
-    const chevron = d.ui.statusUnfolded.includes(row.id) ? '▾' : '▸'
+    const chevron = foldGlyph(d.ui.statusUnfolded.includes(row.id))
 
-    return isSelected
-      ? pageLine(d, at, s.tone('accent', chevron), row.text, s.bold)
-      : pageLine(d, at, s.dim(chevron), row.text, s.dim)
+    return pageLine(d, at, ' ', row.text, isSelected ? s.bold : s.dim, {
+      chevron: { text: chevron, paint: isSelected ? t => s.tone('accent', t) : s.dim },
+    })
   }
-  if (row.kind === 'part') return ['', partHeading(row.text, width, s)]
+  if (row.kind === 'part')
+    return [
+      '',
+      partHeading(row.text, width, s, PAGE_TEXT_AT, row.isTitle),
+      ...(row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []),
+    ]
   if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }

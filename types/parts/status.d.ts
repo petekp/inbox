@@ -84,8 +84,6 @@ export type Milestone = {
   was: string | null
   changedAt: number
   closedAt: number | null
-  /** When its status last turned `working` from another, so the page can say how long it has been under way. Null in a Status an earlier build saved. */
-  startedAt: number | null
   /** When a NEXT line last moved it ahead of the other queued milestones. It marks the milestone changed, but is no progress, so `changedAt` keeps its time. */
   madeNextAt?: number
 }
@@ -150,6 +148,11 @@ export type SessionStatus = {
   serves: Record<string, Serves>
   /** Why the last applied answer's GOAL or RETIRE line was not applied. Null when it was, or when the answer wrote none. */
   goalRefused: GoalRefusal | null
+  /**
+   * The goal the Status call offers while no goal is set or the goal is met, which the person sees after New and takes
+   * with Set. Null when the call offers none, and once a goal is set.
+   */
+  suggestedGoal: string | null
 
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null

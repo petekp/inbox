@@ -28,11 +28,11 @@ test('a look starts when the Status page shows, the page shows the head and the 
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(lookOf()).not.toBeNull()
-  expect((await pane.find({ key: 'status-head' }))?.text).toBe(
-    'Adding a greeting CLIBuilding a CLI that greets by name',
+  expect((await pane.find({ key: 'status-head' }))?.text).toMatch(
+    /^Adding a greeting CLI ─+Building a CLI that greets by name$/,
   )
   expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime')
-  expect((await pane.find({ key: 'status-s1-waits-on' }))?.text).toBe('waits on you: Use Node or Python?')
+  expect((await pane.find({ key: 'status-s1-waits-on' }))?.text).toBe('Use Node or Python?')
   expect((await pane.find({ key: 'status-s1-text' }))?.text).toBe('Node or Python')
   expect((await pane.find({ key: 'status-s1' }))?.text).toContain('◆')
   expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
@@ -143,8 +143,8 @@ test('a release build, with no next-build mark, keys Status, Asks, Finds and PRs
   const pane = await $.ui.mount(PANE)
   await clock.settle()
   expect(w.files).toEqual([])
-  expect((await pane.find({ key: 'status-head' }))?.text).toBe(
-    'Adding a greeting CLIBuilding a CLI that greets by name',
+  expect((await pane.find({ key: 'status-head' }))?.text).toMatch(
+    /^Adding a greeting CLI ─+Building a CLI that greets by name$/,
   )
   expect(await pane.find({ key: 'answer-i1-0' })).toBeUndefined()
   const tabKeys = (await pane.findAll({ type: 'Button' }))
@@ -228,12 +228,12 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   await clock.settle()
 
   const foldLabel = async () => (await pane.find({ key: 'fold-status-done' }))?.props.label
-  expect(await foldLabel()).toBe('▸  1 done')
+  expect(await foldLabel()).toBe('1 done ›')
   expect((await pane.find({ key: 'status-done' }))?.text).not.toContain('✓')
   expect(await pane.find({ key: 'status-s2' })).toBeUndefined()
   await pane.press({ key: 'fold-status-done' })
   await clock.settle()
-  expect(await foldLabel()).toBe('▾  1 done')
+  expect(await foldLabel()).toBe('1 done v')
   expect((await pane.find({ key: 'status-s2' }))?.text).toBe('✓Plan')
   await pane.press({ key: 'fold-status-done' })
   await clock.settle()
@@ -243,7 +243,7 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   await clock.settle()
   await pane.press({ key: 'toggle-fold-done-key' })
   await clock.settle()
-  expect(await foldLabel()).toBe('▾  1 done')
+  expect(await foldLabel()).toBe('1 done v')
   expect(await pane.find({ key: 'status-s2' })).toBeDefined()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
@@ -256,5 +256,5 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   await clock.settle()
   expect((await desktopFold()).isUnfolded).toBe(false)
   expect(await desktop.find({ key: 'status-s2' })).toBeUndefined()
-  expect(await foldLabel()).toBe('▸  1 done')
+  expect(await foldLabel()).toBe('1 done ›')
 })

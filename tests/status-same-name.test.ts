@@ -22,16 +22,14 @@ const withSoleChild = (c: Child, now = 30 * MIN) => ({
   lastCallReadAt: now,
 })
 
-test('a sole child named like its subject draws no row, and its state shows on the subject: moving, waiting, finished', () => {
+test('a sole child named like its subject draws no row, and its state shows on the subject: moving, needs-you mark, finished', () => {
   const now = 30 * MIN
   const working = page(withSoleChild(sameNamedDelegate('help_icon', null, null)), now).rows
   expect(working).toMatchObject([{ kind: 'subject', mark: '●', isRunning: true, hasChildren: false, stall: null }])
   expect(working).toHaveLength(1)
 
   const blocked = page(withSoleChild(sameNamedDelegate('Help  icon', 'blocked', null)), now).rows
-  expect(blocked).toMatchObject([
-    { kind: 'subject', mark: '◆', tone: 'needsYou', isRunning: false, stall: { text: 'waiting', tone: 'needsYou' } },
-  ])
+  expect(blocked).toMatchObject([{ kind: 'subject', mark: '◆', tone: 'needsYou', isRunning: false, stall: null }])
 
   const finished = page(withSoleChild(sameNamedDelegate('help-icon', 'finished', 25 * MIN)), now).rows
   expect(finished).toMatchObject([{ kind: 'subject', mark: '✓', tone: 'done', isRunning: false, hasChildren: false }])

@@ -3,7 +3,14 @@ import { nameKey, namesOtherVersion, REMOVED_KEPT, STATUSES } from './status-lim
 
 type GoalFields = Pick<
   SessionStatus,
-  'goal' | 'removedGoals' | 'goalRemoved' | 'milestones' | 'nextMilestoneId' | 'serves' | 'goalRefused'
+  | 'goal'
+  | 'removedGoals'
+  | 'goalRemoved'
+  | 'milestones'
+  | 'nextMilestoneId'
+  | 'serves'
+  | 'goalRefused'
+  | 'suggestedGoal'
 >
 
 const REFUSAL_LINES: readonly GoalRefusal['line'][] = ['goal', 'retire']
@@ -74,7 +81,6 @@ function milestoneOf(saved: unknown): Milestone | null {
     was: nonEmpty(m.was),
     changedAt,
     closedAt: time(m.closedAt) ?? (status === 'done' || status === 'dropped' ? changedAt : null),
-    startedAt: time(m.startedAt),
     ...(madeNextAt === null ? {} : { madeNextAt }),
   }
 }
@@ -150,5 +156,6 @@ export function goalFields(o: Record<string, unknown>, subjects: readonly Subjec
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
     goalRefused: goalRefusedOf(o.goalRefused),
+    suggestedGoal: nonEmpty(o.suggestedGoal),
   }
 }

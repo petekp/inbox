@@ -1,6 +1,7 @@
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession } from '../hooks/session-files'
-import { statusListRows, statusPage } from '../hooks/status-page'
+import { statusListRows } from '../hooks/status-folds'
+import { statusPage } from '../hooks/status-page'
 import type { StatusPage } from '../hooks/status-page'
 import { HELD_MARK } from '../hooks/help'
 import { nameKey } from '../hooks/status-limits'
@@ -150,7 +151,6 @@ function withGoal(s: Scene) {
     was: null,
     changedAt: minutes(0),
     closedAt: null,
-    startedAt: null,
   })
   s.after.goal = {
     text: 'Offline sync in both stores',
@@ -280,6 +280,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       withGoal(s)
     },
     bad: s => (s.facts.goalClear = CLEAR),
+  },
+  'goal-suggested': {
+    good: s => {
+      s.facts.goalSuggested = CLEAR
+      s.after = { ...s.after, suggestedGoal: 'Offline sync in both stores' }
+    },
+    bad: s => (s.facts.goalSuggested = CLEAR),
   },
   'milestones-true': {
     good: withGoal,

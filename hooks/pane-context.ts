@@ -91,7 +91,8 @@ export type PaneBase = {
   /** The Closed folds whose earlier lines the person opened. */
   closedAll: FoldKind[]
   statusUnfolded: string[]
-  foldHover: string | null
+  /** Whether the person opened the suggested goal with New. */
+  isSuggestionOpen: boolean
   isHelpShown: boolean
   optionsShown: string[]
   termProgram: string | undefined
@@ -154,5 +155,8 @@ export type PaneHandlers = {
   updateHelpShown: (fn: (isShown: boolean) => boolean) => Promise<unknown>
   updateUnfolded: (fn: (unfolded: FoldKind[]) => FoldKind[]) => Promise<unknown>
   updateStatusUnfolded: (fn: (unfolded: string[]) => string[]) => Promise<unknown>
+  updateSuggestionOpen: (isOpen: boolean) => Promise<unknown>
+  /** Folds the Status parent `id` by its name, or opens it. */
+  toggleParent: (id: string) => Promise<unknown>
   updateClosedAll: (fn: (closedAll: FoldKind[]) => FoldKind[]) => Promise<unknown>
 }

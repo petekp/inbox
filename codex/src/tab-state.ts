@@ -162,6 +162,8 @@ class TabState {
   isHelpShown = false
   typing: string | null = null
   focusTyping = false
+  /** Whether the person opened the suggested goal. It shows only while the Status page still has one. */
+  isSuggestionOpen = false
   discarded: Record<string, number> = {}
   lineNote: { text: string; at: number; isError?: boolean } | null = null
   seen = new Map<string, number>()

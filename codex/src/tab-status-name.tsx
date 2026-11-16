@@ -1,10 +1,7 @@
+import { Icon } from './row-actions'
+import type { ParentChevron } from './tab-status-fold'
 import { nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP } from '../../hooks/status-page'
 import type { StatusStall } from '../../hooks/status-page'
-
-const STALL_CLASS: Record<StatusStall['tone'], string> = {
-  needsYou: 'tone-needsYou',
-  muted: 'muted',
-}
 
 /** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */
 function nameParts(name: string): { head: string; last: string } {
@@ -36,11 +33,19 @@ function fitNameLine(el: HTMLElement | null, name: string) {
 }
 
 /**
- * A row's name with its stall word after `STALL_GAP` in the stall's tone, on the line of the name's last word, which a
- * wrap never splits from them.
+ * A row's name with its stall word after `STALL_GAP`, muted, then a parent's chevron, on the line of the name's last
+ * word, which a wrap never splits from them.
  */
-export function NameLine({ name, stall }: { name: string; stall: StatusStall | null }) {
-  if (!stall)
+export function NameLine({
+  name,
+  stall,
+  chevron = null,
+}: {
+  name: string
+  stall: StatusStall | null
+  chevron?: ParentChevron | null
+}) {
+  if (!stall && !chevron)
     return (
       <div class="clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
         {name}
@@ -54,8 +59,19 @@ export function NameLine({ name, stall }: { name: string; stall: StatusStall | n
         <span class="head">{head}</span>
         <span class="unbroken">
           <span class="last">{last}</span>
-          <span class="muted">{STALL_GAP}</span>
-          <span class={STALL_CLASS[stall.tone]}>{stall.text}</span>
+          {stall ? (
+            <>
+              <span class="muted">{STALL_GAP}</span>
+              <span class="muted">{stall.text}</span>
+            </>
+          ) : null}
+          {chevron ? (
+            <span class="muted parent-chevron">
+              {' '}
+              <Icon name={chevron.isFolded ? 'right' : 'down'} />
+              {chevron.isFolded ? <span class="parent-count"> {chevron.count}</span> : null}
+            </span>
+          ) : null}
         </span>
       </span>
     </div>

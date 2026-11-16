@@ -1,26 +1,35 @@
 import { Icon } from './row-actions'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan } from '../../hooks/status-keys'
+import {
+  GOAL_FIELD,
+  GOAL_KEYS_ID,
+  goalKeys,
+  goalSubmitLabel,
+  isSuggestionShown,
+  milestoneKeyPlan,
+} from '../../hooks/status-keys'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { emptyTab } from '../../hooks/empty-tab'
+import { unfoldedRows } from '../../hooks/status-folds'
 import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
 import type { WorkJoint } from '../../hooks/status-path'
 import type { TabView as View } from './core'
 import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
+import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
-import { goalHeadMotion, goalLineMotion, headApartMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
-import { lineMotion } from './tab-line-steps'
+import { goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
+import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
 import { foldMotion, Keys, StatusLine, toggleStatusFold } from './tab-status-line'
 
-/** The goal's text field, with Save and Cancel. It stays open, its buttons out, until the server confirms the goal. */
-function GoalField() {
+/** The goal's text field, with its submit button and Cancel. It stays open, its buttons out, until the server confirms the goal. */
+function GoalField({ page }: { page: StatusPage }) {
   const draft = () => drafts.get(GOAL_KEYS_ID)?.text ?? ''
   const isOut = sending.has(GOAL_KEYS_ID)
 
@@ -35,6 +44,7 @@ function GoalField() {
           const sent = drafts.get(GOAL_KEYS_ID)
           void act(GOAL_KEYS_ID, { action: 'type', id: GOAL_KEYS_ID, text }, () => {
             if (tabState.typing === GOAL_KEYS_ID) tabState.typing = null
+            tabState.isSuggestionOpen = false
             if (drafts.get(GOAL_KEYS_ID) === sent) drafts.delete(GOAL_KEYS_ID)
           })
         }}
@@ -53,7 +63,7 @@ function GoalField() {
         />
         <span class="field-keys">
           <button type="submit" class={isOut ? 'key primary out' : 'key primary'} disabled={isOut}>
-            {GOAL_FIELD.submit}
+            {goalSubmitLabel(page)}
           </button>
           <button
             type="button"
@@ -72,60 +82,32 @@ function GoalField() {
   )
 }
 
-/** The boxes of the text under `el`, one per line of each text node, without the boxes of the elements that hold it. */
-function textRects(el: Element): DOMRect[] {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-  const rects: DOMRect[] = []
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    const range = document.createRange()
-    range.selectNodeContents(n)
-    rects.push(...range.getClientRects())
-  }
-
-  return rects
+/** The goal the Status call offers, in the goal text's style under a muted label. */
+function Suggestion({ text }: { text: string }) {
+  return (
+    <div class="suggested">
+      <p class="muted">{SUGGESTED_GOAL_LABEL}</p>
+      <h1>{text}</h1>
+    </div>
+  )
 }
 
-function placePathWord(word: HTMLElement, name: Element, box: Element) {
-  const rects = textRects(name)
-  const firstTop = Math.min(...rects.map(r => r.top))
-  const firstRight = Math.max(...rects.filter(r => Math.abs(r.top - firstTop) < 2).map(r => r.right))
-  word.hidden = false
-  word.hidden = firstRight + PATH_WORD_GAP_PX + word.offsetWidth > box.getBoundingClientRect().right
-}
-const PATH_WORD_GAP_PX = 12
-const fittedWords = new WeakSet<HTMLElement>()
-
-/** Shows a milestone's word only where it fits at the right of its name's first line, again whenever the name's box resizes. */
-function fitPathWord(word: HTMLElement | null) {
-  const name = word?.previousElementSibling
-  const box = word?.parentElement
-  if (!word || !name || !box) return
-  placePathWord(word, name, box)
-  if (fittedWords.has(word)) return
-  fittedWords.add(word)
-  new ResizeObserver(() => placePathWord(word, name, box)).observe(box)
-}
-
-function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion: string; isConnectorDown: boolean }) {
+function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: string; connector: string | null }) {
   const fold = m.foldId
+  const classes = ['row milestone', connector === null ? '' : 'connector-down', connector ?? '']
   const nameClass = [m.isChanged ? 'changed' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
 
   return (
-    <div class={isConnectorDown ? 'row milestone connector-down' : 'row milestone'} {...lineMotion(motion)}>
+    <div class={classes.filter(Boolean).join(' ')} {...lineMotion(motion)}>
       <span class={markClassOf(m.tone, false)}>
         <MarkGlyph text={m.mark} />
       </span>
       <div class="content tight">
         {fold === null ? (
           <div class="milestone-name">
-            <div class={nameClass}>
-              <NameLine name={m.name} stall={m.stall} />
-            </div>
-            {m.word ? (
-              <span class="path-word muted" ref={fitPathWord}>
-                {m.word}
-              </span>
-            ) : null}
+            <ParentName id={m.id} foldCount={m.foldCount} class={nameClass}>
+              <NameLine name={m.name} stall={null} chevron={chevronOf(m)} />
+            </ParentName>
           </div>
         ) : (
           <button
@@ -156,11 +138,27 @@ function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion
 }
 
 /** A work row in its joint with the column under its milestone's mark, as `workJoints` places it. */
-function JointedLine({ row, joint, motion }: { row: StatusRow; joint: WorkJoint | undefined; motion?: string }) {
-  const line = <StatusLine row={row} motion={motion} />
+function JointedLine({
+  row,
+  joint,
+  motion,
+  under,
+  column,
+}: {
+  row: StatusRow
+  joint: WorkJoint | undefined
+  motion?: string
+  under?: string[]
+  column?: 'leaving' | null
+}) {
+  const line = <StatusLine row={row} motion={motion} under={under} />
   if (!joint) return line
+  const own = motion ? connectorMotion([motion]) : null
+  const columnMotion = joint.arm === 'elbow' ? own : joint.beside === 'connector' ? (column ?? null) : null
   const classes = [
     'work-joint',
+    own ? 'arm-leaving' : '',
+    connectorClass(columnMotion),
     joint.arm ? `arm-${joint.arm}` : '',
     joint.beside === 'connector' ? 'beside-connector' : '',
   ]
@@ -181,6 +179,13 @@ function milestoneGroups(lines: DrawnStatus['goal']): MilestoneGroupLines[] {
   return groups
 }
 
+/** How the connector under a done milestone moves while its fold shuts, as its list fades with it. */
+function foldConnectorMotion(fold: string | null, motion: string): 'leaving' | null {
+  if (fold === null || statusUnfolded.has(fold)) return null
+
+  return closingFolds.has(motion) ? 'leaving' : null
+}
+
 /**
  * A milestone and its rows. A milestone the path's line leaves from draws the line down to the next milestone's mark.
  * One the line does not leave from draws the nesting connector down to its last work row. A done milestone folded to its
@@ -198,8 +203,10 @@ function MilestoneGroup({
   const fold = m.foldId
   const motion = fold === null ? null : foldMotion(fold)
   const isFoldShown = motion !== null && fold !== null && (statusUnfolded.has(fold) || closingFolds.has(motion))
-  const shown = motion === null ? rows : isFoldShown ? m.rows : []
+  const shown = motion === null ? rows : isFoldShown ? unfoldedRows(m.rows, () => false, isParentFolded) : []
   const joints = workJoints(shown, m.line)
+  const connectorState =
+    motion === null ? connectorMotion(rows.map(r => goalLineMotion(r.id))) : foldConnectorMotion(fold, motion)
   const classes = [
     'milestone-group',
     isSpaced ? 'spaced' : '',
@@ -209,12 +216,25 @@ function MilestoneGroup({
 
   return (
     <div class={classes.filter(Boolean).join(' ')}>
-      <MilestoneLine m={m} motion={goalLineMotion(m.id)} isConnectorDown={shown.length > 0 && m.line === null} />
+      <MilestoneLine
+        m={m}
+        motion={goalLineMotion(m.id)}
+        connector={shown.length > 0 && m.line === null ? connectorClass(connectorState) : null}
+      />
       {motion === null ? (
-        rows.map((r, n) => <JointedLine key={r.id} row={r} joint={joints[n]} motion={goalLineMotion(r.id)} />)
+        rows.map((r, n) => (
+          <JointedLine
+            key={r.id}
+            row={r}
+            joint={joints[n]}
+            motion={goalLineMotion(r.id)}
+            under={rowsUnder(rows, n, goalLineMotion)}
+            column={connectorState}
+          />
+        ))
       ) : isFoldShown ? (
         <div class="fold-rows" data-motion={`closed-${motion}`}>
-          {m.rows.map((r, n) => (
+          {shown.map((r, n) => (
             <JointedLine key={r.id} row={r} joint={joints[n]} />
           ))}
         </div>
@@ -241,8 +261,8 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
         <MilestoneGroup
           key={group.m.id}
           group={group}
-          isSpaced={n > 0 && !group.m.startsLater && isSpacedAbove(milestones, n, isUnfolded)}
-          isGapUnder={isSpacedAbove(milestones, n + 1, isUnfolded) && n + 1 < milestones.length}
+          isSpaced={n > 0 && !group.m.startsLater && isSpacedAbove(milestones, n, isUnfolded, isParentFolded)}
+          isGapUnder={isSpacedAbove(milestones, n + 1, isUnfolded, isParentFolded) && n + 1 < milestones.length}
         />,
       ])}
     </div>
@@ -285,7 +305,14 @@ function GoalSection({
 }) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
-  const text = g ? <h1>{g.text}</h1> : <p class="muted">{NO_GOAL_TEXT}</p>
+  const isSuggesting = isSuggestionShown(page, tabState.isSuggestionOpen)
+  const text = isSuggesting ? (
+    <Suggestion text={page.suggestedGoal ?? ''} />
+  ) : g ? (
+    <h1>{g.text}</h1>
+  ) : (
+    <p class="muted">{NO_GOAL_TEXT}</p>
+  )
   const mark = g?.mark ?? null
 
   return (
@@ -300,7 +327,7 @@ function GoalSection({
         <span class="goal-rule" />
         {isTyping ? null : (
           <span class="goal-actions">
-            {goalKeyPlan(page).flatMap((k, n) => [
+            {goalKeys(page, tabState.isSuggestionOpen).flatMap((k, n) => [
               ...(n > 0 ? [<span class="muted">·</span>] : []),
               <Keys key={k.label} keys={[k]} />,
             ])}
@@ -309,7 +336,7 @@ function GoalSection({
       </div>
       <div class={mark ? 'status-head goal marked' : 'status-head goal'} data-motion="goal-head">
         <div class="goal-text" data-motion="goal-text">
-          {isTyping ? <GoalField /> : text}
+          {isTyping ? <GoalField page={page} /> : text}
         </div>
         {head.map(l => (
           <p key={l.id} class="muted" {...lineMotion(goalHeadMotion(l.id))}>
@@ -326,11 +353,28 @@ function GoalSection({
   )
 }
 
-/** New, or the field it opened, under the empty page's centred text. */
-function SetGoal({ keys, isFieldOpen }: { keys: StatusKey[]; isFieldOpen: boolean }) {
+/** New, the suggested goal, or the field New opened, under the empty page's centred text. */
+function SetGoal({
+  page,
+  keys,
+  isFieldOpen,
+  suggestion,
+}: {
+  page: StatusPage
+  keys: StatusKey[]
+  isFieldOpen: boolean
+  suggestion: string | null
+}) {
   return (
     <div class="status-head">
-      {isFieldOpen ? <GoalField /> : <Keys keys={keys} />}
+      {isFieldOpen ? (
+        <GoalField page={page} />
+      ) : (
+        <>
+          {suggestion === null ? null : <Suggestion text={suggestion} />}
+          <Keys keys={keys} />
+        </>
+      )}
       <GoalError />
     </div>
   )
@@ -343,32 +387,48 @@ function GoalError() {
   return error ? <p class="tone-error">{error}</p> : null
 }
 
+/** The motion keys of the rows drawn under the row at `n`: the rows after it that sit deeper, leaving rows too. */
+function rowsUnder(rows: StatusRow[], n: number, motion: (id: string) => string): string[] {
+  const depth = rows[n]?.depth ?? 0
+  const under: string[] = []
+  for (const r of rows.slice(n + 1)) {
+    if (r.depth <= depth) break
+    under.push(motion(r.id))
+  }
+
+  return under
+}
+
 export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   const page = v.statusPage
-  const empty = emptyTab(v, { tab: 'overview', isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID })
+  const empty = emptyTab(v, {
+    tab: 'overview',
+    isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID,
+    isSuggestionOpen: tabState.isSuggestionOpen,
+  })
   if (empty)
-    return <EmptyState empty={empty}>{empty.under?.is === 'set-goal' ? <SetGoal {...empty.under} /> : null}</EmptyState>
-  const head = drawn.apart.map(({ id, head: h }) => (
-    <section key={id} {...lineMotion(headApartMotion(id))}>
-      <div class="status-head">
-        <h1>{h.title}</h1>
-        {h.description ? <p class="muted">{h.description}</p> : null}
-      </div>
-    </section>
-  ))
-  // The list after a goal draws no line between sections: Other work's own rule sets it apart while the goal shows
-  // milestones, and nothing does while it shows none.
-  const isUnruledAfterGoal = page.goal !== null
+    return (
+      <EmptyState empty={empty}>
+        {empty.under?.is === 'set-goal' ? <SetGoal page={page} {...empty.under} /> : null}
+      </EmptyState>
+    )
+  // The list after a goal draws no line between sections: its heading's own rule sets it apart while the goal shows
+  // milestones or the list starts with one, and nothing does while the goal shows none.
+  const isUnruledAfterGoal = page.goal !== null || page.rows[0]?.kind === 'part'
 
   return (
     <main class="status-page">
       <GoalSection page={page} head={drawn.head} fold={drawn.fold} lines={drawn.goal} />
-      {head}
       {drawn.rows.length > 0 ? (
         <section class={isUnruledAfterGoal ? 'unruled' : undefined}>
           <div class="list">
-            {drawn.rows.map(r => (
-              <StatusLine key={r.id} row={r} motion={statusRowMotion(r.id)} />
+            {drawn.rows.map((r, n) => (
+              <StatusLine
+                key={r.id}
+                row={r}
+                motion={statusRowMotion(r.id)}
+                under={rowsUnder(drawn.rows, n, statusRowMotion)}
+              />
             ))}
           </div>
         </section>

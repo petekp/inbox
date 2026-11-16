@@ -114,7 +114,9 @@ what the session is focused on now, and one line under it on what the session
 is doing about it. The inbox model writes it, and checks it at each update
 against the open and finished subjects, so it moves on when the work does,
 even across many small exchanges. When the work it names is done and nothing
-else is working, it stays.
+else is working, it stays. While a goal runs, it is the goal's Now line. While
+no goal is set, or once the goal is met, it is the heading of the list after the
+goal, in the place of "Other work", with its one line under it.
 
 **Subject**:
 One part of the session's work on the Status, such as a feature, a fix or a
@@ -125,8 +127,8 @@ times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, and the item's Asks row reads "Holds up" and the subject's name.
 Its row then has a View question or View task button, which opens Asks with
-the oldest of those items selected, and a line "waits on you:" with that item's
-own words.
+the oldest of those items selected, and a line under its name, in the needs-you
+tone, with that item's own words.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Goal**:
@@ -134,6 +136,10 @@ The one outcome the session's work is for, with a finish line someone could
 check, such as "2.5 in the store". It has 2 to 5 milestones. The Status draws
 it above the head, and the head becomes its Now line. It is met once every
 milestone it keeps is done, and a met goal stays until the next one is set.
+When a new goal replaces one, the old goal's text shows under the new one as
+"Prev: ...", until the person has seen it. A milestone the plan changed shows
+its old text the same way. A milestone shows no word or age beside its name:
+its mark says whether it is done, under way or waiting.
 _Avoid_: target, objective
 
 **Inferred goal**:
@@ -145,6 +151,13 @@ has moved on.
 **Typed goal**:
 A goal the person typed in the goal's field, or an inferred goal they edited.
 It stays until it is met.
+
+**Suggested goal**:
+The goal the inbox model offers while no goal is set or the goal is met, and
+the next goal is not clear enough to set. It shows only when the person presses
+the goal's New, in the goal's place, with Set, Edit and Cancel. Set makes it an
+inferred goal. Edit opens the goal's field holding its words, and that field's
+Cancel shows the suggestion again.
 
 **Removed goal**:
 A goal the person cleared with the goal's Remove button. The inbox model does not set it
@@ -172,21 +185,21 @@ its state.
 _Avoid_: subitem, job
 
 **Stall words**:
-The words after a Status row's name when its work waits on the person, has
-finished, or has stalled. A delegate reads "waiting", in the needs-you tone,
-while Herdr shows it at a question or an approval, and so does a subject whose
-only child is a same-named delegate in that state. A subject held by an open
-question or task has no stall word: a line under its name reads "waits on you:"
-and the item's own words. An open subject with no change for a day or more,
-and no child of it running, reads how long it has been idle, as "idle 2d",
-muted. Other rows show no word. The code calls them `stall`.
+The words after a Status subject's name when its work has stalled. An open
+subject with no change for a day or more, and no child of it running, reads
+how long it has been idle, as "idle 2d", muted. Other rows show no word. A
+row that waits on the person, such as a subject held by an open question or
+task, a milestone it holds up, or a delegate at a question or an approval,
+shows the ◆ mark in the needs-you tone, not a word; a held subject also
+draws the item's own words on a line under its name. The code calls the
+words `stall`.
 _Avoid_: age
 
 **Last look**:
 The last time the person left the Status after it showed for at least five
 seconds. A shorter pass through the tab counts nothing. A row counts as seen
 when the last look that showed it came after its last change. A seen row leaves
-out its merged and was lines. A seen done row folds into its part's done fold,
+out its merged and Prev lines. A seen done row folds into its part's done fold,
 a seen dropped row leaves the page, and a seen open row may fold into "○ N
 more". Under Other work, a seen open row the goal does not need folds into the
 count of its mark, or leaves the page when it is queued. The code keeps its
@@ -195,11 +208,21 @@ _Avoid_: Seen line, look line
 
 **Done fold**:
 The line on the Status that counts seen finished work it does not draw, as "3
-done", after a chevron and with no mark. Pressing it lists those rows under it,
+done", with the chevron after it and no mark. Pressing it lists those rows under it,
 one step in, as the Closed fold lists closed items, and pressing it again folds
 them. The list after the goal, each milestone and Other work each have their
 own.
 _Avoid_: done row, done count
+
+**Parent fold**:
+A subject or milestone on the Status folded by a press on its name, which hides
+the rows under it and shows › and how many rows it hides after the name. The
+same press opens it, and v follows the name while it is open. It counts the rows
+one step under it: a subject's delegates, or a milestone's subjects and the
+running work linked to it. The fold is saved with the session's collapsed rows.
+It opens on its own once something new under it waits on the person, an ask that
+holds up its work or a blocked delegate, and stays open after that.
+_Avoid_: collapsed subject, folded milestone
 
 **Band**:
 In Claude Code, the line above the prompt with the Asks, Finds and PRs

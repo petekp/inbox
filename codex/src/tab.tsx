@@ -73,7 +73,7 @@ function App({
           <Prs v={v} prs={prs} now={now} />
         ) : null
       ) : (
-        <StatusTab v={v} drawn={status ?? { head: [], fold: [], goal: [], apart: [], rows: [] }} />
+        <StatusTab v={v} drawn={status ?? { head: [], fold: [], goal: [], rows: [] }} />
       )}
       <footer>
         <button
@@ -103,6 +103,7 @@ function App({
 }
 
 function draw() {
+  if (tabState.view?.statusPage?.suggestedGoal === null) tabState.isSuggestionOpen = false
   if (tabState.isDisposed || !tabState.isActive) return
   const before = measure()
   const step = tabState.view ? stepLists(tabState.view) : null

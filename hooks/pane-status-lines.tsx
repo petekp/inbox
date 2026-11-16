@@ -1,6 +1,5 @@
 import { desktopLines, desktopTextPt } from './desktop-metrics'
 import type { PaneBase } from './pane-context'
-import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import {
@@ -13,18 +12,11 @@ import {
   STATUS_PAD_Y,
   TREE_LINE_AT,
 } from './pane-sizes'
-import {
-  nameBeforeStall,
-  STALL_GAP,
-  STATUS_TEXT_LINES,
-  type StatusBranch,
-  type StatusPage,
-  type StatusStall,
-} from './status-page'
+import { nameBeforeStall, STALL_GAP, STATUS_TEXT_LINES, type StatusBranch, type StatusStall } from './status-page'
 import { desktopSpanLines, type TerminalSpan, terminalSpanLines } from './terminal-text'
 import { cellWidth } from './text'
 import { paneDesktopTree } from './pane-desktop-tree'
-import { desktopFrameLines, desktopTextLines, inkLines, plus } from './pane-status-tops'
+import { desktopTextLines } from './pane-status-tops'
 import type { Drawn, Lines } from './pane-status-tops'
 
 export function paneStatusLines({
@@ -34,50 +26,13 @@ export function paneStatusLines({
   look,
   listColumns,
   terminalText,
-  desktopFrame,
   desktopColumnPt,
   markWidth,
   branch,
   desktopHairline,
 }: Pick<PaneBase, 'Box' | 'Text' | 'pal' | 'look' | 'listColumns' | 'terminalText'> &
-  Pick<PaneRowFrame, 'desktopFrame'> &
   Pick<PaneRowKeys, 'desktopColumnPt'> &
   Pick<PaneRowLines, 'markWidth' | 'branch' | 'desktopHairline'>) {
-  /** The head reads like a row: its title in bold, and its description muted on the line under it. */
-  const statusHead = (head: NonNullable<StatusPage['head']>): Drawn => {
-    const width = listColumns - TREE_LINE_AT
-    const textLines = (text: string) =>
-      look === 'desktop' ? desktopTextLines(text, desktopBlockWidth) : inkLines(text, width)
-    const titleAndDescription = plus(
-      textLines(head.title),
-      head.description ? textLines(head.description) : { least: 0, most: 0 },
-    )
-    const count = look === 'desktop' ? plus(titleAndDescription, desktopFrameLines(0)) : titleAndDescription
-    const lines = (
-      <Box flexDirection="column">
-        <Text wrap="wrap" bold>
-          {head.title}
-        </Text>
-        {head.description ? (
-          <Text wrap="wrap" color={pal.muted}>
-            {head.description}
-          </Text>
-        ) : null}
-      </Box>
-    )
-
-    return {
-      el:
-        look === 'desktop' ? (
-          desktopFrame({ key: 'status-head', padY: 0, markCells: 0, hasSide: false, children: lines })
-        ) : (
-          <Box key="status-head" paddingLeft={TREE_LINE_AT}>
-            {lines}
-          </Box>
-        ),
-      lines: count,
-    }
-  }
   /** Where a Status row's mark sits in the terminal: in the head's column, so the list lines up with it. */
   const statusMarkAt = TREE_LINE_AT
   /** The text column of a Status line at `depth`, in cells on the terminal and in points on desktop. */
@@ -123,19 +78,18 @@ export function paneStatusLines({
         : terminalSpanLines(spans, statusTextWidth(depth), limit),
       statusTextWidth(depth),
     )
-  /** A row's stall word in the stall's tone, never split by a wrap. */
+  /** A row's stall word, muted, never split by a wrap. */
   const stallSpan = (stall: StatusStall): TerminalSpan => {
     const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
-    const tone = stall.tone === 'needsYou' ? { isNeedsYou: true as const } : { isMuted: true as const }
 
-    return { text, isUnbroken: true, ...tone }
+    return { text, isUnbroken: true, isMuted: true }
   }
   /**
    * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
    * splits from them. `nameBeforeStall` cuts the name so the line fits `STATUS_TEXT_LINES`.
    */
-  const nameSpans = (name: TerminalSpan, stall: StatusStall, depth: number) => {
-    const width = statusTextWidth(depth)
+  const nameSpans = (name: TerminalSpan, stall: StatusStall, depth: number, reserve = 0) => {
+    const width = statusTextWidth(depth) - reserve
     const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
     const spans = (shown: string): TerminalSpan[] => [
       { ...name, text: shown },
@@ -155,6 +109,9 @@ export function paneStatusLines({
 
     return { spans: spans(shown), width }
   }
+  /** A name line's spans, with `reserve` of the line's width left free after them, and the width they wrap in. */
+  const nameLineSpans = (name: TerminalSpan, stall: StatusStall | null, depth: number, reserve: number) =>
+    stall ? nameSpans(name, stall, depth, reserve) : { spans: [name], width: statusTextWidth(depth) - reserve }
   const statusNameLine = (key: string, name: TerminalSpan, stall: StatusStall | null, depth: number): Drawn => {
     if (!stall) return statusPageText(key, [name], depth)
     const { spans, width } = nameSpans(name, stall, depth)
@@ -182,13 +139,13 @@ export function paneStatusLines({
   }
 
   return {
-    statusHead,
     statusMarkAt,
     fitsStatusLine,
     statusTextWidth,
     desktopBlockWidth,
     statusPageText,
     statusNameLine,
+    nameLineSpans,
     statusFrameEdge,
     statusTree,
   }

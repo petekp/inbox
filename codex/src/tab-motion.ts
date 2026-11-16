@@ -304,6 +304,7 @@ export function applyPageVariables() {
   document.documentElement.style.setProperty('--banner-gap', `${BANNER_GAP_PT}px`)
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--fade', `${FADE_MS}ms ${FADE_EASING}`)
+  document.documentElement.style.setProperty('--settle', `${HEIGHT_SETTLE_MS}ms ease-out`)
   document.documentElement.style.setProperty('--enter-fade', `${ENTER_FADE_MS}ms ${FADE_EASING}`)
 }
 

@@ -4,6 +4,7 @@ import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
 import { namedList } from './status-page-parts'
 import { milestonePath, namesOnlyMilestoneUnderWay } from './status-path'
+import { hasRunningGoal } from './status-suggest'
 import type { PathLine, PathPlace, PathStep } from './status-path'
 
 /** A milestone under the goal, in the goal's path. A change draws its name in bold until the person looks. */
@@ -13,8 +14,6 @@ export type MilestoneRow = {
   tone: StatusTone
   name: string
   place: PathPlace
-  /** "now", "now · 3h" or "next", drawn muted at the right of the name's first line. */
-  word: string | null
   line: PathLine
   /** Whether the "Later" label and its rule draw above it. */
   startsLater: boolean
@@ -24,10 +23,13 @@ export type MilestoneRow = {
   isMuted: boolean
   /** The fold a done milestone holds its work in once the person has seen it, so a look draws its rows only unfolded. */
   foldId: string | null
+  /**
+   * The work under it, which a fold on its name hides: its subjects, folded ones too, and running work linked to none.
+   * 0 while it has a done fold or draws no rows, and its name then folds nothing. `statusPage` fills it.
+   */
+  foldCount: number
   /** Where it stands. Null when it says nothing. */
   text: string | null
-  /** "waiting" while an open ask holds it up. */
-  stall: { text: string; tone: 'needsYou' } | null
   /** The plan a change replaced, while the person has not seen it. */
   was: string | null
   /** The oldest open ask that holds it up, which its View button opens. */
@@ -66,6 +68,8 @@ export type GoalParts = {
   goal: GoalBlock | null
   /** Whether Undo can bring back the goal the person removed. */
   canRestoreGoal: boolean
+  /** The goal the Status call offers while no goal is set or the goal is met, which New shows. Null when none is. */
+  suggestedGoal: string | null
 }
 
 const AWAITING_TEXT = 'Milestones after the next reply'
@@ -73,6 +77,8 @@ const AWAITING_TEXT = 'Milestones after the next reply'
 export const GOAL_HEADING = 'Goal'
 /** The dim line under the goal's heading while no goal is set. */
 export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
+/** The dim label above the suggested goal's text while it shows in the goal's place. */
+export const SUGGESTED_GOAL_LABEL = 'Suggested'
 /** What starts the id of the fold a met goal's milestones start in, apart from row and milestone ids. */
 const MILESTONES_FOLD_PREFIX = 'goal-milestones'
 
@@ -137,24 +143,24 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     ...(isHeld ? HELD_MARK : SUBJECT_MARKS[m.status]),
     name: m.name,
     place: step.place,
-    word: step.word,
     line: step.line,
     startsLater: step.startsLater,
     isChanged,
     isMuted: step.place === 'later' || step.place === 'dropped',
     foldId: null,
+    foldCount: 0,
     text: m.text || null,
-    stall: isHeld ? { text: 'waiting', tone: 'needsYou' } : null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
     rows: [],
   }
 }
 
-/** The goal block with its Now line and its milestones in path order, from the saved Status and the open asks at `now`. */
-export function goalPage(o: SessionStatus | null, items: readonly Item[], now: number): GoalParts {
+/** The goal block with its Now line and its milestones in path order, from the saved Status and the open asks. */
+export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalParts {
   const g = o?.goal ?? null
-  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null }
+  const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null, suggestedGoal }
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt)
   const kept = o.milestones.filter(m => m.status !== 'dropped')
   const shown = o.milestones.filter(
@@ -165,7 +171,7 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[], now: n
   const head = o.head
   const nowText = head ? head.description || head.title : null
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept)
-  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map(step => milestoneRow(step, o, items))
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown).map(step => milestoneRow(step, o, items))
 
   return {
     goal: {
@@ -181,5 +187,6 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[], now: n
       milestones,
     },
     canRestoreGoal: false,
+    suggestedGoal,
   }
 }

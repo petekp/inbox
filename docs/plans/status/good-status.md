@@ -18,11 +18,11 @@ A good page after the person was away two hours, drawn as decided:
 Offline sync
 Adding offline sync to the notes app
 
-◆ Sync conflicts · waiting
+◆ Sync conflicts
   merge logic ready
 ● Export button
   works on web
-  ├ ◆ Lay out the PDF export · waiting
+  ├ ◆ Lay out the PDF export
   └ ✓ Check the print styles
 ◌ 2.4 release
   in store review
@@ -140,7 +140,7 @@ A delegate, subagent or workflow run shows under the subject it works on while i
 A delegate whose session publishes no focus, such as one that does not run the inbox, shows its Herdr name in words. A name with nothing to split at, such as `pdfx2`, stays as it is and fails this property.
 
 - **Good:** `● Export button` with `└ ● Lay out the PDF export` under it.
-- **Good:** the same delegate, at an approval prompt, reads `◆ Lay out the PDF export · waiting`.
+- **Good:** the same delegate, at an approval prompt, reads `◆ Lay out the PDF export`.
 - **Good:** a review subagent started as "Review the sync engine diff" reads `Review the sync engine diff`.
 - **Bad:** `└ ● pdfx2`. An agent made up that name, and it says nothing about the work.
 - **Bad:** the PDF layout delegate under `Sync conflicts`.
@@ -187,10 +187,10 @@ A reply that changed nothing about the work leaves every row where it was. So a 
 
 When the session drops one approach for another, the person sees both until they have looked. When one piece merges into another, the row names the merged piece by its short name.
 
-- **Good:** `● Sync conflicts: manual merge`, with `was: last-write-wins` under it.
+- **Good:** `● Sync conflicts: manual merge`, with `Prev: last-write-wins` under it.
 - **Good:** `● Offline banner: option A built`, with `merged in: Banner on hover` under it.
 - **Bad:** the text changes to "manual merge", and nothing says the plan changed.
-- **Bad:** a was line on a row that only made progress.
+- **Bad:** a Prev line on a row that only made progress.
 - **Bad:** `merged in: Show the offline banner on hover and keep it open…`. The merged piece had a sentence for a name, and the line ends cut.
 
 #### 13. The page is current, and says when it is not

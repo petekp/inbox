@@ -45,11 +45,19 @@ test('an open row the person has seen keeps where it stands but not its was line
   const p = page({ ...o, lastLookAt: 50 * MIN }, now, { lastReplyAt: now - 2 * MIN }, [askItem('i1')])
 
   expect(p.head?.title).toBe('Work offline')
-  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick · waits on you: Ask i1?', '○ Docs: outline ready'])
+  expect(shape(p.rows)).toEqual([
+    '== Work offline',
+    '◆ Offline mode: needs a sync pick · Ask i1?',
+    '○ Docs: outline ready',
+  ])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
-  expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick · waits on you: Ask i1?', '○ Docs: outline ready'])
-  expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
+  expect(shape(seen)).toEqual([
+    '== Work offline',
+    '◆ Offline mode: needs a sync pick · Ask i1?',
+    '○ Docs: outline ready',
+  ])
+  expect(seen[1]).toMatchObject({ kind: 'subject', was: null })
 })
 
 test('the list shows held, working, waiting, queued, then finished rows, newest change first within each, whether or not the person has seen them', () => {
@@ -68,8 +76,8 @@ test('the list shows held, working, waiting, queued, then finished rows, newest 
   const rows = page({ ...o, lastLookAt: 50 * MIN }, 86 * MIN, {}, [askItem('i1'), askItem('i2')]).rows
 
   expect(shape(rows)).toEqual([
-    '◆ Flick: needs a pick · waits on you: Ask i1?',
-    '◆ Seen queue: later · waits on you: Ask i2?',
+    '◆ Flick: needs a pick · Ask i1?',
+    '◆ Seen queue: later · Ask i2?',
     '◐ Sync: step two',
     '◐ Export: step one',
     '◌ Review: sent for review',
@@ -123,24 +131,17 @@ test('an open subject unchanged for a day reads how long it has been idle, in wh
   const stalls = (now: number, turn = false) =>
     page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows.flatMap(r =>
       r.kind === 'subject'
-        ? [
-            `${r.name}: ${r.waitsOn ? `waits on you: ${r.waitsOn}` : (r.stall?.text ?? '-')}${r.stall ? ` (${r.stall.tone})` : ''}`,
-          ]
+        ? [`${r.name}: ${r.waitsOn ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
         : [],
     )
 
-  expect(stalls(DAY - MIN)).toEqual(['Sync: waits on you: Ask i1?', 'Search: -', 'Review: -', 'Docs: -'])
-  expect(stalls(2 * DAY + 5 * 60 * MIN)).toEqual([
-    'Sync: waits on you: Ask i1?',
-    'Search: -',
-    'Review: idle 2d (muted)',
-    'Docs: -',
-  ])
+  expect(stalls(DAY - MIN)).toEqual(['Sync: Ask i1?', 'Search: -', 'Review: -', 'Docs: -'])
+  expect(stalls(2 * DAY + 5 * 60 * MIN)).toEqual(['Sync: Ask i1?', 'Search: -', 'Review: idle 2d (muted)', 'Docs: -'])
   expect(stalls(2 * DAY, true)).toContain('Review: idle 2d (muted)')
 })
 
 test('a name before its stall word is cut at a word with an ellipsis until both fit, and keeps its first word when nothing fits', () => {
-  const fitsIn = (cells: number) => (shown: string) => `${shown} · waiting`.length <= cells
+  const fitsIn = (cells: number) => (shown: string) => `${shown} · idle 2d`.length <= cells
 
   expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(60))).toBe('Tune how hard a pinch must be')
   expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(28))).toBe('Tune how hard a…')
@@ -239,7 +240,7 @@ test('work closed since the last look shows as two rows, the rest is named in a 
     '✓ Three: done c',
     '✓ Also done: Five, Two',
     '✗ Also dropped: Six',
-    '▸ 1 more done',
+    '› 1 more done',
   ])
 })
 
@@ -277,7 +278,7 @@ test('a look that showed a named fold counts as seen the work it names and the w
 
   const shown = Object.fromEntries(rows.flatMap(seenSubjectIds).map(id => [id, 61 * MIN]))
   const looked = lookEnded(lookStarted(before, 60 * MIN), 60 * MIN + LOOK_MIN_MS, shown)!
-  expect(shape(page(looked, 70 * MIN).rows)).toEqual(['◐ Six: step 5', '▸ 5 done'])
+  expect(shape(page(looked, 70 * MIN).rows)).toEqual(['◐ Six: step 5', '› 5 done'])
 })
 
 test('a named line shows two names, the newest first, and counts the rest as +N more', () => {

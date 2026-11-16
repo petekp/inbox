@@ -66,10 +66,12 @@ export type FeatureId =
   | 'status-goal'
   | 'status-done-fold'
   | 'status-named-fold'
+  | 'status-parent-fold'
   | 'seen-on-screen'
   | 'status-idle-age'
   | 'question-back-stays-open'
   | 'collapse-rows'
+  | 'suggested-goal'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -156,10 +158,12 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
       'status-named-fold': { kind: 'full' },
+      'status-parent-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
       'collapse-rows': { kind: 'full' },
+      'suggested-goal': { kind: 'full' },
     },
   },
   codex: {
@@ -312,6 +316,11 @@ export const CLIENTS: Record<ClientId, Client> = {
           'A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking.',
       },
       'status-named-fold': { kind: 'full' },
+      'status-parent-fold': {
+        kind: 'different',
+        reason:
+          "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection.",
+      },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': {
@@ -320,6 +329,10 @@ export const CLIENTS: Record<ClientId, Client> = {
           "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere.",
       },
       'collapse-rows': { kind: 'full' },
+      'suggested-goal': {
+        kind: 'different',
+        reason: 'Clicks only, as for the goal: the Codex Status has no row selection.',
+      },
     },
   },
   omp: {
@@ -409,15 +422,12 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
       'status-named-fold': { kind: 'full' },
+      'status-parent-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
       'collapse-rows': { kind: 'full' },
+      'suggested-goal': { kind: 'full' },
     },
   },
-}
-
-/** Whether a Compare press on `client` may hand its work to a background subagent, whose report reaches the chat. */
-export function isCompareInBackground(client: ClientId): boolean {
-  return CLIENTS[client].support['compare-in-background'].kind === 'full'
 }

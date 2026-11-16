@@ -43,11 +43,11 @@ export function countsByMark(folded: Subject[]): StatusCount[] {
 const DAY_MS = 24 * 60 * 60_000
 
 /**
- * A subject's stall word: "waiting" while an ask holds it up and says nothing, else how long it has gone without a change, in whole
- * days, once it is open past `IDLE_AFTER_MS` with no child of it running.
+ * A subject's stall word: how long it has gone without a change, in whole days, once it is open past `IDLE_AFTER_MS` with no
+ * child of it running. A subject an open ask holds up has none, since its ◆ mark and its ask say it waits.
  */
 function subjectStall(x: Subject, isHeld: boolean, isWorkRunning: boolean, now: number): StatusStall | null {
-  if (isHeld) return { text: 'waiting', tone: 'needsYou' }
+  if (isHeld) return null
   const idleMs = now - x.changedAt
   const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS
 
@@ -57,16 +57,6 @@ function subjectStall(x: Subject, isHeld: boolean, isWorkRunning: boolean, now: 
 /** Whether `c` runs and waits on no one: not a delegate at a question or an approval, and not one that finished. */
 function isChildWorking(c: Child): boolean {
   return c.endedAt === null && c.delegateState !== 'blocked'
-}
-
-/**
- * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone. Other
- * work shows none: its moving mark shows it runs, and a finished delegate's ✓ shows it finished.
- */
-function childStall(c: Child): StatusStall | null {
-  if (c.delegateState === 'blocked') return { text: 'waiting', tone: 'needsYou' }
-
-  return null
 }
 
 /** A name as `isNamedLikeSubject` compares it: lower case, with no spaces, hyphens or underscores. */
@@ -82,16 +72,16 @@ function isNamedLikeSubject(x: Subject, under: readonly Child[]): boolean {
 
 /**
  * What the one child that is named like its subject gives the subject's row: a moving mark while it works, the
- * needs-you mark and "waiting" while it is blocked, and ✓ once it finished, unless an open ask holds the subject up,
- * which keeps its own mark and words.
+ * needs-you mark while it is blocked, and ✓ once it finished, unless an open ask holds the subject up, which keeps its
+ * own mark and words. Such a row has no stall word.
  */
 function carriedByChild(
   c: Child,
   isHeld: boolean,
-): Pick<StatusRow & { kind: 'subject' }, 'mark' | 'tone' | 'isRunning' | 'stall'> | null {
-  if (c.delegateState === 'blocked') return { ...HELD_MARK, isRunning: false, stall: childStall(c) }
-  if (c.delegateState === 'finished' && !isHeld) return { ...SUBJECT_MARKS.done, isRunning: false, stall: null }
-  if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true, stall: null }
+): Pick<StatusRow & { kind: 'subject' }, 'mark' | 'tone' | 'isRunning'> | null {
+  if (c.delegateState === 'blocked') return { ...HELD_MARK, isRunning: false }
+  if (c.delegateState === 'finished' && !isHeld) return { ...SUBJECT_MARKS.done, isRunning: false }
+  if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true }
 
   return null
 }
@@ -107,7 +97,6 @@ export function childRow(c: Child, branch: StatusBranch | null, depth: number): 
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
-    stall: childStall(c),
     branch,
   }
 }
@@ -167,11 +156,12 @@ export function partRows(
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? (carried ? carried.stall : ownStall) : null,
+      stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
+      foldCount: lone === null ? under.length : 0,
       ask: c.oldestAskOf(x),
     })
     if (lone === null)
@@ -193,9 +183,4 @@ export function partRows(
   rows.push(...afterClosed)
 
   return rows
-}
-
-/** `rows` as a look draws them: each done fold that `isUnfolded` names by id followed by the finished rows it holds. */
-export function unfoldedRows(rows: StatusRow[], isUnfolded: (id: string) => boolean): StatusRow[] {
-  return rows.flatMap(r => (r.kind === 'done-fold' && isUnfolded(r.id) ? [r, ...r.rows] : [r]))
 }

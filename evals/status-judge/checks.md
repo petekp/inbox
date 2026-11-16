@@ -7,7 +7,7 @@ The examples come from one invented session. It adds two-factor sign-in to a web
 - `rows-are-work`, `each-once`, `marks` and `where-it-stands`: the page has no subject rows.
 - `child-labels`: the page has no child rows.
 - `no-restating`: the facts have no open ask and no finding.
-- `was-lines`: the page has no was line under a subject row.
+- `was-lines`: the page has no Prev line under a subject row.
 - `goal`: the page shows no goal.
 - `milestones`: the page shows no milestone rows.
 - `split`: no goal is set, so nothing is split.
@@ -18,7 +18,7 @@ The examples come from one invented session. It adds two-factor sign-in to a web
 
 The head tells the person what the session is focused on now, in the person's own words. Compare it with `Focus now` in the facts.
 
-The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line under the goal, or, when code leaves that line out, the milestone that reads `← now`. The goal already names the aim, so the `Now:` line names the part of the focus underway now: one piece, one step of a piece, or the next few steps. It passes when that part serves the focus. It fails when it names work outside the focus, or only repeats the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
+The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line under the goal, or, when code leaves that line out, the milestone being worked on. The goal already names the aim, so the `Now:` line names the part of the focus underway now: one piece, one step of a piece, or the next few steps. It passes when that part serves the focus. It fails when it names work outside the focus, or only repeats the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
 
 The head fails when it does any of these:
 
@@ -182,11 +182,11 @@ Examples:
 
 Asks and Finds are the person's to-dos, in tabs of their own. The Status shows the work. A row that an ask holds up says where its work stands. It does not repeat the ask.
 
-Compare the words of each row's text and was line with each quoted ask under `Open asks`, and with each `finding` under `Not work`.
+Compare the words of each row's text and Prev line with each quoted ask under `Open asks`, and with each `finding` under `Not work`.
 
 The check passes when no text repeats an open ask or a finding, and no text says its piece waits on the person.
 
-The check fails when a row's text or was line does any of these:
+The check fails when a row's text or Prev line does any of these:
 
 - It repeats an open ask, in the ask's words or in other words, such as the question with its options.
 - It repeats a finding.
@@ -201,35 +201,35 @@ Examples:
 
 ### was-lines
 
-When the session drops one plan for another, the row shows the plan it replaced on a was line, until the person has looked. When one piece merges into another, the row names the merged piece by its short name.
+When the session drops one plan for another, the row shows the plan it replaced on a Prev line, until the person has looked. When one piece merges into another, the row names the merged piece by its short name.
 
-Compare each was line with the facts' `Plan changed; it was …` and `Merged into it: …` for that row's piece.
+Compare each Prev line with the facts' `Plan changed; it was …` and `Merged into it: …` for that row's piece.
 
-A row needs a was line when the facts give its piece a plan change or a merge, and the piece changed since the person last looked or the facts say the piece changed at this step.
+A row needs a Prev line when the facts give its piece a plan change or a merge, and the piece changed since the person last looked or the facts say the piece changed at this step.
 
-The check passes when every was line names the plan that the facts say was replaced, or the piece that the facts say merged in, by its short name, and every row that needs a was line has one. The check passes when the page has no was lines and no row needs one.
+The check passes when every Prev line names the plan that the facts say was replaced, or the piece that the facts say merged in, by its short name, and every row that needs a Prev line has one. The check passes when the page has no Prev lines and no row needs one.
 
 The check fails when any of these is on the page:
 
-- A was line on a row whose piece has no plan change and no merge in the facts, such as a row that only made progress.
-- A was line that names something other than the replaced plan or the merged piece, such as the new plan or a step of progress.
-- A was line that is a sentence, or ends cut off with `…`.
-- A row that needs a was line and has none that names the replaced plan or the merged piece.
+- A Prev line on a row whose piece has no plan change and no merge in the facts, such as a row that only made progress.
+- A Prev line that names something other than the replaced plan or the merged piece, such as the new plan or a step of progress.
+- A Prev line that is a sentence, or ends cut off with `…`.
+- A row that needs a Prev line and has none that names the replaced plan or the merged piece.
 
 Examples:
 
-- Pass: `● Recovery codes: printable sheet`, with `was: codes by email` under it.
+- Pass: `● Recovery codes: printable sheet`, with `Prev: codes by email` under it.
 - Pass: `● Authenticator setup: QR code works`, with `merged in: Manual key entry` under it.
-- Fail: `● SMS codes: US works`, with `was: US not started`. The piece only made progress.
-- Fail: `● Recovery codes: printable sheet`, with `was: printable sheet`.
+- Fail: `● SMS codes: US works`, with `Prev: US not started`. The piece only made progress.
+- Fail: `● Recovery codes: printable sheet`, with `Prev: printable sheet`.
 - Fail: `merged in: Let people type the setup key by hand when the…`.
-- Fail: the facts say recovery codes changed from email to a printable sheet at this step, and the row has no was line.
+- Fail: the facts say recovery codes changed from email to a printable sheet at this step, and the row has no Prev line.
 
 ### goal
 
 The goal is the one outcome the session's work is for, with a finish line. The inbox model sets it from the person's words or from the work, and the person may type one. Compare it with the facts' `Goal:` line, and with `This step makes the next goal clear:` when the facts have it.
 
-The check passes when the goal names the outcome the facts give, in any words, and its `was:` line, when it has one, names the goal the facts say it replaced.
+The check passes when the goal names the outcome the facts give, in any words, and its `Prev:` line, when it has one, names the goal the facts say it replaced.
 
 The check fails when any of these hold:
 
@@ -237,17 +237,17 @@ The check fails when any of these hold:
 - The page shows a goal while the facts say `Goal: none set` and this step makes no goal clear.
 - The goal names a direction with no finish line, such as `Better sign-in security`, or an activity, such as `Reviewing sign-in`.
 - The page shows the goal open and not met, while the note after the facts' goal says the page shows it met or shows no goal.
-- A `was:` line names a goal the facts do not say it replaced.
+- A `Prev:` line names a goal the facts do not say it replaced.
 
 Examples:
 
 - Pass: `Two-factor sign-in in 3.0`.
 - Pass: `2FA shipped in 3.0`, other words for the same outcome.
-- Pass: `was: Password reset fixed` under the goal, when the facts say it replaced the goal Password reset fixed.
+- Pass: `Prev: Password reset fixed` under the goal, when the facts say it replaced the goal Password reset fixed.
 - Fail: `Stronger account security`, a direction with no finish line.
 - Fail: `Two-factor sign-in and passkeys in 3.0`, which adds an aim the facts do not give.
 - Fail: `Recovery codes ready to demo`, while the facts say `Goal: none set` and this step makes no goal clear.
-- Fail: `was: 2.9 shipped`, when the facts name no goal it replaced.
+- Fail: `Prev: 2.9 shipped`, when the facts name no goal it replaced.
 
 ### milestones
 
@@ -259,7 +259,7 @@ Judge a milestone's mark by the work it stands for: the facts' milestones it cov
 - `●` or `◐` fits when any of it is being worked on now.
 - `○` fits when none of it has started, or all of it is set aside.
 - `◌` fits when it waits on something outside the session and none of it is being worked on.
-- `◆` and `waiting` fit when an open ask holds up the milestone, or a piece that serves it.
+- `◆` fits when an open ask holds up the milestone, or a piece that serves it.
 
 The check passes when every milestone row is an outcome the goal needs, its mark fits the work it stands for, and together the rows cover every outcome the goal needs.
 

@@ -63,7 +63,7 @@ A next build's record of a Status call holds the call's input as data: the Statu
 
 These run after every step of every replay, on the saved Status, the page `statusPage` draws, and the fact list:
 
-- No text the model writes holds a time word or a date: the head, the goal, a milestone, a name, where it stands, or a was line.
+- No text the model writes holds a time word or a date: the head, the goal, a milestone, a name, where it stands, or a Prev line.
 - A name has at most 3 words, no "…" and no question mark. So do the head's title and a milestone's name.
 - The head has a title and a one-line description, and the description does not repeat the title.
 - A text names no command, file, hash, ticket or PR number, or count of tests, files, commits, lines, calls or checks.
@@ -79,8 +79,8 @@ These run after every step of every replay, on the saved Status, the page `statu
 - A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. The replays start their delegates with ids and show no Herdr focus, so this check stays known failing for them. The eval-trust follow-ups name the replay step it needs.
 - On a step the fact list marks as no news, no row's or milestone's last-changed time or place moves.
 - On a step the fact list marks as a change, each changed piece's last-changed time moves.
-- On a reversal step, the right subject has a was line, and on a step of plain progress no new was line appears.
-- No was line on the drawn page ends cut with "…".
+- On a reversal step, the right subject has a Prev line, and on a step of plain progress no new Prev line appears.
+- No Prev line on the drawn page ends cut with "…".
 - The head follows the fact list: it changes where the work moved, and holds where it did not. Its title no longer names finished work the focus moved on from. While a goal is set, the check reads the head's description, which the page draws as "Now:".
 - While a call has failed and none has written since, the status line shows the failure.
 
@@ -89,8 +89,9 @@ The goal adds these:
 - The answer the host would apply, after its one re-ask, parses.
 - No goal is set at a step that makes no next goal clear.
 - A step that makes the next goal clear, from the person's words or the work, shows that goal.
+- While no goal runs, a step whose fact list names the outcome the work most likely leads to suggests that outcome as the goal.
 - Each milestone in the fact list has a milestone with a mark its state allows.
-- Where the fact list says which queued milestone the plan takes up next, that milestone reads next.
+- Where the fact list says which queued milestone the plan takes up next, that milestone is the next one on the path.
 - A goal has 2 to 5 milestones, none named after a subject.
 - A subject the goal needs is not under Other work, and one it does not need is not linked to a milestone.
 - A goal the fact list marks as left by the work is retired or met, not still open. One whose outcome the person dropped is retired, not shown met.
@@ -118,7 +119,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 - Each mark on a row of work fits its piece's real state, and every open piece has a row or a place in the "N more" fold.
 - Where it stands says the state, and keeps parts whose states differ.
 - No text repeats an ask or a finding in any words, or says that its piece waits on the person's decision.
-- A was line names the plan that was replaced, or the piece that merged in.
+- A Prev line names the plan that was replaced, or the piece that merged in.
 
 **Checkpoints:** Replay A after steps 3, 9, 12 and 14. Replay B after steps 4 and 8. Replay C after steps 1 and 4. The short case `mid-turn-activity` after its one step. The judge runs there only with `--judge`. The judge also checks the goal, the milestones and the split into Other work, and answers `n/a` for a check with nothing to judge on the page. The case's facts give the goal and its milestones as the author sees them. The model plans its own milestones, so the judge accepts any milestones that are outcomes the goal needs, with marks that follow the pieces under them.
 
