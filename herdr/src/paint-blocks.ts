@@ -2,7 +2,7 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS } from '../../hooks/help'
-import { ROW_PAD_PT } from '../../hooks/layout'
+import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
@@ -455,6 +455,15 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
 
 /** An empty tab's block, centred across and, at least as tall as the list's room, centred down it too. */
 function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
+  return v_flex()
+    .items_center()
+    .justify_center()
+    .when(p.listRoom !== null, e => e.min_h(p.listRoom ?? 0))
+    .p(END_SPACE)
+    .child(emptyContentEl(b, p, isInert))
+}
+
+function emptyContentEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const { empty, under } = b
   const centred = (text: string, color = t.foreground) =>
@@ -462,9 +471,7 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolea
 
   return v_flex()
     .items_center()
-    .justify_center()
-    .when(p.listRoom !== null, e => e.min_h(p.listRoom ?? 0))
-    .p(END_SPACE)
+    .max_w(EMPTY_STATE_MAX_WIDTH_PT)
     .gap(INSIDE_GAP)
     .child(centred(empty.title).font_semibold())
     .when(empty.hint !== null, e => e.child(centred(empty.hint ?? '', t.muted)))

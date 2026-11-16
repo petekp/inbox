@@ -36,6 +36,9 @@ export const SECTION_GAP_PT = 6 * SPACE_UNIT
 /** The space between the panel's edges and its content. */
 export const EDGE_PT = 4 * SPACE_UNIT
 
+/** The widest an empty tab's text and controls draw, centred. The terminal and omp draw it in their own columns. */
+export const EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT
+
 /** The width of the column marks hang in. Text after a mark starts at `EDGE_PT + MARK_PT`. */
 export const MARK_PT = 6 * SPACE_UNIT
 

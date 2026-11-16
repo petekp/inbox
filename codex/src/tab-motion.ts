@@ -325,6 +325,7 @@ const SPACING_VARIABLES: [string, number][] = [
   ['--control-gap', layout.CONTROL_GAP_PT],
   ['--section-gap', layout.SECTION_GAP_PT],
   ['--edge', layout.EDGE_PT],
+  ['--empty-max-width', layout.EMPTY_STATE_MAX_WIDTH_PT],
   ['--mark', layout.MARK_PT],
   ['--row-pad', layout.ROW_PAD_PT],
   ['--open-row-pad', layout.OPEN_ROW_PAD_PT],

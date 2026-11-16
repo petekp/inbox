@@ -34,7 +34,7 @@ export function helpBlocks(version: string | null): Block[] {
       under: [],
       buttons: [],
     })),
-    heading('help marks', HELP_COPY.marks),
+    heading('help indicators', HELP_COPY.indicators),
     ...MARK_LEGEND.map((m): Block => ({
       kind: 'status',
       id: `mark ${m.mark}`,

@@ -1,6 +1,7 @@
 import { rowsIn, settledIn } from './action-plan'
 import { bannerOf, isResumable, READING_TEXT, stopBanner } from './banners'
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
+import { EMPTY_STATE_MAX_WIDTH_PT } from './layout'
 import { emptyTab, type EmptyTab } from './empty-tab'
 import { FINDING_GROUPS } from './help'
 import { READ_FAILED_TEXT } from './mod-sessions'
@@ -10,7 +11,7 @@ import type { PaneFrame } from './pane-frame'
 import { childPos, type PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
-import { ROW_COLUMNS } from './pane-sizes'
+import { DESKTOP_CELL_PT, ROW_COLUMNS } from './pane-sizes'
 import {
   ASK_MARK,
   closedShown,
@@ -175,7 +176,9 @@ export function paneAskTabs(
       return lines
     }
     const room = listColumns - 4
-    const most = Math.min(46, look === 'desktop' ? Math.floor(room * DESKTOP_CHARS_PER_CELL) : room)
+    const desktopMost = Math.floor((EMPTY_STATE_MAX_WIDTH_PT / DESKTOP_CELL_PT) * DESKTOP_CHARS_PER_CELL)
+    const most =
+      look === 'desktop' ? Math.min(desktopMost, Math.floor(room * DESKTOP_CHARS_PER_CELL)) : Math.min(46, room)
     const count = wrap(most).length
     let width = Math.ceil(text.length / Math.max(count, 1))
     while (width < most && wrap(width).length > count) width++
