@@ -96,7 +96,6 @@ Part of [the look map](../looks.md#files).
 | `hooks/tool-schemas.ts` | Shared tool schemas and the tool fields saved by each session. |
 | `hooks/question-checks.ts` | Shared module. A recorded question's body, its context and a note on each option, and how a record of the open question replaces them. What a recorded question or task lacks, which the record tool's answer names so the agent can record it again, including an approval with nothing to look at. It names only fields the agent's record tool has. |
 | `hooks/record-links.ts` | Shared module. The PR and issue references a `record` call names without a link, and the answer that refuses the call and names them. |
-| `hooks/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |
 | `hooks/dialogs.ts` | Shared module. Notes the questions of a Codex dialog, or of a dialog the person answered or dismissed, and links each to the inbox question that copies it: a Codex dialog's link, the dialog's option descriptions, and the close of an answered dialog's copy with the person's answer. |
 | `hooks/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
 | `hooks/marks.ts` | Shared module. Shapes and glyphs for marks a font draws poorly: desktop draws its toned Svg marks from `markShape`, desktop and Codex draw ✗, ◌ and ⊘ from `mutedMarkShape`, and the terminal and omp draw ✗ as ⊘ from `textMark`. |

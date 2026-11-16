@@ -1,5 +1,6 @@
 import type { DemoCopy, Session, Subject } from '../types'
 import { emptySession } from './session-files'
+import { demoTaskTree } from './demo-timeline'
 import { taskTreeFromStatus } from './task-tree'
 
 const MIN = 60_000
@@ -20,6 +21,7 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   return (
     hasStatus &&
     hasLinkLists &&
+    Array.isArray(d.timelineTaskTree) &&
     ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
   )
 }
@@ -80,6 +82,7 @@ function subject(
 /** The sample. `agent` names the agent that closed its closed items, as a real close does. */
 export function demoView(now: number, agent: string): DemoCopy {
   return {
+    timelineTaskTree: demoTaskTree(now),
     ledger: {
       overview: {
         head: { title: 'Pinch to dismiss', description: 'Adding a pinch that dismisses glances' },

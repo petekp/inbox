@@ -34,6 +34,7 @@ import type {
   TaskFactWarning,
   TaskOwnerFacts,
   TaskProgressSegments,
+  TaskTree,
   Turns,
 } from '../types'
 
@@ -114,6 +115,7 @@ export function sessionView(
   settleWindowMs: number,
   holds: Holds = NO_HOLDS,
   notes: Record<string, RowNote> = {},
+  timelineTaskTree: TaskTree = s.taskTree,
 ): SessionView {
   const l = s.ledger
   const lastActions = withoutStalePending(s.lastActions, now)
@@ -139,6 +141,8 @@ export function sessionView(
   }
   Object.assign(ownerFacts, s.taskOwnerFacts)
   const taskOwnerView = applyTaskOwnerFacts(s.taskTree, ownerFacts, now)
+  const timelineOwnerView =
+    timelineTaskTree === s.taskTree ? taskOwnerView : applyTaskOwnerFacts(timelineTaskTree, ownerFacts, now)
   const feedStalledSince = Object.fromEntries(
     l.findings.flatMap(finding => {
       const fact = finding.owner ? ownerFacts[taskOwnerKey(finding.owner)] : undefined
@@ -153,10 +157,10 @@ export function sessionView(
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now, new Set(Object.keys(taskOwnerView.stalledSince))),
     timeline: timelineData(
-      s.taskTree,
-      taskOwnerView.segments,
-      taskOwnerView.stalledSince,
-      [...s.taskFactWarnings, ...taskOwnerView.warnings],
+      timelineTaskTree,
+      timelineOwnerView.segments,
+      timelineOwnerView.stalledSince,
+      [...s.taskFactWarnings, ...timelineOwnerView.warnings],
       now,
     ),
     taskProgressSegments: taskOwnerView.segments,

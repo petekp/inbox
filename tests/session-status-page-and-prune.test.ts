@@ -24,6 +24,8 @@ import { allRows } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import { prMarkId } from '../hooks/pr-rows'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
+import { demoTaskTree } from '../hooks/demo-timeline'
+import { drawnState } from '../hooks/mod-sessions'
 import { TOOL_FIELDS } from '../hooks/tool-schemas'
 import { answer } from './session-helpers'
 
@@ -207,12 +209,23 @@ test('a sample saved without a Status is replaced, and the sample session carrie
   const old = demoView(1_000_000, 'Claude')
 
   expect(isDemoCopy(old)).toBe(true)
+  expect(isDemoCopy({ ...old, timelineTaskTree: undefined })).toBe(false)
   expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, NO_HOLDS).statusPage
   expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.goal?.milestones).toEqual([])
   expect(page.rows.flatMap(r => (r.kind === 'subject' ? [r.id] : []))).toEqual(['s2', 'm3', 'm2', 's5'])
+})
+
+test('the Timeline demo tree has neutral English and Japanese task titles', () => {
+  const now = 1_000_000
+  const titles = demoTaskTree(now).map(task => task.title)
+  expect(titles).toContain('Ship the image review flow')
+  expect(titles).toContain('選択位置を保存する')
+
+  const drawn = drawnState(emptySession(), {}, demoView(now, 'Claude'), false, null, 'demo', now, NO_HOLDS, 1000)
+  expect(drawn.view.timeline.rows.map(row => row.task.title)).toContain('選択位置を保存する')
 })
 
 test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {

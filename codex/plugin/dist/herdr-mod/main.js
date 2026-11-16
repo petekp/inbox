@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T10:31:19.741Z. 217015 characters follow.
+// Built at 2026-11-16T10:52:21.358Z. 217496 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -82,13 +82,15 @@ var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
   { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
   { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D" },
-  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
+  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" },
+  { id: "timeline", label: "Timeline", symbol: "◷" }
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
-var NEXT_BUILD_TABS = numbered(TAB_NAMES);
-var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
-function shownTabs(isNextBuild) {
-  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
+var NEXT_BUILD_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "timeline"));
+var NEXT_BUILD_TIMELINE_TABS = numbered(TAB_NAMES);
+var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview" && t.id !== "timeline"));
+function shownTabs(isNextBuild, includeTimeline = false) {
+  return isNextBuild ? includeTimeline ? NEXT_BUILD_TIMELINE_TABS : NEXT_BUILD_TABS : RELEASE_TABS;
 }
 function tabBadge(id, counts) {
   return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
@@ -97,7 +99,7 @@ function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
 function isRowTab(tab) {
-  return tab !== "overview";
+  return tab !== "overview" && tab !== "timeline";
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
@@ -1425,8 +1427,8 @@ var DOCUMENT_KEYS = [
   { keys: "v", does: "Read the selected report, if available" },
   { keys: "b", does: "Return to the inbox from a report" }
 ];
-function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
-  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
+function helpKeys(look, isNextBuild, tab, hasStatusButtons, includeTimeline = false) {
+  const tabKeys = shownTabs(isNextBuild, includeTimeline).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
   const hasDocumentRows = tab === "needsYou" || tab === "findings";
   const selectsStatusRows = tab === "overview" && hasStatusButtons;
@@ -3539,7 +3541,7 @@ function updateRecovery(s) {
     return "unreadable";
   return presence.failedAttempts > 1 ? "failed-again" : "waiting";
 }
-function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, timelineTaskTree = s.taskTree) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
   const inbox = inboxView({
@@ -3565,6 +3567,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   }
   Object.assign(ownerFacts, s.taskOwnerFacts);
   const taskOwnerView = applyTaskOwnerFacts(s.taskTree, ownerFacts, now);
+  const timelineOwnerView = timelineTaskTree === s.taskTree ? taskOwnerView : applyTaskOwnerFacts(timelineTaskTree, ownerFacts, now);
   const feedStalledSince = Object.fromEntries(l.findings.flatMap((finding) => {
     const fact = finding.owner ? ownerFacts[taskOwnerKey(finding.owner)] : undefined;
     return finding.kind === "progress" && fact && fact.state !== "working" ? [[finding.id, fact.since]] : [];
@@ -3575,7 +3578,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now, new Set(Object.keys(taskOwnerView.stalledSince))),
-    timeline: timelineData(s.taskTree, taskOwnerView.segments, taskOwnerView.stalledSince, [...s.taskFactWarnings, ...taskOwnerView.warnings], now),
+    timeline: timelineData(timelineTaskTree, timelineOwnerView.segments, timelineOwnerView.stalledSince, [...s.taskFactWarnings, ...timelineOwnerView.warnings], now),
     taskProgressSegments: taskOwnerView.segments,
     taskStalledSince: taskOwnerView.stalledSince,
     feedStalledSince,

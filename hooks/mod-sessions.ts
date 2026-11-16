@@ -6,10 +6,10 @@ import { CLAUDE_CODE } from './model-text'
 import type { AgentTool } from './tools'
 import { exclusiveKeys, orderedKeys } from './session-host'
 import { withDemoPresence } from './demo'
-import { taskTreeFromStatus } from './task-tree'
 import { sessionView, type SessionView } from './session-view'
 import type { Holds } from './timing'
 import { taskReminderSession } from './task-reminder'
+import { taskTreeFromStatus } from './task-tree'
 
 /** The drawn conversation's session. `revision` counts its writes, so a write computed from an older one is retried. */
 export type ModSession = Session & { revision: number }
@@ -63,10 +63,14 @@ function drawnSession(
   now: number,
 ): Session {
   const { ledger, stop, prViews, lastActions, turns } = drawn
-  // prettier-ignore
   const s = {
-    ...session, ledger, taskTree: isDemo ? taskTreeFromStatus(ledger.overview) : session.taskTree,
-    stop, prViews, lastActions, presence: { ...session.presence, ...turns },
+    ...session,
+    ledger,
+    taskTree: isDemo ? taskTreeFromStatus(ledger.overview) : session.taskTree,
+    stop,
+    prViews,
+    lastActions,
+    presence: { ...session.presence, ...turns },
   }
 
   return isDemo ? withDemoPresence(s, now) : s
@@ -86,9 +90,24 @@ export function drawnState(
 ): DemoCopy & { view: SessionView; isDemo: boolean; showsDemoNotices: boolean; isUnread: boolean; now: number } {
   const { ledger, stop, prViews, lastActions, presence } = session
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const drawn: DemoCopy = demo ?? { ledger, stop, prViews, lastActions, notes, turns }
+  const drawn: DemoCopy = demo ?? {
+    ledger,
+    stop,
+    prViews,
+    lastActions,
+    notes,
+    turns,
+    timelineTaskTree: session.taskTree,
+  }
   const isUnread = demo === null && unreadable === conversationId
-  const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, settleWindowMs, holds, drawn.notes)
+  const view = sessionView(
+    drawnSession(session, drawn, demo !== null, now),
+    now,
+    settleWindowMs,
+    holds,
+    drawn.notes,
+    demo?.timelineTaskTree,
+  )
 
   return {
     ...drawn,

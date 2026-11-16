@@ -1302,16 +1302,18 @@ var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
   { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
   { id: "findings", label: "Finds", symbol: "\u{1F50D}" },
-  { id: "prs", label: "PRs", symbol: "\u{1F500}" }
+  { id: "prs", label: "PRs", symbol: "\u{1F500}" },
+  { id: "timeline", label: "Timeline", symbol: "\u25F7" }
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
-var NEXT_BUILD_TABS = numbered(TAB_NAMES);
-var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
+var NEXT_BUILD_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "timeline"));
+var NEXT_BUILD_TIMELINE_TABS = numbered(TAB_NAMES);
+var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview" && t.id !== "timeline"));
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
 function isRowTab(tab) {
-  return tab !== "overview";
+  return tab !== "overview" && tab !== "timeline";
 }
 function isShownTab(raw) {
   return TAB_NAMES.some((t) => t.id === raw);
@@ -3145,7 +3147,7 @@ function updateRecovery(s) {
   if (s.pending.length === 0 && presence.isConversationUnreadable) return "unreadable";
   return presence.failedAttempts > 1 ? "failed-again" : "waiting";
 }
-function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, timelineTaskTree = s.taskTree) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
   const inbox = inboxView({
@@ -3169,6 +3171,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   }
   Object.assign(ownerFacts, s.taskOwnerFacts);
   const taskOwnerView = applyTaskOwnerFacts(s.taskTree, ownerFacts, now);
+  const timelineOwnerView = timelineTaskTree === s.taskTree ? taskOwnerView : applyTaskOwnerFacts(timelineTaskTree, ownerFacts, now);
   const feedStalledSince = Object.fromEntries(
     l.findings.flatMap((finding) => {
       const fact = finding.owner ? ownerFacts[taskOwnerKey(finding.owner)] : void 0;
@@ -3182,10 +3185,10 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now, new Set(Object.keys(taskOwnerView.stalledSince))),
     timeline: timelineData(
-      s.taskTree,
-      taskOwnerView.segments,
-      taskOwnerView.stalledSince,
-      [...s.taskFactWarnings, ...taskOwnerView.warnings],
+      timelineTaskTree,
+      timelineOwnerView.segments,
+      timelineOwnerView.stalledSince,
+      [...s.taskFactWarnings, ...timelineOwnerView.warnings],
       now
     ),
     taskProgressSegments: taskOwnerView.segments,

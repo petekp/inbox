@@ -125,7 +125,7 @@ for (const isNextBuild of [false, true])
                 .map(b => [(b.key ?? '').slice('tab-key-'.length), b.props.hotkey])
             : ((await pane.find({ key: 'tabs' }))?.props.props as TabsProps).tabs.map(t => [t.id, undefined])
         expect(drawnTabs, `${look} tabs`).toEqual(
-          shownTabs(isNextBuild).map(t => [t.id, look === 'terminal' ? t.hotkey : undefined]),
+          shownTabs(isNextBuild, isNextBuild).map(t => [t.id, look === 'terminal' ? t.hotkey : undefined]),
         )
         const drawn = async () => {
           const links = (await pane.findAll({ type: 'Client' })).flatMap(

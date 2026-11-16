@@ -287,6 +287,7 @@ import type { PaneClient, PaneHandlers, Row } from './pane-context'
 import { panePrBlocks, panePrRows } from './pane-prs'
 import { paneStatusLines } from './pane-status-lines'
 import { paneStatus } from './pane-status'
+import { paneTimeline } from './pane-timeline'
 import { paneHelp } from './pane-help'
 import { adjustScroll, clearDocument, documentActions, scrollBy } from './pane-document'
 import { foldOf, upgradedUnfolded, withFold } from './fold-keys'
@@ -1326,7 +1327,7 @@ async function writeRowTab($: EngineInterface, tab: Tab) {
 async function readPage($: EngineInterface): Promise<PageTab | null> {
   const page = await read($, PAGE)
 
-  return page !== null && drawnTabOf(page, mod.isNextBuild) === page ? page : null
+  return page !== null && drawnTabOf(page, mod.isNextBuild, true) === page ? page : null
 }
 
 /** The shown row tab; null while the Status page shows, where no row is drawn, selected or scrolled to. */
@@ -3042,6 +3043,8 @@ export const register: Register = on => {
       termProgram,
       statusSelection,
       statusUnfolded,
+      timelineSelection,
+      timelineFolded,
       closedAll,
     ] = await Promise.all([
       drawnState($),
@@ -3058,19 +3061,23 @@ export const register: Register = on => {
       $.env.get('TERM_PROGRAM'),
       read($, STATUS_SELECTION),
       read($, STATUS_UNFOLDED),
+      read($, TIMELINE_SELECTION),
+      read($, TIMELINE_FOLDED),
       read($, CLOSED_ALL),
       // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
       look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isStatusShown = savedPage === 'overview'
-    const shownTab: ShownTab = isStatusShown ? 'overview' : tab
+    const isTimelineShown = savedPage === 'timeline'
+    const isPageShown = isStatusShown || isTimelineShown
+    const shownTab: ShownTab = savedPage ?? tab
     const { document, ...reader } = documentActions(
       documentFile($),
       () => redrawPane($),
       by => scrollBy(by, () => $.ui.scroll({ in: PANE, to: 'end' })).catch(() => undefined),
     )
-    const tabList = shownTabs(mod.isNextBuild)
+    const tabList = shownTabs(mod.isNextBuild, true)
     if (look === 'terminal')
       animateRunningMarks(
         showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
@@ -3188,7 +3195,7 @@ export const register: Register = on => {
     )
 
     // The Status and Help draw no rows, so none are built while either shows.
-    const isListShown = !isStatusShown && !isHelpShown
+    const isListShown = !isPageShown && !isHelpShown
     const lists = drawnLists(
       view,
       () => true,
@@ -3339,6 +3346,11 @@ export const register: Register = on => {
       view.statusPage.error,
     )
     const status = shownStatus.text ?? ''
+    const {
+      view: timelineView,
+      move: moveTimeline,
+      footer: timelineFooter,
+    } = paneTimeline({ Box, Button, Text, pal, view, now, timelineSelection, timelineFolded }, handlers)
 
     const openIds = openRowIds(view)
     const drawnIds = new Set([...openIds.needsYou, ...openIds.findings, ...prRowIds(shownPrs)])
@@ -3347,7 +3359,7 @@ export const register: Register = on => {
       .map(([, n]) => n)
       .sort((a, b) => b.at - a.at)[0]
 
-    const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
+    const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0, true)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
     const { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines } = paneFrame(
@@ -3377,6 +3389,7 @@ export const register: Register = on => {
         blankLine,
         isHelpShown,
         view,
+        timelineFooter,
       },
       handlers,
     )
@@ -3545,6 +3558,7 @@ export const register: Register = on => {
 
     const { helpView } = paneHelp({
       isNextBuild: mod.isNextBuild,
+      includeTimeline: true,
       pal,
       keyList,
       Box,
@@ -3564,14 +3578,22 @@ export const register: Register = on => {
       const to = steppedIndex(at, step, ids.length)
       void select($, tab, ids[to] ?? '', to)
     }
-    const canMove = !isStatusShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+    const canMove = !isPageShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
     const moveStatus = (step: number) => {
       const from = statusPressRows.findIndex(r => r.id === statusKeyRow?.id)
       const to = statusPressRows[steppedIndex(from, step, statusPressRows.length)]
       if (to) void selectStatusRow($, to.id)
     }
     const moveBy = (by: number) =>
-      isHelpShown ? undefined : isStatusShown ? moveStatus(by) : canMove ? move(by) : undefined
+      isHelpShown
+        ? undefined
+        : isStatusShown
+          ? moveStatus(by)
+          : isTimelineShown
+            ? moveTimeline(by)
+            : canMove
+              ? move(by)
+              : undefined
     // Unbound keys reach the prompt, so hidden Buttons must bind navigation keys.
     const moveKeys: KeyAction[] = document
       ? [reader.scroll(-1), reader.scroll(1)]
@@ -3587,7 +3609,7 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
-    const selectedRow = isStatusShown || isHelpShown || document ? undefined : rows[tab][at]
+    const selectedRow = isPageShown || isHelpShown || document ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
     const rowKeys = [
@@ -3636,11 +3658,13 @@ export const register: Register = on => {
         ? helpView()
         : isStatusShown
           ? statusView()
-          : tab === 'findings'
-            ? findingsView()
-            : tab === 'prs'
-              ? prsView()
-              : needsYouView()
+          : isTimelineShown
+            ? timelineView
+            : tab === 'findings'
+              ? findingsView()
+              : tab === 'prs'
+                ? prsView()
+                : needsYouView()
     const drawn = (
       <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {showsDemoNotices ? (

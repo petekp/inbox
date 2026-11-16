@@ -7,6 +7,7 @@ export const SHARED = [
   'client-support',
   'conversation',
   'demo',
+  'demo-timeline',
   'document',
   'dialogs',
   'gh',

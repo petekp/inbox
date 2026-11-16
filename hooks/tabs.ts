@@ -16,17 +16,19 @@ const TAB_NAMES: readonly TabName[] = [
   { id: 'needsYou', label: 'Asks', symbol: '\u{1F64B}' },
   { id: 'findings', label: 'Finds', symbol: '\u{1F50D}' },
   { id: 'prs', label: 'PRs', symbol: '\u{1F500}' },
+  { id: 'timeline', label: 'Timeline', symbol: '◷' },
 ]
 
 const numbered = (tabs: readonly TabName[]): readonly DrawnTab[] =>
   tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }))
 
-const NEXT_BUILD_TABS = numbered(TAB_NAMES)
-const RELEASE_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'overview'))
+const NEXT_BUILD_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'timeline'))
+const NEXT_BUILD_TIMELINE_TABS = numbered(TAB_NAMES)
+const RELEASE_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'overview' && t.id !== 'timeline'))
 
-/** The tabs a build draws, in order, each keyed by its place. Only a next build draws the Status. */
-export function shownTabs(isNextBuild: boolean): readonly DrawnTab[] {
-  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS
+/** The tabs a build draws, in order, each keyed by its place. Only a next build draws pages. */
+export function shownTabs(isNextBuild: boolean, includeTimeline = false): readonly DrawnTab[] {
+  return isNextBuild ? (includeTimeline ? NEXT_BUILD_TIMELINE_TABS : NEXT_BUILD_TABS) : RELEASE_TABS
 }
 
 /** The `/inbox` command's description: what the build's tabs show. */
@@ -37,8 +39,8 @@ export function inboxCommandText(isNextBuild: boolean): string {
 }
 
 /** The tab a build draws for a saved or sent one: that tab when the build draws it, else the build's first tab. */
-export function drawnTabOf(tab: ShownTab, isNextBuild: boolean): ShownTab {
-  const tabs = shownTabs(isNextBuild)
+export function drawnTabOf(tab: ShownTab, isNextBuild: boolean, includeTimeline = false): ShownTab {
+  const tabs = shownTabs(isNextBuild, includeTimeline)
 
   return tabs.some(t => t.id === tab) ? tab : tabs[0]!.id
 }
@@ -81,7 +83,7 @@ export function isListedTab(tab: ShownTab): tab is ListedTab {
 
 /** Whether a shown tab is a row tab, which has rows, a count and a cursor. */
 export function isRowTab(tab: ShownTab): tab is Tab {
-  return tab !== 'overview'
+  return tab !== 'overview' && tab !== 'timeline'
 }
 
 /** Whether a saved or sent value names a tab that some build draws. */

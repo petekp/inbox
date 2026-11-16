@@ -22,7 +22,11 @@ export function paneHelp({
   sections,
   statusRowLine,
   isNextBuild,
-}: { isNextBuild: boolean } & Pick<PaneBase, 'pal' | 'keyList' | 'Box' | 'keyColumn' | 'Text' | 'hasRail'> &
+  includeTimeline,
+}: { isNextBuild: boolean; includeTimeline?: boolean } & Pick<
+  PaneBase,
+  'pal' | 'keyList' | 'Box' | 'keyColumn' | 'Text' | 'hasRail'
+> &
   Pick<PaneRowLines, 'ToneSvg' | 'svgCell' | 'markGlyph'> &
   Pick<PaneRowParts, 'section' | 'groupTitle' | 'sections'> &
   Pick<PaneStatus, 'statusRowLine'>) {
@@ -54,7 +58,10 @@ export function paneHelp({
   const helpKeysSection = () => section([groupTitle(HELP_COPY.keys, 0), ...keyRows(keyList, 'help-key', keyColumn)])
   /** A tab's symbol takes two cells, so its column is the wider of that and the keys' column. */
   const helpTabsSection = () =>
-    section([groupTitle(HELP_COPY.tabs, 0), ...keyRows(tabLegend(isNextBuild), 'help-tab', Math.max(keyColumn, 4))])
+    section([
+      groupTitle(HELP_COPY.tabs, 0),
+      ...keyRows(tabLegend(isNextBuild, includeTimeline), 'help-tab', Math.max(keyColumn, 4)),
+    ])
   const helpMarksSection = () =>
     section([
       groupTitle(HELP_COPY.marks, 0),

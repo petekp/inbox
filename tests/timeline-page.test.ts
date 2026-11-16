@@ -96,6 +96,42 @@ test('Timeline formats task and history times in the shared plan', () => {
   expect('at' in displayedTask.history[0]!).toBe(false)
 })
 
+test('the selected task plan orders labeled details and link actions', () => {
+  const detail = timelinePage(
+    timelineData(
+      [
+        task('plan', {
+          detail: 'Build the review flow',
+          updatedAt: now - 19 * 60_000,
+          notes: ['Keep the row short', 'Use the shared view'],
+          history: [
+            { at: now - 5 * 60_000, source: 'claude', kind: 'updated', detail: 'Added the pane' },
+            { at: now - 2 * 60_000, source: 'status', kind: 'created' },
+          ],
+          links: { pr: 'https://github.com/a/b/pull/1' },
+        }),
+      ],
+      segments,
+      {},
+      [],
+      now,
+    ),
+    'plan',
+    [],
+  ).selected?.details
+
+  expect(detail?.map(line => line.label)).toEqual(['Detail', 'Updated', 'Note', 'Note', 'History', 'History', 'Links'])
+  expect(detail?.slice(0, 6)).toEqual([
+    { label: 'Detail', text: 'Build the review flow' },
+    { label: 'Updated', text: '19m' },
+    { label: 'Note', text: 'Keep the row short' },
+    { label: 'Note', text: 'Use the shared view' },
+    { label: 'History', text: '5m · claude · Added the pane' },
+    { label: 'History', text: '2m · status · Task created' },
+  ])
+  expect(detail?.at(-1)).toMatchObject({ label: 'Links', actions: [{ label: 'Open PR' }] })
+})
+
 test('meta sessions show separate top-level stream bars and selection follows visible branches', () => {
   const roots: TaskTree = [
     task('one', { status: 'done', streamId: 's1' }),
@@ -119,4 +155,13 @@ test('folding a selected parent hides its children and keeps the parent selected
 
   expect(page.rows.map(row => row.task.id)).toEqual(['root'])
   expect(page.selected?.row.task.id).toBe('root')
+})
+
+test('Timeline offers Select only for unselected rows and keeps planned action order', () => {
+  const tree = [task('root'), task('branch', { parentId: 'root' }), task('leaf', { parentId: 'branch' })]
+  const page = timelinePage(timelineData(tree, segments, {}, [], now), 'root', [])
+
+  expect(page.rows.find(row => row.task.id === 'root')?.actions.map(action => action.action)).toEqual(['toggle-branch'])
+  expect(page.rows.find(row => row.task.id === 'branch')?.actions.map(action => action.action)).toEqual(['select'])
+  expect(page.rows.find(row => row.task.id === 'leaf')?.actions.map(action => action.action)).toEqual(['select'])
 })

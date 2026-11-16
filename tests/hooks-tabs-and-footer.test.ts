@@ -74,10 +74,10 @@ test('on a next build, at 20 desktop columns the tabs show their symbols with th
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 20 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   expect((await tabBar()).tabs.map(t => [t.id, t.label, t.badge])).toEqual(
-    shownTabs(true).map(t => [t.id, t.symbol, t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null]),
+    shownTabs(true, true).map(t => [t.id, t.symbol, t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null]),
   )
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
-  expect((await tabBar()).tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))
+  expect((await tabBar()).tabs.map(t => t.label)).toEqual(shownTabs(true, true).map(t => t.label))
   expect((await tabBar()).isEachFramed).toBe(true)
 
   const { tabs, gap } = await tabBar()
@@ -96,7 +96,7 @@ test('on a next build, at 20 desktop columns the tabs show their symbols with th
 
 for (const isNextBuild of [false, true])
   test(`on a ${isNextBuild ? 'next' : 'release'} build, the terminal tabs show their words down to the narrowest pane they fit, docked and inline, and their symbols below it`, async ($, on) => {
-    const tabs = shownTabs(isNextBuild)
+    const tabs = shownTabs(isNextBuild, isNextBuild)
     expect(['✅', '👩‍💻', ...shownTabs(true).map(t => t.symbol)].map(cellWidth)).toEqual([2, 2, 2, 2, 2, 2])
     mock.clock(on, { now: 1_000_000 })
     world($, on, [])
@@ -197,8 +197,8 @@ for (const isNextBuild of [false, true])
     const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 26 } })
     const tabBar = async () => await pane.find({ key: 'tabs' })
     const narrowest = (await tabBar())?.props.props as TabsProps
-    expect(narrowest.tabs.map(t => t.id)).toEqual(shownTabs(isNextBuild).map(t => t.id))
-    if (isNextBuild) expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))
+    expect(narrowest.tabs.map(t => t.id)).toEqual(shownTabs(isNextBuild, isNextBuild).map(t => t.id))
+    if (isNextBuild) expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs(true, true).map(t => t.symbol))
     expect(tabLines(narrowest.tabs, narrowest.gap, narrowest.columns)).toHaveLength(1)
     await pane.redraw({ ...PANE.props, bodyColumns: 12 })
     const { tabs, gap, columns } = (await tabBar())?.props.props as TabsProps

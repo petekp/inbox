@@ -17,6 +17,8 @@ type TimelineRowAction = Pick<ActionView, 'label' | 'hotkey' | 'kind' | 'emphasi
   id: string
 }
 type TimelineLinkAction = PrAction & { result: LastAction['result'] | null }
+type TimelineDetailLine =
+  { label: 'Detail' | 'Updated' | 'Note' | 'History'; text: string } | { label: 'Links'; actions: TimelineLinkAction[] }
 type TimelineNode = {
   task: TimelineTask
   depth: number
@@ -34,7 +36,7 @@ type TimelineBase = { isEmpty: boolean; empty: { title: string; hint: string }; 
 export type TimelineData = TimelineBase & { rows: Omit<TimelineNode, 'actions'>[] }
 type TimelinePage = TimelineBase & {
   rows: TimelineNode[]
-  selected: { row: TimelineNode; links: TimelineLinkAction[] } | null
+  selected: { row: TimelineNode; details: TimelineDetailLine[]; links: TimelineLinkAction[] } | null
 }
 
 const BAR_MARKS: Record<TimelineBarPart['state'], string> = {
@@ -45,6 +47,14 @@ const BAR_MARKS: Record<TimelineBarPart['state'], string> = {
   queued: '·',
 }
 const BAR_STATES = Object.keys(BAR_MARKS) as TimelineBarPart['state'][]
+const HISTORY_TEXT: Record<TaskHistoryEvent['kind'], string> = {
+  created: 'Task created',
+  updated: 'Task updated',
+  moved: 'Task moved',
+  completed: 'Task completed',
+  note: 'Note added',
+  imported: 'Task imported',
+}
 
 function timelineTask(task: TaskNode, now: number): TimelineTask {
   const { createdAt: _createdAt, updatedAt, history, ...details } = task
@@ -180,8 +190,19 @@ export function timelinePage(
   const drawnRows = rows.map(row => {
     const isFolded = foldedIds.has(row.task.id)
     const actions: TimelineRowAction[] = [
-      { action: 'select', id: row.task.id, label: 'Select', hotkey: 'enter', kind: 'view', emphasis: 'normal' },
-      ...(row.hasChildren
+      ...(row.task.id !== selected?.task.id
+        ? [
+            {
+              action: 'select' as const,
+              id: row.task.id,
+              label: 'Select',
+              hotkey: 'enter',
+              kind: 'view' as const,
+              emphasis: 'normal' as const,
+            },
+          ]
+        : []),
+      ...(row.task.id === selected?.task.id && row.hasChildren
         ? [
             {
               action: 'toggle-branch' as const,
@@ -197,11 +218,24 @@ export function timelinePage(
     return { ...row, actions }
   })
   const selectedRow = selected ? drawnRows.find(row => row.task.id === selected!.task.id)! : null
+  const selectedLinks = selectedRow ? timelineLinkPlan(selectedRow.task, lastActions) : []
+  const details: TimelineDetailLine[] = selectedRow
+    ? [
+        ...(selectedRow.task.detail ? [{ label: 'Detail' as const, text: selectedRow.task.detail }] : []),
+        { label: 'Updated', text: selectedRow.task.updatedAgo },
+        ...selectedRow.task.notes.map(text => ({ label: 'Note' as const, text })),
+        ...selectedRow.task.history.map(event => ({
+          label: 'History' as const,
+          text: `${event.time} · ${event.source} · ${event.detail ?? HISTORY_TEXT[event.kind]}`,
+        })),
+        ...(selectedLinks.length ? [{ label: 'Links' as const, actions: selectedLinks }] : []),
+      ]
+    : []
 
   return {
     ...data,
     rows: drawnRows,
-    selected: selectedRow ? { row: selectedRow, links: timelineLinkPlan(selectedRow.task, lastActions) } : null,
+    selected: selectedRow ? { row: selectedRow, details, links: selectedLinks } : null,
   }
 }
 

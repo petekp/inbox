@@ -49,6 +49,7 @@ export function paneFrame(
     hasRail,
     blankLine,
     isHelpShown,
+    timelineFooter,
   }: PaneClient &
     Pick<
       PaneBase,
@@ -76,7 +77,7 @@ export function paneFrame(
       | 'hasRail'
       | 'blankLine'
       | 'isHelpShown'
-    >,
+    > & { timelineFooter?: JSX.Element | null },
   { showTab, updateHelpShown }: Pick<PaneHandlers, 'showTab' | 'updateHelpShown'>,
 ) {
   const tabColumns = e.props.bodyColumns - 2
@@ -408,6 +409,7 @@ export function paneFrame(
   ) : null
   const footer = (
     <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
+      {shownTab === 'timeline' ? timelineFooter : null}
       <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
         {/* The same key in both states, so a desktop pane keeps its focus on the Button. */}
         <Button
