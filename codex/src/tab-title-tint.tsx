@@ -41,7 +41,7 @@ export function TitleTint({
   }, [shownAt])
 
   return (
-    <span ref={ref} class={`title-tint ${tone}`}>
+    <span ref={ref} class={`title-tint tint-${tone}`}>
       {children}
     </span>
   )
