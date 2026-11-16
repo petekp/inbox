@@ -1,4 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import { SESSION_VERSION } from '../hooks/session-version'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { statusPage } from '../hooks/status-page'

@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import { noteStatusDrawn, takeShownRows } from '../hooks/pane-status-shown'
 import { exactly, type Lines, type RowTop } from '../hooks/pane-status-tops'
 

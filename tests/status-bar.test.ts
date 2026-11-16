@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { alphaPerTest, atLeast, blockAt, interval, TOLERANCE } from '../evals/status-bar'
 import { gradeReplay } from '../evals/status-grade'

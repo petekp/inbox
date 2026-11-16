@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { press } from '../hooks/host-press'
 import { fetchPrs, isPrFetchDue } from '../hooks/host-prs'

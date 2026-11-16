@@ -1,4 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import { SAVED_PR_VIEWS_MAX } from '../hooks/mod-saves'
 import { SESSION_VERSION } from '../hooks/session-version'
 import { SETTLED_MS } from '../hooks/timing'

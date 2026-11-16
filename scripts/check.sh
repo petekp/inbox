@@ -28,7 +28,11 @@ status=0
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 
-# Runs one check and prints the check's output only when it fails.
+# Runs one check and prints the check's output only when it fails. A log that
+# lists every test, as the root tests step's does, prints each failed test's
+# name with the error under it and the totals, not the lines of the tests that
+# passed. Other logs print whole. bun test prints no passed tests and puts a
+# failure's error before its name, so its log is short and prints whole.
 check() {
     label=$1
     shift
@@ -36,7 +40,11 @@ check() {
         echo "  ok $label"
     else
         echo "  x $label"
-        sed 's/^/      /' "$log"
+        if grep -q '^(pass)' "$log" && grep -q '^(fail)' "$log"; then
+            grep -A1 -E '^\(fail\)| pass$| fail$|^Ran ' "$log" | grep -v '^--$' | sed 's/^/      /'
+        else
+            sed 's/^/      /' "$log"
+        fi
         status=1
     fi
 }

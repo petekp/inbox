@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { statusCallPrompt } from '../hooks/status-records'
 import type { StatusExchange } from '../hooks/status-records'

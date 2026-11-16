@@ -1,4 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import type { Session } from '../types'
 import { w, world } from './hooks-world'
 import { SAVED_SESSION } from './hooks-helpers'
