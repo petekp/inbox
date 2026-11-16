@@ -276,6 +276,12 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
  */
 const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
 
+/** A status line's name, its stall word and its fold's chevron, as one run of text. */
+const nameLineOf = (s: StatusLine): string =>
+  [s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name, s.fold?.chevron]
+    .filter(x => x !== undefined)
+    .join(STALL_GAP)
+
 /**
  * A milestone's word over its name's line. gpui-kit cannot measure text, so a hidden copy of the name and stall lays
  * out beside the word in a box one line tall: when they do not fit on one line, the word wraps out of the box and does
@@ -291,7 +297,7 @@ const wordEl = (s: StatusLine, word: string, t: Theme): Element =>
     .overflow_hidden()
     .flex_wrap()
     .child(
-      statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name)
+      statusPartEl(nameLineOf(s))
         .invisible()
         .when(s.isBold, e => e.font_semibold()),
     )
@@ -318,16 +324,32 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
     .when(s.isBold, e => e.font_semibold())
     .when(s.isMuted, e => e.text_color(t.muted))
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : []
+  const chevron = s.fold ? [statusPartEl(s.fold.chevron).text_color(t.muted).ml(LINE_GAP)] : []
   const word = s.word === undefined ? [] : [wordEl(s, s.word, t)]
+  const toggle = s.fold?.toggle
 
   return v_flex()
     .pl(EDGE + s.depth * NEST)
     .pr(EDGE)
     .child(
       h_flex()
+        .id(`fold ${s.id}`)
         .items_start()
+        .when(toggle !== undefined && !isInert, e =>
+          e.hover(x => x.text_color(t.foreground)).on_click((_e, cx) => (toggle ? p.press(toggle, cx) : undefined)),
+        )
         .child(markEl(s.mark, t))
-        .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(word)),
+        .child(
+          h_flex()
+            .relative()
+            .flex_1()
+            .min_w(0)
+            .flex_wrap()
+            .child(name)
+            .children(stall)
+            .children(chevron)
+            .children(word),
+        ),
     )
     .when(s.waitsOn !== undefined, e => e.child(lineEl(s.waitsOn ?? '', colorOf(t, 'needsYou'))))
     .children(s.under.map(l => lineEl(l, t.muted)))
@@ -488,8 +510,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     does: { is: 'view', change: b.change },
   }
   const mark = b.kind === 'fold' ? b.mark : undefined
-  const chevron = b.kind === 'fold' && b.isOpen ? '▾' : '▸'
-  const isChevronAfter = mark !== undefined || (b.kind === 'fold' && b.isLabelFirst === true)
+  const chevron = b.kind === 'fold' ? (b.isOpen ? '▾' : '▸') : null
 
   return h_flex()
     .id(`fold ${b.id}`)
@@ -500,10 +521,16 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .text_color(t.muted)
     .accessibility_label(b.text)
     .when(!isInert, e => e.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx)))
-    .when(b.kind === 'fold' && !isChevronAfter, e => e.child(div().mr(CONTROL_GAP).child(chevron)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(div().min_w(0).whitespace_normal().child(b.text))
-    .when(isChevronAfter, e => e.child(div().flex_none().ml(LINE_GAP).child(chevron)))
+    .when(chevron !== null, e =>
+      e.child(
+        div()
+          .flex_none()
+          .ml(LINE_GAP)
+          .child(chevron ?? ''),
+      ),
+    )
 }
 
 /**

@@ -1,3 +1,4 @@
+import type { IsCollapsed } from '../../hooks/status-folds'
 import { cellWidth, cutForEllipsis, cutToCells } from '../../hooks/text'
 
 const ANSI = /\x1b\[[0-9;]*m/g
@@ -71,3 +72,9 @@ export function indented(
 
   return shown.map(l => ' '.repeat(indent) + paint(l))
 }
+
+/** Whether the person folded the Status parent `id`, as the view's saved `collapsed` says. */
+export const collapsedIn =
+  (view: { collapsed: string[] }): IsCollapsed =>
+  id =>
+    view.collapsed.includes(id)

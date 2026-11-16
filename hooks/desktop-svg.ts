@@ -12,7 +12,6 @@ import {
   UNDO_CELLS,
   UNDO_HEIGHT_PT,
 } from './pane-sizes'
-import { DESKTOP_AGE } from './palettes'
 
 /**
  * The app draws an Svg as an image, which runs SMIL animation, so the fill moves
@@ -104,25 +103,11 @@ export function runningSvg(now: number, colors: { light: string; dark: string } 
 function escapeXml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
-/**
- * It is an Svg, the
- * only icon the pane can draw, sized to the fold line, so it sits in the mark column at the line's middle.
- */
-export function chevronSvg(isUnfolded: boolean, isHover: boolean): string {
+/** An empty Svg the size of a fold line, which gives the fold's `Client` its height in the pane's flow. */
+export function foldSpacerSvg(): string {
   const width = FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT
   const height = 2 * ROW_PAD_PT + DESKTOP_LINE_PT
-  const x = FRAME_INSET_PT - DESKTOP_CELL_PT + 0.5
-  const y = height / 2
-  const points = isUnfolded
-    ? `${x},${y - 2} ${x + 3.5},${y + 1.5} ${x + 7},${y - 2}`
-    : `${x + 1.5},${y - 3.5} ${x + 5},${y} ${x + 1.5},${y + 3.5}`
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    (isHover
-      ? `<style>polyline{stroke:#0b0b0b}@media (prefers-color-scheme: dark){polyline{stroke:#f0efec}}</style>`
-      : `<style>polyline{stroke:${DESKTOP_AGE}}</style>`) +
-    `<polyline points="${points}" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-  )
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"/>`
 }
 /** The Help control on desktop: a question mark in a circle, in the muted mark's colors for the light and dark appearances. */
 export function helpSvg(): string {

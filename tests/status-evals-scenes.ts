@@ -1,6 +1,7 @@
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession } from '../hooks/session-files'
-import { statusListRows, statusPage } from '../hooks/status-page'
+import { statusListRows } from '../hooks/status-folds'
+import { statusPage } from '../hooks/status-page'
 import type { StatusPage } from '../hooks/status-page'
 import { HELD_MARK } from '../hooks/help'
 import { nameKey } from '../hooks/status-limits'

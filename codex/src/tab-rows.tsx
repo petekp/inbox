@@ -181,6 +181,13 @@ function toggleCollapse(t: Tab, id: string, index: number) {
   if (!isCollapsed) open(t, id, index)
   else if (selection[t]?.id !== id) selection[t] = { id, openedAt: 0, index }
   if (isCollapsed && tabState.typing === id) tabState.typing = null
+  pressCollapse(id, isCollapsed)
+}
+
+/** Saves that the row `id` is collapsed or not, and draws it so at once, ahead of the server's answer. */
+export function pressCollapse(id: string, isCollapsed: boolean) {
+  const v = tabState.view
+  if (!v) return
   const seq = ++tabState.requested
   tabState.shown = seq
   tabState.view = { ...v, collapsed: isCollapsed ? [...v.collapsed, id] : v.collapsed.filter(x => x !== id) }

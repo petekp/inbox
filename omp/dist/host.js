@@ -3323,6 +3323,51 @@ function helpKeys(look) {
   }
 }
 
+// ../hooks/status-folds.ts
+function waitingUnderParents(ledger) {
+  const o = ledger.overview;
+  if (!o)
+    return new Map;
+  const blockedOf = (subjectId) => o.children.filter((c) => c.subjectId === subjectId && c.endedAt === null && c.delegateState === "blocked").map((c) => c.id);
+  const asksOf = (subjectId) => ledger.items.filter((i) => o.askSubjects[i.id]?.includes(subjectId)).map((i) => i.id);
+  const subjects = o.subjects.filter((x) => x.into === null);
+  const delegating = subjects.filter((x) => o.children.some((c) => c.subjectId === x.id));
+  const milestones = o.goal ? o.milestones.filter((m) => subjects.some((x) => o.serves[x.id] === m.id)) : [];
+  return new Map([
+    ...delegating.map((x) => [x.id, blockedOf(x.id)]),
+    ...milestones.map((m) => {
+      const serving = subjects.filter((x) => o.serves[x.id] === m.id);
+      return [m.id, [...new Set(serving.flatMap((x) => [...asksOf(x.id), ...blockedOf(x.id)]))]];
+    })
+  ]);
+}
+var parentChevron = (isCollapsed, foldCount) => isCollapsed ? `\u25B8 ${foldCount}` : "\u25BE";
+var NONE_COLLAPSED = () => false;
+function withoutCollapsed(rows, isCollapsed) {
+  let hiddenBelow = null;
+  return rows.filter((r) => {
+    if (hiddenBelow !== null && r.depth > hiddenBelow)
+      return false;
+    hiddenBelow = r.kind === "subject" && isParentCollapsed(r, isCollapsed) ? r.depth : null;
+    return true;
+  });
+}
+function unfoldedRows(rows, isUnfolded, isCollapsed = NONE_COLLAPSED) {
+  return withoutCollapsed(rows, isCollapsed).flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
+}
+var isParentCollapsed = (p, isCollapsed) => p.foldCount > 0 && isCollapsed(p.id);
+function milestoneRows(m, isUnfolded, isCollapsed = NONE_COLLAPSED) {
+  const isShut = m.foldId !== null && !isUnfolded(m.foldId) || isParentCollapsed(m, isCollapsed);
+  return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed);
+}
+var listRows = (milestones, rows) => [
+  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
+  ...rows
+];
+function statusListRows(page) {
+  return listRows(page.goal?.milestones ?? [], page.rows);
+}
+
 // ../hooks/status-page-parts.ts
 var LISTED_NAMES = 2;
 var namedFoldMore = (n) => `+${n} more`;
@@ -3412,6 +3457,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
+      foldCount: lone === null ? under.length : 0,
       ask: c.oldestAskOf(x)
     });
     if (lone === null)
@@ -3431,9 +3477,6 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     rows.push(...afterOpen);
   rows.push(...afterClosed);
   return rows;
-}
-function unfoldedRows(rows, isUnfolded) {
-  return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
 }
 
 // ../hooks/status-path.ts
@@ -3482,9 +3525,6 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
     return [...said].every((w) => row.has(w));
   });
 }
-function milestoneRows(m, isUnfolded) {
-  return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded);
-}
 function workJoints(rows, line) {
   const top = Math.min(...rows.map((r) => r.depth));
   const last = rows.findLastIndex((r) => r.depth === top);
@@ -3495,8 +3535,8 @@ function workJoints(rows, line) {
     return { arm, beside: n < last ? "connector" : null };
   });
 }
-function isSpacedAbove(milestones, n, isUnfolded) {
-  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0;
+function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
+  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded, isCollapsed).length === 0;
   const above = milestones[n - 1];
   const m = milestones[n];
   return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
@@ -3545,6 +3585,7 @@ function milestoneRow(step, o, items) {
     isChanged,
     isMuted: step.place === "later" || step.place === "dropped",
     foldId: null,
+    foldCount: 0,
     text: m.text || null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
@@ -3645,23 +3686,40 @@ function goalKeyPlan(page) {
     REMOVE_GOAL
   ];
 }
-var rowTarget = (r) => ({ id: r.id, keys: statusKeyPlan(r) });
-function statusKeyRows(page, isUnfolded = () => false) {
+function parentFoldKeys(p, isCollapsed) {
+  if (p.foldCount === 0)
+    return [];
+  return [
+    {
+      press: { action: "toggle-collapse", id: p.id },
+      label: isParentCollapsed(p, isCollapsed) ? "Unfold" : "Fold",
+      hotkey: "f",
+      kind: "view",
+      emphasis: "quiet"
+    }
+  ];
+}
+var rowTarget = (isCollapsed) => (r) => ({
+  id: r.id,
+  keys: [...statusKeyPlan(r), ...r.kind === "subject" ? parentFoldKeys(r, isCollapsed) : []]
+});
+function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false) {
   const fold = page.goal?.milestonesFold ?? null;
+  const toTarget = rowTarget(isCollapsed);
   return [
     { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...fold === null ? [] : [{ id: fold.id, keys: milestonesFoldKeyPlan(page.goal) }],
     ...shownMilestones(page.goal, isUnfolded).flatMap((m) => [
-      { id: m.id, keys: milestoneKeyPlan(m) },
-      ...m.rows.map(rowTarget)
+      { id: m.id, keys: [...milestoneKeyPlan(m), ...parentFoldKeys(m, isCollapsed)] },
+      ...milestoneRows(m, isUnfolded, isCollapsed).map(toTarget)
     ]),
-    ...page.rows.map(rowTarget)
+    ...unfoldedRows(page.rows, isUnfolded, isCollapsed).map(toTarget)
   ].filter((t) => t.keys.length > 0);
 }
-function statusSelected(page, selectedId, isUnfolded = () => false) {
-  const targets = statusKeyRows(page, isUnfolded);
+function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed = () => false) {
+  const targets = statusKeyRows(page, isUnfolded, isCollapsed);
   const opensAsk = (t) => t.keys.some((k) => k.press.action === "show-ask");
-  const isFold = (t) => t.keys.some((k) => k.press.action === "toggle-fold");
+  const isFold = (t) => t.keys.every((k) => k.press.action === "toggle-fold" || k.press.action === "toggle-collapse");
   return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets.find((t) => !isFold(t)) ?? targets[0] ?? null;
 }
 var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
@@ -3970,184 +4028,6 @@ function reopenOnFailure(ledger, id, at) {
 // ../hooks/marks.ts
 function textMark(mark) {
   return mark === CLOSED_MARKS.lapsed ? "\u2298" : mark;
-}
-
-// ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var OTHER_WORK = "Other work";
-var WAS_PREFIX = "was: ";
-var MERGED_PREFIX = "merged in: ";
-var STALL_GAP = " \xB7 ";
-var STATUS_TEXT_LINES = 3;
-var NEW_CLOSED_ROWS = 2;
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function mergedLine(merged, fits) {
-  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
-}
-function nameBeforeStall(name, fits) {
-  const words = name.split(" ");
-  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
-  return cuts.find(fits) ?? cuts.at(-1);
-}
-function statusPage(s, now) {
-  const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => o === null || !isSubjectSeen(o, x);
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items, now);
-  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
-  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
-  const milestoneOf = (x) => {
-    const to = servedBy(x);
-    return to !== undefined && milestoneIds.has(to) ? to : null;
-  };
-  const hasMilestones = milestoneIds.size > 0;
-  const isUnneeded = (x) => servedBy(x) === "none";
-  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const needed = subjects.filter((x) => !isUnneeded(x));
-  const main = needed.filter((x) => !isOther(x));
-  const other = subjects.filter(isOther);
-  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
-  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
-  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
-  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
-  const foldable = open.filter(canFold);
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
-  const split = (part, isLater = false) => {
-    const unseenClosed = unseenClosedOf(part);
-    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
-    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
-    return {
-      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
-      newClosed,
-      named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter(isFoldedOpen),
-      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
-    };
-  };
-  const top = split(main.filter((x) => milestoneOf(x) === null));
-  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
-  const otherUnseenClosed = unseenClosedOf(other);
-  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
-  const otherFolded = other.filter(isOtherFolded);
-  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
-  const ctx = {
-    isNew,
-    isHeld,
-    oldestAskOf,
-    items: s.ledger.items,
-    running,
-    isTurnRunning: s.presence.isTurnRunning,
-    now
-  };
-  const foldCtx = { ...ctx, running: [] };
-  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const closed = named.filter((x) => x.status === status);
-    return closed.length === 0 ? [] : [
-      {
-        kind: "fold",
-        id: `${prefix}also-${status}`,
-        depth,
-        ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
-        subjectIds: closed.map((x) => x.id)
-      }
-    ];
-  });
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
-    {
-      kind: "fold",
-      id: `${prefix}open`,
-      depth,
-      ...SUBJECT_MARKS.queued,
-      text: `${foldedOpen.length} more`,
-      subjectIds: []
-    }
-  ];
-  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
-    {
-      kind: "done-fold",
-      id: `${prefix}done`,
-      depth,
-      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
-    }
-  ];
-  const foldedPart = (prefix, p, depth) => [
-    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
-  ];
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
-    const x = subjects.find((y) => y.id === c.subjectId);
-    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
-  });
-  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
-  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
-  const afterOtherOpen = [
-    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
-    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
-  ];
-  const otherRows = [
-    ...hasMilestones ? looseRows(null, 0) : [],
-    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
-  ];
-  const rows = [
-    ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0),
-    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
-  ];
-  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
-  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-  const withRows = (m, p) => {
-    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
-    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
-    return isShrunk ? {
-      ...m,
-      text: null,
-      isMuted: true,
-      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
-      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
-    } : { ...m, rows };
-  };
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
-    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
-  };
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
-  return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
-    head,
-    isHeadApart: goal === null || goal.isMet,
-    ...goalParts,
-    goal,
-    rows,
-    error: s.overviewFailure ? STATUS_FAILED : null
-  };
-}
-function seenSubjectIds(row) {
-  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
-}
-var listRows = (milestones, rows) => [
-  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
-  ...rows
-];
-function statusListRows(page) {
-  return listRows(page.goal?.milestones ?? [], page.rows);
 }
 
 // ../hooks/timing.ts
@@ -5420,6 +5300,66 @@ function herdrPanelOpener() {
   return (calls, target) => pending ??= open(calls, target).finally(() => {
     pending = null;
   });
+}
+
+// ../hooks/collapse.ts
+var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
+function newsByRow({ ledger, prViews, lastActions }) {
+  const pressed = (id) => lastActions[id]?.at;
+  const prs = Object.values(prViews.views);
+  const timed = (at, untimedUrl = null) => ({ at, untimedUrl, waiting: [] });
+  return new Map([
+    ...ledger.items.map((i) => [i.id, timed(latest(i.reportedAt, pressed(i.id)))]),
+    ...ledger.findings.map((f) => [f.id, timed(latest(f.reopenedAt, pressed(f.id)))]),
+    ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
+      const id = prThreadId(pr, t);
+      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+      return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)];
+    })),
+    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
+      const id = prCheckId(pr, c);
+      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
+      return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)];
+    })),
+    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }])
+  ]);
+}
+var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null) && news.waiting.every((id) => c.waiting?.includes(id));
+function collapsedRows(s) {
+  const news = newsByRow(s);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
+}
+function settledCollapses(s) {
+  if (s.collapsed === undefined)
+    return s;
+  const news = newsByRow(s);
+  let isChanged = false;
+  const kept = Object.entries(s.collapsed).flatMap(([id, c]) => {
+    const n = news.get(id);
+    if (!isUnchanged(n, c)) {
+      isChanged = true;
+      return [];
+    }
+    const waiting = c.waiting?.filter((w) => n?.waiting.includes(w)) ?? [];
+    if (waiting.length === (c.waiting?.length ?? 0))
+      return [[id, c]];
+    isChanged = true;
+    const settled = { at: c.at, ...c.untimedUrl !== undefined && { untimedUrl: c.untimedUrl } };
+    return [[id, waiting.length > 0 ? { ...settled, waiting } : settled]];
+  });
+  return isChanged ? { ...s, collapsed: Object.fromEntries(kept) } : s;
+}
+function withCollapse(s, row, isCollapsed, at) {
+  const news = newsByRow(s);
+  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
+  const untimedUrl = news.get(row)?.untimedUrl ?? null;
+  const waiting = news.get(row)?.waiting ?? [];
+  const collapse = {
+    at,
+    ...untimedUrl !== null && { untimedUrl },
+    ...waiting.length > 0 && { waiting }
+  };
+  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
 }
 
 // ../hooks/catch-up-text.ts
@@ -7039,37 +6979,180 @@ function perTurnStatus(isUpdating, recovery) {
   return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
-// ../hooks/collapse.ts
-var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
-function newsByRow({ ledger, prViews, lastActions }) {
-  const pressed = (id) => lastActions[id]?.at;
-  const prs = Object.values(prViews.views);
-  return new Map([
-    ...ledger.items.map((i) => [i.id, { at: latest(i.reportedAt, pressed(i.id)), untimedUrl: null }]),
-    ...ledger.findings.map((f) => [f.id, { at: latest(f.reopenedAt, pressed(f.id)), untimedUrl: null }]),
-    ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
-      const id = prThreadId(pr, t);
-      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
-      return [id, { at: latest(t.reply?.at, pressed(id)), untimedUrl }];
-    })),
-    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
-      const id = prCheckId(pr, c);
-      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
-      return [id, { at: latest(c.finishedAt, pressed(id)), untimedUrl }];
-    }))
-  ]);
+// ../hooks/status-page.ts
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
+var OTHER_WORK = "Other work";
+var WAS_PREFIX = "was: ";
+var MERGED_PREFIX = "merged in: ";
+var STALL_GAP = " \xB7 ";
+var STATUS_TEXT_LINES = 3;
+var NEW_CLOSED_ROWS = 2;
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function mergedLine(merged, fits) {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
 }
-var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null);
-function collapsedRows(s) {
-  const news = newsByRow(s);
-  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
+function nameBeforeStall(name, fits) {
+  const words = name.split(" ");
+  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
+  return cuts.find(fits) ?? cuts.at(-1);
 }
-function withCollapse(s, row, isCollapsed, at) {
-  const news = newsByRow(s);
-  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
-  const untimedUrl = news.get(row)?.untimedUrl ?? null;
-  const collapse = { at, ...untimedUrl !== null && { untimedUrl } };
-  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
+function statusPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => o === null || !isSubjectSeen(o, x);
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const goalParts = goalPage(o, s.ledger.items, now);
+  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
+  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
+  const milestoneOf = (x) => {
+    const to = servedBy(x);
+    return to !== undefined && milestoneIds.has(to) ? to : null;
+  };
+  const hasMilestones = milestoneIds.size > 0;
+  const isUnneeded = (x) => servedBy(x) === "none";
+  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
+  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
+  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
+  const needed = subjects.filter((x) => !isUnneeded(x));
+  const main = needed.filter((x) => !isOther(x));
+  const other = subjects.filter(isOther);
+  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
+  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
+  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
+  const foldable = open.filter(canFold);
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
+  const split = (part, isLater = false) => {
+    const unseenClosed = unseenClosedOf(part);
+    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
+    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
+    return {
+      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
+      newClosed,
+      named: unseenClosed.slice(NEW_CLOSED_ROWS),
+      foldedOpen: part.filter(isFoldedOpen),
+      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
+    };
+  };
+  const top = split(main.filter((x) => milestoneOf(x) === null));
+  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
+  const otherUnseenClosed = unseenClosedOf(other);
+  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
+  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
+  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
+  const ctx = {
+    isNew,
+    isHeld,
+    oldestAskOf,
+    items: s.ledger.items,
+    running,
+    isTurnRunning: s.presence.isTurnRunning,
+    now
+  };
+  const foldCtx = { ...ctx, running: [] };
+  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+    const closed = named.filter((x) => x.status === status);
+    return closed.length === 0 ? [] : [
+      {
+        kind: "fold",
+        id: `${prefix}also-${status}`,
+        depth,
+        ...SUBJECT_MARKS[status],
+        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
+        subjectIds: closed.map((x) => x.id)
+      }
+    ];
+  });
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}open`,
+      depth,
+      ...SUBJECT_MARKS.queued,
+      text: `${foldedOpen.length} more`,
+      subjectIds: []
+    }
+  ];
+  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
+    {
+      kind: "done-fold",
+      id: `${prefix}done`,
+      depth,
+      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
+    }
+  ];
+  const foldedPart = (prefix, p, depth) => [
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
+  ];
+  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
+    const x = subjects.find((y) => y.id === c.subjectId);
+    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
+  });
+  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
+  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
+  const afterOtherOpen = [
+    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
+    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
+  ];
+  const otherRows = [
+    ...hasMilestones ? looseRows(null, 0) : [],
+    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
+  ];
+  const rows = [
+    ...hasMilestones ? [] : looseRows(null, 0),
+    ...foldedPart("", top, 0),
+    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
+  ];
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
+  const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
+  const withRows = (m, p) => {
+    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
+    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
+    return isShrunk ? {
+      ...m,
+      text: null,
+      isMuted: true,
+      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
+      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
+    } : {
+      ...m,
+      rows,
+      foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
+    };
+  };
+  const g = goalParts.goal;
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  return {
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    head,
+    isHeadApart: goal === null || goal.isMet,
+    ...goalParts,
+    goal,
+    rows,
+    error: s.overviewFailure ? STATUS_FAILED : null
+  };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
 
 // ../hooks/session-view.ts
@@ -7249,11 +7332,11 @@ function rowsInPlace(s) {
 function pruned(s) {
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
-  return {
+  return settledCollapses({
     ...s,
     ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
-  };
+  });
 }
 function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = null, unread = {}) {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
@@ -7442,6 +7525,7 @@ function indented(text, indent, width, maxLines, paint) {
     shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
 }
+var collapsedIn = (view) => (id) => view.collapsed.includes(id);
 
 // src/panel-ask-tree.ts
 var TRUNK = "\u2502  ";
@@ -7539,13 +7623,17 @@ var GLUE = "\uE000";
 function pageLine(d, indent, mark, name, namePaint, {
   stall = null,
   waitsOn = null,
-  text = null
+  text = null,
+  chevron = null
 } = {}) {
   const { width, style: s } = d;
   const textAt = indent + 2;
-  const room = pageRoom(indent, width);
+  const full = pageRoom(indent, width);
+  const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full;
   const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
   const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
+  if (chevron)
+    names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ""} ${chevron.paint(chevron.text)}`;
   const seconds = [...waits, ...text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []];
   return [
     `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
@@ -7583,20 +7671,36 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between =
   const focused = isSelected ? pageFocus(target, d.ui) : -1;
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : [];
 }
+function foldChevron(p, d, isSelected) {
+  if (p.foldCount === 0)
+    return null;
+  const { screen, style: s } = d;
+  return {
+    text: parentChevron(isParentCollapsed(p, collapsedIn(screen.view)), p.foldCount),
+    paint: isSelected ? (t) => s.tone("accent", t) : s.dim
+  };
+}
 function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
   const at = markAt(row.depth);
   const textAt = at + PAGE_TEXT_AT - PAGE_MARK_AT;
   if (row.kind === "subject") {
     const mark = paintMark(row, now, s);
-    const out = pageLine(d, at, mark, row.name, (t) => t, { stall: row.stall, waitsOn: row.waitsOn, text: row.text });
+    const chevron = foldChevron(row, d, isSelected);
+    const isFolded = isParentCollapsed(row, collapsedIn(d.screen.view));
+    const out = pageLine(d, at, mark, row.name, chevron && isSelected ? s.bold : (t) => t, {
+      stall: row.stall,
+      waitsOn: row.waitsOn,
+      text: row.text,
+      chevron
+    });
     const room = pageRoom(at, width);
     if (row.merged)
       out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), textAt, width, STATUS_TEXT_LINES, s.dim));
     if (row.was)
       out.push(...indented(`${WAS_PREFIX}${row.was}`, textAt, width, STATUS_TEXT_LINES, s.dim));
     out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, textAt));
-    return row.hasChildren ? withTree(out, at, null, "\u2502", s) : out;
+    return row.hasChildren && !isFolded ? withTree(out, at, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
     const mark = paintMark(row, now, s);
@@ -7612,7 +7716,9 @@ function drawPageRow(row, d, isSelected = false) {
   }
   if (row.kind === "done-fold") {
     const chevron = d.ui.statusUnfolded.includes(row.id) ? "\u25BE" : "\u25B8";
-    return isSelected ? pageLine(d, at, s.tone("accent", chevron), row.text, s.bold) : pageLine(d, at, s.dim(chevron), row.text, s.dim);
+    return pageLine(d, at, " ", row.text, isSelected ? s.bold : s.dim, {
+      chevron: { text: chevron, paint: isSelected ? (t) => s.tone("accent", t) : s.dim }
+    });
   }
   if (row.kind === "part")
     return ["", partHeading(row.text, width, s)];
@@ -7650,7 +7756,7 @@ function goalPartId(part) {
   return part.is === "keys" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
-function goalSection(page, typing, isUnfolded) {
+function goalSection(page, typing, isUnfolded, isCollapsed) {
   const isTyping = typing === GOAL_KEYS_ID;
   const g = page.goal;
   const milestones = shownMilestones(g, isUnfolded);
@@ -7660,10 +7766,10 @@ function goalSection(page, typing, isUnfolded) {
     goalEntry({ is: "title", goal: g, isTyping }),
     ...fold === null ? [] : [goalEntry({ is: "fold", fold })],
     ...milestones.flatMap((row, n) => {
-      const rows = milestoneRows(row, isUnfolded);
+      const rows = milestoneRows(row, isUnfolded, isCollapsed);
       const joints = workJoints(rows, row.line);
       return [
-        ...isSpacedAbove(milestones, n, isUnfolded) ? [goalEntry({ is: "gap", line: milestones[n - 1]?.line ?? null })] : [],
+        ...isSpacedAbove(milestones, n, isUnfolded, isCollapsed) ? [goalEntry({ is: "gap", line: milestones[n - 1]?.line ?? null })] : [],
         ...row.startsLater ? [goalEntry({ is: "later" })] : [],
         goalEntry({ is: "milestone", row }),
         ...rows.map((r, n) => ({ kind: "page", row: r, joint: joints[n] ?? { arm: null, beside: null } }))
@@ -7709,14 +7815,16 @@ var WORD_GAP = 2;
 function milestoneLines(m, d, isSelected) {
   const { width, now, style: s } = d;
   const mark = paintMark({ ...m, isRunning: false }, now, s);
-  const hasWork = milestoneRows(m, (id) => d.ui.statusUnfolded.includes(id)).length > 0;
+  const isCollapsed = collapsedIn(d.screen.view);
+  const hasWork = milestoneRows(m, (id) => d.ui.statusUnfolded.includes(id), isCollapsed).length > 0;
   const column = m.line ?? (hasWork ? "continues" : null);
   if (m.foldId !== null) {
     const [name = "", ...wrapped] = foldedNameLines(d, mark, m.name, m.foldId, isSelected);
     return [name, ...withPathLine(wrapped, column, s)];
   }
-  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged ? s.bold(t) : t);
-  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text });
+  const chevron = foldChevron(m, d, isSelected);
+  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged || chevron && isSelected ? s.bold(t) : t);
+  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron });
   const room = width - 1 - visibleLength(first) - cellWidth(m.word ?? "");
   const word = m.word !== null && room >= WORD_GAP ? `${" ".repeat(room)}${s.dim(m.word)}` : "";
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
@@ -8105,8 +8213,8 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
     kind: "row",
     line: {
       ...blankLine(foldId(g.kind)),
-      lead: { text: isUnfolded ? "\u25BE" : "\u25B8", tone: "sep" },
-      title: foldLabel(total),
+      lead: g.mark ? null : { text: "", tone: null },
+      title: `${foldLabel(total)} ${isUnfolded ? "\u25BE" : "\u25B8"}`,
       isDim: true,
       fold: g.kind,
       isWaiting: false
@@ -8428,6 +8536,7 @@ var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
 function pageEntries(view, typing, isUnfolded) {
+  const isCollapsed = collapsedIn(view);
   const page = view.statusPage;
   const blank = { kind: "note", text: "" };
   const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: typing === GOAL_KEYS_ID });
@@ -8438,8 +8547,8 @@ function pageEntries(view, typing, isUnfolded) {
     { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
     ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
   ] : [];
-  const top = [...goalSection(page, typing, isUnfolded), ...head.length > 0 ? [blank, ...head] : []];
-  const rows = unfoldedRows(page.rows, isUnfolded).map((row) => ({ kind: "page", row }));
+  const top = [...goalSection(page, typing, isUnfolded, isCollapsed), ...head.length > 0 ? [blank, ...head] : []];
+  const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row) => ({ kind: "page", row }));
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
 }
@@ -8624,8 +8733,9 @@ function handleKey(screen, ui, key, now, text) {
 function pageKey(screen, ui, key, now) {
   const page = screen.view.statusPage;
   const isUnfolded = (id) => ui.statusUnfolded.includes(id);
-  const rows = statusKeyRows(page, isUnfolded);
-  const row = statusSelected(page, ui.selectedId, isUnfolded);
+  const isCollapsed = collapsedIn(screen.view);
+  const rows = statusKeyRows(page, isUnfolded, isCollapsed);
+  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed);
   if (!row)
     return null;
   if (key === "j" || key === "k") {
@@ -8633,15 +8743,24 @@ function pageKey(screen, ui, key, now) {
     const to = rows[steppedIndex(at, key === "k" ? -1 : 1, rows.length)].id;
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
   }
-  const { keys } = row;
-  if (key === "left" || key === "right") {
-    const index = steppedIndex(pageFocus(row, ui), key === "left" ? -1 : 1, keys.length);
+  const keys = drawnKeys(row);
+  const fold = row.keys.find((k) => k.press.action === "toggle-collapse");
+  if (fold && (key === fold.hotkey || key === "enter" && keys.length === 0))
+    return {
+      ui: { ...ui, selectedId: row.id, focus: null, pageReveal: row.id },
+      press: { action: "collapse", id: row.id, isCollapsed: !isCollapsed(row.id) }
+    };
+  const drawn = { id: row.id, keys };
+  if ((key === "left" || key === "right") && keys.length > 0) {
+    const index = steppedIndex(pageFocus(drawn, ui), key === "left" ? -1 : 1, keys.length);
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
   }
-  const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
+  const pressed = key === "enter" ? keys[pageFocus(drawn, ui)] : keys.find((k) => k.hotkey === key);
   if (!pressed)
     return null;
   const { press } = pressed;
+  if (press.action === "toggle-collapse")
+    return null;
   if (press.action === "show-ask")
     return { ui: { ...withTab(ui, "needsYou", now), selectedId: press.askId, openedAt: now } };
   if (press.action === "toggle-fold") {
@@ -8659,6 +8778,7 @@ function pageKey(screen, ui, key, now) {
     press: { action: press.action, id: GOAL_KEYS_ID }
   };
 }
+var drawnKeys = (target) => target.keys.filter((k) => k.press.action !== "toggle-collapse");
 var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
 
 // src/panel-draw.ts
@@ -8867,7 +8987,7 @@ function footer(d, isPageScrolling) {
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
   const hints = ui.typing !== null ? [`\u21B5 ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
-    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id)),
+    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view)),
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
     "? help"
@@ -8909,11 +9029,18 @@ function scrolled(body, selectedAt, room, s) {
     clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
   return clip;
 }
-function statusHints(page, selectedId, isUnfolded) {
-  if (statusKeyRows(page, isUnfolded).length === 0)
+function statusHints(page, selectedId, isUnfolded, isCollapsed) {
+  if (statusKeyRows(page, isUnfolded, isCollapsed).length === 0)
     return [];
-  const isPicking = (statusSelected(page, selectedId, isUnfolded)?.keys.length ?? 0) > 1;
-  return ["j k select", ...isPicking ? ["\u2190\u2192 pick"] : [], "\u21B5 press"];
+  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed);
+  const fold = selected?.keys.find((k) => k.press.action === "toggle-collapse");
+  const isPicking = (selected ? drawnKeys(selected).length : 0) > 1;
+  return [
+    "j k select",
+    ...isPicking ? ["\u2190\u2192 pick"] : [],
+    "\u21B5 press",
+    ...fold ? [`${fold.hotkey} ${fold.label.toLowerCase()}`] : []
+  ];
 }
 
 // src/panel.ts
@@ -8980,7 +9107,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
-  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id));
+  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view));
   let pageSelectedAt = null;
   const subjectAt = [];
   for (const e of entries) {
@@ -9866,6 +9993,7 @@ var CLIENTS = {
       "status-goal": { kind: "full" },
       "status-done-fold": { kind: "full" },
       "status-named-fold": { kind: "full" },
+      "status-parent-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" },
       "status-idle-age": { kind: "full" },
       "question-back-stays-open": { kind: "full" },
@@ -10002,6 +10130,10 @@ var CLIENTS = {
         reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
       },
       "status-named-fold": { kind: "full" },
+      "status-parent-fold": {
+        kind: "different",
+        reason: "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection."
+      },
       "seen-on-screen": { kind: "full" },
       "status-idle-age": { kind: "full" },
       "question-back-stays-open": {
@@ -10093,6 +10225,7 @@ var CLIENTS = {
       "status-goal": { kind: "full" },
       "status-done-fold": { kind: "full" },
       "status-named-fold": { kind: "full" },
+      "status-parent-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" },
       "status-idle-age": { kind: "full" },
       "question-back-stays-open": { kind: "full" },

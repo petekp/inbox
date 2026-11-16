@@ -24,6 +24,11 @@ export type MilestoneRow = {
   isMuted: boolean
   /** The fold a done milestone holds its work in once the person has seen it, so a look draws its rows only unfolded. */
   foldId: string | null
+  /**
+   * The work under it, which a fold on its name hides: its subjects, folded ones too, and running work linked to none.
+   * 0 while it has a done fold or draws no rows, and its name then folds nothing. `statusPage` fills it.
+   */
+  foldCount: number
   /** Where it stands. Null when it says nothing. */
   text: string | null
   /** The plan a change replaced, while the person has not seen it. */
@@ -141,6 +146,7 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     isChanged,
     isMuted: step.place === 'later' || step.place === 'dropped',
     foldId: null,
+    foldCount: 0,
     text: m.text || null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),

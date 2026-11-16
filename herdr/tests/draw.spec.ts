@@ -157,7 +157,6 @@ test('a met goal draws a ✓ in the success tone beside its Goal met label, its 
   expect(shut.find(b => b.id === fold.id)).toMatchObject({
     kind: 'fold',
     text: fold.text,
-    isLabelFirst: true,
     isOpen: false,
   })
   expect(shut.some(b => milestoneIds.includes(b.id))).toBe(false)

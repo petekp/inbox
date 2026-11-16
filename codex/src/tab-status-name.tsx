@@ -31,11 +31,19 @@ function fitNameLine(el: HTMLElement | null, name: string) {
 }
 
 /**
- * A row's name with its stall word after `STALL_GAP`, muted, on the line of the name's last word, which a
- * wrap never splits from them.
+ * A row's name with its stall word after `STALL_GAP`, muted, then a parent's chevron, on the line of the name's last
+ * word, which a wrap never splits from them.
  */
-export function NameLine({ name, stall }: { name: string; stall: StatusStall | null }) {
-  if (!stall)
+export function NameLine({
+  name,
+  stall,
+  chevron = null,
+}: {
+  name: string
+  stall: StatusStall | null
+  chevron?: string | null
+}) {
+  if (!stall && !chevron)
     return (
       <div class="clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
         {name}
@@ -49,8 +57,13 @@ export function NameLine({ name, stall }: { name: string; stall: StatusStall | n
         <span class="head">{head}</span>
         <span class="unbroken">
           <span class="last">{last}</span>
-          <span class="muted">{STALL_GAP}</span>
-          <span class="muted">{stall.text}</span>
+          {stall ? (
+            <>
+              <span class="muted">{STALL_GAP}</span>
+              <span class="muted">{stall.text}</span>
+            </>
+          ) : null}
+          {chevron ? <span class="muted parent-chevron"> {chevron}</span> : null}
         </span>
       </span>
     </div>

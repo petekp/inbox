@@ -4,7 +4,7 @@ import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
-import { goalPage, metMilestonesFold, oldestAsk, shownMilestones } from './status-goal-page'
+import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
 import { childRow, countsByMark, namedList, partRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
@@ -46,6 +46,8 @@ export type StatusRow = {
       was: string | null
       /** Whether rows of its children follow, so its tree line runs down from its mark. */
       hasChildren: boolean
+      /** Its children, which a fold on its name hides. 0 while it draws none, and its name then takes no press. */
+      foldCount: number
       /** The oldest open ask that holds it up, which its View button opens. Null while no open ask holds it up. */
       ask: { id: string; kind: Item['kind'] } | null
     }
@@ -356,6 +358,7 @@ export function statusPage(
         isChildRunning(c, now) &&
         (p.shown.some(x => x.id === c.subjectId) || loose.some(l => l.child === c && l.milestoneId === m.id)),
     )
+  const workCount = (p: PartSplit) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length
   /** Whether every row under a milestone is seen and finished, with no running work under it. */
   const isAllSeen = (m: MilestoneRow, p: PartSplit) =>
     p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some(l => l.milestoneId === m.id)
@@ -375,7 +378,11 @@ export function statusPage(
           foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
           rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1),
         }
-      : { ...m, rows }
+      : {
+          ...m,
+          rows,
+          foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter(l => l.milestoneId === m.id).length,
+        }
   }
   const g = goalParts.goal
   const goal = g && {
@@ -401,23 +408,4 @@ export function statusPage(
 /** The subjects a look counts as seen while `row` is on screen. */
 export function seenSubjectIds(row: StatusRow): string[] {
   return row.kind === 'subject' ? [row.id] : row.kind === 'fold' ? row.subjectIds : []
-}
-
-const listRows = (milestones: MilestoneRow[], rows: StatusRow[]) => [
-  ...milestones.flatMap(m => (m.foldId === null ? m.rows : [])),
-  ...rows,
-]
-
-/**
- * Every row of the Status's list in the order the looks draw them: each milestone's rows, then the list after the goal.
- * A milestone folded to its name holds none. The rows of milestones behind a met goal's shut fold are included, which
- * `drawnStatusRows` leaves out.
- */
-export function statusListRows(page: StatusPage): StatusRow[] {
-  return listRows(page.goal?.milestones ?? [], page.rows)
-}
-
-/** The rows of the Status's list a look draws while `isUnfolded` says which folds are open. */
-export function drawnStatusRows(page: StatusPage, isUnfolded: (id: string) => boolean): StatusRow[] {
-  return listRows(shownMilestones(page.goal, isUnfolded), page.rows)
 }

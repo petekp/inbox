@@ -1,8 +1,10 @@
+import { milestoneRows, unfoldedRows } from '../../hooks/status-folds'
 import { shownMilestones } from '../../hooks/status-goal-page'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { statusUnfolded, tabState } from './tab-state'
+import { isParentFolded } from './tab-status-fold'
 import { stepLines } from './tab-line-steps'
 import type { TextLine } from './tab-line-steps'
 
@@ -32,7 +34,7 @@ export const headApartMotion = (id: string) => `apart-${id}`
 const milestoneLines = (milestones: MilestoneRow[]): GoalLine[] =>
   milestones.flatMap(m => [
     { id: m.id, milestone: m },
-    ...(m.foldId === null ? m.rows : []).map(r => ({ id: r.id, row: r })),
+    ...(m.foldId === null ? milestoneRows(m, () => false, isParentFolded) : []).map(r => ({ id: r.id, row: r })),
   ])
 
 /** The goal's lines that step: the milestones it draws, none while a met goal's fold is shut. */
@@ -64,6 +66,13 @@ export function stepStatus(page: StatusPage, now: number, changed: Set<string>, 
     fold: stepLines(fold ? [{ id: 'milestones', fold }] : [], last?.fold, metFoldMotion, now, changed, kept),
     goal: stepLines(goalLines(page), last?.goal, goalLineMotion, now, changed, kept),
     apart: stepLines(apart ? [{ id: 'head', head: apart }] : [], last?.apart, headApartMotion, now, changed, kept),
-    rows: stepLines(page.rows, last?.rows, statusRowMotion, now, changed, kept),
+    rows: stepLines(
+      unfoldedRows(page.rows, () => false, isParentFolded),
+      last?.rows,
+      statusRowMotion,
+      now,
+      changed,
+      kept,
+    ),
   }
 }

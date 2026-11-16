@@ -240,7 +240,7 @@
   padding: 0;
 }
 .status-page .milestone-fold .icon {
-  margin-right: 0;
+  margin-left: 0;
 }
 /* "Other work" at the text column, then a solid rule to the tab's edge. */
 .status-page .row.part-line {
@@ -283,10 +283,29 @@
   display: flex;
   gap: 6px;
 }
-/* A done fold draws as the Closed fold does: its chevron in the mark column and its count at the text column. */
+/* A done fold draws as the Closed fold does: its count at the text column, its chevron after it. */
 .status-page .row.fold-row {
   display: block;
 }
 .status-page .fold-row .fold {
-  margin: 0 0 0 -1px;
+  margin: 0 0 0 calc(var(--text-x) - var(--mark-x) - 4px);
+}
+/* A parent's name line takes the click that folds its rows. Its chevron sits after the name, in the muted tone. */
+.status-page .parent-name {
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.status-page .parent-name:hover {
+  background-color: var(--row-hover);
+}
+.still .status-page .parent-name:not(:active):hover {
+  background-color: transparent;
+}
+.status-page .parent-name:focus-visible {
+  outline: 1px solid var(--soft);
+}
+.status-page .parent-chevron {
+  white-space: nowrap;
 }

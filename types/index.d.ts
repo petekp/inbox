@@ -516,9 +516,10 @@ export type Cursor = { id: string | null; index: number; openedAt: number }
 
 /**
  * A row's collapse: when, and the address of the row's newest entry GitHub gave no time, as it was then. A new such
- * entry has another address, so it counts as new.
+ * entry has another address, so it counts as new. A Status parent, a subject or a milestone, also keeps the ids of the
+ * asks and delegates under it that waited on the person then, so one that starts waiting after counts as new.
  */
-export type RowCollapse = { at: number; untimedUrl?: string }
+export type RowCollapse = { at: number; untimedUrl?: string; waiting?: string[] }
 
 export type PrViews = {
   views: Record<string, PrView>
@@ -734,8 +735,9 @@ export type Session = {
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**
-   * The rows the person collapsed, each with when, by row id. A row stays collapsed until something new arrives on it,
-   * as `hooks/collapse.ts:collapsedRows` decides.
+   * The rows the person collapsed, each with when, by row id: rows of the Asks, Finds and PRs tabs, and Status parents
+   * folded by their name. A row stays collapsed until something new arrives on it, as
+   * `hooks/collapse.ts:collapsedRows` decides.
    */
   collapsed: Record<string, RowCollapse>
   /**

@@ -26,6 +26,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-status.tsx` | Codex adapter. The Status tab: the goal and its milestones, a met goal's folded milestones, and the goal's text field. |
 | `codex/src/tab-status-line.tsx` | Codex adapter. A Status row with its keys and presses, the done folds' toggle, and the fitting of merged lines to the width. |
 | `codex/src/tab-shown.ts` | Codex adapter. The Status subject rows the tab had on screen since its last view request, which the request sends. |
+| `codex/src/tab-status-fold.tsx` | Codex adapter. A Status parent's name line as its fold: the chevron after it, the click and keyboard press, and the collapse it sends. |
 | `codex/src/tab-status-name.tsx` | Codex adapter. A Status row's name line, cut so that it and its stall word fit the lines it may take. |
 | `codex/src/tab-chrome.tsx` | Codex adapter. The tab bar, the footer's status, Help, and the demo toggle. |
 | `codex/src/tab-herdr-ask.tsx` | Codex adapter. The question before the tab installs the inbox's Herdr mod, drawn as a banner under the tab bar with Install filled. Each press goes to the server through `inbox_press`, and the press's result stays for `SETTLED_MS`. |

@@ -42,6 +42,7 @@ import {
   tabUndo,
   withChange,
   withDrawnRows,
+  withCollapsed,
   withSelected,
   withTab,
   withoutConfirmed,
@@ -330,6 +331,7 @@ export default class Inbox extends View {
     this.listInput = withListInput(this.listInput, now)
     const d = b.does
     if (d.is === 'view') this.change(d.change)
+    else if (d.is === 'collapse') this.collapse(d.id, d.isCollapsed, cx)
     else if (d.is === 'press') {
       if ('id' in d.press && d.press.action === 'undo') this.ui = withSelected(this.ui, d.press.id)
       this.send(d.press, d.effects, b.label, cx)
@@ -345,7 +347,7 @@ export default class Inbox extends View {
     if (this.sessionId === null || read === null) return
     const c = { isCollapsed, at: Date.now() }
     this.collapses = { ...this.collapses, [id]: c }
-    this.ui = { ...withSelected(this.ui, id), ...(isCollapsed && { typing: null }) }
+    this.ui = withCollapsed(this.ui, id, isCollapsed)
     this.closeStaleField()
     const to = { appHome: appHome(), sessionId: this.sessionId }
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c))
