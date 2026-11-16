@@ -266,6 +266,42 @@ test('folding a milestone down to its name takes the list’s height down on eve
   expect(opens.stalled).toBe(0)
 })
 
+const { allOf, openPanel, setZoom } = await import('./gpui-stand-in')
+const { layout } = await import('./frames')
+
+test.each([1, 0.9])(
+  'at zoom %p, once the app reports sizes scaled by the zoom, every box in any tab is drawn at its content’s height',
+  async zoom => {
+    setZoom(zoom)
+    const { paint, click, measure } = await openPanel()
+    const laidOut = () => {
+      const root = paint()
+      const list = allOf(root).find(n => n.id === 'inbox-list')!
+      const [chrome, inList] = [layout(root, () => undefined), layout(list, () => undefined, LINE_HEIGHT)]
+      const placed = new Map([...chrome.placed, ...inList.placed])
+      return { root, placed, fits: [...chrome.fits, ...inList.fits] }
+    }
+    const misfitsIn = (tab: string) => {
+      click(allOf(paint()).find(n => n.label?.startsWith(tab))!)
+      for (let i = 0; i < 3; i++) {
+        const { root, placed } = laidOut()
+        const heightOf = (n: Parameters<typeof placed.get>[0]) =>
+          n.id === 'inbox-list' ? 100_000 : (placed.get(n)?.height ?? 0)
+        measure(n => ({ width: 300 * zoom, height: heightOf(n) * zoom }), root)
+      }
+      const { fits } = laidOut()
+      expect(fits.length).toBeGreaterThan(0)
+      return fits.filter(f => Math.abs(f.height - f.content) > 0.5)
+    }
+    try {
+      for (const tab of ['Asks', 'Status', 'Finds', 'PRs'])
+        expect({ tab, misfits: misfitsIn(tab) }).toEqual({ tab, misfits: [] })
+    } finally {
+      setZoom(1)
+    }
+  },
+)
+
 test('a block that leaves slides its content up by the slide offset as it fades, and one that enters slides down from it', () => {
   const some = asks(['d11', 'd12'])
   const fewer = asks(['d11'])
