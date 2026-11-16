@@ -282,3 +282,24 @@ test('a Status saved before looks counted rows on screen counts every subject th
     s2: null,
   })
 })
+
+test('a Status saved before lastCallReadAt counts the finishes it holds as read, and one saved with none keeps none', () => {
+  const child = (id: string, endedAt: number | null) => ({
+    id,
+    ref: `herdr:${id}`,
+    kind: 'delegate',
+    name: id,
+    subjectId: null,
+    startedAt: 1,
+    endedAt,
+    lastActivityAt: 1,
+    delegateState: endedAt === null ? 'running' : 'finished',
+  })
+  const { lastCallReadAt: _, ...old } = EMPTY_SESSION_STATUS
+  const children = [child('a', 300), child('b', 500), child('c', null)]
+
+  expect(upgradeStatus({ ...old, children })?.lastCallReadAt).toBe(500)
+  expect(upgradeStatus({ ...old, children: [child('c', null)] })?.lastCallReadAt).toBeNull()
+  expect(upgradeStatus({ ...EMPTY_SESSION_STATUS, children })?.lastCallReadAt).toBeNull()
+  expect(upgradeStatus({ ...EMPTY_SESSION_STATUS, children, lastCallReadAt: 400 })?.lastCallReadAt).toBe(400)
+})

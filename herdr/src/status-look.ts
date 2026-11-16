@@ -40,7 +40,7 @@ export function isPaneShown(
  * The Status rows as the list lays them out at rest: each row's first line, from the list's first block, with the
  * subjects it stands for, and the height of all the blocks. `room` is the list's height between its edge fades.
  */
-export type StatusPlaced = { rows: { top: number; subjects: string[] }[]; height: number; room: number }
+type StatusPlaced = { rows: { top: number; subjects: string[] }[]; height: number; room: number }
 
 /**
  * Where each Status row sits in the list, from the heights the look measured. Null while a block has no measured
@@ -103,7 +103,7 @@ export function statusDrawn(
 }
 
 /** A look at a session's Status that ended, for the host on its terminal. */
-export type EndedLook = { sessionId: string; terminal: string; look: ReportedLook }
+type EndedLook = { sessionId: string; terminal: string; look: ReportedLook }
 
 type Run = {
   sessionId: string

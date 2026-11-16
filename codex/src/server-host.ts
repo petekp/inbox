@@ -12,6 +12,7 @@ import type { RowPress } from '../../hooks/presses'
 import { turnEnded, turnStarted } from '../../hooks/session-turns'
 import type { SendOutcome } from '../../hooks/session-presses'
 import { fetchPrs, prFetchTracker } from '../../hooks/host-prs'
+import type { Background } from './background'
 import { NO_PR_SHARED } from '../../hooks/pr-fetch'
 import type { PrShared } from '../../hooks/pr-fetch'
 import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/host-press'
@@ -41,16 +42,17 @@ export function makeSessionHost(
   newestTurns: Map<string, string>,
   hooksTrustNow: (s: SessionState, id: string) => HooksTrust | null,
   currentPage: () => Promise<string>,
+  background: Background,
 ) {
   const { dir, now } = deps
   const gh = ghFinder(deps.exec)
   const prFetches = prFetchTracker(now, id => {
-    void hostFor(id)
-      .update(s => {
+    background.track(
+      hostFor(id).update(s => {
         const prFetchPid = prFetches.isFetching(id) ? process.pid : undefined
         return s.prFetchPid === prFetchPid ? s : { ...s, prFetchPid }
-      })
-      .catch(() => undefined)
+      }),
+    )
   })
   let isGhMissing = false
   let prShared: PrShared = NO_PR_SHARED
@@ -139,7 +141,8 @@ export function makeSessionHost(
 
   function fetchPrsWhenDue(id: string, s: SessionState) {
     const seen = { ...s, prViews: { ...s.prViews, isGhMissing } }
-    void prFetches.fetchWhenDue(id, seen, s.shownTab === 'prs', () => fetchPrs(hostFor(id), true))
+    const run = prFetches.fetchWhenDue(id, seen, s.shownTab === 'prs', () => fetchPrs(hostFor(id), true))
+    if (run) background.track(run)
   }
 
   const served = async (s: SessionState, id: string, isDemo = false, holds: Holds = NO_HOLDS): Promise<TabView> => {

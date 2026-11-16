@@ -55,16 +55,6 @@ body {
   cursor: default;
   user-select: none;
 }
-/* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */
-.status-head,
-.status-page .content,
-.earlier,
-.body,
-.panel .muted,
-.settled-line .what,
-.pr-head,
-.pr-order,
-.tone-error,
 input,
 textarea {
   cursor: auto;

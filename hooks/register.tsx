@@ -61,7 +61,7 @@ import {
 } from './children'
 import { CATCH_UP_CALL, runUpdates } from './session-host'
 import { heardCall } from './call-record'
-import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue } from './host-prs'
+import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue, PR_POLL_MS } from './host-prs'
 import { tabPrs } from './pr-fetch'
 import type { FetchAsk } from './pr-fetch'
 import { prSharedStore } from './mod-pr-shared'
@@ -109,7 +109,6 @@ import {
   type HerdrCalls,
 } from './mod-herdr'
 import { ago, cellWidth, turnReply } from './text'
-import { COMPARE_PAGE_FILE } from './press-messages'
 import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
 import { isPressConfirmed, type Effect } from './press-reducer'
 import { openTarget } from './open-targets'
@@ -117,7 +116,8 @@ import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
-import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
+import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf } from './banners'
+import { comparePagePath, readIsNextBuild } from './mod-plugin-files'
 import { bandCounts, isMaybeStale, noCountsText } from './band'
 import {
   drawnLists,
@@ -245,7 +245,6 @@ import {
   type ModSession,
   NO_SESSION,
   type Owner,
-  PR_POLL_MS,
   PRESENT,
   resultsOrder,
   type SavedRecord,
@@ -734,11 +733,6 @@ async function deliver($: EngineInterface, owner: Owner, text: string, deliveryI
   )
 
   return outcome
-}
-
-/** The page template for a comparison, as the mod ships it. */
-function comparePagePath($: EngineInterface): string {
-  return `${$.plugin.root}/hooks/${COMPARE_PAGE_FILE}`
 }
 
 /** The mod's SessionHost for the conversation `owner`, with copies going to `surface`. */
@@ -2015,10 +2009,6 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
   await followNewRows($, true)
 }
 
-function readIsNextBuild($: EngineInterface): Promise<boolean> {
-  return $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
-}
-
 function registerInboxCommand($: EngineInterface) {
   return $.command.register({ name: 'inbox', description: INBOX_COMMAND_TEXT, immediate: true }).catch(() => undefined)
 }
@@ -3152,8 +3142,9 @@ export const register: Register = on => {
     const top = isListShown ? firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions)) : null
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
-    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
-    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
+    const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
+    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded) : null
+    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage, isStatusUnfolded) : []
 
     const {
       desktopColumnPt,

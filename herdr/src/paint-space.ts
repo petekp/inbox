@@ -67,13 +67,13 @@ function aboveOf(prev: Block | null, b: Block, section: number | null): number {
 export const panelId = (id: string): string => `panel ${id}`
 
 /** The key a row's title is measured under. */
-export const titleId = (id: string): string => `title ${id}`
+const titleId = (id: string): string => `title ${id}`
 
 /** The key a row's lines under its title, with its panel, are measured under. */
 export const restId = (id: string): string => `rest ${id}`
 
 /** A drawn block and the space above it. */
-export type Space = { block: Block; above: number }
+type Space = { block: Block; above: number }
 
 /**
  * Each drawn block with the space above it, from the last block above it that is not shut. A gap block draws nothing

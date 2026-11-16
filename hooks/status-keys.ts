@@ -1,13 +1,14 @@
 import type { Item, PressKind } from '../types'
 import { UNDO_KEY } from './help'
 import type { ActionEmphasis } from './rows'
-import type { MilestoneRow } from './status-goal-page'
+import { shownMilestones } from './status-goal-page'
+import type { GoalBlock, MilestoneRow } from './status-goal-page'
 import type { StatusPage, StatusRow } from './status-page'
 
 /**
  * A press on the Status page. `show-ask` opens Asks with that ask selected. `type-goal` opens Reply's field for the
- * goal, prefilled with `text`. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold or a
- * done milestone folded to its name, or folds it again, in the look that drew it. None sends a message.
+ * goal, prefilled with `text`. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, a
+ * done milestone folded to its name or a met goal's milestones, or folds it again, in the look that drew it. None sends a message.
  */
 type StatusPress =
   | { action: 'show-ask'; askId: string }
@@ -65,6 +66,13 @@ export function milestoneKeyPlan(m: MilestoneRow): StatusKey[] {
   return m.ask === null ? [] : [viewAsk(m.ask)]
 }
 
+/** The fold a met goal's milestones start in, which each look draws as its fold line. */
+function milestonesFoldKeyPlan(g: GoalBlock | null): StatusKey[] {
+  const fold = g?.milestonesFold ?? null
+
+  return fold === null ? [] : [toggleFold(fold.id, fold.text)]
+}
+
 const REMOVE_GOAL: StatusKey = {
   press: { action: 'remove-goal' },
   label: 'Remove',
@@ -110,12 +118,19 @@ const rowTarget = (r: StatusRow): StatusKeyTarget => ({ id: r.id, keys: statusKe
 
 /**
  * Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. The
- * goal's buttons come first, as its section does, and a milestone's rows follow it.
+ * goal's buttons come first, as its section does, then a met goal's milestones fold, then the milestones a look draws,
+ * each with its rows after it. `isUnfolded` says which folds the look has open.
  */
-export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
+export function statusKeyRows(page: StatusPage, isUnfolded: (id: string) => boolean = () => false): StatusKeyTarget[] {
+  const fold = page.goal?.milestonesFold ?? null
+
   return [
     { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
-    ...(page.goal?.milestones ?? []).flatMap(m => [{ id: m.id, keys: milestoneKeyPlan(m) }, ...m.rows.map(rowTarget)]),
+    ...(fold === null ? [] : [{ id: fold.id, keys: milestonesFoldKeyPlan(page.goal) }]),
+    ...shownMilestones(page.goal, isUnfolded).flatMap(m => [
+      { id: m.id, keys: milestoneKeyPlan(m) },
+      ...m.rows.map(rowTarget),
+    ]),
     ...page.rows.map(rowTarget),
   ].filter(t => t.keys.length > 0)
 }
@@ -125,8 +140,12 @@ export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
  * first that is not a done fold, else the first. An ask holds up work and a missing goal does not, so View wins over
  * New.
  */
-export function statusSelected(page: StatusPage, selectedId: string | null): StatusKeyTarget | null {
-  const targets = statusKeyRows(page)
+export function statusSelected(
+  page: StatusPage,
+  selectedId: string | null,
+  isUnfolded: (id: string) => boolean = () => false,
+): StatusKeyTarget | null {
+  const targets = statusKeyRows(page, isUnfolded)
   const opensAsk = (t: StatusKeyTarget) => t.keys.some(k => k.press.action === 'show-ask')
   const isFold = (t: StatusKeyTarget) => t.keys.some(k => k.press.action === 'toggle-fold')
 

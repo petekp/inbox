@@ -454,3 +454,38 @@ test('serves-linked counts a link to a dropped or unknown milestone as no link',
     }),
   ).not.toEqual([])
 })
+
+function metGoal(s: Scene) {
+  SCENES['held-milestone']!.good!(s)
+  s.after.subjects = [
+    subject('s1', 'done', 'Sync engine', 'syncs on reconnect', 10),
+    subject('s2', 'done', 'Sync conflicts', 'merged by hand', 10),
+  ]
+  s.after.milestones = s.after.milestones.map(m => ({
+    ...m,
+    status: 'done' as const,
+    changedAt: minutes(10),
+    closedAt: minutes(10),
+  }))
+  s.after.goal = { ...s.after.goal!, metAt: minutes(10) }
+  s.after.children = s.after.children.map(c => ({ ...c, endedAt: minutes(9) }))
+  s.after.askSubjects = {}
+  s.items = []
+}
+
+test("finished-named counts unseen pieces behind a met goal's shut fold, and fails a piece left off the page", () => {
+  const scene = baseScene()
+  metGoal(scene)
+
+  expect(scene.after.lastLookAt).toBeNull()
+  expect(contextOf(scene).result.page.goal?.milestonesFold).not.toBeNull()
+  expect(failuresOf('finished-named', metGoal)).toEqual([])
+  expect(
+    failuresOf('finished-named', s => {
+      metGoal(s)
+      s.page = p => {
+        for (const m of p.goal!.milestones) m.rows = m.rows.filter(r => !(r.kind === 'subject' && r.id === 's1'))
+      }
+    }),
+  ).not.toEqual([])
+})

@@ -130,7 +130,7 @@ function isNumberOnly(name) {
 }
 var VERSION = /^v?\d+(\.\d+)+$/;
 function namesOtherVersion(name, other) {
-  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, ""));
+  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
   const mine = versions(name);
   const theirs = new Set(versions(other));
   return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
@@ -999,6 +999,10 @@ function missedOf(saved, ids) {
   const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
   return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
 }
+function newestEnd(children) {
+  const ends = children.flatMap((c) => c.endedAt === null ? [] : [c.endedAt]);
+  return ends.length === 0 ? null : Math.max(...ends);
+}
 function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null) return null;
@@ -1026,7 +1030,7 @@ function upgradeStatus(saved) {
     lastLookAt: time2(o.lastLookAt),
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
-    lastCallReadAt: time2(o.lastCallReadAt),
+    lastCallReadAt: "lastCallReadAt" in o ? time2(o.lastCallReadAt) : newestEnd(children),
     ...goal
   };
 }
@@ -1932,80 +1936,13 @@ var MARK_LEGEND = [
   }
 ];
 
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-function isHeldSend(last) {
-  return last?.delivery?.state === "held";
-}
-
-// ../hooks/status-children.ts
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
-}
-function isFinishedAfter(c, at) {
-  return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
-}
-function isChildShown(c, now, lastLookAt) {
-  return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
-}
-function subjectsText(o, now) {
-  const subjects = o?.subjects ?? [];
-  const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
-  const open2 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"} | ${ago(now - s.changedAt)}${serves(s.id)}`);
-  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open2.join(NL) || "(none yet)", finished: finished.join(NL) };
-}
-function servesText(o, subjectId) {
-  const to = o.serves[subjectId];
-  return to === void 0 ? "?" : to === "none" ? "-" : to;
-}
-function asksText(o, asks) {
-  return asks.map((a) => {
-    const held = `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(", ") || "-"}`;
-    const why = a.context ? clipWords(a.context.replaceAll("|", "/"), ASK_READ_WORDS) : "";
-    return why === "" ? held : `${held} | ${why}`;
-  }).join(NL);
-}
-function runningText(o, now) {
-  const isSubjectOpen = (id) => id === null || (o?.subjects.some((s) => s.id === id && isOpen(s)) ?? false);
-  const isFinishNew = (c) => isFinishedAfter(c, o?.lastCallReadAt ?? null) && isSubjectOpen(c.subjectId);
-  const state = (c) => !isChildRunning(c, now) ? "finished" : c.delegateState === "blocked" ? "blocked" : "running";
-  return (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishNew(c)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"} | ${state(c)}`).join(NL);
-}
-function subjectSeenAt(o, id) {
-  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
-}
-function isSubjectSeen(o, s) {
-  const seenAt = subjectSeenAt(o, s.id);
-  return seenAt !== null && s.changedAt <= seenAt;
-}
-
 // ../hooks/status-page-parts.ts
+var LISTED_NAMES = 2;
+var namedFoldMore = (n) => `+${n} more`;
+function namedList(names) {
+  const hidden = names.length - LISTED_NAMES;
+  return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
+}
 var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
@@ -2138,6 +2075,12 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
+var MILESTONES_FOLD_PREFIX = "goal-milestones";
+var MET_LABEL = "Goal met";
+function metMilestonesFold(g, milestones, isWorkClosed) {
+  const isFolded = g.metAt !== null && milestones.length > 0 && milestones.every((m) => m.place === "done" && isWorkClosed(m));
+  return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map((m) => m.name)) } : null;
+}
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -2186,18 +2129,95 @@ function goalPage(o, items, now) {
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items));
   return {
     goal: {
-      label: isMet ? "Goal met" : GOAL_HEADING,
+      label: isMet ? MET_LABEL : GOAL_HEADING,
+      mark: isMet ? SUBJECT_MARKS.done : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
-      now: nowText !== null && !isNowSaid ? `Now: ${nowText}` : null,
+      // A met goal's head draws in its own section, since the work no longer serves the goal.
+      now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : milestonePath(shown, now).map((step) => milestoneRow(step, o, items))
+      milestonesFold: null,
+      milestones
     },
     canRestoreGoal: false
   };
+}
+
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
+}
+
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function isFinishedAfter(c, at) {
+  return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
+}
+function isChildShown(c, now, lastLookAt) {
+  return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
+}
+function subjectsText(o, now) {
+  const subjects = o?.subjects ?? [];
+  const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
+  const open2 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"} | ${ago(now - s.changedAt)}${serves(s.id)}`);
+  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
+  return { open: open2.join(NL) || "(none yet)", finished: finished.join(NL) };
+}
+function servesText(o, subjectId) {
+  const to = o.serves[subjectId];
+  return to === void 0 ? "?" : to === "none" ? "-" : to;
+}
+function asksText(o, asks) {
+  return asks.map((a) => {
+    const held = `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(", ") || "-"}`;
+    const why = a.context ? clipWords(a.context.replaceAll("|", "/"), ASK_READ_WORDS) : "";
+    return why === "" ? held : `${held} | ${why}`;
+  }).join(NL);
+}
+function runningText(o, now) {
+  const isSubjectOpen = (id) => id === null || (o?.subjects.some((s) => s.id === id && isOpen(s)) ?? false);
+  const isFinishNew = (c) => isFinishedAfter(c, o?.lastCallReadAt ?? null) && isSubjectOpen(c.subjectId);
+  const state = (c) => !isChildRunning(c, now) ? "finished" : c.delegateState === "blocked" ? "blocked" : "running";
+  return (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishNew(c)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"} | ${state(c)}`).join(NL);
+}
+function subjectSeenAt(o, id) {
+  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
+}
+function isSubjectSeen(o, s) {
+  const seenAt = subjectSeenAt(o, s.id);
+  return seenAt !== null && s.changedAt <= seenAt;
 }
 
 // ../hooks/status-page.ts
@@ -2205,8 +2225,6 @@ var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
-var NAMED_FOLD_NAMES = 2;
-var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
   const o = s.ledger.overview;
@@ -2276,16 +2294,13 @@ function statusPage(s, now) {
   const foldCtx = { ...ctx, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
     const closed = named.filter((x) => x.status === status);
-    const names = closed.map((x) => x.name);
-    const hidden = names.length - NAMED_FOLD_NAMES;
-    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
-    return names.length === 0 ? [] : [
+    return closed.length === 0 ? [] : [
       {
         kind: "fold",
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
         subjectIds: closed.map((x) => x.id)
       }
     ];
@@ -2342,11 +2357,14 @@ function statusPage(s, now) {
     ...foldedPart("", top, 0),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some(
+    (c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id))
+  );
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
     const rows2 = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
     const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isAllSeen = p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
       ...m,
       text: null,
@@ -2356,11 +2374,16 @@ function statusPage(s, now) {
     } : { ...m, rows: rows2 };
   };
   const g = goalParts.goal;
-  const goal = g && { ...g, milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n])) };
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
+    isHeadApart: goal === null || goal.isMet,
     ...goalParts,
     goal,
     rows,
@@ -4120,6 +4143,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
     goalRefused: null
   };
+  const closedHere = /* @__PURE__ */ new Set();
   const find = (ref) => {
     const key = nameKey(clipWords(ref, NAME_KEPT));
     return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
@@ -4130,7 +4154,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       const own = [...words(s.name)];
       return nameKey(s.name) === nameKey([...said].join(" ")) || own.length >= 2 && own.every((w) => said.has(w));
     };
-    return o.subjects.findLast((s) => !isOpen(s) && !isSubjectSeen(o, s) && repeats(s)) ?? null;
+    return o.subjects.findLast((s) => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && repeats(s)) ?? null;
   };
   const forgetSeenWas2 = (s) => {
     if (isSubjectSeen(o, s)) {
@@ -4218,6 +4242,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
         forgetSeenWas2(s);
         s.closedAt = now;
         s.changedAt = now;
+        closedHere.add(s.id);
       } else if (op.kind === "drop") {
         const target = op.into ? find(op.into) : null;
         unfold(s);
@@ -4226,6 +4251,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
         s.closedAt = now;
         s.into = target && target.id !== s.id ? target.id : null;
         s.changedAt = now;
+        closedHere.add(s.id);
         if (target && s.into) {
           forgetSeenWas2(target);
           target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
@@ -4760,11 +4786,15 @@ var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD
 function fields(value) {
   return value.split("|").map((f) => f.trim());
 }
+function statusWord(s) {
+  const word = s?.toLowerCase().replace(/[\s_]+/g, "-");
+  return word !== void 0 && /^(waits?|waiting)-on-others?$/.test(word) ? "waits-on-other" : word;
+}
 function openStatus(s) {
-  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+  return OPEN_STATUSES.find((o) => o === statusWord(s)) ?? null;
 }
 function anyStatus(s) {
-  return STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+  return STATUSES.find((o) => o === statusWord(s)) ?? null;
 }
 function goalMilestones(value) {
   return (value ?? "").split(";").flatMap((part) => {
@@ -4780,7 +4810,7 @@ function opOf(key, f) {
     return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
   }
   if (key === "SET") {
-    const isDone = f[1]?.toLowerCase() === "done";
+    const isDone = statusWord(f[1]) === "done";
     if (f[0] && isDone) return { kind: "done", ref: f[0], text: f[2] ?? "" };
     const status = openStatus(f[1]);
     return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
@@ -4806,14 +4836,24 @@ function opOf(key, f) {
   if (key === "NEXT") return f[0] ? { kind: "next", ref: f[0] } : null;
   return null;
 }
+function standingRef(op) {
+  return op.kind === "set" || op.kind === "done" || op.kind === "drop" ? op.ref.toLowerCase() : null;
+}
+function afterRetractions(ops) {
+  const lastNone = ops.findLastIndex((o) => o.kind === "none");
+  const kept = ops.slice(lastNone + 1);
+  const lastStanding = new Map(kept.flatMap((o, n) => standingRef(o) === null ? [] : [[standingRef(o), n]]));
+  return kept.filter((o, n) => standingRef(o) === null || lastStanding.get(standingRef(o)) === n);
+}
 function parseStatus(text2) {
-  const ops = (text2 ?? "").split(NL).flatMap((raw) => {
+  const all = (text2 ?? "").split(NL).flatMap((raw) => {
     const m = LINE.exec(raw.trim());
     const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
     return op === null ? [] : [op];
   });
-  if (ops.length === 0) return null;
-  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
+  if (all.length === 0) return null;
+  const ops = afterRetractions(all);
+  return ops.length === 0 ? { kind: "unchanged" } : { kind: "ops", ops };
 }
 async function askStatus(ask) {
   const first = await ask();
@@ -5110,9 +5150,13 @@ function attemptOf({ text: text2, report, thrown, ms }) {
     ms
   };
 }
-async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
+async function readForStatus(host) {
+  const at = await host.now();
+  return { s: await host.read(), at };
+}
+async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAfter) {
   if (!isStatusCallCurrent(s, appliedAfter)) return;
-  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
+  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: readAt };
   const prompt = statusCallPrompt(input, call.exchange);
   const system = hostStatusSystem(host.names);
   const heards = [];
@@ -5124,19 +5168,27 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   });
   const attempts = heards.map((h) => attemptOf(h.heard));
   const answer = last.text === null ? null : parseStatus(last.text);
-  const now = await host.now();
   let before = null;
   let isWritten = false;
-  const noted = (current) => heards.reduce(
+  const noted = (current, now) => heards.reduce(
     (x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now),
     current
   );
-  const after = await host.update((current) => {
-    const x = noted(current);
+  const after = await host.update(async (current) => {
+    const now = await host.now();
+    const x = noted(current, now);
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up", input.now);
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(
+      x,
+      answer,
+      appliedAfter,
+      now,
+      readSetAt,
+      call.exchange.kind === "catch-up" || call.isCatchUpImpossible === true,
+      input.now
+    );
   });
   if (!host.records) return;
   const record2 = {
@@ -5158,11 +5210,12 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
 }
 function refreshStatus(host) {
   return host.inOrder(async () => {
-    const s = await host.read();
+    const read = await readForStatus(host);
+    const { s } = read;
     if (!s.presence.isTurnRunning) return;
     const { person, trigger, activity } = s.turn;
     const call = { exchange: { kind: "mid-turn", turn: { person, trigger, activity } }, ask: host.ask };
-    await askAndWriteStatus(host, s, call, s.hostTasks, s.presence.turnsApplied);
+    await askAndWriteStatus(host, read, call, s.hostTasks, s.presence.turnsApplied);
   });
 }
 
@@ -5199,7 +5252,15 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeStatus = (after, call, tasks) => host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, tasks, after.presence.turnsApplied));
+  const writeStatus = (after, call, tasks) => host.inOrder(
+    async () => askAndWriteStatus(
+      host,
+      await readForStatus(host),
+      { ...call, isCatchUpImpossible: !canCatchUp },
+      tasks,
+      after.presence.turnsApplied
+    )
+  );
   const followUp = (run2) => {
     const settled = run2.catch(() => void 0);
     if (host.background) host.background(settled);
