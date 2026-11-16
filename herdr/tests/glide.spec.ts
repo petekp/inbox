@@ -270,16 +270,18 @@ const { allOf, openPanel, setZoom } = await import('./gpui-stand-in')
 const { layout } = await import('./frames')
 
 test.each([1, 0.9])(
-  'at zoom %p, once the app reports sizes scaled by the zoom, no box in any tab is drawn shorter than its content',
+  'at zoom %p, once the app reports sizes scaled by the zoom, every box in any tab is drawn at its content’s height',
   async zoom => {
     setZoom(zoom)
     const { paint, click, measure } = await openPanel()
     const laidOut = () => {
       const root = paint()
       const list = allOf(root).find(n => n.id === 'inbox-list')!
-      return { root, ...layout(list, () => undefined, LINE_HEIGHT) }
+      const [chrome, inList] = [layout(root, () => undefined), layout(list, () => undefined, LINE_HEIGHT)]
+      const placed = new Map([...chrome.placed, ...inList.placed])
+      return { root, placed, fits: [...chrome.fits, ...inList.fits] }
     }
-    const cutsIn = (tab: string) => {
+    const misfitsIn = (tab: string) => {
       click(allOf(paint()).find(n => n.label?.startsWith(tab))!)
       for (let i = 0; i < 3; i++) {
         const { root, placed } = laidOut()
@@ -287,10 +289,13 @@ test.each([1, 0.9])(
           n.id === 'inbox-list' ? 100_000 : (placed.get(n)?.height ?? 0)
         measure(n => ({ width: 300 * zoom, height: heightOf(n) * zoom }), root)
       }
-      return laidOut().cuts
+      const { fits } = laidOut()
+      expect(fits.length).toBeGreaterThan(0)
+      return fits.filter(f => Math.abs(f.height - f.content) > 0.5)
     }
     try {
-      for (const tab of ['Asks', 'Status', 'Finds', 'PRs']) expect({ tab, cuts: cutsIn(tab) }).toEqual({ tab, cuts: [] })
+      for (const tab of ['Asks', 'Status', 'Finds', 'PRs'])
+        expect({ tab, misfits: misfitsIn(tab) }).toEqual({ tab, misfits: [] })
     } finally {
       setZoom(1)
     }

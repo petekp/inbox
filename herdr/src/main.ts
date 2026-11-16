@@ -57,14 +57,14 @@ import type { LinesAbove } from './held-line'
 import { NO_TRACKS, moveRows } from './motion'
 import { nextDrawAt } from './wake'
 import type { Tracks } from './motion'
-import { Heights, atZoomOne, zoomOf } from './heights'
+import { Heights, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
 import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
 import { fitEl, spacedEls } from './paint-space'
-import { EDGE, END_SPACE, LINE, NARROW_PANE, onSize, TEXT } from './paint-theme'
+import { EDGE, END_SPACE, LINE, onSize, paneFit, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PressQueue } from './press-queue'
 import type { PressTarget } from './press-queue'
@@ -79,9 +79,6 @@ const { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeText
 
 type Timer = { cancel(): void }
 
-/** A size the app reported, at zoom 1, the scale every size the look sets is in. */
-const unzoomed = (size: { width: number; height: number }) => atZoomOne(size, zoomOf(settings()))
-
 export default class Inbox extends View {
   tab: string | null = null
   last: string | null = null
@@ -92,8 +89,8 @@ export default class Inbox extends View {
   ui: LookUi = freshUi('needsYou')
   shownSince = Date.now()
   isHelpShown = false
-  isNarrow = false
-  listRoom: number | null = null
+  paneWidth = Infinity
+  listHeight: number | null = null
   drafts: Record<string, Draft> = {}
   /** The typed replies and presses of the sessions the panel left, by session id, for when it follows them again. */
   left: Record<string, SessionPresses> = {}
@@ -427,7 +424,7 @@ export default class Inbox extends View {
       heights: this.heights,
       isAtOnce: key => isFirst || resized.has(key),
       measure: (key, size, cx) => {
-        if (this.heights.measure(key, unzoomed(size))) cx.notify()
+        if (this.heights.measure(key, size, zoomOf(settings()))) cx.notify()
       },
       now,
       newRows: this.ui.newRows,
@@ -435,8 +432,7 @@ export default class Inbox extends View {
       tab: this.ui.tab,
       timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
-      isNarrow: this.isNarrow,
-      listRoom: this.listRoom,
+      ...paneFit(this, zoomOf(settings())),
     }
     const root = v_flex()
       .id('inbox')
@@ -446,7 +442,7 @@ export default class Inbox extends View {
       .text_color(t.foreground)
       .text_size(TEXT)
       .line_height(LINE)
-      .on_size_change(onSize(this, 'isNarrow', s => unzoomed(s).width < NARROW_PANE))
+      .on_size_change(onSize(this, 'paneWidth', s => s.width))
     if (screen.is === 'message') {
       this.timeLeft = new Map()
       this.tracksOf = ''
@@ -461,7 +457,7 @@ export default class Inbox extends View {
     this.tracksOf = tracksOf
     paint.motion = moved.motion
     const read = drawn.read?.is === 'read' && this.ui.tab === 'overview' && !this.isHelpShown ? drawn.read : null
-    const room = moved.nextAt === null ? this.listRoom : null
+    const room = moved.nextAt === null ? paint.listRoom : null
     this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
@@ -495,7 +491,7 @@ export default class Inbox extends View {
               .overflow_y_scroll()
               .pt(EDGE)
               .pb(END_SPACE)
-              .on_size_change(onSize(this, 'listRoom', s => Math.max(0, unzoomed(s).height - EDGE - END_SPACE)))
+              .on_size_change(onSize(this, 'listHeight', s => s.height))
               .on_click((_e, _cx) => {
                 const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null
                 if (field) field.state.focus()
