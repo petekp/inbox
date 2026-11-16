@@ -1,5 +1,4 @@
 import { RowActions } from './row-actions'
-import { HELD_MARK } from '../../hooks/help'
 import { settledBarTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
