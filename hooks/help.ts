@@ -120,7 +120,6 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
 export const HELP_COPY = {
   name: 'Help',
   icon: '?',
-  close: '✕ Close help',
   keys: 'Keys',
   marks: 'Marks',
   tabs: 'Tabs',

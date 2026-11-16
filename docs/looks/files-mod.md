@@ -58,5 +58,5 @@ Part of [the look map](../looks.md#files).
 | `hooks/parent-client.tsx` | Mod only. A Client region for a Status parent's name line on desktop, which folds or opens its rows on a click anywhere on the line. |
 | `hooks/fold-client.tsx` | Mod only. A Client region for a desktop fold line: "N closed" on Asks and "N done" on the Status. |
 | `hooks/links-client.tsx` | Mod only. A Client region for an open row's follow-ups on desktop. |
-| `hooks/press-client.tsx` | Mod only. A Client region that takes a click over its whole shape and tints under the pointer. Undo and the Help icon use it on desktop. |
+| `hooks/press-client.tsx` | Mod only. A Client region that takes a click over its whole shape and tints under the pointer. Undo uses it on desktop. |
 | `hooks/desktop-metrics.ts` | Mod only. How wide the desktop pane draws text: characters per column, each character's width in points, a Button's padding, and line wrapping. |

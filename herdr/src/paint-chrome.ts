@@ -24,17 +24,17 @@ import {
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 
-const helpButton = (isHelpShown: boolean): Button => ({
+const helpButton: Button = {
   id: 'help',
-  label: isHelpShown ? HELP_COPY.close : HELP_COPY.name,
+  label: HELP_COPY.name,
   emphasis: 'quiet',
   isOut: false,
   hotkey: null,
   does: { is: 'view', change: { toggleHelp: true } },
-})
+}
 
-/** The Help control while Help is closed: a question mark in a circle, in the colors of the text beside it. */
-const helpIconEl = (t: Theme): Element =>
+/** The Help tab's icon: a question mark in a circle, in the color of the tab's label. */
+const helpIconEl = (t: Theme, isSelected: boolean): Element =>
   h_flex()
     .w(HELP_ICON)
     .h(HELP_ICON)
@@ -43,20 +43,19 @@ const helpIconEl = (t: Theme): Element =>
     .justify_center()
     .rounded(HELP_ICON / 2)
     .border_1()
-    .border_color(t.muted)
-    .hover(s => s.border_color(t.foreground))
+    .border_color(isSelected ? t.foreground : t.muted)
+    .when(!isSelected, e => e.hover(s => s.border_color(t.foreground)))
     .text_size(HELP_ICON_TEXT)
     .font_semibold()
     .child(HELP_COPY.icon)
 
 /**
- * The tab row: the tabs with their counts, then Help at its right end, inside the panel's padding.
- * A tab is a pill of a button's size, and only the selected tab's label is bold. Herdr's pane header names the pane,
- * so the look draws no title.
+ * The tab row: the tabs with their counts, then the Help tab at its right end, inside the panel's padding.
+ * A tab is a pill of a button's size, and only the selected tab's label is bold. While Help shows, the Help tab is the
+ * selected one and the others are not. Herdr's pane header names the pane, so the look draws no title.
  */
 export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element {
   const { t } = p
-  const help = helpButton(isHelpShown)
 
   return h_flex()
     .flex_none()
@@ -68,16 +67,18 @@ export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element
     .gap_y(CONTROL_GAP)
     .items_center()
     .children(
-      tabs.map(tab =>
-        h_flex()
+      tabs.map(tab => {
+        const isTabSelected = tab.isSelected && !isHelpShown
+
+        return h_flex()
           .id(`tab ${tab.id}`)
           .h(BUTTON_H)
           .px(INSET)
           .items_center()
           .rounded(TAB_RADIUS)
           .accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label)
-          .when(tab.isSelected, e => e.bg(t.raised).text_color(t.foreground).font_semibold())
-          .when(!tab.isSelected, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
+          .when(isTabSelected, e => e.bg(t.raised).text_color(t.foreground).font_semibold())
+          .when(!isTabSelected, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
           .on_click((_e, cx) => p.pick(tab.id, cx))
           .child(tab.label)
           .when(tab.badge !== null, e =>
@@ -88,18 +89,22 @@ export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element
                 .text_color(colorOf(t, tab.id === 'overview' ? null : tab.id))
                 .child(tab.badge ?? ''),
             ),
-          ),
-      ),
+          )
+      }),
     )
     .child(div().flex_1())
     .child(
       h_flex()
         .id('help')
-        .text_color(t.muted)
-        .hover(s => s.text_color(t.foreground))
-        .accessibility_label(help.label)
-        .on_click((_e, cx) => p.press(help, cx))
-        .child(isHelpShown ? help.label : helpIconEl(t)),
+        .h(BUTTON_H)
+        .px(INSET)
+        .items_center()
+        .rounded(TAB_RADIUS)
+        .accessibility_label(helpButton.label)
+        .when(isHelpShown, e => e.bg(t.raised).text_color(t.foreground))
+        .when(!isHelpShown, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
+        .on_click((_e, cx) => p.press(helpButton, cx))
+        .child(helpIconEl(t, isHelpShown)),
     )
 }
 

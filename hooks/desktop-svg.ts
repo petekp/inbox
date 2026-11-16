@@ -1,4 +1,4 @@
-import { CLOSED_MARKS, HELP_COPY, NEEDS_YOU_MARKS } from './help'
+import { CLOSED_MARKS, NEEDS_YOU_MARKS } from './help'
 import { RUNNING_PULSE_MS } from './timing'
 import { ROW_PAD_PT } from './layout'
 import { markShape, mutedMarkShape } from './marks'
@@ -8,7 +8,6 @@ import {
   DESKTOP_LINE_PT,
   DESKTOP_MARK_CELLS,
   FRAME_INSET_PT,
-  HELP_ICON_CELLS,
   UNDO_CELLS,
   UNDO_HEIGHT_PT,
 } from './pane-sizes'
@@ -121,17 +120,4 @@ export function foldSpacerSvg(): string {
   const width = FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT
   const height = 2 * ROW_PAD_PT + DESKTOP_LINE_PT
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"/>`
-}
-/** The Help control on desktop: a question mark in a circle, in the muted mark's colors for the light and dark appearances. */
-export function helpSvg(): string {
-  const width = HELP_ICON_CELLS * DESKTOP_CELL_PT
-  const height = DESKTOP_LINE_PT
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>.help{color:${MUTED_MARK.light}}@media (prefers-color-scheme: dark){.help{color:${MUTED_MARK.dark}}}` +
-    `circle{fill:none;stroke:currentColor;stroke-width:1.2}` +
-    `text{font-family:-apple-system,system-ui,sans-serif;font-size:11px;font-weight:600;fill:currentColor}</style>` +
-    `<g class="help"><circle cx="${width / 2}" cy="${height / 2}" r="7.2"/>` +
-    `<text x="${width / 2}" y="${height / 2 + 0.5}" dominant-baseline="central" text-anchor="middle">${HELP_COPY.icon}</text></g></svg>`
-  )
 }

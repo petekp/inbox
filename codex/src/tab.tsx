@@ -1,6 +1,6 @@
 import { render } from 'preact'
 import type { ComponentChildren } from 'preact'
-import { COLLAPSE_KEY, FOLD_ALL_KEY, HELP_COPY, helpVersionText, UNDO_KEY } from '../../hooks/help'
+import { COLLAPSE_KEY, FOLD_ALL_KEY, helpVersionText, UNDO_KEY } from '../../hooks/help'
 import { DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { steppedIndex } from '../../hooks/action-plan'
@@ -23,7 +23,7 @@ import { NeedsYou, Findings } from './tab-groups'
 import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
 import { pressUndoKey } from './undo-key'
-import { HelpIcon, HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
+import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
 
 let isLoadingShown = false
 let initializing: Promise<boolean> | null = null
@@ -77,19 +77,6 @@ function App({
         <StatusTab v={v} drawn={status ?? { head: [], fold: [], goal: [], rows: [] }} />
       )}
       <footer>
-        <button
-          type="button"
-          class="help-toggle"
-          title={`${HELP_COPY.name} (?)`}
-          aria-label={tabState.isHelpShown ? HELP_COPY.close : HELP_COPY.name}
-          aria-pressed={tabState.isHelpShown}
-          onClick={() => {
-            tabState.isHelpShown = !tabState.isHelpShown
-            draw()
-          }}
-        >
-          {tabState.isHelpShown ? HELP_COPY.close : <HelpIcon />}
-        </button>
         {tabState.isDemo || !DEMO_BUTTON ? null : (
           <button type="button" class="demo-toggle" onClick={() => void toggleDemo()}>
             Show demo

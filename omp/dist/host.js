@@ -3641,7 +3641,6 @@ var MARK_LEGEND = [
 var HELP_COPY = {
   name: "Help",
   icon: "?",
-  close: "\u2715 Close help",
   keys: "Keys",
   marks: "Marks",
   tabs: "Tabs",

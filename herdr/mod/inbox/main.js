@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T05:54:44.865Z. 266321 characters follow.
+// Built at 2026-11-16T06:34:19.959Z. 266497 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -1245,7 +1245,6 @@ var MARK_LEGEND = [
 var HELP_COPY = {
   name: "Help",
   icon: "?",
-  close: "✕ Close help",
   keys: "Keys",
   marks: "Marks",
   tabs: "Tabs",
@@ -5621,19 +5620,21 @@ function spacedEls(blocks, p, el) {
 // src/paint-chrome.ts
 import { Background, PathBuilder as PathBuilder2, div as div3 } from "gpui-kit";
 import { h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
-var helpButton = (isHelpShown) => ({
+var helpButton = {
   id: "help",
-  label: isHelpShown ? HELP_COPY.close : HELP_COPY.name,
+  label: HELP_COPY.name,
   emphasis: "quiet",
   isOut: false,
   hotkey: null,
   does: { is: "view", change: { toggleHelp: true } }
-});
-var helpIconEl = (t) => h_flex2().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(t.muted).hover((s) => s.border_color(t.foreground)).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
+};
+var helpIconEl = (t, isSelected) => h_flex2().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(isSelected ? t.foreground : t.muted).when(!isSelected, (e) => e.hover((s) => s.border_color(t.foreground))).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
 function tabsEl(tabs, isHelpShown, p) {
   const { t } = p;
-  const help = helpButton(isHelpShown);
-  return h_flex2().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex2().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div3().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div3().flex_1()).child(h_flex2().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(isHelpShown ? help.label : helpIconEl(t)));
+  return h_flex2().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => {
+    const isTabSelected = tab.isSelected && !isHelpShown;
+    return h_flex2().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div3().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? "")));
+  })).child(div3().flex_1()).child(h_flex2().id("help").h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(helpButton.label).when(isHelpShown, (e) => e.bg(t.raised).text_color(t.foreground)).when(!isHelpShown, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.press(helpButton, cx)).child(helpIconEl(t, isHelpShown)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {

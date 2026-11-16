@@ -14,8 +14,10 @@ type ClientTab = {
 export type TabsProps = {
   tabs: ClientTab[]
   shown: string
-  /** While Help shows, a press on the shown tab closes Help. */
+  /** While Help shows, the Help tab is the shown one and the tabs above it are not. */
   isHelpShown: boolean
+  /** The Help tab, drawn opposite the tabs at the right end of the first line. */
+  help: { label: string; width: number }
   gap: number
   /** False when only the shown tab has its rounded frame, so the others take only their label's width. */
   isEachFramed: boolean
@@ -29,7 +31,7 @@ export const TAB_HEIGHT = 1.5
 export const TAB_COUNT_GAP = '  '
 
 /** The tabs on each line: a tab that would pass `columns` starts the next line. */
-export function tabLines<T extends { width: number }>(tabs: T[], gap: number, columns: number): T[][] {
+function tabLines<T extends { width: number }>(tabs: T[], gap: number, columns: number): T[][] {
   const lines: T[][] = []
   let used = 0
   for (const tab of tabs) {
@@ -46,9 +48,16 @@ export function tabLines<T extends { width: number }>(tabs: T[], gap: number, co
   return lines
 }
 
+const HELP_TAB_ID = 'help'
+
+/** The lines the tabs take, with the first line's right end kept for the Help tab. */
+export const tabLinesOf = (props: TabsProps): ClientTab[][] =>
+  tabLines(props.tabs, props.gap, props.columns - props.help.width - props.gap)
+
 function tabAt(props: TabsProps, x: number, y: number): string | null {
-  const line = tabLines(props.tabs, props.gap, props.columns)[Math.floor(y / TAB_HEIGHT)]
+  const line = tabLinesOf(props)[Math.floor(y / TAB_HEIGHT)]
   if (y < 0 || !line) return null
+  if (y < TAB_HEIGHT && x >= props.columns - props.help.width && x < props.columns) return HELP_TAB_ID
   let left = 0
   for (const tab of line) {
     if (x >= left && x < left + tab.width) return tab.id
@@ -65,13 +74,14 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
   surface.onPointer(e => {
     const at = e.type === 'leave' ? null : tabAt(props, e.x, e.y)
     if (at !== (surface.state?.hover ?? null)) surface.setState({ hover: at })
-    if (e.type === 'down' && e.button !== 'right' && at !== null && (props.isHelpShown || at !== props.shown))
-      surface.post({ tab: at })
+    if (e.type !== 'down' || e.button === 'right' || at === null) return
+    if (at === HELP_TAB_ID) surface.post({ isHelp: true })
+    else if (props.isHelpShown || at !== props.shown) surface.post({ tab: at })
   })
   const { colors } = props
 
   const tabBox = (tab: ClientTab) => {
-    const isShown = tab.id === props.shown
+    const isShown = tab.id === HELP_TAB_ID ? props.isHelpShown : !props.isHelpShown && tab.id === props.shown
     const isHovered = !isShown && tab.id === hover
     const isFramed = isShown || props.isEachFramed
     const background = isShown ? colors.raised : isHovered && isFramed ? (colors.tab ?? colors.raised) : null
@@ -96,11 +106,26 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
     })
   }
 
+  const helpBox = tabBox({
+    id: HELP_TAB_ID,
+    label: props.help.label,
+    badge: null,
+    badgeColor: null,
+    width: props.help.width,
+  })
+
   return Box({
     flexDirection: 'column',
-    children: tabLines(props.tabs, props.gap, props.columns).map((line, n) =>
-      Box({ key: `line-${n}`, flexDirection: 'row', gap: props.gap, children: line.map(tabBox) }),
-    ),
+    children: tabLinesOf(props).map((line, n) => {
+      const tabsRow = Box({ key: `tabs-${n}`, flexDirection: 'row', gap: props.gap, children: line.map(tabBox) })
+
+      return Box({
+        key: `line-${n}`,
+        flexDirection: 'row',
+        ...(n === 0 ? { width: props.columns, justifyContent: 'space-between' as const } : {}),
+        children: n === 0 ? [tabsRow, helpBox] : tabsRow,
+      })
+    }),
   })
 }
 

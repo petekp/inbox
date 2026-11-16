@@ -29,23 +29,16 @@ footer {
   gap: 16px;
   margin-left: auto;
 }
-.demo-toggle,
-.help-toggle {
+.demo-toggle {
   padding: 0 6px;
   border-radius: 5px;
   color: var(--muted);
-}
-.help-toggle:has(.help-icon) {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 6px;
 }
 .help-icon text {
   font-size: 10px;
   font-weight: 600;
 }
-.demo-toggle:hover,
-.help-toggle:hover {
+.demo-toggle:hover {
   color: var(--text);
   background: var(--hover);
 }

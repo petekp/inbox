@@ -254,7 +254,7 @@ _Avoid_: alert, error strip, status line
 **Help**:
 The page a look shows in place of the shown tab's body: the keys the look
 takes, then what each mark means, then which inbox build runs. Desktop lists
-only the marks. The footer's ? icon opens it, and so does `?` in Codex and omp. Switching tabs or
+only the marks. The ? tab at the right end of the tab row opens it, and so does `?` in Codex and omp. Switching tabs or
 closing the inbox closes it.
 
 **Person's line**:
