@@ -2,7 +2,7 @@
 
 Status: built. For the first week of the question history, the hosts record matches and draw nothing. Then the line shows.
 
-When a question reaches the person's inbox, its row shows the closest answer the person gave to a similar question before. The person can answer with that earlier answer in one press, or ignore it. The agent never sees the earlier answer, and nothing closes on its own.
+When a question reaches the person's inbox, its row shows the closest answer the person gave to a similar question before. The person can answer with it as with any answer, or ignore it. The agent never sees the earlier answer, and nothing closes on its own.
 
 The check needs no model call. It is a keyword search (BM25) over local files, run once when the question is added.
 
@@ -25,7 +25,7 @@ Intervals resample sessions. The measurement and its scripts stay outside this r
 
 An earlier draft had the agent read the earlier answers and close the question itself. A private test on 80 real questions failed its bar. Opus, given the shipped guidance as its whole prompt and no tools, closed 2 of 40 repeats, against a bar of at least 20. It closed 1 of 40 near misses, and that close was wrong: the person later answered the question the other way. The bar of 20 also needed closes on covered repeats, which the draft wording told the agent not to make.
 
-The person's own later answers explain part of it. At least 10 of the 35 labelled repeats with an answer got a different answer from the earlier one. Whether an old answer still holds is often something only the person knows. A row that shows the answer and lets them press it puts that judgment where it belongs.
+The person's own later answers explain part of it. At least 10 of the 35 labelled repeats with an answer got a different answer from the earlier one. Whether an old answer still holds is often something only the person knows. A row that shows the answer and leaves the choice to them puts that judgment where it belongs.
 
 A row also reaches more repeats. An agent's `record` call never saw the 75 repeats the inbox model added from replies. Every question reaches a row, however it was added.
 
@@ -39,15 +39,9 @@ You answered Flick 3 days ago, in glasses-app, to "Which gesture should clear a 
 
 The line shows only on the open row, as the context does today. A folded row looks as it does now, so the rows that carry an earlier answer add nothing to the list. The line names the earlier question as well as the answer, because about 9 in 10 answers are one to five words and mean little alone.
 
-The option buttons stay as they are. When the earlier answer is one of the new question's options, pressing that option answers with it, and the row adds no button. When it is not, the row adds one answer button labelled with the earlier answer, after the agent's options. It sends the agent the same message an option press sends, with the earlier answer as the text.
+The option buttons stay as they are. When the earlier answer is one of the options, the person presses that option. When it is not, they answer with Reply, as with any answer the options miss. The line adds no button.
 
-The build changes three places:
-
-- `pressed` in `hooks/pressed.ts` accepts the added answer as it accepts an option.
-- `actionsOf` in `hooks/action-plan.ts` adds the button after the options, with the next choice key. The "All N options" count and the option descriptions count only the agent's options.
-- Undo of that press reopens the question as any answer's Undo does, and the history drops the answer.
-
-Ignoring it costs nothing beyond reading the line. A wrong match never acts unless the person presses it, and a press shows its feedback and closes as any answer does.
+Ignoring it costs nothing beyond reading the line. A wrong match never acts on its own.
 
 ### Which rows show one
 
@@ -83,17 +77,16 @@ An entry point turns the history on. Codex's are `hook-main.ts`, `update-main.ts
 
 ## Each look
 
-`hooks/view.ts` adds the line to `RowView`, on open rows only, as it does `contextLine`. The added answer button comes from the row's actions in `hooks/action-plan.ts`, so `rowKeyPlan` places it and every look draws the same words and order. Each look draws the line where it draws an open question's context today, in its ask tree.
+`hooks/view.ts` adds the line to `RowView`, on open rows only, as it does `contextLine`. Each look draws the line where it draws an open question's context today, in its ask tree.
 
-| Look | Draws the line in | Draws the added answer as |
-| --- | --- | --- |
-| Terminal | `hooks/pane-ask-tree.tsx` | A choice key, after the agent's options |
-| Desktop | `hooks/pane-ask-tree.tsx` | A native Button. Hotkeys do nothing there, so the button is the only way |
-| Codex tab | `codex/src/tab-ask-tree.tsx` | A button |
-| omp panel | `omp/src/panel-ask-tree.ts` | A choice key, handled in `omp/src/panel-keys.ts` |
-| Herdr | `herdr/src/draw.ts` | A button. Herdr draws the rows a host publishes, and its presses go back to that host |
+| Look | Draws the line in |
+| --- | --- |
+| Terminal and desktop | `hooks/pane-ask-tree.tsx` |
+| Codex tab | `codex/src/tab-ask-tree.tsx` |
+| omp panel | `omp/src/panel-ask-tree.ts` |
+| Herdr | `herdr/src/draw.ts`, from the rows a host publishes |
 
-The feature has the `FeatureId` `earlier-answers` in `hooks/clients.ts`, marked `full` for `claude-code`, `codex` and `omp`. The `FeatureId` union moved to `hooks/client-features.ts` to keep `hooks/clients.ts` under its limit. Herdr draws the line in one muted tone, since gpui-kit has no inline text span to draw the answer bold. The demo in `hooks/demo.ts` gets a question with an earlier answer, so each look's demo shows the line and the press.
+The feature has the `FeatureId` `earlier-answers` in `hooks/clients.ts`, marked `full` for `claude-code`, `codex` and `omp`. The `FeatureId` union moved to `hooks/client-features.ts` to keep `hooks/clients.ts` under its limit. Herdr draws the line in one muted tone, since gpui-kit has no inline text span to draw the answer bold. The demo in `hooks/demo.ts` gets a question with an earlier answer, so each look's demo shows the line.
 
 ## What it searches
 
@@ -121,7 +114,7 @@ The history keeps answers for 180 days. 15 of the 163 repeats matched an answer 
 
 The repo is public. The history lives only under the person's home folder, as each host's store does today. Tests and the demo use invented questions. No real question, answer or path goes into code, fixtures or docs.
 
-The owner decided that earlier answers may cross sessions, projects and hosts. The row design narrows what crosses. An earlier answer is drawn on the person's own row and reaches no model. It reaches an agent only when the person presses it, as their answer to that agent's question.
+The owner decided that earlier answers may cross sessions, projects and hosts. The row design narrows what crosses. An earlier answer is drawn on the person's own row and reaches no model. It reaches an agent only when the person gives the same answer to that agent's question.
 
 `docs/principles.md` says each session has its own inbox, and names this row as the first view across sessions.
 
@@ -147,9 +140,9 @@ The file timings come from Bun on one Mac, with the files in memory. The mod's `
 
 No text a model reads changes, so `AGENTS.md` calls for no run of the agent suite, the ledger suite or the Status suite, and the owner decided to skip the agent suite. The checks below make no model call.
 
-- Unit tests cover the ranking, the floor, the merge into the history, the row's line and the press's place in `rowKeyPlan`, with invented questions. `./scripts/check.sh` runs them.
-- The demo test in `tests/hooks.test.ts` and `omp/tests/panel.spec.ts` check the press's order in the terminal, desktop and omp looks.
-- Each look gets a live check of the demo question: the line, the press, the press's feedback and the row closing. A session that loads the build under test gets its own `XDG_STATE_HOME`, as `AGENTS.md` says.
+- Unit tests cover the ranking, the floor, the merge into the history and the row's line, with invented questions. `./scripts/check.sh` runs them.
+- The demo tests in `tests/hooks-row-drawing.test.ts`, `omp/tests/panel.spec.ts`, `herdr/tests/draw.spec.ts` and `codex/tests/tab-ask-tree.spec.ts` check where each look draws the line.
+- Each look gets a live check of the demo question's line. A session that loads the build under test gets its own `XDG_STATE_HOME`, as `AGENTS.md` says.
 
 ## What shows it works
 
@@ -160,7 +153,7 @@ The build ships in two stages:
 1. For the first week, the hosts search and record matches but draw nothing. That week gives the baseline, and it fills the history. The week starts when the history began, the `created` time of its oldest file. A match stores whether its row draws it, as `earlier.isShown`, so a row keeps its form after the week ends.
 2. Then the line shows for two weeks.
 
-The history records, for each answered question, the match it found, whether the line was drawn, and the person's answer. Questions never answered are not in it. `scripts/earlier-answers-report.mjs` compares the share of matched rows answered with the matched answer, with the line and without it. It counts only rows whose earlier answer is one of their options, since a shown row adds a button for any other. It resamples sessions for the interval. The baseline week runs on a younger history, but the relative floor keeps the share of rows with a match about steady.
+The history records, for each answered question, the match it found, whether the line was drawn, and the person's answer. Questions never answered are not in it. `scripts/earlier-answers-report.mjs` compares the share of matched rows answered with the matched answer, with the line and without it. It resamples sessions for the interval. The baseline week runs on a younger history, but the relative floor keeps the share of rows with a match about steady.
 
 These bars are set before any data:
 
@@ -168,7 +161,7 @@ These bars are set before any data:
 - It fails if the interval's upper end is under 1 point of rise. Then remove the line, since it costs a glance on about a quarter of rows and helps almost none.
 - Anything between is inconclusive. Then the owner says whether the line helps when it shows.
 
-The script also counts presses of the added button, which only the line offers, split by the history's `how`. A young history shows the line on fewer rows. The review of this plan put two weeks at about 500 to 700 rows with a line, so a rise of a few points may stay inconclusive.
+The script also splits the answers given with the line by the history's `how`. A young history shows the line on fewer rows. The review of this plan put two weeks at about 500 to 700 rows with a line, so a rise of a few points may stay inconclusive.
 
 ## The simpler alternatives
 
@@ -177,7 +170,7 @@ The script also counts presses of the added button, which only the line offers, 
 - Show the line on every question. About 2 in 3 shown answers would relate to nothing.
 - Make a model call per question to judge the match. The person judges it in one glance, and the call adds cost to every question.
 - Search each host's existing stores, which need no shared folder. They keep about 480 answers per host, against 8,791 in the measurement, and reach no other host.
-- Put the earlier answer into the Reply field, ready to edit. That needs a press to open Reply and another to send, where the added button takes one.
+- Add an answer button for an earlier answer that is none of the options. The owner chose the line alone.
 
 Open questions in other sessions that ask the same thing are left out. The measurement found 120, but showing one question in two places needs its own design.
 
@@ -187,7 +180,7 @@ Decided by the owner on 11-16:
 
 - Let earlier answers cross sessions, projects and hosts: yes, across every repository. Every repository catches 117 of the 163 repeats in the top three, and one project folder catches 76.
 - Show the earlier answer on the person's row instead of letting the agent close the question.
-- The row design: A, one quiet line in the open row, with the option buttons unchanged. The other two mockups marked the matching button, or added a line to the folded row.
+- The row design: A, one quiet line in the open row, with the option buttons unchanged and no added button. The other two mockups marked the matching button, or added a line to the folded row.
 
 - Build this, as written, with the week that draws nothing first.
 - Skip the agent suite at build time, since no text a model reads changes.

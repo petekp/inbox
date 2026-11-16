@@ -3546,114 +3546,6 @@ function goalPressed(ledger, p, record, now) {
   return { ledger: { ...ledger, overview: typed }, last: record("mark"), effects: [] };
 }
 
-// ../hooks/earlier-answers.ts
-var K1 = 1.2;
-var B = 0.75;
-var RELATIVE_FLOOR = 0.22;
-var EARLIER_TEXT_CHARS = 200;
-var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
-those i you we he she they me my your our their them as if then than so do does did done can could should would will
-shall may might must not no yes now still also just again already instead yet any all some each per via up out over
-about after before when while which what who whom why how where whether there here let lets get got have has had
-pr prs`.split(/\s+/));
-function searchTerms(text) {
-  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => !STOP_WORDS2.has(w) && (w.length > 1 || /\d/.test(w)));
-}
-function answerIndex(docs) {
-  const postings = new Map;
-  const lengths = docs.map((d, n) => {
-    const terms = searchTerms(`${d.ask} ${d.answer}`);
-    const counts = new Map;
-    for (const t of terms)
-      counts.set(t, (counts.get(t) ?? 0) + 1);
-    for (const [t, count] of counts) {
-      const list = postings.get(t);
-      if (list)
-        list.push([n, count]);
-      else
-        postings.set(t, [[n, count]]);
-    }
-    return terms.length;
-  });
-  const total = lengths.reduce((sum, l) => sum + l, 0);
-  return { docs, lengths, postings, averageLength: docs.length > 0 ? total / docs.length : 0 };
-}
-function bestEarlier(index, question, skip) {
-  const n = index.docs.length;
-  const scores = new Map;
-  let reachable = 0;
-  for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
-    const posted = index.postings.get(term);
-    if (!posted)
-      continue;
-    const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
-    reachable += weight * (K1 + 1);
-    for (const [doc, count] of posted) {
-      const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
-      scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
-    }
-  }
-  let best = null;
-  for (const [doc, score] of scores) {
-    const d = index.docs[doc];
-    if (d.key === skip || best && score <= best.score)
-      continue;
-    best = { doc: d, score };
-  }
-  if (!best || reachable === 0)
-    return null;
-  const relative = best.score / reachable;
-  return relative >= RELATIVE_FLOOR ? { doc: best.doc, score: relative } : null;
-}
-function earlierOf(match, isShown) {
-  const { doc } = match;
-  return {
-    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
-    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
-    at: doc.at,
-    repo: doc.repo,
-    score: Math.round(match.score * 1000) / 1000,
-    isShown
-  };
-}
-var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
-function earlierOption(item) {
-  const answer = item.earlier?.answer;
-  return answer === undefined ? null : item.options.find((o) => sameAnswer(o, answer)) ?? null;
-}
-var ADDED_ANSWER_CHARS = 80;
-function addedEarlierAnswer(item) {
-  const earlier = item.earlier;
-  const isTooLong = (earlier?.answer.length ?? 0) > ADDED_ANSWER_CHARS;
-  if (item.kind !== "question" || !earlier?.isShown || isTooLong || earlierOption(item) !== null)
-    return null;
-  return earlier.answer;
-}
-var DAY_MS = 24 * 60 * 60000;
-function agoText(ms) {
-  const minutes = Math.max(1, Math.round(ms / 60000));
-  if (minutes < 60)
-    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24)
-    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
-  const days = Math.round(ms / DAY_MS);
-  return days === 1 ? "yesterday" : `${days} days ago`;
-}
-function earlierLineOf(earlier, now) {
-  if (!earlier?.isShown)
-    return null;
-  const where = earlier.repo ? `, in ${earlier.repo},` : "";
-  return {
-    lead: "You answered ",
-    answer: earlier.answer,
-    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
-  };
-}
-function earlierLineText(line) {
-  return `${line.lead}${line.answer}${line.rest}`;
-}
-
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
@@ -3874,13 +3766,13 @@ function countsByMark(folded) {
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
 }
-var DAY_MS2 = 24 * 60 * 60000;
+var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
     return null;
   const idleMs = now - x.changedAt;
   const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS;
-  return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS2)}d`, tone: "muted" } : null;
+  return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS)}d`, tone: "muted" } : null;
 }
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
@@ -4363,7 +4255,7 @@ function pressed(ledger, last, p, ctx) {
   });
   switch (p.action) {
     case "answer":
-      return item.options.includes(p.option) || addedEarlierAnswer(item) === p.option ? answered(p.option) : stale;
+      return item.options.includes(p.option) ? answered(p.option) : stale;
     case "type": {
       const words = p.text.trim();
       if (!words)
@@ -4671,7 +4563,7 @@ function closedLineAction(d) {
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   return actions.flatMap((a) => {
-    if (a.press.action !== "answer" || a.isEarlier)
+    if (a.press.action !== "answer")
       return [];
     const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
@@ -7140,18 +7032,11 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
-  const earlier = addedEarlierAnswer(item);
   return [
     ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
-    ...earlier === null ? [] : [
-      {
-        ...action({ action: "answer", id, option: earlier }, clipLabel(earlier, OPTION_LABEL_CHARS), "mark"),
-        isEarlier: true
-      }
-    ],
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
@@ -7191,9 +7076,7 @@ function rowAfterClose(rows, closedId) {
 function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
-  const isOption = (a) => a.press.action === "answer" && !a.isEarlier;
-  const lastOption = shown.findLastIndex(isOption);
-  const optionCount = r.actions.filter(isOption).length;
+  const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
   const keys = [];
   const more = [];
   const retry = r.feedback?.is === "notSent" ? r.feedback.retry : null;
@@ -7210,8 +7093,8 @@ function rowKeyPlan(r, isAllShown) {
       if (n === lastOption && folded > 0)
         keys.push({
           slot: "allOptions",
-          count: optionCount,
-          label: ROW_COPY.allOptions(optionCount),
+          count: r.actions.filter((x) => x.press.action === "answer").length,
+          label: ROW_COPY.allOptions(r.actions.filter((x) => x.press.action === "answer").length),
           emphasis: "quiet"
         });
     } else if (a.hotkey)
@@ -7247,6 +7130,101 @@ function actionLines(keys, more, { width, gap, separator }) {
       place(keys.length + i, size, i === 0 ? gap + separator : gap);
   });
   return { lines, isFollowUpLineNew };
+}
+
+// ../hooks/earlier-answers.ts
+var K1 = 1.2;
+var B = 0.75;
+var RELATIVE_FLOOR = 0.22;
+var EARLIER_TEXT_CHARS = 200;
+var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/));
+function searchTerms(text) {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => !STOP_WORDS2.has(w) && (w.length > 1 || /\d/.test(w)));
+}
+function answerIndex(docs) {
+  const postings = new Map;
+  const lengths = docs.map((d, n) => {
+    const terms = searchTerms(`${d.ask} ${d.answer}`);
+    const counts = new Map;
+    for (const t of terms)
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const [t, count] of counts) {
+      const list = postings.get(t);
+      if (list)
+        list.push([n, count]);
+      else
+        postings.set(t, [[n, count]]);
+    }
+    return terms.length;
+  });
+  const total = lengths.reduce((sum, l) => sum + l, 0);
+  return { docs, lengths, postings, averageLength: docs.length > 0 ? total / docs.length : 0 };
+}
+function bestEarlier(index, question, skip) {
+  const n = index.docs.length;
+  const scores = new Map;
+  let reachable = 0;
+  for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
+    const posted = index.postings.get(term);
+    if (!posted)
+      continue;
+    const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
+    reachable += weight * (K1 + 1);
+    for (const [doc, count] of posted) {
+      const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
+      scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
+    }
+  }
+  let best = null;
+  for (const [doc, score] of scores) {
+    const d = index.docs[doc];
+    if (d.key === skip || best && score <= best.score)
+      continue;
+    best = { doc: d, score };
+  }
+  if (!best || reachable === 0)
+    return null;
+  const relative = best.score / reachable;
+  return relative >= RELATIVE_FLOOR ? { doc: best.doc, score: relative } : null;
+}
+function earlierOf(match, isShown) {
+  const { doc } = match;
+  return {
+    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
+    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    at: doc.at,
+    repo: doc.repo,
+    score: Math.round(match.score * 1000) / 1000,
+    isShown
+  };
+}
+var DAY_MS2 = 24 * 60 * 60000;
+function agoText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60)
+    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24)
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  const days = Math.round(ms / DAY_MS2);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+function earlierLineOf(earlier, now) {
+  if (!earlier?.isShown)
+    return null;
+  const where = earlier.repo ? `, in ${earlier.repo},` : "";
+  return {
+    lead: "You answered ",
+    answer: earlier.answer,
+    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
+  };
+}
+function earlierLineText(line) {
+  return `${line.lead}${line.answer}${line.rest}`;
 }
 
 // ../hooks/view.ts
@@ -10126,14 +10104,6 @@ function demoView(now, agent) {
           from: "record",
           ask: "What should the wake word be for the agent?",
           options: [],
-          earlier: {
-            ask: "Which wake word should start the agent?",
-            answer: "Hey Lens",
-            at: now - 9 * 24 * 60 * MIN,
-            repo: "glasses-app",
-            score: 0.52,
-            isShown: true
-          },
           rec: null,
           helps: [],
           turn: 11,
@@ -10572,7 +10542,7 @@ function isAnswer(c) {
   return c.how === "update" && !NOT_AN_ANSWER2.test(c.outcome.trim());
 }
 var keyOf2 = (q) => `${q.id}@${q.askedAt ?? ""}`;
-var sameAnswer2 = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 function questionHistory(previous, s, place, now) {
   const answered = s.ledger.closed.filter(isAnswer).map((c) => ({
     id: c.id,
@@ -10584,7 +10554,7 @@ function questionHistory(previous, s, place, now) {
     how: c.how,
     isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
     earlier: c.item?.earlier ?? null,
-    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer2(c.outcome, c.item.earlier.answer) : false
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
   }));
   const open = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
   const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));

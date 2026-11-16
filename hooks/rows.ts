@@ -123,8 +123,6 @@ export type ActionView = {
   hotkey?: string
   /** Its press is out, so it draws dim and ignores another press until the press settles. */
   isOut: boolean
-  /** The answer button a row adds for its earlier answer, after the agent's options. */
-  isEarlier?: true
 }
 
 export type RowView = {
@@ -173,7 +171,7 @@ export function optionDescriptionsOf(item: Item | null, actions: ActionView[]): 
   const descriptions = item?.optionDescriptions
 
   return actions.flatMap(a => {
-    if (a.press.action !== 'answer' || a.isEarlier) return []
+    if (a.press.action !== 'answer') return []
     const description =
       descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option]! : null
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null

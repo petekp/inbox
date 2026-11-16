@@ -8,7 +8,6 @@ import type { AnswerMessage, PressTexts } from './press-messages'
 import type { Effect, PressResult } from './press-reducer'
 import type { RowPress } from './presses'
 import { goalPressed } from './goal-press'
-import { addedEarlierAnswer } from './earlier-answers'
 import { GOAL_KEYS_ID } from './status-keys'
 
 export function offersUndo(c: Pick<Closed, 'how'>): boolean {
@@ -212,7 +211,7 @@ export function pressed(ledger: Ledger, last: LastAction | undefined, p: RowPres
   })
   switch (p.action) {
     case 'answer':
-      return item.options.includes(p.option) || addedEarlierAnswer(item) === p.option ? answered(p.option) : stale
+      return item.options.includes(p.option) ? answered(p.option) : stale
     case 'type': {
       const words = p.text.trim()
       if (!words) return unchanged

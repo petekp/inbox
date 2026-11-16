@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Earlier, Item, Session } from '../types'
-import { rowKeyPlan } from '../hooks/action-plan'
 import { demoSession } from '../hooks/demo'
 import { answerIndex, bestEarlier, earlierLineOf, earlierLineText } from '../hooks/earlier-answers'
 import type { AnswerDoc } from '../hooks/earlier-answers'
@@ -11,7 +10,6 @@ import { inboxText } from '../hooks/inbox-text'
 import { EMPTY } from '../hooks/ledger'
 import { closeItem } from '../hooks/ledger-close'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { applyPress } from '../hooks/press-reducer'
 import { BASELINE_MS, historyFileName, questionHistory } from '../hooks/question-history'
 import type { HistoryFile } from '../hooks/question-history'
 import { emptySession } from '../hooks/session-files'
@@ -198,10 +196,6 @@ describe('the earlier answer on a row', () => {
     const s = { ...emptySession(), ledger: { ...EMPTY, items: [item] } }
     return sessionView(s, NOW, SETTLED_MS).needsYou.questions[0]!
   }
-  const answers = (item: Item) =>
-    rowKeyPlan(rowOf(item), true).keys.flatMap(k =>
-      k.slot === 'choice' && k.action.press.action === 'answer' ? [k.action.label] : [],
-    )
 
   test('reads as one line with the answer, its age, its project and the earlier question', () => {
     const line = rowOf(question('i1', 'Lock the kiosk?', ['Yes', 'No'], earlier('Yes'))).earlierLine
@@ -213,43 +207,6 @@ describe('the earlier answer on a row', () => {
   test('shows nothing during the baseline week', () => {
     expect(rowOf(question('i1', 'Lock the kiosk?', ['Yes', 'No'], earlier('Yes', false))).earlierLine).toBeNull()
     expect(earlierLineOf(earlier('Yes', false), NOW)).toBeNull()
-  })
-
-  test('adds an answer button only when the earlier answer is none of the options, and short enough to send whole', () => {
-    expect(answers(question('i1', 'Lock the kiosk?', ['Yes', 'No'], earlier('yes')))).toEqual(['Yes', 'No'])
-    expect(answers(question('i1', 'Lock the kiosk?', ['Yes', 'No'], earlier('After five '.repeat(9))))).toEqual([
-      'Yes',
-      'No',
-    ])
-    expect(answers(question('i1', 'Lock the kiosk?', ['Yes', 'No'], earlier('After five')))).toEqual([
-      'Yes',
-      'No',
-      'After five',
-    ])
-  })
-
-  test('the added button answers the question, and Undo reopens it', () => {
-    const item = question('i1', 'Lock the kiosk?', ['Yes', 'No'], earlier('After five'))
-    const ledger = { ...EMPTY, items: [item] }
-    const ctx = {
-      now: NOW,
-      turnsStarted: 1,
-      holdMs: 1000,
-      extraSteps: [],
-      comparePage: '/p.html',
-      compareInBackground: true,
-    }
-    const answered = applyPress(ledger, undefined, { action: 'answer', id: 'i1', option: 'After five' }, ctx)
-    if ('stale' in answered) throw new Error('the press was stale')
-    expect(answered.ledger.closed.map(c => [c.id, c.outcome])).toEqual([['i1', 'After five']])
-    const undone = applyPress(
-      answered.ledger,
-      answered.last ?? undefined,
-      { action: 'undo', id: 'i1' },
-      { ...ctx, now: NOW + 10 },
-    )
-    if ('stale' in undone) throw new Error('Undo was stale')
-    expect(undone.ledger.items.map(i => i.id)).toEqual(['i1'])
   })
 
   test('stays out of the text the agent reads', () => {

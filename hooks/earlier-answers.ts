@@ -104,30 +104,6 @@ export function earlierOf(match: { doc: AnswerDoc; score: number }, isShown: boo
   }
 }
 
-const sameAnswer = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
-
-/** The item's option that is its earlier answer, if one is. Pressing it answers with the earlier answer. */
-function earlierOption(item: Pick<Item, 'options' | 'earlier'>): string | null {
-  const answer = item.earlier?.answer
-
-  return answer === undefined ? null : (item.options.find(o => sameAnswer(o, answer)) ?? null)
-}
-
-/** The longest earlier answer a row adds as a button, the most the close tool keeps of an answer. */
-const ADDED_ANSWER_CHARS = 80
-
-/**
- * The earlier answer a row adds as its own answer button: a shown one that is none of the agent's options and short
- * enough to send whole, since `earlierOf` cuts a longer one.
- */
-export function addedEarlierAnswer(item: Pick<Item, 'kind' | 'options' | 'earlier'>): string | null {
-  const earlier = item.earlier
-  const isTooLong = (earlier?.answer.length ?? 0) > ADDED_ANSWER_CHARS
-  if (item.kind !== 'question' || !earlier?.isShown || isTooLong || earlierOption(item) !== null) return null
-
-  return earlier.answer
-}
-
 const DAY_MS = 24 * 60 * 60_000
 
 function agoText(ms: number): string {
