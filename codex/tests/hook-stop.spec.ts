@@ -133,6 +133,19 @@ test('a dialog question links to the question the agent recorded for it or the u
     ['Bump the version?', null],
   ])
   assert.deepEqual(await linkedQuestions(), [true, false])
+  await applyAnswer('NONE')
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Show the navigation concepts', turn_id: 't4' }), deps)
+  const title = 'Which session-navigation concept do you prefer? A keeps a rail; B uses a directory.'
+  write(started('t4'), dialog('call_d', [{ title, options: ['A — Session rail', 'B — Session directory'] }]))
+  await record('Choose the session-navigation layout', ['Session rail', 'Session directory'])
+  await handleHook(
+    input('Stop', { turn_id: 't4', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+    deps,
+  )
+  assert.deepEqual((await links()).slice(4), [
+    ['Choose the session-navigation layout', { callId: 'call_d', index: 0, question: title }],
+  ])
 })
 
 test('a Stop’s reply is the ending turn’s agent messages in order, ending with the Stop’s last message when the rollout lacks it', async () => {

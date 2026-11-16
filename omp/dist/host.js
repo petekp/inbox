@@ -5868,8 +5868,9 @@ function dialogActivity(questions, outcome) {
 }
 
 // ../hooks/dialogs.ts
+var OPTION_LABEL = /^\s*\(?(?:[a-z]|\d{1,2})\s*(?:[.):]|[\u2014\u2013-])\s+/i;
 function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+  return option.replace(RECOMMENDED_SUFFIX, "").replace(OPTION_LABEL, "").trim().toLowerCase();
 }
 function optionsKey(options) {
   return options.map(optionKey).sort().join(`
