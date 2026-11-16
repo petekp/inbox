@@ -198,7 +198,6 @@ import {
   focusHintFor,
   focusKeys,
   followUpPresses,
-  HELP_TOGGLE,
   type KeyAction,
   openedField,
   openFields,
@@ -2768,12 +2767,13 @@ export const register: Register = on => {
       isAll?: unknown
       key?: unknown
       isPointer?: unknown
+      isHelp?: unknown
     } | null
     if (data?.isPointer === true) return r
     const shown = isShownTab(data?.tab) ? data.tab : null
     const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
-    if (e.element === 'tabs' && shown) await showTab($, shown)
-    else if (e.element === HELP_TOGGLE) await update($, IS_HELP_SHOWN, isShown => !isShown)
+    if (e.element === 'tabs' && data?.isHelp === true) await update($, IS_HELP_SHOWN, isShown => !isShown)
+    else if (e.element === 'tabs' && shown) await showTab($, shown)
     else if (e.element.startsWith('undo-') && followUp && typeof data?.key === 'string')
       followUp({
         plugin: 'inbox',
@@ -3228,7 +3228,7 @@ export const register: Register = on => {
     const keyList = helpKeys(look)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
-    const { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines } = paneFrame(
+    const { banner, tabs, rail, statusBlock, isTabRowFit, desktopTabLines } = paneFrame(
       {
         ...client,
         e,
@@ -3251,7 +3251,6 @@ export const register: Register = on => {
         raise,
         railWidth,
         hasRail,
-        blankLine,
         isHelpShown,
       },
       handlers,
@@ -3545,7 +3544,6 @@ export const register: Register = on => {
           ]
         )}
         {/* Desktop takes no keys: a Button's hotkey does nothing there, so it gets neither the list of keys nor the hidden Buttons. */}
-        {footer}
         {look === 'desktop' ? null : (
           <Box display="none">
             {keyBindings([...tabKeys, ...moveKeys])}

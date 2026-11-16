@@ -1,12 +1,12 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
+import { TAB_HEIGHT, tabLinesOf, type TabsProps } from '../hooks/tabs-client'
 import { cellWidth } from '../hooks/text'
 import { shownTabs } from '../hooks/tabs'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('the terminal footer draws Help as a question mark, and Help names the version from the plugin manifest', async ($, on) => {
+test('the terminal draws Help as a question mark tab that opens and closes Help, and Help names the version from the plugin manifest', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -15,10 +15,12 @@ test('the terminal footer draws Help as a question mark, and Help names the vers
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /v1\.2\.3/ })).toBeUndefined()
-  expect((await pane.find({ key: 'help' }))?.props.label).toBe('?')
-  await pane.press({ key: 'help' })
+  expect((await pane.find({ key: 'tab-help' }))?.props.label).toBe('?')
+  await pane.press({ key: 'tab-help' })
   expect(await pane.find({ text: 'Inbox v1.2.3' })).toBeDefined()
-  expect((await pane.find({ key: 'help' }))?.props.label).toBe('✕ Close help')
+  expect((await pane.find({ key: 'tab-help' }))?.props.label).toBe('?')
+  await pane.press({ key: 'tab-help' })
+  expect(await pane.find({ text: 'Inbox v1.2.3' })).toBeUndefined()
 })
 
 test('Help draws the same page over every tab, and switching tabs closes it', async ($, on) => {
@@ -29,7 +31,7 @@ test('Help draws the same page over every tab, and switching tabs closes it', as
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 69 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const helpTexts = async () => {
-    await pane.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'help-toggle' })
+    await pane.pointer({ type: 'down', x: (await tabBar()).columns - 1, y: 0, button: 'left', in: 'tabs' })
     await clock.settle()
     return (await pane.findAll({ type: 'Text' })).map(t => t.text)
   }
@@ -41,11 +43,11 @@ test('Help draws the same page over every tab, and switching tabs closes it', as
   await clock.settle()
   expect((await tabBar()).shown).toBe(tabs[0]!.id)
   expect((await tabBar()).isHelpShown).toBe(false)
-  expect(await pane.find({ key: 'help' })).toBeUndefined()
   expect(await helpTexts()).toEqual(firstHelp)
+  expect((await tabBar()).isHelpShown).toBe(true)
   await pane.pointer({ type: 'down', x: 1, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  expect(await pane.find({ key: 'help' })).toBeUndefined()
+  expect((await tabBar()).isHelpShown).toBe(false)
 })
 
 test('Help marks a build that follows the next branch', async ($, on) => {
@@ -57,23 +59,29 @@ test('Help marks a build that follows the next branch', async ($, on) => {
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'help' })
+  await pane.press({ key: 'tab-help' })
   expect(await pane.find({ text: 'Inbox v1.2.3 · next' })).toBeDefined()
 })
 
-test('the desktop footer draws Help as a named icon that takes a click anywhere on it, and Help names the version', async ($, on) => {
+test('the desktop tab row ends with a Help tab that takes a click to open and close Help, and Help names the version', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.surfaces = ['desktop']
 
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 69 } })
-  expect((await pane.find({ type: 'Svg' }))?.props.alt).toBe('Help')
-  expect(await pane.find({ key: 'help' })).toBeUndefined()
-  await pane.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'help-toggle' })
-  await clock.settle()
+  const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  const pressHelp = async () => {
+    await pane.pointer({ type: 'down', x: (await tabBar()).columns - 1, y: 0, button: 'left', in: 'tabs' })
+    await clock.settle()
+  }
+  expect((await tabBar()).help.label).toBe('?')
+  await pressHelp()
   expect(await pane.find({ text: 'Inbox v1.2.3' })).toBeDefined()
-  expect((await pane.find({ key: 'help' }))?.props.label).toBe('✕ Close help')
+  expect((await tabBar()).isHelpShown).toBe(true)
+  await pressHelp()
+  expect(await pane.find({ text: 'Inbox v1.2.3' })).toBeUndefined()
+  expect((await tabBar()).isHelpShown).toBe(false)
 })
 
 test('/inbox opens on the tab that has rows when the tab it would show is empty', async ($, on) => {
@@ -229,7 +237,7 @@ test('a PR that arrives while the Asks tab is empty moves the pane to the PRs ta
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
 })
 
-test('the desktop tabs fit one line at the narrowest dock, by their words, and narrower still they wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {
+test('the desktop tabs and the Help tab fit one line at the narrowest dock, by their symbols, then by their words from a few columns wider, and narrower still they wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.surfaces = ['desktop']
@@ -238,14 +246,22 @@ test('the desktop tabs fit one line at the narrowest dock, by their words, and n
   const tabBar = async () => await pane.find({ key: 'tabs' })
   const narrowest = (await tabBar())?.props.props as TabsProps
   expect(narrowest.tabs.map(t => t.id)).toEqual(shownTabs().map(t => t.id))
-  expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs().map(t => t.label))
-  expect(tabLines(narrowest.tabs, narrowest.gap, narrowest.columns)).toHaveLength(1)
+  expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs().map(t => t.symbol))
+  expect(tabLinesOf(narrowest)).toHaveLength(1)
+  await pane.redraw({ ...PANE.props, bodyColumns: 32 })
+  const wider = (await tabBar())?.props.props as TabsProps
+  expect(wider.tabs.map(t => t.label)).toEqual(shownTabs().map(t => t.label))
+  expect(tabLinesOf(wider)).toHaveLength(1)
   await pane.redraw({ ...PANE.props, bodyColumns: 12 })
-  const { tabs, gap, columns } = (await tabBar())?.props.props as TabsProps
-  const lines = tabLines(tabs, gap, columns)
+  const wrapped = (await tabBar())?.props.props as TabsProps
+  const { gap, columns, help } = wrapped
+  const lines = tabLinesOf(wrapped)
   expect(lines.length).toBeGreaterThan(1)
-  for (const line of lines)
-    expect(line.reduce((sum, t) => sum + t.width, gap * (line.length - 1))).toBeLessThanOrEqual(columns)
+  lines.forEach((line, n) =>
+    expect(
+      line.reduce((sum, t) => sum + t.width, gap * (line.length - 1)) + (n === 0 ? gap + help.width : 0),
+    ).toBeLessThanOrEqual(columns),
+  )
   expect((await tabBar())?.props.height).toBe(TAB_HEIGHT * lines.length)
   const last = lines.at(-1)![0]!
   await pane.pointer({ type: 'down', x: 1, y: TAB_HEIGHT * (lines.length - 1) + 1, button: 'left', in: 'tabs' })

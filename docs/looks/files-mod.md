@@ -7,7 +7,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/claude.ts` | Mod only. Claude transcript, command, dialog and stop helpers. |
 | `hooks/register.tsx` | Mod adapter and host. Runs the Pane render. It reads the drawn state, builds the handlers for the calls that need `$`, and calls the `pane-*.tsx` files, which draw every tab. It also runs the band, the per-reply update and the press runner. It keeps the drawn session in an engine atom, saves each conversation's session in the engine store, and builds the mod's `SessionHost`. The plugin directory refuses `$` passed to a function another of the mod's files declares, so every function that takes `$` lives in this file. |
 | `hooks/pane-context.ts` | Mod only. The types the Pane render hands its drawing files: `PaneBase` for the values the render computed, `PaneClient` for whether the surface draws Clients, `PaneHandlers` for the calls that need `$`, and `Row`, the shape every list row is drawn from. |
-| `hooks/pane-frame.tsx` | Mod only. The pane's frame in both looks: the tab bar, the inline rail, banners and the footer. |
+| `hooks/pane-frame.tsx` | Mod only. The pane's frame in both looks: the tab bar, the inline rail, banners and the status block. |
 | `hooks/pane-row-frame.tsx` | Mod only. `desktopFrame`, the frame a desktop row, group title, PR block or Status row draws in: its mark column, side column and padding. |
 | `hooks/pane-asks.tsx` | Mod only. The Asks and Finds tabs: question, task and finding rows, the Needs you and Finds groups, and a tab's empty state. |
 | `hooks/pane-ask-tree.tsx` | Mod only. An open question's or task's context, option lines and Holds up line, hung on one connector in the terminal, and the entries desktop draws on its own lines. |
@@ -60,5 +60,5 @@ Part of [the look map](../looks.md#files).
 | `hooks/parent-client.tsx` | Mod only. A Client region for a Status parent's name line on desktop, which folds or opens its rows on a click anywhere on the line. |
 | `hooks/fold-client.tsx` | Mod only. A Client region for a desktop fold line: "N closed" on Asks and "N done" on the Status. |
 | `hooks/links-client.tsx` | Mod only. A Client region for an open row's follow-ups on desktop. |
-| `hooks/press-client.tsx` | Mod only. A Client region that takes a click over its whole shape and tints under the pointer. Undo and the Help icon use it on desktop. |
+| `hooks/press-client.tsx` | Mod only. A Client region that takes a click over its whole shape and tints under the pointer. Undo uses it on desktop. |
 | `hooks/desktop-metrics.ts` | Mod only. How wide the desktop pane draws text: characters per column, each character's width in points, a Button's padding, and line wrapping. |

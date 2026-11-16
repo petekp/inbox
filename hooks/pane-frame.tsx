@@ -1,9 +1,6 @@
 import { bannerOf, type BannerView, tabBarBanners } from './banners'
 import { feedbackText } from './feedback'
 import { HELP_COPY } from './help'
-import { helpSvg } from './desktop-svg'
-import { HELP_TOGGLE } from './pane-keys'
-import type { PressAreaProps } from './press-client'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from './layout'
 import { HERDR_ASK_BUTTONS, herdrAskBanner } from './herdr-ask'
 import { pressHerdrAsk } from './mod-herdr'
@@ -11,18 +8,16 @@ import { TOOLS_REFUSED_TEXT } from './mod-records'
 import { mod } from './mod-state'
 import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import {
-  DESKTOP_CELL_PT,
   DESKTOP_LINE_PT,
   DESKTOP_TAB_PAD,
-  HELP_ICON_CELLS,
   desktopTabSizes,
   FRAMED_TAB_LAYOUTS,
   INLINE_TAB_GAPS,
   RAIL_GUTTER,
   TAB_PAD,
 } from './pane-sizes'
-import { fitTabs, isRowTab, tabName, type TabNaming } from './tabs'
-import { TAB_HEIGHT, tabLines, type TabsProps } from './tabs-client'
+import { fitTabs, isRowTab, tabName, type ShownTab, type TabNaming } from './tabs'
+import { TAB_HEIGHT, tabLinesOf, type TabsProps } from './tabs-client'
 import { cellWidth } from './text'
 import type { BannerTone } from './tones'
 
@@ -50,7 +45,6 @@ export function paneFrame(
     raise,
     railWidth,
     hasRail,
-    blankLine,
     isHelpShown,
   }: PaneClient &
     Pick<
@@ -75,16 +69,25 @@ export function paneFrame(
       | 'raise'
       | 'railWidth'
       | 'hasRail'
-      | 'blankLine'
       | 'isHelpShown'
     >,
   { showTab, updateHelpShown }: Pick<PaneHandlers, 'showTab' | 'updateHelpShown'>,
 ) {
   const tabColumns = e.props.bodyColumns - 2
+  const isTabSelected = (id: ShownTab) => !isHelpShown && id === shownTab
+  const helpTab = {
+    label: HELP_COPY.icon,
+    symbol: HELP_COPY.icon,
+    badge: null,
+    isShown: isHelpShown,
+    isAlwaysFramed: true,
+  }
   const tabSizes = desktopTabSizes(
-    tabList.map(t => ({ ...t, badge: badgeOf(t.id), isShown: t.id === shownTab })),
+    [...tabList.map(t => ({ ...t, badge: badgeOf(t.id), isShown: isTabSelected(t.id) })), helpTab],
     tabColumns,
   )
+  const helpWidth = tabSizes.widths.at(-1)!
+  const toggleHelp = () => void updateHelpShown(shown => !shown)
   const tabProps: TabsProps | null = hasClient
     ? {
         tabs: tabList.map((t, n) => ({
@@ -96,6 +99,7 @@ export function paneFrame(
         })),
         shown: shownTab,
         isHelpShown,
+        help: { label: HELP_COPY.icon, width: helpWidth },
         gap: tabSizes.gap,
         isEachFramed: tabSizes.isEachFramed,
         columns: tabColumns,
@@ -194,13 +198,14 @@ export function paneFrame(
   ).map(b => (b.kind === 'herdr-mod-ask' ? banner(b, { isBodyBelow: true, extra: herdrAskButtons() }) : banner(b)))
   const namesWidth = (naming: TabNaming) =>
     tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
+  const helpCells = cellWidth(HELP_COPY.icon)
   const fitsFramed = (naming: TabNaming, r: (typeof FRAMED_TAB_LAYOUTS)[number]) =>
-    namesWidth(naming) + 2 * r.pad.length * tabList.length + r.gap * (tabList.length - 1) <=
+    namesWidth(naming) + helpCells + 2 * r.pad.length * (tabList.length + 1) + r.gap * tabList.length <=
     e.props.bodyColumns - 1 - r.right
   const framedTabs = fitTabs(FRAMED_TAB_LAYOUTS, fitsFramed)
   const { pad } = framedTabs.layout
   const fitsInline = (naming: TabNaming, gap: number) =>
-    namesWidth(naming) + gap * (tabList.length - 1) <= e.props.bodyColumns - 3
+    namesWidth(naming) + helpCells + gap * tabList.length <= e.props.bodyColumns - 3
   const inlineTabs = fitTabs(INLINE_TAB_GAPS, fitsInline)
   /** Whether the terminal's tabs fit on one row, so the lines above a tab's page are known. */
   const isTabRowFit = isInline
@@ -213,8 +218,85 @@ export function paneFrame(
   // line beside it. There a tab is its filled name line alone.
   const hasHalfLines = termProgram !== 'Apple_Terminal'
   /** The lines the tabs' Client takes, which draws the tabs on desktop; null when the tabs are Buttons. */
-  const desktopTabLines =
-    hasClient && tabProps ? TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length : null
+  const desktopTabLines = hasClient && tabProps ? TAB_HEIGHT * tabLinesOf(tabProps).length : null
+  /**
+   * The Help tab at the right end of the tab row, drawn as the other tabs are. Unlike the shown tab, it stays a Button
+   * while it shows, with the same keys, so a press on it closes Help and the app keeps the pane's focus.
+   */
+  const helpTabEl = isInline ? (
+    <Button plain key="tab-help" label={HELP_COPY.icon} onPress={toggleHelp}>
+      {isHelpShown ? (
+        <Text bold underline>
+          {HELP_COPY.icon}
+        </Text>
+      ) : (
+        <Text color={pal.muted}>{HELP_COPY.icon}</Text>
+      )}
+    </Button>
+  ) : look === 'desktop' ? (
+    <Button
+      key="tab-help"
+      label={`${DESKTOP_TAB_PAD}${HELP_COPY.icon}${DESKTOP_TAB_PAD}`}
+      {...(isHelpShown ? { variant: 'primary' as const } : {})}
+      onPress={toggleHelp}
+    />
+  ) : (
+    (() => {
+      const width = cellWidth(HELP_COPY.icon) + 2 * pad.length
+      const edgeFill = hasHalfLines ? pal.tab : undefined
+      const edgeHover = edgeFill ? raiseEdge : { inverse: false }
+      const hover = isHelpShown ? undefined : raise
+      const aboveFill = isHelpShown ? pal.raised : edgeFill
+
+      return (
+        <Box key="tab-block-help" flexDirection="column" flexShrink={0}>
+          <Button plain key="tab-help-above" hover={isHelpShown ? { inverse: false } : edgeHover} onPress={toggleHelp}>
+            {isHelpShown ? (
+              <Text color={pal.raised}>{(hasHalfLines ? '▄' : ' ').repeat(width)}</Text>
+            ) : aboveFill ? (
+              <Text color={aboveFill} hover={raiseEdge}>
+                {'▄'.repeat(width)}
+              </Text>
+            ) : (
+              ' '.repeat(width)
+            )}
+          </Button>
+          <Box flexDirection="row" backgroundColor={isHelpShown ? pal.raised : pal.tab}>
+            {pad ? (
+              <Button plain key="tab-help-before" label={pad} {...(hover ? { hover } : {})} onPress={toggleHelp} />
+            ) : null}
+            <Button plain key="tab-help" label={HELP_COPY.icon} {...(hover ? { hover } : {})} onPress={toggleHelp}>
+              {isHelpShown ? (
+                <Text bold color={pal.raisedText}>
+                  {HELP_COPY.icon}
+                </Text>
+              ) : (
+                <Text color={pal.muted}>{HELP_COPY.icon}</Text>
+              )}
+            </Button>
+            {pad ? (
+              <Button plain key="tab-help-after" label={pad} {...(hover ? { hover } : {})} onPress={toggleHelp} />
+            ) : null}
+          </Box>
+          <Button plain key="tab-help-below" hover={isHelpShown ? { inverse: false } : edgeHover} onPress={toggleHelp}>
+            {isHelpShown ? (
+              hasHalfLines ? (
+                <Text color={pal.raised}>{'▀'.repeat(width)}</Text>
+              ) : (
+                <Text color={tabLine}>{'─'.repeat(width)}</Text>
+              )
+            ) : edgeFill ? (
+              <Text color={edgeFill} hover={raiseEdge}>
+                {'▀'.repeat(width)}
+              </Text>
+            ) : (
+              <Text color={tabLine}>{'─'.repeat(width)}</Text>
+            )}
+          </Button>
+        </Box>
+      )
+    })()
+  )
   const tabs = (
     <Box
       paddingLeft={isInline ? 2 : 1}
@@ -232,6 +314,7 @@ export function paneFrame(
       <Box
         flexDirection="row"
         flexWrap="wrap"
+        flexGrow={1}
         columnGap={isInline ? inlineTabs.layout : look === 'desktop' ? 2 : framedTabs.layout.gap}
       >
         {hasClient && tabProps ? (
@@ -247,7 +330,7 @@ export function paneFrame(
               if (isInline)
                 return (
                   <Box key={`tab-block-${id}`} flexDirection="row">
-                    {shownTab === id ? (
+                    {isTabSelected(id) ? (
                       <Text bold underline>
                         {label}
                       </Text>
@@ -256,7 +339,7 @@ export function paneFrame(
                         <Text color={pal.muted}>{label}</Text>
                       </Button>
                     )}
-                    {badge === null ? null : shownTab === id ? (
+                    {badge === null ? null : isTabSelected(id) ? (
                       <Text bold color={tabTone(id)}>
                         {' '}
                         {badge}
@@ -281,12 +364,12 @@ export function paneFrame(
                   <Button
                     key={`tab-${id}`}
                     label={`${DESKTOP_TAB_PAD}${badge === null ? label : `${label} ${badge}`}${DESKTOP_TAB_PAD}`}
-                    {...(shownTab === id ? { variant: 'primary' as const } : {})}
+                    {...(isTabSelected(id) ? { variant: 'primary' as const } : {})}
                     onPress={() => void showTab(id)}
                   />
                 )
 
-              if (shownTab === id)
+              if (isTabSelected(id))
                 return (
                   <Box flexDirection="column" flexShrink={0}>
                     <Text color={pal.raised}>{(hasHalfLines ? '▄' : ' ').repeat(width)}</Text>
@@ -351,14 +434,16 @@ export function paneFrame(
               )
             })}
       </Box>
+      {tabProps ? null : helpTabEl}
     </Box>
   )
+  const helpFill = ' '.repeat(railWidth - cellWidth(HELP_COPY.icon) - TAB_PAD.length)
   const rail = (
     <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
       {tabList.map(({ id, label }) => {
         const badge = badgeOf(id)
         const fill = ' '.repeat(railWidth - cellWidth(tabText(id, label)) - TAB_PAD.length)
-        if (shownTab === id)
+        if (isTabSelected(id))
           return (
             <Text key={`rail-${id}`} backgroundColor={pal.raised}>
               {TAB_PAD}
@@ -391,6 +476,23 @@ export function paneFrame(
           </Box>
         )
       })}
+      <Box key="rail-help" flexDirection="row" marginTop={1}>
+        {[
+          ['tab-help-before', TAB_PAD],
+          ['tab-help', HELP_COPY.icon],
+          ['tab-help-after', helpFill],
+        ].map(([key, label]) => (
+          <Button plain key={key} label={label} {...(isHelpShown ? {} : { hover: raise })} onPress={toggleHelp}>
+            {isHelpShown ? (
+              <Text bold={key === 'tab-help'} color={pal.raisedText} backgroundColor={pal.raised}>
+                {label}
+              </Text>
+            ) : key === 'tab-help' ? (
+              <Text color={pal.muted}>{label}</Text>
+            ) : null}
+          </Button>
+        ))}
+      </Box>
     </Box>
   )
   const statusBlock = statusLines.some(Boolean) ? (
@@ -403,48 +505,7 @@ export function paneFrame(
       {statusLines}
     </Box>
   ) : null
-  /**
-   * Desktop draws Help's icon as an Svg under a Client, so a click anywhere on the circle opens Help. A Button takes
-   * a click only over its label and draws no icon. The terminal draws a plain question mark in a Button. While Help
-   * shows, both draw the close Button, with the same key in the terminal so its pane keeps its focus.
-   */
-  const helpControl =
-    !isHelpShown && hasClient && 'Svg' in elements ? (
-      <Box key="help-icon" width={HELP_ICON_CELLS} height={1} flexShrink={0}>
-        <elements.Svg
-          source={helpSvg()}
-          alt={HELP_COPY.name}
-          width={HELP_ICON_CELLS * DESKTOP_CELL_PT}
-          height={DESKTOP_LINE_PT}
-        />
-        <Box position="absolute" top={0} left={0}>
-          <elements.Client
-            key={HELP_TOGGLE}
-            module="./press-client.tsx"
-            width={HELP_ICON_CELLS}
-            height={1}
-            props={{ pressKey: HELP_TOGGLE, hover: 'rgba(128, 128, 128, 0.12)' } satisfies PressAreaProps}
-          />
-        </Box>
-      </Box>
-    ) : (
-      <Button
-        plain
-        dimColor={look !== 'desktop'}
-        key="help"
-        label={isHelpShown ? HELP_COPY.close : HELP_COPY.icon}
-        onPress={() => void updateHelpShown(shown => !shown)}
-      />
-    )
-  const footer = (
-    <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
-      <Box flexDirection="row" paddingX={1}>
-        {helpControl}
-      </Box>
-    </Box>
-  )
-
-  return { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines }
+  return { banner, tabs, rail, statusBlock, isTabRowFit, desktopTabLines }
 }
 
 export type PaneFrame = ReturnType<typeof paneFrame>

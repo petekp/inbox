@@ -44,8 +44,6 @@ export const DESKTOP_LINK_GAP_CELLS = 1.5
 /** Room a link takes past its label's estimated width. At the estimate alone, app 3.6556.2 cut a link's label, as "Re…". */
 export const DESKTOP_LINK_SLACK_CELLS = 0.5
 export const UNDO_CELLS = 9
-/** The cells the desktop Help icon's Svg and click region take. */
-export const HELP_ICON_CELLS = 3
 export const UNDO_HEIGHT_PT = 23
 /**
  * A Box in the hooks tree counts padding in half lines, so it pads twice this.
@@ -98,7 +96,7 @@ export const INLINE_RAIL_AT = 80
 export const RAIL_GUTTER = 2
 
 export function desktopTabSizes(
-  tabs: { label: string; symbol: string; badge: string | null; isShown: boolean }[],
+  tabs: { label: string; symbol: string; badge: string | null; isShown: boolean; isAlwaysFramed?: boolean }[],
   columns: number,
 ): { widths: number[]; gap: number; isEachFramed: boolean; naming: TabNaming } {
   const steps = [
@@ -111,7 +109,7 @@ export function desktopTabSizes(
     tabs.map(t => {
       const name = tabName(t, naming)
       const text = t.badge === null ? name : `${name}${TAB_COUNT_GAP}${t.badge}`
-      const isFramed = isEachFramed || t.isShown
+      const isFramed = isEachFramed || t.isShown || t.isAlwaysFramed === true
       // A tab's rounded frame insets its label FRAME_INSET_PT on each side, so its width adds those columns,
       // rounded up, to what the label needs. Narrower, the label wraps inside the tab.
       return (

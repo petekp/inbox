@@ -26,6 +26,12 @@ nav {
   color: var(--text);
   font-weight: 600;
 }
+.help-tab {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  margin-left: auto;
+}
 .tab .count {
   font-weight: 600;
   margin-left: var(--unit);
@@ -35,7 +41,7 @@ nav {
   display: none;
   color: var(--text);
 }
-@container tab-bar (width < 316px) {
+@container tab-bar (width < 348px) {
   .tab-symbol {
     display: inline;
   }

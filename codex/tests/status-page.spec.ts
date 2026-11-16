@@ -150,7 +150,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       .filter(c => c.getAttribute('aria-hidden') !== 'true')
       .map(c => c.textContent)
       .join('')
-  const tabLabels = () => [...root.querySelectorAll('.tab')].map(spokenText)
+  const tabLabels = () => [...root.querySelectorAll('.tab')].map(b => b.getAttribute('aria-label') ?? spokenText(b))
   const shownTab = () => {
     const shown = root.querySelector('.tab.shown')
 
@@ -160,13 +160,13 @@ test('the Codex tab draws the Status page from a release build’s view, and new
   try {
     await import('../src/tab')
     await until(() => root.querySelector('.status-head') !== null)
-    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds', 'PRs', 'Help'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => [
         b.getAttribute('title'),
         b.querySelector('.tab-symbol')?.textContent,
       ]),
-      shownTabs().map(t => [t.label, t.symbol]),
+      [...shownTabs().map(t => [t.label, t.symbol]), ['Help (?)', undefined]],
     )
     assert.equal(shownTab(), 'Status')
     assert.equal(sentTabs[0], 'overview')
@@ -204,7 +204,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     await afterPoll()
     assert.equal(shownTab(), 'Status')
     assert.ok(root.querySelector('.row.selected') === null, 'a row is open')
-    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds1', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds1', 'PRs', 'Help'])
 
     key('3')
     assert.equal(shownTab(), 'Finds1')
@@ -237,7 +237,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
 
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => b.getAttribute('title')),
-      shownTabs().map(t => t.label),
+      [...shownTabs().map(t => t.label), 'Help (?)'],
     )
     key('4')
     assert.equal(shownTab(), 'PRs')

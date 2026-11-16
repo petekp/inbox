@@ -17,8 +17,8 @@ import { HerdrAskBanner } from './tab-herdr-ask'
 import { bannerMotion, lineMotion } from './tab-line-steps'
 import type { BannerLine } from './tab-line-steps'
 
-/** The Help control's drawn form: a question mark in a circle, in the button's text color. */
-export function HelpIcon() {
+/** The Help tab's icon: a question mark in a circle, in the tab's text color. */
+function HelpIcon() {
   return (
     <svg class="help-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
       <circle cx="8" cy="8" r="6.8" fill="none" stroke="currentColor" stroke-width="1.2" />
@@ -132,7 +132,7 @@ export function TabBar({ v }: { v: View }) {
         {shownTabs().map(t => (
           <button
             type="button"
-            class={`tab ${shown === t.id ? 'shown' : ''}`}
+            class={`tab ${shown === t.id && !tabState.isHelpShown ? 'shown' : ''}`}
             title={t.label}
             data-tab={t.id}
             onClick={() => {
@@ -150,6 +150,19 @@ export function TabBar({ v }: { v: View }) {
           </button>
         ))}
       </div>
+      <button
+        type="button"
+        class={`tab help-tab ${tabState.isHelpShown ? 'shown' : ''}`}
+        title={`${HELP_COPY.name} (?)`}
+        aria-label={HELP_COPY.name}
+        aria-pressed={tabState.isHelpShown}
+        onClick={() => {
+          tabState.isHelpShown = !tabState.isHelpShown
+          tabState.draw()
+        }}
+      >
+        <HelpIcon />
+      </button>
       <div class="banner-stack" data-motion="banners">
         {(tabState.lastBanners ?? []).map(({ id, banner: b }) => (
           <div key={id} {...lineMotion(bannerMotion(id))}>
