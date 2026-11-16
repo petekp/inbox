@@ -441,6 +441,10 @@ var CLIENTS = {
       "status-idle-age": { kind: "full" },
       "question-back-stays-open": { kind: "full" },
       "collapse-rows": { kind: "full" },
+      "fold-all": {
+        kind: "different",
+        reason: "A terminal click carries no modifier key, and the engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, and no run has shown that its click reports Option, so the desktop has no known way in."
+      },
       "suggested-goal": { kind: "full" }
     }
   },
@@ -586,6 +590,7 @@ var CLIENTS = {
         reason: "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere."
       },
       "collapse-rows": { kind: "full" },
+      "fold-all": { kind: "full" },
       "suggested-goal": {
         kind: "different",
         reason: "Clicks only, as for the goal: the Codex Status has no row selection."
@@ -680,6 +685,10 @@ var CLIENTS = {
       "status-idle-age": { kind: "full" },
       "question-back-stays-open": { kind: "full" },
       "collapse-rows": { kind: "full" },
+      "fold-all": {
+        kind: "different",
+        reason: "The panel takes keys only, so the w key folds every fold or opens them all, and no click does."
+      },
       "suggested-goal": { kind: "full" }
     }
   }
@@ -3644,6 +3653,7 @@ function tabLegend() {
 }
 var UNDO_KEY = "u";
 var COLLAPSE_KEY = "z";
+var FOLD_ALL_KEY = "w";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "On PRs, rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "On PRs, clear the merged and closed PRs" }
@@ -3653,6 +3663,7 @@ function helpKeys(look) {
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
   const collapseKey = { keys: COLLAPSE_KEY, does: "Collapse or expand the selected row" };
+  const foldAllKey = { keys: FOLD_ALL_KEY, does: "Fold every fold on the tab, or open them all" };
   switch (look) {
     case "desktop":
       return [];
@@ -3661,6 +3672,7 @@ function helpKeys(look) {
         switchTabs,
         { keys: "j k", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
@@ -3670,6 +3682,7 @@ function helpKeys(look) {
         switchTabs,
         { keys: "j k \u2191 \u2193", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
@@ -3683,6 +3696,7 @@ function helpKeys(look) {
         { keys: "\u21B5", does: "Press the picked button" },
         { keys: "t", does: "Reply to the selected row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
@@ -3693,6 +3707,7 @@ function helpKeys(look) {
         { keys: "\u2190 \u2192", does: "Switch tabs" },
         { keys: "j k", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
@@ -7065,7 +7080,36 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
 }
+function drawnLists(v, isSettledDrawn, toRow) {
+  const entries = (rows) => rows.flatMap((r) => {
+    if (r.state.is === "settled")
+      return isSettledDrawn(r.id) ? [{ settled: r, state: r.state }] : [];
+    const row = toRow(r);
+    return row === null ? [] : [{ row }];
+  });
+  const questions = entries(v.needsYou.questions);
+  const tasks = entries(v.needsYou.tasks);
+  const findingGroups = Object.keys(FINDING_GROUPS).map((kind) => ({
+    kind,
+    title: FINDING_GROUPS[kind].title,
+    entries: entries(v.findings.rows.filter((r) => r.finding?.kind === kind))
+  }));
+  const findings = findingGroups.flatMap((g) => g.entries);
+  return {
+    questions,
+    tasks,
+    findings,
+    findingGroups,
+    byTab: { needsYou: [...rowsIn(questions), ...rowsIn(tasks)], findings: rowsIn(findings) }
+  };
+}
 var opensFor = (r) => r.isWaiting && !r.isCollapsed;
+function listWaits(v) {
+  const lists = drawnLists(v, () => true, (r) => r);
+  const collapsed = new Set(v.collapsed);
+  const waits = (entries) => entries.map((x) => ("row" in x) ? { id: x.row.id, isWaiting: isWaitingRow(x.row), isCollapsed: collapsed.has(x.row.id) } : { id: x.settled.id, isWaiting: false });
+  return { needsYou: waits([...lists.questions, ...lists.tasks]), findings: waits(lists.findings) };
+}
 function firstWaiting(rows) {
   return rows.find(opensFor)?.id ?? null;
 }
@@ -7093,6 +7137,9 @@ function rowAfterClose(rows, closedId) {
   if (at < 0)
     return null;
   return (rows.slice(at + 1).find(opensFor) ?? rows.slice(0, at).reverse().find(opensFor))?.id ?? null;
+}
+function rowsIn(entries) {
+  return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
 function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
@@ -8062,6 +8109,56 @@ function askTreeLines(line, pad, width, s, isAllShown = false) {
       out.push(...draw(rest, b.reason, rest));
   });
   return out;
+}
+
+// ../hooks/fold-all.ts
+var statusFoldsOf = (view) => {
+  const page = view.statusPage;
+  const milestones = page.goal?.milestones ?? [];
+  const rows = [...milestones.flatMap((m) => m.rows), ...page.rows];
+  const listed = rows.flatMap((r) => r.kind === "done-fold" ? [r, ...r.rows] : [r]);
+  const foldIds = [
+    ...page.goal?.milestonesFold ? [page.goal.milestonesFold.id] : [],
+    ...milestones.flatMap((m) => m.foldId === null ? [] : [m.foldId]),
+    ...listed.filter((r) => r.kind === "done-fold").map((r) => r.id)
+  ];
+  const parentIds = [
+    ...milestones.filter((m) => m.foldCount > 0).map((m) => m.id),
+    ...listed.filter((r) => r.kind === "subject" && r.foldCount > 0).map((r) => r.id)
+  ];
+  return { statusFolds: [...new Set(foldIds)], parents: [...new Set(parentIds)] };
+};
+function tabFolds(view, tab) {
+  const none = { closed: [], statusFolds: [], parents: [], rows: [] };
+  if (tab === "overview")
+    return { ...none, ...statusFoldsOf(view) };
+  if (tab === "prs")
+    return { ...none, rows: prRowWaits(openPrViews(view.prs.drawn), view.lastActions).map((r) => r.id) };
+  const live = new Set((tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows).filter((r) => r.state.is !== "settled").map((r) => r.id));
+  const closed = tab === "needsYou" ? NEEDS_YOU_GROUPS.filter((g) => view.needsYou.closed[g.list].length > 0).map((g) => g.kind) : Object.keys(FINDING_GROUPS).filter((kind) => view.findings.closed.some((f) => f.kind === kind));
+  return {
+    ...none,
+    closed,
+    rows: listWaits(view)[tab].flatMap((r) => live.has(r.id) ? [r.id] : [])
+  };
+}
+function isAnyFoldOpen(folds, state) {
+  const isOpen = (id) => !state.collapsed.includes(id);
+  return folds.closed.some((k) => state.unfolded.includes(k)) || folds.statusFolds.some((id) => state.statusUnfolded.includes(id)) || folds.parents.some(isOpen) || folds.rows.some(isOpen);
+}
+function foldAll(folds, state, isOpening) {
+  const set = (list, these) => isOpening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
+  const collapsible = [...folds.parents, ...folds.rows];
+  return {
+    unfolded: set(state.unfolded, folds.closed),
+    statusUnfolded: set(state.statusUnfolded, folds.statusFolds),
+    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === isOpening ? [{ id, isCollapsed: !isOpening }] : [])
+  };
+}
+function foldAllOn(view, tab, open, isOpening) {
+  const folds = tabFolds(view, tab);
+  const state = { ...open, collapsed: view.collapsed };
+  return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
 }
 
 // ../hooks/empty-tab.ts
@@ -9189,7 +9286,7 @@ function activate(screen, ui, line, button, now) {
       return { ui };
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: "sending" } }, press };
   }
-  if (press.action === "herdr-ask" || press.action === "collapse")
+  if (press.action === "herdr-ask" || press.action === "collapse" || press.action === "collapse-all")
     return { ui: { ...ui, focus: null }, press };
   if (!isPrPress(press) && press.action === "type") {
     const draft = ui.drafts[line.id] ?? { text: "", since: now };
@@ -9257,6 +9354,14 @@ function handleKey(screen, ui, key, now, text) {
   }
   if (pickedTab)
     return { ui: withTab(base, pickedTab.id, now) };
+  if (key === FOLD_ALL_KEY) {
+    const change = foldAllOn(screen.view, base.tab, base, null);
+    const closedAll = base.closedAll.filter((k) => change.unfolded.includes(k));
+    return {
+      ui: { ...base, unfolded: change.unfolded, statusUnfolded: change.statusUnfolded, closedAll },
+      press: { action: "collapse-all", changes: change.collapses }
+    };
+  }
   if (key === UNDO_KEY) {
     const undoable = latestUndo(lines.flatMap((l) => l.settled?.undo ? [{ id: l.id, press: l.settled.undo, at: l.settled.at }] : []));
     return undoable ? { ui: withSelection(base, undoable.id), press: undoable.press } : { ui: base };
@@ -9825,6 +9930,15 @@ function createPanel(deps) {
         screen = { ...screen, view: { ...screen.view, collapsed: collapsedAfter(screen.view.collapsed, p) } };
       deps.requestRender();
       return source.collapse(p.id, p.isCollapsed).then(() => refresh());
+    }
+    if (p.action === "collapse-all") {
+      const collapsed = p.changes.reduce(collapsedAfter, screen?.view.collapsed ?? []);
+      if (screen)
+        screen = { ...screen, view: { ...screen.view, collapsed } };
+      deps.requestRender();
+      for (const c of p.changes)
+        await source.collapse(c.id, c.isCollapsed);
+      return refresh();
     }
     const rowId = pressRowId(p);
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());

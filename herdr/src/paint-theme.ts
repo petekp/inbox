@@ -149,10 +149,11 @@ export type Paint = {
   t: Theme
   /** The theme's code font. */
   mono: string
-  press: (b: Button, cx: Context) => void
+  /** `isAll` is set while Option is held, which folds or opens every fold of the tab when the button is a fold. */
+  press: (b: Button, cx: Context, isAll?: boolean) => void
   select: (id: string, cx: Context) => void
   /** Collapses row `id`, or expands and selects it. */
-  collapse: (id: string, isCollapsed: boolean, cx: Context) => void
+  collapse: (id: string, isCollapsed: boolean, cx: Context, isAll?: boolean) => void
   pick: (tab: ShownTab, cx: Context) => void
   motion: ReadonlyMap<string, RowMotion>
   /** Each block's height without its space, and each row's panel's, by `panelId`, from its last measure. */

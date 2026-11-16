@@ -43,3 +43,29 @@ test('a title press opens a closed row and collapses the open one, a collapsed r
   expect((await replyField(pane, 'i2'))?.props.value).toBe('greet is fine')
   expect(w.sent).toEqual([])
 })
+
+test('the fold-all key folds every row of the tab, then opens them again', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+
+  const pane = await $.ui.mount(PANE)
+  const isOpen = async (id: string) => (await pane.find({ key: `collapse-${id}` })) !== undefined
+  await pane.press({ key: 'fold-all' })
+  await clock.settle()
+  expect([await isOpen('i1'), await isOpen('i2')]).toEqual([false, false])
+  await pane.press({ key: 'fold-all' })
+  await clock.settle()
+  expect(await isOpen('i1')).toBe(true)
+})

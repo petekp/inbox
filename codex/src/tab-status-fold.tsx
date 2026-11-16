@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact'
+import { clickFold } from './tab-fold-all'
 import { pressCollapse } from './tab-rows'
 import { tabState } from './tab-state'
 
@@ -35,7 +36,7 @@ export function ParentName({
       role="button"
       tabIndex={0}
       aria-expanded={!isParentFolded(id)}
-      onClick={() => toggleParentFold(id)}
+      onClick={e => clickFold(e, !isParentFolded(id), () => toggleParentFold(id))}
       onKeyDown={e => {
         if (e.key !== 'Enter' && e.key !== ' ') return
         e.preventDefault()

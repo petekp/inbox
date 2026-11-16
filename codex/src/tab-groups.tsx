@@ -19,6 +19,7 @@ import type { FoldGroup } from './arrivals'
 import type { TabView as View } from './core'
 import { unfolded, closedAll, sending, closingFolds, drawnRows, tabState } from './tab-state'
 import type { Row, Entry, Lists } from './tab-state'
+import { clickFold } from './tab-fold-all'
 import { toggleFold } from './tab-motion'
 import { act } from './tab-rows'
 import { ResultMarkView, GroupTitle, EmptyState } from './tab-parts'
@@ -125,10 +126,12 @@ function GroupEnd({
               type="button"
               class="fold"
               data-fold={group}
-              onClick={() => {
-                closedAll.delete(group)
-                toggleFold(group, unfolded)
-              }}
+              onClick={e =>
+                clickFold(e, isUnfolded, () => {
+                  closedAll.delete(group)
+                  toggleFold(group, unfolded)
+                })
+              }
             >
               {foldLabel(total)}
               <Icon name={isUnfolded ? 'down' : 'right'} />
