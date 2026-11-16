@@ -51,8 +51,10 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   `personality` is "removed" in 0.160.1 but still in the `OFF` list
   (codex/src/update.ts:OFF). On 0.163.0 `--disable personality` is still
   accepted [live 0.163.0].
-- **Model.** `gpt-6.1-sol` at low effort got 12 of 12 right in 4–5 s;
-  `gpt-6-luna` got 10 of 12 [live] (docs/plans/codex-plugin.md:115-122).
+- **Historical inbox model comparison.** `gpt-6.1-sol` at low effort got
+  12 of 12 right in 4–5 s; `gpt-6-luna` got 10 of 12 [live]
+  (docs/plans/codex-plugin.md:115-122). The runner now defaults to
+  `gpt-6-luna` despite its known finding-closure risk.
 - `exec` threads are excluded from `thread/list` by default (see app-server).
 - **`notify` is not a substitute trigger.** It runs one external program on
   `agent-turn-complete` with `thread-id` and `last-assistant-message`, but it

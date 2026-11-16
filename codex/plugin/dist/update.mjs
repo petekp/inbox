@@ -5593,7 +5593,7 @@ async function readRollout(path, cwd, currentTurnId) {
 }
 
 // src/update.ts
-var MODEL = "gpt-6.1-sol";
+var MODEL = "gpt-6-luna";
 var TIMEOUT_MS = 12e4;
 var RESULTS_WAIT_MS = 4 * TIMEOUT_MS;
 var resultsOrder = orderedKeys();

@@ -39,8 +39,8 @@ import { readRollout, withCurrentRollout } from './transcript'
 import type { RunWithInput } from './run'
 import { diagnosticLines } from './diagnostics'
 
-/** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
-export const MODEL = 'gpt-6.1-sol'
+/** The Codex inbox model is gpt-6-luna at low reasoning effort; it once closed a finding the reply only mentioned. */
+export const MODEL = 'gpt-6-luna'
 const TIMEOUT_MS = 120_000
 /** How long a results call waits for the earlier ones: a few calls at their longest. */
 const RESULTS_WAIT_MS = 4 * TIMEOUT_MS

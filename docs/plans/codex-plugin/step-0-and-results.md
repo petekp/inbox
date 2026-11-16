@@ -133,7 +133,8 @@ The inbox model, measured on four sample exchanges, three runs each:
 
 Both misses by `gpt-6-luna` closed an open finding because the reply said
 it was recorded, which drops the finding. It made the same mistake in the
-live session. The plugin uses `gpt-6.1-sol`.
+live session. At the time, the plugin used `gpt-6.1-sol`; the current default
+is `gpt-6-luna`.
 
 In a desktop app session with the hooks trusted, the hooks ran, the update
 added the reply's two questions, and the tab polled. Not confirmed yet: a
