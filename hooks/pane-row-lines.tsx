@@ -11,7 +11,6 @@ import {
   markedFeedbackText,
   rowFeedbackText,
 } from './feedback'
-import { HELD_MARK } from './help'
 import type { PaneBase, PaneClient, Row } from './pane-context'
 import {
   DESKTOP_CELL_PT,
@@ -26,12 +25,12 @@ import {
   TREE_LINE_AT,
 } from './pane-sizes'
 import type { RowProps } from './row-client'
-import { DOT, type ResultMark, rowResultMark, type RowView, shortAgo } from './rows'
+import { DOT, type ResultMark, rowMark, rowResultMark, type RowView, shortAgo } from './rows'
 import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './terminal-text'
 import { ago, clipLabel } from './text'
 import { resultGlyph, runningMark } from './timing'
 
-export const holdsUpLineOf = (r: RowView | undefined) => r?.holdsUpLine ?? null
+const holdsUpLineOf = (r: RowView | undefined) => r?.holdsUpLine ?? null
 
 export const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
 
@@ -126,9 +125,9 @@ export function paneRowLines({
       {...box}
     />
   )
-  const columnsFor = (row: Pick<Row, 'view'>) => {
+  const columnsFor = (row: Pick<Row, 'view' | 'handle'>) => {
     const base = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
-    return row.view && look === 'terminal' ? { ...base, textAt: base.handleAt } : base
+    return row.view && look === 'terminal' && !row.handle ? { ...base, textAt: base.handleAt } : base
   }
   const markColumns = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
   const markWidth = markColumns.textAt - markColumns.handleAt
@@ -262,15 +261,7 @@ export function paneRowLines({
         ) : null}
         {holdsUpLine ? (
           <Box paddingLeft={line.before?.length ?? 0}>
-            <Text color={pal.muted}>
-              <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-              {clipLabel(holdsUpLine, Math.max(12, width - 2))}
-            </Text>
-          </Box>
-        ) : null}
-        {row.view?.recLine ? (
-          <Box paddingLeft={line.before?.length ?? 0}>
-            <Text color={pal.muted}>{clipLabel(row.view.recLine, Math.max(12, width))}</Text>
+            <Text color={pal.muted}>{clipLabel(holdsUpLine, Math.max(12, width))}</Text>
           </Box>
         ) : null}
       </Box>
@@ -286,7 +277,7 @@ export function paneRowLines({
     ) : null
   /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
   const gutterMark = (row: Row) => {
-    const mark = look === 'desktop' && row.view ? rowResultMark(row.view) : null
+    const mark = look === 'desktop' && row.view ? rowMark(row.view) : null
     if (mark?.tone && ToneSvg) return svgCell(toneSvg(mark.tone, mark.text), mark.text)
     return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
   }
@@ -321,8 +312,6 @@ export function paneRowLines({
       title: titleSpans.map(s => s.text).join(''),
       after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
       note: holdsUpLineOf(row.view) ?? '',
-      noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
-      recNote: row.view?.recLine ?? '',
       side: sideAge(row),
       padY: DESKTOP_ROW_PAD,
       charsPerCell: DESKTOP_CLIP_CHARS_PER_CELL,

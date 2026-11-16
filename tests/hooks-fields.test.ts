@@ -49,7 +49,7 @@ test(
     expect((await replyField(pane, 'i1'))?.props.value).toBe('Deno, actually')
     await pane.press({ key: 'send-i1' })
     expect(w.sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
-    expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^Use Node or Python\?\s·\s✓ Replied: Deno, actually/)
+    expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^\s*Use Node or Python\?\s·\s✓ Replied: Deno, actually/)
     const questionBack = await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Why not Deno?' } as never)
     expect(questionBack.result).toContain('Not closed: the user asked a question back')
     await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Deno' } as never)

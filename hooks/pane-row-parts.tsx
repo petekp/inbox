@@ -505,7 +505,11 @@ export function paneRowParts(
       )
     return (
       <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
-        {treeRow(pos, null, settledContent(rowTitle(r, look), state, undo, mark))}
+        {treeRow(
+          pos,
+          r.type === 'finding' ? null : <Text> </Text>,
+          settledContent(rowTitle(r, look), state, undo, mark),
+        )}
         {settledBar(r.id, state)}
       </Box>
     )

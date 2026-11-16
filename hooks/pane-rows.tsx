@@ -1,11 +1,9 @@
-import { fadedOver } from './tones'
-import { newRowIn, steppedShare } from './arrivals'
-import { ROW_BAR } from './help'
-import { newBarSvg } from './desktop-svg'
-import { ROW_PAD_PT } from './layout'
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { isStatusUnderActions } from './feedback'
 import { paneState } from './mod-state'
+import { type AskEntry, paneAskTree } from './pane-ask-tree'
+import { paneDesktopTree } from './pane-desktop-tree'
+import { paneNewBar } from './pane-new-bar'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { fieldKey, openFields } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
@@ -19,15 +17,17 @@ import {
   DESKTOP_MARK_CELLS,
   DESKTOP_REPLY_ROWS,
   fieldRows,
+  DESKTOP_ARM_GAP,
+  DESKTOP_TREE_AT,
   FRAME_INSET_PT,
   REPLY_ROWS,
   SELECTED_GAP_PT,
   TERMINAL_SIDE_CELLS,
   TREE_LINE_AT,
 } from './pane-sizes'
-import { DOT, ROW_COPY, shownOptionDescriptions } from './rows'
+import { DOT, ROW_COPY } from './rows'
 import { lineCount, SELECTION_BAR, type TreePos } from './terminal-text'
-import { cellWidth, clipLabel } from './text'
+import { cellWidth } from './text'
 
 export function paneRows(
   {
@@ -66,6 +66,7 @@ export function paneRows(
     withSideAge,
     unselectedLine,
     branch,
+    desktopHairline,
     rowActions,
     desktopRowTextPt,
     keyLines,
@@ -112,38 +113,18 @@ export function paneRows(
       | 'withSideAge'
       | 'unselectedLine'
       | 'branch'
+      | 'desktopHairline'
     > &
     Pick<PaneRowKeys, 'rowActions' | 'desktopRowTextPt' | 'keyLines' | 'keyRow' | 'fieldActions' | 'actionRows'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
 ) {
-  const DesktopSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-  /**
-   * The bar at a new row's left edge, which fades once its tab is shown, or null for a row not new. `top` lines it up
-   * with the title, and on a selected row the terminal fades it toward the selection's color.
-   */
-  const newBar = (row: Row, { top = 0, isSelected = false }: { top?: number; isSelected?: boolean } = {}) => {
-    const newRow = newRowIn(paneState.newRows, row.id, shownTab)
-    if (DesktopSvg && newRow)
-      return (
-        <Box key={`new-${row.id}`} position="absolute" top={0} left={0} marginTop={top}>
-          <DesktopSvg
-            source={newBarSvg(newRow.shownAt ?? now, now)}
-            alt=""
-            width={FRAME_INSET_PT - DESKTOP_CELL_PT}
-            height={2 * ROW_PAD_PT + DESKTOP_LINE_PT}
-          />
-        </Box>
-      )
-    const share = steppedShare(newRow, now)
-    if (look !== 'terminal' || share === 0) return null
-    const under = isSelected && pal.selection ? pal.selection : pal.under
-    return (
-      <Box key={`new-${row.id}`} position="absolute" top={0} left={0} width={1} marginTop={top}>
-        <Text color={under ? fadedOver(pal.key, under, share) : pal.key}>{ROW_BAR}</Text>
-      </Box>
-    )
-  }
+  const { newBar } = paneNewBar({ look, elements, Box, Text, pal, now, shownTab })
+  const { askTree, askEntries, hasTree, treeTextIndent } = paneAskTree(
+    { look, Box, Text, pal, optionsShown, blankLine },
+    { branch },
+  )
+  const { desktopTreeLine } = paneDesktopTree({ Box, desktopHairline, pal })
   const listRow = (row: Row, tree: TreePos) => {
     const columns = columnsFor(row)
     const index = indexOf.get(row.id) ?? -1
@@ -240,23 +221,28 @@ export function paneRows(
         : null
     const body =
       bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
-    const described = row.view ? shownOptionDescriptions(row.view, optionsShown.includes(row.id)) : []
-    const descriptionsBlock =
-      described.length > 0 ? (
-        <Box flexDirection="column" marginTop={blankLine}>
-          {described.map(o => {
-            const line = clipLabel(`${o.label}: ${o.description}`, look === 'desktop' ? titleWidth : textWidth)
-            return (
-              <Text wrap="truncate-end">
-                <Text>{line.slice(0, o.label.length)}</Text>
-                <Text color={pal.muted}>{line.slice(o.label.length)}</Text>
-              </Text>
-            )
-          })}
+    const treeEntries = row.view && look === 'desktop' && isSelected ? askEntries(row.view) : []
+    const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
+    const isTrunkBridged = look === 'terminal' && isSelected && row.view !== undefined && hasTree(row.view)
+    const descriptionsBlock = row.view && !isDesktopTree ? askTree(row.view, isTrunkBridged) : null
+    const trunked = (above: JSX.Element) =>
+      isTrunkBridged ? (
+        <Box
+          flexDirection="column"
+          position="relative"
+          overflow="hidden"
+          marginLeft={-treeTextIndent}
+          paddingLeft={treeTextIndent}
+          paddingBottom={blankLine}
+        >
+          {branch('pass', 0, 0, pal.selectionLine ?? pal.line, 1, `trunk-${row.id}`)}
+          {above}
         </Box>
-      ) : null
+      ) : (
+        above
+      )
     const keysBlock = (
-      <Box flexDirection="column" marginTop={blankLine}>
+      <Box flexDirection="column" marginTop={isDesktopTree ? 0 : blankLine}>
         {isTyping ? (
           look === 'desktop' ? (
             <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap} rowGap={1}>
@@ -315,6 +301,77 @@ export function paneRows(
       </Text>
     )
     const selectedGapY = (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT
+    if (isDesktopTree) {
+      const contextEntry = treeEntries.find(en => en.key === 'context')
+      const groups = treeEntries
+        .filter(en => en.key !== 'context')
+        .reduce<AskEntry[][]>(
+          (all, en) => (en.pos === 'pass' ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
+          [],
+        )
+      const hungMarkCenter = DESKTOP_TREE_AT - 1
+      const textAt = DESKTOP_MARK_CELLS
+      const line = (en: AskEntry) => (
+        <Text key={en.key} wrap="wrap">
+          {en.label ? <Text>{en.label}</Text> : null}
+          <Text color={pal.muted}>{en.rest}</Text>
+        </Text>
+      )
+      const treeBox = (key: string, shape: 'down' | 'mid' | 'last', edge: number) =>
+        desktopTreeLine(key, shape, {
+          at: hungMarkCenter,
+          arm: textAt - DESKTOP_ARM_GAP - hungMarkCenter,
+          edge,
+        })
+
+      return (
+        <Box key={`row-${row.id}`} flexDirection="column" marginY={selectedGapY} position="relative">
+          <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />
+          {desktopFrame({
+            key: `row-${row.id}-title`,
+            markCells: DESKTOP_MARK_CELLS,
+            mark: gutterMark(row),
+            side: <Text color={pal.age}>{sideAge(row)}</Text>,
+            fill: pal.selection,
+            tree: treeBox(`row-${row.id}-trunk`, 'down', space.rowPad),
+            children: [
+              desktopTitle,
+              row.subtitle ?? null,
+              row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
+              contextEntry ? <Box marginTop={blankLine}>{line(contextEntry)}</Box> : null,
+            ],
+          })}
+          {groups.map(group =>
+            desktopFrame({
+              key: `row-${row.id}-${group[0]!.key}`,
+              markCells: DESKTOP_MARK_CELLS,
+              fill: pal.selection,
+              padY: 0,
+              tree: treeBox(`row-${row.id}-${group[0]!.key}-tree`, group[0]!.pos === 'last' ? 'last' : 'mid', 0),
+              children: group.map(line),
+            }),
+          )}
+          {desktopFrame({
+            key: `row-${row.id}-keys`,
+            markCells: DESKTOP_MARK_CELLS,
+            fill: pal.selection,
+            children: [
+              status.length > 0 ? (
+                <Box flexDirection="column" marginTop={blankLine}>
+                  {status.map(st => (
+                    <Text color={st.color} wrap="wrap">
+                      {st.text}
+                    </Text>
+                  ))}
+                </Box>
+              ) : null,
+              keysBlock,
+            ],
+          })}
+          {newBar(row)}
+        </Box>
+      )
+    }
     if (look === 'desktop' && isSelected)
       return (
         <Box key={`row-${row.id}`} flexDirection="column">
@@ -363,7 +420,7 @@ export function paneRows(
         backgroundColor={isSelected || isCursorMarked ? pal.selection : undefined}
       >
         <Box width={columns.lead} flexShrink={0} />
-        {row.view && look === 'terminal' ? null : (
+        {row.view && look === 'terminal' && !row.handle ? null : (
           <Box
             width={columns.textAt - columns.lead}
             flexShrink={0}
@@ -385,19 +442,23 @@ export function paneRows(
         )}
         {isSelected ? (
           <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={space.rowPad}>
-            {withSideAge(
-              row,
-              <Button plain key={`collapse-${row.id}`} onPress={() => void pressTitle(row.id)}>
-                <Text wrap="wrap">
-                  <Text bold>{row.title}</Text>
-                  {titleAfter ? (
-                    <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
-                  ) : null}
-                </Text>
-              </Button>,
+            {trunked(
+              <Box flexDirection="column">
+                {withSideAge(
+                  row,
+                  <Button plain key={`collapse-${row.id}`} onPress={() => void pressTitle(row.id)}>
+                    <Text wrap="wrap">
+                      <Text bold>{row.title}</Text>
+                      {titleAfter ? (
+                        <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
+                      ) : null}
+                    </Text>
+                  </Button>,
+                )}
+                {row.subtitle}
+                {body ? <Box marginTop={blankLine}>{body}</Box> : null}
+              </Box>,
             )}
-            {row.subtitle}
-            {body ? <Box marginTop={blankLine}>{body}</Box> : null}
             {descriptionsBlock}
             {status.length > 0 ? (
               <Box flexDirection="column" marginTop={blankLine}>

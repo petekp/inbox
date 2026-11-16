@@ -3239,6 +3239,7 @@ export const register: Register = on => {
         withSideAge,
         unselectedLine,
         branch,
+        desktopHairline,
         rowActions,
         desktopRowTextPt,
         keyLines,

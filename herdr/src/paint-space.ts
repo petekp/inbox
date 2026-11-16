@@ -209,10 +209,10 @@ function spaceEl(s: Space, p: Paint, columns: Element[]): Element {
 
 /** The path's line and the nesting connectors: the text mixed into the panel's background at the Codex tab's `--tree-line` share. */
 const TREE_LINE_SHARE = 0.2
-const lineColor = (t: Theme) => mixInto(t.foreground, t.background, TREE_LINE_SHARE)
+export const lineColor = (t: Theme) => mixInto(t.foreground, t.background, TREE_LINE_SHARE)
 
 /** Where the path's line runs: under the middle of a milestone's mark. */
-const PATH_X = EDGE + 4
+export const PATH_X = EDGE + 4
 
 /** A stretch of the path's line from `top`, down to `height` or to the end of its box. Dashed into the milestone that reads next. */
 function pathLineEl(line: PathLine, top: number, height: number | null, t: Theme): Element[] {

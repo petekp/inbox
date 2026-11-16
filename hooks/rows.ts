@@ -6,7 +6,7 @@ import { capitalized } from './press-labels'
 import type { HelpStep } from './help-steps'
 import type { RowPress } from './presses'
 import { offersUndo } from './pressed'
-import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS } from './help'
+import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK } from './help'
 import { canUndoClose, isUndoLeft } from './timing'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
@@ -146,8 +146,6 @@ export type RowView = {
    * "Holds up" and the names of the open subjects an open ask holds up, comma-separated, as the Status call linked them.
    */
   holdsUpLine: string | null
-  /** "Why", the recommended option and the agent's reason for it, on a question whose record gave one. */
-  recLine: string | null
   /**
    * Why the agent asked, on an open question whose record gave a context. A look draws it whole, first under the
    * title, on the selected row only.
@@ -155,23 +153,45 @@ export type RowView = {
   contextLine: string | null
 }
 
-export function recLineOf(item: Item | null): string | null {
-  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null
+/**
+ * An answer button's line under a question: its label, what it does, and for the recommended answer the agent's
+ * reason for it. An answer with neither has no line.
+ */
+type OptionDescription = {
+  label: string
+  description: string | null
+  reason: string | null
+  isFolded: boolean
 }
-
-type OptionDescription = { label: string; description: string; isFolded: boolean }
 
 export function optionDescriptionsOf(item: Item | null, actions: ActionView[]): OptionDescription[] {
   const descriptions = item?.optionDescriptions
-  if (!descriptions) return []
 
   return actions.flatMap(a => {
-    if (a.press.action !== 'answer' || !Object.hasOwn(descriptions, a.press.option)) return []
-    const description = descriptions[a.press.option]!
+    if (a.press.action !== 'answer') return []
+    const description =
+      descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option]! : null
+    const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null
+    if (description === null && reason === null) return []
 
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }]
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }]
   })
 }
+
+/** What follows an option's label and a colon: its description, then the recommendation's reason. Null with no description. */
+export function optionBody(o: OptionDescription): string | null {
+  if (o.description === null) return null
+  if (o.reason === null) return o.description
+
+  return `${o.description}${/[.!?]$/.test(o.description) ? '' : '.'} ${recommendedLine(o.reason)}`
+}
+
+/** The recommendation's reason on a line of its own, for a recommended option that has no description. */
+export function optionReasonLine(o: OptionDescription): string | null {
+  return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null
+}
+
+const recommendedLine = (reason: string) => `Recommended: ${reason}`
 
 /** The option descriptions a row shows: all of them once its folded options show, else the unfolded ones. */
 export function shownOptionDescriptions(row: RowView, isShowingAll: boolean): OptionDescription[] {
@@ -231,7 +251,7 @@ export function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boole
  * in the row's mark column. `isRunning` says the look draws its running mark in place of `text`, as on the Status,
  * while what the row sent is on its way.
  */
-export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' }
+export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' | 'needsYou' }
 
 const RUNNING_RESULT: ResultMark = { text: RUNNING_MARK, isRunning: true }
 
@@ -250,6 +270,16 @@ export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultM
   return isHandedOffDone(row)
     ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: 'done' }
     : { text: '', isRunning: false }
+}
+
+export const ASK_MARK: ResultMark = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone }
+
+/**
+ * A row's mark in the mark column: its result mark, or ◆ on an open question or task, which waits on the person. A
+ * running mark replaces ◆ while the agent works on the row.
+ */
+export function rowMark(row: Pick<RowView, 'state' | 'feedback' | 'type'>): ResultMark | null {
+  return rowResultMark(row) ?? (row.state.is === 'open' && row.type !== 'finding' ? ASK_MARK : null)
 }
 
 /** Whether what a row sent is still on its way to the agent: `unconfirmed` and a refused send are not. */

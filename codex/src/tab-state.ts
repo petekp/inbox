@@ -45,10 +45,8 @@ export type Row = {
   meta?: string
   /** The open subjects an ask holds up, as "Holds up Offline sync, Hotfix release". */
   holdsUp?: string
-  /** Why the agent recommends an answer, as "Why Redis: it survives restarts". */
-  recLine?: string
-  /** Why the agent asked, which the row draws first under its title while it is open. */
-  context?: string
+  /** Whether the open row draws a tree under its title, which its ◆ in the mark column starts. */
+  hasTree?: boolean
   age?: string
   body?: JSX.Element | null
   keys: Key[]

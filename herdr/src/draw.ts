@@ -14,12 +14,14 @@ import {
   earlierLabel,
   foldLabel,
   isWaitingRow,
-  rowResultMark,
+  rowMark,
   rowTitle,
   settledLabel,
   settledBarTone,
   settledTone,
   shortAgo,
+  optionBody,
+  optionReasonLine,
   shownOptionDescriptions,
   waitingCount,
 } from '../../hooks/rows'
@@ -31,7 +33,7 @@ import type { BannerView } from '../../hooks/banners'
 import { emptyTab } from '../../hooks/empty-tab'
 import { isFailure, rowFeedbackText } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
-import { FINDING_GROUPS, HELD_MARK } from '../../hooks/help'
+import { FINDING_GROUPS } from '../../hooks/help'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
@@ -87,8 +89,6 @@ export type LookScreen = {
   /** Whether the host has a PR fetch running, from the published file. */
   isFetchingPrs: boolean
 }
-
-const HOLDS_UP_MARK: Mark = { text: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false }
 
 const toneOfFeedback = (f: Feedback): Tone =>
   isFailure(f) ? 'error' : f.is === 'done' || (f.is === 'local' && f.result.state === 'done') ? 'done' : 'muted'
@@ -168,16 +168,34 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
 }
 
 function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
-  const lines: { text: string | null; tone: Tone; mark?: Mark }[] = [
-    { text: row.contextLine, tone: 'muted' },
-    { text: row.detail, tone: null },
-    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: 'muted' },
-    ...shownOptionDescriptions(row, isAllShown).map(o => ({ text: `${o.label}: ${o.description}`, tone: null })),
-    { text: row.recLine, tone: 'muted' },
-    { text: row.holdsUpLine, tone: 'muted', mark: HOLDS_UP_MARK },
+  const options = shownOptionDescriptions(row, isAllShown).map(o => {
+    const body = optionBody(o)
+    const reason = optionReasonLine(o)
+
+    return [
+      { text: body === null ? o.label : `${o.label}: ${body}`, tone: null },
+      ...(reason ? [{ text: reason, tone: 'muted' as const }] : []),
+    ]
+  })
+  const branches = [...options, ...(row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: 'muted' as const }]] : [])]
+  const lastBranch = branches.length - 1
+  const hasTree = branches.length > 0
+  const tree = (branch: number, line: number): RowBlock['body'][number]['tree'] =>
+    line > 0 ? (branch === lastBranch ? undefined : 'trunk') : branch === lastBranch ? 'last' : 'tee'
+  const lines: RowBlock['body'] = [
+    { text: row.contextLine ?? '', tone: 'muted', ...(hasTree ? { tree: 'trunk' as const } : {}) },
+    { text: row.detail ?? '', tone: null },
+    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : '', tone: 'muted' },
+    ...branches.flatMap((lines, branch) =>
+      lines.map((l, line) => {
+        const placed = tree(branch, line)
+
+        return { ...l, ...(placed ? { tree: placed } : {}) }
+      }),
+    ),
   ]
 
-  return lines.flatMap(l => (l.text ? [{ ...l, text: l.text }] : []))
+  return lines.filter(l => l.text)
 }
 
 function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: LookScreen): RowBlock {
@@ -194,7 +212,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     kind: 'row',
     id: row.id,
     depth: 0,
-    mark: markOf(rowResultMark(row)),
+    mark: markOf(rowMark(row)),
     title: rowTitle(row, LOOK),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
