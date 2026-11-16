@@ -19,6 +19,7 @@ import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
 import type { WorkJoint } from '../../hooks/status-path'
 import type { TabView as View } from './core'
 import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
+import { clickFold } from './tab-fold-all'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
@@ -114,7 +115,7 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
             type="button"
             class="fold milestone-fold"
             data-fold={foldMotion(fold)}
-            onClick={() => toggleStatusFold(fold)}
+            onClick={e => clickFold(e, statusUnfolded.has(fold), () => toggleStatusFold(fold))}
           >
             {m.name}
             <Icon name={statusUnfolded.has(fold) ? 'down' : 'right'} />
@@ -276,7 +277,11 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
 function MilestonesFold({ line: { id, fold } }: { line: DrawnStatus['fold'][number] }) {
   return (
     <div class="milestones-fold" {...lineMotion(metFoldMotion(id))}>
-      <button type="button" class="fold milestone-fold" onClick={() => toggleStatusFold(fold.id)}>
+      <button
+        type="button"
+        class="fold milestone-fold"
+        onClick={e => clickFold(e, statusUnfolded.has(fold.id), () => toggleStatusFold(fold.id))}
+      >
         {fold.text}
         <Icon name={statusUnfolded.has(fold.id) ? 'down' : 'right'} />
       </button>

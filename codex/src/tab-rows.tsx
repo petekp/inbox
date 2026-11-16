@@ -151,15 +151,19 @@ function openAfterClose(v: View, id: string) {
   later(revealSelected, 0)
 }
 
-/** A click on a row's title: it opens a closed row, and collapses or expands the open one. */
-export function pressTitle(t: Tab, rows: Row[], index: number) {
+/**
+ * A click on a row's title: it opens a closed row, and collapses or expands the open one. `foldAll` takes the place of
+ * that collapse or expand, and is told whether the click opens.
+ */
+export function pressTitle(t: Tab, rows: Row[], index: number, foldAll?: (isOpening: boolean) => void) {
   const v = tabState.view
   const row = rows[index]
   if (!v || !row) return
   const isOpen = openRowId(rows, t, v) === row.id
   if (isOpen && isOpenGuarded()) return
-  if (isOpen || v.collapsed.includes(row.id)) toggleCollapse(t, row.id, index)
-  else select(t, rows, index)
+  if (!isOpen && !v.collapsed.includes(row.id)) select(t, rows, index)
+  else if (foldAll) foldAll(!isOpen)
+  else toggleCollapse(t, row.id, index)
 }
 
 /** The collapse key: collapses or expands the row the cursor is on. */

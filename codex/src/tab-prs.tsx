@@ -22,6 +22,7 @@ import type { PrView } from '../../types'
 import type { TabView as View } from './core'
 import { tabState, sending, errors, undoing, drawnRows } from './tab-state'
 import type { Key, Row } from './tab-state'
+import { foldAllHere } from './tab-fold-all'
 import { act, pendingLocal, pressesOf, prKey, pressTitle } from './tab-rows'
 import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner, EmptyState } from './tab-parts'
 import { PR_REFRESH } from '../../hooks/pr-press'
@@ -278,7 +279,7 @@ function PrRows({
               row={row}
               track={tracks?.get(row.id) ?? drawnRows.get(row.id)!.track}
               now={now}
-              onSelect={() => pressTitle('prs', prs.rows, prs.rows.indexOf(row))}
+              onSelect={isAll => pressTitle('prs', prs.rows, prs.rows.indexOf(row), isAll ? foldAllHere : undefined)}
             />
           </div>
         ))}

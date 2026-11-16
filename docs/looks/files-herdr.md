@@ -24,6 +24,7 @@ The Herdr look is a Herdr app mod. It draws the inbox of the session that a host
 | `herdr/src/press-queue.ts` | Herdr adapter. One session's presses from send to end: refusing a press, running the look's own opens, writing the press file, waking the host, and taking back a file no host took in time. Its effects come through `QueueIo`, so the tests run it without the app. |
 | `herdr/src/press-file.ts` | Herdr adapter. Where the look writes a press for the host, the file's text in the format `hooks/herdr-press-file.ts:pressFile` reads, and the label that wakes the host. |
 | `herdr/src/collapse.ts` | Herdr adapter. Writes a collapse file for the host, and draws the look's own collapses until the session it reads shows them. |
+| `herdr/src/fold-all.ts` | Herdr adapter. `foldAllIn` applies a fold-all to the look's folds and saves each collapse through the look's `collapse`. `foldClickOpens` says whether an Option-click on a fold opens every fold or folds them all. |
 | `herdr/src/status-look.ts` | Herdr adapter. Whether the Herdr app shows the look's pane, where the Status rows sit from their measured heights, which rows are surely on screen wherever the list is scrolled, the look at the Status under way, and the look file it writes for the host when the look ends. |
 | `herdr/src/io.ts` | Herdr adapter. Runs commands, probes paths, writes press files and wakes the host, through the Herdr calls `main.ts` passes in. |
 | `herdr/src/run-here.ts` | Herdr adapter. Which opens and copies the look runs itself, at once, and running them. |

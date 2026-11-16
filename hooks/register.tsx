@@ -65,7 +65,8 @@ import { fetchPrs as fetchSessionPrs, isPrFetchDue, isPrPollDue, PR_POLL_MS } fr
 import { tabPrs } from './pr-fetch'
 import type { FetchAsk } from './pr-fetch'
 import { prSharedStore } from './mod-pr-shared'
-import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
+import { refreshStatus, type StatusCall, type StatusRecords } from './status-records'
+import { configFolder, recordsFolder, statusRecords, type EngineCalls } from './mod-engine-calls'
 import { startPress, wakeAfterSettle as wakeSessionAfterSettle } from './host-press'
 import type { Ask, CatchUpReply, SessionHost } from './session-host'
 import { callReport, MODEL } from './inbox-model'
@@ -95,7 +96,7 @@ import {
   turnBoxText,
 } from './claude'
 import { ghIn } from './gh'
-import { isGhUnstartable, pathProbe, placeChange, runOf, sessionFolder, type CommandCalls } from './mod-commands'
+import { isGhUnstartable, pathProbe, placeChange, runOf, sessionFolder } from './mod-commands'
 import type { HerdrFile } from './herdr-press-file'
 import { applyHerdrFile } from './herdr-app'
 import {
@@ -143,7 +144,7 @@ import {
   withListInput,
   type Holds,
 } from './timing'
-import { COLLAPSE_KEY, helpKeys, UNDO_KEY } from './help'
+import { COLLAPSE_KEY, FOLD_ALL_KEY, helpKeys, UNDO_KEY } from './help'
 import { agentTools, NOT_SAVED } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
@@ -267,6 +268,7 @@ import {
   titlePress,
 } from './pane-open-row'
 import { withCollapse } from './collapse'
+import { foldAllOn } from './fold-all'
 import { desktopSpaceLines } from './pane-status-tops'
 import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { type HistoryEngine, withHistory } from './mod-history'
@@ -364,7 +366,7 @@ async function syncTheme($: EngineInterface) {
 
 function herdrCalls($: EngineInterface): HerdrCalls {
   return {
-    run: processRun($),
+    run: runOf(commandCalls($)),
     env: () =>
       Promise.all([
         $.env.get('HERDR_PANE_ID'),
@@ -619,7 +621,7 @@ function saveEngine($: EngineInterface): SaveEngine {
     log: text => $.ui.log(text, { to: 'debug' }),
     runningSessions: () =>
       runningSessions({
-        configFolder: () => configFolder($),
+        configFolder: () => configFolder(commandCalls($)),
         sessionId: () => $.session.id(),
         list: folder => $.fs.list(folder),
         read: path => $.fs.read(path),
@@ -648,48 +650,6 @@ async function askInboxModel(
   return r.isAnswered ? r.text : null
 }
 
-/** The engine has no call that removes a file, so removing runs `rm` and `rmdir`. */
-function recordFiles($: EngineInterface): RecordFiles {
-  return {
-    write: (path, text) => $.fs.write(path, text),
-    list: async folder => (await $.fs.list(folder).catch(() => [])).map(entry => entry.name),
-    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths], { cwd: '/' })),
-    removeFolder: async path => void (await $.process.run(['rmdir', '--', path], { cwd: '/' })),
-  }
-}
-
-/** Claude Code's configuration folder: `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
-async function configFolder($: EngineInterface): Promise<string | null> {
-  const home = await $.env.get('HOME')
-
-  return (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
-}
-
-/** The folder a next build keeps its Status call records in, under Claude Code's configuration folder. */
-async function recordsFolder($: EngineInterface): Promise<string | null> {
-  const config = await configFolder($)
-
-  return config ? `${config}/plugins/data/inbox/overview-calls` : null
-}
-
-function statusRecords($: EngineInterface, folder: string, owner: Owner): StatusRecords {
-  return { host: 'claude-code', folder, session: owner.id, files: recordFiles($) }
-}
-
-function commandCalls($: EngineInterface): CommandCalls {
-  return {
-    root: () => $.session.root(),
-    exists: path => $.fs.exists(path),
-    stat: path => $.fs.stat(path),
-    run: (argv, init) => $.process.run(argv, init),
-    now: () => $.clock.now(),
-  }
-}
-
-function processRun($: EngineInterface) {
-  return runOf(commandCalls($))
-}
-
 async function perform(
   $: EngineInterface,
   effect: Extract<Effect, { kind: 'open' | 'copy' }>,
@@ -697,8 +657,9 @@ async function perform(
 ): Promise<string | null> {
   try {
     if (effect.kind === 'open') {
-      const [home, folder] = await Promise.all([$.env.get('HOME'), sessionFolder(commandCalls($))])
-      return await openTarget(processRun($), pathProbe(commandCalls($)), effect.target, folder ?? '', home ?? '')
+      const calls = commandCalls($)
+      const [home, folder] = await Promise.all([calls.home(), sessionFolder(calls)])
+      return await openTarget(runOf(calls), pathProbe(calls), effect.target, folder ?? '', home ?? '')
     }
     const r = await $.ui.copy({ text: effect.text, surface })
     return r.isCopied ? null : COPY_FAILURES[r.reason]
@@ -782,7 +743,7 @@ function sessionHost(
         ghFound = undefined
       },
       run: (_s, _bin, onUnstartable) => async args =>
-        ghIn(processRun($), 'gh', (await sessionFolder(commandCalls($))) ?? '', onUnstartable)(args),
+        ghIn(runOf(commandCalls($)), 'gh', (await sessionFolder(commandCalls($))) ?? '', onUnstartable)(args),
       noteMissing: opts.onGhMissing,
     },
     settleWindowMs: opts.settleWindowMs,
@@ -864,33 +825,61 @@ function later($: EngineInterface, waitMs: number, run: () => unknown) {
  * A click on row `id`'s title, or with `id` null the `z` key. A collapse keeps the cursor on its row and is saved in the
  * sample copy while the sample shows.
  */
-async function toggleRow($: EngineInterface, id: string | null) {
+async function toggleRow($: EngineInterface, id: string | null, isAll?: unknown) {
   const [{ view, now }, tab, selection] = await Promise.all([drawnState($), readRowTab($), read($, SELECTION)])
   const toggle = id === null ? collapseKeyPress(view, tab, selection) : titlePress(view, tab, selection, now, id)
   if (tab === null || toggle === null) return
   const { is, id: row, index } = toggle
   if (is === 'select') return select($, tab, row, index)
+  if (isAll) return foldAll($, is === 'expand')
   const isCollapsed = is === 'collapse'
-  if (isCollapsed)
-    await Promise.all([
-      update($, SELECTION, s => pinnedOn(s, tab, row, index)),
-      update($, TYPING, t => (t === row ? null : t)),
-    ])
+  if (isCollapsed) await update($, SELECTION, s => pinnedOn(s, tab, row, index))
   await saveCollapse($, row, isCollapsed)
   if (!isCollapsed) await select($, tab, row, index)
 }
 
+function commandCalls($: EngineInterface): EngineCalls {
+  return {
+    root: () => $.session.root(),
+    exists: path => $.fs.exists(path),
+    stat: path => $.fs.stat(path),
+    run: (argv, init) => $.process.run(argv, init),
+    now: () => $.clock.now(),
+    write: (path, text) => $.fs.write(path, text),
+    list: folder => $.fs.list(folder),
+    home: () => $.env.get('HOME'),
+    configDir: () => $.env.get('CLAUDE_CONFIG_DIR'),
+  }
+}
+
 /** Saves row `id` collapsed or open, in the sample copy while the sample shows. */
 async function saveCollapse($: EngineInterface, id: string, isCollapsed: boolean) {
+  if (isCollapsed) await update($, TYPING, t => (t === id ? null : t))
   const at = await $.clock.now()
   if (await read($, DEMO)) await update($, DEMO, d => d && withCollapse(d, id, isCollapsed, at))
   else await commit($, currentOwner(), s => withCollapse(s, id, isCollapsed, at))
 }
 
+async function foldAll($: EngineInterface, isOpen: boolean | null) {
+  const [{ view }, tab, unfolded, statusUnfolded] = await Promise.all([
+    drawnState($),
+    readShownTab($),
+    read($, UNFOLDED),
+    read($, STATUS_UNFOLDED),
+  ])
+  const change = foldAllOn(view, tab, { unfolded, statusUnfolded }, isOpen)
+  await Promise.all([
+    update($, UNFOLDED, () => change.unfolded),
+    update($, STATUS_UNFOLDED, () => change.statusUnfolded),
+  ])
+  for (const c of change.collapses) await saveCollapse($, c.id, c.isCollapsed)
+}
+
 /** A press on a Status parent's name or its Fold key. */
-async function toggleParent($: EngineInterface, id: string) {
+async function toggleParent($: EngineInterface, id: string, isAll?: unknown) {
   const { view } = await drawnState($)
-  await saveCollapse($, id, !view.collapsed.includes(id))
+  const isOpen = view.collapsed.includes(id)
+  await (isAll ? foldAll($, isOpen) : saveCollapse($, id, !isOpen))
 }
 
 async function openLeftRows($: EngineInterface) {
@@ -1035,7 +1024,7 @@ function updateLedger($: EngineInterface) {
 }
 
 function recordsOf($: EngineInterface, owner: Owner): StatusRecords | undefined {
-  return mod.statusRecordsFolder === null ? undefined : statusRecords($, mod.statusRecordsFolder, owner)
+  return mod.statusRecordsFolder === null ? undefined : statusRecords(commandCalls($), mod.statusRecordsFolder, owner)
 }
 
 /** The mod's SessionHost for `owner`'s conversation. A press passes its surface, which copies go to. */
@@ -1201,7 +1190,7 @@ function followDelegates($: EngineInterface, isShown: boolean) {
   followHerdrDelegates(isShown, paneState, herdrCalls($), () => {
     const owner = currentOwner()
     return {
-      run: processRun($),
+      run: runOf(commandCalls($)),
       now: () => $.clock.now(),
       ownerId: owner.id,
       overview: async () => upgradeSession(await read($, SESSION)).ledger.overview,
@@ -1546,9 +1535,10 @@ async function showAsk($: EngineInterface, askId: string) {
 }
 
 /** A set, not a toggle: a second click before the redraw posts the same state, so a double-click leaves it unfolded. */
-async function setFold($: EngineInterface, key: string, isUnfolded: unknown) {
+async function setFold($: EngineInterface, key: string, isUnfolded: unknown, isAll?: unknown) {
   const fold = foldOf(key)
   if (!fold || typeof isUnfolded !== 'boolean') return
+  if (isAll) return foldAll($, isUnfolded)
   await ('kind' in fold
     ? update($, UNFOLDED, u => withFold(u, fold.kind, isUnfolded))
     : update($, STATUS_UNFOLDED, u => withFold(u, fold.statusId, isUnfolded)))
@@ -2063,7 +2053,7 @@ async function readVersion($: EngineInterface) {
     mod.version = null
   }
   mod.isNextBuild = await readIsNextBuild($)
-  mod.statusRecordsFolder = mod.isNextBuild ? await recordsFolder($).catch(() => null) : null
+  mod.statusRecordsFolder = mod.isNextBuild ? await recordsFolder(commandCalls($)).catch(() => null) : null
 }
 
 async function initializeInbox($: EngineInterface) {
@@ -2777,6 +2767,7 @@ export const register: Register = on => {
     const data = e.data as {
       tab?: unknown
       isUnfolded?: unknown
+      isAll?: unknown
       key?: unknown
       isPointer?: unknown
     } | null
@@ -2804,9 +2795,11 @@ export const register: Register = on => {
         requestId: e.requestId,
         surface: e.surface,
       })
-    } else if (/^(select|collapse)-/.test(e.element)) await toggleRow($, e.element.replace(/^\w+-/, ''))
-    else if (e.element.startsWith(PARENT_PREFIX)) await toggleParent($, e.element.slice(PARENT_PREFIX.length))
-    else if (e.element.startsWith('fold-')) await setFold($, e.element.slice('fold-'.length), data?.isUnfolded)
+    } else if (/^(select|collapse)-/.test(e.element)) await toggleRow($, e.element.replace(/^\w+-/, ''), data?.isAll)
+    else if (e.element.startsWith(PARENT_PREFIX))
+      await toggleParent($, e.element.slice(PARENT_PREFIX.length), data?.isAll)
+    else if (e.element.startsWith('fold-'))
+      await setFold($, e.element.slice('fold-'.length), data?.isUnfolded, data?.isAll)
 
     return r
   })
@@ -3476,6 +3469,13 @@ export const register: Register = on => {
         hotkey: COLLAPSE_KEY,
         kind: 'view',
         onPress: () => (isListShown && !isHelpShown ? toggleRow($, null) : undefined),
+      },
+      {
+        key: 'fold-all',
+        label: 'Fold all',
+        hotkey: FOLD_ALL_KEY,
+        kind: 'view',
+        onPress: () => !isHelpShown && foldAll($, null),
       },
     ]
     const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
