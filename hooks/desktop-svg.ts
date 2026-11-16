@@ -1,4 +1,4 @@
-import { CLOSED_MARKS, HELP_COPY } from './help'
+import { CLOSED_MARKS, HELP_COPY, NEEDS_YOU_MARKS } from './help'
 import { RUNNING_PULSE_MS } from './timing'
 import { ROW_PAD_PT } from './layout'
 import { markShape, mutedMarkShape } from './marks'
@@ -43,12 +43,25 @@ export function undoSvg(fraction: number, leftMs: number): string {
 export function toneSvg(tone: ToneName, mark: string, tint?: string): string {
   const { light, dark } = toneColors(tone)
   // A marker needs only 3:1, so an error mark takes a stronger red than text could.
-  const shape = markShape(mark, DESKTOP_LINE_PT / 2)
+  const shape = desktopMarkShape(mark)
   if (tint) return markSvg(mark, shape, tint, tint)
 
   return tone === 'error'
     ? markSvg(mark, shape, LIGHT_TONES.errorMark, DARK_TONES.errorMark)
     : markSvg(mark, shape, light, dark)
+}
+/**
+ * The checked box is drawn in a box 6 of 8 pt wide, which reads smaller here than the text ? beside it. It is scaled
+ * about the box's middle and moved right so its stroke stays inside the mark's cell, `DESKTOP_CELL_PT` wide.
+ */
+const CHECKBOX_SCALE = 1.25
+const CHECKBOX_SHIFT_PT = 0.34
+function desktopMarkShape(mark: string): string | null {
+  const shape = markShape(mark, DESKTOP_LINE_PT / 2)
+  if (shape === null || mark !== NEEDS_YOU_MARKS.task.mark) return shape
+  const mid = DESKTOP_LINE_PT / 2
+
+  return `<g transform="translate(${CHECKBOX_SHIFT_PT + 4 * (1 - CHECKBOX_SCALE)} ${mid * (1 - CHECKBOX_SCALE)}) scale(${CHECKBOX_SCALE})">${shape}</g>`
 }
 /** A muted mark's color in an Svg, in the light and dark appearances. */
 export const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }

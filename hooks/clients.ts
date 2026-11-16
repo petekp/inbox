@@ -105,7 +105,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'fold-all': {
         kind: 'different',
         reason:
-          'A terminal click carries no modifier key, and the engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, and no run has shown that its click reports Option, so the desktop has no known way in.',
+          'The engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, so it reads an Option-click on a fold: the Claude app reports `alt` on a click, which a VM run showed. The engine types say a terminal reports modifier keys when its mouse reports carry them, and tmux passes none, so no terminal run has shown an Option-click folding all there.',
       },
       'suggested-goal': { kind: 'full' },
     },

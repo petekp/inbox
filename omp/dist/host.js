@@ -443,7 +443,7 @@ var CLIENTS = {
       "collapse-rows": { kind: "full" },
       "fold-all": {
         kind: "different",
-        reason: "A terminal click carries no modifier key, and the engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, and no run has shown that its click reports Option, so the desktop has no known way in."
+        reason: "The engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, so it reads an Option-click on a fold: the Claude app reports `alt` on a click, which a VM run showed. The engine types say a terminal reports modifier keys when its mouse reports carry them, and tmux passes none, so no terminal run has shown an Option-click folding all there."
       },
       "suggested-goal": { kind: "full" }
     }
@@ -12177,9 +12177,9 @@ function demoSource(deps) {
 }
 
 // ../hooks/tones.ts
-var DARK_AMBER = "#ffc107";
+var DARK_ORANGE = "#ffa21f";
 var DARK_TONES = {
-  needsYou: DARK_AMBER,
+  needsYou: DARK_ORANGE,
   issue: "#ff6b80",
   findings: "#cab0ff",
   tasks: "#b48cff",
@@ -12192,9 +12192,9 @@ var DARK_TONES = {
   errorMark: "#ff6b80",
   key: "#b1b9f9"
 };
-var LIGHT_AMBER = "#745417";
+var LIGHT_ORANGE = "#a15000";
 var LIGHT_TONES = {
-  needsYou: LIGHT_AMBER,
+  needsYou: LIGHT_ORANGE,
   issue: "#a5293d",
   findings: "#7b00e8",
   tasks: "#6a14d9",
