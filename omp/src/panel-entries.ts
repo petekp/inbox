@@ -208,12 +208,14 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         line: {
           ...blankLine(markId),
           lead,
+          isPrHead: true,
           mark: settledMark(state),
           title: pr.title,
           isDim: true,
           settled: {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
+            bar: null,
             undo: state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
             at: state.at,
           },
@@ -229,6 +231,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       line: {
         ...blankLine(markId),
         lead,
+        isPrHead: true,
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
         age: doneAt(f),

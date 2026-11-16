@@ -32,6 +32,12 @@ export const RUNNING_MARK = RUNNING_FRAMES[0]
 /** The mark of a working subject while no turn runs and no child under it works. */
 export const IDLE_MARK: { mark: string; tone: StatusTone } = { mark: '◐', tone: null }
 
+/**
+ * The bar a look that draws text puts at a row's left edge, narrower than the terminal cursor's `▌`: on a new row, and on
+ * a settled row.
+ */
+export const ROW_BAR = '▍'
+
 export const CLOSED_MARKS: Record<ClosedState, string> = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: '✕',
@@ -92,6 +98,13 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: 'Opportunity: something that could be better',
+  },
+  {
+    mark: ROW_BAR,
+    tone: null,
+    isRunning: false,
+    words:
+      "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed.",
   },
 ]
 

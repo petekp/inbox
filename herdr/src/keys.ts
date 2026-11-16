@@ -1,5 +1,6 @@
 import { drawnLists, latestUndo, openOnArrival, rowAfterClose, steppedIndex, tabUndos } from '../../hooks/action-plan'
 import type { RowWait } from '../../hooks/action-plan'
+import { addNewRows, showNewRows } from '../../hooks/arrivals'
 import { COLLAPSE_KEY, UNDO_KEY } from '../../hooks/help'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
@@ -131,14 +132,46 @@ export function withClosedSelection(ui: LookUi, last: RowWait[], now: RowWait[])
 }
 
 /**
- * After a publish, selects the first new row that waits while the selected row is collapsed, as `openOnArrival` says.
- * `last` and `now` are the tab's rows at the last draw and at this one.
+ * After a publish, selects the first new row that waits while the selected row is collapsed, as `openOnArrival` says,
+ * and records the new rows. The look finds them only in the tab it shows. `last` and `now` are the tab's rows at the
+ * last draw and at this one.
  */
-export function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
+function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
   const added = now.filter(r => !last.some(l => l.id === r.id)).map(r => r.id)
   const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added)
+  const recorded = added.length === 0 ? ui : { ...ui, newRows: addNewRows(ui.newRows, { [ui.tab]: added }) }
 
-  return id === null ? ui : withSelected(ui, id)
+  return id === null ? recorded : withSelected(recorded, id)
+}
+
+/** `ui` as the look shows its tab `at`: the tab's new rows start their bar's clock, and ended bars are dropped. */
+function withShownNewRows(ui: LookUi, at: number): LookUi {
+  const newRows = showNewRows(ui.newRows, ui.tab, at)
+  const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row)
+
+  return isSame ? ui : { ...ui, newRows }
+}
+
+/** The tab a draw showed, and its rows, or null when it showed no inbox, as while a session is read. */
+export type LastWaits = { tab: ShownTab; rows: RowWait[] | null }
+
+/**
+ * The look's state after a draw that shows `rows`, from the rows the last draw showed. Rows count as closed or new
+ * only between two draws of the same tab's rows. A new row's clock starts once `isTabShown`, which is false while Help
+ * covers the tab.
+ */
+export function withDrawnRows(
+  ui: LookUi,
+  last: LastWaits,
+  rows: RowWait[] | null,
+  at: number,
+  isTabShown: boolean,
+): LookUi {
+  const lastRows = last.tab === ui.tab ? last.rows : null
+  const arrived =
+    rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui
+
+  return isTabShown ? withShownNewRows(arrived, at) : arrived
 }
 
 /**

@@ -82,7 +82,8 @@ export type RowBlock = {
    */
   feedback: { text: string; tone: Tone; source: Feedback | null; aged?: Aged } | null
   /** Shown once the row has closed, until it folds. */
-  settled: { label: string; tone: Tone } | null
+  /** `bar` is the tone of the bar at the row's left edge, or null for a PR, which draws none. */
+  settled: { label: string; tone: Tone; bar: 'done' | 'muted' | 'error' | null } | null
   isDim: boolean
   /** Whether the person can select it to see its body and buttons. */
   isSelectable: boolean
@@ -90,7 +91,11 @@ export type RowBlock = {
   /** The person collapsed it, so it draws closed while selected. */
   isCollapsed?: true
   /** What the selected row shows under its line, in order, each line with the mark that leads it, if any. */
-  body: { text: string; tone: Tone; mark?: Mark }[]
+  /**
+   * The row's lines under its title. `tree` places a line on the tree that hangs from the title's mark: `trunk` passes
+   * it, `tee` joins a branch to the trunk, and `last` ends the trunk at the last branch.
+   */
+  body: { text: string; tone: Tone; tree?: 'trunk' | 'tee' | 'last' }[]
   buttons: Button[]
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null

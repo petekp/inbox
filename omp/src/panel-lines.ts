@@ -3,6 +3,7 @@ import type { FoldKind } from '../../types'
 import type { PrAction } from '../../hooks/pr-press'
 import {
   closedLineAction,
+  settledBarTone,
   settledTone,
   closedShown,
   closedTotal,
@@ -12,6 +13,7 @@ import {
   waitingCount,
   rowTitle,
   rowResultMark,
+  ASK_MARK,
   settledLabel,
 } from '../../hooks/rows'
 import { feedbackOf, markedFeedbackText, isFailure, rowFeedbackText } from '../../hooks/feedback'
@@ -54,7 +56,7 @@ export type Line = {
   id: string
   /** Extra indent, for the rows under a PR. */
   depth: number
-  /** The mark before the title. An Asks or Finds row has none, so its title starts in the mark's place. */
+  /** The mark before the title: ◆ on an open question or task. A Finds row has none, so its title starts in the mark's place. */
   lead: Lead | null
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
   mark: ResultMark | null
@@ -69,7 +71,14 @@ export type Line = {
   file: string | null
   feedback: { text: string; tone: Tone | null; source: Feedback | null } | null
   /** Set once the row has closed and its label shows until it leaves. */
-  settled: { label: string; tone: 'done' | 'muted'; undo: PanelPress | null; at: number } | null
+  /** `bar` is the tone of the bar at the row's left edge, or null for a PR, which draws none. */
+  settled: {
+    label: string
+    tone: 'done' | 'muted'
+    bar: 'done' | 'muted' | 'error' | null
+    undo: PanelPress | null
+    at: number
+  } | null
   buttons: Button[]
   row: RowView | null
   /** The group a Closed line folds. Enter unfolds or folds it. */
@@ -88,6 +97,8 @@ export type Line = {
   isFolded: boolean
   /** A row the person collapsed: drawn as its one line, even while selected, until they expand it. */
   isCollapsed?: boolean
+  /** A PR's own line, which no look marks with a new row's bar: its threads and checks get the bar. */
+  isPrHead?: boolean
   /**
    * The PRs tab's own buttons, drawn on one line after the line's title, if any, with their press status after them,
    * or under them when it does not fit. Their keys work from any row of the tab.
@@ -195,7 +206,12 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
 
   return {
     ...blankLine(row.id),
-    lead: null,
+    lead:
+      row.type === 'finding'
+        ? null
+        : row.state.is === 'open'
+          ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null }
+          : { text: '', tone: null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === 'settled',
@@ -209,6 +225,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
         ? {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
+            bar: settledBarTone(state),
             undo: undo ? undo.press : null,
             at: state.at,
           }

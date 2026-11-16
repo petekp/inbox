@@ -114,7 +114,9 @@ test('rows that arrive while the Status page shows leave the panel on the page',
   const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const opened = followRows(empty, onPage, {}, true, NOW)
   expect(opened.ui).toEqual(onPage)
-  expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
+  const { newRows, ...followed } = followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui
+  expect({ ...followed, newRows: onPage.newRows }).toEqual(onPage)
+  expect(newRows.size).toBeGreaterThan(0)
 })
 
 test('a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count', () => {

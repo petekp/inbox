@@ -3202,6 +3202,7 @@ var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: null };
+var ROW_BAR = "\u258D";
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -3250,6 +3251,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: ROW_BAR,
+    tone: null,
+    isRunning: false,
+    words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
 var HELP_COPY = {
@@ -4285,19 +4292,31 @@ function closedLineAction(d) {
     return { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } };
   return d.how === "dismissed" ? { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } } : null;
 }
-function recLineOf(item) {
-  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
-}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
-  if (!descriptions)
-    return [];
   return actions.flatMap((a) => {
-    if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option))
+    if (a.press.action !== "answer")
       return [];
-    const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
+    const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
+    if (description === null && reason === null)
+      return [];
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
   });
+}
+function optionBody(o) {
+  if (o.description === null)
+    return null;
+  if (o.reason === null)
+    return o.description;
+  return `${o.description}${/[.!?]$/.test(o.description) ? "" : "."} ${recommendedLine(o.reason)}`;
+}
+function optionReasonLine(o) {
+  return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null;
+}
+var recommendedLine = (reason) => `Recommended: ${reason}`;
+function shownOptionDescriptions(row, isShowingAll) {
+  return row.optionDescriptions.filter((o) => isShowingAll || !o.isFolded);
 }
 function rowHandle(row) {
   return row.number === null ? "\u2022" : `${row.number})`;
@@ -4337,6 +4356,7 @@ function rowResultMark(row) {
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
+var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
 }
@@ -4401,6 +4421,14 @@ function canUndoRefused(delivery) {
 }
 function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
+}
+function settledBarTone(state) {
+  if (isSendRefused(state.delivery))
+    return "error";
+  return state.closedAs === "handled" ? "done" : "muted";
+}
+function isSendRefused(delivery) {
+  return delivery !== null && typeof delivery === "object";
 }
 function settledLabel(label, delivery, reply) {
   if (delivery && typeof delivery === "object")
@@ -6527,6 +6555,52 @@ function prRowIds(drawn) {
 function isPrsTabEmpty(drawnCount, isFetching) {
   return drawnCount === 0 && !isFetching;
 }
+var NEW_HOLD_MS = 1500;
+var NEW_FADE_MS = 3000;
+var NEW_STEPS = 6;
+function addNewRows(rows, added) {
+  const next = new Map(rows);
+  for (const [tab, ids] of Object.entries(added))
+    for (const id of ids ?? [])
+      if (!next.has(id))
+        next.set(id, { tab, shownAt: null });
+  return next;
+}
+function showNewRows(rows, tab, now) {
+  const next = new Map;
+  for (const [id, row] of rows) {
+    const shown = row.tab === tab && row.shownAt === null ? { ...row, shownAt: now } : row;
+    if (newRowShare(shown, now) > 0)
+      next.set(id, shown);
+  }
+  return next;
+}
+function newRowIn(rows, id, tab) {
+  const row = rows.get(id);
+  return row?.tab === tab ? row : undefined;
+}
+function newRowShare(row, now) {
+  if (!row)
+    return 0;
+  if (row.shownAt === null)
+    return 1;
+  const p = (now - row.shownAt - NEW_HOLD_MS) / NEW_FADE_MS;
+  if (p >= 1)
+    return 0;
+  if (p <= 0)
+    return 1;
+  return (1 + Math.cos(Math.PI * p)) / 2;
+}
+function steppedShare(row, now, steps = NEW_STEPS) {
+  if (row?.shownAt == null)
+    return newRowShare(row, now);
+  const step = NEW_FADE_MS / steps;
+  const faded = Math.max(0, now - row.shownAt - NEW_HOLD_MS);
+  return newRowShare(row, row.shownAt + NEW_HOLD_MS + Math.floor(faded / step) * step);
+}
+function isNewRowFading(rows, now) {
+  return [...rows.values()].some((r) => r.shownAt !== null && newRowShare(r, now) > 0);
+}
 
 // ../hooks/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
@@ -6827,7 +6901,6 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null,
       contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
@@ -7274,50 +7347,6 @@ async function rerunRun(host, e) {
 `)[0] || `gh exited with ${r.exitCode}`;
 }
 
-// ../hooks/empty-tab.ts
-var EMPTY_TITLES = {
-  needsYou: NOTHING_NEEDED_TEXT,
-  findings: "No findings yet",
-  prs: "No PRs",
-  prsFetching: "Checking for PRs\u2026"
-};
-var EMPTY_STATUS_TEXT = {
-  title: screenTabOf("overview").label,
-  hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-};
-function prsEmptyHint(place) {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
-}
-function emptyTab(view, look) {
-  if (look.tab === "overview") {
-    const page = view.statusPage;
-    if (!page.isEmpty)
-      return null;
-    return {
-      ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
-    };
-  }
-  if (look.tab === "prs") {
-    if (look.drawn > 0)
-      return null;
-    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure };
-    const { refresh } = view.prs;
-    return {
-      title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
-      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
-      under: refresh ? { is: "pr-refresh", refresh } : null
-    };
-  }
-  if (look.drawn > 0 || look.hasBlocker)
-    return null;
-  if (look.tab === "needsYou" && look.hostText)
-    return { ...look.hostText, under: null };
-  const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
-  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab];
-  return { title, hint, under: null };
-}
-
 // src/panel-text.ts
 var ANSI = /\x1b\[[0-9;]*m/g;
 var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
@@ -7375,6 +7404,85 @@ function indented(text, indent, width, maxLines, paint) {
   if (wrapped.length > maxLines)
     shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
+}
+
+// src/panel-ask-tree.ts
+var TRUNK = "\u2502  ";
+var TEE = "\u251C\u2500 ";
+var LAST = "\u2514\u2500 ";
+var NONE = "   ";
+function askTreeLines(line, pad, width, s, isAllShown = false) {
+  const row = line.row;
+  if (!row || row.state.is !== "open")
+    return [];
+  const margin = " ".repeat(3 + pad);
+  const room = Math.max(10, width - margin.length - TRUNK.length - 1);
+  const branches = shownOptionDescriptions(row, isAllShown).map((o) => {
+    const body = optionBody(o);
+    return { label: o.label, text: body === null ? o.label : `${o.label}: ${body}`, reason: optionReasonLine(o) };
+  });
+  const holdsUp = row.holdsUpLine;
+  const hasTree = branches.length > 0 || holdsUp !== null;
+  const draw = (arm, text, rest, label = "") => wrapText(text, room).map((l, i) => {
+    const arms = s.dim(margin + (i === 0 ? arm : rest));
+    return i === 0 && label && l.startsWith(label) ? arms + label + s.dim(l.slice(label.length)) : arms + s.dim(l);
+  });
+  const out = [];
+  if (row.contextLine)
+    out.push(...draw(hasTree ? TRUNK : NONE, row.contextLine, hasTree ? TRUNK : NONE));
+  const all = [...branches, ...holdsUp ? [{ label: "", text: holdsUp, reason: null }] : []];
+  all.forEach((b, n) => {
+    const isLast = n === all.length - 1;
+    const rest = isLast ? NONE : TRUNK;
+    out.push(...draw(isLast ? LAST : TEE, b.text, rest, b.label));
+    if (b.reason)
+      out.push(...draw(rest, b.reason, rest));
+  });
+  return out;
+}
+
+// ../hooks/empty-tab.ts
+var EMPTY_TITLES = {
+  needsYou: NOTHING_NEEDED_TEXT,
+  findings: "No findings yet",
+  prs: "No PRs",
+  prsFetching: "Checking for PRs\u2026"
+};
+var EMPTY_STATUS_TEXT = {
+  title: screenTabOf("overview").label,
+  hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+};
+function prsEmptyHint(place) {
+  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+}
+function emptyTab(view, look) {
+  if (look.tab === "overview") {
+    const page = view.statusPage;
+    if (!page.isEmpty)
+      return null;
+    return {
+      ...EMPTY_STATUS_TEXT,
+      under: { is: "set-goal", keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen }
+    };
+  }
+  if (look.tab === "prs") {
+    if (look.drawn > 0)
+      return null;
+    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure };
+    const { refresh } = view.prs;
+    return {
+      title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
+      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
+      under: refresh ? { is: "pr-refresh", refresh } : null
+    };
+  }
+  if (look.drawn > 0 || look.hasBlocker)
+    return null;
+  if (look.tab === "needsYou" && look.hostText)
+    return { ...look.hostText, under: null };
+  const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
+  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab];
+  return { title, hint, under: null };
 }
 
 // src/panel-page.ts
@@ -7897,7 +8005,7 @@ function lineOfRow(row, isAllShown) {
   const undo = row.actions.find((a) => a.press.action === "undo");
   return {
     ...blankLine(row.id),
-    lead: null,
+    lead: row.type === "finding" ? null : row.state.is === "open" ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null } : { text: "", tone: null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
@@ -7908,6 +8016,7 @@ function lineOfRow(row, isAllShown) {
     settled: state.is === "settled" ? {
       label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
+      bar: settledBarTone(state),
       undo: undo ? undo.press : null,
       at: state.at
     } : null,
@@ -8140,12 +8249,14 @@ function prEntries(screen, ui, now) {
         line: {
           ...blankLine(markId),
           lead,
+          isPrHead: true,
           mark: settledMark(state),
           title: pr.title,
           isDim: true,
           settled: {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
+            bar: null,
             undo: state.canUndo ? { action: "pr-undo", ref: pr.ref } : null,
             at: state.at
           }
@@ -8161,6 +8272,7 @@ function prEntries(screen, ui, now) {
       line: {
         ...blankLine(markId),
         lead,
+        isPrHead: true,
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
         age: doneAt(f),
@@ -8594,7 +8706,10 @@ function drawLine(line, isSelected, d) {
   const mark = markText(line.mark, now, s);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
-  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
+  const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now);
+  const bar = line.settled?.bar ?? null;
+  const edge = bar ? s.settledBar(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : " ";
+  const head = `${edge}${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
   const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
@@ -8603,15 +8718,12 @@ function drawLine(line, isSelected, d) {
   if (line.settled || isShut(line, ui))
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
-  const contextLine = isOpen ? line.row?.contextLine : null;
-  if (contextLine)
-    out.push(...indented(contextLine, indent, width, Infinity, s.dim));
   const holdsUp = line.row?.holdsUpLine;
-  if (holdsUp)
-    out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
-  const recLine = line.row?.recLine;
-  if (recLine)
-    out.push(...isOpen ? indented(recLine, indent, width, 3, s.dim) : [fit(`${" ".repeat(indent)}${s.dim(recLine)}`, width)]);
+  const tree = isOpen ? askTreeLines(line, pad, width, s, ui.optionsShown.includes(line.id)) : [];
+  if (tree.length > 0)
+    out.push(...tree);
+  else if (holdsUp)
+    out.push(fit(`${" ".repeat(indent)}${s.dim(holdsUp)}`, width));
   if (line.body && isOpen)
     out.push(...indented(line.body, indent, width, BODY_LINES, (t) => t));
   if (line.detail && (isOpen || line.isDetailShown))
@@ -8620,8 +8732,6 @@ function drawLine(line, isSelected, d) {
     return out;
   if (line.file)
     out.push(" ".repeat(indent) + s.tone("accent", line.file));
-  for (const o of line.row?.optionDescriptions ?? [])
-    out.push(fit(" ".repeat(indent) + o.label + s.dim(`: ${o.description}`), width));
   if (line.buttons.length > 0 && ui.typing !== line.id)
     out.push(...buttonLines(line, ui, indent - 1, width, s));
   if (ui.typing === line.id) {
@@ -8663,6 +8773,7 @@ function isShownEmpty(screen, ui, tab) {
 function followRows(screen, ui, seen, isOpening, now) {
   const { listed, open } = tabRows(screen);
   const recorded = recordRows(seen, listed);
+  ui = { ...ui, newRows: addNewRows(ui.newRows, recorded.added) };
   const { tab } = ui;
   if (!isRowTab(tab))
     return { ui, seen: recorded.seen };
@@ -8775,7 +8886,8 @@ var INITIAL_UI = {
   openedAt: 0,
   shownSince: 0,
   isHelpShown: false,
-  listInput: null
+  listInput: null,
+  newRows: new Map
 };
 function holdsOf(ui) {
   return {
@@ -8905,6 +9017,15 @@ function createPanel(deps) {
   let isOpening = true;
   let heldHeight = null;
   const stops = [];
+  const syncFrames = () => {
+    const hasFrames = screen !== null && (isNewRowFading(ui.newRows, deps.now()) || showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind)));
+    if (hasFrames && frames === null)
+      frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS);
+    if (!hasFrames && frames !== null) {
+      timers.stop(frames);
+      frames = null;
+    }
+  };
   const syncAnimation = () => {
     const isMoving = screen !== null && isAnimating(screen, ui, deps.now());
     if (isMoving && animation === null)
@@ -8913,13 +9034,7 @@ function createPanel(deps) {
       timers.stop(animation);
       animation = null;
     }
-    const hasFrames = screen !== null && showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind));
-    if (hasFrames && frames === null)
-      frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS);
-    if (!hasFrames && frames !== null) {
-      timers.stop(frames);
-      frames = null;
-    }
+    syncFrames();
     const now = deps.now();
     const at = screen === null ? null : timedChangeAt(screen.view.lastActions, now);
     if (timedChange !== null && timedChange.at !== at) {
@@ -8994,6 +9109,9 @@ function createPanel(deps) {
         return [` ${READING_TEXT}`];
       const now = deps.now();
       const maxHeight = deps.height();
+      if (!ui.isHelpShown)
+        ui = { ...ui, newRows: showNewRows(ui.newRows, ui.tab, now) };
+      syncFrames();
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
       heldHeight = Math.max(heldHeight, drawn.lines.length);
@@ -9227,6 +9345,10 @@ function demoView(now, agent) {
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
           context: "A glance stays up until it times out, and testers asked for a way to clear it sooner.",
           options: ["Pinch", "Flick"],
+          optionDescriptions: {
+            Pinch: "Touch thumb and finger together to clear the glance.",
+            Flick: "Flick the wrist outward to clear it."
+          },
           rec: "Pinch",
           recReason: "a flick fires by accident while walking",
           isDesignChoice: true,
@@ -9655,6 +9777,8 @@ var CLIENTS = {
       "compare-in-background": { kind: "full" },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
+      "new-row-bar": { kind: "different", reason: "The terminal steps the fade in 6 colors. Desktop fades an Svg." },
+      "settled-row-bar": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -9669,7 +9793,7 @@ var CLIENTS = {
       "child-names": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
-      "asks-rec-reason-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
@@ -9763,6 +9887,8 @@ var CLIENTS = {
       },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
+      "new-row-bar": { kind: "full" },
+      "settled-row-bar": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": { kind: "full" },
@@ -9789,7 +9915,7 @@ var CLIENTS = {
       "child-names": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
-      "asks-rec-reason-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": {
@@ -9877,6 +10003,8 @@ var CLIENTS = {
       "compare-in-background": { kind: "full" },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
+      "new-row-bar": { kind: "different", reason: "Steps the fade in 6 colors." },
+      "settled-row-bar": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -9894,7 +10022,7 @@ var CLIENTS = {
       "child-names": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
-      "asks-rec-reason-line": { kind: "full" },
+      "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
@@ -11279,6 +11407,13 @@ var LIGHT_BANNER_TINTS = {
   notice: LIGHT_BLUE_TINT,
   ask: LIGHT_BLUE_TINT
 };
+var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
+var MUTED_TEXT = { dark: "#bdbdbd", light: "#595959" };
+function fadedOver(hex, under, share) {
+  const channel = (c, i) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
+  const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
+  return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
 
 // src/theme.ts
 var ESC = "\x1B[";
@@ -11300,7 +11435,9 @@ function styleOf(theme) {
     inverse: theme.inverse.bind(theme),
     underline: theme.underline.bind(theme),
     tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
-    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text)
+    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
+    newBar: (share, text) => truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? "light" : "dark"], share), text),
+    settledBar: (tone, text) => truecolor(tone === "muted" ? MUTED_TEXT[theme.isLight ? "light" : "dark"] : tones[tone === "error" ? "errorMark" : "done"], text)
   };
 }
 

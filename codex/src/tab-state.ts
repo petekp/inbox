@@ -7,6 +7,7 @@ import type { Feedback } from '../../hooks/feedback'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft, Finding, Tab } from '../../types'
 import type { FoldGroup, SeenRows } from './arrivals'
+import type { NewRows } from '../../hooks/arrivals'
 import type { TabView as View } from './core'
 import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
@@ -44,10 +45,8 @@ export type Row = {
   meta?: string
   /** The open subjects an ask holds up, as "Holds up Offline sync, Hotfix release". */
   holdsUp?: string
-  /** Why the agent recommends an answer, as "Why Redis: it survives restarts". */
-  recLine?: string
-  /** Why the agent asked, which the row draws first under its title while it is open. */
-  context?: string
+  /** Whether the open row draws a tree under its title, which its ◆ in the mark column starts. */
+  hasTree?: boolean
   age?: string
   body?: JSX.Element | null
   keys: Key[]
@@ -167,6 +166,9 @@ class TabState {
   lineNote: { text: string; at: number; isError?: boolean } | null = null
   seen = new Map<string, number>()
   rowsSeen: SeenRows = {}
+  newRows: NewRows = new Map()
+  /** Whether the page was visible at the last read, so a row that arrived while it was hidden gets no bar. */
+  wasVisibleAtRead = false
   lastLists: Lists | null = null
   /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
   lastPrs: DrawnPrs | null = null

@@ -1,8 +1,8 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-15T23:55:13.209Z. 244116 characters follow.
+// Built at 2026-11-16T00:13:25.721Z. 249384 characters follow.
 
 // src/main.ts
-import { View, div as div5 } from "gpui-kit";
+import { View, div as div6 } from "gpui-kit";
 import { InputState, Scrollbar, v_flex as v_flex4 } from "gpui-base";
 import {
   appHome,
@@ -1168,6 +1168,7 @@ var HELD_MARK = { mark: "◆", tone: "needsYou" };
 var RUNNING_FRAMES = ["●", "◉", "◎", "◉"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "◐", tone: null };
+var ROW_BAR = "▍";
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "✕",
@@ -1216,6 +1217,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: ROW_BAR,
+    tone: null,
+    isRunning: false,
+    words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
 var HELP_COPY = {
@@ -1944,20 +1951,29 @@ function closedLineAction(d) {
     return { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } };
   return d.how === "dismissed" ? { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } } : null;
 }
-function recLineOf(item) {
-  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
-}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
-  if (!descriptions)
-    return [];
   return actions.flatMap((a) => {
-    if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option))
+    if (a.press.action !== "answer")
       return [];
-    const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
+    const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
+    if (description === null && reason === null)
+      return [];
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
   });
 }
+function optionBody(o) {
+  if (o.description === null)
+    return null;
+  if (o.reason === null)
+    return o.description;
+  return `${o.description}${/[.!?]$/.test(o.description) ? "" : "."} ${recommendedLine(o.reason)}`;
+}
+function optionReasonLine(o) {
+  return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null;
+}
+var recommendedLine = (reason) => `Recommended: ${reason}`;
 function shownOptionDescriptions(row, isShowingAll) {
   return row.optionDescriptions.filter((o) => isShowingAll || !o.isFolded);
 }
@@ -2001,6 +2017,10 @@ function rowResultMark(row) {
   if (f.is === "sending" || f.is === "queued")
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
+}
+var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+function rowMark(row) {
+  return rowResultMark(row) ?? (row.state.is === "open" && row.type !== "finding" ? ASK_MARK : null);
 }
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
@@ -2064,6 +2084,14 @@ function canUndoRefused(delivery) {
 }
 function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
+}
+function settledBarTone(state) {
+  if (isSendRefused(state.delivery))
+    return "error";
+  return state.closedAs === "handled" ? "done" : "muted";
+}
+function isSendRefused(delivery) {
+  return delivery !== null && typeof delivery === "object";
 }
 function settledLabel(label, delivery, reply) {
   if (delivery && typeof delivery === "object")
@@ -2767,6 +2795,42 @@ function pressFolder(appHome, sessionId) {
 
 // ../hooks/arrivals.ts
 var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+var NEW_HOLD_MS = 1500;
+var NEW_FADE_MS = 3000;
+var NEW_STEPS = 6;
+function addNewRows(rows, added) {
+  const next = new Map(rows);
+  for (const [tab, ids] of Object.entries(added))
+    for (const id of ids ?? [])
+      if (!next.has(id))
+        next.set(id, { tab, shownAt: null });
+  return next;
+}
+function showNewRows(rows, tab, now) {
+  const next = new Map;
+  for (const [id, row] of rows) {
+    const shown = row.tab === tab && row.shownAt === null ? { ...row, shownAt: now } : row;
+    if (newRowShare(shown, now) > 0)
+      next.set(id, shown);
+  }
+  return next;
+}
+function newRowIn(rows, id, tab) {
+  const row = rows.get(id);
+  return row?.tab === tab ? row : undefined;
+}
+function newRowShare(row, now) {
+  if (!row)
+    return 0;
+  if (row.shownAt === null)
+    return 1;
+  const p = (now - row.shownAt - NEW_HOLD_MS) / NEW_FADE_MS;
+  if (p >= 1)
+    return 0;
+  if (p <= 0)
+    return 1;
+  return (1 + Math.cos(Math.PI * p)) / 2;
+}
 
 // ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
@@ -3319,7 +3383,6 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null,
       contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
@@ -3675,7 +3738,7 @@ function settledPr(d) {
     title: pr.title,
     age: `#${pr.number}`,
     feedback: null,
-    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted" },
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted", bar: null },
     isDim: true,
     isSelectable: false,
     isSelected: false,
@@ -4070,9 +4133,9 @@ var freshUi = (tab) => ({
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
-  typing: null
+  typing: null,
+  newRows: new Map
 });
-var HOLDS_UP_MARK = { text: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false };
 var toneOfFeedback = (f) => isFailure(f) ? "error" : f.is === "done" || f.is === "local" && f.result.state === "done" ? "done" : "muted";
 var markOf3 = (m) => m ? { text: m.text, tone: m.tone ?? "muted", isRunning: m.isRunning } : null;
 function rowDoes(row, press, kind, agent) {
@@ -4126,15 +4189,28 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   };
 }
 function rowBody(row, isAllShown) {
+  const options = shownOptionDescriptions(row, isAllShown).map((o) => {
+    const body = optionBody(o);
+    const reason = optionReasonLine(o);
+    return [
+      { text: body === null ? o.label : `${o.label}: ${body}`, tone: null },
+      ...reason ? [{ text: reason, tone: "muted" }] : []
+    ];
+  });
+  const branches = [...options, ...row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: "muted" }]] : []];
+  const lastBranch = branches.length - 1;
+  const hasTree = branches.length > 0;
+  const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
   const lines = [
-    { text: row.contextLine, tone: "muted" },
-    { text: row.detail, tone: null },
-    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: "muted" },
-    ...shownOptionDescriptions(row, isAllShown).map((o) => ({ text: `${o.label}: ${o.description}`, tone: null })),
-    { text: row.recLine, tone: "muted" },
-    { text: row.holdsUpLine, tone: "muted", mark: HOLDS_UP_MARK }
+    { text: row.contextLine ?? "", tone: "muted", ...hasTree ? { tree: "trunk" } : {} },
+    { text: row.detail ?? "", tone: null },
+    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
+    ...branches.flatMap((lines, branch) => lines.map((l, line) => {
+      const placed = tree(branch, line);
+      return { ...l, ...placed ? { tree: placed } : {} };
+    }))
   ];
-  return lines.flatMap((l) => l.text ? [{ ...l, text: l.text }] : []);
+  return lines.filter((l) => l.text);
 }
 function rowBlock(row, ui, selected, screen) {
   const { state, feedback: f } = row;
@@ -4149,11 +4225,15 @@ function rowBlock(row, ui, selected, screen) {
     kind: "row",
     id: row.id,
     depth: 0,
-    mark: markOf3(rowResultMark(row)),
+    mark: markOf3(rowMark(row)),
     title: rowTitle(row, LOOK2),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
-    settled: isSettled ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) } : null,
+    settled: isSettled ? {
+      label: settledLabel(state.label, state.delivery, state.reply),
+      tone: settledTone(state),
+      bar: settledBarTone(state)
+    } : null,
     isDim: isSettled,
     isSelectable: !isSettled,
     isSelected,
@@ -4502,7 +4582,18 @@ function withClosedSelection(ui, last, now) {
 function withArrivals(ui, last, now) {
   const added = now.filter((r) => !last.some((l) => l.id === r.id)).map((r) => r.id);
   const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added);
-  return id === null ? ui : withSelected(ui, id);
+  const recorded = added.length === 0 ? ui : { ...ui, newRows: addNewRows(ui.newRows, { [ui.tab]: added }) };
+  return id === null ? recorded : withSelected(recorded, id);
+}
+function withShownNewRows(ui, at) {
+  const newRows = showNewRows(ui.newRows, ui.tab, at);
+  const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
+  return isSame ? ui : { ...ui, newRows };
+}
+function withDrawnRows(ui, last, rows, at, isTabShown) {
+  const lastRows = last.tab === ui.tab ? last.rows : null;
+  const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
+  return isTabShown ? withShownNewRows(arrived, at) : arrived;
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
@@ -4844,7 +4935,7 @@ class Heights {
 }
 
 // src/paint-blocks.ts
-import { div as div4 } from "gpui-kit";
+import { div as div5 } from "gpui-kit";
 import { Input, h_flex as h_flex2, v_flex as v_flex3 } from "gpui-base";
 
 // ../hooks/layout.ts
@@ -5162,6 +5253,41 @@ function timeLeftEl(id, left, runsOutAt, now, t) {
   return cut.w(timeLeftShare(runsOutAt, now + step) * TIMED_W).transition("width", { duration: step, easing: "linear" });
 }
 
+// src/paint-new-bar.ts
+import { div as div4 } from "gpui-kit";
+var FADE_STEP_MS = NEW_FADE_MS / NEW_STEPS;
+var BAR_W = 3;
+var BAR_GAP = 6;
+function nextStepAt(row, now) {
+  if (row.shownAt === null)
+    return null;
+  const fadeAt = row.shownAt + NEW_HOLD_MS;
+  const endAt = fadeAt + NEW_FADE_MS;
+  if (now >= endAt)
+    return null;
+  if (now < fadeAt)
+    return fadeAt;
+  return Math.min(endAt, fadeAt + (Math.floor((now - fadeAt) / FADE_STEP_MS) + 1) * FADE_STEP_MS);
+}
+function newRowsNextAt(rows, now) {
+  const at = [...rows.values()].map((r) => nextStepAt(r, now)).filter((a) => a !== null);
+  return at.length > 0 ? Math.min(...at) : null;
+}
+function newBarEls(r, p) {
+  const row = newRowIn(p.newRows, r.id, p.tab);
+  const at = row ? nextStepAt(row, p.now) : null;
+  if (!row || at === null)
+    return [];
+  const bar = barEl(r, `new ${r.id}`).bg(p.t.ansi4).opacity(newRowShare(row, at));
+  return [bar.transition("opacity", { duration: at - p.now, easing: "linear" })];
+}
+function settledBarEls(r, p) {
+  return r.settled?.bar ? [barEl(r, `settled ${r.id}`).bg(colorOf(p.t, r.settled.bar))] : [];
+}
+function barEl(r, id) {
+  return div4().id(id).absolute().left(EDGE + r.depth * NEST - BAR_GAP - BAR_W).top(ROW_PAD_PT - 2).w(BAR_W).h(LINE_HEIGHT + 4).rounded(BAR_W / 2);
+}
+
 // src/paint-blocks.ts
 function buttonEl(b, p, isInert = false) {
   const { t } = p;
@@ -5185,14 +5311,23 @@ function buttonEl(b, p, isInert = false) {
 }
 var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex2().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t) => div4().w(MARK_W).flex_none().text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
-var lineEl = (text, color, indent = MARK_W) => div4().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
-var bodyLineEl = (l, t) => l.mark ? h_flex2().pt(LINE_GAP).items_start().child(markEl(l.mark, t)).child(div4().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
+var markEl = (m, t) => div5().w(MARK_W).flex_none().text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
+var lineEl = (text, color, indent = MARK_W) => div5().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
+var trunkEl = (top, height, t) => {
+  const el = div5().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t));
+  return height === null ? el.bottom(0) : el.h(height);
+};
+var bodyLineEl = (l, t) => {
+  const armAt = LINE_GAP + LINE_HEIGHT / 2;
+  const arm = div5().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t));
+  const strokes = l.tree === "trunk" ? [trunkEl(0, null, t)] : l.tree === "tee" ? [trunkEl(0, null, t), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t), arm] : [];
+  return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes);
+};
 function fieldEl(f, p, indent, isInert = false) {
   const { t } = p;
   const state = p.input(f.rowId);
   const input = state ? [
-    div4().min_h(BUTTON_H).px(INSET).py(SPACE.xs).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
+    div5().min_h(BUTTON_H).px(INSET).py(SPACE.xs).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
   return v_flex3().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
 }
@@ -5203,13 +5338,17 @@ function rowEl(r, p) {
   const isOpen = isOpenRow(r);
   const isWrapped = isOpen || m?.isWrapHeld === true;
   const isPressable = r.isSelectable && !isLeaving;
-  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).child(markEl(r.mark, t)).child(div4().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const hasTree = (m?.closing ?? r).body.some((l) => l.tree !== undefined);
+  const line = h_flex2().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t))).child(markEl(r.mark, t)).child(div5().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div5().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => ("isHidden" in l) && l.isHidden ? bodyLineEl(l, t).opacity(0) : bodyLineEl(l, t))).children(panelEl(r, m, p, isLeaving))));
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).children(r.settled ? settledBarEls(r, p) : newBarEls(r, p)).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
+    const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t);
+    return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
+  })).children(panelEl(r, m, p, isLeaving))));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;
@@ -5231,10 +5370,10 @@ function panelEl(r, m, p, isLeaving) {
     v_flex3().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];
 }
-var statusPartEl = (text) => div4().min_w(0).max_w_full().whitespace_normal().child(text);
-var wordEl = (s, word, t) => h_flex2().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name).invisible().when(s.isBold, (e) => e.font_semibold())).child(div4().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
+var statusPartEl = (text) => div5().min_w(0).max_w_full().whitespace_normal().child(text);
+var wordEl = (s, word, t) => h_flex2().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name).invisible().when(s.isBold, (e) => e.font_semibold())).child(div5().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
 function keyEl(s, does, t) {
-  return h_flex2().items_start().pl(TEXT_X).pr(EDGE).child(div4().flex_none().w(HELP_KEY_COLUMN).font_semibold().child(s.name)).child(div4().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex2().items_start().pl(TEXT_X).pr(EDGE).child(div5().flex_none().w(HELP_KEY_COLUMN).font_semibold().child(s.name)).child(div5().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;
@@ -5247,30 +5386,30 @@ function statusEl(s, p, isInert) {
 }
 function prEl(b, p, isInert) {
   const { t } = p;
-  const title = h_flex2().items_start().child(div4().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div4().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
+  const title = h_flex2().items_start().child(div5().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div5().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
   const hasReasons = b.unlisted.length > 0;
-  const word = h_flex2().items_start().min_w(0).max_w_full().child(div4().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div4().flex_none().text_color(t.muted).child(SEP)));
+  const word = h_flex2().items_start().min_w(0).max_w_full().child(div5().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div5().flex_none().text_color(t.muted).child(SEP)));
   const reasons = b.unlisted.map((u, i) => statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted));
-  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div4().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
+  const status = h_flex2().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div5().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
   return v_flex3().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex3().pl(EDGE).pr(EDGE).child(h_flex2().gap(CONTROL_GAP).items_center().child(div4().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex3().pl(EDGE).pr(EDGE).child(h_flex2().gap(CONTROL_GAP).items_center().child(div5().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
-var ruleLine = (t) => div4().flex_1().border_t(1).border_color(t.border);
+var ruleLine = (t) => div5().flex_1().border_t(1).border_color(t.border);
 function headingEl(b, p, isInert) {
   const { t } = p;
   const buttons = h_flex2().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
     return h_flex2().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex2().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
-  return h_flex2().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div4().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div4().text_color(t.muted).child(`${SEP}${b.count}`))).child(div4().flex_1()).child(buttons);
+  return h_flex2().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div5().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div5().text_color(t.muted).child(`${SEP}${b.count}`))).child(div5().flex_1()).child(buttons);
 }
 function emptyEl(b, p, isInert) {
   const { t } = p;
   const { empty, under } = b;
-  const centred = (text, color = t.foreground) => div4().text_center().whitespace_normal().text_color(color).child(text);
-  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(GROUP_GAP).gap(LINE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div4().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div4()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
+  const centred = (text, color = t.foreground) => div5().text_center().whitespace_normal().text_color(color).child(text);
+  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(GROUP_GAP).gap(LINE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div5().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div5()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
 }
 function foldEl(b, p, isInert) {
   const { t } = p;
@@ -5285,15 +5424,15 @@ function foldEl(b, p, isInert) {
   const mark = b.kind === "fold" ? b.mark : undefined;
   const chevron = b.kind === "fold" && b.isOpen ? "▾" : "▸";
   const isChevronAfter = mark !== undefined || b.kind === "fold" && b.isLabelFirst === true;
-  return h_flex2().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold" && !isChevronAfter, (e) => e.child(div4().mr(CONTROL_GAP).child(chevron))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div4().min_w(0).whitespace_normal().child(b.text)).when(isChevronAfter, (e) => e.child(div4().flex_none().ml(LINE_GAP).child(chevron)));
+  return h_flex2().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold" && !isChevronAfter, (e) => e.child(div5().mr(CONTROL_GAP).child(chevron))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div5().min_w(0).whitespace_normal().child(b.text)).when(isChevronAfter, (e) => e.child(div5().flex_none().ml(LINE_GAP).child(chevron)));
 }
 function ruleEl(b, t) {
   if (b.text === null)
     return h_flex2().pl(EDGE).pr(EDGE).child(ruleLine(t));
-  return h_flex2().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div4().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
+  return h_flex2().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div5().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t) {
-  const text = div4().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+  const text = div5().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
   return h_flex2().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text);
 }
 function blockEl(b, p) {
@@ -5316,14 +5455,14 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div4().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
+    return div5().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
     return noteEl(b, t);
   if (b.kind === "caption")
-    return div4().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
+    return div5().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
-  return div4();
+  return div5();
 }
 
 // src/out.ts
@@ -5671,6 +5810,8 @@ function nextUndoPlaceEnd(settled, now) {
 
 // src/status-look.ts
 var LOOK_TICK_MS = 1000;
+var REREAD_MS = 1e4;
+var AGE_TICK_MS = 60000;
 var LOOK_GAP_MS = 3 * LOOK_TICK_MS;
 function isPaneShown(paneId, panes, spaces, window2) {
   const own = panes.find((p) => p.pane === paneId);
@@ -5752,8 +5893,6 @@ async function writeLook(io, appHome, ended) {
 }
 
 // src/main.ts
-var REREAD_MS = 1e4;
-var AGE_TICK_MS = 60000;
 var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
 
 class Inbox extends View {
@@ -5780,7 +5919,7 @@ class Inbox extends View {
   tracks = NO_TRACKS;
   heights = new Heights;
   tracksOf = "";
-  lastWaits = { tab: "needsYou", rows: [] };
+  lastWaits = { tab: "needsYou", rows: null };
   timeLeft = new Map;
   linesAbove = NO_LINES_ABOVE;
   focus = null;
@@ -6033,13 +6172,10 @@ class Inbox extends View {
       queue: this.queue
     });
     let screen = screenFor(this.ui);
-    if (screen.is === "inbox" && this.lastWaits.tab === this.ui.tab) {
-      const last = this.lastWaits.rows;
-      const ui = withArrivals(withClosedSelection(this.ui, last, screen.waits), last, screen.waits);
-      if (ui !== this.ui)
-        screen = screenFor(this.ui = ui);
-    }
-    this.lastWaits = { tab: this.ui.tab, rows: screen.is === "inbox" ? screen.waits : [] };
+    const ui = withDrawnRows(this.ui, this.lastWaits, screen.is === "inbox" ? screen.waits : null, now, !this.isHelpShown);
+    if (ui !== this.ui)
+      screen = screenFor(this.ui = ui);
+    this.lastWaits = { tab: this.ui.tab, rows: screen.is === "inbox" ? screen.waits : null };
     this.view = screen.is === "inbox" ? screen.view : null;
     this.drawTimer?.cancel();
     this.drawTimer = null;
@@ -6075,6 +6211,8 @@ class Inbox extends View {
           cx.notify();
       },
       now,
+      newRows: this.ui.newRows,
+      tab: this.ui.tab,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
       isNarrow: this.isNarrow,
@@ -6101,12 +6239,12 @@ class Inbox extends View {
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
     const nextFrame = isStarting ? now + NEXT_FRAME_MS : null;
-    const timed = timeLeftNextAt(moved.blocks, now);
+    const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, now)]);
     const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter((at) => at !== null);
     if (wakeAt.length > 0)
       this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div5().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div6().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

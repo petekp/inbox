@@ -1,12 +1,12 @@
 import { RowActions } from './row-actions'
-import { HELD_MARK } from '../../hooks/help'
-import { settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
+import { settledBarTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
 import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
+import { newRowIn, showNewRows } from '../../hooks/arrivals'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
 import { stepRow } from '../../hooks/row-motion'
@@ -26,8 +26,14 @@ import type { BannerLine, TextLine } from './tab-line-steps'
 import { tabBanners } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
 import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
+import { NewBar } from './tab-new-bar'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
+
+/** Rows whose panel is closing, and rows whose close just ended, whose Holds up line then fades in over the settled height. */
+const rowsClosing = new Set<string>()
+const rowsJustClosed = new Set<string>()
+const JUST_CLOSED_MS = 600
 
 export function stepLists(v: View): {
   lists: Lists
@@ -39,6 +45,8 @@ export function stepLists(v: View): {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
+  if (document.visibilityState === 'visible' && !tabState.isHelpShown)
+    tabState.newRows = showNewRows(tabState.newRows, t, now)
   const rows = isListedTab(t) ? lists.byTab[t] : []
   const openId = isRowTab(t) ? openRowId(rows, t, v) : undefined
   const changed = new Set<string>()
@@ -153,12 +161,25 @@ export function ListRow({
 }) {
   const isClosing = track.hasPanel && (track.state === 'closing' || track.state === 'leaving')
   const isSelected = track.hasPanel && !isClosing
+  if (isClosing) rowsClosing.add(row.id)
+  else if (rowsClosing.delete(row.id)) {
+    rowsJustClosed.add(row.id)
+    setTimeout(() => rowsJustClosed.delete(row.id), JUST_CLOSED_MS)
+  }
+  const isJustClosed = !isSelected && rowsJustClosed.has(row.id)
+  const isTreeHung = row.hasTree && (isSelected || isClosing)
   const handle = (
     <span
-      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}`}
-      ref={row.isHandleRunning ? pulseInStep : undefined}
+      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}${isTreeHung ? ' has-tree' : ''}`}
+      ref={row.isHandleRunning && !isTreeHung ? pulseInStep : undefined}
     >
-      <MarkGlyph text={row.handle} />
+      {isTreeHung ? (
+        <span class="glyph" ref={row.isHandleRunning ? pulseInStep : undefined}>
+          <MarkGlyph text={row.handle} />
+        </span>
+      ) : (
+        <MarkGlyph text={row.handle} />
+      )}
     </span>
   )
 
@@ -192,10 +213,11 @@ export function ListRow({
 
   return (
     <div
-      class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}`}
+      class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}${isJustClosed ? ' just-closed' : ''}`}
       onClick={isSelected ? undefined : onSelect}
     >
       {handle}
+      <NewBar row={newRowIn(tabState.newRows, row.id, drawnTab())} />
       <div class="content">
         <button type="button" class="line" aria-expanded={isSelected} onClick={isSelected ? onSelect : undefined}>
           <span class="text">
@@ -209,13 +231,7 @@ export function ListRow({
           {row.meta ? <span class="meta">{row.meta}</span> : null}
           {after(drawn, closed ? ' open-only' : '')}
           {closed ? after(closed, ' closed-only') : null}
-          {row.context ? <span class="context-line">{row.context}</span> : null}
-          {row.holdsUp ? (
-            <span class="holds-up">
-              <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
-            </span>
-          ) : null}
-          {row.recLine ? <span class="rec-line">{row.recLine}</span> : null}
+          {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>
@@ -309,6 +325,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
+      <span class={`settled-bar ${settledBarTone(state)}`} aria-hidden="true" />
       <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">

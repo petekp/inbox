@@ -1130,6 +1130,7 @@ var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: null };
+var ROW_BAR = "\u258D";
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -1178,6 +1179,12 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
+  },
+  {
+    mark: ROW_BAR,
+    tone: null,
+    isRunning: false,
+    words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
 
@@ -1741,22 +1748,21 @@ var ROW_COPY = {
   undo: "Undo",
   reopen: "Reopen"
 };
-function recLineOf(item) {
-  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
-}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
-  if (!descriptions) return [];
   return actions.flatMap((a) => {
-    if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option)) return [];
-    const description = descriptions[a.press.option];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+    if (a.press.action !== "answer") return [];
+    const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
+    const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
+    if (description === null && reason === null) return [];
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
   });
 }
 function isWaitingRow(row) {
   return row.state.is === "open";
 }
 var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
+var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
 }
@@ -2821,7 +2827,6 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null,
       contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };

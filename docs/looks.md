@@ -23,7 +23,9 @@ Change a rule in its owner. Do not change it in a reader.
 
 - [Tabs, lists, banners and the footer](looks/owners-tabs-and-lists.md)
 - [Rows, presses and feedback](looks/owners-rows-and-feedback.md)
+- [Presses: their messages, status and reducer](looks/owners-presses.md)
 - [The Status page](looks/owners-status.md)
+- [The Status goal and Other work](looks/owners-status-goal.md)
 - [The Status call](looks/owners-status-call.md)
 - [The ledger, sessions and model-read texts](looks/owners-ledger-and-sessions.md)
 - [PRs](looks/owners-prs.md)

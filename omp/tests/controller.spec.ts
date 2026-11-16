@@ -15,6 +15,8 @@ const style: Style = {
   underline: s => s,
   tone: (_n, s) => s,
   banner: (_t, _p, s) => s,
+  newBar: (_share, s) => s,
+  settledBar: (_tone, s) => s,
 }
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 

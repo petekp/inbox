@@ -1,6 +1,6 @@
 import { ledgerActions } from './row-actions'
 import { clipLabel } from '../../hooks/text'
-import { allRows, DOT, replyHint, ROW_COPY, shortAgo, shownOptionDescriptions } from '../../hooks/rows'
+import { allRows, DOT, replyHint, ROW_COPY, shortAgo } from '../../hooks/rows'
 import { drawnLists, rowAfterClose } from '../../hooks/action-plan'
 import { isRowTab } from '../../hooks/tabs'
 import { feedbackOf } from '../../hooks/feedback'
@@ -61,6 +61,7 @@ import {
 } from './tab-selection'
 import { applyView, replies, holds } from './tab-read'
 import { isNotSent, copy, startTyping, discardReply, lastPressKey } from './tab-press'
+import { askTree } from './tab-ask-tree'
 import { resultHandle, inlineHtml } from './tab-parts'
 
 function isListed(v: View, id: string): boolean {
@@ -228,7 +229,6 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
 function itemRow(v: View, r: RowView): Row {
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
-  const described = shownOptionDescriptions(r, optionsShown.has(id))
 
   return {
     id,
@@ -237,23 +237,8 @@ function itemRow(v: View, r: RowView): Row {
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
     ...(r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
-    ...(r.recLine ? { recLine: r.recLine } : {}),
-    ...(r.contextLine ? { context: r.contextLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
-    ...(described.length > 0
-      ? {
-          body: (
-            <div>
-              {described.map(o => (
-                <p class="option-description" title={`${o.label}: ${o.description}`}>
-                  {o.label}
-                  <span class="muted">: {o.description}</span>
-                </p>
-              ))}
-            </div>
-          ),
-        }
-      : {}),
+    ...askTree(r, optionsShown.has(id)),
     ...rowKeys(r),
     typing: {
       hint: replyHint(r, 'Codex'),

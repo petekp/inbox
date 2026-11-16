@@ -6,7 +6,6 @@ import type { PaneRowLines } from './pane-row-lines'
 import {
   DESKTOP_ARM_GAP,
   DESKTOP_CELL_PT,
-  DESKTOP_HAIR_CELLS,
   DESKTOP_HAIR_LINES,
   DESKTOP_MARK_CELLS,
   DESKTOP_SIDE_CELLS,
@@ -24,6 +23,7 @@ import {
 } from './status-page'
 import { desktopSpanLines, type TerminalSpan, terminalSpanLines } from './terminal-text'
 import { cellWidth } from './text'
+import { paneDesktopTree } from './pane-desktop-tree'
 import { desktopFrameLines, desktopTextLines, inkLines, plus } from './pane-status-tops'
 import type { Drawn, Lines } from './pane-status-tops'
 
@@ -163,6 +163,7 @@ export function paneStatusLines({
   }
   /** A Status row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
   const statusFrameEdge = STATUS_PAD_Y + 2 * DESKTOP_HAIR_LINES
+  const { desktopTreeLine } = paneDesktopTree({ Box, desktopHairline, pal })
   /**
    * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
    * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
@@ -173,33 +174,11 @@ export function paneStatusLines({
       const at = statusMarkAt + markWidth * depth
       return shape === 'down' ? branch('pass', 0, at, pal.line, 1, key) : branch(shape, 0, at, pal.line, 0, key)
     }
-    // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
-    // over the frame's padding and its border.
-    const reach = -statusFrameEdge
-    const firstLineMiddle = 0.5
-    const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
-      <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
-        {desktopHairline('line', 'down', ends, pal.line)}
-      </Box>
-    )
-    const arm = DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP
-    const parts =
-      shape === 'down'
-        ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reach })]
-        : [
-            hair('to-arm', false, { marginTop: reach }),
-            desktopHairline('arm', 'across', { width: arm }, pal.line),
-            ...(shape === 'mid' ? [hair('on', true, { marginBottom: reach })] : []),
-          ]
-
-    return (
-      <Box key={key} position="absolute" top={0} bottom={0} left={0} flexDirection="row">
-        <Box width={DESKTOP_MARK_CELLS * 2 * depth + DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
-        <Box flexDirection="column" flexShrink={0}>
-          {parts}
-        </Box>
-      </Box>
-    )
+    return desktopTreeLine(key, shape, {
+      at: DESKTOP_MARK_CELLS * 2 * depth + DESKTOP_TREE_AT,
+      arm: DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP,
+      edge: STATUS_PAD_Y,
+    })
   }
 
   return {

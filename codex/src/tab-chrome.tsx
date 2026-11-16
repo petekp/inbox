@@ -190,6 +190,7 @@ export async function toggleDemo() {
   tabState.view = null
   tabState.seen = new Map()
   tabState.rowsSeen = {}
+  tabState.newRows = new Map()
   drawnRows.clear()
   tabState.lastLists = null
   selection.needsYou = null

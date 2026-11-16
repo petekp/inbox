@@ -220,6 +220,10 @@ export function demoView(now: number, agent: string): DemoCopy {
           ask: 'Dismiss a glance with a pinch, or a flick of the wrist?',
           context: 'A glance stays up until it times out, and testers asked for a way to clear it sooner.',
           options: ['Pinch', 'Flick'],
+          optionDescriptions: {
+            Pinch: 'Touch thumb and finger together to clear the glance.',
+            Flick: 'Flick the wrist outward to clear it.',
+          },
           rec: 'Pinch',
           recReason: 'a flick fires by accident while walking',
           isDesignChoice: true,

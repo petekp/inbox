@@ -1,4 +1,5 @@
 .row {
+  --tree-line: color-mix(in srgb, var(--muted) 55%, transparent);
   display: grid;
   grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
   padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);
@@ -137,8 +138,7 @@
 .row.collapsed:not(:hover) .line .meta {
   color: var(--age);
 }
-.line .holds-up,
-.line .rec-line {
+.line .holds-up {
   display: block;
   color: var(--muted);
   font-weight: 400;
@@ -150,19 +150,19 @@
 .row.closing .line .meta {
   display: none;
 }
-.row.selected .line .rec-line,
-.row.closing .line .rec-line {
-  white-space: normal;
+/* The line returns with the end of the close, fading in so it does not pop in over the settled height. */
+.row.just-closed .line .holds-up {
+  animation: holds-up-in var(--enter-fade);
 }
-/* Drawn while the row is open and while it closes, so collapse() measures the closed line without it. */
-.line .context-line {
+@keyframes holds-up-in {
+  from {
+    opacity: 0;
+  }
+}
+/* An open row's Holds up line is the last branch of its tree, which a closing row's fading body still draws. */
+.row.selected .line .holds-up,
+.row.closing .line .holds-up {
   display: none;
-  color: var(--muted);
-  font-weight: 400;
-}
-.row.selected .line .context-line,
-.row.closing .line .context-line {
-  display: block;
 }
 .row.closing .closed-only,
 .row.collapsed:not(.closing) .open-only {
@@ -193,12 +193,73 @@
   margin-top: 4px;
 }
 .body .option-description {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--muted);
 }
-.body .option-description + .option-description {
-  margin-top: 0;
+.body .option-label {
+  color: var(--text);
+}
+.body .reason-line {
+  display: block;
+}
+.body .tree p + p,
+.body .tree p {
+  margin: 0;
+}
+.body .tree .context-line {
+  color: var(--muted);
+}
+/*
+ * The tree hangs from the ◆ in the mark column. The ◆'s cell draws the line down to its row's end, and each branch
+ * of the tree draws the rest from the top of its own block to its tick, `--tree-x` left of the text column.
+ */
+.body .tree {
+  --tree-x: calc((var(--text-x) - var(--mark-x) - 8px) / 2 + 8px);
+  position: relative;
+}
+.body .tree > p {
+  position: relative;
+  padding: 1px 0;
+}
+.body .tree:not(.plain) > p::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--tree-x) - 0.75px);
+  top: 0;
+  bottom: 0;
+  border-left: 1.5px solid var(--tree-line);
+}
+.body .tree > p:first-child::before {
+  top: -8px;
+}
+.body .tree > p.branch::after {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--tree-x) - 0.75px);
+  top: 0.8em;
+  width: calc(var(--tree-x) - 6px + 0.75px);
+  border-top: 1.5px solid var(--tree-line);
+}
+.body .tree > p:last-child::before {
+  bottom: auto;
+  height: calc(0.8em + 1px);
+}
+.mark.has-tree.running {
+  animation: none;
+}
+.mark.has-tree.running .glyph {
+  animation: running-pulse var(--pulse) ease-in-out infinite;
+}
+.mark.has-tree {
+  position: relative;
+  align-self: stretch;
+}
+.mark.has-tree::after {
+  content: '';
+  position: absolute;
+  left: calc((var(--text-x) - var(--mark-x) - 8px) / 2 - 0.75px);
+  top: 1.7em;
+  bottom: 0;
+  border-left: 1.5px solid var(--tree-line);
 }
 code {
   padding: 1px 4px;
@@ -308,4 +369,28 @@ textarea {
   background: transparent;
   border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
   border-radius: 10px;
+}
+.row:has(> .new-bar),
+.row:has(> .settled-bar) {
+  position: relative;
+}
+.new-bar,
+.settled-bar {
+  position: absolute;
+  left: calc(var(--mark-x) - 9px);
+  top: calc(var(--row-pad) - 2px);
+  width: 3px;
+  height: calc(1lh + 4px);
+  border-radius: 2px;
+  background-color: var(--key);
+  pointer-events: none;
+}
+.settled-bar.done {
+  background-color: var(--done);
+}
+.settled-bar.muted {
+  background-color: var(--muted);
+}
+.settled-bar.error {
+  background-color: var(--error-mark);
 }

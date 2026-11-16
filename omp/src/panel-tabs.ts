@@ -8,6 +8,7 @@ import {
   listedRowIds,
   openRowIds,
   prRowIds,
+  addNewRows,
   recordRows,
 } from '../../hooks/arrivals'
 import type { RowRecord } from '../../hooks/arrivals'
@@ -64,6 +65,7 @@ export function followRows(
 ): { ui: PanelUi; seen: SeenRows } {
   const { listed, open } = tabRows(screen)
   const recorded = recordRows(seen, listed)
+  ui = { ...ui, newRows: addNewRows(ui.newRows, recorded.added) }
   const { tab } = ui
   if (!isRowTab(tab)) return { ui, seen: recorded.seen }
   const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded.added)

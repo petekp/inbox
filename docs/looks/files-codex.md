@@ -8,6 +8,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-state.ts` | Codex adapter. The page's state. `tabState` holds each value that more than one tab file sets, and the file also holds the shared maps and sets and the row types. |
 | `codex/src/tab-host.ts` | Codex adapter. The bridge to Codex: timers, `request` and `callTool`, the message listener, the host's theme, and `dispose`. |
 | `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the spring glide each height change plays, the animation each row state starts, tab widths, folds, and the draws that end a move. |
+| `codex/src/tab-new-bar.tsx` | Codex adapter. The bar at a new row's left edge, which holds and then fades on a Web Animation that starts at the clock's point, so a row drawn again mid-fade does not start over. |
 | `codex/src/tab-line-steps.ts` | Codex adapter. Steps lines that come and go, such as banners and a press's status, through the row states, so a line enters and leaves from its place. |
 | `codex/src/tab-status-steps.ts` | Codex adapter. Steps the Status page's lines, the goal's milestones and the lines under the goal's text with `stepLines`. |
 | `codex/src/tab-selection.ts` | Codex adapter. The shown tab and its open row: switching tabs, following arrivals, and opening and selecting rows. |
@@ -15,6 +16,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-read.ts` | Codex adapter. Reads the view and applies it, and sends the replies and discards the server holds with each request. |
 | `codex/src/tab-press.ts` | Codex adapter. The parts of a press that need no rows: copying its text, checking whether it was sent, and starting or dropping a reply. |
 | `codex/src/tab-rows.tsx` | Codex adapter. Each tab's rows, built from the view, and `act`, which sends a press. `act` and the row builders call each other, so they share a file. |
+| `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's context, option lines and Holds up line as the `.tree` its ◆ starts. |
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
