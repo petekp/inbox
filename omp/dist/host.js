@@ -3648,14 +3648,10 @@ var HELP_COPY = {
   name: "Help",
   icon: "?",
   keys: "Keys",
-  marks: "Marks",
-  tabs: "Tabs",
+  indicators: "Indicators",
   version: "Inbox"
 };
 var helpVersionText = (version, isNextBuild) => `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`;
-function tabLegend() {
-  return shownTabs().map((t) => ({ keys: t.symbol, does: t.label }));
-}
 var UNDO_KEY = "u";
 var COLLAPSE_KEY = "z";
 var FOLD_ALL_KEY = "w";
@@ -9217,11 +9213,8 @@ function helpEntries(screen) {
     },
     ...keys.map((key) => ({ kind: "key", key, at, column })),
     { kind: "note", text: "" },
-    { kind: "heading", text: HELP_COPY.marks },
-    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry, at, textAt })),
-    { kind: "note", text: "" },
-    { kind: "heading", text: HELP_COPY.tabs },
-    ...tabLegend().map((key) => ({ kind: "key", key, at, column }))
+    { kind: "heading", text: HELP_COPY.indicators },
+    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry, at, textAt }))
   ];
 }
 function entriesOf(screen, ui, tab, now) {

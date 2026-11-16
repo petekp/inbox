@@ -1,5 +1,5 @@
 import { toneSvg } from './desktop-svg'
-import { HELP_COPY, helpVersionText, type HelpKey, type LegendEntry, MARK_LEGEND, tabLegend } from './help'
+import { HELP_COPY, helpVersionText, type HelpKey, type LegendEntry, MARK_LEGEND } from './help'
 import { markShape } from './marks'
 import { mod } from './mod-state'
 import type { PaneBase } from './pane-context'
@@ -59,10 +59,9 @@ export function paneHelp({
   const versionText = mod.version ? helpVersionText(mod.version, mod.isNextBuild) : undefined
   const helpKeysSection = () =>
     section([groupTitle(HELP_COPY.keys, 0, undefined, false, versionText), ...keyRows(keyList, 'help-key')])
-  const helpTabsSection = () => section([groupTitle(HELP_COPY.tabs, 0), ...keyRows(tabLegend(), 'help-tab')])
   const helpMarksSection = () =>
     section([
-      groupTitle(HELP_COPY.marks, 0),
+      groupTitle(HELP_COPY.indicators, 0),
       ...MARK_LEGEND.map(m => (
         <Box key={`help-mark-${m.mark}`} flexDirection="row" paddingLeft={listIndent}>
           <Box width={helpColumn} flexShrink={0}>
@@ -88,7 +87,7 @@ export function paneHelp({
   /** Help in place of the tab's body: the keys where keys work, then the legend. A wide inline pane sets them side by side. */
   const helpView = () => {
     const version = helpVersionSection()
-    if (keyList.length === 0) return sections([helpMarksSection(), helpTabsSection(), ...(version ? [version] : [])])
+    if (keyList.length === 0) return sections([helpMarksSection(), ...(version ? [version] : [])])
     if (hasRail)
       return (
         <Box flexDirection="row" columnGap={4} flexGrow={1}>
@@ -97,12 +96,11 @@ export function paneHelp({
           </Box>
           <Box flexDirection="column" width="50%" flexShrink={1}>
             {helpMarksSection()}
-            {helpTabsSection()}
           </Box>
         </Box>
       )
 
-    return sections([helpKeysSection(), helpMarksSection(), helpTabsSection()])
+    return sections([helpKeysSection(), helpMarksSection()])
   }
 
   return { helpView }

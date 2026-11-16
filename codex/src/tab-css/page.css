@@ -11,6 +11,10 @@
   padding: calc(2 * var(--edge));
   text-align: center;
 }
+.empty > * {
+  max-width: var(--empty-max-width);
+  margin-inline: auto;
+}
 .empty .title {
   margin-bottom: var(--list-gap);
 }
