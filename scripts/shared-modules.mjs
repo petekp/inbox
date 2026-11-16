@@ -102,6 +102,7 @@ export const SHARED = [
   'status-page',
   'status-page-parts',
   'status-folds',
+  'status-gaps',
   'fold-chevron',
   'fold-all',
   'action-plan',

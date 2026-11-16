@@ -1,7 +1,7 @@
 import { PathBuilder, div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
-import { LINE_GAP, LINE_HEIGHT } from './paint-theme'
+import { LINE_HEIGHT, SMALL_GAP } from './paint-theme'
 import type { Theme } from './paint-theme'
 
 const SIZE_PX = 12
@@ -69,13 +69,13 @@ export function foldChevronEl(t: Theme, fold: { isOpen: boolean; isLive: boolean
     .flex_none()
     .items_center()
     .h(LINE_HEIGHT)
-    .ml(LINE_GAP)
+    .ml(SMALL_GAP)
     .text_color(t.muted)
     .child(chevronEl(fold.isOpen, t, fold.isLive))
     .when(fold.count !== undefined, e =>
       e.child(
         div()
-          .ml(LINE_GAP)
+          .ml(SMALL_GAP)
           .child(`${fold.count}`)
           .when(fold.isLive, c => c.hover(x => x.text_color(t.foreground))),
       ),

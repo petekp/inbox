@@ -6,7 +6,7 @@ import { closedTitleTint } from './pane-title-tint'
 import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
 import { foldGlyph } from './fold-chevron'
 import type { FoldProps } from './fold-client'
-import { ROW_PAD_PT } from './layout'
+import { HEAD_GAP_PT, ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
 import type { Entry, PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import { followUpPresses } from './pane-keys'
@@ -21,6 +21,8 @@ import {
   DESKTOP_ROW_PT,
   DESKTOP_MARK_CELLS,
   DESKTOP_ROW_PAD,
+  DESKTOP_SECTION_SPACE,
+  desktopPad,
   FRAME_INSET_PT,
   ROW_COLUMNS,
   TERMINAL_SIDE_CELLS,
@@ -168,7 +170,7 @@ export function paneRowParts(
    * Sections one under another. On desktop a hairline sits between each two, except above a section whose place in
    * `list` is in `unruled`, which keeps only the hairline's space.
    */
-  const sections = (list: JSX.Element[], space = 1, unruled: number[] = []) => (
+  const sections = (list: JSX.Element[], space = DESKTOP_SECTION_SPACE, unruled: number[] = []) => (
     <Box flexDirection="column" flexGrow={1} gap={look === 'desktop' ? 0 : terminalSectionGap}>
       {look === 'desktop'
         ? list.flatMap((el, n) => {
@@ -195,7 +197,7 @@ export function paneRowParts(
     isInline
       ? []
       : look === 'desktop'
-        ? [<Box paddingTop={(2 * ROW_PAD_PT) / DESKTOP_LINE_PT} />]
+        ? [<Box paddingTop={desktopPad(HEAD_GAP_PT - ROW_PAD_PT)} />]
         : [
             <Box paddingLeft={TREE_LINE_AT}>
               <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>

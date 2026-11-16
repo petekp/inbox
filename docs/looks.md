@@ -43,6 +43,7 @@ The parts below hold the main table, split by subject. The omp table is in the p
 - [Keys, clicks and replies](looks/differences-input.md)
 - [Rows, tabs, banners and motion](looks/differences-drawing.md)
 - [The Status page and marks](looks/differences-status-and-marks.md)
+- [Spacing](looks/differences-spacing.md)
 - [How each host runs](looks/differences-hosts.md)
 - [How each host runs in Herdr](looks/differences-hosts-herdr.md)
 - [The agent and its turns](looks/differences-agent-and-turns.md)

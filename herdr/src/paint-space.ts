@@ -1,57 +1,75 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
-import { ROW_PAD_PT } from '../../hooks/layout'
+import { OPEN_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
 import { isOpenRow } from './blocks'
 import type { Block, PathSide, RowBlock, TreeStroke } from './blocks'
 import type { PathLine } from '../../hooks/status-path'
 import type { RowMotion } from './motion'
 import {
+  CHILD_GAP,
   CONTROL_GAP,
   EDGE,
-  GROUP_GAP,
   HEAD_GAP,
-  INSET,
+  INSIDE_GAP,
   ITEM_GAP,
-  LINE_GAP,
   LINE_HEIGHT,
+  LIST_GAP,
   NEST,
+  SECTION_GAP,
+  SMALL_GAP,
   mixInto,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { SLIDE_PX } from '../../hooks/row-motion'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
-/** The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space. */
-export const padOf = (b: Block): number => (b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0)
+/**
+ * The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space.
+ * A selected row's box shows, so it keeps half an item's gap.
+ */
+export function padOf(b: Block): number {
+  if (b.kind === 'row') return b.isSelected ? OPEN_ROW_PAD_PT : ROW_PAD_PT
+
+  return b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0
+}
+
+/** A row that draws only its title line, with no box showing. */
+const isOneLineRow = (r: RowBlock): boolean =>
+  !r.isSelected && r.body.length === 0 && r.settled === null && r.feedback === null && r.heldLine === undefined
+
+/** A line of a list with nothing under it, as a subject's child, a closed row, a note or a fold. */
+function isOneLine(b: Block): boolean {
+  if (b.kind === 'status') return b.under.length === 0 && b.buttons.length === 0
+  if (b.kind === 'row') return isOneLineRow(b)
+
+  return b.kind === 'note' || b.kind === 'fold' || b.kind === 'more'
+}
 
 const depthOf = (b: Block): number => ('depth' in b ? b.depth : 0)
 
-/** A line of a list with nothing under it, as a subject's child, a note or a fold. */
-const isOneLine = (b: Block): boolean =>
-  b.kind === 'status' ? b.under.length === 0 && b.buttons.length === 0 : b.kind === 'note' || b.kind === 'fold'
-
-/** The space between two Status items. One-liners stay close, items inside a group further apart, top-level items further still. */
+/**
+ * The space between two items of a list. One-liners stay close. An item with more than one line stands apart, less
+ * far from its siblings under one parent than from the next top-level item.
+ */
 function itemGap(prev: Block, b: Block): number {
-  if (isOneLine(prev) && isOneLine(b)) return CONTROL_GAP
-  if (depthOf(b) === 0) return ITEM_GAP
+  if (isOneLine(prev) && isOneLine(b)) return LIST_GAP
 
-  return INSET
+  return depthOf(b) > 0 ? CHILD_GAP : ITEM_GAP
 }
 
 const isMilestone = (b: Block): boolean => 'path' in b && b.path?.is === 'milestone'
 
 /** The space the eye sees between one block's last line and the next block's first. */
 function gapBetween(prev: Block, b: Block): number {
-  if (isMilestone(prev)) return isMilestone(b) ? CONTROL_GAP : INSET
+  if ('gapAbove' in b && b.gapAbove !== undefined) return b.gapAbove
+  if (isMilestone(prev)) return isMilestone(b) ? LIST_GAP : HEAD_GAP
   const isLabelled = prev.kind === 'heading' || prev.kind === 'caption' || (prev.kind === 'rule' && prev.text !== null)
   if (isLabelled) return HEAD_GAP
-  if (prev.kind === 'rule' || b.kind === 'rule') return GROUP_GAP / 2
-  if (prev.kind === 'note' && prev.isHead && b.kind === 'note' && b.isHead) return LINE_GAP
+  if (prev.kind === 'rule' || b.kind === 'rule') return SECTION_GAP / 2
+  if (prev.kind === 'note' && prev.isHead && b.kind === 'note' && b.isHead) return INSIDE_GAP
   if (prev.kind === 'line' && b.kind === 'line') return CONTROL_GAP
-  if (prev.kind === 'line' || prev.kind === 'banner') return GROUP_GAP
-  if (b.kind === 'heading') return prev.kind === 'row' || prev.kind === 'pr' ? ITEM_GAP : GROUP_GAP
-  if ([prev, b].some(x => x.kind === 'row' || x.kind === 'more')) return EDGE
+  if (prev.kind === 'line' || prev.kind === 'banner' || b.kind === 'heading') return SECTION_GAP
 
   return itemGap(prev, b)
 }
@@ -89,7 +107,7 @@ export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[
   for (const b of blocks) {
     if (b.kind === 'gap') {
       if (isShut(b)) continue
-      section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : GROUP_GAP
+      section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : SECTION_GAP
       continue
     }
     if (isShut(b)) {
@@ -116,6 +134,18 @@ const springBox = (id: string, height: number | undefined): Element =>
       .overflow_hidden()
       .when(height !== undefined, e => e.h(height ?? 0)),
   )
+
+/**
+ * The padding a selected row adds past `ROW_PAD_PT`, above or below its lines, as a box whose height springs, so the
+ * row's lines glide with its box as it is selected or left.
+ */
+export function rowPadEl(r: RowBlock, edge: 'top' | 'bottom', p: Paint): Element {
+  const id = `pad ${edge} ${r.id}`
+  const box = springHeight(div().id(id).flex_none())
+  const extra = padOf(r) - ROW_PAD_PT
+
+  return p.isAtOnce(id) ? box.pt(extra) : box.h(extra)
+}
 
 /** Content that reports its size under `key`. */
 export const sizeEl = (key: string, p: Paint, el: Element): Element =>
@@ -172,7 +202,7 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
   const title = titleHeightOf(b, p)
   const rest = p.heights.get(restId(id))
 
-  return title === undefined || rest === undefined ? undefined : 2 * ROW_PAD_PT + title + rest - panel
+  return title === undefined || rest === undefined ? undefined : 2 * padOf(b) + title + rest - panel
 }
 
 /**
@@ -308,7 +338,7 @@ function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): E
         .absolute()
         .left(PATH_X + depth * NEST + 1)
         .top(armAt)
-        .w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP)
+        .w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP)
         .h(1)
         .border_t_1()
         .border_color(lineColor(t)),

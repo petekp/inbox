@@ -1,7 +1,9 @@
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { RUNNING_SVG_CELLS } from './desktop-svg'
 import { DESKTOP_BUTTON_PT, DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_ROW_PT } from './pane-sizes'
-import { STALL_GAP, type StatusCount } from './status-page'
+import { ITEM_GAP_PT } from './layout'
+import { statusGaps } from './status-gaps'
+import { STALL_GAP, type StatusCount, type StatusRow } from './status-page'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
 
@@ -70,8 +72,9 @@ export function desktopTextLines(text: string, widthPt: number): Lines {
 /** A desktop Box's padding, margin or gap of `cells` on one side, in lines: the hooks tree counts them in half lines. */
 export const desktopSpaceLines = (cells: number) => cells / 2
 
-/** The lines a desktop row frame adds around its text: `padY` above and below, and its 1 pt border on each side. */
-export const desktopFrameLines = (padY: number) => exactly(2 * desktopSpaceLines(padY) + 2 * DESKTOP_HAIR_LINES)
+/** The lines a desktop row frame adds around its text: `padY` above, `padBelow` below, and its 1 pt border on each side. */
+export const desktopFrameLines = (padY: number, padBelow = padY) =>
+  exactly(desktopSpaceLines(padY + padBelow) + 2 * DESKTOP_HAIR_LINES)
 
 /** A line of native buttons on desktop: as tall as a button, and at least a line of text. */
 export const DESKTOP_BUTTON_LINES = DESKTOP_BUTTON_PT / DESKTOP_ROW_PT
@@ -120,4 +123,14 @@ export function desktopCountsLines(counts: StatusCount[], widthPt: number): Line
   )
 
   return { least: 1, most: desktopWrapLines(widths, 0, widthPt) }
+}
+
+/**
+ * Rows with `blank(n)` above each row that `statusGaps` sets `ITEM_GAP_PT` from the row above, as the docked terminal
+ * spaces Status items: `ITEM_GAP_PT` rounds to one line there, and the smaller steps to none.
+ */
+export function spacedItems(rows: StatusRow[], drawn: Drawn[], blank: (n: number) => Drawn): Drawn[] {
+  const gaps = statusGaps(rows)
+
+  return drawn.flatMap((d, n) => (gaps[n] === ITEM_GAP_PT ? [blank(n), d] : [d]))
 }
