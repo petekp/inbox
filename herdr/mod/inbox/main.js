@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T05:27:47.652Z. 266992 characters follow.
+// Built at 2026-11-16T05:38:18.107Z. 266992 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -5183,7 +5183,7 @@ function placeAfter(shown, above) {
 }
 
 // ../hooks/tones.ts
-var DARK_ORANGE = "#ffa21f";
+var DARK_ORANGE = "#ffae42";
 var DARK_TONES = {
   needsYou: DARK_ORANGE,
   issue: "#ff6b80",
@@ -5198,7 +5198,7 @@ var DARK_TONES = {
   errorMark: "#ff6b80",
   key: "#b1b9f9"
 };
-var LIGHT_ORANGE = "#a15000";
+var LIGHT_ORANGE = "#844100";
 var LIGHT_TONES = {
   needsYou: LIGHT_ORANGE,
   issue: "#a5293d",

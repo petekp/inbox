@@ -55,7 +55,7 @@ export function toneSvg(tone: ToneName, mark: string, tint?: string): string {
  * about the box's middle and moved right so its stroke stays inside the mark's cell, `DESKTOP_CELL_PT` wide.
  */
 const CHECKBOX_SCALE = 1.25
-const CHECKBOX_SHIFT_PT = 0.34
+const CHECKBOX_SHIFT_PT = 0.35
 function desktopMarkShape(mark: string): string | null {
   const shape = markShape(mark, DESKTOP_LINE_PT / 2)
   if (shape === null || mark !== NEEDS_YOU_MARKS.task.mark) return shape

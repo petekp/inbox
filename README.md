@@ -278,7 +278,7 @@ To tell the counts apart by each tab's color, add this row to `rows` under
 ```toml
 [
   { token = "$inbox-stop", fg = "#ffa3b0" },
-  { token = "$inbox-needs-you", fg = "#ffa21f" },
+  { token = "$inbox-needs-you", fg = "#ffae42" },
   { token = "$inbox-findings", fg = "#cab0ff" },
   { token = "$inbox-prs", fg = "#8cc8c0" },
 ],
