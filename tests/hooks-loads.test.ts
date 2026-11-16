@@ -71,13 +71,25 @@ test('the Claude mod keeps a task tree already present in its saved session', as
     return next(event)
   })
   const status = savedTaskSession().ledger.overview
-  const migratedTree = taskTreeFromStatus(status)
+  const migratedTree = taskTreeFromStatus(status).map((task, index) =>
+    index === 0
+      ? {
+          ...task,
+          links: {
+            pr: 'https://github.com/acme/app/pull/12',
+            issue: 'https://github.com/acme/app/issues/34',
+            owner: { agent: 'worker-1', machine: 'local' },
+          },
+        }
+      : task,
+  )
   w.stored.set('s:session-1', JSON.stringify({ ...SAVED_SESSION, ...savedTaskSession(migratedTree) }))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
 
   expect(session!.taskTree).toEqual(migratedTree)
+  expect(session!.taskTree[0]?.links).toEqual(migratedTree[0]?.links)
 })
 
 test('resuming a session waits for its in-flight save before loading it', async ($, on) => {

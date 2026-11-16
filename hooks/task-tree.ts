@@ -1,4 +1,4 @@
-import type { SessionStatus, TaskHistoryEvent, TaskNode, TaskTree } from '../types'
+import type { SessionStatus, TaskHistoryEvent, TaskLinks, TaskNode, TaskTree } from '../types'
 
 export const TASK_HISTORY_LIMIT = 100
 export const TASK_NOTES_LIMIT = 40
@@ -9,9 +9,16 @@ export const TASK_DEPTH_LIMIT = 8
 export const TASK_TITLE_LENGTH = 100
 export const TASK_WEIGHT_MIN = 0.1
 export const TASK_WEIGHT_MAX = 100
+export const TASK_AGENT_NAME_LENGTH = 32
+export const TASK_MACHINE_ALIAS_LENGTH = 100
 const TASK_HISTORY_SOURCE_LENGTH = 100
 
-type TaskTreeError = 'duplicate-id' | 'unknown-task' | 'unknown-parent' | 'cycle' | 'limit' | 'invalid-weight'
+type TaskLinkProblem = 'invalid-pr' | 'invalid-issue' | 'invalid-owner'
+
+type TaskTreeError =
+  'duplicate-id' | 'unknown-task' | 'unknown-parent' | 'cycle' | 'limit' | 'invalid-weight' | TaskLinkProblem
+
+type TaskLinkInputResult = { ok: true; provided: boolean; links?: TaskLinks } | { ok: false; reason: TaskLinkProblem }
 
 type TaskTreeResult = { ok: true; tree: TaskTree } | { ok: false; reason: TaskTreeError }
 
@@ -47,6 +54,90 @@ function hasValidWeight(weight: number): boolean {
   return Number.isFinite(weight) && weight >= TASK_WEIGHT_MIN && weight <= TASK_WEIGHT_MAX
 }
 
+function validGitHubLink(value: string, kind: 'pull' | 'issue'): boolean {
+  const match =
+    /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})?\/([A-Za-z0-9_.-]{1,100})\/(pull|issues)\/[1-9]\d*$/.exec(
+      value,
+    )
+  return Boolean(match && match[1] !== '.' && match[1] !== '..' && match[2] === (kind === 'pull' ? 'pull' : 'issues'))
+}
+
+function validAgentName(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(value.trim())
+}
+
+function validMachineAlias(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= TASK_MACHINE_ALIAS_LENGTH
+}
+
+function linksProblem(links: TaskLinks): TaskLinkProblem | null {
+  if (links.pr !== undefined && (typeof links.pr !== 'string' || !validGitHubLink(links.pr, 'pull')))
+    return 'invalid-pr'
+  if (links.issue !== undefined && (typeof links.issue !== 'string' || !validGitHubLink(links.issue, 'issue')))
+    return 'invalid-issue'
+  if (
+    links.owner !== undefined &&
+    (!links.owner || !validAgentName(links.owner.agent) || !validMachineAlias(links.owner.machine))
+  )
+    return 'invalid-owner'
+  return null
+}
+
+/** Reads the task links supplied by the tool, preserving omitted fields and allowing null to clear a link. */
+export function taskLinksFromInput(input: Record<string, unknown>, previous?: TaskLinks): TaskLinkInputResult {
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(input, key)
+  const provided = ['pr', 'issue', 'owner_agent', 'owner_machine'].some(has)
+  if (!provided) return { ok: true, provided: false }
+
+  const links: TaskLinks = { ...previous }
+  for (const kind of ['pr', 'issue'] as const) {
+    if (!has(kind)) continue
+    const value = input[kind]
+    if (value === null) {
+      delete links[kind]
+    } else if (typeof value !== 'string' || !validGitHubLink(value, kind === 'pr' ? 'pull' : 'issue')) {
+      return { ok: false, reason: kind === 'pr' ? 'invalid-pr' : 'invalid-issue' }
+    } else {
+      links[kind] = value
+    }
+  }
+
+  const hasAgent = has('owner_agent')
+  const hasMachine = has('owner_machine')
+  if (hasAgent || hasMachine) {
+    const agent = input.owner_agent
+    const machine = input.owner_machine
+    if ((hasAgent && agent === undefined) || (hasMachine && machine === undefined))
+      return { ok: false, reason: 'invalid-owner' }
+    if (agent === null || machine === null) {
+      if (
+        (hasAgent && agent === null && hasMachine && machine !== null) ||
+        (hasMachine && machine === null && hasAgent && agent !== null)
+      )
+        return { ok: false, reason: 'invalid-owner' }
+      delete links.owner
+    } else {
+      const nextAgent = hasAgent ? agent : previous?.owner?.agent
+      const nextMachine = hasMachine ? machine : previous?.owner?.machine
+      if (!validAgentName(nextAgent) || !validMachineAlias(nextMachine)) return { ok: false, reason: 'invalid-owner' }
+      links.owner = { agent: nextAgent.trim(), machine: nextMachine.trim() }
+    }
+  }
+
+  const problem = linksProblem(links)
+  return problem
+    ? { ok: false, reason: problem }
+    : { ok: true, provided: true, ...(Object.keys(links).length ? { links } : {}) }
+}
+
+export function taskLinkProblemText(problem: TaskLinkProblem): string {
+  if (problem === 'invalid-pr')
+    return 'pr must be a GitHub pull request URL like https://github.com/owner/repo/pull/123.'
+  if (problem === 'invalid-issue')
+    return 'issue must be a GitHub issue URL like https://github.com/owner/repo/issues/123.'
+  return `owner_agent must match the Herdr agent-name pattern [a-z][a-z0-9_-]{0,31}; owner_machine must be a non-empty alias up to ${TASK_MACHINE_ALIAS_LENGTH} characters. Provide both when adding an owner; on update, one can change an existing owner. Pass null alone to clear the owner.`
+}
+
 /** Depth of a new node under `parentId`, counting roots as level one. */
 function depthUnder(tree: TaskTree, parentId: string | null): number {
   let depth = 1
@@ -79,20 +170,36 @@ export function createTask(tree: TaskTree, node: TaskNode, source: string): Task
   if (tree.length >= TASK_NODE_LIMIT || depthUnder(tree, node.parentId) > TASK_DEPTH_LIMIT) return failed('limit')
   if (!validTitle(node.title) || node.detail.length > TASK_HISTORY_DETAIL_LENGTH) return failed('limit')
   if (!hasValidWeight(node.weight)) return failed('invalid-weight')
+  const linkProblem = node.links ? linksProblem(node.links) : null
+  if (linkProblem) return failed(linkProblem)
   if (!notesAreValid(node.notes) || node.history.length > TASK_HISTORY_LIMIT || !node.history.every(eventIsValid)) {
     return failed('limit')
   }
   const event: TaskHistoryEvent = { at: node.createdAt, source, kind: 'created' }
   if (!eventIsValid(event)) return failed('limit')
 
-  return succeeded([...tree, { ...node, notes: [...node.notes], history: boundedHistory(node.history, event) }])
+  return succeeded([
+    ...tree,
+    {
+      ...node,
+      notes: [...node.notes],
+      history: boundedHistory(node.history, event),
+      ...(node.links
+        ? { links: { ...node.links, ...(node.links.owner ? { owner: { ...node.links.owner } } : {}) } }
+        : {}),
+    },
+  ])
 }
 
 /** Updates task facts and records the update time and source. */
 export function updateTask(
   tree: TaskTree,
   id: string,
-  changes: Partial<Pick<TaskNode, 'status' | 'weight' | 'title' | 'detail' | 'goalId' | 'streamId' | 'mergedIntoId'>>,
+  changes: Partial<
+    Pick<TaskNode, 'status' | 'weight' | 'title' | 'detail' | 'goalId' | 'streamId' | 'mergedIntoId'>
+  > & {
+    links?: TaskLinks | null
+  },
   at: number,
   source: string,
 ): TaskTreeResult {
@@ -104,13 +211,25 @@ export function updateTask(
   )
     return failed('limit')
   if (changes.weight !== undefined && !hasValidWeight(changes.weight)) return failed('invalid-weight')
-  const event: TaskHistoryEvent = { at, source, kind: 'updated' }
+  const linkProblem = changes.links ? linksProblem(changes.links) : null
+  if (linkProblem) return failed(linkProblem)
+  const event: TaskHistoryEvent = {
+    at,
+    source,
+    kind: 'updated',
+    ...(changes.links !== undefined ? { detail: 'links updated' } : {}),
+  }
   if (!eventIsValid(event)) return failed('limit')
 
   return succeeded(
-    tree.map(node =>
-      node.id === id ? { ...node, ...changes, updatedAt: at, history: boundedHistory(node.history, event) } : node,
-    ),
+    tree.map(node => {
+      if (node.id !== id) return node
+      const { links, ...fields } = changes
+      const updated = { ...node, ...fields, updatedAt: at, history: boundedHistory(node.history, event) }
+      if (links === null) delete updated.links
+      else if (links !== undefined) updated.links = { ...links, ...(links.owner ? { owner: { ...links.owner } } : {}) }
+      return updated
+    }),
   )
 }
 

@@ -138,6 +138,21 @@ test('tree operations refuse duplicate ids, unknown ids and parents, cycles, inv
   expect(moveTask(deepTarget, 'other', 'target', 2, 'agent')).toEqual({ ok: false, reason: 'limit' })
 })
 
+test('tree operations reject malformed task links when applied directly', () => {
+  expect(createTask(tree, node('bad-pr', { links: { pr: 'http://github.com/acme/app/pull/12' } }), 'agent')).toEqual({
+    ok: false,
+    reason: 'invalid-pr',
+  })
+  expect(createTask(tree, node('bad-owner', { links: { owner: { agent: '', machine: 'local' } } }), 'agent')).toEqual({
+    ok: false,
+    reason: 'invalid-owner',
+  })
+  expect(updateTask(tree, 'parent', { links: { issue: 'https://github.com/acme/app/pull/12' } }, 2, 'agent')).toEqual({
+    ok: false,
+    reason: 'invalid-issue',
+  })
+})
+
 test('notes refuse their count limit and history keeps only the newest bounded events', () => {
   const full = node('full', { notes: Array.from({ length: TASK_NOTES_LIMIT }, () => 'note') })
   expect(addTaskNote([full], 'full', 'next', 2, 'agent')).toEqual({ ok: false, reason: 'limit' })

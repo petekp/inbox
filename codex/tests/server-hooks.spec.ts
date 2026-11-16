@@ -30,7 +30,15 @@ test('Codex registers tasks and saves task-tree edits through the session store'
 
   const result = await call(
     'tasks',
-    { operation: 'add', task_id: 't1', title: 'Wire Codex task tool' },
+    {
+      operation: 'add',
+      task_id: 't1',
+      title: 'Wire Codex task tool',
+      pr: 'https://github.com/acme/app/pull/12',
+      issue: 'https://github.com/acme/app/issues/34',
+      owner_agent: 'worker-1',
+      owner_machine: 'local',
+    },
     { 'x-codex-turn-metadata': { session_id: 's1', thread_id: 's1' } },
   )
   assert.match(result.result.content[0]?.text ?? '', /Task saved: \{"id":"t1"/)
@@ -41,6 +49,11 @@ test('Codex registers tasks and saves task-tree edits through the session store'
     weight: 1,
     title: 'Wire Codex task tool',
     detail: '',
+    links: {
+      pr: 'https://github.com/acme/app/pull/12',
+      issue: 'https://github.com/acme/app/issues/34',
+      owner: { agent: 'worker-1', machine: 'local' },
+    },
     notes: [],
     createdAt: 100,
     updatedAt: 100,

@@ -10,14 +10,30 @@ import {
   TASK_TITLE_LENGTH,
   TASK_WEIGHT_MAX,
   TASK_WEIGHT_MIN,
+  taskLinkProblemText,
+  taskLinksFromInput,
   updateTask,
 } from './task-tree'
 import type { TaskNode, TaskStatus, TaskTree } from '../types'
 
 const TASK_ID_LENGTH = 100
+const TASK_LINK_FIELDS = ['pr', 'issue', 'owner_agent', 'owner_machine'] as const
 const TASK_STATUSES: readonly TaskStatus[] = ['working', 'queued', 'waits-on-other', 'done', 'dropped']
 
-type TaskTreeError = 'duplicate-id' | 'unknown-task' | 'unknown-parent' | 'cycle' | 'limit' | 'invalid-weight'
+function hasTaskLinks(input: Record<string, unknown>): boolean {
+  return TASK_LINK_FIELDS.some(key => Object.prototype.hasOwnProperty.call(input, key))
+}
+
+type TaskTreeError =
+  | 'duplicate-id'
+  | 'unknown-task'
+  | 'unknown-parent'
+  | 'cycle'
+  | 'limit'
+  | 'invalid-weight'
+  | 'invalid-pr'
+  | 'invalid-issue'
+  | 'invalid-owner'
 type TaskTreeResult = { ok: true; tree: TaskTree } | { ok: false; reason: TaskTreeError }
 
 function taskId(value: unknown): string {
@@ -38,6 +54,9 @@ function failure(tree: TaskTree, result: TaskTreeResult, id: string): TaskToolAn
     cycle: "this move would create a cycle; choose a parent outside the task's descendants or null for the root.",
     limit: `this change exceeds a task-tree limit (${TASK_NODE_LIMIT} tasks, ${TASK_DEPTH_LIMIT} levels, or a field/history limit); reduce it or choose another parent.`,
     'invalid-weight': `weight must be a finite number from ${TASK_WEIGHT_MIN} to ${TASK_WEIGHT_MAX}.`,
+    'invalid-pr': taskLinkProblemText('invalid-pr'),
+    'invalid-issue': taskLinkProblemText('invalid-issue'),
+    'invalid-owner': taskLinkProblemText('invalid-owner'),
   }
   return { taskTree: tree, result: `Not saved: ${detail[result.reason]}` }
 }
@@ -56,6 +75,8 @@ export function taskTreeAnswer(tree: TaskTree, input: Record<string, unknown>, n
 
   let result: TaskTreeResult
   if (operation === 'add') {
+    const linkInput = taskLinksFromInput(input)
+    if (!linkInput.ok) return { taskTree: tree, result: `Not saved: ${taskLinkProblemText(linkInput.reason)}` }
     const title = taskText(input.title)
     if (!title) return { taskTree: tree, result: 'Not saved: add needs a non-empty title.' }
     if (title.length > TASK_TITLE_LENGTH)
@@ -89,10 +110,18 @@ export function taskTreeAnswer(tree: TaskTree, input: Record<string, unknown>, n
       createdAt: now,
       updatedAt: now,
       history: [],
+      ...(linkInput.links ? { links: linkInput.links } : {}),
     }
     result = createTask(tree, node, 'agent')
   } else if (operation === 'update') {
-    const changes: Partial<Pick<TaskNode, 'title' | 'detail' | 'status' | 'weight'>> = {}
+    const current = tree.find(task => task.id === id)
+    if (!current) return failure(tree, { ok: false, reason: 'unknown-task' }, id)
+    const linkInput = taskLinksFromInput(input, current.links)
+    if (!linkInput.ok) return { taskTree: tree, result: `Not saved: ${taskLinkProblemText(linkInput.reason)}` }
+    const changes: Partial<Pick<TaskNode, 'title' | 'detail' | 'status' | 'weight'>> & {
+      links?: TaskNode['links'] | null
+    } = {}
+    if (linkInput.provided) changes.links = linkInput.links ?? null
     if (input.title !== undefined) {
       const title = taskText(input.title)
       if (!title) return { taskTree: tree, result: 'Not saved: title must not be empty.' }
@@ -125,9 +154,14 @@ export function taskTreeAnswer(tree: TaskTree, input: Record<string, unknown>, n
       changes.weight = input.weight
     }
     if (Object.keys(changes).length === 0)
-      return { taskTree: tree, result: 'Not saved: update needs title, detail, status or weight to change.' }
+      return { taskTree: tree, result: 'Not saved: update needs title, detail, status, weight or a link to change.' }
     result = updateTask(tree, id, changes, now, 'agent')
   } else if (operation === 'move') {
+    if (hasTaskLinks(input))
+      return {
+        taskTree: tree,
+        result: 'Not saved: pr, issue, owner_agent and owner_machine are only accepted by add or update.',
+      }
     const parent = input.parent_id
     if (parent !== null && (typeof parent !== 'string' || !parent.trim() || parent.length > TASK_ID_LENGTH))
       return {
@@ -136,8 +170,18 @@ export function taskTreeAnswer(tree: TaskTree, input: Record<string, unknown>, n
       }
     result = moveTask(tree, id, typeof parent === 'string' ? parent.trim() : null, now, 'agent')
   } else if (operation === 'complete') {
+    if (hasTaskLinks(input))
+      return {
+        taskTree: tree,
+        result: 'Not saved: pr, issue, owner_agent and owner_machine are only accepted by add or update.',
+      }
     result = completeTask(tree, id, now, 'agent')
   } else {
+    if (hasTaskLinks(input))
+      return {
+        taskTree: tree,
+        result: 'Not saved: pr, issue, owner_agent and owner_machine are only accepted by add or update.',
+      }
     const note = taskText(input.note)
     if (!note) return { taskTree: tree, result: 'Not saved: note needs non-empty text.' }
     if (note.length > TASK_NOTE_LENGTH)

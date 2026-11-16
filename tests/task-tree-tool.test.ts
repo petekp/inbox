@@ -3,7 +3,12 @@ import { expect, test } from 'claude-code/testing'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { recorded } from '../hooks/session-presses'
 import { emptySession } from '../hooks/session-files'
-import { TASK_NOTE_LENGTH, TASK_TITLE_LENGTH } from '../hooks/task-tree'
+import {
+  TASK_AGENT_NAME_LENGTH,
+  TASK_MACHINE_ALIAS_LENGTH,
+  TASK_NOTE_LENGTH,
+  TASK_TITLE_LENGTH,
+} from '../hooks/task-tree'
 import { TOOL_FIELDS } from '../hooks/tool-schemas'
 import type { Session } from '../types'
 
@@ -60,6 +65,117 @@ test('tasks adds, updates, moves, completes and notes, returning the normalized 
   })
 })
 
+test('tasks adds, updates and clears PR, issue and owner links, recording link changes in history', () => {
+  const { call, state } = caller()
+  const added = call({
+    operation: 'add',
+    task_id: 'linked',
+    title: 'Ship the task links',
+    pr: 'https://github.com/acme/app/pull/12',
+    issue: 'https://github.com/acme/app/issues/34',
+    owner_agent: 'worker-1',
+    owner_machine: 'local',
+  })
+  expect(JSON.parse(added.slice('Task saved: '.length))).toMatchObject({
+    links: {
+      pr: 'https://github.com/acme/app/pull/12',
+      issue: 'https://github.com/acme/app/issues/34',
+      owner: { agent: 'worker-1', machine: 'local' },
+    },
+  })
+
+  const updated = call({
+    operation: 'update',
+    task_id: 'linked',
+    pr: 'https://github.com/acme/app/pull/56',
+    issue: 'https://github.com/acme/app/issues/78',
+    owner_agent: 'worker-2',
+    owner_machine: 'build-machine',
+  })
+  const updatedNode = JSON.parse(updated.slice('Task saved: '.length))
+  expect(updatedNode).toMatchObject({
+    links: {
+      pr: 'https://github.com/acme/app/pull/56',
+      issue: 'https://github.com/acme/app/issues/78',
+      owner: { agent: 'worker-2', machine: 'build-machine' },
+    },
+  })
+  expect(updatedNode.history[updatedNode.history.length - 1]).toMatchObject({
+    kind: 'updated',
+    detail: 'links updated',
+  })
+
+  const changedOwner = call({ operation: 'update', task_id: 'linked', owner_agent: 'worker-3' })
+  expect(JSON.parse(changedOwner.slice('Task saved: '.length))).toMatchObject({
+    links: { owner: { agent: 'worker-3', machine: 'build-machine' } },
+  })
+
+  const clearedPr = call({ operation: 'update', task_id: 'linked', pr: null })
+  expect(JSON.parse(clearedPr.slice('Task saved: '.length))).toMatchObject({
+    links: {
+      issue: 'https://github.com/acme/app/issues/78',
+      owner: { agent: 'worker-3', machine: 'build-machine' },
+    },
+  })
+
+  const cleared = call({ operation: 'update', task_id: 'linked', issue: null, owner_agent: null })
+  expect(JSON.parse(cleared.slice('Task saved: '.length))).not.toHaveProperty('links')
+  expect(state().taskTree[0]).not.toHaveProperty('links')
+})
+
+test('tasks refuses invalid links without changing the tree and explains how to fix each call', () => {
+  const { call, state } = caller()
+  call({ operation: 'add', task_id: 'linked', title: 'A task' })
+  const refused = (input: Record<string, unknown>, advice: string) => {
+    const before = state().taskTree
+    const answer = call(input)
+    expect(answer).toContain('Not saved:')
+    expect(answer).toContain(advice)
+    expect(state().taskTree).toEqual(before)
+  }
+
+  refused({ operation: 'update', task_id: 'linked', pr: 'not a URL' }, 'GitHub pull request URL')
+  refused(
+    { operation: 'update', task_id: 'linked', pr: 'https://github.com.evil/acme/app/pull/12' },
+    'GitHub pull request URL',
+  )
+  refused({ operation: 'update', task_id: 'linked', issue: 'https://github.com/acme/app/pull/12' }, 'GitHub issue URL')
+  refused(
+    {
+      operation: 'add',
+      task_id: 'long-agent',
+      title: 'A task',
+      owner_agent: `a${'x'.repeat(TASK_AGENT_NAME_LENGTH)}`,
+      owner_machine: 'local',
+    },
+    'Herdr agent-name pattern',
+  )
+  refused(
+    {
+      operation: 'add',
+      task_id: 'long-machine',
+      title: 'A task',
+      owner_agent: 'worker-1',
+      owner_machine: 'x'.repeat(TASK_MACHINE_ALIAS_LENGTH + 1),
+    },
+    'up to 100 characters',
+  )
+  refused(
+    { operation: 'add', task_id: 'partial', title: 'A task', owner_agent: 'worker-1' },
+    'Provide both when adding an owner',
+  )
+  refused(
+    {
+      operation: 'add',
+      task_id: 'invalid-agent',
+      title: 'A task',
+      owner_agent: 'Worker One',
+      owner_machine: 'local',
+    },
+    'Herdr agent-name pattern',
+  )
+})
+
 test('tasks refuses invalid ids, parents, operations, statuses, weights, empty changes and oversized values with corrections', () => {
   const { call, state } = caller()
   const refused = (input: Record<string, unknown>, advice: string) => {
@@ -101,7 +217,7 @@ test('tasks refuses invalid ids, parents, operations, statuses, weights, empty c
     { operation: 'add', task_id: 'detail', title: 'Detail', detail: 'x'.repeat(2001) },
     'detail must be at most 2000 characters',
   )
-  refused({ operation: 'update', task_id: 'same' }, 'update needs title, detail, status or weight to change')
+  refused({ operation: 'update', task_id: 'same' }, 'update needs title, detail, status, weight or a link')
   refused({ operation: 'move', task_id: 'same' }, 'move needs an existing parent_id')
   refused({ operation: 'note', task_id: 'same', note: '  ' }, 'note needs non-empty text')
   refused(

@@ -41,6 +41,10 @@ declare module 'claude-code' {
       detail?: string
       status?: 'working' | 'queued' | 'waits-on-other' | 'done' | 'dropped'
       weight?: number
+      pr?: string | null
+      issue?: string | null
+      owner_agent?: string | null
+      owner_machine?: string | null
       note?: string
     }
   }

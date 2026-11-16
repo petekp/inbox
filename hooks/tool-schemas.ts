@@ -138,6 +138,26 @@ export const TASKS_SCHEMA = {
       description: 'For add or update: the task status.',
     },
     weight: { type: 'number', description: 'For add or update: a sibling-relative weight from 0.1 to 100.' },
+    pr: {
+      type: ['string', 'null'],
+      description:
+        'For add or update: a GitHub pull request URL, https://github.com/owner/repo/pull/123. Use null to clear.',
+    },
+    issue: {
+      type: ['string', 'null'],
+      description:
+        'For add or update: a GitHub issue URL, https://github.com/owner/repo/issues/123. Use null to clear.',
+    },
+    owner_agent: {
+      type: ['string', 'null'],
+      description:
+        'For add or update: the Herdr owner agent name, matching [a-z][a-z0-9_-]{0,31}. Add with owner_machine; on update, it can change alone. Use null alone to clear the owner.',
+    },
+    owner_machine: {
+      type: ['string', 'null'],
+      description:
+        'For add or update: the Herdr machine alias (use local for this machine), up to 100 characters. Add with owner_agent; on update, it can change alone. Use null alone to clear the owner.',
+    },
     note: { type: 'string', description: 'For note: a note to append, at most 2000 characters.' },
   },
   required: ['operation'],

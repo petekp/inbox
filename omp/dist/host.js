@@ -3123,6 +3123,7 @@ var TASK_DEPTH_LIMIT = 8;
 var TASK_TITLE_LENGTH = 100;
 var TASK_WEIGHT_MIN = 0.1;
 var TASK_WEIGHT_MAX = 100;
+var TASK_MACHINE_ALIAS_LENGTH = 100;
 var TASK_HISTORY_SOURCE_LENGTH = 100;
 var failed = (reason) => ({ ok: false, reason });
 var succeeded = (tree) => ({ ok: true, tree });
@@ -3143,6 +3144,72 @@ function notesOf(notes) {
 }
 function hasValidWeight(weight) {
   return Number.isFinite(weight) && weight >= TASK_WEIGHT_MIN && weight <= TASK_WEIGHT_MAX;
+}
+function validGitHubLink(value, kind) {
+  const match = /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})?\/([A-Za-z0-9_.-]{1,100})\/(pull|issues)\/[1-9]\d*$/.exec(value);
+  return Boolean(match && match[1] !== "." && match[1] !== ".." && match[2] === (kind === "pull" ? "pull" : "issues"));
+}
+function validAgentName(value) {
+  return typeof value === "string" && /^[a-z][a-z0-9_-]{0,31}$/.test(value.trim());
+}
+function validMachineAlias(value) {
+  return typeof value === "string" && value.trim().length > 0 && value.trim().length <= TASK_MACHINE_ALIAS_LENGTH;
+}
+function linksProblem(links) {
+  if (links.pr !== undefined && (typeof links.pr !== "string" || !validGitHubLink(links.pr, "pull")))
+    return "invalid-pr";
+  if (links.issue !== undefined && (typeof links.issue !== "string" || !validGitHubLink(links.issue, "issue")))
+    return "invalid-issue";
+  if (links.owner !== undefined && (!links.owner || !validAgentName(links.owner.agent) || !validMachineAlias(links.owner.machine)))
+    return "invalid-owner";
+  return null;
+}
+function taskLinksFromInput(input, previous) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(input, key);
+  const provided = ["pr", "issue", "owner_agent", "owner_machine"].some(has);
+  if (!provided)
+    return { ok: true, provided: false };
+  const links = { ...previous };
+  for (const kind of ["pr", "issue"]) {
+    if (!has(kind))
+      continue;
+    const value = input[kind];
+    if (value === null) {
+      delete links[kind];
+    } else if (typeof value !== "string" || !validGitHubLink(value, kind === "pr" ? "pull" : "issue")) {
+      return { ok: false, reason: kind === "pr" ? "invalid-pr" : "invalid-issue" };
+    } else {
+      links[kind] = value;
+    }
+  }
+  const hasAgent = has("owner_agent");
+  const hasMachine = has("owner_machine");
+  if (hasAgent || hasMachine) {
+    const agent = input.owner_agent;
+    const machine = input.owner_machine;
+    if (hasAgent && agent === undefined || hasMachine && machine === undefined)
+      return { ok: false, reason: "invalid-owner" };
+    if (agent === null || machine === null) {
+      if (hasAgent && agent === null && hasMachine && machine !== null || hasMachine && machine === null && hasAgent && agent !== null)
+        return { ok: false, reason: "invalid-owner" };
+      delete links.owner;
+    } else {
+      const nextAgent = hasAgent ? agent : previous?.owner?.agent;
+      const nextMachine = hasMachine ? machine : previous?.owner?.machine;
+      if (!validAgentName(nextAgent) || !validMachineAlias(nextMachine))
+        return { ok: false, reason: "invalid-owner" };
+      links.owner = { agent: nextAgent.trim(), machine: nextMachine.trim() };
+    }
+  }
+  const problem = linksProblem(links);
+  return problem ? { ok: false, reason: problem } : { ok: true, provided: true, ...Object.keys(links).length ? { links } : {} };
+}
+function taskLinkProblemText(problem) {
+  if (problem === "invalid-pr")
+    return "pr must be a GitHub pull request URL like https://github.com/owner/repo/pull/123.";
+  if (problem === "invalid-issue")
+    return "issue must be a GitHub issue URL like https://github.com/owner/repo/issues/123.";
+  return `owner_agent must match the Herdr agent-name pattern [a-z][a-z0-9_-]{0,31}; owner_machine must be a non-empty alias up to ${TASK_MACHINE_ALIAS_LENGTH} characters. Provide both when adding an owner; on update, one can change an existing owner. Pass null alone to clear the owner.`;
 }
 function depthUnder(tree, parentId) {
   let depth = 1;
@@ -3178,13 +3245,24 @@ function createTask(tree, node, source) {
     return failed("limit");
   if (!hasValidWeight(node.weight))
     return failed("invalid-weight");
+  const linkProblem = node.links ? linksProblem(node.links) : null;
+  if (linkProblem)
+    return failed(linkProblem);
   if (!notesAreValid(node.notes) || node.history.length > TASK_HISTORY_LIMIT || !node.history.every(eventIsValid)) {
     return failed("limit");
   }
   const event = { at: node.createdAt, source, kind: "created" };
   if (!eventIsValid(event))
     return failed("limit");
-  return succeeded([...tree, { ...node, notes: [...node.notes], history: boundedHistory(node.history, event) }]);
+  return succeeded([
+    ...tree,
+    {
+      ...node,
+      notes: [...node.notes],
+      history: boundedHistory(node.history, event),
+      ...node.links ? { links: { ...node.links, ...node.links.owner ? { owner: { ...node.links.owner } } : {} } } : {}
+    }
+  ]);
 }
 function updateTask(tree, id, changes, at, source) {
   const task = tree.find((node) => node.id === id);
@@ -3194,10 +3272,28 @@ function updateTask(tree, id, changes, at, source) {
     return failed("limit");
   if (changes.weight !== undefined && !hasValidWeight(changes.weight))
     return failed("invalid-weight");
-  const event = { at, source, kind: "updated" };
+  const linkProblem = changes.links ? linksProblem(changes.links) : null;
+  if (linkProblem)
+    return failed(linkProblem);
+  const event = {
+    at,
+    source,
+    kind: "updated",
+    ...changes.links !== undefined ? { detail: "links updated" } : {}
+  };
   if (!eventIsValid(event))
     return failed("limit");
-  return succeeded(tree.map((node) => node.id === id ? { ...node, ...changes, updatedAt: at, history: boundedHistory(node.history, event) } : node));
+  return succeeded(tree.map((node) => {
+    if (node.id !== id)
+      return node;
+    const { links, ...fields } = changes;
+    const updated = { ...node, ...fields, updatedAt: at, history: boundedHistory(node.history, event) };
+    if (links === null)
+      delete updated.links;
+    else if (links !== undefined)
+      updated.links = { ...links, ...links.owner ? { owner: { ...links.owner } } : {} };
+    return updated;
+  }));
 }
 function moveTask(tree, id, parentId, at, source) {
   const task = tree.find((node) => node.id === id);
@@ -6635,6 +6731,22 @@ var TASKS_SCHEMA = {
       description: "For add or update: the task status."
     },
     weight: { type: "number", description: "For add or update: a sibling-relative weight from 0.1 to 100." },
+    pr: {
+      type: ["string", "null"],
+      description: "For add or update: a GitHub pull request URL, https://github.com/owner/repo/pull/123. Use null to clear."
+    },
+    issue: {
+      type: ["string", "null"],
+      description: "For add or update: a GitHub issue URL, https://github.com/owner/repo/issues/123. Use null to clear."
+    },
+    owner_agent: {
+      type: ["string", "null"],
+      description: "For add or update: the Herdr owner agent name, matching [a-z][a-z0-9_-]{0,31}. Add with owner_machine; on update, it can change alone. Use null alone to clear the owner."
+    },
+    owner_machine: {
+      type: ["string", "null"],
+      description: "For add or update: the Herdr machine alias (use local for this machine), up to 100 characters. Add with owner_agent; on update, it can change alone. Use null alone to clear the owner."
+    },
     note: { type: "string", description: "For note: a note to append, at most 2000 characters." }
   },
   required: ["operation"]
@@ -6667,12 +6779,18 @@ Do not record rhetorical questions, offers to continue when continuing is the de
 }
 var CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`;
 function tasksDescription(host) {
-  return `Keep your task tree current when you make a plan, start work, finish work or drop work. Add, update, move, complete or note tasks. A task is your own work plan, never a question or a step for the user; use ${host.recordTool} for those.`;
+  return `Keep your task tree current when you make a plan, start work, finish work or drop work. Add, update, move, complete or note tasks. A task is your own work plan, never a question or a step for the user; use ${host.recordTool} for those.
+
+When one exists, link the PR, issue or owner agent so finished or stalled work can be noticed.`;
 }
 
 // ../hooks/task-tool.ts
 var TASK_ID_LENGTH = 100;
+var TASK_LINK_FIELDS = ["pr", "issue", "owner_agent", "owner_machine"];
 var TASK_STATUSES = ["working", "queued", "waits-on-other", "done", "dropped"];
+function hasTaskLinks(input) {
+  return TASK_LINK_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(input, key));
+}
 function taskId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -6688,7 +6806,10 @@ function failure2(tree, result, id) {
     "unknown-parent": "parent_id is not in this session's task tree; use an existing task id or null for the root.",
     cycle: "this move would create a cycle; choose a parent outside the task's descendants or null for the root.",
     limit: `this change exceeds a task-tree limit (${TASK_NODE_LIMIT} tasks, ${TASK_DEPTH_LIMIT} levels, or a field/history limit); reduce it or choose another parent.`,
-    "invalid-weight": `weight must be a finite number from ${TASK_WEIGHT_MIN} to ${TASK_WEIGHT_MAX}.`
+    "invalid-weight": `weight must be a finite number from ${TASK_WEIGHT_MIN} to ${TASK_WEIGHT_MAX}.`,
+    "invalid-pr": taskLinkProblemText("invalid-pr"),
+    "invalid-issue": taskLinkProblemText("invalid-issue"),
+    "invalid-owner": taskLinkProblemText("invalid-owner")
   };
   return { taskTree: tree, result: `Not saved: ${detail[result.reason]}` };
 }
@@ -6701,6 +6822,9 @@ function taskTreeAnswer(tree, input, now) {
     return { taskTree: tree, result: `Not saved: task_id must be 1\u2013${TASK_ID_LENGTH} characters.` };
   let result;
   if (operation === "add") {
+    const linkInput = taskLinksFromInput(input);
+    if (!linkInput.ok)
+      return { taskTree: tree, result: `Not saved: ${taskLinkProblemText(linkInput.reason)}` };
     const title = taskText(input.title);
     if (!title)
       return { taskTree: tree, result: "Not saved: add needs a non-empty title." };
@@ -6734,11 +6858,20 @@ function taskTreeAnswer(tree, input, now) {
       notes: [],
       createdAt: now,
       updatedAt: now,
-      history: []
+      history: [],
+      ...linkInput.links ? { links: linkInput.links } : {}
     };
     result = createTask(tree, node, "agent");
   } else if (operation === "update") {
+    const current = tree.find((task) => task.id === id);
+    if (!current)
+      return failure2(tree, { ok: false, reason: "unknown-task" }, id);
+    const linkInput = taskLinksFromInput(input, current.links);
+    if (!linkInput.ok)
+      return { taskTree: tree, result: `Not saved: ${taskLinkProblemText(linkInput.reason)}` };
     const changes = {};
+    if (linkInput.provided)
+      changes.links = linkInput.links ?? null;
     if (input.title !== undefined) {
       const title = taskText(input.title);
       if (!title)
@@ -6767,9 +6900,14 @@ function taskTreeAnswer(tree, input, now) {
       changes.weight = input.weight;
     }
     if (Object.keys(changes).length === 0)
-      return { taskTree: tree, result: "Not saved: update needs title, detail, status or weight to change." };
+      return { taskTree: tree, result: "Not saved: update needs title, detail, status, weight or a link to change." };
     result = updateTask(tree, id, changes, now, "agent");
   } else if (operation === "move") {
+    if (hasTaskLinks(input))
+      return {
+        taskTree: tree,
+        result: "Not saved: pr, issue, owner_agent and owner_machine are only accepted by add or update."
+      };
     const parent = input.parent_id;
     if (parent !== null && (typeof parent !== "string" || !parent.trim() || parent.length > TASK_ID_LENGTH))
       return {
@@ -6778,8 +6916,18 @@ function taskTreeAnswer(tree, input, now) {
       };
     result = moveTask(tree, id, typeof parent === "string" ? parent.trim() : null, now, "agent");
   } else if (operation === "complete") {
+    if (hasTaskLinks(input))
+      return {
+        taskTree: tree,
+        result: "Not saved: pr, issue, owner_agent and owner_machine are only accepted by add or update."
+      };
     result = completeTask(tree, id, now, "agent");
   } else {
+    if (hasTaskLinks(input))
+      return {
+        taskTree: tree,
+        result: "Not saved: pr, issue, owner_agent and owner_machine are only accepted by add or update."
+      };
     const note = taskText(input.note);
     if (!note)
       return { taskTree: tree, result: "Not saved: note needs non-empty text." };

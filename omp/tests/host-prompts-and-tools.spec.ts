@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { guidanceText } from '../../hooks/model-text'
 import { createInbox } from '../src/host'
+import { readState } from '../src/state'
 import { OMP } from '../src/texts'
 import { call, deps, endWorld, makeCtx, pi, prompt, record, startWorld, state, w } from './host-harness'
 
@@ -100,13 +101,35 @@ test('record, close, order_prs and tasks are registered with the shared schemas 
 
 test('the tasks tool saves its change through omp session storage', async () => {
   createInbox(pi(), deps())
-  const result = await w.tools
-    .get('tasks')
-    .execute('call', { operation: 'add', task_id: 't1', title: 'Wire omp task tool' }, undefined, undefined, makeCtx())
+  const result = await w.tools.get('tasks').execute(
+    'call',
+    {
+      operation: 'add',
+      task_id: 't1',
+      title: 'Wire omp task tool',
+      pr: 'https://github.com/acme/app/pull/12',
+      issue: 'https://github.com/acme/app/issues/34',
+      owner_agent: 'worker-1',
+      owner_machine: 'local',
+    },
+    undefined,
+    undefined,
+    makeCtx(),
+  )
 
   expect(result.content[0].text).toContain('Task saved: {"id":"t1"')
-  expect(state().taskTree[0]).toMatchObject({ id: 't1', status: 'queued', title: 'Wire omp task tool' })
+  expect(state().taskTree[0]).toMatchObject({
+    id: 't1',
+    status: 'queued',
+    title: 'Wire omp task tool',
+    links: {
+      pr: 'https://github.com/acme/app/pull/12',
+      issue: 'https://github.com/acme/app/issues/34',
+      owner: { agent: 'worker-1', machine: 'local' },
+    },
+  })
   expect(state().taskTree[0].history[0]).toMatchObject({ source: 'agent', kind: 'created' })
+  expect((await readState(w.dir, 's1')).taskTree[0]?.links).toEqual(state().taskTree[0].links)
 })
 
 test('a close call closes the recorded item', async () => {

@@ -485,6 +485,17 @@ export type TaskHistoryEvent = {
   detail?: string
 }
 
+export type TaskOwner = {
+  agent: string
+  machine: string
+}
+
+export type TaskLinks = {
+  pr?: string
+  issue?: string
+  owner?: TaskOwner
+}
+
 export type TaskNode = {
   id: string
   parentId: string | null
@@ -499,6 +510,7 @@ export type TaskNode = {
   goalId?: string
   streamId?: string
   mergedIntoId?: string
+  links?: TaskLinks
 }
 
 export type TaskTree = TaskNode[]
@@ -915,6 +927,10 @@ declare module 'claude-code' {
       detail?: string
       status?: 'working' | 'queued' | 'waits-on-other' | 'done' | 'dropped'
       weight?: number
+      pr?: string | null
+      issue?: string | null
+      owner_agent?: string | null
+      owner_machine?: string | null
       note?: string
     }
   }

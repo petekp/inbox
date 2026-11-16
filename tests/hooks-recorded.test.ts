@@ -18,6 +18,8 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   const tasks = await $.tool.describe({ tool: 'mcp__inbox__tasks', description: 'Maintain tasks.', provider })
   expect([close, record, order, tasks].map(d => d.isDeferred)).toEqual([false, false, false, false])
   expect(tasks.description).toContain('when you make a plan')
+  expect(tasks.description).toContain('finished or stalled work can be noticed')
+  for (const field of ['pr', 'issue', 'owner_agent', 'owner_machine']) expect(TOOL_FIELDS.tasks).toContain(field)
 })
 
 test('Claude saves the task-tree tool change through its session store and returns the normalized node', async ($, on) => {
@@ -30,11 +32,24 @@ test('Claude saves the task-tree tool change through its session store and retur
     operation: 'add',
     task_id: 't1',
     title: 'Implement task tool',
+    pr: 'https://github.com/acme/app/pull/12',
+    issue: 'https://github.com/acme/app/issues/34',
+    owner_agent: 'worker-1',
+    owner_machine: 'local',
   } as never)
   const saved = JSON.parse(w.stored.get('s:session-1') ?? '{}')
 
   expect(result.result).toContain('Task saved: {"id":"t1"')
-  expect(saved.taskTree[0]).toMatchObject({ id: 't1', status: 'queued', title: 'Implement task tool' })
+  expect(saved.taskTree[0]).toMatchObject({
+    id: 't1',
+    status: 'queued',
+    title: 'Implement task tool',
+    links: {
+      pr: 'https://github.com/acme/app/pull/12',
+      issue: 'https://github.com/acme/app/issues/34',
+      owner: { agent: 'worker-1', machine: 'local' },
+    },
+  })
   expect(saved.taskTree[0].history[0]).toMatchObject({ source: 'agent', kind: 'created' })
 })
 
