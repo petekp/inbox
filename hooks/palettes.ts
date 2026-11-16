@@ -189,7 +189,7 @@ const THEME_KEY_PALETTE: Palette = {
 }
 // Theme keys resolve to the app's colors, so the desktop pane draws text in theme keys.
 // The app refuses an hsl() alpha or color-mix() color.
-export const DESKTOP_AGE = '#85837e'
+const DESKTOP_AGE = '#85837e'
 const DESKTOP_PALETTE: Palette = {
   raised: 'rgba(128, 120, 105, 0.14)',
   raisedText: 'text',

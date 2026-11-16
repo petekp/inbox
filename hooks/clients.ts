@@ -66,6 +66,7 @@ export type FeatureId =
   | 'status-goal'
   | 'status-done-fold'
   | 'status-named-fold'
+  | 'status-parent-fold'
   | 'seen-on-screen'
   | 'status-idle-age'
   | 'question-back-stays-open'
@@ -156,6 +157,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
       'status-named-fold': { kind: 'full' },
+      'status-parent-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
@@ -312,6 +314,11 @@ export const CLIENTS: Record<ClientId, Client> = {
           'A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking.',
       },
       'status-named-fold': { kind: 'full' },
+      'status-parent-fold': {
+        kind: 'different',
+        reason:
+          "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection.",
+      },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': {
@@ -409,6 +416,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
       'status-named-fold': { kind: 'full' },
+      'status-parent-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },

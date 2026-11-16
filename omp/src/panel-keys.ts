@@ -5,11 +5,12 @@ import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
 import { COLLAPSE_KEY, UNDO_KEY } from '../../hooks/help'
 import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
-import type { StatusKeyTarget } from '../../hooks/status-keys'
+import type { StatusKey, StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
 import { entriesOf } from './panel-entries'
 import { isSelectable, isShut, linesOf, waitsOf } from './panel-lines'
 import type { Button, Line } from './panel-lines'
+import { collapsedIn } from './panel-text'
 import type { PanelPress, PanelScreen, PanelUi } from './panel'
 
 export function resolveSelected(lines: Line[], selectedId: string | null): Line | null {
@@ -196,8 +197,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): KeyResult | null {
   const page = screen.view.statusPage
   const isUnfolded = (id: string) => ui.statusUnfolded.includes(id)
-  const rows = statusKeyRows(page, isUnfolded)
-  const row = statusSelected(page, ui.selectedId, isUnfolded)
+  const isCollapsed = collapsedIn(screen.view)
+  const rows = statusKeyRows(page, isUnfolded, isCollapsed)
+  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed)
   if (!row) return null
   if (key === 'j' || key === 'k') {
     const at = rows.findIndex(r => r.id === row.id)
@@ -205,15 +207,23 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
 
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } }
   }
-  const { keys } = row
-  if (key === 'left' || key === 'right') {
-    const index = steppedIndex(pageFocus(row, ui), key === 'left' ? -1 : 1, keys.length)
+  const keys = drawnKeys(row)
+  const fold = row.keys.find(k => k.press.action === 'toggle-collapse')
+  if (fold && (key === fold.hotkey || (key === 'enter' && keys.length === 0)))
+    return {
+      ui: { ...ui, selectedId: row.id, focus: null, pageReveal: row.id },
+      press: { action: 'collapse', id: row.id, isCollapsed: !isCollapsed(row.id) },
+    }
+  const drawn = { id: row.id, keys }
+  if ((key === 'left' || key === 'right') && keys.length > 0) {
+    const index = steppedIndex(pageFocus(drawn, ui), key === 'left' ? -1 : 1, keys.length)
 
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } }
   }
-  const pressed = key === 'enter' ? keys[pageFocus(row, ui)] : keys.find(k => k.hotkey === key)
+  const pressed = key === 'enter' ? keys[pageFocus(drawn, ui)] : keys.find(k => k.hotkey === key)
   if (!pressed) return null
   const { press } = pressed
+  if (press.action === 'toggle-collapse') return null
   if (press.action === 'show-ask')
     return { ui: { ...withTab(ui, 'needsYou', now), selectedId: press.askId, openedAt: now } }
   if (press.action === 'toggle-fold') {
@@ -235,6 +245,10 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
     press: { action: press.action, id: GOAL_KEYS_ID },
   }
 }
+
+/** A Status target's keys that draw as buttons: its fold is the parent's name line, not a button. */
+export const drawnKeys = (target: StatusKeyTarget): StatusKey[] =>
+  target.keys.filter(k => k.press.action !== 'toggle-collapse')
 
 export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>
   ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0

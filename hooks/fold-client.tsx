@@ -19,7 +19,6 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
   const set = (next: State) => {
     if (next.hover === (surface.state?.hover ?? false)) return
     surface.setState(next)
-    surface.post({ hover: next.hover })
   }
   surface.onPointer(e => {
     if (e.type === 'leave') return set({ hover: false })
@@ -44,7 +43,7 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
     ...(background ? { backgroundColor: background } : {}),
     children: [
       Box({ width: props.markCells, flexShrink: 0 }),
-      Text({ ...(color ? { color } : {}), children: props.label }),
+      Text({ ...(color ? { color } : {}), children: `${props.label} ${props.isUnfolded ? '▾' : '▸'}` }),
     ],
   })
 }

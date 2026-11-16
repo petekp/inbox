@@ -179,7 +179,7 @@ test('after a failed update, the next reply catches up over the whole conversati
   await clock.settle()
   expect(await pane.find({ key: 'row-f3' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-f3' })).toBeUndefined()
-  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('▸ 1 closed')
+  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed ▸')
 })
 
 test('a reload that cuts off the end-of-turn hook catches up on load, and a subagent’s turn leaves nothing to catch up', async ($, on) => {

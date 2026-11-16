@@ -1,6 +1,7 @@
 import type { Milestone } from '../types'
 import { stems } from './status-limits'
-import { unfoldedRows } from './status-page-parts'
+import { milestoneRows } from './status-folds'
+import type { IsCollapsed } from './status-folds'
 import type { StatusRow } from './status-page'
 
 /**
@@ -102,17 +103,6 @@ export function namesOnlyMilestoneUnderWay(nowText: string, milestones: readonly
 }
 
 /**
- * The rows a look draws under a milestone: none while it is a done milestone folded to its name, else its rows with
- * each unfolded done fold opened.
- */
-export function milestoneRows(
-  m: { foldId: string | null; rows: StatusRow[] },
-  isUnfolded: (id: string) => boolean,
-): StatusRow[] {
-  return m.foldId !== null && !isUnfolded(m.foldId) ? [] : unfoldedRows(m.rows, isUnfolded)
-}
-
-/**
  * Where a line of a milestone's work meets the column under the milestone's mark. `arm` is the branch from the column
  * to the row's mark on its first line: a `tee` while the column goes on below the row, an `elbow` where it ends there.
  * `beside` is what runs in the column past the arm: the nesting connector, which ties the work to its milestone, the
@@ -138,7 +128,9 @@ export function workJoints(rows: readonly StatusRow[], line: PathLine): WorkJoin
 }
 
 type SpacedMilestone = {
+  id: string
   foldId: string | null
+  foldCount: number
   rows: StatusRow[]
   text: string | null
   was: string | null
@@ -154,9 +146,10 @@ export function isSpacedAbove(
   milestones: readonly (SpacedMilestone & { startsLater: boolean })[],
   n: number,
   isUnfolded: (id: string) => boolean,
+  isCollapsed: IsCollapsed = () => false,
 ): boolean {
   const drawsNameOnly = (m: SpacedMilestone) =>
-    m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded).length === 0
+    m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded, isCollapsed).length === 0
   const above = milestones[n - 1]
   const m = milestones[n]
 

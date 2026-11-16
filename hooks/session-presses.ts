@@ -1,3 +1,4 @@
+import { settledCollapses } from './collapse'
 import { linkDialogs } from './dialogs'
 import { closedAt, pruneClosed } from './ledger-close'
 import type { Host } from './model-text'
@@ -169,7 +170,7 @@ export function rowsInPlace(s: Session): Set<string> {
 
 /**
  * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of `rowsInPlace`.
- * A PR's view goes once `isViewKept` no longer keeps it.
+ * A PR's view goes once `isViewKept` no longer keeps it, and the collapses settle as `settledCollapses` says.
  */
 export function pruned<S extends Session>(s: S): S {
   const views = Object.fromEntries(
@@ -179,11 +180,11 @@ export function pruned<S extends Session>(s: S): S {
   )
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length
 
-  return {
+  return settledCollapses({
     ...s,
     ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews,
-  }
+  })
 }
 
 /**

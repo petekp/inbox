@@ -91,7 +91,6 @@ export type PaneBase = {
   /** The Closed folds whose earlier lines the person opened. */
   closedAll: FoldKind[]
   statusUnfolded: string[]
-  foldHover: string | null
   isHelpShown: boolean
   optionsShown: string[]
   termProgram: string | undefined
@@ -154,5 +153,7 @@ export type PaneHandlers = {
   updateHelpShown: (fn: (isShown: boolean) => boolean) => Promise<unknown>
   updateUnfolded: (fn: (unfolded: FoldKind[]) => FoldKind[]) => Promise<unknown>
   updateStatusUnfolded: (fn: (unfolded: string[]) => string[]) => Promise<unknown>
+  /** Folds the Status parent `id` by its name, or opens it. */
+  toggleParent: (id: string) => Promise<unknown>
   updateClosedAll: (fn: (closedAll: FoldKind[]) => FoldKind[]) => Promise<unknown>
 }

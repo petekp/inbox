@@ -1,6 +1,7 @@
 import { Icon, RowActions } from './row-actions'
 import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
+import { unfoldedRows } from '../../hooks/status-folds'
 import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusRow } from '../../hooks/status-page'
@@ -8,6 +9,7 @@ import { closingFolds, drafts, sending, statusUnfolded, tabState } from './tab-s
 import type { Key } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
+import { chevronOf, isParentFolded, ParentName, toggleParentFold } from './tab-status-fold'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
@@ -47,6 +49,7 @@ function openGoalField(text: string) {
 function statusKey({ press, label, emphasis }: StatusKey): Key {
   if (press.action === 'show-ask') return { label, emphasis, run: () => showAsk(press.askId) }
   if (press.action === 'toggle-fold') return { label, emphasis, run: () => toggleStatusFold(press.foldId) }
+  if (press.action === 'toggle-collapse') return { label, emphasis, run: () => toggleParentFold(press.id) }
   if (press.action === 'type-goal') return { label, emphasis, run: () => openGoalField(press.text) }
 
   return {
@@ -77,7 +80,7 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
 
     return (
       <div
-        class={row.hasChildren ? 'row has-children' : 'row'}
+        class={row.hasChildren && !isParentFolded(row.id) ? 'row has-children' : 'row'}
         style={depthStyle(row)}
         {...{ [SUBJECTS_ATTRIBUTE]: row.id }}
         {...lineMotion(motion)}
@@ -86,7 +89,9 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
           <MarkGlyph text={row.mark} />
         </span>
         <div class="content tight">
-          <NameLine name={row.name} stall={row.stall} />
+          <ParentName id={row.id} foldCount={row.foldCount}>
+            <NameLine name={row.name} stall={row.stall} chevron={chevronOf(row)} />
+          </ParentName>
           {row.waitsOn ? (
             <div class="tone-needsYou clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
               {row.waitsOn}
@@ -145,13 +150,13 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
       <>
         <div class="row fold-row" style={depthStyle(row)} {...lineMotion(motion)}>
           <button type="button" class="fold" data-fold={fold} onClick={() => toggleStatusFold(row.id)}>
-            <Icon name={isUnfolded ? 'down' : 'right'} />
             {row.text}
+            <Icon name={isUnfolded ? 'down' : 'right'} />
           </button>
         </div>
         {isUnfolded || closingFolds.has(fold) ? (
           <div class="fold-rows" data-motion={`closed-${fold}`}>
-            {row.rows.map(r => (
+            {unfoldedRows(row.rows, () => false, isParentFolded).map(r => (
               <StatusLine key={r.id} row={r} />
             ))}
           </div>

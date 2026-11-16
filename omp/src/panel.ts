@@ -25,7 +25,7 @@ import type { HerdrAsk } from '../../hooks/herdr-ask'
 import { drawGoalPart, goalPartId, workRowLines } from './panel-goal'
 import { drawPageRow } from './panel-page'
 import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
-import { fit, indented, spread } from './panel-text'
+import { collapsedIn, fit, indented, spread } from './panel-text'
 
 type ResumePress = { action: 'resume' }
 /** An answer to the question before omp installs the inbox's Herdr mod. */
@@ -231,7 +231,12 @@ export function drawPanel(
   const pageSelected =
     isRowTab(ui.tab) || ui.typing !== null
       ? null
-      : statusSelected(screen.view.statusPage, ui.selectedId, id => ui.statusUnfolded.includes(id))
+      : statusSelected(
+          screen.view.statusPage,
+          ui.selectedId,
+          id => ui.statusUnfolded.includes(id),
+          collapsedIn(screen.view),
+        )
   let pageSelectedAt: number[] | null = null
   /** The line each subject a Status row stands for starts on. */
   const subjectAt: [string, number][] = []

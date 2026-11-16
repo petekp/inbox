@@ -25,6 +25,8 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-status.tsx` | Mod only. The Status tab: each row and its buttons, Other work's rule, and the tab's page. |
 | `hooks/inbox-model.ts` | Mod only. The model the mod's ledger and Status calls ask, and the report each call gives its record. |
 | `hooks/pane-status-goal.tsx` | Mod only. The Status tab's goal section: its heading, the goal or the line that says none is set, its buttons, its text field, the Now line and the milestones. |
+| `hooks/pane-status-parent.tsx` | Mod only. A Status parent's name line as its fold in the terminal and desktop looks: the chevron as a dim Button in the terminal, and the line as a Client on desktop. |
+| `hooks/pane-text.tsx` | Mod only. The pane's formatted text: inline Markdown, and lines already wrapped into spans. |
 | `hooks/pane-status-path.tsx` | Mod only. The goal's path in the terminal and desktop looks: the line in the milestones' mark column, the word at the right of a name's first line, and a done milestone folded to its name. |
 | `hooks/pane-help.tsx` | Mod only. The Help page: the key list and the mark legend. |
 | `hooks/pane-sizes.ts` | Mod only. The terminal and desktop looks' sizes in cells, lines and points: row columns, padding, tree lines, tab layouts and the inline tab column. `desktopTabSizes` fits the desktop tab bar to the pane's width. |
@@ -50,6 +52,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/tabs-client.tsx` | Mod only. A Client region for the desktop tab bar, so each tab takes clicks over its whole shape. |
 | `hooks/row-client.tsx` | Mod only. A Client region for a closed row in the desktop pane. |
 | `hooks/fold-keys.ts` | Mod only. The keys a fold line draws under, for an Asks group's Closed fold and a Status done fold, which a desktop click and hover come back with, and the upgrade of the saved Asks folds. |
+| `hooks/parent-client.tsx` | Mod only. A Client region for a Status parent's name line on desktop, which folds or opens its rows on a click anywhere on the line. |
 | `hooks/fold-client.tsx` | Mod only. A Client region for a desktop fold line: "N closed" on Asks and "N done" on the Status. |
 | `hooks/links-client.tsx` | Mod only. A Client region for an open row's follow-ups on desktop. |
 | `hooks/press-client.tsx` | Mod only. A Client region that takes a click over its whole shape and tints under the pointer. Undo and the Help icon use it on desktop. |

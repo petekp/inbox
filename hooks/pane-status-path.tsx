@@ -175,16 +175,17 @@ export function paneStatusPath(
           ),
         }
   /** Whether the word fits at the right of the name's first line, which it never shortens or pushes to more lines. */
-  const wordFits = (m: MilestoneRow, word: string) => {
+  const wordFits = (m: MilestoneRow, word: string, chevron: string | null) => {
     const width = statusTextWidth(0)
-    if (look === 'desktop') return desktopTextPt(`${desktopLines(m.name, width)[0] ?? ''}${WORD_GAP}${word}`) <= width
-    const first = (terminalSpanLines([{ text: m.name }], width)[0] ?? []).map(s => s.text).join('')
+    const name = chevron === null ? m.name : `${m.name} ${chevron}`
+    if (look === 'desktop') return desktopTextPt(`${desktopLines(name, width)[0] ?? ''}${WORD_GAP}${word}`) <= width
+    const first = (terminalSpanLines([{ text: name }], width)[0] ?? []).map(s => s.text).join('')
 
     return cellWidth(`${first}${WORD_GAP}${word}`) <= width
   }
   /** The milestone's word, muted at the right of its name's first line, where it fits. It takes no line of its own. */
-  const pathWord = (m: MilestoneRow): Drawn[] =>
-    m.word === null || !wordFits(m, m.word)
+  const pathWord = (m: MilestoneRow, chevron: string | null): Drawn[] =>
+    m.word === null || !wordFits(m, m.word, chevron)
       ? []
       : [
           {
@@ -198,8 +199,8 @@ export function paneStatusPath(
         ]
   /**
    * A done milestone folded to its name, or a met goal's milestones folded into the line that names them. The terminal
-   * draws the name muted with the fold's chevron after it, as one button. Desktop draws a fold line, whose chevron takes
-   * the mark's place, since only a `Client` takes a click across the line.
+   * draws the name muted with the fold's chevron after it, as one button. Desktop draws a fold line, since only a
+   * `Client` takes a click across the line.
    */
   const foldedName = (m: Pick<MilestoneRow, 'id' | 'name'> & { foldId: string }) => {
     const toggle = () => toggleFold(m.foldId)
@@ -209,7 +210,7 @@ export function paneStatusPath(
       return { el: <Box key={`status-${m.id}`}>{foldRow(key, m.name, isOpen, toggle)}</Box>, lines: desktopFoldLines }
 
     return {
-      el: <Box key={`goal-${m.id}-fold`}>{foldButton(key, m.name, isOpen, toggle, ' ', true)}</Box>,
+      el: <Box key={`goal-${m.id}-fold`}>{foldButton(key, m.name, isOpen, toggle)}</Box>,
       lines: inkLines(`${m.name} ▸`, statusTextWidth(0)),
     }
   }

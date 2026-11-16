@@ -412,7 +412,11 @@ export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView
 export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {
   if (ui.tab === 'overview') {
     const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null
-    return statusBlocks(screen.view, { isUnfolded: id => ui.statusUnfolded.includes(id), goalField })
+    return statusBlocks(screen.view, {
+      isUnfolded: id => ui.statusUnfolded.includes(id),
+      isCollapsed: id => screen.view.collapsed.includes(id),
+      goalField,
+    })
   }
   if (ui.tab === 'prs') return prTabBlocks(screen, ui.selected)
 
