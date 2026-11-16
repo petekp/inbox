@@ -118,8 +118,10 @@ export const BOX_RADIUS = 10
 export const TAB_RADIUS = 6
 /** The width of the column that holds a Help key, so each key's words line up. */
 export const HELP_KEY_COLUMN = 72
-/** The Help control's circle. */
-export const HELP_ICON = 20
+/** The Help control's circle, about the size of the Codex tab's and the desktop pane's. */
+export const HELP_ICON = 14
+/** The question mark inside the Help control's circle. */
+export const HELP_ICON_TEXT = 10
 
 /** The separator between a status and its reasons, and between a heading and its count. */
 export const SEP = ' · '
