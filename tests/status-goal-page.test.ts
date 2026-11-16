@@ -404,3 +404,26 @@ test('a milestone or a subject with rows under it folds by its name, which hides
   const askedAgain = after(o, 'LINK: i2 | s1', 45, new Set(['i1', 'i2']))
   expect(collapsedRows({ ...collapsed, ledger: session(askedAgain, [...asked, askItem('i2')]).ledger })).toEqual(['s1'])
 })
+
+test('every milestone with work under it folds by its name before it is done: the one under way, the next and one under Later', () => {
+  const goal = 'GOAL: Import ready to demo | done Parsing works; working Errors explained; queued Demo script; queued Docs written'
+  const o = after(
+    after(after(null, START, 10), goal, 20),
+    'SERVES: s1 | m2\nSERVES: s2 | m3\nSERVES: s4 | m4\nSERVES: s3 | -',
+    30,
+  )
+  const p = page(o, 40)
+  const open = (p.goal?.milestones ?? []).filter(m => m.mark !== '✓')
+  const folded = new Set(open.map(m => m.id))
+  const targets = statusKeyRows(p, () => false, id => folded.has(id))
+
+  expect(open.map(m => [m.word, m.foldCount > 0])).toEqual([
+    ['now', true],
+    ['next', true],
+    [null, true],
+  ])
+  for (const m of open) {
+    expect(milestoneRows(m, () => false, id => folded.has(id))).toEqual([])
+    expect(targets.find(t => t.id === m.id)?.keys.map(k => k.label)).toContain('Unfold')
+  }
+})

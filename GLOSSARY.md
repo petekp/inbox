@@ -201,6 +201,14 @@ them. The list after the goal, each milestone and Other work each have their
 own.
 _Avoid_: done row, done count
 
+**Parent fold**:
+A subject or milestone on the Status folded by a press on its name, which hides
+the rows under it and shows ▸ and how many rows it hides after the name. The
+same press opens it, and ▾ follows the name while it is open. The fold is saved
+with the session's collapsed rows. It opens on its own once something new under
+it waits on the person: an ask that holds up its work, or a blocked delegate.
+_Avoid_: collapsed subject, folded milestone
+
 **Band**:
 In Claude Code, the line above the prompt with the Asks, Finds and PRs
 counts and [Open inbox]. With no counts it reads "Nothing needed", or "May be

@@ -176,17 +176,18 @@ export function paneStatusPath(
           ),
         }
   /** Whether the word fits at the right of the name's first line, which it never shortens or pushes to more lines. */
-  const wordFits = (m: MilestoneRow, word: string) => {
+  const wordFits = (m: MilestoneRow, word: string, chevron: string | null) => {
     const width = statusTextWidth(0)
-    const name = m.stall ? `${m.name}${STALL_GAP}${m.stall.text}` : m.name
+    const stalled = m.stall ? `${m.name}${STALL_GAP}${m.stall.text}` : m.name
+    const name = chevron === null ? stalled : `${stalled} ${chevron}`
     if (look === 'desktop') return desktopTextPt(`${desktopLines(name, width)[0] ?? ''}${WORD_GAP}${word}`) <= width
     const first = (terminalSpanLines([{ text: name }], width)[0] ?? []).map(s => s.text).join('')
 
     return cellWidth(`${first}${WORD_GAP}${word}`) <= width
   }
   /** The milestone's word, muted at the right of its name's first line, where it fits. It takes no line of its own. */
-  const pathWord = (m: MilestoneRow): Drawn[] =>
-    m.word === null || !wordFits(m, m.word)
+  const pathWord = (m: MilestoneRow, chevron: string | null): Drawn[] =>
+    m.word === null || !wordFits(m, m.word, chevron)
       ? []
       : [
           {

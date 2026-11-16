@@ -166,7 +166,7 @@ test('e on the goal’s Edit opens the field with the goal in it in place of the
 
 test('New is the only button on a page with no goal and no held subject, at the right end of the Goal heading row above the line that says no goal is set, and is selected ahead of the done fold: it is keyed, up and down still scroll, and n opens an empty goal field above the head', () => {
   const screen = screenWith({})
-  expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toEqual(['goal', 'done'])
+  expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toEqual(['goal', 's1', 's2', 'done'])
   const shown = text(screen, onPage).split('\n')
   expect(lineAt(shown, 'Goal ─')).toBe(lineAt(shown, '↵ New'))
   expect(lineAt(shown, '↵ New')).toBeLessThan(lineAt(shown, 'No goal yet.'))

@@ -15,7 +15,8 @@ import type { Draw } from './panel-draw'
 import { PAGE_CHILD_AT, PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
 import { pageFocus } from './panel-keys'
 import type { ButtonFace } from './panel-lines'
-import { indented, wrapText } from './panel-text'
+import { collapsedIn, indented, wrapText } from './panel-text'
+import { isParentCollapsed, parentChevron } from '../../hooks/status-folds'
 import type { Style } from './panel'
 
 const TREE_ARMS: Record<StatusBranch, { first: string; rest: string }> = {
@@ -41,7 +42,7 @@ const GLUE = '\uE000'
 
 /**
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
- * stall's tone on the line of the name's last word. Then what it waits on, in the needs-you tone, and where it stands, dim.
+ * stall's tone on the line of the name's last word, then a parent's fold chevron. Then what it waits on, in the needs-you tone, and where it stands, dim.
  */
 export function pageLine(
   d: Draw,
@@ -53,17 +54,25 @@ export function pageLine(
     stall = null,
     waitsOn = null,
     text = null,
-  }: { stall?: StatusStall | null; waitsOn?: string | null; text?: string | null } = {},
+    chevron = null,
+  }: {
+    stall?: StatusStall | null
+    waitsOn?: string | null
+    text?: string | null
+    chevron?: { text: string; paint: (t: string) => string } | null
+  } = {},
 ): string[] {
   const { width, style: s } = d
   const textAt = indent + 2
-  const room = pageRoom(indent, width)
+  const full = pageRoom(indent, width)
+  const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full
   const names = stall
     ? stalledName(name, stall, room, namePaint, s)
     : pageText(name, room, STATUS_TEXT_LINES, namePaint)
   const waits = waitsOn
     ? pageText(`${WAITS_ON_PREFIX}${waitsOn}`, room, STATUS_TEXT_LINES, t => s.tone('needsYou', t))
     : []
+  if (chevron) names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ''} ${chevron.paint(chevron.text)}`
   const seconds = [...waits, ...(text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [])]
 
   return [
@@ -150,6 +159,21 @@ export function pageButtonLines(
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : []
 }
 
+/** A parent's fold chevron, dim, or in the accent while its name is selected. */
+export function foldChevron(
+  p: { id: string; foldCount: number },
+  d: Draw,
+  isSelected: boolean,
+): { text: string; paint: (t: string) => string } | null {
+  if (p.foldCount === 0) return null
+  const { screen, style: s } = d
+
+  return {
+    text: parentChevron(isParentCollapsed(p, collapsedIn(screen.view)), p.foldCount),
+    paint: isSelected ? t => s.tone('accent', t) : s.dim,
+  }
+}
+
 /** A line on the Status page, laid out as the shared row says. */
 export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
   const { width, now, style: s } = d
@@ -157,7 +181,14 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   const textAt = at + PAGE_TEXT_AT - PAGE_MARK_AT
   if (row.kind === 'subject') {
     const mark = paintMark(row, now, s)
-    const out = pageLine(d, at, mark, row.name, t => t, { stall: row.stall, waitsOn: row.waitsOn, text: row.text })
+    const chevron = foldChevron(row, d, isSelected)
+    const isFolded = isParentCollapsed(row, collapsedIn(d.screen.view))
+    const out = pageLine(d, at, mark, row.name, chevron && isSelected ? s.bold : t => t, {
+      stall: row.stall,
+      waitsOn: row.waitsOn,
+      text: row.text,
+      chevron,
+    })
     const room = pageRoom(at, width)
     if (row.merged)
       out.push(
@@ -172,7 +203,7 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
     if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, textAt, width, STATUS_TEXT_LINES, s.dim))
     out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, textAt))
 
-    return row.hasChildren ? withTree(out, at, null, '│', s) : out
+    return row.hasChildren && !isFolded ? withTree(out, at, null, '│', s) : out
   }
   if (row.kind === 'child') {
     const mark = paintMark(row, now, s)

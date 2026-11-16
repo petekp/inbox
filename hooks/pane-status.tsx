@@ -2,7 +2,7 @@ import type { UiPressArgument } from 'claude-code'
 import { foldKey } from './fold-keys'
 import { SECTION_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
-import type { PaneBase, PaneHandlers } from './pane-context'
+import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import type { KeyAction } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
@@ -18,6 +18,7 @@ import {
 } from './pane-sizes'
 import { emptyTab } from './empty-tab'
 import { paneStatusGoal } from './pane-status-goal'
+import { paneStatusParent } from './pane-status-parent'
 import { paneStatusPath } from './pane-status-path'
 import {
   desktopButtonLines,
@@ -43,12 +44,16 @@ import {
   WAITS_ON_PREFIX,
   WAS_PREFIX,
 } from './status-page'
-import { unfoldedRows } from './status-folds'
+import { isParentCollapsed, unfoldedRows } from './status-folds'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
 
 export function paneStatus(
   {
+    hasClient,
+    elements,
+    terminalText,
+    Button,
     e,
     listColumns,
     look,
@@ -65,6 +70,7 @@ export function paneStatus(
     statusMarkAt,
     statusFrameEdge,
     statusNameLine,
+    nameLineSpans,
     statusPageText,
     statusTextWidth,
     desktopBlockWidth,
@@ -85,28 +91,32 @@ export function paneStatus(
     foldButton,
     desktopFoldLines,
     statusUnfolded,
-  }: Pick<
-    PaneBase,
-    | 'e'
-    | 'listColumns'
-    | 'look'
-    | 'Box'
-    | 'Text'
-    | 'pal'
-    | 'statusKeyRow'
-    | 'view'
-    | 'isInline'
-    | 'Input'
-    | 'typing'
-    | 'drafts'
-    | 'now'
-    | 'statusUnfolded'
-  > &
+  }: PaneClient &
+    Pick<
+      PaneBase,
+      | 'terminalText'
+      | 'Button'
+      | 'e'
+      | 'listColumns'
+      | 'look'
+      | 'Box'
+      | 'Text'
+      | 'pal'
+      | 'statusKeyRow'
+      | 'view'
+      | 'isInline'
+      | 'Input'
+      | 'typing'
+      | 'drafts'
+      | 'now'
+      | 'statusUnfolded'
+    > &
     Pick<
       PaneStatusLines,
       | 'statusMarkAt'
       | 'statusFrameEdge'
       | 'statusNameLine'
+      | 'nameLineSpans'
       | 'statusPageText'
       | 'statusTextWidth'
       | 'desktopBlockWidth'
@@ -129,10 +139,27 @@ export function paneStatus(
     | 'startTyping'
     | 'selectStatusRow'
     | 'updateStatusUnfolded'
+    | 'toggleParent'
   >,
 ) {
-  const { showAsk, runPress, startTyping, selectStatusRow, updateStatusUnfolded } = handlers
+  const { showAsk, runPress, startTyping, selectStatusRow, updateStatusUnfolded, toggleParent } = handlers
   const isUnfolded = (id: string) => statusUnfolded.includes(id)
+  const isCollapsed = (id: string) => view.collapsed.includes(id)
+  const { parentName } = paneStatusParent(
+    {
+      ...(hasClient ? { hasClient, elements } : { hasClient, elements }),
+      look,
+      Box,
+      Text,
+      Button,
+      pal,
+      terminalText,
+      statusNameLine,
+      nameLineSpans,
+      statusTextWidth,
+    },
+    handlers,
+  )
   const toggleFold = (id: string) =>
     void updateStatusUnfolded(u => (u.includes(id) ? u.filter(k => k !== id) : [...u, id]))
   // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
@@ -301,7 +328,9 @@ export function paneStatus(
             ? startTyping(GOAL_KEYS_ID, press.text)
             : press.action === 'toggle-fold'
               ? toggleFold(press.foldId)
-              : pressGoal(press.action, p.surface),
+              : press.action === 'toggle-collapse'
+                ? void toggleParent(press.id)
+                : pressGoal(press.action, p.surface),
     }))
   const { goalSection, setGoalBare, markRun, isTypingGoal } = paneStatusGoal(
     {
@@ -335,6 +364,8 @@ export function paneStatus(
       statusKeys,
       statusPartLine,
       isUnfolded,
+      isCollapsed,
+      parentName,
       path: paneStatusPath(
         { look, Box, Text, pal, statusMarkAt, statusFrameEdge, statusTextWidth, foldRow, foldButton, desktopFoldLines },
         { isUnfolded, toggleFold },
@@ -349,8 +380,11 @@ export function paneStatus(
   const statusRow = (r: StatusRow, n: number) => {
     if (r.kind === 'subject') {
       const mark = statusMark(r)
+      const isFolded = isParentCollapsed(r, isCollapsed)
       const content = [
-        statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, r.depth),
+        r.foldCount > 0
+          ? parentName(r.id, { text: r.name }, r.stall, r.depth, { isCollapsed: isFolded, count: r.foldCount })
+          : statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, r.depth),
         ...(r.waitsOn
           ? [
               statusPageText(
@@ -380,7 +414,7 @@ export function paneStatus(
         depth: r.depth,
         mark,
         content,
-        tree: r.hasChildren ? statusTree(`status-${r.id}-tree`, 'down', r.depth) : null,
+        tree: r.hasChildren && !isFolded ? statusTree(`status-${r.id}-tree`, 'down', r.depth) : null,
         isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
       })
 
@@ -457,7 +491,7 @@ export function paneStatus(
 
     return { ...fold, tops: seenTops(r) }
   }
-  const statusRows = (rows: StatusRow[]): Drawn[] => unfoldedRows(rows, isUnfolded).map(statusRow)
+  const statusRows = (rows: StatusRow[]): Drawn[] => unfoldedRows(rows, isUnfolded, isCollapsed).map(statusRow)
   /** The padding a desktop section starts with, above its first part. */
   const desktopSectionPad: Drawn[] =
     look === 'desktop' ? [{ el: <Box key="section-pad" />, lines: exactly(desktopSpaceLines(isInline ? 0 : 1)) }] : []

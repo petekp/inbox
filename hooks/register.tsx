@@ -157,7 +157,8 @@ import {
   prRowIds,
   showNewRows,
 } from './arrivals'
-import { parseInline } from './inline'
+import { paneText } from './pane-text'
+import { PARENT_PREFIX } from './pane-status-parent'
 import {
   DESKTOP_OFFSET_ROUNDING,
   DESKTOP_ROW_PAD,
@@ -169,7 +170,7 @@ import {
 import { lookOf, paletteFor } from './palettes'
 import { endOfTints } from './pane-title-tint'
 import { animateRunningMarks } from './running-mark-timer'
-import { glued, type TerminalSpan, unbroken } from './terminal-text'
+import { glued, unbroken } from './terminal-text'
 import {
   lastUndoEnd,
   NO_CURSOR,
@@ -864,10 +865,21 @@ async function toggleRow($: EngineInterface, id: string | null) {
       update($, SELECTION, s => pinnedOn(s, tab, row, index)),
       update($, TYPING, t => (t === row ? null : t)),
     ])
-  const at = await $.clock.now()
-  if (await read($, DEMO)) await update($, DEMO, d => d && withCollapse(d, row, isCollapsed, at))
-  else await commit($, currentOwner(), s => withCollapse(s, row, isCollapsed, at))
+  await saveCollapse($, row, isCollapsed)
   if (!isCollapsed) await select($, tab, row, index)
+}
+
+/** Saves row `id` collapsed or open, in the sample copy while the sample shows. */
+async function saveCollapse($: EngineInterface, id: string, isCollapsed: boolean) {
+  const at = await $.clock.now()
+  if (await read($, DEMO)) await update($, DEMO, d => d && withCollapse(d, id, isCollapsed, at))
+  else await commit($, currentOwner(), s => withCollapse(s, id, isCollapsed, at))
+}
+
+/** A press on a Status parent's name or its Fold key. */
+async function toggleParent($: EngineInterface, id: string) {
+  const { view } = await drawnState($)
+  await saveCollapse($, id, !view.collapsed.includes(id))
 }
 
 async function openLeftRows($: EngineInterface) {
@@ -2786,6 +2798,7 @@ export const register: Register = on => {
         surface: e.surface,
       })
     } else if (/^(select|collapse)-/.test(e.element)) await toggleRow($, e.element.replace(/^\w+-/, ''))
+    else if (e.element.startsWith(PARENT_PREFIX)) await toggleParent($, e.element.slice(PARENT_PREFIX.length))
     else if (e.element.startsWith('fold-') && typeof data?.hover === 'boolean')
       await setFoldHover($, e.element.slice('fold-'.length), data.hover)
     else if (e.element.startsWith('fold-')) await setFold($, e.element.slice('fold-'.length), data?.isUnfolded)
@@ -3017,47 +3030,7 @@ export const register: Register = on => {
     const settledLayout = settledLayoutId(tab, view, shownPrs, lastActions, notes, now, paneState.terminalInlineSize)
     const prViews = shownPrs.map(x => x.pr)
     const pal = paletteFor(theme, look)
-    const inlineText = (text: string) =>
-      parseInline(text).map((s, n) => (
-        <Text key={String(n)}>
-          <Text
-            bold={s.bold}
-            italic={s.italic}
-            strikethrough={s.strike}
-            underline={s.link ? true : undefined}
-            color={s.code ? 'permission' : undefined}
-          >
-            {s.text}
-          </Text>
-          {s.link ? <Text color={pal.muted}>{` ${s.link}`}</Text> : null}
-        </Text>
-      ))
-    const terminalText = (lines: TerminalSpan[][]) =>
-      lines.flatMap((line, n) => [
-        ...(n > 0 ? ['\n'] : []),
-        ...line.map((span, i) => (
-          <Text
-            key={`${n}-${i}`}
-            bold={span.bold}
-            italic={span.italic}
-            strikethrough={span.strike}
-            underline={span.link ? true : undefined}
-            color={
-              span.isNeedsYou
-                ? (pal.tone.needsYou ?? pal.mark.needsYou)
-                : span.isDone
-                  ? (pal.tone.done ?? pal.mark.done)
-                  : span.isLinkAddress || span.isMuted
-                    ? pal.muted
-                    : span.code
-                      ? 'permission'
-                      : undefined
-            }
-          >
-            {span.text}
-          </Text>
-        )),
-      ])
+    const { inlineText, terminalText } = paneText({ Text, pal })
     const raise = {
       dimColor: false,
       backgroundColor: pal.raised,
@@ -3083,6 +3056,7 @@ export const register: Register = on => {
       updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
       updateUnfolded: fn => update($, UNFOLDED, fn),
       updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
+      toggleParent: id => toggleParent($, id),
       updateClosedAll: fn => update($, CLOSED_ALL, fn),
       runPress: (p, surface) => runPress($, p, surface),
       readAgain: () => readAgain($),
@@ -3143,8 +3117,11 @@ export const register: Register = on => {
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
     const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
-    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded) : null
-    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage, isStatusUnfolded) : []
+    const isStatusCollapsed = (id: string) => view.collapsed.includes(id)
+    const statusKeyRow = isStatusShown
+      ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded, isStatusCollapsed)
+      : null
+    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage, isStatusUnfolded, isStatusCollapsed) : []
 
     const {
       desktopColumnPt,
@@ -3417,6 +3394,9 @@ export const register: Register = on => {
     })
     const { statusKeys, statusView, statusTops } = paneStatus(
       {
+        ...client,
+        terminalText,
+        Button,
         e,
         listColumns,
         look,

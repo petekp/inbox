@@ -7,12 +7,14 @@ import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { emptyTab } from '../../hooks/empty-tab'
+import { unfoldedRows } from '../../hooks/status-folds'
 import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
 import type { WorkJoint } from '../../hooks/status-path'
 import type { TabView as View } from './core'
 import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
+import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
 import { goalHeadMotion, goalLineMotion, headApartMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
 import { lineMotion } from './tab-line-steps'
@@ -118,9 +120,9 @@ function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion
       <div class="content tight">
         {fold === null ? (
           <div class="milestone-name">
-            <div class={nameClass}>
-              <NameLine name={m.name} stall={m.stall} />
-            </div>
+            <ParentName id={m.id} foldCount={m.foldCount} class={nameClass}>
+              <NameLine name={m.name} stall={m.stall} chevron={chevronOf(m)} />
+            </ParentName>
             {m.word ? (
               <span class="path-word muted" ref={fitPathWord}>
                 {m.word}
@@ -198,7 +200,7 @@ function MilestoneGroup({
   const fold = m.foldId
   const motion = fold === null ? null : foldMotion(fold)
   const isFoldShown = motion !== null && fold !== null && (statusUnfolded.has(fold) || closingFolds.has(motion))
-  const shown = motion === null ? rows : isFoldShown ? m.rows : []
+  const shown = motion === null ? rows : isFoldShown ? unfoldedRows(m.rows, () => false, isParentFolded) : []
   const joints = workJoints(shown, m.line)
   const classes = [
     'milestone-group',
@@ -214,7 +216,7 @@ function MilestoneGroup({
         rows.map((r, n) => <JointedLine key={r.id} row={r} joint={joints[n]} motion={goalLineMotion(r.id)} />)
       ) : isFoldShown ? (
         <div class="fold-rows" data-motion={`closed-${motion}`}>
-          {m.rows.map((r, n) => (
+          {shown.map((r, n) => (
             <JointedLine key={r.id} row={r} joint={joints[n]} />
           ))}
         </div>
@@ -241,8 +243,8 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
         <MilestoneGroup
           key={group.m.id}
           group={group}
-          isSpaced={n > 0 && !group.m.startsLater && isSpacedAbove(milestones, n, isUnfolded)}
-          isGapUnder={isSpacedAbove(milestones, n + 1, isUnfolded) && n + 1 < milestones.length}
+          isSpaced={n > 0 && !group.m.startsLater && isSpacedAbove(milestones, n, isUnfolded, isParentFolded)}
+          isGapUnder={isSpacedAbove(milestones, n + 1, isUnfolded, isParentFolded) && n + 1 < milestones.length}
         />,
       ])}
     </div>

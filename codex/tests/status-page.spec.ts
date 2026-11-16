@@ -7,6 +7,7 @@ import { parseStatus } from '../../hooks/status'
 import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { applyStatus } from '../../hooks/status-ops'
 import { goalPressed } from '../../hooks/goal-press'
+import { withCollapse } from '../../hooks/collapse'
 import { NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import type { RowPress } from '../../hooks/presses'
 import { recordItem } from '../../hooks/tools'
@@ -31,7 +32,7 @@ window.HTMLElement.prototype.animate = function (...args: Parameters<typeof anim
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its milestones as a path with the next one’s word, its Now line and the field Edit opens draw in place', async context => {
+test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its milestones as a path with the next one’s word, its Now line and the field Edit opens draw in place, and a subject with rows under it folds them by its name and opens them again', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -127,6 +128,9 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       const press = request.params.arguments.press
       presses.push(press)
       const at = Date.now()
+      const collapse = press as unknown as { action: string; id: string; isCollapsed: boolean }
+      if (collapse.action === 'collapse')
+        Object.assign(state, withCollapse(state, collapse.id, collapse.isCollapsed, at))
       const r = goalPressed(state.ledger, press, kind => ({ kind, action: press.action, text: '', at }), at)
       if ('ledger' in r) state.ledger = r.ledger
       result = { structuredContent: { view: viewNow(), error: null, note: null } }
@@ -299,6 +303,47 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped')
+
+    state.ledger = {
+      ...state.ledger,
+      overview: {
+        ...state.ledger.overview!,
+        children: [
+          {
+            id: 'c1',
+            ref: 'c1',
+            kind: 'subagent',
+            name: 'Read the draw code',
+            subjectId: 's4',
+            startedAt: now,
+            endedAt: null,
+            lastActivityAt: now,
+            delegateState: null,
+          },
+        ],
+      },
+    }
+    await afterPoll()
+    const rowNames = () => [...root.querySelectorAll('main .row .content')].map(c => c.firstElementChild?.textContent)
+    const parentName = () => root.querySelector('.parent-name') as HTMLElement
+    assert.match(parentName().textContent ?? '', /^Status page ▾$/)
+    assert.ok(rowNames().includes('Read the draw code'))
+    parentName().click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.deepEqual(presses.at(-1), { action: 'collapse', id: 's4', isCollapsed: true })
+    assert.match(parentName().textContent ?? '', /^Status page ▸ 1$/)
+    context.mock.timers.tick(ROW_STATE_MS.leaving + 100)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.ok(!rowNames().includes('Read the draw code'))
+    assert.equal(root.querySelector('.row.has-children'), null)
+    await afterPoll()
+    assert.match(parentName().textContent ?? '', /^Status page ▸ 1$/)
+    parentName().click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.deepEqual(presses.at(-1), { action: 'collapse', id: 's4', isCollapsed: false })
+    assert.match(parentName().textContent ?? '', /^Status page ▾$/)
+    assert.ok(rowNames().includes('Read the draw code'))
+    assert.ok(root.querySelector('.row.has-children'))
 
     await click('Edit')
     const field = window.document.querySelector('#type-goal')!

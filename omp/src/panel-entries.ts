@@ -36,6 +36,7 @@ import { isRowTab } from '../../hooks/tabs'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { SessionView } from '../../hooks/session-view'
 import { goalSection, setGoal } from './panel-goal'
+import { collapsedIn } from './panel-text'
 import { unfoldedRows } from '../../hooks/status-folds'
 import type { ShownTab } from '../../hooks/tabs'
 import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../hooks/herdr-ask'
@@ -352,6 +353,7 @@ export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 export const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
 function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
+  const isCollapsed = collapsedIn(view)
   const page = view.statusPage
   const blank: Entry = { kind: 'note', text: '' }
   const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: typing === GOAL_KEYS_ID })
@@ -364,8 +366,8 @@ function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: 
           ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
         ]
       : []
-  const top = [...goalSection(page, typing, isUnfolded), ...(head.length > 0 ? [blank, ...head] : [])]
-  const rows = unfoldedRows(page.rows, isUnfolded).map((row): Entry => ({ kind: 'page', row }))
+  const top = [...goalSection(page, typing, isUnfolded, isCollapsed), ...(head.length > 0 ? [blank, ...head] : [])]
+  const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row): Entry => ({ kind: 'page', row }))
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== 'part'
 
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows]

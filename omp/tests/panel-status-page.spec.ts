@@ -61,7 +61,7 @@ test('on the Status page, the rows under a subject hang from its mark, ├─ fo
     at('Review the'),
     at('Tune how hard'),
     at('Time the'),
-    at('Flick decided'),
+    at('Flick'),
   ]
   const col = lines[subject]!.indexOf('Dismiss gesture') - 2
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))

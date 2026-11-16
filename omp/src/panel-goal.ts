@@ -4,14 +4,15 @@ import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from '../../hooks/status-
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusPage } from '../../hooks/status-page'
 import { milestoneRows } from '../../hooks/status-folds'
+import type { IsCollapsed } from '../../hooks/status-folds'
 import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
 import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import type { Entry } from './panel-lines'
 import { PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
-import { pageButtonLines, pageLine, pageRuleCells, partHeading } from './panel-page'
-import { indented, visibleLength, wrapText } from './panel-text'
+import { foldChevron, pageButtonLines, pageLine, pageRuleCells, partHeading } from './panel-page'
+import { collapsedIn, indented, visibleLength, wrapText } from './panel-text'
 import type { Style } from './panel'
 import { cellWidth } from '../../hooks/text'
 
@@ -49,7 +50,12 @@ const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
  * column from each milestone to the next. While the person types a goal, the field takes the text's place, and the
  * buttons leave.
  */
-export function goalSection(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
+export function goalSection(
+  page: StatusPage,
+  typing: string | null,
+  isUnfolded: (id: string) => boolean,
+  isCollapsed: IsCollapsed,
+): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
   const g = page.goal
   const milestones = shownMilestones(g, isUnfolded)
@@ -60,11 +66,11 @@ export function goalSection(page: StatusPage, typing: string | null, isUnfolded:
     goalEntry({ is: 'title', goal: g, isTyping }),
     ...(fold === null ? [] : [goalEntry({ is: 'fold', fold })]),
     ...milestones.flatMap((row, n) => {
-      const rows = milestoneRows(row, isUnfolded)
+      const rows = milestoneRows(row, isUnfolded, isCollapsed)
       const joints = workJoints(rows, row.line)
 
       return [
-        ...(isSpacedAbove(milestones, n, isUnfolded)
+        ...(isSpacedAbove(milestones, n, isUnfolded, isCollapsed)
           ? [goalEntry({ is: 'gap', line: milestones[n - 1]?.line ?? null })]
           : []),
         ...(row.startsLater ? [goalEntry({ is: 'later' })] : []),
@@ -150,15 +156,22 @@ const WORD_GAP = 2
 function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[] {
   const { width, now, style: s } = d
   const mark = paintMark({ ...m, isRunning: false }, now, s)
-  const hasWork = milestoneRows(m, id => d.ui.statusUnfolded.includes(id)).length > 0
+  const isCollapsed = collapsedIn(d.screen.view)
+  const hasWork = milestoneRows(m, id => d.ui.statusUnfolded.includes(id), isCollapsed).length > 0
   const column: PathLine = m.line ?? (hasWork ? 'continues' : null)
   if (m.foldId !== null) {
     const [name = '', ...wrapped] = foldedNameLines(d, mark, m.name, m.foldId, isSelected)
 
     return [name, ...withPathLine(wrapped, column, s)]
   }
-  const namePaint = (t: string) => (m.isMuted ? s.dim : (u: string) => u)(m.isChanged ? s.bold(t) : t)
-  const [first = '', ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { stall: m.stall, text: m.text })
+  const chevron = foldChevron(m, d, isSelected)
+  const namePaint = (t: string) =>
+    (m.isMuted ? s.dim : (u: string) => u)(m.isChanged || (chevron && isSelected) ? s.bold(t) : t)
+  const [first = '', ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, {
+    stall: m.stall,
+    text: m.text,
+    chevron,
+  })
   const room = width - 1 - visibleLength(first) - cellWidth(m.word ?? '')
   const word = m.word !== null && room >= WORD_GAP ? `${' '.repeat(room)}${s.dim(m.word)}` : ''
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []

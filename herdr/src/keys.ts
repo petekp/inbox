@@ -117,6 +117,15 @@ export const withSelected = (ui: LookUi, id: string): LookUi => ({
 })
 
 /**
+ * The look's state after a row or a Status parent collapses or opens. A row becomes the selected one and a collapse
+ * closes its field. A Status parent is no row, so the selection stays.
+ */
+export const withCollapsed = (ui: LookUi, id: string, isCollapsed: boolean): LookUi => ({
+  ...(ui.tab === 'overview' ? ui : withSelected(ui, id)),
+  ...(isCollapsed && { typing: null }),
+})
+
+/**
  * After a publish, moves the selection off a selected row that waited at the last draw and no longer does, to the row
  * `rowAfterClose` gives, as the terminal's `openAfterClose` does. `last` and `now` are the tab's rows at the last draw
  * and at this one.

@@ -49,6 +49,7 @@ export type ViewChange =
  */
 export type Does =
   | { is: 'view'; change: ViewChange }
+  | { is: 'collapse'; id: string; isCollapsed: boolean }
   | { is: 'press'; press: RowPress | PrPress; effects: Effect[] }
   | { is: 'type'; rowId: string; text: string; hint: string }
   | { is: 'send'; rowId: string }
@@ -161,6 +162,11 @@ export type StatusLine = {
   does?: string
   /** A milestone's "now" or "next", muted at the right of its name's line where the name and it fit on one line. */
   word?: string
+  /**
+   * A parent's fold: its chevron after its name and stall, and the press that folds its rows away or opens them, which
+   * the whole name line takes.
+   */
+  fold?: { chevron: string; toggle: Button }
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */
   under: string[]
   buttons: Button[]

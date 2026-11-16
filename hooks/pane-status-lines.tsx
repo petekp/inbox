@@ -134,8 +134,8 @@ export function paneStatusLines({
    * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
    * splits from them. `nameBeforeStall` cuts the name so the line fits `STATUS_TEXT_LINES`.
    */
-  const nameSpans = (name: TerminalSpan, stall: StatusStall, depth: number) => {
-    const width = statusTextWidth(depth)
+  const nameSpans = (name: TerminalSpan, stall: StatusStall, depth: number, reserve = 0) => {
+    const width = statusTextWidth(depth) - reserve
     const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
     const spans = (shown: string): TerminalSpan[] => [
       { ...name, text: shown },
@@ -155,6 +155,9 @@ export function paneStatusLines({
 
     return { spans: spans(shown), width }
   }
+  /** A name line's spans, with `reserve` of the line's width left free after them, and the width they wrap in. */
+  const nameLineSpans = (name: TerminalSpan, stall: StatusStall | null, depth: number, reserve: number) =>
+    stall ? nameSpans(name, stall, depth, reserve) : { spans: [name], width: statusTextWidth(depth) - reserve }
   const statusNameLine = (key: string, name: TerminalSpan, stall: StatusStall | null, depth: number): Drawn => {
     if (!stall) return statusPageText(key, [name], depth)
     const { spans, width } = nameSpans(name, stall, depth)
@@ -189,6 +192,7 @@ export function paneStatusLines({
     desktopBlockWidth,
     statusPageText,
     statusNameLine,
+    nameLineSpans,
     statusFrameEdge,
     statusTree,
   }

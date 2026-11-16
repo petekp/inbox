@@ -290,3 +290,22 @@
 .status-page .fold-row .fold {
   margin: 0 0 0 -1px;
 }
+/* A parent's name line takes the click that folds its rows. Its chevron sits after the name, in the muted tone. */
+.status-page .parent-name {
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.status-page .parent-name:hover {
+  background-color: var(--row-hover);
+}
+.still .status-page .parent-name:not(:active):hover {
+  background-color: transparent;
+}
+.status-page .parent-name:focus-visible {
+  outline: 1px solid var(--soft);
+}
+.status-page .parent-chevron {
+  white-space: nowrap;
+}

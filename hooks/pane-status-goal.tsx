@@ -38,7 +38,9 @@ import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
-import { milestoneRows } from './status-folds'
+import { isParentCollapsed, milestoneRows, parentChevron } from './status-folds'
+import type { IsCollapsed } from './status-folds'
+import type { PaneStatusParent } from './pane-status-parent'
 import { isSpacedAbove, LATER_TEXT, workJoints } from './status-path'
 import { ROW_COPY } from './rows'
 
@@ -88,6 +90,8 @@ export function paneStatusGoal(
     statusKeys,
     statusPartLine,
     isUnfolded,
+    isCollapsed,
+    parentName,
     path,
   }: {
     statusRowLine: StatusRowLine
@@ -97,6 +101,8 @@ export function paneStatusGoal(
     keysRow: (t: StatusKeyTarget, width: number) => Drawn[]
     statusPartLine: (id: string, text: string, isFirst: boolean) => Drawn
     isUnfolded: (id: string) => boolean
+    isCollapsed: IsCollapsed
+    parentName: PaneStatusParent['parentName']
     path: PaneStatusPath
   },
 ) {
@@ -255,12 +261,17 @@ export function paneStatusGoal(
       ...(m.isMuted ? { isMuted: true as const } : {}),
     }
 
+    const isFolded = isParentCollapsed(m, isCollapsed)
+    const chevron = parentChevron(isFolded, m.foldCount)
+
     return statusRowLine({
       key: `status-${m.id}`,
       mark,
       content: [
-        statusNameLine(`goal-${m.id}-name`, name, m.stall, 0),
-        ...path.pathWord(m),
+        m.foldCount > 0
+          ? parentName(m.id, name, m.stall, 0, { isCollapsed: isFolded, count: m.foldCount })
+          : statusNameLine(`goal-${m.id}-name`, name, m.stall, 0),
+        ...path.pathWord(m, m.foldCount > 0 ? chevron : null),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
         ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),
@@ -273,7 +284,7 @@ export function paneStatusGoal(
    * column by the nesting connector or by the path's line.
    */
   const milestoneLines = (m: MilestoneRow): Drawn[] => {
-    const rows = milestoneRows(m, isUnfolded)
+    const rows = milestoneRows(m, isUnfolded, isCollapsed)
     const joints = workJoints(rows, m.line)
     const line = milestoneLine(m)
     const isConnectorDown = rows.length > 0 && m.line === null
@@ -292,7 +303,7 @@ export function paneStatusGoal(
    */
   const milestoneSection = (milestones: MilestoneRow[]): Drawn[] => {
     const spaceAbove = (n: number) =>
-      isSpacedAbove(milestones, n, isUnfolded) ? [gap(`goal-${milestones[n]?.id}-gap`, n === 0)] : []
+      isSpacedAbove(milestones, n, isUnfolded, isCollapsed) ? [gap(`goal-${milestones[n]?.id}-gap`, n === 0)] : []
 
     return milestones.flatMap((m, n) => {
       const hasLineAbove = (milestones[n - 1]?.line ?? null) !== null
