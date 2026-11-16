@@ -19,7 +19,7 @@ test('the selected tab draws inverse and the others draw their counts', () => {
   const bar = drawn(screen, keys(screen, INITIAL_UI, '2'))[1]!
   expect(bar).toContain(`${ESC}7m${ESC}1m [2] Finds ${screen.view.findings.count} `)
   expect(strip(bar)).toContain(`[1] Asks ${screen.view.needsYou.count}`)
-  expect(strip(bar)).toContain(`[3] PRs ${screen.view.prs.count}`)
+  expect(strip(bar)).toContain(`[4] PRs ${screen.view.prs.count}`)
   expect(strip(bar)).toContain('esc to close')
 })
 
@@ -203,7 +203,7 @@ for (const isNextBuild of [false, true])
         expect(symbols.replace(/[[\]]/g, '')).toContain(`${shown.hotkey} ${shown.symbol}`)
         if (isNextBuild) expect(symbols).toContain(`[${shown.hotkey}] ${shown.symbol}`)
         if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
-        for (const width of isNextBuild ? [34, symbolsAt] : [symbolsAt]) {
+        for (const width of isNextBuild ? [42, symbolsAt] : [symbolsAt]) {
           const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
           expect(cellWidth(line)).toBeLessThanOrEqual(width)
           if (width === symbolsAt) {

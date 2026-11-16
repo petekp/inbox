@@ -7,6 +7,11 @@
   padding-top: var(--status-row-pad);
   padding-bottom: var(--status-row-pad);
 }
+.timeline-page .timeline-detail {
+  grid-column: 2 / -1;
+  padding: 4px 14px 8px var(--text-x);
+  overflow-wrap: anywhere;
+}
 .status-page .mark {
   text-align: left;
 }

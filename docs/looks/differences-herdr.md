@@ -7,7 +7,7 @@ This table compares the Herdr look with the Codex tab, the nearest look. The str
 | Topic | Herdr look | Why | Where |
 | --- | --- | --- | --- |
 | Who draws | A Herdr app mod draws the inbox apart from the host, from the session file the host publishes under the app's home folder. | Herdr's mods run in Herdr's own process, so the look reaches the host's session only through a file. | `herdr/src/files.ts:readSession`, `hooks/herdr.ts:publishedSessionPath` |
-| Timeline | Does not draw the Timeline tab. | This Timeline slice wires the terminal and desktop panes only. | `hooks/register.tsx`, `herdr/src/screen.ts:screenOf` |
+| Timeline | Does not draw the Timeline tab or task tree. | The Herdr look is outside the four-look Timeline feature. | `herdr/src/paint-chrome.ts:tabsEl`, `herdr/src/screen.ts:screenOf` |
 | Following focus | Shows the session of the terminal last focused in the look's tab, and keeps it while the look itself has focus. Before anything in the tab had focus, it shows the first terminal with a session label. | One look pane can serve several agents in a tab. | `herdr/src/follow.ts:follow` |
 | Timeline and Agents tabs | Does not show Timeline or Agents, including in next builds. | Timeline and Agents are implemented for the four agreed client looks; the Herdr pane remains a compact session overview and has no separate implementation for these pages. | `herdr/src/draw.ts:tabCells` |
 | A terminal with no session | Draws a message in place of the tabs: no terminal in the tab, no inbox in the terminal with the program that runs there, or a session that ended. | The followed terminal can be any program, and a session can end while its terminal stays open. | `herdr/src/screen.ts:screenOf` |

@@ -15,8 +15,8 @@ const TAB_NAMES: readonly TabName[] = [
   { id: 'overview', label: 'Status', symbol: '\u{1F9ED}' },
   { id: 'needsYou', label: 'Asks', symbol: '\u{1F64B}' },
   { id: 'findings', label: 'Finds', symbol: '\u{1F50D}' },
-  { id: 'prs', label: 'PRs', symbol: '\u{1F500}' },
   { id: 'timeline', label: 'Timeline', symbol: '◷' },
+  { id: 'prs', label: 'PRs', symbol: '\u{1F500}' },
 ]
 
 const numbered = (tabs: readonly TabName[]): readonly DrawnTab[] =>
@@ -25,17 +25,24 @@ const numbered = (tabs: readonly TabName[]): readonly DrawnTab[] =>
 const NEXT_BUILD_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'timeline'))
 const NEXT_BUILD_TIMELINE_TABS = numbered(TAB_NAMES)
 const RELEASE_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'overview' && t.id !== 'timeline'))
+const RELEASE_TIMELINE_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'overview'))
 
-/** The tabs a build draws, in order, each keyed by its place. Only a next build draws pages. */
+/** The tabs a look draws, in order, each keyed by its place. Status needs a next build; supported looks opt into Timeline. */
 export function shownTabs(isNextBuild: boolean, includeTimeline = false): readonly DrawnTab[] {
-  return isNextBuild ? (includeTimeline ? NEXT_BUILD_TIMELINE_TABS : NEXT_BUILD_TABS) : RELEASE_TABS
+  return isNextBuild
+    ? includeTimeline
+      ? NEXT_BUILD_TIMELINE_TABS
+      : NEXT_BUILD_TABS
+    : includeTimeline
+      ? RELEASE_TIMELINE_TABS
+      : RELEASE_TABS
 }
 
 /** The `/inbox` command's description: what the build's tabs show. */
 export function inboxCommandText(isNextBuild: boolean): string {
   return isNextBuild
     ? 'Show where this session stands and what waits on you'
-    : "Show this session's questions, tasks, findings and PRs"
+    : "Show this session's questions, findings, task plan and PRs"
 }
 
 /** The tab a build draws for a saved or sent one: that tab when the build draws it, else the build's first tab. */

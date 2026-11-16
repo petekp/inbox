@@ -17,14 +17,17 @@ import { drawIn } from './tab-motion'
 
 export function switchTab(to: ShownTab) {
   tabState.document = null
-  if (to !== tabState.tab) tabState.shownSince = Date.now()
+  if (to !== tabState.tab) {
+    tabState.shownSince = Date.now()
+    if (!isRowTab(to)) drawnRows.clear()
+  }
   tabState.tab = to
   tabState.isHelpShown = false
 }
 
 /** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Status page, as from an older server. */
 export function drawnTab(): ShownTab {
-  const drawn = drawnTabOf(tabState.tab, tabState.view?.isNextBuild === true)
+  const drawn = drawnTabOf(tabState.tab, tabState.view?.isNextBuild === true, true)
 
   return drawn === 'overview' && !tabState.view?.statusPage ? 'needsYou' : drawn
 }

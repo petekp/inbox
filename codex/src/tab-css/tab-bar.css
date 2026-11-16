@@ -35,11 +35,23 @@ nav {
   display: none;
   color: var(--text);
 }
-@container tab-bar (width < 316px) {
-  .tab-symbol {
+@container tab-bar (width < 392px) {
+  nav[data-next-build='true'] .tab-symbol {
     display: inline;
   }
-  .tab-word {
+  nav[data-next-build='true'] .tab-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+@container tab-bar (width < 316px) {
+  nav[data-next-build='false'] .tab-symbol {
+    display: inline;
+  }
+  nav[data-next-build='false'] .tab-word {
     position: absolute;
     width: 1px;
     height: 1px;

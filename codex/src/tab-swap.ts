@@ -8,6 +8,7 @@ import {
   optionsShown,
   unfolded,
   statusUnfolded,
+  timelineFolded,
   inboxWindow,
   handoff,
   root,
@@ -34,6 +35,8 @@ function capturedState(): Kept {
     unfolded: [...unfolded],
     shownSince: tabState.shownSince,
     statusUnfolded: [...statusUnfolded],
+    timelineSelection: tabState.timelineSelection,
+    timelineFolded: [...timelineFolded],
   }
 }
 
@@ -65,6 +68,8 @@ export function restoreState(incoming?: Kept) {
   for (const g of kept.unfolded)
     for (const fold of g === 'finding' ? (['issue', 'opportunity'] as const) : [g]) unfolded.add(fold)
   for (const id of kept.statusUnfolded ?? []) statusUnfolded.add(id)
+  tabState.timelineSelection = kept.timelineSelection ?? null
+  for (const id of kept.timelineFolded ?? []) timelineFolded.add(id)
 }
 
 const PAGE_START_MS = 2_000

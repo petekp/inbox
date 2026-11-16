@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T13:09:54.826Z. 218010 characters follow.
+// Built at 2026-11-16T14:40:57.470Z. 218492 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -82,15 +82,16 @@ var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
   { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
   { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D" },
-  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" },
-  { id: "timeline", label: "Timeline", symbol: "◷" }
+  { id: "timeline", label: "Timeline", symbol: "◷" },
+  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
 var NEXT_BUILD_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "timeline"));
 var NEXT_BUILD_TIMELINE_TABS = numbered(TAB_NAMES);
 var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview" && t.id !== "timeline"));
+var RELEASE_TIMELINE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
 function shownTabs(isNextBuild, includeTimeline = false) {
-  return isNextBuild ? includeTimeline ? NEXT_BUILD_TIMELINE_TABS : NEXT_BUILD_TABS : RELEASE_TABS;
+  return isNextBuild ? includeTimeline ? NEXT_BUILD_TIMELINE_TABS : NEXT_BUILD_TABS : includeTimeline ? RELEASE_TIMELINE_TABS : RELEASE_TABS;
 }
 function tabBadge(id, counts) {
   return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
@@ -1427,18 +1428,12 @@ var DOCUMENT_KEYS = [
   { keys: "v", does: "Read the selected report, if available" },
   { keys: "b", does: "Return to the inbox from a report" }
 ];
-var TIMELINE_KEYS = [
-  { keys: "j k", does: "Select a task" },
-  { keys: "h l", does: "Close or open a task branch" },
-  { keys: "enter", does: "Select a task or open its link" },
-  { keys: "↑ ↓", does: "Scroll the selected task details" }
-];
 function helpKeys(look, isNextBuild, tab, hasStatusButtons, includeTimeline = false) {
   const tabKeys = shownTabs(isNextBuild, includeTimeline).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
+  const selectsTimelineRows = tab === "timeline";
   const hasDocumentRows = tab === "needsYou" || tab === "findings";
   const selectsStatusRows = tab === "overview" && hasStatusButtons;
-  const isTimeline = tab === "timeline";
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
@@ -1448,8 +1443,13 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons, includeTimeline = fa
     case "terminal":
       return [
         switchTabs,
-        ...isTimeline ? TIMELINE_KEYS : [],
-        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows || selectsStatusRows || selectsTimelineRows ? [
+          {
+            keys: "j k",
+            does: selectsTimelineRows ? "Select the next or previous task" : "Select the next or previous row"
+          }
+        ] : [],
+        ...selectsTimelineRows ? [{ keys: "h l", does: "Open or close the selected task branch" }] : [],
         ...hasRows ? [undoKey] : [],
         ...hasRows || selectsStatusRows ? [
           {
@@ -1464,12 +1464,12 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons, includeTimeline = fa
     case "codex":
       return [
         switchTabs,
-        ...isTimeline ? TIMELINE_KEYS : [],
-        ...hasRows ? [
+        ...hasRows || selectsTimelineRows ? [
           {
             keys: "j k ↑ ↓",
-            does: hasDocumentRows ? "Select a row or scroll a report" : "Select the next or previous row"
+            does: hasDocumentRows ? "Select a row or scroll a report" : selectsTimelineRows ? "Select the next or previous task" : "Select the next or previous row"
           },
+          ...selectsTimelineRows ? [{ keys: "h l", does: "Open or close the selected task branch" }] : [],
           ...hasDocumentRows ? DOCUMENT_KEYS : []
         ] : [],
         ...hasRows ? [undoKey] : [],
@@ -1480,16 +1480,23 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons, includeTimeline = fa
     case "omp":
       return [
         { keys: `tab ${tabKeys}`, does: "Switch tabs" },
-        ...isTimeline ? TIMELINE_KEYS : [],
         ...hasRows ? [
-          { keys: "↑ ↓ j k", does: hasDocumentRows ? "Move between rows or scroll a report" : "Move between rows" },
+          {
+            keys: "↑ ↓ j k",
+            does: hasDocumentRows ? "Move between rows or scroll a report" : "Move between rows"
+          },
           ...hasDocumentRows ? DOCUMENT_KEYS : [],
           { keys: "← →", does: "Pick a button" },
           { keys: "↵", does: "Press the picked button" },
           { keys: "t", does: "Reply to the selected row" },
           undoKey,
           ...prTabKeys
-        ] : isTimeline ? [] : [
+        ] : selectsTimelineRows ? [
+          { keys: "↑ ↓ j k", does: "Move between tasks" },
+          { keys: "h l", does: "Open or close the selected task branch" },
+          { keys: "← →", does: "Pick a button" },
+          { keys: "↵", does: "Press the picked button" }
+        ] : [
           ...selectsStatusRows ? [
             { keys: "j k", does: "Select the next or previous row with a button" },
             { keys: "← →", does: "Pick a button" },

@@ -1302,13 +1302,14 @@ var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
   { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
   { id: "findings", label: "Finds", symbol: "\u{1F50D}" },
-  { id: "prs", label: "PRs", symbol: "\u{1F500}" },
-  { id: "timeline", label: "Timeline", symbol: "\u25F7" }
+  { id: "timeline", label: "Timeline", symbol: "\u25F7" },
+  { id: "prs", label: "PRs", symbol: "\u{1F500}" }
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
 var NEXT_BUILD_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "timeline"));
 var NEXT_BUILD_TIMELINE_TABS = numbered(TAB_NAMES);
 var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview" && t.id !== "timeline"));
+var RELEASE_TIMELINE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }

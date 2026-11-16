@@ -134,12 +134,6 @@ const DOCUMENT_KEYS: HelpKey[] = [
   { keys: 'v', does: 'Read the selected report, if available' },
   { keys: 'b', does: 'Return to the inbox from a report' },
 ]
-const TIMELINE_KEYS: HelpKey[] = [
-  { keys: 'j k', does: 'Select a task' },
-  { keys: 'h l', does: 'Close or open a task branch' },
-  { keys: 'enter', does: 'Select a task or open its link' },
-  { keys: '↑ ↓', does: 'Scroll the selected task details' },
-]
 
 /**
  * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a
@@ -157,9 +151,9 @@ export function helpKeys(
     .map(t => t.hotkey)
     .join(' ')
   const hasRows = isRowTab(tab)
+  const selectsTimelineRows = tab === 'timeline'
   const hasDocumentRows = tab === 'needsYou' || tab === 'findings'
   const selectsStatusRows = tab === 'overview' && hasStatusButtons
-  const isTimeline = tab === 'timeline'
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
   const undoKey = { keys: UNDO_KEY, does: 'Undo the last close' }
@@ -169,8 +163,15 @@ export function helpKeys(
     case 'terminal':
       return [
         switchTabs,
-        ...(isTimeline ? TIMELINE_KEYS : []),
-        ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...(hasRows || selectsStatusRows || selectsTimelineRows
+          ? [
+              {
+                keys: 'j k',
+                does: selectsTimelineRows ? 'Select the next or previous task' : 'Select the next or previous row',
+              },
+            ]
+          : []),
+        ...(selectsTimelineRows ? [{ keys: 'h l', does: 'Open or close the selected task branch' }] : []),
         ...(hasRows ? [undoKey] : []),
         ...(hasRows || selectsStatusRows
           ? [
@@ -187,13 +188,17 @@ export function helpKeys(
     case 'codex':
       return [
         switchTabs,
-        ...(isTimeline ? TIMELINE_KEYS : []),
-        ...(hasRows
+        ...(hasRows || selectsTimelineRows
           ? [
               {
                 keys: 'j k ↑ ↓',
-                does: hasDocumentRows ? 'Select a row or scroll a report' : 'Select the next or previous row',
+                does: hasDocumentRows
+                  ? 'Select a row or scroll a report'
+                  : selectsTimelineRows
+                    ? 'Select the next or previous task'
+                    : 'Select the next or previous row',
               },
+              ...(selectsTimelineRows ? [{ keys: 'h l', does: 'Open or close the selected task branch' }] : []),
               ...(hasDocumentRows ? DOCUMENT_KEYS : []),
             ]
           : []),
@@ -205,10 +210,12 @@ export function helpKeys(
     case 'omp':
       return [
         { keys: `tab ${tabKeys}`, does: 'Switch tabs' },
-        ...(isTimeline ? TIMELINE_KEYS : []),
         ...(hasRows
           ? [
-              { keys: '↑ ↓ j k', does: hasDocumentRows ? 'Move between rows or scroll a report' : 'Move between rows' },
+              {
+                keys: '↑ ↓ j k',
+                does: hasDocumentRows ? 'Move between rows or scroll a report' : 'Move between rows',
+              },
               ...(hasDocumentRows ? DOCUMENT_KEYS : []),
               { keys: '← →', does: 'Pick a button' },
               { keys: '↵', does: 'Press the picked button' },
@@ -216,8 +223,13 @@ export function helpKeys(
               undoKey,
               ...prTabKeys,
             ]
-          : isTimeline
-            ? []
+          : selectsTimelineRows
+            ? [
+                { keys: '↑ ↓ j k', does: 'Move between tasks' },
+                { keys: 'h l', does: 'Open or close the selected task branch' },
+                { keys: '← →', does: 'Pick a button' },
+                { keys: '↵', does: 'Press the picked button' },
+              ]
             : [
                 ...(selectsStatusRows
                   ? [

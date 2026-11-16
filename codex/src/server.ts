@@ -199,7 +199,7 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
         const sentTab = shownTabOf(args.tab)
         const feed = await readFeedFiles(await feedPathValue(deps.feedPath))
         const s = await updateState(dir, id, s => {
-          const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
+          const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true, true)
           const ledger = feed ? applyFeedFiles(s.ledger, feed.root, feed.files, now()) : s.ledger
 
           const updated = ledger === s.ledger ? s : { ...s, ledger }

@@ -226,8 +226,9 @@ call, which Codex shows in place of the line. `personLine` in
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Asks,
-Finds and PRs tabs, and a Status tab before them on a next build. Codex shows the same tabs in its Inbox tab. omp
-shows them in an overlay that `/inbox` opens.
+Finds, Timeline and PRs tabs, and a Status tab before them on a next build. Codex
+shows the same tabs in its Inbox tab. omp shows them in an overlay that `/inbox`
+opens. The Herdr pane leaves Timeline out (see Differences on purpose).
 
 **Tab symbol**:
 The emoji a tab shows in place of its words when the words don't fit,

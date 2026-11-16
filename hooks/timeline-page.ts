@@ -34,7 +34,7 @@ type TimelineNode = {
 }
 type TimelineBase = { isEmpty: boolean; empty: { title: string; hint: string }; summary: string; bars: TimelineBar[] }
 export type TimelineData = TimelineBase & { rows: Omit<TimelineNode, 'actions'>[] }
-type TimelinePage = TimelineBase & {
+export type TimelinePage = TimelineBase & {
   rows: TimelineNode[]
   selected: { row: TimelineNode; details: TimelineDetailLine[]; links: TimelineLinkAction[] } | null
 }

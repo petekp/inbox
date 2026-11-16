@@ -15,12 +15,10 @@ test('document reader keys appear in Help where the host takes keys', () => {
   expect(helpKeys('desktop', false, 'findings', false)).toEqual([])
 })
 
-test('Timeline Help describes task navigation and detail scrolling for looks that take keys', () => {
+test('Timeline Help names task selection and branch keys, and the supported looks list the tab in a normal build', () => {
   for (const look of ['terminal', 'codex', 'omp'] as const) {
-    const keys = helpKeys(look, true, 'timeline', false)
-    expect(keys.map(key => key.keys)).toContain('j k')
+    const keys = helpKeys(look, false, 'timeline', false, true)
     expect(keys.map(key => key.keys)).toContain('h l')
-    expect(keys.find(key => key.keys === '↑ ↓')?.does).toContain('Scroll')
+    expect(keys.some(key => /task/.test(key.does))).toBe(true)
   }
-  expect(helpKeys('desktop', true, 'timeline', false)).toEqual([])
 })

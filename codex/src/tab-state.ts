@@ -12,6 +12,7 @@ import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
 import type { DrawnPrs, OpenPrBlock } from './tab-pr-steps'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
+import type { TimelinePage } from '../../hooks/timeline-page'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
 export type DocumentView = { title: string; text: string | null; error: string | null }
@@ -72,6 +73,8 @@ export const unfolded = new Set<FoldGroup>()
 export const closedAll = new Set<FoldGroup>()
 /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
 export const statusUnfolded = new Set<string>()
+/** Timeline task branches the person folded. */
+export const timelineFolded = new Set<string>()
 /**
  * The latest press on its way, by row id: its request number, when it began on the tab's clock, its pending Local
  * result or null for a message, which reads SENDING, and its action, so its button draws as out before the view says
@@ -96,7 +99,12 @@ export const undoing = new Set<string>()
 /** Folds whose list still shrinks after a press folded them, by the list's motion key after `closed-`. */
 export const closingFolds = new Set<string>()
 /** A row's or PR block's track, and what it drew open, which it still draws while its height shrinks over it. */
-type DrawnRow = { track: RowTrack; openRow?: Row; openBlock?: OpenPrBlock }
+type DrawnRow = {
+  track: RowTrack
+  openRow?: Row
+  openBlock?: OpenPrBlock
+  openTimeline?: NonNullable<TimelinePage['selected']>
+}
 export const drawnRows = new Map<string, DrawnRow>()
 
 export type Kept = {
@@ -115,6 +123,8 @@ export type Kept = {
   shownSince?: number
   /** Missing on a state an earlier page kept. */
   statusUnfolded?: string[]
+  timelineSelection?: string | null
+  timelineFolded?: string[]
 }
 export type CandidatePage = {
   initialize: () => Promise<boolean>
@@ -158,6 +168,7 @@ class TabState {
   pollFailures = 0
   readAt = 0
   tab: ShownTab = 'needsYou'
+  timelineSelection: string | null = null
   /** When this page began showing `tab`. A row that closes since then stays in place no longer than that, as `isSettledInPlace` says. */
   shownSince = Date.now()
   /** Whether Help shows in place of the tab's body. Switching tabs closes it. */

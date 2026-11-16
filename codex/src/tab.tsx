@@ -3,8 +3,9 @@ import type { ComponentChildren } from 'preact'
 import { HELP_COPY, UNDO_KEY } from '../../hooks/help'
 import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
+import { moveTimelineSelection } from '../../hooks/timeline-page'
 import { steppedIndex } from '../../hooks/action-plan'
-import { tabState, handoff, root, instanceAbort } from './tab-state'
+import { tabState, handoff, root, instanceAbort, drawnRows } from './tab-state'
 import { noteShownRows, rowsInView, SUBJECTS_ATTRIBUTE } from './tab-shown'
 import type { Kept, Lists } from './tab-state'
 import type { DrawnPrs } from './tab-pr-steps'
@@ -21,6 +22,8 @@ import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
 import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
+import { TimelineTab } from './tab-timeline'
+import { forgetTimelineRows, selectTimelineRow, stepTimelineRows, timelinePageOf, toggleTimelineFold } from './rows'
 import { pressUndoKey } from './undo-key'
 import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
 
@@ -66,6 +69,8 @@ function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): Com
         prs ? (
           <Prs v={v} prs={prs} now={now} />
         ) : null
+      ) : shown === 'timeline' ? (
+        <TimelineTab view={v} />
       ) : (
         <StatusTab page={v.statusPage} />
       )}
@@ -99,12 +104,21 @@ function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): Com
 function draw() {
   if (tabState.isDisposed || !tabState.isActive) return
   const before = measure()
-  const step = tabState.view ? stepLists(tabState.view) : null
-  tabState.lastLists = step?.lists ?? null
-  tabState.lastPrs = step?.prs ?? null
+  const isTimeline = tabState.view !== null && drawnTab() === 'timeline'
+  const step = tabState.view && (!isTimeline || drawnRows.size === 0) ? stepLists(tabState.view) : null
+  if (step || !isTimeline) {
+    tabState.lastLists = step?.lists ?? null
+    tabState.lastPrs = step?.prs ?? null
+  }
+  const changed = new Set(step?.changed ?? [])
+  if (tabState.view && isTimeline) {
+    for (const id of stepTimelineRows(tabState.view)) changed.add(id)
+  } else {
+    forgetTimelineRows()
+  }
   wakeForMoves()
   render(<App lists={tabState.lastLists} prs={tabState.lastPrs} />, root)
-  animateDraw(before, step?.changed ?? new Set())
+  animateDraw(before, changed)
   noteStatusInView()
   const fieldToFocus =
     tabState.focusTyping && tabState.typing ? document.getElementById(`type-${tabState.typing}`) : null
@@ -185,14 +199,35 @@ document.addEventListener(
       draw()
       return
     }
-    const switched = shownTabs(tabState.view.isNextBuild === true).find(t => t.hotkey === e.key)
+    const switched = shownTabs(tabState.view.isNextBuild === true, true).find(t => t.hotkey === e.key)
     if (switched) {
       switchTab(switched.id)
       draw()
       return
     }
     const t = drawnTab()
-    if (tabState.isHelpShown || !isRowTab(t)) return
+    if (tabState.isHelpShown) return
+    if (t === 'timeline') {
+      const page = timelinePageOf(tabState.view)
+      const selected = page.selected?.row
+      if (move) {
+        e.preventDefault()
+        const id = moveTimelineSelection(page.rows, selected?.task.id ?? null, move)
+        if (id) {
+          selectTimelineRow(id)
+          revealSelected()
+        }
+      } else if (selected) {
+        const action = selected.actions.find(item => item.hotkey === e.key)
+        if (action) {
+          e.preventDefault()
+          if (action.action === 'toggle-branch') toggleTimelineFold(tabState.view, action.id)
+          else selectTimelineRow(action.id)
+        }
+      }
+      return
+    }
+    if (!isRowTab(t)) return
     const tabKey =
       t === 'prs'
         ? [...prOrderKeys(tabState.view), ...prClearKeys(tabState.view)].find(x => x.hotkey === e.key)

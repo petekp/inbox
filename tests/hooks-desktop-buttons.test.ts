@@ -93,7 +93,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
 
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const { tabs, gap } = await tabBar()
-  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs'])
+  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'timeline', 'prs'])
   const findingsEnd = tabs[0]!.width + gap + tabs[1]!.width
   await pane.pointer({ type: 'down', x: findingsEnd - 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()

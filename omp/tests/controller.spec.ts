@@ -103,7 +103,7 @@ test('the panel restores Timeline navigation and saves selection and branch fold
   })
 
   await panel.start()
-  panel.handleInput('5')
+  panel.handleInput('4')
   panel.handleInput('j')
   panel.handleInput('h')
   expect(saved).toEqual([
@@ -220,7 +220,7 @@ test('a failed send shows its reason below the rows', async () => {
 test('after Address on a PR thread, the selection moves to the next PR row that waits', async () => {
   const { panel, pressed } = open()
   await panel.start()
-  for (const key of ['3', 'a', 'enter', 'a']) {
+  for (const key of ['4', 'a', 'enter', 'a']) {
     panel.handleInput(key)
     await flush()
   }

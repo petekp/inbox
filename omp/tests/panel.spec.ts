@@ -204,8 +204,12 @@ for (const isNextBuild of [false, true])
     const tabs = shownTabs(isNextBuild, true)
     const ids = tabs.map(t => t.id)
     expect(ids.includes('overview')).toBe(isNextBuild)
-    expect(ids.includes('timeline')).toBe(isNextBuild)
-    if (isNextBuild) expect(ids).toEqual(['overview', 'needsYou', 'findings', 'prs', 'timeline'])
+    expect(ids.includes('timeline')).toBe(true)
+    expect(ids).toEqual(
+      isNextBuild
+        ? ['overview', 'needsYou', 'findings', 'timeline', 'prs']
+        : ['needsYou', 'findings', 'timeline', 'prs'],
+    )
     const start = ids.indexOf(INITIAL_UI.tab)
     const cycled = ids.map((_, n) => keys(screen, INITIAL_UI, ...ids.slice(0, n).map(() => 'tab')).tab)
     expect(cycled).toEqual([...ids.slice(start), ...ids.slice(0, start)])

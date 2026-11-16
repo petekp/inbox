@@ -58,7 +58,12 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     TOOL_FIELDS,
   ).ledger
   const taskTree = [
-    task('omp-task', 'omp panel', 'working', now, 'reading the draw code'),
+    {
+      ...task('omp-task', 'omp panel', 'working', now, 'reading the draw code'),
+      links: { pr: 'https://github.com/acme/inbox/pull/12' },
+      notes: ['Keep the row selected while reviewing its details.'],
+      history: [{ kind: 'created' as const, at: now, source: 'Codex', detail: 'Started the panel work.' }],
+    },
     task('label-task', 'Label', 'working', now, 'pick one'),
     task('page-task', 'Page', 'done', now, 'built'),
   ]
@@ -98,6 +103,12 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     writable: true,
   })
   const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+  const animate = window.HTMLElement.prototype.animate
+  window.HTMLElement.prototype.animate = function (...args: Parameters<typeof animate>) {
+    const animation = animate.apply(this, args)
+    animation.finished.catch(() => {})
+    return animation
+  }
   const globals = {
     parent: window.parent,
     navigator: window.navigator,
@@ -179,13 +190,13 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
   try {
     await import('../src/tab')
     await until(() => root.querySelector('.status-head') !== null)
-    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds', 'Timeline', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => [
         b.getAttribute('title'),
         b.querySelector('.tab-symbol')?.textContent,
       ]),
-      shownTabs(true).map(t => [t.label, t.symbol]),
+      shownTabs(true, true).map(t => [t.label, t.symbol]),
     )
     assert.equal(shownTab(), 'Status')
     assert.equal(sentTabs[0], 'overview')
@@ -223,7 +234,39 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     await afterPoll()
     assert.equal(shownTab(), 'Status')
     assert.ok(root.querySelector('.row.selected') === null, 'a row is open')
-    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds1', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds1', 'Timeline', 'PRs'])
+
+    state.taskTree = [
+      taskTree[0]!,
+      { ...taskTree[1]!, parentId: 'omp-task' },
+      { ...taskTree[2]!, parentId: 'omp-task' },
+    ]
+    await afterPoll()
+    key('4')
+    assert.equal(shownTab(), 'Timeline')
+    assert.equal(root.querySelectorAll('.timeline-bars > div').length, 1)
+    assert.match(root.querySelector('.timeline-bars > div')?.textContent ?? '', /^Task plan · .* weight · .+/)
+    assert.equal(root.querySelectorAll('.timeline-bars').length, 1)
+    assert.match(root.querySelector('.timeline-node .content > div')?.textContent ?? '', /^omp panel · working · /)
+    assert.equal([...root.querySelectorAll('.timeline-node .content > div')][1]?.textContent, '├─ Label · working · w1')
+    assert.equal([...root.querySelectorAll('.timeline-node .content > div')][2]?.textContent, '└─ Page · done · w1')
+    assert.equal(
+      [...root.querySelectorAll('.timeline-detail > div')].every(line => line.textContent?.startsWith('└─ ')),
+      true,
+    )
+    assert.deepEqual(
+      [...root.querySelectorAll('.timeline-detail-label')].map(label => label.textContent?.replace(' · ', '')),
+      ['Detail', 'Updated', 'Note', 'History', 'Links'],
+    )
+    const { drawnRows } = await import('../src/tab-state')
+    key('j')
+    assert.match(root.querySelector('.row.selected .timeline-title')?.textContent ?? '', /Label/)
+    assert.equal(drawnRows.get('timeline:omp-task')?.track.state, 'closing')
+    assert.equal(drawnRows.get('timeline:label-task')?.track.state, 'opening')
+    key('1')
+    assert.equal(shownTab(), 'Status')
+    state.taskTree = taskTree
+    await afterPoll()
 
     key('3')
     assert.equal(shownTab(), 'Finds1')
@@ -259,22 +302,22 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
 
     isNextBuild = false
     await afterPoll()
-    assert.deepEqual(tabLabels(), ['Asks1', 'Finds1', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Asks1', 'Finds1', 'Timeline', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => b.getAttribute('title')),
-      shownTabs(false).map(t => t.label),
+      shownTabs(false, true).map(t => t.label),
     )
     assert.equal(shownTab(), 'Asks1')
     assert.ok(root.querySelector('.status-head') === null, 'the Status page is drawn')
     assert.ok(root.querySelector('main .holds-up') === null, 'a row names what it holds up')
     key('4')
-    assert.equal(shownTab(), 'Asks1')
+    assert.equal(shownTab(), 'PRs')
     isNextBuild = true
     await afterPoll()
-    assert.equal(shownTab(), 'Status')
+    assert.equal(shownTab(), 'PRs')
     isNextBuild = false
     await afterPoll()
-    key('3')
+    key('4')
     assert.equal(shownTab(), 'PRs')
     key('1')
     assert.equal(shownTab(), 'Asks1')

@@ -17,7 +17,7 @@ import { HerdrAskBanner } from './tab-herdr-ask'
 
 /** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
 export function HelpPage({ v }: { v: View }) {
-  const keys = helpKeys('codex', v.isNextBuild === true, drawnTab(), false)
+  const keys = helpKeys('codex', v.isNextBuild === true, drawnTab(), false, true)
 
   return (
     <main class="status-page help">
@@ -48,7 +48,7 @@ export function HelpPage({ v }: { v: View }) {
       <section>
         <GroupTitle title={HELP_COPY.tabs} count={0} />
         <div class="help-keys">
-          {tabLegend(v.isNextBuild === true).flatMap(t => [
+          {tabLegend(v.isNextBuild === true, true).flatMap(t => [
             <b key={`${t.keys}-symbol`}>{t.keys}</b>,
             <span key={`${t.keys}-name`} class="muted">
               {t.does}
@@ -100,9 +100,9 @@ export function TabBar({ v }: { v: View }) {
   const shown = drawnTab()
 
   return (
-    <nav>
+    <nav data-next-build={v.isNextBuild === true ? 'true' : 'false'}>
       <div class="tabs">
-        {shownTabs(v.isNextBuild === true).map(t => (
+        {shownTabs(v.isNextBuild === true, true).map(t => (
           <button
             type="button"
             class={`tab ${shown === t.id ? 'shown' : ''}`}
