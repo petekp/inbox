@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:51:22.261Z. 262301 characters follow.
+// Built at 2026-11-16T05:23:53.025Z. 263154 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -5121,6 +5121,22 @@ var LIGHT_TONES = {
   key: "#243bf5"
 };
 
+// ../hooks/layout.ts
+var SPACE_UNIT = 4;
+var LINE_PT = 5 * SPACE_UNIT;
+var INSIDE_GAP_PT = 0;
+var LIST_GAP_PT = SPACE_UNIT;
+var ITEM_GAP_PT = 3 * SPACE_UNIT;
+var CHILD_GAP_PT = 2 * SPACE_UNIT;
+var HEAD_GAP_PT = 2 * SPACE_UNIT;
+var CONTROL_GAP_PT = 2 * SPACE_UNIT;
+var SECTION_GAP_PT = 6 * SPACE_UNIT;
+var EDGE_PT = 4 * SPACE_UNIT;
+var MARK_PT = 6 * SPACE_UNIT;
+var ROW_PAD_PT = LIST_GAP_PT / 2;
+var OPEN_ROW_PAD_PT = ITEM_GAP_PT / 2;
+var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
+
 // src/paint-theme.ts
 var TONE_COLORS = {
   needsYou: "ansi3",
@@ -5147,25 +5163,27 @@ function mixInto(c, under, share) {
   return `#${[1, 3, 5].map((at) => channel(at).toString(16).padStart(2, "0")).join("")}`;
 }
 var TEXT = 13;
-var LINE_HEIGHT = 20;
+var LINE_HEIGHT = LINE_PT;
 var LINE = `${LINE_HEIGHT}px`;
 var SMALL_TEXT = 12;
 var HEAD_TEXT = 15;
 var HEAD_LINE = "24px";
-var SPACE = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 };
-var LINE_GAP = SPACE.xs;
-var CONTROL_GAP = SPACE.s;
-var HEAD_GAP = SPACE.m;
-var INSET = SPACE.m;
-var EDGE = SPACE.l;
-var ITEM_GAP = SPACE.xl;
-var GROUP_GAP = SPACE.xxl;
-var END_SPACE = GROUP_GAP;
-var MARK_W = SPACE.xl;
+var INSIDE_GAP = INSIDE_GAP_PT;
+var LIST_GAP = LIST_GAP_PT;
+var CHILD_GAP = CHILD_GAP_PT;
+var ITEM_GAP = ITEM_GAP_PT;
+var HEAD_GAP = HEAD_GAP_PT;
+var CONTROL_GAP = CONTROL_GAP_PT;
+var SECTION_GAP = SECTION_GAP_PT;
+var EDGE = EDGE_PT;
+var SMALL_GAP = SPACE_UNIT;
+var INSET = 3 * SPACE_UNIT;
+var END_SPACE = 2 * EDGE;
+var MARK_W = MARK_PT;
 var TEXT_X = EDGE + MARK_W;
 var NEST = MARK_W;
 var NARROW_PANE = 280;
-var BUTTON_H = 28;
+var BUTTON_H = 7 * SPACE_UNIT;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
 var HELP_INDENT = NEST;
@@ -5306,12 +5324,6 @@ class Heights {
 import { PathBuilder as PathBuilder3, div as div6 } from "gpui-kit";
 import { Input, h_flex as h_flex4, v_flex as v_flex3 } from "gpui-base";
 
-// ../hooks/layout.ts
-var ROW_PAD_PT = 8;
-var STATUS_ROW_PAD_PT = 19 / 4;
-var SECTION_GAP_PT = 19 / 2;
-var BANNER_PAD_Y_PT = 8;
-
 // src/paint-chevron.ts
 import { PathBuilder, div } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -5343,41 +5355,46 @@ function chevronEl(isOpen, t, isLive) {
   return div().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
 }
 function foldChevronEl(t, fold) {
-  return h_flex().flex_none().items_center().h(LINE_HEIGHT).ml(LINE_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div().ml(LINE_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
+  return h_flex().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
 }
 
 // src/paint-space.ts
 import { div as div2 } from "gpui-kit";
 import { v_flex } from "gpui-base";
-var padOf = (b) => b.kind === "row" || b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
+function padOf(b) {
+  if (b.kind === "row")
+    return b.isSelected ? OPEN_ROW_PAD_PT : ROW_PAD_PT;
+  return b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
+}
+var isOneLineRow = (r) => !r.isSelected && r.body.length === 0 && r.settled === null && r.feedback === null && r.heldLine === undefined;
+function isOneLine(b) {
+  if (b.kind === "status")
+    return b.under.length === 0 && b.buttons.length === 0;
+  if (b.kind === "row")
+    return isOneLineRow(b);
+  return b.kind === "note" || b.kind === "fold" || b.kind === "more";
+}
 var depthOf = (b) => ("depth" in b) ? b.depth : 0;
-var isOneLine = (b) => b.kind === "status" ? b.under.length === 0 && b.buttons.length === 0 : b.kind === "note" || b.kind === "fold";
 function itemGap(prev, b) {
   if (isOneLine(prev) && isOneLine(b))
-    return CONTROL_GAP;
-  if (depthOf(b) === 0)
-    return ITEM_GAP;
-  return INSET;
+    return LIST_GAP;
+  return depthOf(b) > 0 ? CHILD_GAP : ITEM_GAP;
 }
 var isMilestone = (b) => ("path" in b) && b.path?.is === "milestone";
 function gapBetween(prev, b) {
   if (isMilestone(prev))
-    return isMilestone(b) ? CONTROL_GAP : INSET;
+    return isMilestone(b) ? LIST_GAP : HEAD_GAP;
   const isLabelled = prev.kind === "heading" || prev.kind === "caption" || prev.kind === "rule" && prev.text !== null;
   if (isLabelled)
     return HEAD_GAP;
   if (prev.kind === "rule" || b.kind === "rule")
-    return GROUP_GAP / 2;
+    return SECTION_GAP / 2;
   if (prev.kind === "note" && prev.isHead && b.kind === "note" && b.isHead)
-    return LINE_GAP;
+    return INSIDE_GAP;
   if (prev.kind === "line" && b.kind === "line")
     return CONTROL_GAP;
-  if (prev.kind === "line" || prev.kind === "banner")
-    return GROUP_GAP;
-  if (b.kind === "heading")
-    return prev.kind === "row" || prev.kind === "pr" ? ITEM_GAP : GROUP_GAP;
-  if ([prev, b].some((x) => x.kind === "row" || x.kind === "more"))
-    return EDGE;
+  if (prev.kind === "line" || prev.kind === "banner" || b.kind === "heading")
+    return SECTION_GAP;
   return itemGap(prev, b);
 }
 function aboveOf(prev, b, section) {
@@ -5397,7 +5414,7 @@ function spacesOf(blocks, isShut) {
     if (b.kind === "gap") {
       if (isShut(b))
         continue;
-      section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : GROUP_GAP;
+      section = prev === null ? null : b.isMilestoneStep ? ITEM_GAP : SECTION_GAP;
       continue;
     }
     if (isShut(b)) {
@@ -5412,6 +5429,12 @@ function spacesOf(blocks, isShut) {
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
 var springBox = (id, height) => springHeight(v_flex().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
+function rowPadEl(r, edge, p) {
+  const id = `pad ${edge} ${r.id}`;
+  const box = springHeight(div2().id(id).flex_none());
+  const extra = padOf(r) - ROW_PAD_PT;
+  return p.isAtOnce(id) ? box.pt(extra) : box.h(extra);
+}
 var sizeEl = (key, p, el) => div2().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
 function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
@@ -5432,7 +5455,7 @@ function fitHeight(b, m, p) {
   }
   const title = titleHeightOf(b, p);
   const rest = p.heights.get(restId(id));
-  return title === undefined || rest === undefined ? undefined : 2 * ROW_PAD_PT + title + rest - panel;
+  return title === undefined || rest === undefined ? undefined : 2 * padOf(b) + title + rest - panel;
 }
 function contentEl(b, m, p, el, strokes) {
   const id = b.id;
@@ -5498,7 +5521,7 @@ function contentStrokeEls(b, t, fade) {
   const armAt = Math.round(top + LINE_HEIGHT / 2);
   const pathEls = (side) => side.is === "work" ? pathLineEl(side.line, 0, null, t) : [...pathLineEl(side.above, 0, top, t), ...pathLineEl(side.below, top + LINE_HEIGHT, null, t)];
   const treeEls = tree.flatMap(({ depth, is }) => {
-    const arm = fade(div2().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t)));
+    const arm = fade(div2().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)));
     if (is === "down")
       return [columnEl(depth, top + LINE_HEIGHT, null, t)];
     if (is === "past")
@@ -5546,7 +5569,7 @@ var helpIconEl = (t) => h_flex2().w(HELP_ICON).h(HELP_ICON).flex_none().items_ce
 function tabsEl(tabs, status, isHelpShown, p) {
   const { t } = p;
   const help = helpButton(isHelpShown);
-  return h_flex2().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex2().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div3().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div3().flex_1()).when(status !== null, (e) => e.child(div3().min_w(0).whitespace_normal().px(LINE_GAP).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex2().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(isHelpShown ? help.label : helpIconEl(t)));
+  return h_flex2().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(SMALL_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex2().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div3().ml(SMALL_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div3().flex_1()).when(status !== null, (e) => e.child(div3().min_w(0).whitespace_normal().px(SMALL_GAP).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex2().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(isHelpShown ? help.label : helpIconEl(t)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
@@ -5557,7 +5580,7 @@ function bannerEl(b, t, buttons = [], under = null) {
 }
 var sessionNoteEl = (text, t) => div3().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text);
 function messageEl(m, t) {
-  return v_flex2().flex_1().justify_center().items_center().p(GROUP_GAP).gap(LINE_GAP).child(div3().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div3().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+  return v_flex2().flex_1().justify_center().items_center().p(END_SPACE).gap(INSIDE_GAP).child(div3().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div3().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
 }
 var FILL = PathBuilder2.fill().add_polygon([
   [0, 0],
@@ -5568,7 +5591,7 @@ var FILL = PathBuilder2.fill().add_polygon([
 function scrollFadeEl(t, edge) {
   const isTop = edge === "top";
   const fade = Background.linear_gradient(isTop ? 180 : 0, tint(t.background, 1), tint(t.background, 0));
-  return window.paint_path(FILL, fade).absolute().left(0).right(0).when(isTop, (e) => e.top(0).h(EDGE)).when(!isTop, (e) => e.bottom(0).h(GROUP_GAP));
+  return window.paint_path(FILL, fade).absolute().left(0).right(0).when(isTop, (e) => e.top(0).h(EDGE)).when(!isTop, (e) => e.bottom(0).h(END_SPACE));
 }
 
 // src/paint-timer.ts
@@ -5623,14 +5646,14 @@ var CHECKBOX_PX = 11;
 var CHECK_PATH = PathBuilder3.stroke(1.5).move_to("27%", "53%").line_to("43%", "69%").line_to("74%", "31%").build();
 var checkboxEl = (color) => div6().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div6().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div6().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
-var lineEl = (text, color, indent = MARK_W) => div6().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
+var lineEl = (text, color, indent = MARK_W) => div6().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
 var trunkEl = (top, height, t) => {
   const el = div6().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t));
   return height === null ? el.bottom(0) : el.h(height);
 };
 var bodyLineEl = (l, t) => {
-  const armAt = LINE_GAP + LINE_HEIGHT / 2;
-  const arm = div6().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP).h(1).border_t_1().border_color(lineColor(t));
+  const armAt = INSIDE_GAP + LINE_HEIGHT / 2;
+  const arm = div6().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t));
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t)] : l.tree === "tee" ? [trunkEl(0, null, t), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t), arm] : [];
   return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes);
 };
@@ -5638,7 +5661,7 @@ function fieldEl(f, p, indent, isInert = false) {
   const { t } = p;
   const state = p.input(f.rowId);
   const input = state ? [
-    div6().min_h(BUTTON_H).px(INSET).py(SPACE.xs).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
+    div6().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
   return v_flex3().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
 }
@@ -5656,10 +5679,10 @@ function rowEl(r, p) {
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(rowPadEl(r, "top", p)).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
     const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t);
     return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
-  })).children(panelEl(r, m, p, isLeaving))));
+  })).children(panelEl(r, m, p, isLeaving)))).child(rowPadEl(r, "bottom", p));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;
@@ -5683,7 +5706,7 @@ function panelEl(r, m, p, isLeaving) {
 }
 var statusPartEl = (text) => div6().min_w(0).max_w_full().whitespace_normal().child(text);
 function keyEl(s, does, t) {
-  return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LINE_GAP).child(div6().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div6().font_semibold().child(s.name))).child(div6().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div6().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div6().font_semibold().child(s.name))).child(div6().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;
@@ -5707,7 +5730,7 @@ function prEl(b, p, isInert) {
   const hasReasons = b.unlisted.length > 0;
   const word = h_flex4().items_start().min_w(0).max_w_full().child(div6().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div6().flex_none().text_color(t.muted).child(SEP)));
   const reasons = b.unlisted.map((u, i) => statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted));
-  const status = h_flex4().flex_wrap().items_start().pt(LINE_GAP).when(p.isNarrow, (e) => e.child(div6().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
+  const status = h_flex4().flex_wrap().items_start().pt(INSIDE_GAP).when(p.isNarrow, (e) => e.child(div6().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
   return v_flex3().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p, isInert) {
@@ -5718,14 +5741,14 @@ function headingEl(b, p, isInert) {
   const { t } = p;
   const buttons = h_flex4().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
-    return h_flex4().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex4().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
+    return h_flex4().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex4().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
   return h_flex4().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div6().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div6().text_color(t.muted).child(`${SEP}${b.count}`))).child(div6().flex_1()).when(b.aside !== undefined, (e) => e.child(div6().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
 function emptyEl(b, p, isInert) {
   const { t } = p;
   const { empty, under } = b;
   const centred = (text, color = t.foreground) => div6().text_center().whitespace_normal().text_color(color).child(text);
-  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(GROUP_GAP).gap(LINE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex4().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div6().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div6()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
+  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).gap(INSIDE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex4().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div6().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div6()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null))));
 }
 function foldEl(b, p, isInert) {
   const { t } = p;
