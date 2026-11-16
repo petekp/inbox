@@ -1,5 +1,6 @@
 import type { BannerView } from '../../hooks/banners'
 import { READING_TEXT } from '../../hooks/banners'
+import { helpVersionText } from '../../hooks/help'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
 import type { SettledState } from '../../hooks/rows'
@@ -28,6 +29,8 @@ type Screen =
       /** Says the host left out older closed items, or null when the session is whole. */
       trimmedNote: string | null
       blocks: Block[]
+      /** The host's inbox build as Help names it, or null when its file says none. */
+      helpVersion: string | null
       /** The tab's rows, in order, and whether each waits on the person. */
       waits: RowWait[]
       /** When a settled row folds, so the look draws again then. Null when none comes due on the clock. */
@@ -112,6 +115,9 @@ export function screenOf(
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
+    helpVersion: read.envelope.version
+      ? helpVersionText(read.envelope.version, read.envelope.isNextBuild === true)
+      : null,
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
     waits: rowWaits(screen, ui.tab),
     foldAt: nextFoldAt(settled, placing),

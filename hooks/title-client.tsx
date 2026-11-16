@@ -2,6 +2,8 @@ import type { ClientModule } from 'claude-code'
 
 type TitleProps = {
   title: string
+  /** The title's tint, or null for the theme's own. */
+  titleColor: string | null
   /** Muted text after the title, such as a press's result, or empty for none. */
   after: string
   colors: { muted: string | null; hover: string | null; hoverText: string | null; pressed: string | null }
@@ -39,7 +41,7 @@ const Title: ClientModule<TitleProps, State> = (props, surface) => {
     children: Text({
       wrap: 'wrap',
       children: [
-        Text({ bold: true, ...colored(null), children: props.title }),
+        Text({ bold: true, ...colored(props.titleColor), children: props.title }),
         ...(props.after ? [Text({ ...colored(props.colors.muted), children: props.after })] : []),
       ],
     }),

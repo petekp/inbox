@@ -1,11 +1,11 @@
 import { toneSvg } from './desktop-svg'
-import { HELP_COPY, type HelpKey, type LegendEntry, MARK_LEGEND, tabLegend } from './help'
+import { HELP_COPY, helpVersionText, type HelpKey, type LegendEntry, MARK_LEGEND, tabLegend } from './help'
 import { markShape } from './marks'
+import { mod } from './mod-state'
 import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import { DESKTOP_LINE_PT, TREE_LINE_AT } from './pane-sizes'
-import type { PaneStatus } from './pane-status'
 
 export function paneHelp({
   pal,
@@ -20,11 +20,9 @@ export function paneHelp({
   section,
   groupTitle,
   sections,
-  statusRowLine,
 }: Pick<PaneBase, 'pal' | 'keyList' | 'Box' | 'keyColumn' | 'Text' | 'hasRail'> &
   Pick<PaneRowLines, 'ToneSvg' | 'svgCell' | 'markGlyph'> &
-  Pick<PaneRowParts, 'section' | 'groupTitle' | 'sections'> &
-  Pick<PaneStatus, 'statusRowLine'>) {
+  Pick<PaneRowParts, 'section' | 'groupTitle' | 'sections'>) {
   /** A legend mark, drawn as rows draw it: the running mark moves, and desktop draws a shape where it has one. */
   const legendMark = (m: LegendEntry) => {
     if (ToneSvg && m.tone && markShape(m.mark, DESKTOP_LINE_PT / 2) !== null)
@@ -36,11 +34,16 @@ export function paneHelp({
       m.tone ? pal.mark[m.tone] : pal.muted,
     )
   }
+  /**
+   * Help's one pair of columns, in cells: a key, a mark or a tab's symbol in the first, which starts at `TREE_LINE_AT`, and
+   * its words in the second. A tab's symbol takes two cells, so the column is the wider of that and the keys' column.
+   */
+  const helpColumn = Math.max(keyColumn, 4)
   /** Help's two-column lines: what to press or look for, and what it does or names. */
-  const keyRows = (list: readonly HelpKey[], prefix: string, column: number) =>
+  const keyRows = (list: readonly HelpKey[], prefix: string) =>
     list.map(k => (
       <Box key={`${prefix}-${k.keys}`} flexDirection="row" paddingLeft={TREE_LINE_AT}>
-        <Box width={column} flexShrink={0}>
+        <Box width={helpColumn} flexShrink={0}>
           <Text bold>{k.keys}</Text>
         </Box>
         <Box flexShrink={1}>
@@ -50,32 +53,37 @@ export function paneHelp({
         </Box>
       </Box>
     ))
-  const helpKeysSection = () => section([groupTitle(HELP_COPY.keys, 0), ...keyRows(keyList, 'help-key', keyColumn)])
-  /** A tab's symbol takes two cells, so its column is the wider of that and the keys' column. */
-  const helpTabsSection = () =>
-    section([groupTitle(HELP_COPY.tabs, 0), ...keyRows(tabLegend(), 'help-tab', Math.max(keyColumn, 4))])
+  const helpKeysSection = () => section([groupTitle(HELP_COPY.keys, 0), ...keyRows(keyList, 'help-key')])
+  const helpTabsSection = () => section([groupTitle(HELP_COPY.tabs, 0), ...keyRows(tabLegend(), 'help-tab')])
   const helpMarksSection = () =>
     section([
       groupTitle(HELP_COPY.marks, 0),
-      ...MARK_LEGEND.map(
-        m =>
-          statusRowLine({
-            key: `help-mark-${m.mark}`,
-            mark: legendMark(m),
-            content: {
-              el: (
-                <Text color={pal.muted} wrap="wrap">
-                  {m.words}
-                </Text>
-              ),
-              lines: null,
-            },
-          }).el,
-      ),
+      ...MARK_LEGEND.map(m => (
+        <Box key={`help-mark-${m.mark}`} flexDirection="row" paddingLeft={TREE_LINE_AT}>
+          <Box width={helpColumn} flexShrink={0}>
+            {legendMark(m)}
+          </Box>
+          <Box flexShrink={1}>
+            <Text color={pal.muted} wrap="wrap">
+              {m.words}
+            </Text>
+          </Box>
+        </Box>
+      )),
     ])
+  /** Which inbox build this is, in the muted words of the legend. A build with no version, as in a test, draws none. */
+  const helpVersionSection = () =>
+    mod.version
+      ? section(
+          <Box key="help-version" flexDirection="row" paddingLeft={TREE_LINE_AT + helpColumn}>
+            <Text color={pal.muted}>{helpVersionText(mod.version, mod.isNextBuild)}</Text>
+          </Box>,
+        )
+      : null
   /** Help in place of the tab's body: the keys where keys work, then the legend. A wide inline pane sets them side by side. */
   const helpView = () => {
-    if (keyList.length === 0) return sections([helpMarksSection(), helpTabsSection()])
+    const version = helpVersionSection()
+    if (keyList.length === 0) return sections([helpMarksSection(), helpTabsSection(), ...(version ? [version] : [])])
     if (hasRail)
       return (
         <Box flexDirection="row" columnGap={4} flexGrow={1}>
@@ -85,11 +93,12 @@ export function paneHelp({
           <Box flexDirection="column" width="50%" flexShrink={1}>
             {helpMarksSection()}
             {helpTabsSection()}
+            {version}
           </Box>
         </Box>
       )
 
-    return sections([helpKeysSection(), helpMarksSection(), helpTabsSection()])
+    return sections([helpKeysSection(), helpMarksSection(), helpTabsSection(), ...(version ? [version] : [])])
   }
 
   return { helpView }

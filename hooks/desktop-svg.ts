@@ -1,5 +1,4 @@
-import { CLOSED_MARKS } from './help'
-import { NEW_FADE_MS, NEW_HOLD_MS } from './arrivals'
+import { CLOSED_MARKS, HELP_COPY } from './help'
 import { RUNNING_PULSE_MS } from './timing'
 import { ROW_PAD_PT } from './layout'
 import { markShape, mutedMarkShape } from './marks'
@@ -9,6 +8,7 @@ import {
   DESKTOP_LINE_PT,
   DESKTOP_MARK_CELLS,
   FRAME_INSET_PT,
+  HELP_ICON_CELLS,
   UNDO_CELLS,
   UNDO_HEIGHT_PT,
 } from './pane-sizes'
@@ -41,10 +41,12 @@ export function undoSvg(fraction: number, leftMs: number): string {
  * appearances, which the mod cannot read, but an Svg follows the system's light or dark setting, so this takes the
  * shared tone for each, as the Codex tab does.
  */
-export function toneSvg(tone: ToneName, mark: string): string {
+export function toneSvg(tone: ToneName, mark: string, tint?: string): string {
   const { light, dark } = toneColors(tone)
   // A marker needs only 3:1, so an error mark takes a stronger red than text could.
   const shape = markShape(mark, DESKTOP_LINE_PT / 2)
+  if (tint) return markSvg(mark, shape, tint, tint)
+
   return tone === 'error'
     ? markSvg(mark, shape, LIGHT_TONES.errorMark, DARK_TONES.errorMark)
     : markSvg(mark, shape, light, dark)
@@ -99,40 +101,6 @@ export function runningSvg(now: number, colors: { light: string; dark: string } 
     `</circle></svg>`
   )
 }
-/** The bar's width and its left edge, in the frame inset before the mark column. */
-const NEW_BAR_PT = 3
-const NEW_BAR_X_PT = 3.3
-/** A bar at a row's left edge on desktop, as tall as a row with one line, in `light` and `dark`, with SMIL `animation`. */
-function barSvg(light: string, dark: string, animation = ''): string {
-  const width = FRAME_INSET_PT - DESKTOP_CELL_PT
-  const height = 2 * ROW_PAD_PT + DESKTOP_LINE_PT
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>.bar{fill:${light}}@media (prefers-color-scheme: dark){.bar{fill:${dark}}}</style>` +
-    `<rect class="bar" x="${NEW_BAR_X_PT}" y="${ROW_PAD_PT}" width="${NEW_BAR_PT}" height="${DESKTOP_LINE_PT}" rx="1.5">` +
-    `${animation}</rect></svg>`
-  )
-}
-/**
- * A new row's bar on desktop. It shows at full strength for `NEW_HOLD_MS` from `shownAt`, then fades. SMIL runs it,
- * and each pane redraw starts it again, so it begins at the clock's point.
- */
-export function newBarSvg(shownAt: number, now: number): string {
-  const total = NEW_HOLD_MS + NEW_FADE_MS
-  return barSvg(
-    LIGHT_TONES.key,
-    DARK_TONES.key,
-    `<animate attributeName="opacity" values="1;1;0" keyTimes="0;${NEW_HOLD_MS / total};1" calcMode="spline" ` +
-      `keySplines="0 0 1 1;0.37 0 0.63 1" dur="${total}ms" begin="-${Math.max(0, now - shownAt)}ms" fill="freeze"/>`,
-  )
-}
-/** A settled row's bar on desktop, in its tone, held while the row stays in place. */
-export function settledBarSvg(tone: 'done' | 'muted' | 'error'): string {
-  if (tone === 'muted') return barSvg(MUTED_MARK.light, MUTED_MARK.dark)
-  return tone === 'error'
-    ? barSvg(LIGHT_TONES.errorMark, DARK_TONES.errorMark)
-    : barSvg(LIGHT_TONES.done, DARK_TONES.done)
-}
 function escapeXml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -154,5 +122,18 @@ export function chevronSvg(isUnfolded: boolean, isHover: boolean): string {
       ? `<style>polyline{stroke:#0b0b0b}@media (prefers-color-scheme: dark){polyline{stroke:#f0efec}}</style>`
       : `<style>polyline{stroke:${DESKTOP_AGE}}</style>`) +
     `<polyline points="${points}" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+  )
+}
+/** The Help control on desktop: a question mark in a circle, in the muted mark's colors for the light and dark appearances. */
+export function helpSvg(): string {
+  const width = HELP_ICON_CELLS * DESKTOP_CELL_PT
+  const height = DESKTOP_LINE_PT
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<style>.help{color:${MUTED_MARK.light}}@media (prefers-color-scheme: dark){.help{color:${MUTED_MARK.dark}}}` +
+    `circle{fill:none;stroke:currentColor;stroke-width:1.2}` +
+    `text{font-family:-apple-system,system-ui,sans-serif;font-size:11px;font-weight:600;fill:currentColor}</style>` +
+    `<g class="help"><circle cx="${width / 2}" cy="${height / 2}" r="7.2"/>` +
+    `<text x="${width / 2}" y="${height / 2 + 0.5}" dominant-baseline="central" text-anchor="middle">${HELP_COPY.icon}</text></g></svg>`
   )
 }

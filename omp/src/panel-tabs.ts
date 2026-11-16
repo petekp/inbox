@@ -19,7 +19,6 @@ import { footerStatus } from '../../hooks/view'
 import { openOnArrival } from '../../hooks/action-plan'
 import { GOAL_FIELD, GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { StatusPage } from '../../hooks/status-page'
-import { versionLabel } from '../../hooks/banners'
 import type { ShownTab, TabNaming } from '../../hooks/tabs'
 import type { Draw } from './panel-draw'
 import { entriesOf } from './panel-entries'
@@ -149,7 +148,7 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
               'tab switch',
               '? help',
             ]
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  ${versionLabel(screen.version, screen.isNextBuild === true)} `
+  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
   if (fitsBesideHints) out.push(spread(hintLine, s.dim(model), width))

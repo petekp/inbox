@@ -109,6 +109,8 @@ export const LIGHT_BANNER_TINTS: Record<BannerTone, BannerTint> = {
 
 /** The backgrounds a terminal theme is drawn for. A terminal does not report its own, so a fade moves toward these. */
 export const THEME_BACKGROUND = { dark: '#1e1e1e', light: '#ffffff' }
+/** The text color a terminal theme is drawn with, which a title's tint fades toward. A terminal does not report its own. */
+export const THEME_TEXT = { dark: '#ececec', light: '#1b1b1b' }
 /** Muted text over `THEME_BACKGROUND`, in the terminal's light and dark palettes and in omp's. */
 export const MUTED_TEXT = { dark: '#bdbdbd', light: '#595959' }
 

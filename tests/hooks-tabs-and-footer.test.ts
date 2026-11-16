@@ -5,7 +5,7 @@ import { shownTabs } from '../hooks/tabs'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('the pane footer shows the version from the plugin manifest', async ($, on) => {
+test('the terminal footer draws Help as a question mark, and Help names the version from the plugin manifest', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -13,10 +13,41 @@ test('the pane footer shows the version from the plugin manifest', async ($, on)
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: 'v1.2.3' })).toBeDefined()
+  expect(await pane.find({ text: /v1\.2\.3/ })).toBeUndefined()
+  expect((await pane.find({ key: 'help' }))?.props.label).toBe('?')
+  await pane.press({ key: 'help' })
+  expect(await pane.find({ text: 'Inbox v1.2.3' })).toBeDefined()
+  expect((await pane.find({ key: 'help' }))?.props.label).toBe('✕ Close help')
 })
 
-test('the pane footer marks a build that follows the next branch', async ($, on) => {
+test('Help draws the same page over every tab, and switching tabs closes it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.surfaces = ['desktop']
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 69 } })
+  const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  const helpTexts = async () => {
+    await pane.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'help-toggle' })
+    await clock.settle()
+    return (await pane.findAll({ type: 'Text' })).map(t => t.text)
+  }
+  const { tabs, shown } = await tabBar()
+  expect(shown).toBe('needsYou')
+  const firstHelp = await helpTexts()
+  expect(firstHelp.length).toBeGreaterThan(10)
+  await pane.pointer({ type: 'down', x: 1, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect((await tabBar()).shown).toBe(tabs[0]!.id)
+  expect((await tabBar()).isHelpShown).toBe(false)
+  expect(await pane.find({ key: 'help' })).toBeUndefined()
+  expect(await helpTexts()).toEqual(firstHelp)
+  await pane.pointer({ type: 'down', x: 1, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect(await pane.find({ key: 'help' })).toBeUndefined()
+})
+
+test('Help marks a build that follows the next branch', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -25,7 +56,23 @@ test('the pane footer marks a build that follows the next branch', async ($, on)
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: 'v1.2.3 · next' })).toBeDefined()
+  await pane.press({ key: 'help' })
+  expect(await pane.find({ text: 'Inbox v1.2.3 · next' })).toBeDefined()
+})
+
+test('the desktop footer draws Help as a named icon that takes a click anywhere on it, and Help names the version', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.surfaces = ['desktop']
+
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 69 } })
+  expect((await pane.find({ type: 'Svg' }))?.props.alt).toBe('Help')
+  expect(await pane.find({ key: 'help' })).toBeUndefined()
+  await pane.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'help-toggle' })
+  await clock.settle()
+  expect(await pane.find({ text: 'Inbox v1.2.3' })).toBeDefined()
+  expect((await pane.find({ key: 'help' }))?.props.label).toBe('✕ Close help')
 })
 
 test('/inbox opens on the tab that has rows when the tab it would show is empty', async ($, on) => {

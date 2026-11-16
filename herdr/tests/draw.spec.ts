@@ -14,6 +14,7 @@ import { agedText } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { readSession } from '../src/files'
+import { helpBlocks } from '../src/draw-help'
 import { NO_LINES_ABOVE, holdLinesAbove } from '../src/held-line'
 import { keyMove } from '../src/keys'
 import { screenOf } from '../src/screen'
@@ -382,4 +383,19 @@ test('a held line that ends with its age keeps counting it', () => {
   const later = holdLinesAbove([sending], first.held, NOW + 60_000)
   expect(rowsOf(later.blocks)[0]?.heldLine?.text).toBe(agedText(aged, NOW + 60_000))
   expect(agedText(aged, NOW + 60_000)).not.toBe(agedText(aged, NOW))
+})
+
+test('Help names the build the host published, with the next-build mark, and names none for a file without one', () => {
+  const o = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW }, queue: { outs: [], notes: {}, lines: {} } }
+  const followed: Followed = { is: 'session', terminal: 't1', sessionId: 's1' }
+  const helpVersionOf = (overrides: Record<string, unknown>) => {
+    const screen = screenOf(followed, readSession(demoEnvelopeText(overrides)), uiOn('needsYou'), o)
+
+    return screen.is === 'inbox' ? screen.helpVersion : 'no inbox'
+  }
+  expect(helpVersionOf({ version: '1.2.3' })).toBe('Inbox v1.2.3')
+  expect(helpVersionOf({ version: '1.2.3', isNextBuild: true })).toBe('Inbox v1.2.3 · next')
+  expect(helpVersionOf({})).toBeNull()
+  expect(helpBlocks('Inbox v1.2.3').at(-1)).toMatchObject({ does: 'Inbox v1.2.3' })
+  expect(helpBlocks(null).some(b => b.kind === 'status' && b.id === 'help version')).toBe(false)
 })

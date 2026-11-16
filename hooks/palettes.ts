@@ -11,6 +11,7 @@ import {
   LIGHT_TONES,
   MUTED_TEXT,
   THEME_BACKGROUND,
+  THEME_TEXT,
 } from './tones'
 
 const NEEDS_YOU = 'warning'
@@ -44,6 +45,8 @@ type Palette = {
   mark: Record<Tone, string>
   /** The background a palette of hex colors is drawn for, which a fade moves toward. Theme keys have none. */
   under?: string
+  /** The text color of a palette of hex colors, which a title's tint fades toward. */
+  text?: string
   /** A banner's border, and its fill where the palette can tint one. */
   banner: Record<BannerTone, { line: string; fill?: string }>
 }
@@ -57,6 +60,7 @@ const THEME_KEY_BANNERS: Palette['banner'] = {
 }
 const DARK_PALETTE: Palette = {
   under: THEME_BACKGROUND.dark,
+  text: THEME_TEXT.dark,
   card: '#373737',
   tab: '#373737',
   raised: '#4c4c4c',
@@ -73,6 +77,7 @@ const DARK_PALETTE: Palette = {
 }
 const LIGHT_PALETTE: Palette = {
   under: THEME_BACKGROUND.light,
+  text: THEME_TEXT.light,
   card: '#e6e6e6',
   tab: '#e6e6e6',
   raised: '#d0d0d0',

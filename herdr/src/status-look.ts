@@ -16,6 +16,10 @@ import type { QueueIo } from './press-queue'
 
 /** How often the look checks whether its Status is on screen. A look ends at the last check that found it shown. */
 export const LOOK_TICK_MS = 1_000
+/** How often the look reads its session again when no folder change came, and how long it waits to watch again. */
+export const REREAD_MS = 10_000
+/** Ages read in minutes, so the look draws again each minute. */
+export const AGE_TICK_MS = 60_000
 
 /** A check this long after the last one ends the look at the last one, as when the Mac slept with the Status shown. */
 const LOOK_GAP_MS = 3 * LOOK_TICK_MS

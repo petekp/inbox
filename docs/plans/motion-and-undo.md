@@ -71,7 +71,7 @@ Pressing Undo:
 The pane is drawn through the engine's elements, which have no opacity, transform or CSS. Fast redraws from the hooks module break clicks, as issue #100924 records. So the pane gets:
 
 - **Now:** the outcome colors above. Green only for Done and answers. The terminal pane shares this code, so its settled rows change the same way.
-- **The countdown:** Undo is an Svg pill whose fill drains on its own over the time Undo has left, so the pane does not redraw. `hooks/undo-client.tsx` lies over it and takes the click.
+- **The countdown:** Undo is an Svg pill whose fill drains on its own over the time Undo has left, so the pane does not redraw. `hooks/press-client.tsx` lies over it and takes the click.
 
 ## Checks
 

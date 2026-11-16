@@ -379,27 +379,21 @@ textarea {
   border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
   border-radius: 10px;
 }
-.row:has(> .new-bar),
-.row:has(> .settled-bar) {
-  position: relative;
+@property --tint {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
 }
-.new-bar,
-.settled-bar {
-  position: absolute;
-  left: calc(var(--mark-x) - 9px);
-  top: calc(var(--row-pad) - 2px);
-  width: 3px;
-  height: calc(1lh + 4px);
-  border-radius: 2px;
-  background-color: var(--key);
-  pointer-events: none;
+.title-tint {
+  --tone: var(--key);
+  color: color-mix(in oklab, var(--tone) var(--tint), currentcolor);
 }
-.settled-bar.done {
-  background-color: var(--done);
+.title-tint.done {
+  --tone: var(--done);
 }
-.settled-bar.muted {
-  background-color: var(--muted);
+.title-tint.muted {
+  --tone: var(--muted);
 }
-.settled-bar.error {
-  background-color: var(--error-mark);
+.title-tint.error {
+  --tone: var(--error-mark);
 }

@@ -1,4 +1,5 @@
-import type { ComponentChildren } from 'preact'
+import type { ComponentChildren, ComponentProps } from 'preact'
+import { TitleTint } from './tab-title-tint'
 import { ActionButton, Icon } from './row-actions'
 import { mutedMarkShape } from '../../hooks/marks'
 import { DOT, rowMark } from '../../hooks/rows'
@@ -90,10 +91,22 @@ export function MarkGlyph({ text }: { text: string }) {
   )
 }
 
-export function ResultMarkView({ mark }: { mark: ResultMark }) {
+export function ResultMarkView({
+  mark,
+  tint,
+}: {
+  mark: ResultMark
+  tint?: Omit<ComponentProps<typeof TitleTint>, 'children'>
+}) {
   return (
     <span class={mark.isRunning ? 'mark running' : 'mark'} ref={mark.isRunning ? pulseInStep : undefined}>
-      <MarkGlyph text={mark.text} />
+      {tint ? (
+        <TitleTint {...tint}>
+          <MarkGlyph text={mark.text} />
+        </TitleTint>
+      ) : (
+        <MarkGlyph text={mark.text} />
+      )}
     </span>
   )
 }

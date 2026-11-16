@@ -204,7 +204,7 @@ export function paneRowLines({
       text.slice(at + doneMark.length),
     ]
   }
-  const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
+  const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number, titleColor?: string) => {
     const line = closedLine(row)
     const before = line.before?.length ?? 0
     const side = isAgeInSide ? TERMINAL_SIDE_CELLS : 0
@@ -232,6 +232,14 @@ export function paneRowLines({
         : line.after
     const hover = second ? { hover: { scope: `title-${row.id}`.slice(0, 64), inverse: true } } : {}
     const holdsUpLine = holdsUpLineOf(row.view)
+    const titleButton = (key: string, label: string) =>
+      titleColor ? (
+        <Button plain key={key} {...hover} onPress={onPress}>
+          <Text color={titleColor}>{label}</Text>
+        </Button>
+      ) : (
+        <Button plain key={key} label={label} {...hover} onPress={onPress} />
+      )
 
     return (
       <Box flexDirection="column">
@@ -241,20 +249,14 @@ export function paneRowLines({
               <Text color={pal.muted}>{line.before}</Text>
             </Box>
           ) : null}
-          <Box flexShrink={0}>
-            <Button plain key={`title-${row.id}`} label={first} {...hover} onPress={onPress} />
-          </Box>
+          <Box flexShrink={0}>{titleButton(`title-${row.id}`, first)}</Box>
           {after ? (
             <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
               {withDoneMark(after, line.afterDoneMark)}
             </Text>
           ) : null}
         </Box>
-        {second ? (
-          <Box paddingLeft={line.before?.length ?? 0}>
-            <Button plain key={`title-${row.id}-2`} label={second} {...hover} onPress={onPress} />
-          </Box>
-        ) : null}
+        {second ? <Box paddingLeft={line.before?.length ?? 0}>{titleButton(`title-${row.id}-2`, second)}</Box> : null}
         {meta ? (
           <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
             {withDoneMark(meta, line.afterDoneMark)}
@@ -288,19 +290,19 @@ export function paneRowLines({
     svgCell(runningSvg(now, svgColorsOf(color)), glyph, `${id}-mark`, RUNNING_SVG_CELLS) ?? (
       <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
     )
-  const toned = (row: Row) => {
+  const toned = (row: Row, tint?: string) => {
     if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
     const isMutedHandle = !!row.handle && !row.handleTone && !row.isHandleRunning
-    if (isMutedHandle) return markGlyph({ text: row.handle, isRunning: false }, `handle-${row.id}`, pal.muted)
+    if (isMutedHandle) return markGlyph({ text: row.handle, isRunning: false }, `handle-${row.id}`, tint ?? pal.muted)
     if (ToneSvg === null || !row.handle || !row.handleTone) return null
-    return svgCell(toneSvg(row.handleTone, row.handle), row.handle)
+    return svgCell(toneSvg(row.handleTone, row.handle, tint), row.handle)
   }
   const sideAge = (row: Row) => {
     const f = row.view ? row.view.feedback : feedbackOf(row.id, lastActions[row.id], notes[row.id], turns, now)
     const at = f && hasAge(f) ? f.at : row.at
     return at === undefined ? '' : shortAgo(now - at)
   }
-  const rowClientProps = (row: Row, textColumnPt: number): RowProps => {
+  const rowClientProps = (row: Row, textColumnPt: number, titleColor?: string): RowProps => {
     const f = feedbackLabel(row.id, row)
     const before = row.line?.before ?? ''
     const text = (row.line?.text ?? row.title).trim()
@@ -313,6 +315,7 @@ export function paneRowLines({
       sideCells: DESKTOP_SIDE_CELLS,
       before,
       title: titleSpans.map(s => s.text).join(''),
+      titleColor: titleColor ?? null,
       after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
       note: holdsUpLineOf(row.view) ?? '',
       side: sideAge(row),

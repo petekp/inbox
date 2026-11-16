@@ -56,7 +56,7 @@ import type { Tracks } from './motion'
 import { Heights } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws, timeLeftNextAt } from './time-left'
-import { newRowsNextAt } from './paint-new-bar'
+import { titleTintNextAt } from './paint-title-tint'
 import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
@@ -68,12 +68,7 @@ import type { PressTarget } from './press-queue'
 import { herdrIo } from './io'
 import { runHere } from './run-here'
 import { screenOf } from './screen'
-import { LOOK_TICK_MS, StatusLook, isPaneShown, statusDrawn, writeLook } from './status-look'
-
-/** How often the look reads its session again when no folder change came, and how long it waits to watch again. */
-const REREAD_MS = 10_000
-/** Ages read in minutes, so the look draws again each minute. */
-const AGE_TICK_MS = 60_000
+import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, StatusLook, isPaneShown, statusDrawn, writeLook } from './status-look'
 
 type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; queue: PressQueue }
 
@@ -221,6 +216,14 @@ export default class Inbox extends View {
   change(c: ViewChange): void {
     if ('toggleHelp' in c) this.isHelpShown = !this.isHelpShown
     else this.ui = withChange(this.ui, c)
+    if ('showAsk' in c) this.isHelpShown = false
+    this.closeStaleField()
+  }
+
+  /** Shows `tab` and closes Help, which draws the same page over any tab. */
+  showTab(tab: ShownTab): void {
+    this.ui = withTab(this.ui, tab)
+    this.isHelpShown = false
     this.closeStaleField()
   }
 
@@ -354,7 +357,7 @@ export default class Inbox extends View {
     const move = keyMove(key, tabs, blocks, this.ui.typing, undo)
     if (move === null) return
     if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
-    else if (move.is === 'tab') this.ui = withTab(this.ui, move.tab)
+    else if (move.is === 'tab') this.showTab(move.tab)
     else if (move.is === 'select') this.ui = withSelected(this.ui, move.id)
     else if (move.is === 'collapse') this.collapse(move.id, move.isCollapsed, cx)
     else if (move.is === 'press') return this.press(move.button, cx)
@@ -408,8 +411,7 @@ export default class Inbox extends View {
         cx.notify()
       },
       pick: (tab: ShownTab, cx) => {
-        this.ui = withTab(this.ui, tab)
-        this.closeStaleField()
+        this.showTab(tab)
         cx.notify()
       },
       motion: new Map(),
@@ -420,6 +422,7 @@ export default class Inbox extends View {
       },
       now,
       newRows: this.ui.newRows,
+      closedSeen: this.ui.closedSeen,
       tab: this.ui.tab,
       timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
@@ -441,8 +444,7 @@ export default class Inbox extends View {
       this.look.drew(null, now)
       return root.child(messageEl(screen.message, t))
     }
-    const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
-    const shown = this.isHelpShown ? helpBlocks(this.ui.tab, hasStatusButtons) : screen.blocks
+    const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
     const moved = moveRows(held.blocks, this.tracks, now, isFirst)
@@ -456,7 +458,10 @@ export default class Inbox extends View {
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
     const nextFrame = isStarting ? now + NEXT_FRAME_MS : null
-    const timed = earliestOf([timeLeftNextAt(moved.blocks, now), newRowsNextAt(this.ui.newRows, now)])
+    const timed = earliestOf([
+      timeLeftNextAt(moved.blocks, now),
+      titleTintNextAt(this.ui.newRows, moved.blocks, this.ui.closedSeen, now),
+    ])
     const wakeAt = [nextFrame, moved.nextAt, screen.foldAt, screen.undoPlaceEndsAt, screen.timedChangeAt, timed].filter(
       at => at !== null,
     )

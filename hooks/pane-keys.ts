@@ -9,6 +9,8 @@ import { UNDO_KEY } from './help'
 export function focusHintFor(element: string): string | null {
   return element.startsWith('typekey-') ? `type-${element.slice('typekey-'.length)}` : null
 }
+/** The key of the desktop Help icon's click region, which `ui.message` reads as a press of Help. */
+export const HELP_TOGGLE = 'help-toggle'
 export const followUpPresses = new Map<string, (press: UiPressArgument) => void>()
 
 export function focusKeys(node: unknown, keys = new Set<string>()): Set<string> {

@@ -95,7 +95,7 @@ export type RowBlock = {
   feedback: { text: string; tone: Tone; source: Feedback | null; aged?: Aged } | null
   /** Shown once the row has closed, until it folds. */
   /** `bar` is the tone of the bar at the row's left edge, or null for a PR, which draws none. */
-  settled: { label: string; tone: Tone; bar: 'done' | 'muted' | 'error' | null } | null
+  settled: { label: string; tone: Tone; tint: 'done' | 'muted' | 'error' | null; at: number } | null
   isDim: boolean
   /** Whether the person can select it to see its body and buttons. */
   isSelectable: boolean
@@ -152,6 +152,11 @@ export type StatusLine = {
   /** A child or a plain line, or a milestone that waits or was dropped, whose name draws quiet. */
   isMuted: boolean
   stall: { text: string; tone: StatusStall['tone'] } | null
+  /**
+   * A Help line's words, in the column that starts after `HELP_COLUMN`. The left column holds the line's key, in `name`, or
+   * its mark, or nothing for the version line. Such a line has nothing under it.
+   */
+  does?: string
   /** A milestone's "now" or "next", muted at the right of its name's line where the name and it fit on one line. */
   word?: string
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */

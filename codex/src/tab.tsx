@@ -1,7 +1,7 @@
 import { render } from 'preact'
 import type { ComponentChildren } from 'preact'
-import { COLLAPSE_KEY, HELP_COPY, UNDO_KEY } from '../../hooks/help'
-import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
+import { COLLAPSE_KEY, HELP_COPY, helpVersionText, UNDO_KEY } from '../../hooks/help'
+import { DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { steppedIndex } from '../../hooks/action-plan'
 import { tabState, handoff, root, instanceAbort } from './tab-state'
@@ -22,7 +22,7 @@ import { NeedsYou, Findings } from './tab-groups'
 import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
 import { pressUndoKey } from './undo-key'
-import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
+import { HelpIcon, HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
 
 let isLoadingShown = false
 let initializing: Promise<boolean> | null = null
@@ -63,7 +63,7 @@ function App({
       ) : null}
       <TabBar v={v} />
       {tabState.isHelpShown ? (
-        <HelpPage />
+        <HelpPage version={helpVersionText(VERSION, v.isNextBuild === true)} />
       ) : shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
       ) : shown === 'findings' ? (
@@ -79,14 +79,15 @@ function App({
         <button
           type="button"
           class="help-toggle"
-          title={`${HELP_COPY.open} (?)`}
+          title={`${HELP_COPY.name} (?)`}
+          aria-label={tabState.isHelpShown ? HELP_COPY.close : HELP_COPY.name}
           aria-pressed={tabState.isHelpShown}
           onClick={() => {
             tabState.isHelpShown = !tabState.isHelpShown
             draw()
           }}
         >
-          {tabState.isHelpShown ? HELP_COPY.close : HELP_COPY.open}
+          {tabState.isHelpShown ? HELP_COPY.close : <HelpIcon />}
         </button>
         {tabState.isDemo || !DEMO_BUTTON ? null : (
           <button type="button" class="demo-toggle" onClick={() => void toggleDemo()}>
@@ -95,7 +96,6 @@ function App({
         )}
         <div class="footer-end">
           <Status v={v} />
-          <span class="version">{versionLabel(VERSION, v.isNextBuild === true)}</span>
         </div>
       </footer>
     </>
