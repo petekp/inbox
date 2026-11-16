@@ -61,6 +61,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/session-view.ts` | Shared view. Carries derived task warnings, task progress segments, and stalled markers for task and feed rows to each look beside the PR and Status views. |
 | `hooks/saved-check-keys.ts` | Shared module. `withCheckKeys`, which `upgradeSession` runs to rename the checks an earlier build saved by name alone, in last actions, sent rows and a PR order's recorded statuses, to each check's `checkKey`. |
 | `hooks/session-turns.ts` | Shared module. A turn's start and end, each prompt and the press that sent it, turn activity, and what a shell command's output shows. `endTurn` queues the turn's exchange, and `applied` applies the ledger call's answer to it. |
+| `hooks/task-reminder.ts` | Shared module. The per-turn 24-tool-call reminder: its threshold and text, saved counter and eligibility flag, and reset and count operations. |
 | `hooks/session-status.ts` | Shared module. Saving the Status call's answer or why it failed, and when a running turn's Status call is due. Whether an update or a catch-up is due, and `appliedCatchUp`, which applies a catch-up's answer. A forked conversation's ledger, and when a look at the Status starts and ends. |
 | `hooks/session-presses.ts` | Shared module. Applies presses and tool calls to a session, holds rows in place, prunes PR views and merges fetched PRs. |
 | `hooks/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including the PRs tab. `showsRunningMark` says whether a text look draws a running mark. |
@@ -74,7 +75,6 @@ Part of [the look map](../looks.md#files).
 | `hooks/host-prs.ts` | Shared module. `fetchPrs`, which fetches tracked PRs, account-wide PRs and bounded task-linked PR states through the host's gh, reads the views and shared limit, and stops under a limit until it resets, and `isPrFetchDue` and `prFetchTracker`, which say when to fetch again. |
 | `hooks/pr-query.ts` | Shared module. The GraphQL queries that read tracked PRs and task-linked PR states, and how answers are read: `readPrsAnswer` finds each PR's node or its own error, `readPrNode` makes a view of a node, `runFailureOf` says why a whole gh run gave no PRs, and `limitResetOf` reads when GitHub's limit resets. |
 | `hooks/pr-refresh.ts` | Shared module. The top of the PRs tab after a fetch that could not read every PR: the notice for a cause that stopped the whole fetch, `refreshProblem`, why the PRs are not all current, and `prRefreshView`, the line with Refresh PRs and its press status. |
-| `hooks/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. `branchIn` reads a folder's git branch over the same runner. |
 | `hooks/band.ts` | Shared module. The band's counts, whether the rows may be missing some, and what the band reads with no counts: "Nothing needed" or "May be out of date". |
 | `hooks/text.ts` | Shared module. Clipping, code-block formatting, relative ages and a turn's reply. |
 | `hooks/prs.ts` | Shared module. PR parsing, readiness and prompts. |

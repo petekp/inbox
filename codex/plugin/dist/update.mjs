@@ -2548,6 +2548,18 @@ function withCheckKeys(s, views) {
   };
 }
 
+// ../hooks/task-reminder.ts
+var TASK_REMINDER_THRESHOLD = 24;
+var NO_TASK_REMINDER = { callsSinceTasks: 0, hasUsedTasks: false };
+function taskReminderState(value) {
+  if (!value || typeof value !== "object") return NO_TASK_REMINDER;
+  const saved = value;
+  return {
+    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0,
+    hasUsedTasks: saved.hasUsedTasks === true
+  };
+}
+
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
@@ -2563,6 +2575,7 @@ function emptySession() {
     taskOwnerFactCheckedAt: null,
     taskOwnerFactCursor: null,
     taskPrFactCursor: null,
+    taskReminder: NO_TASK_REMINDER,
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -2640,6 +2653,7 @@ function sessionFields(saved, views) {
     taskOwnerFactCheckedAt: Number.isFinite(saved.taskOwnerFactCheckedAt) && saved.taskOwnerFactCheckedAt >= 0 ? saved.taskOwnerFactCheckedAt : null,
     taskOwnerFactCursor: typeof saved.taskOwnerFactCursor === "string" && saved.taskOwnerFactCursor.length <= 256 ? saved.taskOwnerFactCursor : null,
     taskPrFactCursor: saved.taskPrFactCursor ?? null,
+    taskReminder: taskReminderState(saved.taskReminder),
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },

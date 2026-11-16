@@ -3,6 +3,7 @@ import { symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { guidanceText } from '../../hooks/model-text'
+import { TASK_REMINDER_TEXT } from '../../hooks/task-reminder'
 import { createInbox } from '../src/host'
 import { readState } from '../src/state'
 import { OMP } from '../src/texts'
@@ -187,6 +188,25 @@ test('only bash, edit and write calls that ran become turn activity', async () =
     'edited /work/a.ts',
     'edited /work/b.ts',
   ])
+})
+
+test('24 main-agent tool results queue one hidden task reminder', async () => {
+  createInbox(pi(), deps())
+  await prompt('Continue the work')
+  const task = w.tools.get('tasks')
+  await task.execute(
+    'call',
+    { operation: 'add', task_id: 't1', title: 'Finish the work' },
+    undefined,
+    undefined,
+    makeCtx(),
+  )
+  await call('tool_result', { toolName: 'tasks', input: { operation: 'add' } })
+
+  for (let i = 0; i < 24; i++) await call('tool_result', { toolName: 'read', input: {} })
+
+  expect(w.hidden.filter(message => message.content === TASK_REMINDER_TEXT)).toHaveLength(1)
+  expect(w.hidden.at(-1)?.options).toEqual({ deliverAs: 'nextTurn' })
 })
 
 test('a bash result notes local URLs it printed and links the PR gh pr create names', async () => {

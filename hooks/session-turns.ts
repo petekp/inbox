@@ -14,6 +14,7 @@ import { withArrival, withUnconfirmed } from './press-reducer'
 import { prRefs } from './prs'
 import type { Exchange, Ledger, Press, Session } from '../types'
 import { NO_TURN } from './session-files'
+import { resetTaskReminderTurn } from './task-reminder'
 
 /**
  * A resumed conversation still holds the guidance from
@@ -162,7 +163,12 @@ export function placed<S extends Session>(s: S, folder: string, branch: string |
 
 /** Counts a turn that started, and clears the stop the last turn ended with. */
 export function startTurn<S extends Session>(s: S): S {
-  return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null }
+  return {
+    ...s,
+    taskReminder: resetTaskReminderTurn(s.taskReminder),
+    presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 },
+    stop: null,
+  }
 }
 
 /**

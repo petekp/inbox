@@ -1,9 +1,6 @@
-import type { ClientId, FeatureId } from './clients'
+import type { ClientId, ClientSupport } from './clients'
 
-type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
-type Client = { support: Record<FeatureId, Support> }
-
-export const CLIENTS: Record<ClientId, Client> = {
+export const CLIENTS: Record<ClientId, ClientSupport> = {
   'claude-code': {
     support: {
       'catch-up': { kind: 'full' },
@@ -100,6 +97,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'record-link-guard': { kind: 'full' },
       'task-pr-facts': { kind: 'full' },
       'task-owner-facts': { kind: 'full' },
+      'task-reminder': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },
@@ -279,6 +277,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'record-link-guard': { kind: 'full' },
       'task-pr-facts': { kind: 'full' },
       'task-owner-facts': { kind: 'full' },
+      'task-reminder': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },
@@ -403,6 +402,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'record-link-guard': { kind: 'full' },
       'task-pr-facts': { kind: 'full' },
       'task-owner-facts': { kind: 'full' },
+      'task-reminder': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },

@@ -1,4 +1,4 @@
-import type { Away, DemoCopy, LastAction, Session } from '../types'
+import type { Away, DemoCopy, LastAction, RowNote, Session } from '../types'
 import { emptySession, upgradeSession, type SavedSession } from './session-files'
 import { sessionToolFields, TOOL_FIELDS } from './tool-schemas'
 import { recorded } from './session-presses'
@@ -7,6 +7,9 @@ import type { AgentTool } from './tools'
 import { exclusiveKeys, orderedKeys } from './session-host'
 import { withDemoPresence } from './demo'
 import { taskTreeFromStatus } from './task-tree'
+import { sessionView, type SessionView } from './session-view'
+import type { Holds } from './timing'
+import { taskReminderSession } from './task-reminder'
 
 /** The drawn conversation's session. `revision` counts its writes, so a write computed from an older one is retried. */
 export type ModSession = Session & { revision: number }
@@ -53,7 +56,7 @@ export const updating = exclusiveKeys()
  * The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows,
  * and the sample's place and presence.
  */
-export function drawnSession(
+function drawnSession(
   session: Session,
   drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
   isDemo: boolean,
@@ -67,6 +70,35 @@ export function drawnSession(
   }
 
   return isDemo ? withDemoPresence(s, now) : s
+}
+
+/** Builds the view state after the mod has read the engine-owned values. */
+export function drawnState(
+  session: Session,
+  notes: Record<string, RowNote>,
+  demo: DemoCopy | null,
+  isDemoRecording: boolean,
+  unreadable: string | null,
+  conversationId: string,
+  now: number,
+  holds: Holds,
+  settleWindowMs: number,
+): DemoCopy & { view: SessionView; isDemo: boolean; showsDemoNotices: boolean; isUnread: boolean; now: number } {
+  const { ledger, stop, prViews, lastActions, presence } = session
+  const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
+  const drawn: DemoCopy = demo ?? { ledger, stop, prViews, lastActions, notes, turns }
+  const isUnread = demo === null && unreadable === conversationId
+  const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, settleWindowMs, holds, drawn.notes)
+
+  return {
+    ...drawn,
+    lastActions: view.lastActions,
+    view,
+    isDemo: demo !== null,
+    showsDemoNotices: demo !== null && !isDemoRecording,
+    isUnread,
+    now,
+  }
 }
 
 /** The `CLAUDE_CODE_ENTRYPOINT` values the desktop app gives the Claude Code sessions it starts. */
@@ -83,10 +115,24 @@ export function withoutRowActions(lastActions: Record<string, LastAction>): Reco
 }
 
 /** The mod's answer to an inbox tool call in `s`, which asks only for fields the conversation's agent has. */
-export function answerToolCall(s: Session, tool: AgentTool, input: Record<string, unknown>, now: number) {
+function answerToolCall(s: Session, tool: AgentTool, input: Record<string, unknown>, now: number) {
   const answer = recorded(CLAUDE_CODE, s, tool, input, now, sessionToolFields(s))
 
   return { ...answer, changedSavedState: hasSavedChange(s, answer.state) }
+}
+
+export function answerToolCallWithReminder(
+  s: Session,
+  tool: AgentTool,
+  input: Record<string, unknown>,
+  now: number,
+  isMainAgent: boolean,
+  isTasksCall: boolean,
+) {
+  const answer = answerToolCall(s, tool, input, now)
+  const counted = taskReminderSession(answer.state, isMainAgent, isTasksCall)
+
+  return { ...answer, state: counted.session, reminder: counted.reminder }
 }
 
 /** How the mod came to load a conversation: as the mod started, or after /clear, /resume or a fork in the session. */

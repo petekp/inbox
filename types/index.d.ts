@@ -759,6 +759,8 @@ export type Session = {
   taskOwnerFactCursor: string | null
   /** Last linked task PR checked when a poll is bounded to a subset. */
   taskPrFactCursor: string | null
+  /** Main-agent tool calls since the last tasks call or turn start, and whether tasks was used in this session. */
+  taskReminder: { callsSinceTasks: number; hasUsedTasks: boolean }
   /** What the turn running now gathered for the per-reply update. */
   turn: {
     person: string | null

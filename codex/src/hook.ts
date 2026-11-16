@@ -41,6 +41,7 @@ import { rolloutReads, rolloutTail } from './transcript'
 import { applyFeedFiles } from '../../hooks/feed'
 import { readFeedFiles } from '../../feed-reader'
 import { resolveInboxFeedPath } from '../../hooks/feed-path'
+import { taskReminderAfterToolCall } from '../../hooks/task-reminder'
 
 export type HookInput = {
   hook_event_name: string
@@ -230,6 +231,21 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       if (isClaimed) deps.startStatusRefresh(id)
 
       return null
+    }
+    case 'PostToolUse': {
+      if (input.agent_id) return null
+      let reminder: string | null = null
+      await write(s => {
+        const next = taskReminderAfterToolCall(s.taskReminder, {
+          isMainAgent: true,
+          isTasksCall: input.tool_name === 'mcp__inbox__tasks',
+          hasTaskTree: s.taskTree.length > 0,
+        })
+        reminder = next.reminder
+        return next.state === s.taskReminder ? s : { ...s, taskReminder: next.state }
+      })
+
+      return reminder ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: reminder } } : null
     }
     case 'SubagentStart': {
       const ref = input.agent_id

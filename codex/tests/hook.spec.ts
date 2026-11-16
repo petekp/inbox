@@ -11,6 +11,7 @@ import { viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
 import { readState, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
+import { TASK_REMINDER_TEXT } from '../../hooks/task-reminder'
 import { hookDeps, input, tempDir } from './helpers'
 
 test('the Codex MCP server receives feed and Herdr identity variables', () => {
@@ -56,6 +57,29 @@ test('a session starts with the guidance, records the prompt, and ends the turn 
   assert.equal(ended.pending[0]?.ex.person, 'Run the tests')
   assert.equal(ended.pending[0]?.ex.reply, 'All tests pass.')
   assert.deepEqual(deps.updates, ['s1'])
+})
+
+test('PostToolUse gives the main agent one reminder after 24 calls, and ignores subagent calls', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await handleHook(input('UserPromptSubmit', { prompt: 'Continue the work', turn_id: 't1' }), deps)
+  await updateState(dir, 's1', s => ({ ...s, taskReminder: { callsSinceTasks: 0, hasUsedTasks: true } }))
+
+  for (let i = 0; i < 5; i++)
+    await handleHook(input('PostToolUse', { tool_name: 'Read', agent_id: 'subagent-1' }), deps)
+  assert.equal((await readState(dir, 's1')).taskReminder.callsSinceTasks, 0)
+
+  const reminders: string[] = []
+  for (let i = 0; i < 24; i++) {
+    const result = await handleHook(input('PostToolUse', { tool_name: 'Read' }), deps)
+    const context = (result as { hookSpecificOutput?: { additionalContext?: string } } | null)?.hookSpecificOutput
+      ?.additionalContext
+    if (context) reminders.push(context)
+  }
+
+  assert.deepEqual(reminders, [TASK_REMINDER_TEXT])
+  assert.equal((await readState(dir, 's1')).taskReminder.callsSinceTasks, 0)
 })
 
 test('a Codex hook applies the configured progress feed to the session ledger', async () => {

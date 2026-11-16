@@ -5196,6 +5196,35 @@ function withCheckKeys(s, views) {
   };
 }
 
+// ../hooks/task-reminder.ts
+var TASK_REMINDER_THRESHOLD = 24;
+var TASK_REMINDER_TEXT = "You have made 24 tool calls since this turn began or your last tasks call. Update your task tree if your plan or progress changed.";
+var NO_TASK_REMINDER = { callsSinceTasks: 0, hasUsedTasks: false };
+function taskReminderState(value) {
+  if (!value || typeof value !== "object")
+    return NO_TASK_REMINDER;
+  const saved = value;
+  return {
+    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0,
+    hasUsedTasks: saved.hasUsedTasks === true
+  };
+}
+function resetTaskReminderTurn(state) {
+  return state.callsSinceTasks === 0 ? state : { ...state, callsSinceTasks: 0 };
+}
+function taskReminderAfterToolCall(state, options) {
+  if (!options.isMainAgent)
+    return { state, reminder: null };
+  if (options.isTasksCall)
+    return { state: { callsSinceTasks: 0, hasUsedTasks: true }, reminder: null };
+  const callsSinceTasks = Math.min(TASK_REMINDER_THRESHOLD, state.callsSinceTasks + 1);
+  const shouldRemind = callsSinceTasks === TASK_REMINDER_THRESHOLD && (options.hasTaskTree || state.hasUsedTasks);
+  return {
+    state: { ...state, callsSinceTasks: shouldRemind ? 0 : callsSinceTasks },
+    reminder: shouldRemind ? TASK_REMINDER_TEXT : null
+  };
+}
+
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
@@ -5211,6 +5240,7 @@ function emptySession() {
     taskOwnerFactCheckedAt: null,
     taskOwnerFactCursor: null,
     taskPrFactCursor: null,
+    taskReminder: NO_TASK_REMINDER,
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -5290,6 +5320,7 @@ function sessionFields(saved, views) {
     taskOwnerFactCheckedAt: Number.isFinite(saved.taskOwnerFactCheckedAt) && saved.taskOwnerFactCheckedAt >= 0 ? saved.taskOwnerFactCheckedAt : null,
     taskOwnerFactCursor: typeof saved.taskOwnerFactCursor === "string" && saved.taskOwnerFactCursor.length <= 256 ? saved.taskOwnerFactCursor : null,
     taskPrFactCursor: saved.taskPrFactCursor ?? null,
+    taskReminder: taskReminderState(saved.taskReminder),
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
@@ -10596,6 +10627,7 @@ var CLIENTS = {
       "record-link-guard": { kind: "full" },
       "task-pr-facts": { kind: "full" },
       "task-owner-facts": { kind: "full" },
+      "task-reminder": { kind: "full" },
       timeline: { kind: "full" }
     }
   },
@@ -10754,6 +10786,7 @@ var CLIENTS = {
       "record-link-guard": { kind: "full" },
       "task-pr-facts": { kind: "full" },
       "task-owner-facts": { kind: "full" },
+      "task-reminder": { kind: "full" },
       timeline: { kind: "full" }
     }
   },
@@ -10873,6 +10906,7 @@ var CLIENTS = {
       "record-link-guard": { kind: "full" },
       "task-pr-facts": { kind: "full" },
       "task-owner-facts": { kind: "full" },
+      "task-reminder": { kind: "full" },
       timeline: { kind: "full" }
     }
   }
@@ -11039,7 +11073,12 @@ function placed(s, folder, branch) {
   return isSame ? s : { ...s, place };
 }
 function startTurn(s) {
-  return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
+  return {
+    ...s,
+    taskReminder: resetTaskReminderTurn(s.taskReminder),
+    presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 },
+    stop: null
+  };
 }
 function recordPrompt(host, s, text, isOpen, sentBy) {
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
@@ -12356,22 +12395,29 @@ function activityHandlers(context, sessions) {
       return;
     });
   };
-  const noteQuietly = async (ctx, line) => {
-    if (!line)
-      return;
+  const noteQuietly = async (ctx, line, isTasksCall) => {
     let isClaimed = false;
+    let reminder = null;
     try {
       await change(sessionIdOf(ctx), (s) => {
-        const noted = noteActivity(s, line);
-        const claimed = claimedStatusRefresh(noted, deps.now());
+        const counted = taskReminderAfterToolCall(s.taskReminder, {
+          isMainAgent: true,
+          isTasksCall,
+          hasTaskTree: s.taskTree.length > 0
+        });
+        reminder = counted.reminder;
+        const withReminder = counted.state === s.taskReminder ? s : { ...s, taskReminder: counted.state };
+        const noted = line ? noteActivity(withReminder, line) : withReminder;
+        const claimed = line ? claimedStatusRefresh(noted, deps.now()) : noted;
         isClaimed = claimed !== noted;
         return claimed;
       });
     } catch {
-      return;
+      return null;
     }
     if (isClaimed)
       deps.background(refreshStatus(updateHostFor(ctx)));
+    return reminder;
   };
   const waits = new Map;
   const onToolExecutionStart = async (event, ctx) => {
@@ -12404,7 +12450,9 @@ function activityHandlers(context, sessions) {
     if (isUnattended(ctx))
       return;
     waits.delete(event.toolCallId);
-    await noteQuietly(ctx, activityOf(event.toolName, event.input));
+    const reminder = await noteQuietly(ctx, activityOf(event.toolName, event.input), event.toolName === "tasks");
+    if (reminder)
+      context.sendNotes([reminder]);
     if (event.toolName === "bash") {
       const command = event.input.command;
       if (typeof command !== "string")

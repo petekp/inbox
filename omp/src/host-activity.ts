@@ -19,6 +19,7 @@ import { isUnattended, sessionIdOf } from './host-context'
 import type { HostContext, OmpContext } from './host-context'
 import type { SessionCalls } from './host-sessions'
 import { textOfBlocks } from './omp-messages'
+import { taskReminderAfterToolCall } from '../../hooks/task-reminder'
 
 export function activityHandlers(context: HostContext, sessions: SessionCalls) {
   const { deps, memory } = context
@@ -53,20 +54,29 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
    * Notes the main agent's activity, and runs the Status call when the running turn is due one. Activity notes are
    * best effort, so a failed write never surfaces as an extension error.
    */
-  const noteQuietly = async (ctx: OmpContext, line: string | null) => {
-    if (!line) return
+  const noteQuietly = async (ctx: OmpContext, line: string | null, isTasksCall: boolean): Promise<string | null> => {
     let isClaimed = false
+    let reminder: string | null = null
     try {
       await change(sessionIdOf(ctx), s => {
-        const noted = noteActivity(s, line)
-        const claimed = claimedStatusRefresh(noted, deps.now())
+        const counted = taskReminderAfterToolCall(s.taskReminder, {
+          isMainAgent: true,
+          isTasksCall,
+          hasTaskTree: s.taskTree.length > 0,
+        })
+        reminder = counted.reminder
+        const withReminder = counted.state === s.taskReminder ? s : { ...s, taskReminder: counted.state }
+        const noted = line ? noteActivity(withReminder, line) : withReminder
+        const claimed = line ? claimedStatusRefresh(noted, deps.now()) : noted
         isClaimed = claimed !== noted
         return claimed
       })
     } catch {
-      return
+      return null
     }
     if (isClaimed) deps.background(refreshStatus(updateHostFor(ctx)))
+
+    return reminder
   }
 
   /** Each running bash call that waits on a delegate: its command, when it started, and the Status before it started. */
@@ -111,7 +121,8 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
   ) => {
     if (isUnattended(ctx)) return
     waits.delete(event.toolCallId)
-    await noteQuietly(ctx, activityOf(event.toolName, event.input))
+    const reminder = await noteQuietly(ctx, activityOf(event.toolName, event.input), event.toolName === 'tasks')
+    if (reminder) context.sendNotes([reminder])
     if (event.toolName === 'bash') {
       const command = (event.input as { command?: unknown }).command
       if (typeof command !== 'string') return

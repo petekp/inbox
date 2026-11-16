@@ -87,7 +87,11 @@ export type FeatureId =
   | 'record-link-guard'
   | 'task-pr-facts'
   | 'task-owner-facts'
+  | 'task-reminder'
   | 'timeline'
+
+type FeatureSupport = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
+export type ClientSupport = { support: Record<FeatureId, FeatureSupport> }
 
 export { CLIENTS } from './client-support'
 

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T08:40:26.033Z. 213139 characters follow.
+// Built at 2026-11-16T08:59:15.904Z. 213746 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2595,6 +2595,19 @@ function withCheckKeys(s, views) {
   };
 }
 
+// ../hooks/task-reminder.ts
+var TASK_REMINDER_THRESHOLD = 24;
+var NO_TASK_REMINDER = { callsSinceTasks: 0, hasUsedTasks: false };
+function taskReminderState(value) {
+  if (!value || typeof value !== "object")
+    return NO_TASK_REMINDER;
+  const saved = value;
+  return {
+    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0,
+    hasUsedTasks: saved.hasUsedTasks === true
+  };
+}
+
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
@@ -2610,6 +2623,7 @@ function emptySession() {
     taskOwnerFactCheckedAt: null,
     taskOwnerFactCursor: null,
     taskPrFactCursor: null,
+    taskReminder: NO_TASK_REMINDER,
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -2680,6 +2694,7 @@ function sessionFields(saved, views) {
     taskOwnerFactCheckedAt: Number.isFinite(saved.taskOwnerFactCheckedAt) && saved.taskOwnerFactCheckedAt >= 0 ? saved.taskOwnerFactCheckedAt : null,
     taskOwnerFactCursor: typeof saved.taskOwnerFactCursor === "string" && saved.taskOwnerFactCursor.length <= 256 ? saved.taskOwnerFactCursor : null,
     taskPrFactCursor: saved.taskPrFactCursor ?? null,
+    taskReminder: taskReminderState(saved.taskReminder),
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },

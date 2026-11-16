@@ -2091,6 +2091,32 @@ function withCheckKeys(s, views) {
   };
 }
 
+// ../hooks/task-reminder.ts
+var TASK_REMINDER_THRESHOLD = 24;
+var TASK_REMINDER_TEXT = "You have made 24 tool calls since this turn began or your last tasks call. Update your task tree if your plan or progress changed.";
+var NO_TASK_REMINDER = { callsSinceTasks: 0, hasUsedTasks: false };
+function taskReminderState(value) {
+  if (!value || typeof value !== "object") return NO_TASK_REMINDER;
+  const saved = value;
+  return {
+    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0,
+    hasUsedTasks: saved.hasUsedTasks === true
+  };
+}
+function resetTaskReminderTurn(state) {
+  return state.callsSinceTasks === 0 ? state : { ...state, callsSinceTasks: 0 };
+}
+function taskReminderAfterToolCall(state, options) {
+  if (!options.isMainAgent) return { state, reminder: null };
+  if (options.isTasksCall) return { state: { callsSinceTasks: 0, hasUsedTasks: true }, reminder: null };
+  const callsSinceTasks = Math.min(TASK_REMINDER_THRESHOLD, state.callsSinceTasks + 1);
+  const shouldRemind = callsSinceTasks === TASK_REMINDER_THRESHOLD && (options.hasTaskTree || state.hasUsedTasks);
+  return {
+    state: { ...state, callsSinceTasks: shouldRemind ? 0 : callsSinceTasks },
+    reminder: shouldRemind ? TASK_REMINDER_TEXT : null
+  };
+}
+
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
@@ -2106,6 +2132,7 @@ function emptySession() {
     taskOwnerFactCheckedAt: null,
     taskOwnerFactCursor: null,
     taskPrFactCursor: null,
+    taskReminder: NO_TASK_REMINDER,
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -2183,6 +2210,7 @@ function sessionFields(saved, views) {
     taskOwnerFactCheckedAt: Number.isFinite(saved.taskOwnerFactCheckedAt) && saved.taskOwnerFactCheckedAt >= 0 ? saved.taskOwnerFactCheckedAt : null,
     taskOwnerFactCursor: typeof saved.taskOwnerFactCursor === "string" && saved.taskOwnerFactCursor.length <= 256 ? saved.taskOwnerFactCursor : null,
     taskPrFactCursor: saved.taskPrFactCursor ?? null,
+    taskReminder: taskReminderState(saved.taskReminder),
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
@@ -3518,7 +3546,12 @@ function placed(s, folder, branch) {
   return isSame ? s : { ...s, place };
 }
 function startTurn(s) {
-  return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
+  return {
+    ...s,
+    taskReminder: resetTaskReminderTurn(s.taskReminder),
+    presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 },
+    stop: null
+  };
 }
 function recordPrompt(host, s, text2, isOpen2, sentBy) {
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
@@ -5225,6 +5258,20 @@ async function handleHook(input, deps) {
         });
       if (isClaimed) deps.startStatusRefresh(id);
       return null;
+    }
+    case "PostToolUse": {
+      if (input.agent_id) return null;
+      let reminder = null;
+      await write((s) => {
+        const next = taskReminderAfterToolCall(s.taskReminder, {
+          isMainAgent: true,
+          isTasksCall: input.tool_name === "mcp__inbox__tasks",
+          hasTaskTree: s.taskTree.length > 0
+        });
+        reminder = next.reminder;
+        return next.state === s.taskReminder ? s : { ...s, taskReminder: next.state };
+      });
+      return reminder ? { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: reminder } } : null;
     }
     case "SubagentStart": {
       const ref = input.agent_id;

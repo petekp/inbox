@@ -3,6 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import type { Session } from '../types'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { statusPage } from '../hooks/status-page'
+import { TASK_REMINDER_TEXT } from '../hooks/task-reminder'
 import { w, world } from './hooks-world'
 import { PANE, selectRow } from './hooks-helpers'
 
@@ -80,6 +81,34 @@ test('once a call from its source raised a Post hook, a call that raised none ad
   await $.tool.call({ tool: 'mcp__othermod__ping', tool_use_id: 'mod' } as never)
 
   expect(activity).toEqual(['ran: echo probe-ok', 'ran: false', 'called othermod__ping'])
+})
+
+test('PostToolUse adds one task reminder after 24 calls through the hook context', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'continue the work', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'continue the work', turnId: 't1' })
+  await $.tool.call({
+    tool: 'mcp__inbox__tasks',
+    operation: 'add',
+    task_id: 't1',
+    title: 'Finish the work',
+  } as never)
+
+  const reminders: string[] = []
+  for (let i = 0; i < 24; i++) {
+    const result = await $.classic.PostToolUse({
+      tool_use_id: `read-${i}`,
+      tool_name: 'Read',
+      tool_input: {},
+      tool_response: 'ok',
+    } as never)
+    const contexts = (result as { additionalContext?: string[] } | null)?.additionalContext ?? []
+    reminders.push(...contexts)
+  }
+
+  expect(reminders).toEqual([TASK_REMINDER_TEXT])
 })
 
 test('where no Post hook runs, as under the guard, every call adds its activity line', async ($, on) => {

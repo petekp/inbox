@@ -41,9 +41,10 @@ import {
   type SentBy,
 } from './session-turns'
 import { emptySession, upgradeSession, type SavedSession } from './session-files'
+import { noteTaskReminderAfterCall, withHookReminder } from './mod-task-reminder'
 import { pressOn, pruned, type SendOutcome } from './session-presses'
 import { isCompareInBackground } from './clients'
-import { sessionView, showsRunningMark, type SessionView } from './session-view'
+import { showsRunningMark, type SessionView } from './session-view'
 import {
   childrenCutOff,
   childStarted,
@@ -244,14 +245,14 @@ import {
 } from './mod-records'
 import {
   AWAY_MS,
-  answerToolCall,
+  answerToolCallWithReminder,
   broughtBack,
   type Changed,
   conversation,
   currentOwner,
   cutOffUpdate,
   DESKTOP_APP_ENTRYPOINTS,
-  drawnSession,
+  drawnState as makeDrawnState,
   hasSavedChange,
   isCurrent,
   MAX_TRIES,
@@ -515,8 +516,7 @@ async function clearingDialog<T>($: EngineInterface, key: string, run: () => Pro
   }
 }
 
-// The plugin directory refuses `$` passed to a function that another of the mod's files declares, so every
-// function that takes `$`, the session's storage and the SessionHost included, lives in this file.
+// Claude rejects `$` passed to another file, so engine callbacks, storage and SessionHost stay here.
 
 const OLD_LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
 const OLD_PRESENCE = atom({ plugin: 'inbox', key: 'presence' } as const, NO_OLD_PRESENCE)
@@ -718,10 +718,7 @@ async function perform(
   }
 }
 
-/**
- * Sends a message as the person's own prompt. Claude Code may store its row before `$.prompt.submit` returns, as
- * the mod's `session.append` handler sees, and another plugin may rewrite it.
- */
+/** Sends text as the person's prompt; Claude may store it early, and another plugin may rewrite it. */
 async function deliver($: EngineInterface, owner: Owner, text: string, deliveryId: string): Promise<SendOutcome> {
   if (!isCurrent(owner)) return { state: 'rejected', reason: 'the conversation changed first' }
   const since = stored.count
@@ -755,6 +752,14 @@ async function deliver($: EngineInterface, owner: Owner, text: string, deliveryI
 /** The shipped comparison template. */
 function comparePagePath($: EngineInterface): string {
   return `${$.plugin.root}/hooks/${COMPARE_PAGE_FILE}`
+}
+
+async function noteReminderAfterCall(
+  $: EngineInterface,
+  isMainAgent: boolean,
+  isTasksCall = false,
+): Promise<string | null> {
+  return noteTaskReminderAfterCall(change => commit($, currentOwner(), change), isMainAgent, isTasksCall)
 }
 
 /** The mod host for one conversation. */
@@ -822,9 +827,7 @@ function commitLedger(
   })
 }
 
-/**
- * Writes `owner`'s session while keeping reply rows in place. A drawn session also redraws its Status and new rows.
- */
+/** Writes a session; drawn writes also refresh Status and new rows. */
 async function commit(
   $: EngineInterface,
   owner: Owner,
@@ -914,10 +917,7 @@ function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): St
   }
 }
 
-/**
- * The model's answer to a catch-up over the whole conversation: from a fork of it, or from the transcript when there
- * is nothing to fork.
- */
+/** Builds a catch-up answer from a conversation fork or its transcript. */
 async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpReply> {
   if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   const [{ ledger }, shown, transcript] = await Promise.all([
@@ -972,10 +972,7 @@ async function catchUpNow($: EngineInterface) {
   updateLedger($)
 }
 
-/**
- * Runs the per-reply update for the conversation, one at a time: the pending exchanges, or a catch-up when the
- * ledger may have missed a turn, as after a failed update or a reload that cut one off.
- */
+/** Runs pending exchanges serially, catching up when a failed update or reload may have lost a turn. */
 function updateLedger($: EngineInterface) {
   const owner = currentOwner()
   mod.queue = mod.queue.then(async () => {
@@ -1093,17 +1090,17 @@ async function runTool(
   tool: AgentTool,
   input: Record<string, unknown>,
   toolUseId: string | undefined,
+  isMainAgent: boolean,
+  isTasksCall: boolean,
 ): Promise<string> {
   const now = await $.clock.now()
   const owner = currentOwner()
   const toolInput = tool === 'record' ? await withDocumentPreview(input, documentFile($)) : input
-  let answer: ReturnType<typeof answerToolCall> = {
-    state: NO_SESSION,
-    result: '',
-    personLine: null,
-    changedSavedState: false,
-  }
-  await commit($, owner, s => (answer = answerToolCall(s, tool, toolInput, now)).state)
+  let answer!: ReturnType<typeof answerToolCallWithReminder>
+  await commit($, owner, s => {
+    answer = answerToolCallWithReminder(s, tool, toolInput, now, isMainAgent, isTasksCall)
+    return answer.state
+  })
   const { personLine } = answer
   if (personLine !== null && toolUseId)
     await update($, PERSON_LINES, lines =>
@@ -1111,7 +1108,9 @@ async function runTool(
     )
   const isChangeUnsaved = answer.changedSavedState && isLastSaveRefused(owner.id)
 
-  return isChangeUnsaved ? `${answer.result} ${NOT_SAVED}` : answer.result
+  const result = isChangeUnsaved ? `${answer.result} ${NOT_SAVED}` : answer.result
+
+  return answer.reminder ? `${result}\n\n${answer.reminder}` : result
 }
 
 /**
@@ -2004,11 +2003,7 @@ function rowKeyActions(
   return { keys: keys.map(keyAction), more: more.map(keyAction) }
 }
 
-async function drawnState(
-  $: EngineInterface,
-): Promise<
-  DemoCopy & { view: SessionView; isDemo: boolean; showsDemoNotices: boolean; isUnread: boolean; now: number }
-> {
+async function drawnState($: EngineInterface): Promise<ReturnType<typeof makeDrawnState>> {
   const [session, notes, demo, isDemoRecording, unreadable, holds, now] = await Promise.all([
     read($, SESSION),
     read($, NOTES),
@@ -2021,31 +2016,20 @@ async function drawnState(
     // The minute tick while the person is away redraws the ages.
     read($, AWAY),
   ])
-  const { ledger, stop, prViews, lastActions, presence } = session
-  const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const drawn: DemoCopy = demo ?? {
-    ledger,
-    stop,
-    prViews,
-    lastActions,
+  const state = makeDrawnState(
+    session,
     notes,
-    turns,
-  }
-
-  const isUnread = demo === null && unreadable === conversation.id
-
-  const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, SETTLED_MS, holds, drawn.notes)
-  redrawAtNextFold($, view, presence.lastTypedMessageAt, now)
-
-  return {
-    ...drawn,
-    lastActions: view.lastActions,
-    view,
-    isDemo: demo !== null,
-    showsDemoNotices: demo !== null && !isDemoRecording,
-    isUnread,
+    demo,
+    isDemoRecording,
+    unreadable,
+    conversation.id,
     now,
-  }
+    holds,
+    SETTLED_MS,
+  )
+  redrawAtNextFold($, state.view, session.presence.lastTypedMessageAt, now)
+
+  return state
 }
 
 async function setDemo($: EngineInterface, isShown: boolean, isRecording = false) {
@@ -2363,9 +2347,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await registerInboxCommand($)
     const r = await next(e)
-    // The desktop app runs its sessions headless and attaches to them, before or after this start. Only tools
-    // registered during this hook are sure to be offered on the first prompt, so a session the app started turns on
-    // here too. -p, the SDK and VS Code draw nothing, so the mod stays off there.
+    // Desktop sessions can attach before or after this hook; register here to offer tools on the first prompt.
+    // -p, SDK and VS Code draw nothing, so leave the mod off.
     const isDesktop = (await $.session.surfaces()).includes('desktop') || (await isStartedByDesktopApp($))
     if (e.isInteractive || isDesktop) await turnOn($)
 
@@ -2542,8 +2525,18 @@ export const register: Register = on => {
             : e.tool === TASKS_TOOL
               ? 'tasks'
               : null
-    if (inboxTool)
-      return { result: await runTool($, inboxTool, e as unknown as Record<string, unknown>, e.tool_use_id) }
+    if (inboxTool) {
+      return {
+        result: await runTool(
+          $,
+          inboxTool,
+          e as unknown as Record<string, unknown>,
+          e.tool_use_id,
+          mod.isOn && !e.agentId,
+          inboxTool === 'tasks',
+        ),
+      }
+    }
     if (!mod.isOn) return next(e)
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
@@ -2639,13 +2632,21 @@ export const register: Register = on => {
     return run()
   })
 
-  on('classic.PostToolUse', async (_$, e, next) => {
+  on('classic.PostToolUse', async ($, e, next) => {
     if (mod.isOn) noteRanCall(e.tool_use_id, e.tool_name)
-    return next(e)
+    const result = await next(e)
+    const agentId = (e as typeof e & { agent_id?: string }).agent_id
+    const isInboxTool = [RECORD_TOOL, CLOSE_TOOL, ORDER_TOOL, TASKS_TOOL].includes(e.tool_name)
+    const reminder = mod.isOn && !isInboxTool ? await noteReminderAfterCall($, !agentId) : null
+    return withHookReminder(result, reminder)
   })
-  on('classic.PostToolUseFailure', async (_$, e, next) => {
+  on('classic.PostToolUseFailure', async ($, e, next) => {
     if (mod.isOn) noteRanCall(e.tool_use_id, e.tool_name)
-    return next(e)
+    const result = await next(e)
+    const agentId = (e as typeof e & { agent_id?: string }).agent_id
+    const isInboxTool = [RECORD_TOOL, CLOSE_TOOL, ORDER_TOOL, TASKS_TOOL].includes(e.tool_name)
+    const reminder = mod.isOn && !isInboxTool ? await noteReminderAfterCall($, !agentId) : null
+    return withHookReminder(result, reminder)
   })
 
   // A question dialog opens from its own tool call, which also raises a permission request.
@@ -2663,9 +2664,8 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Where the guard skips classic.PermissionRequest, the permission row comes from here. The plugin
-  // directory accepts a permission hook only when it returns next(e) itself, so waitForPermission
-  // asks for the verdict with a query of its own.
+  // If the guard skips PermissionRequest, waitForPermission draws the row and asks for its verdict;
+  // Claude requires permission hooks to call next(e).
   on('tool.check', async ($, e, next) => {
     const mayShowRow = mod.isOn && !mod.hasPermissionRequestHook && !e.agentId && e.tool !== 'AskUserQuestion'
     if (mayShowRow && e.tool_use_id) void waitForPermission($, e.tool_use_id, e.tool, e.input)
@@ -3001,11 +3001,11 @@ export const register: Register = on => {
     const isKeyboardHandedBack = hadKeys && !e.props.isFocused
     const elements = $.ui.resolve(e)
     const { Box, Button, Link, Markdown, Text } = elements
-    // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
+    // Desktop Buttons are native, taller than text, and have no hotkeys.
     const look = lookOf(e.surface)
     paneState.paneLook = look
     const hasClient = look === 'desktop' && 'Client' in elements
-    // The mobile app draws no text field, so there the typed reply is not offered.
+    // Mobile has no text field, so typed replies are unavailable there.
     const Input = 'Input' in elements ? elements.Input : null
     const isNarrowDesktop = look === 'desktop' && e.props.bodyColumns < DESKTOP_WIDE_AT
     const isAgeInSide = look === 'terminal'

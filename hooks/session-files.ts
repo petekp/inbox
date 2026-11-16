@@ -4,6 +4,7 @@ import { upgradeLastActions } from './last-actions'
 import { upgradeHostTasks } from './host-tasks'
 import { taskTreeFromStatus } from './task-tree'
 import { withCheckKeys } from './saved-check-keys'
+import { NO_TASK_REMINDER, taskReminderState } from './task-reminder'
 import type { PrView, PrViews, Session, Told, ToolFields, TurnDialogQuestion } from '../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
@@ -23,6 +24,7 @@ export function emptySession(): Session {
     taskOwnerFactCheckedAt: null,
     taskOwnerFactCursor: null,
     taskPrFactCursor: null,
+    taskReminder: NO_TASK_REMINDER,
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -165,6 +167,7 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
         ? saved.taskOwnerFactCursor
         : null,
     taskPrFactCursor: saved.taskPrFactCursor ?? null,
+    taskReminder: taskReminderState(saved.taskReminder),
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
