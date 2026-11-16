@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:47:58.173Z. 261416 characters follow.
+// Built at 2026-11-16T04:51:22.261Z. 262301 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -1530,7 +1530,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var SUGGESTED_GOAL_LABEL = "Suggested";
+var suggestedGoalOffer = (text) => `Next goal: “${text}”?`;
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -1650,8 +1650,8 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
-var newGoal = (page, emphasis) => ({
-  press: page.suggestedGoal === null ? { action: "type-goal", text: "" } : { action: "show-suggestion" },
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
   label: "New",
   hotkey: "n",
   kind: "view",
@@ -1660,9 +1660,9 @@ var newGoal = (page, emphasis) => ({
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal(page, "quiet")];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
   if (g.isMet)
-    return [newGoal(page, "normal"), REMOVE_GOAL];
+    return [newGoal("normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
@@ -1670,14 +1670,14 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
-    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    { press: { action: "hide-suggestion" }, label: "Cancel", hotkey: "c", kind: "view", emphasis: "quiet" }
+    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
-var isSuggestionShown = (page, isSuggestionOpen) => isSuggestionOpen && page.suggestedGoal !== null;
-function goalKeys(page, isSuggestionOpen) {
-  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal) : goalKeyPlan(page);
+function goalKeyGroups(page) {
+  if (page.suggestedGoal === null)
+    return { heading: goalKeyPlan(page), offer: [] };
+  return { heading: page.canRestoreGoal ? [RESTORE_GOAL] : [], offer: suggestionKeyPlan(page.suggestedGoal) };
 }
 var GOAL_FIELD = { placeholder: "An outcome to work toward" };
 var goalSubmitLabel = (page) => page.goal === null || page.goal.isMet ? "Set" : "Save";
@@ -3198,6 +3198,37 @@ function rowKeyPlan(r, isAllShown) {
   return { keys, more };
 }
 
+// ../hooks/earlier-answers.ts
+var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/));
+var DAY_MS2 = 24 * 60 * 60000;
+function agoText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60)
+    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24)
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  const days = Math.round(ms / DAY_MS2);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+function earlierLineOf(earlier, now) {
+  if (!earlier?.isShown)
+    return null;
+  const where = earlier.repo ? `, in ${earlier.repo},` : "";
+  return {
+    lead: "You answered ",
+    answer: earlier.answer,
+    rest: ` ${agoText(now - earlier.at)}${where} to “${earlier.ask}”`
+  };
+}
+function earlierLineText(line) {
+  return `${line.lead}${line.answer}${line.rest}`;
+}
+
 // ../hooks/view.ts
 var HOLDS_UP_TEXT = "Holds up";
 function needsYouOrder(ledger) {
@@ -3321,7 +3352,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      contextLine: state.is === "open" ? row.item?.context ?? null : null
+      contextLine: state.is === "open" ? row.item?.context ?? null : null,
+      earlierLine: state.is === "open" ? earlierLineOf(row.item?.earlier, now) : null
     };
   };
   const itemRow = (item) => {
@@ -3721,11 +3753,15 @@ function emptyTab(view, look) {
     const page = view.statusPage;
     if (!page.isEmpty)
       return null;
-    const isSuggestionOpen = look.isSuggestionOpen ?? false;
-    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion }
+      under: {
+        is: "set-goal",
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
+        isFieldOpen: look.isGoalFieldOpen,
+        suggestion: page.suggestedGoal
+      }
     };
   }
   if (look.tab === "prs") {
@@ -4018,16 +4054,12 @@ function doesOf(k) {
     return { is: "view", change: { toggleFold: p.foldId } };
   if (p.action === "toggle-collapse")
     return { is: "nothing" };
-  if (p.action === "show-suggestion")
-    return { is: "view", change: { isSuggestionOpen: true } };
-  if (p.action === "hide-suggestion")
-    return { is: "view", change: { isSuggestionOpen: false } };
   if (p.action === "type-goal")
     return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
   return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
 }
-function keyButtons(id, keys) {
-  return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)));
+function keyButtons(id, keys, from = 0) {
+  return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)));
 }
 function foldOf(p, isCollapsed) {
   if (p.foldCount === 0)
@@ -4187,22 +4219,25 @@ var headTitle = (id, text) => ({
   isAtEdge: true,
   isStrong: true
 });
-function goalBlocks(page, { isUnfolded, isCollapsed, isSuggestionOpen, goalField }) {
+function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
   const g = page.goal;
-  const isSuggested = goalField === null && isSuggestionShown(page, isSuggestionOpen);
+  const groups = goalKeyGroups(page);
+  const isSuggested = goalField === null && page.suggestedGoal !== null;
   const heading = {
     kind: "heading",
     id: "goal heading",
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page, isSuggested)),
+    buttons: keyButtons(GOAL_KEYS_ID, groups.heading),
     isLabel: true
   };
   const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
   const suggestion = [
-    headNote("goal suggested", SUGGESTED_GOAL_LABEL, "muted"),
-    headTitle("goal text", page.suggestedGoal ?? "")
+    {
+      ...headNote("goal text", suggestedGoalOffer(page.suggestedGoal ?? ""), "muted"),
+      buttons: keyButtons(GOAL_KEYS_ID, groups.offer, groups.heading.length)
+    }
   ];
   if (g === null) {
     const empty = isSuggested ? suggestion : [headNote("goal text", NO_GOAL_TEXT, "muted")];
@@ -4242,17 +4277,16 @@ function goalBlocks(page, { isUnfolded, isCollapsed, isSuggestionOpen, goalField
 function statusBlocks(view, ui) {
   const page = view.statusPage;
   const { isUnfolded, isCollapsed } = ui;
-  const empty = emptyTab(view, {
-    tab: "overview",
-    isGoalFieldOpen: ui.goalField !== null,
-    isSuggestionOpen: ui.isSuggestionOpen
-  });
+  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: ui.goalField !== null });
   if (empty) {
     const setGoal = empty.under?.is === "set-goal" ? empty.under : null;
     const parts = setGoal && {
       id: GOAL_KEYS_ID,
-      text: setGoal.suggestion === null ? null : `${SUGGESTED_GOAL_LABEL}: ${setGoal.suggestion}`,
-      buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
+      text: setGoal.suggestion === null ? null : suggestedGoalOffer(setGoal.suggestion),
+      buttons: setGoal.isFieldOpen ? [] : [
+        ...keyButtons(GOAL_KEYS_ID, setGoal.keys),
+        ...keyButtons(GOAL_KEYS_ID, setGoal.offerKeys, setGoal.keys.length)
+      ],
       feedback: null,
       field: setGoal.isFieldOpen ? ui.goalField : null
     };
@@ -4273,7 +4307,6 @@ var freshUi = (tab) => ({
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
-  isSuggestionOpen: false,
   typing: null,
   newRows: new Map,
   closedSeen: new Map
@@ -4345,6 +4378,11 @@ function rowBody(row, isAllShown) {
   const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
   const lines = [
     { text: row.contextLine ?? "", tone: "muted", ...hasTree ? { tree: "trunk" } : {} },
+    {
+      text: row.earlierLine ? earlierLineText(row.earlierLine) : "",
+      tone: "muted",
+      ...hasTree ? { tree: "trunk" } : {}
+    },
     { text: row.detail ?? "", tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
     ...branches.flatMap((lines, branch) => lines.map((l, line) => {
@@ -4522,7 +4560,6 @@ function tabBlocks(screen, ui) {
     return statusBlocks(screen.view, {
       isUnfolded: (id) => ui.statusUnfolded.includes(id),
       isCollapsed: (id) => screen.view.collapsed.includes(id),
-      isSuggestionOpen: ui.isSuggestionOpen,
       goalField
     });
   }
@@ -4730,21 +4767,17 @@ function withShownNewRows(ui, at) {
   const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
   return isSame ? ui : { ...ui, newRows };
 }
-function withDrawnRows(ui, last, rows, at, isTabShown, page) {
+function withDrawnRows(ui, last, rows, at, isTabShown) {
   const lastRows = last.tab === ui.tab ? last.rows : null;
   const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
-  const shown = isTabShown ? withShownNewRows(arrived, at) : arrived;
-  return page ? withoutStaleSuggestion(shown, page) : shown;
+  return isTabShown ? withShownNewRows(arrived, at) : arrived;
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
 function afterPress(ui, press) {
-  if (press.action === "take-goal")
-    return { ...ui, isSuggestionOpen: false };
   return "id" in press && press.action === "undo" ? withSelected(ui, press.id) : ui;
 }
-var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null, ...rowId === GOAL_KEYS_ID && { isSuggestionOpen: false } } : ui;
-var withoutStaleSuggestion = (ui, page) => ui.isSuggestionOpen && page.suggestedGoal === null ? { ...ui, isSuggestionOpen: false } : ui;
+var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null } : ui;
 function withoutConfirmed(drafts, confirmed, typing, pending) {
   const current = confirmed.filter((c) => !pending.some((p) => p.rowId === c.rowId && p.pressId > c.pressId));
   const done = current.filter((c) => c.rowId !== typing);
@@ -4764,8 +4797,6 @@ function withChange(ui, c) {
     return { ...ui, closedAll: [...ui.closedAll, c.earlier] };
   if ("toggleFold" in c)
     return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) };
-  if ("isSuggestionOpen" in c)
-    return { ...ui, isSuggestionOpen: c.isSuggestionOpen };
   return withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
 }
 
@@ -5560,9 +5591,9 @@ function ruleEl(b, t) {
     return h_flex3().pl(EDGE).pr(EDGE).child(ruleLine(t));
   return h_flex3().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div5().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
 }
-function noteEl(b, t) {
+function noteEl(b, t, buttons = []) {
   const text = div5().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  return h_flex3().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text);
+  return h_flex3().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex3().flex_none().items_center().gap(CONTROL_GAP).pl(CONTROL_GAP).children(buttons)));
 }
 
 // src/paint-blocks.ts
@@ -5732,7 +5763,7 @@ function blockEl(b, p) {
   if (b.kind === "field")
     return div6().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
-    return noteEl(b, t);
+    return noteEl(b, t, (b.buttons ?? []).map((x) => buttonEl(x, p, isLeaving)));
   if (b.kind === "caption")
     return div6().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
@@ -6449,7 +6480,7 @@ class Inbox extends View {
     });
     let screen = screenFor(this.ui);
     const inbox = screen.is === "inbox" ? screen : null;
-    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, inbox?.view.statusPage);
+    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown);
     if (ui !== this.ui)
       screen = screenFor(this.ui = ui);
     this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null };

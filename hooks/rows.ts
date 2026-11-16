@@ -4,6 +4,7 @@ import type { ClosedState } from './ledger-close'
 import { clipLabel, ago } from './text'
 import { capitalized } from './press-labels'
 import type { HelpStep } from './help-steps'
+import type { EarlierLine } from './earlier-answers'
 import type { RowPress } from './presses'
 import { offersUndo } from './pressed'
 import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS } from './help'
@@ -156,6 +157,8 @@ export type RowView = {
    * title, on the selected row only.
    */
   contextLine: string | null
+  /** The person's earlier answer to a similar question, on an open question that has a shown one, drawn after the context. */
+  earlierLine: EarlierLine | null
 }
 
 /**

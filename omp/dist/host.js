@@ -416,6 +416,7 @@ var CLIENTS = {
       "asks-holds-up-line": { kind: "full" },
       "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
+      "earlier-answers": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
       "ran-call-delegates": { kind: "full" },
@@ -539,6 +540,7 @@ var CLIENTS = {
       "asks-holds-up-line": { kind: "full" },
       "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
+      "earlier-answers": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": {
         kind: "different",
@@ -653,6 +655,7 @@ var CLIENTS = {
       "asks-holds-up-line": { kind: "full" },
       "asks-tree": { kind: "full" },
       "asks-context-line": { kind: "full" },
+      "earlier-answers": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
       "ran-call-delegates": { kind: "full" },
@@ -1457,9 +1460,9 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 
 // src/host.ts
 import { existsSync } from "fs";
-import { stat as stat4 } from "fs/promises";
+import { stat as stat5 } from "fs/promises";
 import { homedir } from "os";
-import { dirname as dirname3, join as join4 } from "path";
+import { dirname as dirname4, join as join5 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
 var version = "0.4.0";
@@ -1483,7 +1486,7 @@ function pressText(p) {
     case "restore-goal":
       return "Undo";
     case "take-goal":
-      return "Set";
+      return "Set this goal";
     default:
       return capitalized(p.action);
   }
@@ -3922,7 +3925,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var SUGGESTED_GOAL_LABEL = "Suggested";
+var suggestedGoalOffer = (text) => `Next goal: \u201C${text}\u201D?`;
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -4046,8 +4049,8 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
-var newGoal = (page, emphasis) => ({
-  press: page.suggestedGoal === null ? { action: "type-goal", text: "" } : { action: "show-suggestion" },
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
   label: "New",
   hotkey: "n",
   kind: "view",
@@ -4056,9 +4059,9 @@ var newGoal = (page, emphasis) => ({
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal(page, "quiet")];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
   if (g.isMet)
-    return [newGoal(page, "normal"), REMOVE_GOAL];
+    return [newGoal("normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
@@ -4066,14 +4069,18 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
-    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    { press: { action: "hide-suggestion" }, label: "Cancel", hotkey: "c", kind: "view", emphasis: "quiet" }
+    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
-var isSuggestionShown = (page, isSuggestionOpen) => isSuggestionOpen && page.suggestedGoal !== null;
-function goalKeys(page, isSuggestionOpen) {
-  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal) : goalKeyPlan(page);
+function goalKeyGroups(page) {
+  if (page.suggestedGoal === null)
+    return { heading: goalKeyPlan(page), offer: [] };
+  return { heading: page.canRestoreGoal ? [RESTORE_GOAL] : [], offer: suggestionKeyPlan(page.suggestedGoal) };
+}
+function goalKeys(page) {
+  const { heading, offer } = goalKeyGroups(page);
+  return [...heading, ...offer];
 }
 function parentFoldKeys(p, isCollapsed) {
   if (p.foldCount === 0)
@@ -4092,11 +4099,11 @@ var rowTarget = (isCollapsed) => (r) => ({
   id: r.id,
   keys: [...statusKeyPlan(r), ...r.kind === "subject" ? parentFoldKeys(r, isCollapsed) : []]
 });
-function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false, isSuggestionOpen = false) {
+function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false) {
   const fold = page.goal?.milestonesFold ?? null;
   const toTarget = rowTarget(isCollapsed);
   return [
-    { id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) },
+    { id: GOAL_KEYS_ID, keys: goalKeys(page) },
     ...fold === null ? [] : [{ id: fold.id, keys: milestonesFoldKeyPlan(page.goal) }],
     ...shownMilestones(page.goal, isUnfolded).flatMap((m) => [
       { id: m.id, keys: [...milestoneKeyPlan(m), ...parentFoldKeys(m, isCollapsed)] },
@@ -4105,8 +4112,8 @@ function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false
     ...unfoldedRows(page.rows, isUnfolded, isCollapsed).map(toTarget)
   ].filter((t) => t.keys.length > 0);
 }
-function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed = () => false, isSuggestionOpen = false) {
-  const targets = statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen);
+function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed = () => false) {
+  const targets = statusKeyRows(page, isUnfolded, isCollapsed);
   const opensAsk = (t) => t.keys.some((k) => k.press.action === "show-ask");
   const isFold = (t) => t.keys.every((k) => k.press.action === "toggle-fold" || k.press.action === "toggle-collapse");
   return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets.find((t) => !isFold(t)) ?? targets[0] ?? null;
@@ -7145,6 +7152,101 @@ function actionLines(keys, more, { width, gap, separator }) {
   return { lines, isFollowUpLineNew };
 }
 
+// ../hooks/earlier-answers.ts
+var K1 = 1.2;
+var B = 0.75;
+var RELATIVE_FLOOR = 0.22;
+var EARLIER_TEXT_CHARS = 200;
+var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/));
+function searchTerms(text) {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => !STOP_WORDS2.has(w) && (w.length > 1 || /\d/.test(w)));
+}
+function answerIndex(docs) {
+  const postings = new Map;
+  const lengths = docs.map((d, n) => {
+    const terms = searchTerms(`${d.ask} ${d.answer}`);
+    const counts = new Map;
+    for (const t of terms)
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const [t, count] of counts) {
+      const list = postings.get(t);
+      if (list)
+        list.push([n, count]);
+      else
+        postings.set(t, [[n, count]]);
+    }
+    return terms.length;
+  });
+  const total = lengths.reduce((sum, l) => sum + l, 0);
+  return { docs, lengths, postings, averageLength: docs.length > 0 ? total / docs.length : 0 };
+}
+function bestEarlier(index, question, skip) {
+  const n = index.docs.length;
+  const scores = new Map;
+  let reachable = 0;
+  for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
+    const posted = index.postings.get(term);
+    if (!posted)
+      continue;
+    const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
+    reachable += weight * (K1 + 1);
+    for (const [doc, count] of posted) {
+      const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
+      scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
+    }
+  }
+  let best = null;
+  for (const [doc, score] of scores) {
+    const d = index.docs[doc];
+    if (d.key === skip || best && score <= best.score)
+      continue;
+    best = { doc: d, score };
+  }
+  if (!best || reachable === 0)
+    return null;
+  const relative = best.score / reachable;
+  return relative >= RELATIVE_FLOOR ? { doc: best.doc, score: relative } : null;
+}
+function earlierOf(match, isShown) {
+  const { doc } = match;
+  return {
+    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
+    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    at: doc.at,
+    repo: doc.repo,
+    score: Math.round(match.score * 1000) / 1000,
+    isShown
+  };
+}
+var DAY_MS2 = 24 * 60 * 60000;
+function agoText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60)
+    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24)
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  const days = Math.round(ms / DAY_MS2);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+function earlierLineOf(earlier, now) {
+  if (!earlier?.isShown)
+    return null;
+  const where = earlier.repo ? `, in ${earlier.repo},` : "";
+  return {
+    lead: "You answered ",
+    answer: earlier.answer,
+    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
+  };
+}
+function earlierLineText(line) {
+  return `${line.lead}${line.answer}${line.rest}`;
+}
+
 // ../hooks/view.ts
 var HOLDS_UP_TEXT = "Holds up";
 function needsYouOrder(ledger) {
@@ -7268,7 +7370,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      contextLine: state.is === "open" ? row.item?.context ?? null : null
+      contextLine: state.is === "open" ? row.item?.context ?? null : null,
+      earlierLine: state.is === "open" ? earlierLineOf(row.item?.earlier, now) : null
     };
   };
   const itemRow = (item) => {
@@ -7939,6 +8042,16 @@ function askTreeLines(line, pad, width, s, isAllShown = false) {
   const out = [];
   if (row.contextLine)
     out.push(...draw(hasTree ? TRUNK : NONE, row.contextLine, hasTree ? TRUNK : NONE));
+  const earlier = row.earlierLine;
+  if (earlier) {
+    const arm = hasTree ? TRUNK : NONE;
+    const head = earlier.lead + earlier.answer;
+    wrapText(earlierLineText(earlier), room).forEach((l, i) => {
+      const arms = s.dim(margin + arm);
+      const isAnswerWhole = i === 0 && l.startsWith(head);
+      out.push(isAnswerWhole ? arms + s.dim(earlier.lead) + s.bold(earlier.answer) + s.dim(l.slice(head.length)) : arms + s.dim(l));
+    });
+  }
   const all = [...branches, ...holdsUp ? [{ label: "", text: holdsUp, reason: null }] : []];
   all.forEach((b, n) => {
     const isLast = n === all.length - 1;
@@ -7969,11 +8082,15 @@ function emptyTab(view, look) {
     const page = view.statusPage;
     if (!page.isEmpty)
       return null;
-    const isSuggestionOpen = look.isSuggestionOpen ?? false;
-    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion }
+      under: {
+        is: "set-goal",
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
+        isFieldOpen: look.isGoalFieldOpen,
+        suggestion: page.suggestedGoal
+      }
     };
   }
   if (look.tab === "prs") {
@@ -8051,7 +8168,7 @@ function partHeading(text, width, s, at = PAGE_TEXT_AT, isTitle = false) {
   const rule = "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)));
   return `${" ".repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`;
 }
-function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
+function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "", focusAmong = target) {
   const faces = target.keys.map((k) => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
@@ -8059,7 +8176,8 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between =
     isFollowUp: false,
     ...k.emphasis === "quiet" ? { isQuiet: true } : {}
   }));
-  const focused = isSelected ? pageFocus(target, d.ui) : -1;
+  const focus = isSelected ? pageFocus(focusAmong, d.ui) : -1;
+  const focused = focus < target.keys.length ? focus : -1;
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : [];
 }
 function foldChevron(p, d, isSelected) {
@@ -8148,12 +8266,15 @@ function goalPartId(part) {
     return part.fold.id;
   if (part.is === "heading")
     return part.page ? GOAL_KEYS_ID : null;
-  return part.is === "keys" ? GOAL_KEYS_ID : null;
+  if (part.is === "title")
+    return part.suggestion ? GOAL_KEYS_ID : null;
+  return part.is === "keys" || part.is === "suggestion" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
-function goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed) {
+function goalSection(page, typing, isUnfolded, isCollapsed) {
   const isTyping = typing === GOAL_KEYS_ID;
-  const suggestion = !isTyping && isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
+  const groups = goalKeyGroups(page);
+  const suggestion = isTyping || page.suggestedGoal === null ? null : { text: page.suggestedGoal, keys: groups.offer, before: groups.heading };
   const g = page.goal;
   const milestones = shownMilestones(g, isUnfolded);
   const fold = g?.milestonesFold ?? null;
@@ -8162,8 +8283,7 @@ function goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed) {
       is: "heading",
       text: g?.label ?? GOAL_HEADING,
       mark: g?.mark ?? null,
-      page: isTyping ? null : page,
-      isSuggestionOpen: suggestion !== null
+      page: isTyping ? null : page
     }),
     goalEntry({ is: "title", goal: g, isTyping, suggestion }),
     ...fold === null ? [] : [goalEntry({ is: "fold", fold })],
@@ -8199,13 +8319,37 @@ function setGoal(under) {
   if (under.isFieldOpen)
     return [goalEntry({ is: "field" })];
   return [
-    ...under.suggestion === null ? [] : [goalEntry({ is: "suggestion", text: under.suggestion })],
-    goalEntry({ is: "keys", keys: under.keys })
+    ...under.keys.length === 0 ? [] : [goalEntry({ is: "keys", keys: under.keys })],
+    ...under.suggestion === null ? [] : [
+      goalEntry({ is: "suggestion", offer: { text: under.suggestion, keys: under.offerKeys, before: under.keys } })
+    ]
   ];
 }
-function suggestionLines(text, d, at) {
+function offerFaces(offer, d, isSelected) {
+  const before = offer.before.length;
+  const target = { id: GOAL_KEYS_ID, keys: [...offer.before, ...offer.keys] };
+  const focus = isSelected ? pageFocus(target, d.ui) - before : -1;
+  const faces = offer.keys.map((k) => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false,
+    ...k.emphasis === "quiet" ? { isQuiet: true } : {}
+  }));
+  return { faces, focused: focus >= 0 && focus < faces.length ? focus : -1 };
+}
+function offerLines(offer, d, at, isSelected) {
   const { width, style: s } = d;
-  return [" ".repeat(at) + s.dim(SUGGESTED_GOAL_LABEL), ...indented(text, at, width, Infinity, s.bold)];
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim);
+  const { faces, focused } = offerFaces(offer, d, isSelected);
+  if (faces.length === 0)
+    return text;
+  const keys = faceLines(faces, focused, 0, width, s, s.dim("\xB7"));
+  const last = text[text.length - 1] ?? "";
+  const first = keys[0] ?? "";
+  if (keys.length === 1 && visibleLength(last) + visibleLength(first) + 1 <= width - 1)
+    return [...text.slice(0, -1), `${last} ${first}`];
+  return [...text, ...faceLines(faces, focused, at - 1, width, s, s.dim("\xB7"))];
 }
 function fieldLines(d, at) {
   const { ui, width, style: s } = d;
@@ -8241,7 +8385,10 @@ function milestoneLines(m, d, isSelected) {
 }
 function headingLines(part, d, isSelected) {
   const { width, now, style: s } = d;
-  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeys(part.page, part.isSuggestionOpen) }, d, isSelected, 1, s.dim("\xB7")) : [];
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim("\xB7"), {
+    id: GOAL_KEYS_ID,
+    keys: goalKeys(part.page)
+  }) : [];
   const right = width - 1;
   const { mark } = part;
   const at = mark === null ? PAGE_MARK_AT : PAGE_TEXT_AT;
@@ -8271,7 +8418,7 @@ function drawGoalPart(part, d, isSelected) {
     return [partHeading(LATER_TEXT, width, s)];
   if (part.is === "title") {
     const g = part.suggestion === null ? part.goal : null;
-    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? suggestionLines(part.suggestion, d, textAt) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
+    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? offerLines(part.suggestion, d, textAt, isSelected) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
     return [
       ...text,
       ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
@@ -8282,7 +8429,7 @@ function drawGoalPart(part, d, isSelected) {
   if (part.is === "milestone")
     return milestoneLines(part.row, d, isSelected);
   if (part.is === "suggestion")
-    return suggestionLines(part.text, d, PAGE_MARK_AT);
+    return offerLines(part.offer, d, PAGE_MARK_AT, isSelected);
   if (part.is === "keys")
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT);
   return fieldLines(d, PAGE_MARK_AT);
@@ -8946,18 +9093,14 @@ function orderEntries(screen, order, now) {
 var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
-function pageEntries(view, typing, isSuggestionOpen, isUnfolded) {
+function pageEntries(view, typing, isUnfolded) {
   const isCollapsed = collapsedIn(view);
   const page = view.statusPage;
   const blank = { kind: "note", text: "" };
-  const empty = emptyTab(view, {
-    tab: "overview",
-    isGoalFieldOpen: typing === GOAL_KEYS_ID,
-    isSuggestionOpen
-  });
+  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: typing === GOAL_KEYS_ID });
   if (empty)
     return emptyEntries(empty, empty.under?.is === "set-goal" ? setGoal(empty.under) : []);
-  const top = goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed);
+  const top = goalSection(page, typing, isUnfolded, isCollapsed);
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row) => ({ kind: "page", row }));
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
@@ -8986,7 +9129,7 @@ function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
     return helpEntries(screen);
   if (!isRowTab(tab))
-    return pageEntries(screen.view, ui.typing, ui.isSuggestionOpen, (id) => ui.statusUnfolded.includes(id));
+    return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id));
   const collapsed = new Set(screen.view.collapsed);
   const entries = tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
   return entries.map((e) => e.kind === "row" && collapsed.has(e.line.id) ? { ...e, line: { ...e.line, isCollapsed: true } } : e);
@@ -9068,8 +9211,7 @@ function typingKey(ui, id, key, now, text) {
   if (key === "enter") {
     if (draft.text.trim() === "")
       return { ui };
-    const closed = id === GOAL_KEYS_ID ? { ...ui, typing: null, isSuggestionOpen: false } : { ...ui, typing: null };
-    return { ui: closed, press: { action: "type", id, text: draft.text } };
+    return { ui: { ...ui, typing: null }, press: { action: "type", id, text: draft.text } };
   }
   if (key === "backspace")
     return edit([...draft.text].slice(0, -1).join(""));
@@ -9148,8 +9290,8 @@ function pageKey(screen, ui, key, now) {
   const page = screen.view.statusPage;
   const isUnfolded = (id) => ui.statusUnfolded.includes(id);
   const isCollapsed = collapsedIn(screen.view);
-  const rows = statusKeyRows(page, isUnfolded, isCollapsed, ui.isSuggestionOpen);
-  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed, ui.isSuggestionOpen);
+  const rows = statusKeyRows(page, isUnfolded, isCollapsed);
+  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed);
   if (!row)
     return null;
   if (key === "j" || key === "k") {
@@ -9187,18 +9329,8 @@ function pageKey(screen, ui, key, now) {
     const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } };
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } };
   }
-  if (press.action === "show-suggestion")
-    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: true, focus: { rowId: GOAL_KEYS_ID, index: 0 } } };
-  if (press.action === "hide-suggestion") {
-    const index = Math.max(0, goalKeys(page, false).findIndex((k) => k.press.action === "show-suggestion"));
-    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: { rowId: GOAL_KEYS_ID, index } } };
-  }
-  if (press.action === "take-goal")
-    return {
-      ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: null, pageReveal: GOAL_KEYS_ID },
-      press: { action: "take-goal", id: GOAL_KEYS_ID }
-    };
-  if (press.action !== "remove-goal" && press.action !== "restore-goal")
+  const isGoalPress = press.action === "remove-goal" || press.action === "restore-goal" || press.action === "take-goal";
+  if (!isGoalPress)
     return null;
   return {
     ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
@@ -9417,7 +9549,7 @@ function footer(d, isPageScrolling) {
     `\u21B5 ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
     `esc ${ROW_COPY.cancel}`
   ] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
-    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view), ui.isSuggestionOpen),
+    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view)),
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
     "? help"
@@ -9459,10 +9591,10 @@ function scrolled(body, selectedAt, room, s) {
     clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
   return clip;
 }
-function statusHints(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen) {
-  if (statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen).length === 0)
+function statusHints(page, selectedId, isUnfolded, isCollapsed) {
+  if (statusKeyRows(page, isUnfolded, isCollapsed).length === 0)
     return [];
-  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen);
+  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed);
   const fold = selected?.keys.find((k) => k.press.action === "toggle-collapse");
   const isPicking = (selected ? drawnKeys(selected).length : 0) > 1;
   return [
@@ -9486,7 +9618,6 @@ var INITIAL_UI = {
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
-  isSuggestionOpen: false,
   resuming: null,
   opened: null,
   pageTop: 0,
@@ -9538,7 +9669,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
-  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view), ui.isSuggestionOpen);
+  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view));
   let pageSelectedAt = null;
   const subjectAt = [];
   for (const e of entries) {
@@ -9667,8 +9798,6 @@ function createPanel(deps) {
       return;
     }
     screen = next;
-    if (ui.isSuggestionOpen && next.view.statusPage.suggestedGoal === null)
-      ui = { ...ui, isSuggestionOpen: false };
     const followed = followRows(next, ui, seen, isOpening, deps.now());
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now());
     seen = followed.seen;
@@ -9962,7 +10091,15 @@ function demoView(now, agent) {
           isDesignChoice: true,
           helps: [],
           turn: 14,
-          at: now - 12 * MIN
+          at: now - 12 * MIN,
+          earlier: {
+            ask: "Which gesture should clear a glance?",
+            answer: "Flick",
+            at: now - 3 * 24 * 60 * MIN,
+            repo: "glasses-app",
+            score: 0.41,
+            isShown: true
+          }
         },
         {
           id: "d12",
@@ -10427,6 +10564,232 @@ async function runSends(host, effects, rowId, rows, at) {
 // src/state.ts
 import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "fs/promises";
 import { join } from "path";
+
+// ../hooks/question-history.ts
+var HISTORY_VERSION = 1;
+var DAY_MS3 = 24 * 60 * 60000;
+var HISTORY_KEEP_MS = 180 * DAY_MS3;
+var BASELINE_MS = 7 * DAY_MS3;
+var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
+function historyFileName(host, session) {
+  return `${host}-${session.replace(/[^\w.-]/g, "_")}.json`;
+}
+function isAnswer(c) {
+  if (c.kind !== "question")
+    return false;
+  if (c.how === "answered")
+    return true;
+  return c.how === "update" && !NOT_AN_ANSWER2.test(c.outcome.trim());
+}
+var keyOf2 = (q) => `${q.id}@${q.askedAt ?? ""}`;
+var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+function questionHistory(previous, s, place, now) {
+  const answered = s.ledger.closed.filter(isAnswer).map((c) => ({
+    id: c.id,
+    ask: c.ask,
+    options: c.item?.options ?? [],
+    askedAt: c.item?.at ?? null,
+    answer: c.outcome,
+    answeredAt: c.at,
+    how: c.how,
+    isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
+    earlier: c.item?.earlier ?? null,
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
+  }));
+  const open = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
+  const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));
+  for (const q of answered)
+    byKey.set(keyOf2(q), q);
+  const questions = [...byKey.values()].filter((q) => !open.has(keyOf2(q)) && now - q.answeredAt <= HISTORY_KEEP_MS).sort((a, b) => a.answeredAt - b.answeredAt);
+  return {
+    version: HISTORY_VERSION,
+    host: place.host,
+    session: place.session,
+    repo: place.repo ?? previous?.repo ?? null,
+    created: previous?.created ?? now,
+    savedAt: now,
+    questions
+  };
+}
+function isHistoryChanged(previous, next) {
+  if (!previous)
+    return next.questions.length > 0;
+  const said = (f) => JSON.stringify([f.repo, f.questions]);
+  return said(previous) !== said(next);
+}
+function upgradeHistoryFile(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const f = raw;
+  if (f.version !== HISTORY_VERSION || !Array.isArray(f.questions) || typeof f.session !== "string")
+    return null;
+  return f;
+}
+function historyDocs(files, now) {
+  return files.flatMap((f) => f.questions.filter((q) => now - q.answeredAt <= HISTORY_KEEP_MS).map((q) => ({
+    key: answerKey(f.host, f.session, q.id),
+    ask: q.ask,
+    answer: q.answer,
+    at: q.answeredAt,
+    repo: f.repo
+  })));
+}
+function answerKey(host, session, id) {
+  return `${host}:${session}:${id}`;
+}
+function historyStart(files, now) {
+  return files.reduce((start, f) => Math.min(start, f.created), now);
+}
+function isEarlierShown(start, now) {
+  return now - start >= BASELINE_MS;
+}
+function historyFolder(env) {
+  const state = env.XDG_STATE_HOME?.trim() || (env.HOME?.trim() ? `${env.HOME.trim()}/.local/state` : "");
+  return state ? `${state.replace(/\/+$/, "")}/inbox/questions` : null;
+}
+
+// ../hooks/history-store.ts
+var caches = new Map;
+var repos = new Map;
+function cacheOf(folder) {
+  const known = caches.get(folder);
+  if (known)
+    return known;
+  const made = { files: new Map, index: null, isSeeded: false };
+  caches.set(folder, made);
+  return made;
+}
+var parsed = (text) => {
+  try {
+    return upgradeHistoryFile(JSON.parse(text));
+  } catch {
+    return null;
+  }
+};
+async function readHistory(place) {
+  const cache = cacheOf(place.folder);
+  const listed = (await place.fs.list(place.folder)).filter((e) => e.name.endsWith(".json"));
+  const names = new Set(listed.map((e) => e.name));
+  for (const name of cache.files.keys())
+    if (!names.has(name))
+      cache.files.delete(name);
+  await Promise.all(listed.map(async (e) => {
+    if (cache.files.get(e.name)?.mtimeMs === e.mtimeMs)
+      return;
+    const text = await place.fs.read(`${place.folder}/${e.name}`).catch(() => null);
+    cache.files.set(e.name, { mtimeMs: e.mtimeMs, file: text === null ? null : parsed(text) });
+  }));
+  return [...cache.files.values()].flatMap((x) => x.file ? [x.file] : []);
+}
+var DAY_MS4 = 24 * 60 * 60000;
+function indexOf(place, files, now) {
+  const cache = cacheOf(place.folder);
+  const fileTimes = [...cache.files.entries()].map(([name, x]) => `${name}@${x.mtimeMs}`);
+  const said = [Math.floor(now / DAY_MS4), ...fileTimes].join("|");
+  if (cache.index?.said === said)
+    return cache.index.index;
+  const index = answerIndex(historyDocs(files, now));
+  cache.index = { said, index };
+  return index;
+}
+var parentOf = (path) => path.replace(/\/+[^/]*\/*$/, "") || "/";
+var baseName2 = (path) => path.replace(/\/+$/, "").split("/").pop() ?? "";
+function resolved(from, to) {
+  if (to.startsWith("/"))
+    return to;
+  const parts = from.split("/");
+  for (const part of to.split("/")) {
+    if (part === "..")
+      parts.pop();
+    else if (part && part !== ".")
+      parts.push(part);
+  }
+  return parts.join("/") || "/";
+}
+function repoName(fs, folder) {
+  const known = repos.get(folder);
+  if (known)
+    return known;
+  const found = findRepo(fs, folder).catch(() => null);
+  repos.set(folder, found);
+  return found;
+}
+async function findRepo(fs, folder) {
+  let dir = folder.replace(/\/+$/, "");
+  for (let depth = 0;depth < 40 && dir; depth++) {
+    const link = await fs.read(`${dir}/.git`).catch(() => null);
+    const gitdir = link?.match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+    if (gitdir) {
+      const linked = resolved(dir, gitdir);
+      const common = await fs.read(`${linked}/commondir`).catch(() => null);
+      const root = common ? resolved(linked, common.trim()) : linked;
+      return baseName2(root) === ".git" ? baseName2(parentOf(root)) : baseName2(root).replace(/\.git$/, "");
+    }
+    if (await fs.read(`${dir}/.git/HEAD`).catch(() => null) !== null)
+      return baseName2(dir);
+    const up = parentOf(dir);
+    if (up === dir)
+      break;
+    dir = up;
+  }
+  return null;
+}
+async function writeHistory(place, id, s, now) {
+  const path = `${place.folder}/${historyFileName(place.host, id)}`;
+  const previous = parsed(await place.fs.read(path).catch(() => ""));
+  const isNothingToWrite = !previous && !s.ledger.closed.some((c) => c.item?.kind === "question");
+  if (isNothingToWrite)
+    return;
+  const repo = s.place?.folder ? await repoName(place.fs, s.place.folder) : null;
+  const next = questionHistory(previous, s, { host: place.host, session: id, repo }, now);
+  if (isHistoryChanged(previous, next))
+    await place.fs.write(path, JSON.stringify(next));
+}
+async function seeded(place, now) {
+  const cache = cacheOf(place.folder);
+  if (cache.isSeeded)
+    return;
+  const listed = await place.fs.list(place.folder);
+  if (!listed.some((e) => e.name.startsWith(`${place.host}-`)))
+    for (const { id, session } of await place.keptSessions())
+      await writeHistory(place, id, session, now);
+  cache.isSeeded = true;
+}
+function addedQuestions(before, after) {
+  const known = new Set([...before.ledger.items, ...before.ledger.closed].map((x) => x.id));
+  return after.ledger.items.filter((i) => i.kind === "question" && !i.earlier && !known.has(i.id));
+}
+function isHistoryStepNeeded(before, after) {
+  return before.ledger.closed !== after.ledger.closed || addedQuestions(before, after).length > 0;
+}
+async function historyStep(place, id, before, after, now) {
+  if (!place || !isHistoryStepNeeded(before, after))
+    return after;
+  const added = addedQuestions(before, after);
+  const isClosedChanged = before.ledger.closed !== after.ledger.closed;
+  await seeded(place, now).catch(() => {
+    return;
+  });
+  const tagged = added.length > 0 ? await withEarlier(place, id, after, added, now).catch(() => after) : after;
+  if (isClosedChanged)
+    await writeHistory(place, id, tagged, now).catch(() => {
+      return;
+    });
+  return tagged;
+}
+async function withEarlier(place, id, s, added, now) {
+  const files = await readHistory(place);
+  const index = indexOf(place, files, now);
+  const isShown = isEarlierShown(historyStart(files, now), now);
+  const matches = new Map(added.flatMap((item) => {
+    const match = bestEarlier(index, item, answerKey(place.host, id, item.id));
+    return match ? [[item.id, earlierOf(match, isShown)]] : [];
+  }));
+  if (matches.size === 0)
+    return s;
+  const items = s.ledger.items.map((i) => matches.has(i.id) ? { ...i, earlier: matches.get(i.id) } : i);
+  return { ...s, ledger: { ...s.ledger, items } };
+}
 
 // ../hooks/model-text.ts
 function guidanceText(host) {
@@ -11021,7 +11384,7 @@ var GOAL_PARTS = {
   "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
-  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it only when they ask for a new goal, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
+  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
@@ -11544,11 +11907,15 @@ function inTurn(key, fn) {
   });
   return run;
 }
+var questionHistory2 = null;
+function useQuestionHistory(place) {
+  questionHistory2 = place;
+}
 async function updateState(dir, sessionId, change) {
   const path = statePath(dir, sessionId);
   return inTurn(path, async () => {
     const { state: current, isSaved } = await readSaved(dir, sessionId);
-    const changed = await change(current);
+    const changed = await historyStep(questionHistory2, sessionId, current, await change(current), Date.now());
     if (isSaved && changed === current)
       return current;
     const next = pruned(changed);
@@ -11747,6 +12114,46 @@ function styleOf(theme) {
     tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : name === "working" ? text : truecolor(tones[name], text),
     banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
     tint: (tone, share, text, rest = null) => truecolor(fadedOver(tone === "key" ? tones.key : tone === "muted" ? MUTED_TEXT[mode] : tones[tone === "error" ? "errorMark" : "done"], rest === "dim" ? MUTED_TEXT[mode] : rest && rest !== "sep" && rest !== "accent" ? tones[rest] : THEME_TEXT[mode], share), text)
+  };
+}
+
+// src/question-history.ts
+import { mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rename as rename2, stat as stat2, writeFile as writeFile2 } from "fs/promises";
+import { dirname, join as join2 } from "path";
+var nodeFs = {
+  list: async (folder) => {
+    const names = await readdir2(folder).catch(() => []);
+    const listed = await Promise.all(names.map(async (name) => {
+      const info = await stat2(join2(folder, name)).catch(() => null);
+      return info?.isFile() ? { name, mtimeMs: info.mtimeMs } : null;
+    }));
+    return listed.filter((x) => x !== null);
+  },
+  read: (path) => readFile2(path, "utf8"),
+  write: async (path, text) => {
+    await mkdir2(dirname(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile2(tmp, text);
+    await rename2(tmp, path);
+  }
+};
+function questionHistoryPlace(env, dir) {
+  const folder = historyFolder(env);
+  if (!folder)
+    return null;
+  return {
+    fs: nodeFs,
+    folder,
+    host: "omp",
+    keptSessions: async () => {
+      const names = (await readdir2(join2(dir, "sessions")).catch(() => [])).filter(isSessionFile);
+      const read = await Promise.all(names.map(async (name) => {
+        const id = name.slice(0, -".json".length);
+        const session = await readState(dir, id).catch(() => null);
+        return session ? { id, session } : null;
+      }));
+      return read.filter((x) => x !== null);
+    }
   };
 }
 
@@ -12527,8 +12934,8 @@ function activityHandlers(context, sessions) {
 
 // src/host-presses.ts
 import { watch } from "fs";
-import { appendFile, lstat, mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "fs/promises";
-import { dirname, join as join2 } from "path";
+import { appendFile, lstat, mkdir as mkdir3, readdir as readdir3, readFile as readFile3, rename as rename3, rm, stat as stat3, writeFile as writeFile3 } from "fs/promises";
+import { dirname as dirname2, join as join3 } from "path";
 import { fileURLToPath } from "url";
 
 // ../hooks/herdr-press-file.ts
@@ -13256,47 +13663,47 @@ async function startInHerdrApp(run, files, target, bundledFolder, now, log) {
 // src/host-presses.ts
 var HERDR_LOG_BYTES = 64 * 1024;
 function herdrLog(dir) {
-  const path = join2(dir, "herdr.log");
+  const path = join3(dir, "herdr.log");
   return (text) => void (async () => {
-    const size = await stat2(path).then((s) => s.size, () => 0);
+    const size = await stat3(path).then((s) => s.size, () => 0);
     const line = `${new Date().toISOString()} ${text}
 `;
-    await mkdir2(dir, { recursive: true });
-    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+    await mkdir3(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile3(path, line) : appendFile(path, line));
   })().catch(() => {
     return;
   });
 }
 var pressFiles = {
-  list: (folder) => readdir2(folder),
+  list: (folder) => readdir3(folder),
   read: async (path) => {
-    const problem = pressFileProblem(await stat2(path));
+    const problem = pressFileProblem(await stat3(path));
     if (problem)
       throw new Error(problem);
-    return readFile2(path, "utf8");
+    return readFile3(path, "utf8");
   },
-  move: (from, to) => rename2(from, to),
+  move: (from, to) => rename3(from, to),
   remove: (path) => rm(path, { force: true })
 };
 var startFiles = {
   kind: (path) => lstat(path).then((s) => s.isSymbolicLink() ? "link" : s.isDirectory() ? "folder" : s.isFile() ? "file" : "other", () => null),
-  read: (path) => readFile2(path, "utf8"),
+  read: (path) => readFile3(path, "utf8"),
   write: async (path, text) => {
-    await mkdir2(dirname(path), { recursive: true });
-    await writeFile2(path, text);
+    await mkdir3(dirname2(path), { recursive: true });
+    await writeFile3(path, text);
   },
-  makeFolder: async (path) => void await mkdir2(path, { recursive: true }),
-  move: (from, to) => rename2(from, to),
+  makeFolder: async (path) => void await mkdir3(path, { recursive: true }),
+  move: (from, to) => rename3(from, to),
   remove: (path) => rm(path, { force: true }),
   removeFolder: (path) => rm(path, { recursive: true, force: true }),
-  list: async (folder) => (await readdir2(folder, { withFileTypes: true })).filter((e) => e.isFile() || e.isDirectory()).map((e) => e.name)
+  list: async (folder) => (await readdir3(folder, { withFileTypes: true })).filter((e) => e.isFile() || e.isDirectory()).map((e) => e.name)
 };
 async function startOmpInHerdrApp(target, run, log) {
   if (target?.kind !== "terminal")
     return null;
   return startInHerdrApp(run, startFiles, target, bundledHerdrMod(), Date.now(), log);
 }
-var bundledHerdrMod = () => join2(dirname(fileURLToPath(import.meta.url)), "herdr-mod");
+var bundledHerdrMod = () => join3(dirname2(fileURLToPath(import.meta.url)), "herdr-mod");
 var message4 = (err) => err instanceof Error ? err.message : String(err);
 function ompPresses(target, apply, log) {
   let stopFollowing = null;
@@ -13317,14 +13724,14 @@ function ompPresses(target, apply, log) {
       } catch (err) {
         return log(`Herdr presses not read: ${message4(err)}`);
       }
-      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile2(path, "utf8"), appHome, sessionId, "omp", terminal), async (_id, file) => {
+      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile3(path, "utf8"), appHome, sessionId, "omp", terminal), async (_id, file) => {
         await apply(ctx, file);
         return true;
       }, log);
       const watchFolder = (wake) => {
         let isStopped = false;
         let watcher = null;
-        mkdir2(folder, { recursive: true }).then(() => {
+        mkdir3(folder, { recursive: true }).then(() => {
           if (isStopped)
             return;
           watcher = watch(folder, () => wake());
@@ -13503,8 +13910,8 @@ function panelCalls(context, sessions, herdrAsk) {
 }
 
 // src/host-sessions.ts
-import { mkdir as mkdir3, readdir as readdir3, rename as rename3, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
-import { dirname as dirname2, join as join3 } from "path";
+import { mkdir as mkdir4, readdir as readdir4, rename as rename4, rm as rm2, rmdir, writeFile as writeFile4 } from "fs/promises";
+import { dirname as dirname3, join as join4 } from "path";
 
 // ../hooks/conversation.ts
 var NL7 = `
@@ -13541,10 +13948,10 @@ function flattenConversation(turns) {
 
 // src/commands.ts
 import { constants } from "fs";
-import { access, stat as stat3 } from "fs/promises";
+import { access, stat as stat4 } from "fs/promises";
 function openTarget2(run, target, root, home) {
   return openTarget(run, {
-    stat: (path) => stat3(path).catch(() => null),
+    stat: (path) => stat4(path).catch(() => null),
     isExecutable: (path) => access(path, constants.X_OK).then(() => true, () => false)
   }, target, root, home);
 }
@@ -13556,25 +13963,25 @@ function sessionIdInFile(file) {
 }
 var publishFiles = {
   write: async (path, text) => {
-    await mkdir3(dirname2(path), { recursive: true });
-    await writeFile3(path, text);
+    await mkdir4(dirname3(path), { recursive: true });
+    await writeFile4(path, text);
   },
-  move: (from, to) => rename3(from, to),
+  move: (from, to) => rename4(from, to),
   remove: (path) => rm2(path, { force: true }),
   removeFolder: (path) => rm2(path, { recursive: true, force: true })
 };
 var recordFiles = {
   write: async (path, text) => {
-    await mkdir3(dirname2(path), { recursive: true });
-    await writeFile3(path, text);
+    await mkdir4(dirname3(path), { recursive: true });
+    await writeFile4(path, text);
   },
-  list: (folder) => readdir3(folder).catch(() => []),
+  list: (folder) => readdir4(folder).catch(() => []),
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),
   removeFolder: (path) => rmdir(path)
 };
 var statusRecords = (dir, sessionId) => ({
   host: "omp",
-  folder: join3(dir, "overview-calls"),
+  folder: join4(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
@@ -14001,13 +14408,13 @@ async function copyToClipboard(text) {
   return `no clipboard command started (${candidates.map((c) => c[0]).join(", ")})`;
 }
 var defaultDeps = {
-  stateDir: (pi) => join4(pi.pi.getAgentDir(), "inbox"),
+  stateDir: (pi) => join5(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
-  isNextBuild: existsSync(join4(dirname3(dirname3(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
-  comparePage: join4(dirname3(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
+  isNextBuild: existsSync(join5(dirname4(dirname4(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join5(dirname4(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -14015,7 +14422,8 @@ var defaultDeps = {
   }),
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
-  herdrTarget: herdrTarget(process.env)
+  herdrTarget: herdrTarget(process.env),
+  questionHistory: (dir) => questionHistoryPlace(process.env, dir)
 };
 var messageOf = (err) => err instanceof Error ? err.message : String(err);
 function byNewestRevision(a, b) {
@@ -14031,6 +14439,7 @@ function inboxModel(ctx) {
 }
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
+  useQuestionHistory(deps.questionHistory?.(dir) ?? null);
   const run = async (args, { cwd, timeoutMs }) => {
     const [file = "", ...rest] = args;
     try {
@@ -14288,7 +14697,7 @@ function createInbox(pi, deps = defaultDeps) {
     }
   }
   const openHerdrPanel = herdrPanelOpener();
-  const isFile = (path) => stat4(path).then((s) => s.isFile());
+  const isFile = (path) => stat5(path).then((s) => s.isFile());
   pi.registerCommand("inbox", {
     description: INBOX_COMMAND_TEXT,
     handler: async (args, ctx) => {

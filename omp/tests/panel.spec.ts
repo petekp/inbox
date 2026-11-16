@@ -178,6 +178,20 @@ test('a question’s context draws whole and dim, first under its title, on its 
   expect(flat(onRow(other))).not.toContain(firstWords)
 })
 
+test('a question’s earlier answer draws dim after its context, with the answer bold, on its selected row only', () => {
+  const screen = screenOf()
+  const row = firstQuestion(screen)
+  const line = drawn(screen, onRow(row), 80).find(l => strip(l).includes('You answered'))
+  expect(strip(line ?? '')).toContain('You answered Flick 3 days ago, in glasses-app,')
+  expect(line).toContain(`${ESC}1mFlick`)
+  const shown = text(screen, onRow(row), 80)
+  expect(shown.indexOf('You answered')).toBeGreaterThan(
+    shown.indexOf(row.contextLine!.split(' ').slice(0, 3).join(' ')),
+  )
+  const other = screen.view.needsYou.questions.find(r => r.state.is === 'open' && r.id !== row.id)!
+  expect(text(screen, onRow(other), 80)).not.toContain('You answered')
+})
+
 test('an Asks row names the open subject it holds up', () => {
   const shown = text(screenOf(), { ...INITIAL_UI, tab: 'needsYou' })
 

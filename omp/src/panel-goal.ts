@@ -2,23 +2,24 @@ import { foldGlyph } from '../../hooks/fold-chevron'
 import {
   GOAL_FIELD,
   GOAL_KEYS_ID,
+  goalKeyGroups,
   goalKeys,
-  isSuggestionShown,
   milestoneKeyPlan,
   type StatusKey,
 } from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL, shownMilestones } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../hooks/status-goal-page'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusPage } from '../../hooks/status-page'
 import { milestoneRows } from '../../hooks/status-folds'
 import type { IsCollapsed } from '../../hooks/status-folds'
 import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
 import type { PathLine, WorkJoint } from '../../hooks/status-path'
-import { feedbackPaint, paintMark } from './panel-draw'
+import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
-import type { Entry } from './panel-lines'
+import type { ButtonFace, Entry } from './panel-lines'
 import { PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
+import { pageFocus } from './panel-keys'
 import { foldChevron, pageButtonLines, pageLine, pageRuleCells, partHeading } from './panel-page'
 import { collapsedIn, indented, visibleLength, wrapText } from './panel-text'
 import type { Style } from './panel'
@@ -30,22 +31,26 @@ import { cellWidth } from '../../hooks/text'
  * path's line through it, the Later label, a milestone, or on the empty page New or its field.
  */
 export type GoalPart =
-  | { is: 'heading'; text: string; mark: GoalBlock['mark']; page: StatusPage | null; isSuggestionOpen: boolean }
-  | { is: 'title'; goal: GoalBlock | null; isTyping: boolean; suggestion: string | null }
+  | { is: 'heading'; text: string; mark: GoalBlock['mark']; page: StatusPage | null }
+  | { is: 'title'; goal: GoalBlock | null; isTyping: boolean; suggestion: Offer | null }
   | { is: 'fold'; fold: NonNullable<GoalBlock['milestonesFold']> }
   | { is: 'milestone'; row: MilestoneRow }
   | { is: 'keys'; keys: StatusKey[] }
-  | { is: 'suggestion'; text: string }
+  | { is: 'suggestion'; offer: Offer }
   | { is: 'gap'; line: PathLine }
   | { is: 'later' }
   | { is: 'field' }
+
+/** The suggested goal's offer: its words, its buttons, and the goal target's buttons that come before them. */
+type Offer = { text: string; keys: StatusKey[]; before: StatusKey[] }
 
 /** The id of the Status target a part draws the buttons of, or null for a part with none. */
 export function goalPartId(part: GoalPart): string | null {
   if (part.is === 'milestone') return part.row.id
   if (part.is === 'fold') return part.fold.id
   if (part.is === 'heading') return part.page ? GOAL_KEYS_ID : null
-  return part.is === 'keys' ? GOAL_KEYS_ID : null
+  if (part.is === 'title') return part.suggestion ? GOAL_KEYS_ID : null
+  return part.is === 'keys' || part.is === 'suggestion' ? GOAL_KEYS_ID : null
 }
 
 const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
@@ -57,17 +62,21 @@ const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
  * only while the person has it unfolded. A blank line comes before each milestone unless the one above draws
  * only its name, and before the Later label above the first that waits under it. The path's line runs in the mark
  * column from each milestone to the next. While the person types a goal, the field takes the text's place, and the
- * buttons leave. While the person has the suggested goal open, it takes the text's place, with Set, Edit and Cancel.
+ * buttons leave. While the page has a suggested goal, its offer takes the text's place with Set this goal and Edit
+ * after it, and the heading keeps only Undo.
  */
 export function goalSection(
   page: StatusPage,
   typing: string | null,
-  isSuggestionOpen: boolean,
   isUnfolded: (id: string) => boolean,
   isCollapsed: IsCollapsed,
 ): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
-  const suggestion = !isTyping && isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null
+  const groups = goalKeyGroups(page)
+  const suggestion =
+    isTyping || page.suggestedGoal === null
+      ? null
+      : { text: page.suggestedGoal, keys: groups.offer, before: groups.heading }
   const g = page.goal
   const milestones = shownMilestones(g, isUnfolded)
   const fold = g?.milestonesFold ?? null
@@ -78,7 +87,6 @@ export function goalSection(
       text: g?.label ?? GOAL_HEADING,
       mark: g?.mark ?? null,
       page: isTyping ? null : page,
-      isSuggestionOpen: suggestion !== null,
     }),
     goalEntry({ is: 'title', goal: g, isTyping, suggestion }),
     ...(fold === null ? [] : [goalEntry({ is: 'fold', fold })]),
@@ -131,21 +139,57 @@ function withJoint(lines: string[], joint: WorkJoint, s: Style): string[] {
   })
 }
 
-/** Under the empty state: New, or the field it opened. */
-export function setGoal(under: { keys: StatusKey[]; isFieldOpen: boolean; suggestion: string | null }): Entry[] {
+/** Under the empty state: New, the suggested goal's offer, or the field New opened. */
+export function setGoal(under: {
+  keys: StatusKey[]
+  offerKeys: StatusKey[]
+  isFieldOpen: boolean
+  suggestion: string | null
+}): Entry[] {
   if (under.isFieldOpen) return [goalEntry({ is: 'field' })]
 
   return [
-    ...(under.suggestion === null ? [] : [goalEntry({ is: 'suggestion', text: under.suggestion })]),
-    goalEntry({ is: 'keys', keys: under.keys }),
+    ...(under.keys.length === 0 ? [] : [goalEntry({ is: 'keys', keys: under.keys })]),
+    ...(under.suggestion === null
+      ? []
+      : [
+          goalEntry({ is: 'suggestion', offer: { text: under.suggestion, keys: under.offerKeys, before: under.keys } }),
+        ]),
   ]
 }
 
-/** The suggested goal at column `at`: a dim label, then its text in the goal text's style. */
-function suggestionLines(text: string, d: Draw, at: number): string[] {
-  const { width, style: s } = d
+/** The offer's buttons as faces, with the one the goal target's focus is on, or -1 while none of them is. */
+function offerFaces(offer: Offer, d: Draw, isSelected: boolean): { faces: ButtonFace[]; focused: number } {
+  const before = offer.before.length
+  const target = { id: GOAL_KEYS_ID, keys: [...offer.before, ...offer.keys] }
+  const focus = isSelected ? pageFocus(target, d.ui) - before : -1
+  const faces = offer.keys.map((k): ButtonFace => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false,
+    ...(k.emphasis === 'quiet' ? { isQuiet: true } : {}),
+  }))
 
-  return [' '.repeat(at) + s.dim(SUGGESTED_GOAL_LABEL), ...indented(text, at, width, Infinity, s.bold)]
+  return { faces, focused: focus >= 0 && focus < faces.length ? focus : -1 }
+}
+
+/**
+ * The suggested goal's offer at column `at`, dim like the line that says no goal is set, with its buttons after it. When
+ * they do not fit on the offer's last line, they sit on a line under it.
+ */
+function offerLines(offer: Offer, d: Draw, at: number, isSelected: boolean): string[] {
+  const { width, style: s } = d
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim)
+  const { faces, focused } = offerFaces(offer, d, isSelected)
+  if (faces.length === 0) return text
+  const keys = faceLines(faces, focused, 0, width, s, s.dim('·'))
+  const last = text[text.length - 1] ?? ''
+  const first = keys[0] ?? ''
+  if (keys.length === 1 && visibleLength(last) + visibleLength(first) + 1 <= width - 1)
+    return [...text.slice(0, -1), `${last} ${first}`]
+
+  return [...text, ...faceLines(faces, focused, at - 1, width, s, s.dim('·'))]
 }
 
 /** The goal's text field at column `at`, with the draft in it and the cursor after it, under its placeholder. */
@@ -208,13 +252,10 @@ function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[]
 function headingLines(part: GoalPart & { is: 'heading' }, d: Draw, isSelected: boolean): string[] {
   const { width, now, style: s } = d
   const keys = part.page
-    ? pageButtonLines(
-        { id: GOAL_KEYS_ID, keys: goalKeys(part.page, part.isSuggestionOpen) },
-        d,
-        isSelected,
-        1,
-        s.dim('·'),
-      )
+    ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim('·'), {
+        id: GOAL_KEYS_ID,
+        keys: goalKeys(part.page),
+      })
     : []
   const right = width - 1
   const { mark } = part
@@ -250,7 +291,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
     const text = part.isTyping
       ? fieldLines(d, textAt)
       : part.suggestion !== null
-        ? suggestionLines(part.suggestion, d, textAt)
+        ? offerLines(part.suggestion, d, textAt, isSelected)
         : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity)
 
     return [
@@ -261,7 +302,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
     ]
   }
   if (part.is === 'milestone') return milestoneLines(part.row, d, isSelected)
-  if (part.is === 'suggestion') return suggestionLines(part.text, d, PAGE_MARK_AT)
+  if (part.is === 'suggestion') return offerLines(part.offer, d, PAGE_MARK_AT, isSelected)
   if (part.is === 'keys') return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT)
   return fieldLines(d, PAGE_MARK_AT)
 }

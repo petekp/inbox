@@ -65,12 +65,17 @@ test('a selected question draws why it came up first under its title, and a coll
   expect(collapsed.body.some(l => l.text === question.contextLine)).toBe(false)
 })
 
-test('a selected question with described answers draws its context, answers and Holds up line on one tree, with the last line ending it', () => {
+test('a selected question with described answers draws its context, earlier answer, answers and Holds up line on one tree, with the last line ending it', () => {
   const screen = demoScreen()
   const question = screen.view.needsYou.questions.find(r => r.id === 'd11')!
   const selected = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: question.id }))).find(
     b => b.id === question.id,
   )!
+  const texts = selected.body.map(l => l.text)
+  const earlier = texts.indexOf(
+    'You answered Flick 3 days ago, in glasses-app, to “Which gesture should clear a glance?”',
+  )
+  expect([earlier > 0, earlier < texts.findIndex(t => t.startsWith('Pinch: '))]).toEqual([true, true])
   const recommended = selected.body.find(l => l.text.startsWith('Pinch: '))!
   expect(recommended.text).toContain('Recommended: a flick fires by accident while walking')
   const trees = selected.body.filter(l => l.tree !== undefined).map(l => l.tree)

@@ -26,7 +26,7 @@ export function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
     .child(ruleLine(t))
 }
 
-export function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
+export function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme, buttons: Element[] = []): Element {
   const text = div()
     .min_w(0)
     .when(b.isStrong, e => e.font_semibold())
@@ -41,4 +41,7 @@ export function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
     .whitespace_normal()
     .when(b.isStrong, e => e.text_size(HEAD_TEXT).line_height(HEAD_LINE))
     .child(text)
+    .when(buttons.length > 0, e =>
+      e.child(h_flex().flex_none().items_center().gap(CONTROL_GAP).pl(CONTROL_GAP).children(buttons)),
+    )
 }

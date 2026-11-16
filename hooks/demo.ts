@@ -226,6 +226,14 @@ export function demoView(now: number, agent: string): DemoCopy {
           helps: [],
           turn: 14,
           at: now - 12 * MIN,
+          earlier: {
+            ask: 'Which gesture should clear a glance?',
+            answer: 'Flick',
+            at: now - 3 * 24 * 60 * MIN,
+            repo: 'glasses-app',
+            score: 0.41,
+            isShown: true,
+          },
         },
         {
           id: 'd12',

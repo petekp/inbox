@@ -7,15 +7,16 @@ import { API, nameOf, propertiesOf, propertyOf, ts } from './ts.mjs'
 const FEATURE_ID = /^[a-z]+(-[a-z]+)*$/
 const DIFFERENCE_TABLES = { 'claude-code': 'main', codex: 'main', omp: 'omp' }
 
+/** The files the record is read from: `CLIENTS` from the first, `FeatureId` from whichever declares it. */
+const RECORD_FILES = ['hooks/clients.ts', 'hooks/client-features.ts']
+
 function parityRecord(root) {
-  const path = 'hooks/clients.ts'
-  if (!existsSync(join(root, path))) return null
+  if (!existsSync(join(root, RECORD_FILES[0]))) return null
   const api = new API({ cwd: root })
   try {
-    const absolute = join(root, path)
-    const project = api.updateSnapshot({ openFiles: [absolute] }).getDefaultProjectForFile(absolute)
-    const source = project?.program.getSourceFile(absolute) ?? project?.program.getSourceFile(realpathSync(absolute))
-    if (!source) throw new Error(`Cannot parse ${path}.`)
+    const paths = RECORD_FILES.filter(path => existsSync(join(root, path)))
+    const absolutes = paths.map(path => join(root, path))
+    const snapshot = api.updateSnapshot({ openFiles: absolutes })
     const record = { features: [], clients: new Map() }
     const visit = node => {
       if (ts.isTypeAliasDeclaration(node) && node.name.text === 'FeatureId') {
@@ -39,7 +40,12 @@ function parityRecord(root) {
       }
       node.forEachChild(visit)
     }
-    visit(source)
+    for (const [n, absolute] of absolutes.entries()) {
+      const project = snapshot.getDefaultProjectForFile(absolute)
+      const source = project?.program.getSourceFile(absolute) ?? project?.program.getSourceFile(realpathSync(absolute))
+      if (!source) throw new Error(`Cannot parse ${paths[n]}.`)
+      visit(source)
+    }
 
     return record
   } finally {

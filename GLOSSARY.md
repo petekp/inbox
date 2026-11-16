@@ -23,6 +23,16 @@ agent gave when it recorded the question. The question's row draws it first
 under its title while the row is selected.
 _Avoid_: background, body
 
+**Earlier answer**:
+The answer the person gave before to the question most like a new one, found in
+the question history. The new question's row draws it on one line under its
+context while the row is open. Stored as `Item.earlier`.
+_Avoid_: duplicate, repeat
+
+**Question history**:
+The answers the person gave, one file per session in a folder every host
+shares, kept 180 days. Each host writes only its own sessions' files.
+
 **Option note**:
 What picking one of a question's options does, in at most 12 words. The agent
 gives one for each option when it records the question, and a dialog's option
@@ -154,10 +164,10 @@ It stays until it is met.
 
 **Suggested goal**:
 The goal the inbox model offers while no goal is set or the goal is met, and
-the next goal is not clear enough to set. It shows only when the person presses
-the goal's New, in the goal's place, with Set, Edit and Cancel. Set makes it an
-inferred goal. Edit opens the goal's field holding its words, and that field's
-Cancel shows the suggestion again.
+the next goal is not clear enough to set. It shows at once in the goal's place,
+as a dim line, "Next goal: …?", with Set this goal and Edit after it. Set this
+goal makes it an inferred goal. Edit opens the goal's field holding its words,
+and that field's Cancel shows the suggestion again.
 
 **Removed goal**:
 A goal the person cleared with the goal's Remove button. The inbox model does not set it

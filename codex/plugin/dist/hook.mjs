@@ -1,7 +1,7 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
 // src/hook-main.ts
-import { dirname as dirname4, join as join5 } from "node:path";
+import { dirname as dirname5, join as join6 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/detached-update.ts
@@ -888,8 +888,8 @@ function numberedTasks(rows, textKey) {
   return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
 }
 function codexPlanOf(args) {
-  const parsed = typeof args === "string" ? safeJson(args) : args;
-  const plan = recordOf(parsed).plan;
+  const parsed2 = typeof args === "string" ? safeJson(args) : args;
+  const plan = recordOf(parsed2).plan;
   if (!Array.isArray(plan)) return null;
   return numberedTasks(plan, "step");
 }
@@ -1981,10 +1981,12 @@ function emptySession() {
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
+var SESSION_FILE = /^[\w-]{1,100}\.json$/;
 function sessionFile(sessionId) {
   if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
   return `${sessionId}.json`;
 }
+var isSessionFile = (name) => SESSION_FILE.test(name);
 function missingAsNull(err) {
   if (err.code === "ENOENT") return null;
   throw err;
@@ -2568,6 +2570,93 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
   ];
 }
 
+// ../hooks/earlier-answers.ts
+var K1 = 1.2;
+var B = 0.75;
+var RELATIVE_FLOOR = 0.22;
+var EARLIER_TEXT_CHARS = 200;
+var STOP_WORDS2 = new Set(
+  `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/)
+);
+function searchTerms(text2) {
+  return (text2.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
+    (w) => !STOP_WORDS2.has(w) && (w.length > 1 || /\d/.test(w))
+  );
+}
+function answerIndex(docs) {
+  const postings = /* @__PURE__ */ new Map();
+  const lengths = docs.map((d, n) => {
+    const terms = searchTerms(`${d.ask} ${d.answer}`);
+    const counts = /* @__PURE__ */ new Map();
+    for (const t of terms) counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const [t, count] of counts) {
+      const list = postings.get(t);
+      if (list) list.push([n, count]);
+      else postings.set(t, [[n, count]]);
+    }
+    return terms.length;
+  });
+  const total = lengths.reduce((sum, l) => sum + l, 0);
+  return { docs, lengths, postings, averageLength: docs.length > 0 ? total / docs.length : 0 };
+}
+function bestEarlier(index, question, skip) {
+  const n = index.docs.length;
+  const scores = /* @__PURE__ */ new Map();
+  let reachable = 0;
+  for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
+    const posted = index.postings.get(term);
+    if (!posted) continue;
+    const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
+    reachable += weight * (K1 + 1);
+    for (const [doc, count] of posted) {
+      const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
+      scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
+    }
+  }
+  let best = null;
+  for (const [doc, score] of scores) {
+    const d = index.docs[doc];
+    if (d.key === skip || best && score <= best.score) continue;
+    best = { doc: d, score };
+  }
+  if (!best || reachable === 0) return null;
+  const relative = best.score / reachable;
+  return relative >= RELATIVE_FLOOR ? { doc: best.doc, score: relative } : null;
+}
+function earlierOf(match, isShown) {
+  const { doc } = match;
+  return {
+    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
+    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    at: doc.at,
+    repo: doc.repo,
+    score: Math.round(match.score * 1e3) / 1e3,
+    isShown
+  };
+}
+var DAY_MS2 = 24 * 60 * 6e4;
+function agoText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 6e4));
+  if (minutes < 60) return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  const days = Math.round(ms / DAY_MS2);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+function earlierLineOf(earlier, now) {
+  if (!earlier?.isShown) return null;
+  const where = earlier.repo ? `, in ${earlier.repo},` : "";
+  return {
+    lead: "You answered ",
+    answer: earlier.answer,
+    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
+  };
+}
+
 // ../hooks/view.ts
 var HOLDS_UP_TEXT = "Holds up";
 function needsYouOrder(ledger) {
@@ -2715,7 +2804,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
-      contextLine: state.is === "open" ? row.item?.context ?? null : null
+      contextLine: state.is === "open" ? row.item?.context ?? null : null,
+      earlierLine: state.is === "open" ? earlierLineOf(row.item?.earlier, now) : null
     };
   };
   const itemRow = (item) => {
@@ -3135,6 +3225,210 @@ function pruned(s) {
   });
 }
 
+// ../hooks/question-history.ts
+var HISTORY_VERSION = 1;
+var DAY_MS3 = 24 * 60 * 6e4;
+var HISTORY_KEEP_MS = 180 * DAY_MS3;
+var BASELINE_MS = 7 * DAY_MS3;
+var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
+function historyFileName(host, session) {
+  return `${host}-${session.replace(/[^\w.-]/g, "_")}.json`;
+}
+function isAnswer(c) {
+  if (c.kind !== "question") return false;
+  if (c.how === "answered") return true;
+  return c.how === "update" && !NOT_AN_ANSWER2.test(c.outcome.trim());
+}
+var keyOf = (q) => `${q.id}@${q.askedAt ?? ""}`;
+var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+function questionHistory(previous, s, place, now) {
+  const answered = s.ledger.closed.filter(isAnswer).map((c) => ({
+    id: c.id,
+    ask: c.ask,
+    options: c.item?.options ?? [],
+    askedAt: c.item?.at ?? null,
+    answer: c.outcome,
+    answeredAt: c.at,
+    how: c.how,
+    isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
+    earlier: c.item?.earlier ?? null,
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
+  }));
+  const open2 = new Set(s.ledger.items.map((i) => keyOf({ id: i.id, askedAt: i.at })));
+  const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf(q), q]));
+  for (const q of answered) byKey.set(keyOf(q), q);
+  const questions = [...byKey.values()].filter((q) => !open2.has(keyOf(q)) && now - q.answeredAt <= HISTORY_KEEP_MS).sort((a, b) => a.answeredAt - b.answeredAt);
+  return {
+    version: HISTORY_VERSION,
+    host: place.host,
+    session: place.session,
+    repo: place.repo ?? previous?.repo ?? null,
+    created: previous?.created ?? now,
+    savedAt: now,
+    questions
+  };
+}
+function isHistoryChanged(previous, next) {
+  if (!previous) return next.questions.length > 0;
+  const said = (f) => JSON.stringify([f.repo, f.questions]);
+  return said(previous) !== said(next);
+}
+function upgradeHistoryFile(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const f = raw;
+  if (f.version !== HISTORY_VERSION || !Array.isArray(f.questions) || typeof f.session !== "string") return null;
+  return f;
+}
+function historyDocs(files, now) {
+  return files.flatMap(
+    (f) => f.questions.filter((q) => now - q.answeredAt <= HISTORY_KEEP_MS).map((q) => ({
+      key: answerKey(f.host, f.session, q.id),
+      ask: q.ask,
+      answer: q.answer,
+      at: q.answeredAt,
+      repo: f.repo
+    }))
+  );
+}
+function answerKey(host, session, id) {
+  return `${host}:${session}:${id}`;
+}
+function historyStart(files, now) {
+  return files.reduce((start, f) => Math.min(start, f.created), now);
+}
+function isEarlierShown(start, now) {
+  return now - start >= BASELINE_MS;
+}
+function historyFolder(env) {
+  const state = env.XDG_STATE_HOME?.trim() || (env.HOME?.trim() ? `${env.HOME.trim()}/.local/state` : "");
+  return state ? `${state.replace(/\/+$/, "")}/inbox/questions` : null;
+}
+
+// ../hooks/history-store.ts
+var caches = /* @__PURE__ */ new Map();
+var repos = /* @__PURE__ */ new Map();
+function cacheOf(folder) {
+  const known = caches.get(folder);
+  if (known) return known;
+  const made = { files: /* @__PURE__ */ new Map(), index: null, isSeeded: false };
+  caches.set(folder, made);
+  return made;
+}
+var parsed = (text2) => {
+  try {
+    return upgradeHistoryFile(JSON.parse(text2));
+  } catch {
+    return null;
+  }
+};
+async function readHistory(place) {
+  const cache = cacheOf(place.folder);
+  const listed = (await place.fs.list(place.folder)).filter((e) => e.name.endsWith(".json"));
+  const names = new Set(listed.map((e) => e.name));
+  for (const name of cache.files.keys()) if (!names.has(name)) cache.files.delete(name);
+  await Promise.all(
+    listed.map(async (e) => {
+      if (cache.files.get(e.name)?.mtimeMs === e.mtimeMs) return;
+      const text2 = await place.fs.read(`${place.folder}/${e.name}`).catch(() => null);
+      cache.files.set(e.name, { mtimeMs: e.mtimeMs, file: text2 === null ? null : parsed(text2) });
+    })
+  );
+  return [...cache.files.values()].flatMap((x) => x.file ? [x.file] : []);
+}
+var DAY_MS4 = 24 * 60 * 6e4;
+function indexOf(place, files, now) {
+  const cache = cacheOf(place.folder);
+  const fileTimes = [...cache.files.entries()].map(([name, x]) => `${name}@${x.mtimeMs}`);
+  const said = [Math.floor(now / DAY_MS4), ...fileTimes].join("|");
+  if (cache.index?.said === said) return cache.index.index;
+  const index = answerIndex(historyDocs(files, now));
+  cache.index = { said, index };
+  return index;
+}
+var parentOf = (path) => path.replace(/\/+[^/]*\/*$/, "") || "/";
+var baseName2 = (path) => path.replace(/\/+$/, "").split("/").pop() ?? "";
+function resolved(from, to) {
+  if (to.startsWith("/")) return to;
+  const parts = from.split("/");
+  for (const part of to.split("/")) {
+    if (part === "..") parts.pop();
+    else if (part && part !== ".") parts.push(part);
+  }
+  return parts.join("/") || "/";
+}
+function repoName(fs, folder) {
+  const known = repos.get(folder);
+  if (known) return known;
+  const found = findRepo(fs, folder).catch(() => null);
+  repos.set(folder, found);
+  return found;
+}
+async function findRepo(fs, folder) {
+  let dir = folder.replace(/\/+$/, "");
+  for (let depth = 0; depth < 40 && dir; depth++) {
+    const link = await fs.read(`${dir}/.git`).catch(() => null);
+    const gitdir = link?.match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+    if (gitdir) {
+      const linked = resolved(dir, gitdir);
+      const common = await fs.read(`${linked}/commondir`).catch(() => null);
+      const root = common ? resolved(linked, common.trim()) : linked;
+      return baseName2(root) === ".git" ? baseName2(parentOf(root)) : baseName2(root).replace(/\.git$/, "");
+    }
+    if (await fs.read(`${dir}/.git/HEAD`).catch(() => null) !== null) return baseName2(dir);
+    const up = parentOf(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  return null;
+}
+async function writeHistory(place, id, s, now) {
+  const path = `${place.folder}/${historyFileName(place.host, id)}`;
+  const previous = parsed(await place.fs.read(path).catch(() => ""));
+  const isNothingToWrite = !previous && !s.ledger.closed.some((c) => c.item?.kind === "question");
+  if (isNothingToWrite) return;
+  const repo = s.place?.folder ? await repoName(place.fs, s.place.folder) : null;
+  const next = questionHistory(previous, s, { host: place.host, session: id, repo }, now);
+  if (isHistoryChanged(previous, next)) await place.fs.write(path, JSON.stringify(next));
+}
+async function seeded(place, now) {
+  const cache = cacheOf(place.folder);
+  if (cache.isSeeded) return;
+  const listed = await place.fs.list(place.folder);
+  if (!listed.some((e) => e.name.startsWith(`${place.host}-`)))
+    for (const { id, session } of await place.keptSessions()) await writeHistory(place, id, session, now);
+  cache.isSeeded = true;
+}
+function addedQuestions(before, after) {
+  const known = new Set([...before.ledger.items, ...before.ledger.closed].map((x) => x.id));
+  return after.ledger.items.filter((i) => i.kind === "question" && !i.earlier && !known.has(i.id));
+}
+function isHistoryStepNeeded(before, after) {
+  return before.ledger.closed !== after.ledger.closed || addedQuestions(before, after).length > 0;
+}
+async function historyStep(place, id, before, after, now) {
+  if (!place || !isHistoryStepNeeded(before, after)) return after;
+  const added = addedQuestions(before, after);
+  const isClosedChanged = before.ledger.closed !== after.ledger.closed;
+  await seeded(place, now).catch(() => void 0);
+  const tagged = added.length > 0 ? await withEarlier(place, id, after, added, now).catch(() => after) : after;
+  if (isClosedChanged) await writeHistory(place, id, tagged, now).catch(() => void 0);
+  return tagged;
+}
+async function withEarlier(place, id, s, added, now) {
+  const files = await readHistory(place);
+  const index = indexOf(place, files, now);
+  const isShown = isEarlierShown(historyStart(files, now), now);
+  const matches = new Map(
+    added.flatMap((item) => {
+      const match = bestEarlier(index, item, answerKey(place.host, id, item.id));
+      return match ? [[item.id, earlierOf(match, isShown)]] : [];
+    })
+  );
+  if (matches.size === 0) return s;
+  const items = s.ledger.items.map((i) => matches.has(i.id) ? { ...i, earlier: matches.get(i.id) } : i);
+  return { ...s, ledger: { ...s.ledger, items } };
+}
+
 // src/diagnostics.ts
 var DIAGNOSTIC_CHARS = 2e3;
 var ANSI_STYLE = /\x1b\[[0-9;]*m/g;
@@ -3399,11 +3693,15 @@ async function tryWithLock(path, fn) {
     throw err;
   }
 }
+var questionHistory2 = null;
+function useQuestionHistory(place) {
+  questionHistory2 = place;
+}
 async function updateState(dir, sessionId, change) {
   const path = statePath(dir, sessionId);
   return withLock(`${path}.lock`, async () => {
     const { state: current, isSaved } = await readSaved(dir, sessionId);
-    const changed = await change(current);
+    const changed = await historyStep(questionHistory2, sessionId, current, await change(current), Date.now());
     if (isSaved && changed === current) return current;
     const next = pruned(changed);
     const tmp = `${path}.${process.pid}.tmp`;
@@ -4420,8 +4718,8 @@ function commandText(command) {
 function outputText(output) {
   if (!isText(output)) return "";
   try {
-    const parsed = JSON.parse(output);
-    return isText(parsed.output) ? parsed.output : output;
+    const parsed2 = JSON.parse(output);
+    return isText(parsed2.output) ? parsed2.output : output;
   } catch {
     return output;
   }
@@ -5112,13 +5410,57 @@ function exitCodeOf(err) {
   return typeof err.code === "number" ? err.code : UNSTARTABLE_CODE;
 }
 
+// src/question-history.ts
+import { mkdir as mkdir3, readdir as readdir3, readFile as readFile2, rename as rename3, stat as stat5, writeFile as writeFile3 } from "node:fs/promises";
+import { dirname as dirname4, join as join5 } from "node:path";
+var nodeFs = {
+  list: async (folder) => {
+    const names = await readdir3(folder).catch(() => []);
+    const listed = await Promise.all(
+      names.map(async (name) => {
+        const info = await stat5(join5(folder, name)).catch(() => null);
+        return info?.isFile() ? { name, mtimeMs: info.mtimeMs } : null;
+      })
+    );
+    return listed.filter((x) => x !== null);
+  },
+  read: (path) => readFile2(path, "utf8"),
+  write: async (path, text2) => {
+    await mkdir3(dirname4(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile3(tmp, text2);
+    await rename3(tmp, path);
+  }
+};
+function questionHistoryPlace(env, dir) {
+  const folder = historyFolder(env);
+  if (!folder) return null;
+  return {
+    fs: nodeFs,
+    folder,
+    host: "codex",
+    keptSessions: async () => {
+      const names = (await readdir3(join5(dir, "sessions")).catch(() => [])).filter(isSessionFile);
+      const read = await Promise.all(
+        names.map(async (name) => {
+          const id = name.slice(0, -".json".length);
+          const session = await readState(dir, id).catch(() => null);
+          return session ? { id, session } : null;
+        })
+      );
+      return read.filter((x) => x !== null);
+    }
+  };
+}
+
 // src/hook-main.ts
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const dist = dirname4(fileURLToPath2(import.meta.url));
-  const dir = dataDir(process.env, dirname4(dist));
-  const startUpdate = detachedUpdate(dir, process.env, join5(dist, "update.mjs"));
+  const dist = dirname5(fileURLToPath2(import.meta.url));
+  const dir = dataDir(process.env, dirname5(dist));
+  useQuestionHistory(questionHistoryPlace(process.env, dir));
+  const startUpdate = detachedUpdate(dir, process.env, join6(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {
     dir,
     env: process.env,

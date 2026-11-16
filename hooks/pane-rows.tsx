@@ -311,9 +311,9 @@ export function paneRows(
     )
     const selectedGapY = (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT
     if (isDesktopTree) {
-      const contextEntry = treeEntries.find(en => en.key === 'context')
+      const heads = treeEntries.filter(en => en.key === 'context' || en.key === 'earlier')
       const groups = treeEntries
-        .filter(en => en.key !== 'context')
+        .filter(en => !heads.includes(en))
         .reduce<AskEntry[][]>(
           (all, en) => (en.pos === 'pass' ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
           [],
@@ -322,7 +322,8 @@ export function paneRows(
       const textAt = DESKTOP_MARK_CELLS
       const line = (en: AskEntry) => (
         <Text key={en.key} wrap="wrap">
-          {en.label ? <Text>{en.label}</Text> : null}
+          {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
+          {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
           <Text color={pal.muted}>{en.rest}</Text>
         </Text>
       )
@@ -347,7 +348,11 @@ export function paneRows(
               desktopTitle,
               row.subtitle ?? null,
               row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
-              contextEntry ? <Box marginTop={blankLine}>{line(contextEntry)}</Box> : null,
+              heads.length > 0 ? (
+                <Box flexDirection="column" marginTop={blankLine}>
+                  {heads.map(line)}
+                </Box>
+              ) : null,
             ],
           })}
           {groups.map(group =>
