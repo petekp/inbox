@@ -1,12 +1,5 @@
 import type { StatusTone } from '../../hooks/help'
-import {
-  goalKeys,
-  isSuggestionShown,
-  milestoneKeyPlan,
-  statusKeyPlan,
-  GOAL_FIELD,
-  GOAL_KEYS_ID,
-} from '../../hooks/status-keys'
+import { goalKeys, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { StatusKey } from '../../hooks/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL, shownMilestones } from '../../hooks/status-goal-page'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
@@ -38,8 +31,6 @@ function doesOf(k: StatusKey): Does {
   if (p.action === 'show-ask') return { is: 'view', change: { showAsk: p.askId } }
   if (p.action === 'toggle-fold') return { is: 'view', change: { toggleFold: p.foldId } }
   if (p.action === 'toggle-collapse') return { is: 'nothing' }
-  if (p.action === 'show-suggestion') return { is: 'view', change: { isSuggestionOpen: true } }
-  if (p.action === 'hide-suggestion') return { is: 'view', change: { isSuggestionOpen: false } }
   if (p.action === 'type-goal') return { is: 'type', rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder }
 
   return { is: 'press', press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] }
@@ -243,7 +234,6 @@ const headTitle = (id: string, text: string): Block => ({
 type StatusUi = {
   isUnfolded: (id: string) => boolean
   isCollapsed: IsCollapsed
-  isSuggestionOpen: boolean
   goalField: Field | null
 }
 
@@ -251,16 +241,16 @@ type StatusUi = {
  * The goal's section: its heading with the goal's buttons, its text and the lines under it, then each milestone on the
  * path and its work, with the Later rule before the first milestone that waits under it.
  */
-function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, isSuggestionOpen, goalField }: StatusUi): Block[] {
+function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: StatusUi): Block[] {
   const g = page.goal
-  const isSuggested = goalField === null && isSuggestionShown(page, isSuggestionOpen)
+  const isSuggested = goalField === null && page.suggestedGoal !== null
   const heading: Block = {
     kind: 'heading',
     id: 'goal heading',
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: 'success', isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page, isSuggested)),
+    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page)),
     isLabel: true,
   }
   const field: Block[] = goalField
@@ -322,11 +312,7 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, isSuggestionOpe
 export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
   const page = view.statusPage
   const { isUnfolded, isCollapsed } = ui
-  const empty = emptyTab(view, {
-    tab: 'overview',
-    isGoalFieldOpen: ui.goalField !== null,
-    isSuggestionOpen: ui.isSuggestionOpen,
-  })
+  const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: ui.goalField !== null })
   if (empty) {
     const setGoal = empty.under?.is === 'set-goal' ? empty.under : null
     const parts = setGoal && {

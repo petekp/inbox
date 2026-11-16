@@ -4,7 +4,7 @@ import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
 import { COLLAPSE_KEY, UNDO_KEY } from '../../hooks/help'
-import { GOAL_KEYS_ID, goalKeys, statusKeyRows, statusSelected } from '../../hooks/status-keys'
+import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { StatusKey, StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
 import { entriesOf } from './panel-entries'
@@ -108,9 +108,7 @@ function typingKey(ui: PanelUi, id: string, key: string, now: number, text: stri
   if (key === 'enter') {
     if (draft.text.trim() === '') return { ui }
 
-    const closed = id === GOAL_KEYS_ID ? { ...ui, typing: null, isSuggestionOpen: false } : { ...ui, typing: null }
-
-    return { ui: closed, press: { action: 'type', id, text: draft.text } }
+    return { ui: { ...ui, typing: null }, press: { action: 'type', id, text: draft.text } }
   }
   if (key === 'backspace') return edit([...draft.text].slice(0, -1).join(''))
   if (text !== undefined) return edit(draft.text + text.replace(/[\r\n]+/g, ' '))
@@ -200,8 +198,8 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
   const page = screen.view.statusPage
   const isUnfolded = (id: string) => ui.statusUnfolded.includes(id)
   const isCollapsed = collapsedIn(screen.view)
-  const rows = statusKeyRows(page, isUnfolded, isCollapsed, ui.isSuggestionOpen)
-  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed, ui.isSuggestionOpen)
+  const rows = statusKeyRows(page, isUnfolded, isCollapsed)
+  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed)
   if (!row) return null
   if (key === 'j' || key === 'k') {
     const at = rows.findIndex(r => r.id === row.id)
@@ -240,24 +238,14 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
 
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } }
   }
-  if (press.action === 'show-suggestion')
-    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: true, focus: { rowId: GOAL_KEYS_ID, index: 0 } } }
-  if (press.action === 'hide-suggestion') {
-    const index = Math.max(
-      0,
-      goalKeys(page, false).findIndex(k => k.press.action === 'show-suggestion'),
-    )
-
-    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: { rowId: GOAL_KEYS_ID, index } } }
-  }
-  if (press.action === 'take-goal')
-    return {
-      ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: null, pageReveal: GOAL_KEYS_ID },
-      press: { action: 'take-goal', id: GOAL_KEYS_ID },
-    }
 
   // The goal's buttons change with the press, so the goal's place keeps the selection: Undo after Remove.
-  if (press.action !== 'remove-goal' && press.action !== 'restore-goal') return null
+  const isGoalPress =
+    press.action === 'remove-goal' ||
+    press.action === 'restore-goal' ||
+    press.action === 'take-goal' ||
+    press.action === 'dismiss-suggestion'
+  if (!isGoalPress) return null
 
   return {
     ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },

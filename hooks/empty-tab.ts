@@ -3,7 +3,7 @@ import { MAYBE_STALE_TEXT, NOTHING_NEEDED_TEXT } from './banners'
 import { ghNoticeOf } from './pr-rows'
 import type { PrRefreshView } from './pr-refresh'
 import type { SessionView } from './session-view'
-import { goalKeys, isSuggestionShown } from './status-keys'
+import { goalKeys } from './status-keys'
 import type { StatusKey } from './status-keys'
 import { screenTabOf } from './tabs'
 
@@ -51,7 +51,7 @@ type EmptyTabLook =
       isFetchingPrs: boolean
       isGhMissing: boolean
     }
-  | { tab: 'overview'; isGoalFieldOpen: boolean; isSuggestionOpen?: boolean }
+  | { tab: 'overview'; isGoalFieldOpen: boolean }
 
 /** The empty Status tab's text. Its title is the tab's name. */
 export const EMPTY_STATUS_TEXT: { title: string; hint: string } = {
@@ -72,12 +72,15 @@ export function emptyTab(view: SessionView, look: EmptyTabLook): EmptyTab | null
   if (look.tab === 'overview') {
     const page = view.statusPage
     if (!page.isEmpty) return null
-    const isSuggestionOpen = look.isSuggestionOpen ?? false
-    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null
 
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: 'set-goal', keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion },
+      under: {
+        is: 'set-goal',
+        keys: goalKeys(page),
+        isFieldOpen: look.isGoalFieldOpen,
+        suggestion: page.suggestedGoal,
+      },
     }
   }
   if (look.tab === 'prs') {

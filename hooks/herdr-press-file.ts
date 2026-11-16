@@ -57,6 +57,7 @@ const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref'
   'remove-goal': 'id',
   'restore-goal': 'id',
   'take-goal': 'id',
+  'dismiss-suggestion': 'id',
   'thread-address': 'ref',
   'thread-draft': 'ref',
   'thread-discuss': 'ref',

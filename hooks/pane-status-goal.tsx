@@ -22,7 +22,7 @@ import type { StatusTone } from './help'
 import type { GoalBlock, MilestoneRow } from './status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, SUGGESTED_GOAL_LABEL } from './status-goal-page'
 import { paneGoalField, uncounted } from './pane-status-goal-field'
-import { GOAL_KEYS_ID, goalKeys, isSuggestionShown, milestoneKeyPlan, type StatusKey } from './status-keys'
+import { GOAL_KEYS_ID, goalKeys, milestoneKeyPlan, type StatusKey } from './status-keys'
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
@@ -58,21 +58,9 @@ export function paneStatusGoal(
     keyRow,
     terminalKeyCells,
     desktopFrame,
-    isSuggestionOpen,
   }: Pick<
     PaneBase,
-    | 'e'
-    | 'look'
-    | 'Box'
-    | 'Text'
-    | 'pal'
-    | 'Input'
-    | 'typing'
-    | 'drafts'
-    | 'listColumns'
-    | 'now'
-    | 'statusKeyRow'
-    | 'isSuggestionOpen'
+    'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
   > &
     Pick<
       PaneStatusLines,
@@ -81,7 +69,7 @@ export function paneStatusGoal(
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow' | 'terminalKeyCells'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
-  handlers: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped' | 'updateSuggestionOpen'>,
+  handlers: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
   {
     statusRowLine,
     drawRows,
@@ -384,8 +372,8 @@ export function paneStatusGoal(
           width,
         )
       : muted('goal-none', NO_GOAL_TEXT)
-    const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) })
-    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null
+    const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeys(page) })
+    const suggestion = page.suggestedGoal
     /** A met goal's lines under its text say nothing about the suggestion drawn in its place. */
     const shownGoal = suggestion === null ? g : null
     const under = [

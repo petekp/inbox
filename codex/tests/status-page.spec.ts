@@ -274,21 +274,24 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       overview: { ...state.ledger.overview!, suggestedGoal: 'Ship 0.5.0 to the store' },
     }
     await afterPoll()
-    assert.deepEqual(labels(), ['New'])
-    await pressLabel('New')
     assert.equal(root.querySelector('.suggested')?.textContent, 'SuggestedShip 0.5.0 to the store')
-    assert.deepEqual(labels(), ['Set', 'Edit', 'Cancel'])
+    assert.deepEqual(labels(), ['Set', 'Edit', 'Dismiss'])
     await pressLabel('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Ship 0.5.0 to the store')
     assert.deepEqual(labels(), ['Set', 'Cancel'])
     await pressLabel('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
-    assert.deepEqual(labels(), ['Set', 'Edit', 'Cancel'])
+    assert.deepEqual(labels(), ['Set', 'Edit', 'Dismiss'])
     assert.match(goalHead() ?? '', /^SuggestedShip 0.5.0 to the store/)
-    await pressLabel('Cancel')
+    await pressLabel('Dismiss')
+    assert.deepEqual(presses.at(-1), { action: 'dismiss-suggestion', id: 'goal' })
     assert.equal(root.querySelector('.suggested'), null)
     assert.deepEqual(labels(), ['New'])
-    await pressLabel('New')
+    state.ledger = {
+      ...state.ledger,
+      overview: { ...state.ledger.overview!, suggestedGoal: 'Ship 0.5.0 to the store', removedGoals: [] },
+    }
+    await afterPoll()
     await pressLabel('Set')
     assert.deepEqual(presses.at(-1), { action: 'take-goal', id: 'goal' })
     assert.equal(root.querySelector('.suggested'), null)

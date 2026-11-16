@@ -1,7 +1,7 @@
 import type { SessionStatus } from '../types'
 import type { Op } from './status'
 import { restatesGoal, setTypedGoal } from './status-goal-ops'
-import { clipWords, DESCRIPTION_KEPT } from './status-limits'
+import { clipWords, DESCRIPTION_KEPT, nameKey, REMOVED_KEPT } from './status-limits'
 
 /** Whether a goal is set and not met, so no goal is offered in its place. */
 export const hasRunningGoal = (o: SessionStatus): boolean => o.goal !== null && o.goal.metAt === null
@@ -36,4 +36,13 @@ export function takeSuggestedGoal(o: SessionStatus, now: number): SessionStatus 
   const set = setTypedGoal(o, text, now)
 
   return set.goal === null ? o : { ...set, goal: { ...set.goal, source: 'inferred' }, suggestedGoal: null }
+}
+
+/** Dismiss on the suggested goal: it goes, and is kept with the removed goals so the call may not suggest it again. */
+export function dismissSuggestedGoal(o: SessionStatus): SessionStatus {
+  const text = o.suggestedGoal
+  if (text === null) return o
+  const removedGoals = [...o.removedGoals.filter(k => k !== nameKey(text)), nameKey(text)]
+
+  return { ...o, suggestedGoal: null, removedGoals: removedGoals.slice(-REMOVED_KEPT) }
 }

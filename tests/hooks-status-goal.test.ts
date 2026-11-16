@@ -156,15 +156,11 @@ test('New on the empty Status page sets the typed goal before any Status call', 
   expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('Milestones after the next reply')
 })
 
-test('New shows the suggested goal with Set, Edit and Cancel, Edit opens the field with its words whose Cancel shows it again, Cancel hides it, and Set makes it the goal', async ($, on) => {
+test('the suggested goal shows with Set, Edit and Dismiss, Edit opens the field with its words whose Cancel shows it again, Dismiss hides it for New, and Set makes it the goal', async ($, on) => {
   const { clock, pane } = await statusShown($, on, `${INFERRING.split('\nGOAL')[0]}\nSUGGEST: Pilot ready to announce`)
-  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/n: New$/)
-
-  await pane.press({ key: 'show-suggestion-goal-key' })
-  await clock.settle()
   expect((await pane.find({ key: 'goal-suggested-label' }))?.text).toBe('Suggested')
   expect((await pane.find({ key: 'goal-suggested' }))?.text).toBe('Pilot ready to announce')
-  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/s: Set · e: Edit · c: Cancel$/)
+  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/s: Set · e: Edit · d: Dismiss$/)
 
   await pane.press({ key: 'type-goal-goal-key' })
   await clock.settle()
@@ -176,13 +172,16 @@ test('New shows the suggested goal with Set, Edit and Cancel, Edit opens the fie
   await clock.settle()
   expect((await pane.find({ key: 'goal-suggested' }))?.text).toBe('Pilot ready to announce')
 
-  await pane.press({ key: 'hide-suggestion-goal-key' })
+  await pane.press({ key: 'dismiss-suggestion-goal-key' })
   await clock.settle()
   expect(await pane.find({ key: 'goal-suggested' })).toBeUndefined()
   expect((await pane.find({ key: 'goal-none' }))?.text).toBe(NO_GOAL_TEXT)
+  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/n: New$/)
+  expect(w.sent).toEqual([])
+})
 
-  await pane.press({ key: 'show-suggestion-goal-key' })
-  await clock.settle()
+test('Set on the suggested goal makes it the goal', async ($, on) => {
+  const { clock, pane } = await statusShown($, on, `${INFERRING.split('\nGOAL')[0]}\nSUGGEST: Pilot ready to announce`)
   await pane.press({ key: 'take-goal-goal-key' })
   await clock.settle()
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')

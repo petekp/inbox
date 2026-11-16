@@ -308,7 +308,6 @@ const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
 const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
-const SUGGESTION_OPEN = atom({ plugin: 'inbox', key: 'suggestionOpen' } as const, false)
 /** The Closed folds whose earlier lines the person opened. */
 const CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
@@ -2260,7 +2259,6 @@ async function forgetRowState($: EngineInterface) {
     update($, TYPING, () => null),
     update($, UNFOLDED, () => []),
     update($, STATUS_UNFOLDED, () => []),
-    update($, SUGGESTION_OPEN, () => false),
     update($, CLOSED_ALL, () => []),
     update($, OPTIONS_SHOWN, () => []),
     update($, DRAFTS, () => ({})),
@@ -2969,7 +2967,6 @@ export const register: Register = on => {
       statusSelection,
       statusUnfolded,
       closedAll,
-      isSuggestionOpen,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -2985,7 +2982,6 @@ export const register: Register = on => {
       read($, STATUS_SELECTION),
       read($, STATUS_UNFOLDED),
       read($, CLOSED_ALL),
-      read($, SUGGESTION_OPEN),
       // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
       look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
@@ -3049,7 +3045,6 @@ export const register: Register = on => {
       updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
       updateUnfolded: fn => update($, UNFOLDED, fn),
       updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
-      updateSuggestionOpen: isOpen => update($, SUGGESTION_OPEN, () => isOpen),
       toggleParent: id => toggleParent($, id),
       updateClosedAll: fn => update($, CLOSED_ALL, fn),
       runPress: (p, surface) => runPress($, p, surface),
@@ -3113,13 +3108,9 @@ export const register: Register = on => {
     const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
     const isStatusCollapsed = (id: string) => view.collapsed.includes(id)
     const statusKeyRow = isStatusShown
-      ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded, isStatusCollapsed, isSuggestionOpen)
+      ? statusSelected(view.statusPage, statusSelection, isStatusUnfolded, isStatusCollapsed)
       : null
-    const statusPressRows = isStatusShown
-      ? statusKeyRows(view.statusPage, isStatusUnfolded, isStatusCollapsed, isSuggestionOpen)
-      : []
-    if (isSuggestionOpen && view.statusPage.suggestedGoal === null)
-      later($, 0, () => update($, SUGGESTION_OPEN, () => false))
+    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage, isStatusUnfolded, isStatusCollapsed) : []
 
     const {
       desktopColumnPt,
@@ -3421,7 +3412,6 @@ export const register: Register = on => {
         foldButton,
         desktopFoldLines,
         statusUnfolded,
-        isSuggestionOpen,
       },
       handlers,
     )

@@ -32,12 +32,7 @@ export function paneGoalField(
   }: Pick<PaneBase, 'e' | 'look' | 'Box' | 'Input' | 'drafts' | 'listColumns' | 'now'> &
     Pick<PaneStatusLines, 'statusMarkAt'> &
     Pick<PaneRowKeys, 'keyRow'>,
-  {
-    updateDrafts,
-    updateTyping,
-    sendTyped,
-    updateSuggestionOpen,
-  }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped' | 'updateSuggestionOpen'>,
+  { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
   muted: (key: string, text: string) => Drawn,
 ) {
   /** Closes the field and keeps its draft. A suggested goal the field was opened from shows again. */
@@ -73,10 +68,9 @@ export function paneGoalField(
           [GOAL_KEYS_ID]: { text: value, since: d[GOAL_KEYS_ID]?.since ?? now },
         }))
       }
-      onSubmit={async (value: string, submit: { surface: UiPressArgument['surface'] }) => {
-        await sendTyped(GOAL_KEYS_ID, value, submit.surface)
-        if (value.trim()) await updateSuggestionOpen(false)
-      }}
+      onSubmit={(value: string, submit: { surface: UiPressArgument['surface'] }) =>
+        sendTyped(GOAL_KEYS_ID, value, submit.surface)
+      }
     />
   )
   /**

@@ -66,27 +66,44 @@ test('the Status call reads the suggestion only while no goal runs', () => {
   expect(goalBlocks(withGoal, 22 * MIN).join('\n')).not.toContain('<suggested>')
 })
 
-test('New shows the suggestion, whose buttons are Set, Edit with its words and Cancel, and the field sets a new goal and saves an edit', () => {
+test('the suggestion shows at once with Set, Edit with its words and Dismiss, and the field sets a new goal and saves an edit', () => {
   const p = page(suggested(), 22 * MIN)
-  expect(goalKeys(p, false).map(k => k.press)).toEqual([{ action: 'show-suggestion' }])
-  expect(goalKeys(p, true).map(k => [k.label, k.press])).toEqual([
+  expect(goalKeys(p).map(k => [k.label, k.press])).toEqual([
     ['Set', { action: 'take-goal' }],
     ['Edit', { action: 'type-goal', text: 'Import ready to demo' }],
-    ['Cancel', { action: 'hide-suggestion' }],
+    ['Dismiss', { action: 'dismiss-suggestion' }],
   ])
   expect(goalSubmitLabel(p)).toBe('Set')
   const typed = page(setTypedGoal(suggested(), 'Dark mode shipped', 22 * MIN), 22 * MIN)
   expect(goalSubmitLabel(typed)).toBe('Save')
-  expect(goalKeys(typed, true).map(k => k.label)).toEqual(['Edit', 'Remove'])
+  expect(goalKeys(typed).map(k => k.label)).toEqual(['Edit', 'Remove'])
 })
 
-test('the empty Status page carries the suggestion while it shows', () => {
+test('Dismiss hides the suggestion, keeps the same words from coming back, and shows New for a goal of their own', () => {
+  const o = suggested()
+  const pressed = goalPressed(ledgerOf(o), { action: 'dismiss-suggestion', id: 'goal' }, record, 22 * MIN)
+  const dismissed = 'ledger' in pressed ? pressed.ledger.overview : null
+  expect(dismissed?.suggestedGoal).toBeNull()
+  expect(goalKeys(page(dismissed!, 22 * MIN)).map(k => k.label)).toEqual(['New'])
+  expect(after(dismissed!, SUGGEST, 23 * MIN).suggestedGoal).toBeNull()
+  expect(after(dismissed!, 'SUGGEST: Dark mode shipped', 23 * MIN).suggestedGoal).toBe('Dark mode shipped')
+  expect(goalPressed(ledgerOf(dismissed!), { action: 'dismiss-suggestion', id: 'goal' }, record, 24 * MIN)).toEqual({
+    stale: true,
+  })
+})
+
+test('the empty Status page carries the suggestion', () => {
   const o = after(null, SUGGEST, 20 * MIN)
   const view = { statusPage: page(o, 20 * MIN) } as Parameters<typeof emptyTab>[0]
-  expect(emptyTab(view, { tab: 'overview', isGoalFieldOpen: false, isSuggestionOpen: true })?.under).toMatchObject({
+  expect(emptyTab(view, { tab: 'overview', isGoalFieldOpen: false })?.under).toMatchObject({
     is: 'set-goal',
     suggestion: 'Import ready to demo',
-    keys: [{ label: 'Set' }, { label: 'Edit' }, { label: 'Cancel' }],
+    keys: [{ label: 'Set' }, { label: 'Edit' }, { label: 'Dismiss' }],
   })
-  expect(emptyTab(view, { tab: 'overview', isGoalFieldOpen: false })?.under).toMatchObject({ suggestion: null })
+})
+
+test('Undo of a removed goal stays before the suggestion’s buttons', () => {
+  const removed = removeGoal(after(null, `${WORK}\n${GOAL}`, 20 * MIN))
+  const withSuggestion = after(removed, SUGGEST.replace('Import ready', 'Import almost ready'), 21 * MIN)
+  expect(goalKeys(page(withSuggestion, 22 * MIN)).map(k => k.label)).toEqual(['Undo', 'Set', 'Edit', 'Dismiss'])
 })

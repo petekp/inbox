@@ -16,6 +16,8 @@ export type RowPress =
   | { action: 'restore-goal'; id: string }
   /** Set on the suggested goal: makes it the goal. `id` is `GOAL_KEYS_ID`. */
   | { action: 'take-goal'; id: string }
+  /** Dismiss on the suggested goal: hides it, and the Status call does not suggest it again. `id` is `GOAL_KEYS_ID`. */
+  | { action: 'dismiss-suggestion'; id: string }
 
 export type PrActionId =
   | 'thread-address'

@@ -1,12 +1,5 @@
 import { foldGlyph } from '../../hooks/fold-chevron'
-import {
-  GOAL_FIELD,
-  GOAL_KEYS_ID,
-  goalKeys,
-  isSuggestionShown,
-  milestoneKeyPlan,
-  type StatusKey,
-} from '../../hooks/status-keys'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeys, milestoneKeyPlan, type StatusKey } from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL, shownMilestones } from '../../hooks/status-goal-page'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
@@ -30,7 +23,7 @@ import { cellWidth } from '../../hooks/text'
  * path's line through it, the Later label, a milestone, or on the empty page New or its field.
  */
 export type GoalPart =
-  | { is: 'heading'; text: string; mark: GoalBlock['mark']; page: StatusPage | null; isSuggestionOpen: boolean }
+  | { is: 'heading'; text: string; mark: GoalBlock['mark']; page: StatusPage | null }
   | { is: 'title'; goal: GoalBlock | null; isTyping: boolean; suggestion: string | null }
   | { is: 'fold'; fold: NonNullable<GoalBlock['milestonesFold']> }
   | { is: 'milestone'; row: MilestoneRow }
@@ -57,17 +50,16 @@ const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
  * only while the person has it unfolded. A blank line comes before each milestone unless the one above draws
  * only its name, and before the Later label above the first that waits under it. The path's line runs in the mark
  * column from each milestone to the next. While the person types a goal, the field takes the text's place, and the
- * buttons leave. While the person has the suggested goal open, it takes the text's place, with Set, Edit and Cancel.
+ * buttons leave. While the page has a suggested goal, it takes the text's place, with Set, Edit and Dismiss.
  */
 export function goalSection(
   page: StatusPage,
   typing: string | null,
-  isSuggestionOpen: boolean,
   isUnfolded: (id: string) => boolean,
   isCollapsed: IsCollapsed,
 ): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
-  const suggestion = !isTyping && isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null
+  const suggestion = isTyping ? null : page.suggestedGoal
   const g = page.goal
   const milestones = shownMilestones(g, isUnfolded)
   const fold = g?.milestonesFold ?? null
@@ -78,7 +70,6 @@ export function goalSection(
       text: g?.label ?? GOAL_HEADING,
       mark: g?.mark ?? null,
       page: isTyping ? null : page,
-      isSuggestionOpen: suggestion !== null,
     }),
     goalEntry({ is: 'title', goal: g, isTyping, suggestion }),
     ...(fold === null ? [] : [goalEntry({ is: 'fold', fold })]),
@@ -208,13 +199,7 @@ function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[]
 function headingLines(part: GoalPart & { is: 'heading' }, d: Draw, isSelected: boolean): string[] {
   const { width, now, style: s } = d
   const keys = part.page
-    ? pageButtonLines(
-        { id: GOAL_KEYS_ID, keys: goalKeys(part.page, part.isSuggestionOpen) },
-        d,
-        isSelected,
-        1,
-        s.dim('·'),
-      )
+    ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeys(part.page) }, d, isSelected, 1, s.dim('·'))
     : []
   const right = width - 1
   const { mark } = part

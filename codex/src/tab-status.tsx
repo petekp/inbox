@@ -1,13 +1,6 @@
 import { Icon } from './row-actions'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
-import {
-  GOAL_FIELD,
-  GOAL_KEYS_ID,
-  goalKeys,
-  goalSubmitLabel,
-  isSuggestionShown,
-  milestoneKeyPlan,
-} from '../../hooks/status-keys'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeys, goalSubmitLabel, milestoneKeyPlan } from '../../hooks/status-keys'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
@@ -44,7 +37,6 @@ function GoalField({ page }: { page: StatusPage }) {
           const sent = drafts.get(GOAL_KEYS_ID)
           void act(GOAL_KEYS_ID, { action: 'type', id: GOAL_KEYS_ID, text }, () => {
             if (tabState.typing === GOAL_KEYS_ID) tabState.typing = null
-            tabState.isSuggestionOpen = false
             if (drafts.get(GOAL_KEYS_ID) === sent) drafts.delete(GOAL_KEYS_ID)
           })
         }}
@@ -305,14 +297,14 @@ function GoalSection({
 }) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
-  const isSuggesting = isSuggestionShown(page, tabState.isSuggestionOpen)
-  const text = isSuggesting ? (
-    <Suggestion text={page.suggestedGoal ?? ''} />
-  ) : g ? (
-    <h1>{g.text}</h1>
-  ) : (
-    <p class="muted">{NO_GOAL_TEXT}</p>
-  )
+  const text =
+    page.suggestedGoal !== null ? (
+      <Suggestion text={page.suggestedGoal} />
+    ) : g ? (
+      <h1>{g.text}</h1>
+    ) : (
+      <p class="muted">{NO_GOAL_TEXT}</p>
+    )
   const mark = g?.mark ?? null
 
   return (
@@ -327,7 +319,7 @@ function GoalSection({
         <span class="goal-rule" />
         {isTyping ? null : (
           <span class="goal-actions">
-            {goalKeys(page, tabState.isSuggestionOpen).flatMap((k, n) => [
+            {goalKeys(page).flatMap((k, n) => [
               ...(n > 0 ? [<span class="muted">·</span>] : []),
               <Keys key={k.label} keys={[k]} />,
             ])}
@@ -401,11 +393,7 @@ function rowsUnder(rows: StatusRow[], n: number, motion: (id: string) => string)
 
 export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   const page = v.statusPage
-  const empty = emptyTab(v, {
-    tab: 'overview',
-    isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID,
-    isSuggestionOpen: tabState.isSuggestionOpen,
-  })
+  const empty = emptyTab(v, { tab: 'overview', isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID })
   if (empty)
     return (
       <EmptyState empty={empty}>

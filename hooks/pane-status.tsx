@@ -82,7 +82,6 @@ export function paneStatus(
     foldButton,
     desktopFoldLines,
     statusUnfolded,
-    isSuggestionOpen,
   }: PaneClient &
     Pick<
       PaneBase,
@@ -102,7 +101,6 @@ export function paneStatus(
       | 'drafts'
       | 'now'
       | 'statusUnfolded'
-      | 'isSuggestionOpen'
     > &
     Pick<
       PaneStatusLines,
@@ -131,12 +129,10 @@ export function paneStatus(
     | 'startTyping'
     | 'selectStatusRow'
     | 'updateStatusUnfolded'
-    | 'updateSuggestionOpen'
     | 'toggleParent'
   >,
 ) {
   const { showAsk, runPress, startTyping, selectStatusRow, updateStatusUnfolded, toggleParent } = handlers
-  const { updateSuggestionOpen } = handlers
   const isUnfolded = (id: string) => statusUnfolded.includes(id)
   const isCollapsed = (id: string) => view.collapsed.includes(id)
   const { parentName } = paneStatusParent(
@@ -322,23 +318,17 @@ export function paneStatus(
     lines: look === 'desktop' ? desktopTextLines(text, statusTextWidth(depth)) : inkLines(text, statusTextWidth(depth)),
   })
   /**
-   * Removes the goal and selects its Undo, or brings it back or sets the suggested goal and selects Edit, then scrolls
-   * to the button and focuses it. The pressed button is gone, and the terminal would move its focus to the next button
+   * Removes the goal and selects its Undo, or brings it back, sets the suggested goal and selects Edit, or dismisses the
+   * suggested goal and selects New, then scrolls to the button and focuses it. The pressed button is gone, and the terminal would move its focus to the next button
    * drawn.
    */
   const pressGoal = async (
-    action: 'remove-goal' | 'restore-goal' | 'take-goal',
+    action: 'remove-goal' | 'restore-goal' | 'take-goal' | 'dismiss-suggestion',
     surface: UiPressArgument['surface'],
   ) => {
     await runPress({ action, id: GOAL_KEYS_ID }, surface)
-    if (action === 'take-goal') await updateSuggestionOpen(false)
     const next = action === 'remove-goal' ? 'restore-goal' : 'type-goal'
     await selectStatusRow(GOAL_KEYS_ID, `${next}-${GOAL_KEYS_ID}`)
-  }
-  /** Shows the suggested goal and focuses Set, or hides it and focuses New. */
-  const showSuggestion = async (isShown: boolean) => {
-    await updateSuggestionOpen(isShown)
-    await selectStatusRow(GOAL_KEYS_ID, isShown ? `take-goal-${GOAL_KEYS_ID}` : `show-suggestion-${GOAL_KEYS_ID}`)
   }
   /** A target's buttons from its plan. Only the selected target's keys press it, so only that one names its keys. */
   const statusKeys = (t: StatusKeyTarget): KeyAction[] =>
@@ -357,9 +347,7 @@ export function paneStatus(
               ? toggleFold(press.foldId)
               : press.action === 'toggle-collapse'
                 ? void toggleParent(press.id)
-                : press.action === 'show-suggestion' || press.action === 'hide-suggestion'
-                  ? showSuggestion(press.action === 'show-suggestion')
-                  : pressGoal(press.action, p.surface),
+                : pressGoal(press.action, p.surface),
     }))
   const { goalSection, setGoalBare, markRun, isTypingGoal } = paneStatusGoal(
     {
@@ -384,7 +372,6 @@ export function paneStatus(
       keyRow,
       terminalKeyCells,
       desktopFrame,
-      isSuggestionOpen,
     },
     handlers,
     {
@@ -518,7 +505,7 @@ export function paneStatus(
   /** The Status page, and each subject row's first line from the page's top. */
   const drawStatus = (): { el: JSX.Element; tops: Map<string, RowTop> } => {
     const page = view.statusPage
-    const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: isTypingGoal, isSuggestionOpen })
+    const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: isTypingGoal })
     if (empty) {
       const below = empty.under?.is === 'set-goal' ? setGoalBare(empty.under, page).map(p => p.el) : []
 

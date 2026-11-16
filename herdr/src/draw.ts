@@ -62,8 +62,6 @@ export type LookUi = {
   closedAll: FoldKind[]
   optionsShown: string[]
   statusUnfolded: string[]
-  /** Whether the person opened the suggested goal. It shows only while the page still offers one. */
-  isSuggestionOpen: boolean
   typing: string | null
   /** The rows that arrived while their tab showed, whose bar shows until it fades. */
   newRows: NewRows
@@ -77,7 +75,6 @@ export const freshUi = (tab: ShownTab): LookUi => ({
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
-  isSuggestionOpen: false,
   typing: null,
   newRows: new Map(),
   closedSeen: new Map(),
@@ -419,7 +416,6 @@ export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {
     return statusBlocks(screen.view, {
       isUnfolded: id => ui.statusUnfolded.includes(id),
       isCollapsed: id => screen.view.collapsed.includes(id),
-      isSuggestionOpen: ui.isSuggestionOpen,
       goalField,
     })
   }

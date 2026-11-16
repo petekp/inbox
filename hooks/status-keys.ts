@@ -9,8 +9,8 @@ import type { StatusPage, StatusRow } from './status-page'
 
 /**
  * A press on the Status page. `show-ask` opens Asks with that ask selected. `type-goal` opens Reply's field for the
- * goal, prefilled with `text`. `show-suggestion` shows the suggested goal in the goal's place, `hide-suggestion` hides it,
- * and `take-goal` makes it the goal. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, a
+ * goal, prefilled with `text`. `take-goal` makes the suggested goal the goal, and `dismiss-suggestion` hides it for
+ * good. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, a
  * done milestone folded to its name or a met goal's milestones, or folds it again, in the look that drew it.
  * `toggle-collapse` folds a subject or milestone by its name, or opens it, and the session saves it as a collapse. None
  * sends a message.
@@ -20,9 +20,8 @@ type StatusPress =
   | { action: 'type-goal'; text: string }
   | { action: 'remove-goal' }
   | { action: 'restore-goal' }
-  | { action: 'show-suggestion' }
-  | { action: 'hide-suggestion' }
   | { action: 'take-goal' }
+  | { action: 'dismiss-suggestion' }
   | { action: 'toggle-fold'; foldId: string }
   | { action: 'toggle-collapse'; id: string }
 
@@ -98,12 +97,9 @@ const RESTORE_GOAL: StatusKey = {
   emphasis: 'normal',
 }
 
-/**
- * New: shows the suggested goal when the page has one, else opens an empty goal field. Its words leave out "goal", since
- * the buttons sit on the Goal heading.
- */
-const newGoal = (page: StatusPage, emphasis: StatusKey['emphasis']): StatusKey => ({
-  press: page.suggestedGoal === null ? { action: 'type-goal', text: '' } : { action: 'show-suggestion' },
+/** New: opens an empty goal field. Its words leave out "goal", since the buttons sit on the Goal heading. */
+const newGoal = (emphasis: StatusKey['emphasis']): StatusKey => ({
+  press: { action: 'type-goal', text: '' },
   label: 'New',
   hotkey: 'n',
   kind: 'view',
@@ -117,8 +113,8 @@ const newGoal = (page: StatusPage, emphasis: StatusKey['emphasis']): StatusKey =
  */
 export function goalKeyPlan(page: StatusPage): StatusKey[] {
   const g = page.goal
-  if (g === null) return [...(page.canRestoreGoal ? [RESTORE_GOAL] : []), newGoal(page, 'quiet')]
-  if (g.isMet) return [newGoal(page, 'normal'), REMOVE_GOAL]
+  if (g === null) return [...(page.canRestoreGoal ? [RESTORE_GOAL] : []), newGoal('quiet')]
+  if (g.isMet) return [newGoal('normal'), REMOVE_GOAL]
 
   return [
     { press: { action: 'type-goal', text: g.text }, label: 'Edit', hotkey: 'e', kind: 'view', emphasis: 'quiet' },
@@ -127,24 +123,22 @@ export function goalKeyPlan(page: StatusPage): StatusKey[] {
 }
 
 /**
- * The suggested goal's buttons: Set makes it the goal, Edit opens the goal's field with its words, and Cancel hides it.
- * The field's own Cancel shows the suggestion again.
+ * The suggested goal's buttons: Set makes it the goal, Edit opens the goal's field with its words, and Dismiss hides it
+ * for good. The field's own Cancel shows the suggestion again.
  */
 function suggestionKeyPlan(suggested: string): StatusKey[] {
   return [
     { press: { action: 'take-goal' }, label: 'Set', hotkey: 's', kind: 'mark', emphasis: 'normal' },
     { press: { action: 'type-goal', text: suggested }, label: 'Edit', hotkey: 'e', kind: 'view', emphasis: 'quiet' },
-    { press: { action: 'hide-suggestion' }, label: 'Cancel', hotkey: 'c', kind: 'view', emphasis: 'quiet' },
+    { press: { action: 'dismiss-suggestion' }, label: 'Dismiss', hotkey: 'd', kind: 'mark', emphasis: 'quiet' },
   ]
 }
 
-/** Whether the goal's section shows the suggested goal: the look has it open, and the page still has one. */
-export const isSuggestionShown = (page: StatusPage, isSuggestionOpen: boolean): boolean =>
-  isSuggestionOpen && page.suggestedGoal !== null
+/** The goal target's buttons: the suggested goal's while the page has one, after Undo while a removed goal can come back, else the goal's own. */
+export function goalKeys(page: StatusPage): StatusKey[] {
+  if (page.suggestedGoal === null) return goalKeyPlan(page)
 
-/** The goal target's buttons: the suggested goal's while it shows, else the goal's own. */
-export function goalKeys(page: StatusPage, isSuggestionOpen: boolean): StatusKey[] {
-  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal!) : goalKeyPlan(page)
+  return [...(page.canRestoreGoal ? [RESTORE_GOAL] : []), ...suggestionKeyPlan(page.suggestedGoal)]
 }
 
 /**
@@ -176,20 +170,18 @@ const rowTarget =
  * Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. The
  * goal's buttons come first, as its section does, then a met goal's milestones fold, then the milestones a look draws,
  * each with the rows it draws after it. A parent's own target holds its buttons, then its fold. `isUnfolded` says which
- * done folds the look has open, `isCollapsed` which parents the person folded, and `isSuggestionOpen` whether the look
- * shows the suggested goal.
+ * done folds the look has open, and `isCollapsed` which parents the person folded.
  */
 export function statusKeyRows(
   page: StatusPage,
   isUnfolded: (id: string) => boolean = () => false,
   isCollapsed: IsCollapsed = () => false,
-  isSuggestionOpen = false,
 ): StatusKeyTarget[] {
   const fold = page.goal?.milestonesFold ?? null
   const toTarget = rowTarget(isCollapsed)
 
   return [
-    { id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) },
+    { id: GOAL_KEYS_ID, keys: goalKeys(page) },
     ...(fold === null ? [] : [{ id: fold.id, keys: milestonesFoldKeyPlan(page.goal) }]),
     ...shownMilestones(page.goal, isUnfolded).flatMap(m => [
       { id: m.id, keys: [...milestoneKeyPlan(m), ...parentFoldKeys(m, isCollapsed)] },
@@ -209,9 +201,8 @@ export function statusSelected(
   selectedId: string | null,
   isUnfolded: (id: string) => boolean = () => false,
   isCollapsed: IsCollapsed = () => false,
-  isSuggestionOpen = false,
 ): StatusKeyTarget | null {
-  const targets = statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen)
+  const targets = statusKeyRows(page, isUnfolded, isCollapsed)
   const opensAsk = (t: StatusKeyTarget) => t.keys.some(k => k.press.action === 'show-ask')
   const isFold = (t: StatusKeyTarget) =>
     t.keys.every(k => k.press.action === 'toggle-fold' || k.press.action === 'toggle-collapse')
