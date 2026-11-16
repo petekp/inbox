@@ -438,7 +438,7 @@ export function paneFrame(
     )
   const footer = (
     <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
-      <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
+      <Box flexDirection="row" paddingX={1}>
         {helpControl}
       </Box>
     </Box>

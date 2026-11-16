@@ -258,6 +258,7 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
     })
     return (answer?.result as { structuredContent: ReturnType<typeof viewOf> }).structuredContent
   }
+  assert.equal((await poll()).status.error, null)
   assert.equal((await readState(dir, 's1')).presence.isUpdating, true)
   assert.equal((await readState(dir, 's1')).pending[0]?.failed, undefined)
   assert.equal(worker.exitCode, null)
@@ -298,4 +299,5 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   assert.deepEqual((await readState(dir, 's1')).pending, [])
   await updateState(dir, 's1', s => ({ ...s, presence: { ...s.presence, isUpdating: true, ledgerState: 'current' } }))
   assert.deepEqual((await poll()).status, { isRetrying: false, error: null })
+  assert.equal((await readState(dir, 's1')).presence.isUpdating, false)
 })
