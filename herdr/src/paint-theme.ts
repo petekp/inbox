@@ -32,14 +32,14 @@ export type Theme = Record<
 >
 
 /**
- * Needs-you and warnings take the theme's yellow, as the other looks draw them in amber. Findings, PRs and errors take
+ * Warnings take the theme's yellow. Needs-you takes the shared orange of `hooks/tones.ts`, as tasks take the shared violet,
+ * so a question's mark does not read as a warning. Findings, PRs and errors take
  * its magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. An issue takes the red
  * of an error. Done takes the color Herdr's sidebar gives an agent that is done. A met goal and a ready PR take the success
  * green, as an opportunity does: the theme's green, which each theme picks to read on its own background. A working mark takes the
  * theme's text color.
  */
-const TONE_COLORS: Record<Exclude<Tone, 'tasks' | null>, keyof Theme> = {
-  needsYou: 'ansi3',
+const TONE_COLORS: Record<Exclude<Tone, 'tasks' | 'needsYou' | null>, keyof Theme> = {
   issue: 'ansi1',
   notice: 'ansi4',
   warning: 'ansi3',
@@ -59,10 +59,10 @@ const isLightTheme = (t: Theme) => {
   return (r! * 299 + g! * 587 + b! * 114) / 1000 > 128
 }
 
-/** Tasks takes the shared violet of `hooks/tones.ts`, which no Herdr theme names, in the light or dark form the theme's background calls for. */
+/** Tasks and needs-you take the shared violet and orange of `hooks/tones.ts`, which no Herdr theme names, in the light or dark form the theme's background calls for. */
 export const colorOf = (t: Theme, tone: Tone): Color =>
-  tone === 'tasks'
-    ? ((isLightTheme(t) ? LIGHT_TONES : DARK_TONES).tasks as Color)
+  tone === 'tasks' || tone === 'needsYou'
+    ? ((isLightTheme(t) ? LIGHT_TONES : DARK_TONES)[tone] as Color)
     : t[tone === null ? 'foreground' : TONE_COLORS[tone]]
 
 /** A theme color at a share of its strength, for a banner's fill and border. Tone colors are opaque `#rrggbb`. */
