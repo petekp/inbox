@@ -1,3 +1,4 @@
+import type { On } from 'claude-code'
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import { w, world } from './hooks-world'
@@ -6,12 +7,28 @@ import { BAND } from './hooks-helpers'
 const APP_TERMINAL = { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' }
 const LS = JSON.stringify({ spaces: [{ machine: null, tabs: [{ terminals: [{ terminal: 't1', pane: 'p1' }] }] }] })
 const herdrAppCalls = () => w.ran.filter(argv => argv[0] === 'herdr-app').map(argv => argv.slice(1, 3).join(' '))
-const PRESS_DISPATCH_TURNS = 5
 
-async function isPaneOpenedInPress(count: number) {
-  for (let turn = 0; turn < PRESS_DISPATCH_TURNS && w.panesOpened.length < count; turn++) await Promise.resolve()
+function spyOnEvents(on: On) {
+  const events: string[] = []
+  const spy = ((name: string, handler: (...args: never[]) => unknown) => {
+    const isStream = handler.constructor.name === 'AsyncGeneratorFunction'
+    const recorded = isStream
+      ? async function* (...args: never[]) {
+          events.push(name)
+          yield* handler(...args) as AsyncGenerator
+        }
+      : (...args: never[]) => {
+          events.push(name)
 
-  return w.panesOpened.length === count
+          return handler(...args)
+        }
+
+    return on(name as never, recorded as never)
+  }) as On
+
+  const awaitedSince = (start: number) => events.slice(start).filter(name => name !== 'ui.log')
+
+  return { events, awaitedSince, spy }
 }
 
 test('in a Herdr app terminal, /inbox and Open inbox open the Herdr panel beside the terminal, label it, then focus it, and open no pane', async ($, on) => {
@@ -68,7 +85,8 @@ test('in a Herdr app terminal, a split Herdr refuses opens the pane and says why
 
 test('in a Herdr app terminal without the inbox mod, Open inbox opens the pane in the press and logs why', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [], APP_TERMINAL)
+  const { events, awaitedSince, spy } = spyOnEvents(on)
+  world($, spy, [], APP_TERMINAL)
   w.missingFiles = ['/app/mods/inbox/main.js']
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
@@ -76,9 +94,9 @@ test('in a Herdr app terminal without the inbox mod, Open inbox opens the pane i
   w.panesOpened = []
 
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  const pressing = band.press({ key: 'open-inbox' })
-  expect(await isPaneOpenedInPress(1)).toBe(true)
-  await pressing
+  const beforePress = events.length
+  await band.press({ key: 'open-inbox' })
+  expect(awaitedSince(beforePress)[0]).toBe('ui.open')
   await clock.settle()
   expect(w.logged).toContain('Opened the inbox here, since the Herdr app has no inbox mod in /app/mods.')
   expect(herdrAppCalls()).toEqual([])
@@ -86,7 +104,8 @@ test('in a Herdr app terminal without the inbox mod, Open inbox opens the pane i
 
 test('outside a Herdr app terminal, /inbox and Open inbox open the pane in the press and run no herdr-app', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [], { HERDR_PANE_ID: 'p1' })
+  const { events, awaitedSince, spy } = spyOnEvents(on)
+  world($, spy, [], { HERDR_PANE_ID: 'p1' })
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
   await clock.settle()
@@ -94,9 +113,9 @@ test('outside a Herdr app terminal, /inbox and Open inbox open the pane in the p
 
   expect((await $.command.run({ command: 'inbox', args: '' } as never)).text).toBe('Opened the inbox.')
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  const pressing = band.press({ key: 'open-inbox' })
-  expect(await isPaneOpenedInPress(2)).toBe(true)
-  await pressing
+  const beforePress = events.length
+  await band.press({ key: 'open-inbox' })
+  expect(awaitedSince(beforePress)[0]).toBe('ui.open')
   await clock.settle()
   expect(herdrAppCalls()).toEqual([])
 })
