@@ -183,6 +183,7 @@ export function sessionCalls(context: HostContext) {
 
     return {
       now: deps.now,
+      run,
       read: () => readState(dir, id),
       update: fn => change(id, fn),
       exclusive: fn => exclusiveRun(dir, id, fn),

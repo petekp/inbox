@@ -2,7 +2,7 @@ import type { Place } from './status'
 import type { TurnDialogQuestion } from './items'
 import type { LastAction, RowNote } from './press'
 import type { Ledger, PrView } from './ledger'
-import type { TaskFactWarning, TaskPrState, TaskTree } from './task-tree'
+import type { TaskFactWarning, TaskOwnerFacts, TaskPrState, TaskTree } from './task-tree'
 
 /** Why the session halted outside the conversation, from the error Claude Code classified it with. */
 export type Stop = {
@@ -208,6 +208,11 @@ export type Session = {
   taskPrStates: Record<string, TaskPrState>
   /** Warnings from the latest task-fact pass. These are not task history. */
   taskFactWarnings: TaskFactWarning[]
+  /** Last observed state for owners of open tasks, keyed by machine and agent. */
+  taskOwnerFacts: TaskOwnerFacts
+  /** Last owner poll time and cursor, which bound the number of local Herdr lookups. */
+  taskOwnerFactCheckedAt: number | null
+  taskOwnerFactCursor: string | null
   /** Last linked task PR checked when a poll is bounded to a subset. */
   taskPrFactCursor: string | null
   /** What the turn running now gathered for the per-reply update. */

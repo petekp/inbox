@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { UNSTARTABLE_CODE } from '../hooks/gh'
 import type { Run } from '../hooks/gh'
-import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrReporter, herdrTarget } from '../hooks/herdr'
+import {
+  CLEARED_TOKENS,
+  herdrEnvelope,
+  herdrLabels,
+  herdrReporter,
+  herdrTarget,
+  taskOwnerInHerdr,
+} from '../hooks/herdr'
 import { pressFile } from '../hooks/herdr-press-file'
 import type { EnvelopeSource } from '../hooks/herdr'
 import { publishSession } from '../hooks/herdr-app'
@@ -17,6 +24,31 @@ const PRESS = {
   press: { action: 'answer', id: 'q3', option: 'Yes' },
   holds: { replies: { q2: 4 }, discarded: { q1: 3 }, shownSince: 0 },
 }
+
+describe('taskOwnerInHerdr', () => {
+  test('reads the named agent status and treats unknown or failed lookups as absent', async () => {
+    const calls: { args: string[]; cwd: string; timeoutMs: number }[] = []
+    const run: Run = async (args, options) => {
+      calls.push({ args, cwd: options.cwd, timeoutMs: options.timeoutMs })
+      return {
+        code: 0,
+        stdout: JSON.stringify({ result: { agent: { name: 'worker-1', agent_status: 'idle' } } }),
+        stderr: '',
+      }
+    }
+    expect(await taskOwnerInHerdr('worker-1', run)).toBe('idle')
+    expect(calls).toEqual([{ args: ['herdr', 'agent', 'get', 'worker-1'], cwd: '/', timeoutMs: 5000 }])
+    expect(
+      await taskOwnerInHerdr('worker-1', async () => ({
+        code: 0,
+        stdout: JSON.stringify({ result: { agent: { agent_status: 'unknown' } } }),
+        stderr: '',
+      })),
+    ).toBeNull()
+    expect(await taskOwnerInHerdr('worker-1', async () => ({ code: 1, stdout: '', stderr: '' }))).toBeNull()
+    expect(await taskOwnerInHerdr('worker-1', async () => Promise.reject(new Error('herdr unavailable')))).toBeNull()
+  })
+})
 
 describe('herdrTarget', () => {
   test('a multiplexer pane wins over an app terminal, and neither means no target', () => {

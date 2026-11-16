@@ -18,11 +18,22 @@ import { inboxView, perTurnStatus } from './view'
 import type { UpdateRecovery } from './view'
 import { isRowTab } from './tabs'
 import { statusPage } from './status-page'
+import { applyTaskOwnerFacts, taskOwnerKey } from './task-facts'
 import type { InboxView } from './view'
 import type { StatusPage } from './status-page'
 import type { Holds } from './timing'
 import type { ShownTab } from './tabs'
-import type { FoldKind, LastAction, PrFetchFailure, RowNote, Session, TaskFactWarning, Turns } from '../types'
+import type {
+  FoldKind,
+  LastAction,
+  PrFetchFailure,
+  RowNote,
+  Session,
+  TaskFactWarning,
+  TaskOwnerFacts,
+  TaskProgressSegments,
+  Turns,
+} from '../types'
 
 export const PRESS_TIMEOUT_MS = 60_000
 
@@ -58,7 +69,12 @@ export type SessionView = InboxView & {
   turns: Turns
   prs: PrTab
   statusPage: StatusPage
-  /** Derived linked-task PR warnings for the Status and Timeline looks. */
+  /** Weighted task progress, with working tasks whose owners are not working counted as stalled. */
+  taskProgressSegments: TaskProgressSegments
+  /** Derived start times for stalled task and Progress rows, keyed by their ids. */
+  taskStalledSince: Record<string, number>
+  feedStalledSince: Record<string, number>
+  /** Derived linked-task PR and owner warnings for the Status and Timeline looks. */
   taskFactWarnings: TaskFactWarning[]
 }
 
@@ -111,14 +127,31 @@ export function sessionView(
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
   })
+  const ownerFacts: TaskOwnerFacts = {}
+  for (const finding of l.findings) {
+    if (!finding.owner || !finding.ownerFact) continue
+    const key = taskOwnerKey(finding.owner)
+    if (!ownerFacts[key] || ownerFacts[key]!.since < finding.ownerFact.since) ownerFacts[key] = finding.ownerFact
+  }
+  Object.assign(ownerFacts, s.taskOwnerFacts)
+  const taskOwnerView = applyTaskOwnerFacts(s.taskTree, ownerFacts, now)
+  const feedStalledSince = Object.fromEntries(
+    l.findings.flatMap(finding => {
+      const fact = finding.owner ? ownerFacts[taskOwnerKey(finding.owner)] : undefined
+      return finding.kind === 'progress' && fact && fact.state !== 'working' ? [[finding.id, fact.since]] : []
+    }),
+  )
 
   return {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
-    statusPage: statusPage(s, now),
-    taskFactWarnings: s.taskFactWarnings,
+    statusPage: statusPage(s, now, new Set(Object.keys(taskOwnerView.stalledSince))),
+    taskProgressSegments: taskOwnerView.segments,
+    taskStalledSince: taskOwnerView.stalledSince,
+    feedStalledSince,
+    taskFactWarnings: [...s.taskFactWarnings, ...taskOwnerView.warnings],
   }
 }
 

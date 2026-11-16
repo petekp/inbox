@@ -1,4 +1,4 @@
-import type { SessionStatus, TaskHistoryEvent, TaskLinks, TaskNode, TaskTree } from '../types'
+import type { SessionStatus, TaskHistoryEvent, TaskLinks, TaskNode, TaskProgressSegments, TaskTree } from '../types'
 
 export const TASK_HISTORY_LIMIT = 100
 export const TASK_NOTES_LIMIT = 40
@@ -341,6 +341,41 @@ export function weightedTaskProgress(tree: TaskTree, rootIds?: string | string[]
 function weightedAverage(values: [number, number][]): number {
   const total = values.reduce((sum, [, weight]) => sum + weight, 0)
   return total ? values.reduce((sum, [value, weight]) => sum + value * weight, 0) / total : 0
+}
+
+/** Shares each root's weight across its active children and reports the work in each task state. */
+export function weightedTaskProgressSegments(
+  tree: TaskTree,
+  stalledTasks: ReadonlySet<string> = new Set(),
+): TaskProgressSegments {
+  const children = new Map<string | null, TaskNode[]>()
+  for (const task of tree) children.set(task.parentId, [...(children.get(task.parentId) ?? []), task])
+
+  const segments: TaskProgressSegments = { total: 0, done: 0, working: 0, stalled: 0, waiting: 0, queued: 0 }
+  const add = (task: TaskNode, weight: number, path: ReadonlySet<string>) => {
+    if (task.status === 'dropped' || path.has(task.id)) return
+    if (task.status === 'done') {
+      segments.total += weight
+      segments.done += weight
+      return
+    }
+    const descendants = children.get(task.id) ?? []
+    const active = descendants.filter(child => child.status !== 'dropped')
+    if (active.length > 0) {
+      const total = active.reduce((sum, child) => sum + child.weight, 0)
+      const nextPath = new Set(path).add(task.id)
+      for (const child of active) add(child, (weight * child.weight) / total, nextPath)
+      return
+    }
+    segments.total += weight
+    if (task.status === 'working') segments[stalledTasks.has(task.id) ? 'stalled' : 'working'] += weight
+    else if (task.status === 'waits-on-other') segments.waiting += weight
+    else segments.queued += weight
+  }
+
+  for (const root of children.get(null) ?? []) add(root, root.weight, new Set())
+
+  return segments
 }
 
 /** Converts the current Status work rows once, retaining source order and their explicit goal links. */

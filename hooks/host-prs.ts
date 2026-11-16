@@ -7,7 +7,9 @@ import { withFetchedPrs } from './session-presses'
 import { applyTaskPrFacts } from './task-facts'
 import { prStatesQuery, readPrsAnswer } from './pr-query'
 import { prRefs } from './prs'
-import type { Session, TaskPrState } from '../types'
+import { taskOwnerInHerdr } from './herdr'
+import { observedTaskOwnerFact, taskOwnerKey } from './task-facts'
+import type { Session, TaskOwner, TaskPrState } from '../types'
 import type { SessionHost } from './session-host'
 
 const PRS_REFRESH_MS = 120_000
@@ -15,6 +17,8 @@ const PRS_REFRESH_MS = 120_000
 export const PRS_HIDDEN_REFRESH_MS = 10 * 60_000
 const NEW_PR_FETCH_MS = 15_000
 const TASK_PR_FETCH_LIMIT = 8
+const TASK_OWNER_POLL_MS = 60_000
+export const TASK_OWNER_FETCH_LIMIT = 5
 
 function stateOf(value: unknown): TaskPrState | undefined {
   return value === 'OPEN' || value === 'CLOSED' || value === 'MERGED' ? value : undefined
@@ -40,6 +44,56 @@ function afterCursor(urls: string[], cursor: string | null): string[] {
   const index = cursor ? urls.indexOf(cursor) : -1
   const start = (index + 1) % urls.length
   return [...urls.slice(start), ...urls.slice(0, start)]
+}
+
+function taskOwners(s: Session): Map<string, TaskOwner> {
+  const owners = new Map<string, TaskOwner>()
+  const add = (owner: TaskOwner | undefined) => {
+    if (owner) owners.set(taskOwnerKey(owner), owner)
+  }
+  for (const task of s.taskTree) if (task.status !== 'done' && task.status !== 'dropped') add(task.links?.owner)
+  for (const finding of s.ledger.findings) if (finding.kind === 'progress') add(finding.owner)
+  return owners
+}
+
+/** Refreshes a bounded batch of local task owners, keeping unknown and failed lookups out of task facts. */
+export async function fetchTaskOwnerFacts<S extends Session>(
+  host: Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'run'>,
+): Promise<void> {
+  const run = host.run
+  if (!run) return
+  const s = await host.read()
+  const now = await host.now()
+  if (s.taskOwnerFactCheckedAt !== null && now - s.taskOwnerFactCheckedAt < TASK_OWNER_POLL_MS) return
+
+  const local = [...taskOwners(s)]
+    .filter(([, owner]) => owner.machine === 'local')
+    .sort(([a], [b]) => a.localeCompare(b))
+  if (local.length === 0) return
+  const selected = afterCursor(
+    local.map(([key]) => key),
+    s.taskOwnerFactCursor,
+  ).slice(0, TASK_OWNER_FETCH_LIMIT)
+  const observations = await Promise.all(
+    selected.map(async key => {
+      const owner = local.find(([candidate]) => candidate === key)?.[1]
+      if (!owner) return [key, null] as const
+      return [key, await taskOwnerInHerdr(owner.agent, run)] as const
+    }),
+  )
+  await host.update(cur => {
+    const active = taskOwners(cur)
+    const facts = Object.fromEntries(Object.entries(cur.taskOwnerFacts).filter(([key]) => active.has(key)))
+    for (const [key, state] of observations)
+      if (state !== null && active.has(key)) facts[key] = observedTaskOwnerFact(facts[key], state, now)
+
+    return {
+      ...cur,
+      taskOwnerFacts: facts,
+      taskOwnerFactCheckedAt: now,
+      taskOwnerFactCursor: selected.at(-1) ?? cur.taskOwnerFactCursor,
+    }
+  })
 }
 
 async function fetchUntrackedTaskPrStates<S extends Session>(
@@ -144,11 +198,13 @@ export function prFetchTracker(now: () => number): {
  * Returns without fetching when gh cannot start.
  */
 export async function fetchPrs<S extends Session>(
-  host: Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'gh'>,
+  host: Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'gh' | 'run'>,
   findsBranchPr: boolean,
   isPress = false,
 ): Promise<void> {
-  const s = await host.read()
+  let s = await host.read()
+  await fetchTaskOwnerFacts(host)
+  s = await host.read()
   const shared = (await host.gh.shared?.read()) ?? NO_PR_SHARED
   const now = await host.now()
   if (!isPress && isLimitInForce(shared.limit, now)) {

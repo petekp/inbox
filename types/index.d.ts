@@ -366,6 +366,10 @@ export type Finding = {
   feedOwned?: true
   /** The active-items source owns this finding's lifecycle. */
   sourceManaged?: true
+  /** The agent assigned to this feed row. */
+  owner?: TaskOwner
+  /** Owner state and time from a patrol snapshot that explicitly carries them. */
+  ownerFact?: TaskOwnerFact
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']
@@ -490,6 +494,22 @@ export type TaskOwner = {
   machine: string
 }
 
+export type TaskOwnerState = 'working' | 'idle' | 'blocked' | 'done'
+
+/** The first time this host observed the owner in its current non-working state. */
+export type TaskOwnerFact = { state: TaskOwnerState; since: number }
+
+export type TaskOwnerFacts = Record<string, TaskOwnerFact>
+
+export type TaskProgressSegments = {
+  total: number
+  done: number
+  working: number
+  stalled: number
+  waiting: number
+  queued: number
+}
+
 export type TaskLinks = {
   pr?: string
   issue?: string
@@ -498,11 +518,9 @@ export type TaskLinks = {
 
 export type TaskPrState = 'OPEN' | 'CLOSED' | 'MERGED'
 
-export type TaskFactWarning = {
-  taskId: string
-  pr: string
-  message: 'PR merged, task still open' | 'PR closed without merge'
-}
+export type TaskFactWarning =
+  | { taskId: string; pr: string; message: 'PR merged, task still open' | 'PR closed without merge' }
+  | { taskId: string; owner: TaskOwner; message: 'Owner idle 15m+' | 'Owner finished, task open' }
 
 export type TaskNode = {
   id: string
@@ -729,6 +747,11 @@ export type Session = {
   taskPrStates: Record<string, TaskPrState>
   /** Warnings from the latest task-fact pass. These are not task history. */
   taskFactWarnings: TaskFactWarning[]
+  /** Last observed state for owners of open tasks, keyed by machine and agent. */
+  taskOwnerFacts: TaskOwnerFacts
+  /** Last owner poll time and cursor, which bound the number of local Herdr lookups. */
+  taskOwnerFactCheckedAt: number | null
+  taskOwnerFactCursor: string | null
   /** Last linked task PR checked when a poll is bounded to a subset. */
   taskPrFactCursor: string | null
   /** What the turn running now gathered for the per-reply update. */

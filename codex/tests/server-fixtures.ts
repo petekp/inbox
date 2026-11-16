@@ -12,6 +12,7 @@ export async function setup(
   fallbackCli = async () => 'codex',
   isNextBuild = false,
   feedPath?: string,
+  execAnswer?: (args: string[]) => { code: number; stdout: string; stderr: string },
 ) {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
@@ -37,10 +38,12 @@ export async function setup(
       ],
     },
   }))
-  const runner = fakeRunner(() =>
-    queueCode === 0
-      ? { code: 0, stdout: 'Queued message q1\n', stderr: '' }
-      : { code: queueCode, stdout: '', stderr: 'no such thread' },
+  const runner = fakeRunner(
+    execAnswer ??
+      (() =>
+        queueCode === 0
+          ? { code: 0, stdout: 'Queued message q1\n', stderr: '' }
+          : { code: queueCode, stdout: '', stderr: 'no such thread' }),
   )
   const handle = makeServer({
     comparePage: '/plugin/dist/compare-page.html',

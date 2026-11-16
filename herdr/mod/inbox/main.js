@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T06:18:57.574Z. 208066 characters follow.
+// Built at 2026-11-16T07:48:24.435Z. 212112 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -909,6 +909,40 @@ function weightedAverage(values) {
   const total = values.reduce((sum, [, weight]) => sum + weight, 0);
   return total ? values.reduce((sum, [value, weight]) => sum + value * weight, 0) / total : 0;
 }
+function weightedTaskProgressSegments(tree, stalledTasks = new Set) {
+  const children = new Map;
+  for (const task of tree)
+    children.set(task.parentId, [...children.get(task.parentId) ?? [], task]);
+  const segments = { total: 0, done: 0, working: 0, stalled: 0, waiting: 0, queued: 0 };
+  const add = (task, weight, path) => {
+    if (task.status === "dropped" || path.has(task.id))
+      return;
+    if (task.status === "done") {
+      segments.total += weight;
+      segments.done += weight;
+      return;
+    }
+    const descendants = children.get(task.id) ?? [];
+    const active = descendants.filter((child) => child.status !== "dropped");
+    if (active.length > 0) {
+      const total = active.reduce((sum, child) => sum + child.weight, 0);
+      const nextPath = new Set(path).add(task.id);
+      for (const child of active)
+        add(child, weight * child.weight / total, nextPath);
+      return;
+    }
+    segments.total += weight;
+    if (task.status === "working")
+      segments[stalledTasks.has(task.id) ? "stalled" : "working"] += weight;
+    else if (task.status === "waits-on-other")
+      segments.waiting += weight;
+    else
+      segments.queued += weight;
+  };
+  for (const root of children.get(null) ?? [])
+    add(root, root.weight, new Set);
+  return segments;
+}
 function taskTreeFromStatus(status) {
   if (!status)
     return [];
@@ -1682,7 +1716,7 @@ function statusOf(roots) {
     return "working";
   return roots.some((task) => task.status === "waits-on-other") ? "waits-on-other" : "queued";
 }
-function statusPage(s, now) {
+function statusPage(s, now, stalledTasks = new Set) {
   const o = s.ledger.overview;
   const tree = s.taskTree ?? [];
   const byId = new Map(tree.map((task) => [task.id, task]));
@@ -1754,6 +1788,7 @@ function statusPage(s, now) {
     head,
     ...goalParts,
     rows,
+    progressSegments: weightedTaskProgressSegments(tree, stalledTasks),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -2547,6 +2582,9 @@ function emptySession() {
     taskTree: [],
     taskPrStates: {},
     taskFactWarnings: [],
+    taskOwnerFacts: {},
+    taskOwnerFactCheckedAt: null,
+    taskOwnerFactCursor: null,
     taskPrFactCursor: null,
     turn: NO_TURN,
     told: TOLD_NOTHING,
@@ -2608,11 +2646,15 @@ function upgradeSession(saved) {
 function sessionFields(saved, views) {
   const base = emptySession();
   const ledger = saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger;
+  const taskOwnerFacts = Object.fromEntries(Object.entries(saved.taskOwnerFacts ?? {}).filter((entry) => entry[0].length <= 256 && !!entry[1] && typeof entry[1] === "object" && ["working", "idle", "blocked", "done"].includes(entry[1].state) && Number.isFinite(entry[1].since) && entry[1].since >= 0).slice(-200));
   return {
     ledger,
     taskTree: Array.isArray(saved.taskTree) ? saved.taskTree : taskTreeFromStatus(ledger.overview),
     taskPrStates: Object.fromEntries(Object.entries(saved.taskPrStates ?? {}).filter((entry) => entry[1] === "OPEN" || entry[1] === "CLOSED" || entry[1] === "MERGED")),
     taskFactWarnings: saved.taskFactWarnings ?? [],
+    taskOwnerFacts,
+    taskOwnerFactCheckedAt: Number.isFinite(saved.taskOwnerFactCheckedAt) && saved.taskOwnerFactCheckedAt >= 0 ? saved.taskOwnerFactCheckedAt : null,
+    taskOwnerFactCursor: typeof saved.taskOwnerFactCursor === "string" && saved.taskOwnerFactCursor.length <= 256 ? saved.taskOwnerFactCursor : null,
     taskPrFactCursor: saved.taskPrFactCursor ?? null,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
@@ -3336,6 +3378,31 @@ function perTurnStatus(isUpdating, recovery) {
   return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
+// ../hooks/task-facts.ts
+var OWNER_IDLE_WARNING = "Owner idle 15m+";
+var OWNER_FINISHED_WARNING = "Owner finished, task open";
+var OWNER_IDLE_AFTER_MS = 15 * 60000;
+function taskOwnerKey(owner) {
+  return JSON.stringify([owner.machine, owner.agent]);
+}
+function applyTaskOwnerFacts(tree, facts, at) {
+  const stalledSince = {};
+  const warnings = [];
+  for (const task of tree) {
+    const owner = task.links?.owner;
+    const fact = owner ? facts[taskOwnerKey(owner)] : undefined;
+    if (task.status !== "working" || !owner || !fact || fact.state === "working")
+      continue;
+    stalledSince[task.id] = fact.since;
+    if (at - fact.since >= OWNER_IDLE_AFTER_MS)
+      warnings.push({ taskId: task.id, owner, message: OWNER_IDLE_WARNING });
+    if (fact.state === "done" || fact.state === "idle")
+      warnings.push({ taskId: task.id, owner, message: OWNER_FINISHED_WARNING });
+  }
+  const segments = weightedTaskProgressSegments(tree, new Set(Object.keys(stalledSince)));
+  return { stalledSince, warnings, segments };
+}
+
 // ../hooks/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
@@ -3373,13 +3440,30 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
   });
+  const ownerFacts = {};
+  for (const finding of l.findings) {
+    if (!finding.owner || !finding.ownerFact)
+      continue;
+    const key = taskOwnerKey(finding.owner);
+    if (!ownerFacts[key] || ownerFacts[key].since < finding.ownerFact.since)
+      ownerFacts[key] = finding.ownerFact;
+  }
+  Object.assign(ownerFacts, s.taskOwnerFacts);
+  const taskOwnerView = applyTaskOwnerFacts(s.taskTree, ownerFacts, now);
+  const feedStalledSince = Object.fromEntries(l.findings.flatMap((finding) => {
+    const fact = finding.owner ? ownerFacts[taskOwnerKey(finding.owner)] : undefined;
+    return finding.kind === "progress" && fact && fact.state !== "working" ? [[finding.id, fact.since]] : [];
+  }));
   return {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
-    statusPage: statusPage(s, now),
-    taskFactWarnings: s.taskFactWarnings
+    statusPage: statusPage(s, now, new Set(Object.keys(taskOwnerView.stalledSince))),
+    taskProgressSegments: taskOwnerView.segments,
+    taskStalledSince: taskOwnerView.stalledSince,
+    feedStalledSince,
+    taskFactWarnings: [...s.taskFactWarnings, ...taskOwnerView.warnings]
   };
 }
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {

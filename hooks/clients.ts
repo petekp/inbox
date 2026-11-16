@@ -86,6 +86,7 @@ export type FeatureId =
   | 'document-preview'
   | 'record-link-guard'
   | 'task-pr-facts'
+  | 'task-owner-facts'
   | 'timeline'
 
 export { CLIENTS } from './client-support'

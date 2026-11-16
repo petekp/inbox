@@ -72,6 +72,7 @@ export function makeSessionHost(
     let preparedCli: string | undefined
     return {
       ...codexStore(dir, id, now, deps.onWrite),
+      run: deps.exec,
       readPersonInstructions: () => readInboxInstructions(process.env),
       prepare: async s => {
         preparedCli = s.cliPath ?? (await deps.fallbackCli())

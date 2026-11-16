@@ -116,6 +116,8 @@ export function applyFeed(ledger: Ledger, feed: Feed, now: number, source = ''):
     let finding = next.findings.find(f => owns(f) && f.feedKey === entry.key)
     const isClosed = next.closedFindings.some(f => owns(f) && f.feedKey === entry.key)
     if (!finding && (entry.state === 'done' || isClosed || now - entry.at >= FEED_TTL_MS)) continue
+    const patrolOwner = feed.source === 'herdr-meta-patrol' ? /^herdr\/([^/]+)\/([^/]+)$/.exec(entry.key) : null
+    const owner = entry.owner ?? (patrolOwner ? { machine: patrolOwner[1]!, agent: patrolOwner[2]! } : undefined)
     const updated: Finding = {
       ...finding,
       id: finding?.id ?? `f${next.nextId}`,
@@ -127,7 +129,13 @@ export function applyFeed(ledger: Ledger, feed: Feed, now: number, source = ''):
       feedKey: entry.key,
       feedSource: source,
       feedOwned: true,
+      ...(owner ? { owner: { ...owner } } : {}),
+      ...(feed.source === 'herdr-meta-patrol' && owner ? { ownerFact: { state: entry.state, since: entry.at } } : {}),
     }
+    if (!owner) {
+      delete updated.owner
+      delete updated.ownerFact
+    } else if (feed.source !== 'herdr-meta-patrol') delete updated.ownerFact
     if (!finding) next = { ...next, findings: [...next.findings, updated], nextId: next.nextId + 1 }
     else if (
       finding.kind !== updated.kind ||
@@ -136,7 +144,9 @@ export function applyFeed(ledger: Ledger, feed: Feed, now: number, source = ''):
       finding.path !== updated.path ||
       finding.at !== updated.at ||
       finding.feedKey !== updated.feedKey ||
-      finding.feedSource !== updated.feedSource
+      finding.feedSource !== updated.feedSource ||
+      JSON.stringify(finding.owner) !== JSON.stringify(updated.owner) ||
+      JSON.stringify(finding.ownerFact) !== JSON.stringify(updated.ownerFact)
     )
       next = { ...next, findings: next.findings.map(f => (f.id === finding!.id ? updated : f)) }
     if (entry.state === 'done')
@@ -235,9 +245,16 @@ function applyMetaOpenItems(ledger: Ledger, feed: Feed, now: number, source: str
       feedSource: source,
       feedOwned: true as const,
       sourceManaged: true as const,
+      ...(entry.owner ? { owner: { ...entry.owner } } : {}),
     }
+    if (!entry.owner) delete updated.owner
     if (!current) next = { ...next, findings: [...next.findings, updated], nextId: next.nextId + 1 }
-    else if (current.title !== updated.title || current.detail !== updated.detail || current.at !== updated.at)
+    else if (
+      current.title !== updated.title ||
+      current.detail !== updated.detail ||
+      current.at !== updated.at ||
+      JSON.stringify(current.owner) !== JSON.stringify(updated.owner)
+    )
       next = { ...next, findings: next.findings.map(f => (f.id === current.id ? updated : f)) }
   }
   for (const finding of next.findings)

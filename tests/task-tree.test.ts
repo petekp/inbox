@@ -16,6 +16,7 @@ import {
   taskTreeFromStatus,
   updateTask,
   weightedTaskProgress,
+  weightedTaskProgressSegments,
 } from '../hooks/task-tree'
 import { upgradeSession } from '../hooks/session-files'
 import type { TaskNode, TaskTree } from '../types'
@@ -184,6 +185,32 @@ test('weighted progress derives recursively from task status and weight', () => 
     ]),
   ).toBe(0.5)
   expect(weightedTaskProgress([])).toBe(0)
+})
+
+test('weighted progress segments sum active work and exclude dropped tasks', () => {
+  const tree = [
+    node('group', { weight: 2 }),
+    node('finished', { parentId: 'group', status: 'done' }),
+    node('stalled', { parentId: 'group' }),
+    node('dropped-child', { parentId: 'group', status: 'dropped', weight: 20 }),
+    node('queued', { status: 'queued' }),
+    node('dropped-root', { status: 'dropped', weight: 3 }),
+  ]
+  const segments = weightedTaskProgressSegments(tree, new Set(['stalled']))
+
+  expect(segments).toEqual({ total: 3, done: 1, working: 0, stalled: 1, waiting: 0, queued: 1 })
+  expect(segments.done + segments.working + segments.stalled + segments.waiting + segments.queued).toBe(segments.total)
+  // The percentage helper keeps T3's denominator, including dropped tasks.
+  expect(weightedTaskProgress(tree)).toBe(1 / 66)
+})
+
+test('a task with only dropped children counts its own state in progress segments', () => {
+  expect(
+    weightedTaskProgressSegments([
+      node('working-root'),
+      node('dropped-child', { parentId: 'working-root', status: 'dropped' }),
+    ]),
+  ).toEqual({ total: 1, done: 0, working: 1, stalled: 0, waiting: 0, queued: 0 })
 })
 
 test('empty Status and pre-v0.4 saves migrate to an empty or upgraded task tree', () => {

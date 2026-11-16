@@ -1,5 +1,6 @@
 import type { SessionStatus } from './status'
 import type { Closed, Item } from './items'
+import type { TaskOwner, TaskOwnerFact } from './task-tree'
 
 export type Finding = {
   id: string
@@ -23,6 +24,10 @@ export type Finding = {
   feedOwned?: true
   /** The active-items source owns this finding's lifecycle. */
   sourceManaged?: true
+  /** The agent assigned to this feed row. */
+  owner?: TaskOwner
+  /** Owner state and time from a patrol snapshot that explicitly carries them. */
+  ownerFact?: TaskOwnerFact
 }
 
 export type FoldKind = Item['kind'] | Finding['kind']

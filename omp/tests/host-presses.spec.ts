@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
+import type { TaskNode } from '../../types'
 import {
   call,
   deps,
@@ -46,6 +47,36 @@ test('only what the person submits in the editor counts as a typed message, not 
   expect(first).toBeNumber()
   await call('input', { type: 'input', text: 'and then?', source: 'interactive' })
   expect(typedAt()).toBeGreaterThan(first!)
+})
+
+test('omp polls a local task owner through its host runner and derives the stalled marker', async () => {
+  const inbox = createInbox(pi(), deps())
+  await call('session_start', { type: 'session_start' }, makeCtx())
+  await settle()
+  const ownerTask: TaskNode = {
+    id: 't1',
+    parentId: null,
+    status: 'working',
+    weight: 1,
+    title: 'Implement the host check',
+    detail: '',
+    notes: [],
+    createdAt: w.clock,
+    updatedAt: w.clock,
+    history: [],
+    links: { owner: { machine: 'local', agent: 'worker-1' } },
+  }
+  writeFileSync(join(w.dir, 'sessions', 's1.json'), JSON.stringify({ ...state(), taskTree: [ownerTask] }))
+  w.execResults.set('herdr', {
+    code: 0,
+    stdout: JSON.stringify({ result: { agent: { agent_status: 'idle' } } }),
+  })
+
+  await inbox.openPanel(makeCtx(), w.clock)
+  await settle()
+
+  expect(w.execCalls.some(call => call.command === 'herdr' && call.args.join(' ') === 'agent get worker-1')).toBe(true)
+  expect((await inbox.screen(makeCtx())).view.taskStalledSince.t1).toBeDefined()
 })
 
 async function afterSettle() {

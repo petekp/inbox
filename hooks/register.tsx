@@ -62,7 +62,7 @@ import {
 import { CATCH_UP_CALL, runUpdates } from './session-host'
 import { heardCall } from './call-record'
 import { isRecordedItemsOnly } from './session-host'
-import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
+import { fetchPrs as fetchSessionPrs, fetchTaskOwnerFacts, isPrFetchDue } from './host-prs'
 import { tabPrs } from './pr-fetch'
 import type { FetchAsk } from './pr-fetch'
 import { prSharedStore } from './mod-pr-shared'
@@ -776,6 +776,7 @@ function sessionHost(
 
   return {
     now: () => $.clock.now(),
+    run: runOf(commandCalls($)),
     read: async () => {
       if (isCurrent(owner)) return upgradeSession(await read($, SESSION))
       const saved = await readSettled(saveEngine($), owner.id)
@@ -1695,6 +1696,7 @@ async function pollPrs($: EngineInterface) {
     isPrsTabShown($),
     $.clock.now(),
   ])
+  await fetchTaskOwnerFacts(hostOf($, currentOwner()))
   const { ledger, prViews } = session
   if (away.isAway || (!isTabShown && tabPrs(ledger).length === 0 && prViews.branchRef === null)) return
   if (!isPrFetchDue(session, mod.prFetchEndedAt, now, isTabShown)) return
@@ -2151,8 +2153,7 @@ async function initializeInbox($: EngineInterface) {
     () => conversation.id,
     (id, f) => herdrPress($, id, f),
   )
-  // After loadConversation, which brings saved state up to date. A band or pane drawn while the mod was off read no
-  // state, so no state write draws it again.
+  // Redraw after loadConversation even if no state write follows.
   $.ui.invalidate('ui.render')
   void feed?.()
   await redrawAfterReload($)

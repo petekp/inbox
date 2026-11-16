@@ -11,6 +11,7 @@ import { parsedReply, applied } from './session-turns'
 import { needsCatchUp, appliedCatchUp } from './session-status'
 import type { SendOutcome } from './session-presses'
 import type { CallKind, ProcessFailure, Session } from '../types'
+import type { Run } from './gh'
 import { askAndWriteStatus } from './status-records'
 import { askedCall, heardCall, withCall } from './call-record'
 import type { HeardCall } from './call-record'
@@ -94,6 +95,8 @@ export type SessionHost<S extends Session> = {
   read(): Promise<S>
   /** Changes the session under its lock. An external effect, such as a delivery, runs outside a change. */
   update(change: (s: S) => S | Promise<S>): Promise<S>
+  /** Runs a bounded read-only command through the host's process runner. */
+  run?: Run
   /** Runs `fn` unless another run holds the session's per-reply update. */
   exclusive<T>(fn: () => Promise<T>): Promise<Exclusive<T>>
   /** Calls the inbox model, once for the ledger and once for the Status. Null when a call fails. */

@@ -99,6 +99,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
       'task-pr-facts': { kind: 'full' },
+      'task-owner-facts': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },
@@ -226,7 +227,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'ran-call-activity': {
         kind: 'different',
         reason:
-          "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked. In a code-mode script that ends on a declined command, the error does not name the command, so the declined one is the only command with no row while the script ran. When more than one has none, as when another still runs, every line stays. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches.",
+          'Codex shows calls from PreToolUse, before approval. Stop and mid-turn Status reconciliation remove rows for declined or blocked calls when the rollout identifies them. One declined command at the end of a code-mode script is the only missing row; when multiple calls have no row, all remain. Declined MCP calls and blocks caught by scripts keep their rows.',
       },
       'ran-call-delegates': {
         kind: 'different',
@@ -277,6 +278,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
       'task-pr-facts': { kind: 'full' },
+      'task-owner-facts': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },
@@ -400,6 +402,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
       'task-pr-facts': { kind: 'full' },
+      'task-owner-facts': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },

@@ -19,6 +19,9 @@ export function emptySession(): Session {
     taskTree: [],
     taskPrStates: {},
     taskFactWarnings: [],
+    taskOwnerFacts: {},
+    taskOwnerFactCheckedAt: null,
+    taskOwnerFactCursor: null,
     taskPrFactCursor: null,
     turn: NO_TURN,
     told: TOLD_NOTHING,
@@ -128,6 +131,19 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
   const ledger = saved.ledger
     ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) }
     : base.ledger
+  const taskOwnerFacts = Object.fromEntries(
+    Object.entries(saved.taskOwnerFacts ?? {})
+      .filter(
+        (entry): entry is [string, Session['taskOwnerFacts'][string]] =>
+          entry[0].length <= 256 &&
+          !!entry[1] &&
+          typeof entry[1] === 'object' &&
+          ['working', 'idle', 'blocked', 'done'].includes((entry[1] as { state?: unknown }).state as string) &&
+          Number.isFinite((entry[1] as { since?: unknown }).since) &&
+          (entry[1] as { since: number }).since >= 0,
+      )
+      .slice(-200),
+  )
 
   return {
     ledger,
@@ -139,6 +155,15 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
       ),
     ),
     taskFactWarnings: saved.taskFactWarnings ?? [],
+    taskOwnerFacts,
+    taskOwnerFactCheckedAt:
+      Number.isFinite(saved.taskOwnerFactCheckedAt) && saved.taskOwnerFactCheckedAt! >= 0
+        ? saved.taskOwnerFactCheckedAt!
+        : null,
+    taskOwnerFactCursor:
+      typeof saved.taskOwnerFactCursor === 'string' && saved.taskOwnerFactCursor.length <= 256
+        ? saved.taskOwnerFactCursor
+        : null,
     taskPrFactCursor: saved.taskPrFactCursor ?? null,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },

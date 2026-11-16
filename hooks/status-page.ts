@@ -1,4 +1,4 @@
-import type { Item, Ledger, Session, Subject, TaskNode, TaskTree } from '../types'
+import type { Item, Ledger, Session, Subject, TaskNode, TaskProgressSegments, TaskTree } from '../types'
 import { isChildRunning } from './status-children'
 import { isOpen } from './status-limits'
 import { cutAtPhrase } from './text'
@@ -7,7 +7,7 @@ import { goalPage, oldestAsk } from './status-goal-page'
 import type { GoalParts } from './status-goal-page'
 import { isFinishedUnseen, looseChildRows, partRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
-import { taskRootGroups, weightedTaskProgress } from './task-tree'
+import { taskRootGroups, weightedTaskProgress, weightedTaskProgressSegments } from './task-tree'
 
 const STATUS_FAILED =
   "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply."
@@ -53,6 +53,7 @@ export type StatusPage = GoalParts & {
   isEmpty: boolean
   head: { title: string; description: string | null } | null
   rows: StatusRow[]
+  progressSegments: TaskProgressSegments
   error: string | null
   empty: { title: string; hint: string }
 }
@@ -91,6 +92,7 @@ export function statusPage(
     overviewFailure?: Session['overviewFailure']
   },
   now: number,
+  stalledTasks: ReadonlySet<string> = new Set(),
 ): StatusPage {
   const o = s.ledger.overview
   const tree = s.taskTree ?? []
@@ -164,6 +166,7 @@ export function statusPage(
     head,
     ...goalParts,
     rows,
+    progressSegments: weightedTaskProgressSegments(tree, stalledTasks),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: 'Status',

@@ -60,6 +60,20 @@ const HERDR_STATUSES: readonly HerdrStatus[] = ['idle', 'working', 'blocked', 'd
 /** What Herdr shows about an agent: what it does, and the focus its session publishes, if it runs the inbox. */
 export type HerdrAgent = { status: HerdrStatus; focus: string | null }
 
+/** The current status of a named Herdr agent, or null when the lookup fails or is unknown. */
+export async function taskOwnerInHerdr(agent: string, run: Run): Promise<Exclude<HerdrStatus, 'unknown'> | null> {
+  try {
+    const result = await run(['herdr', 'agent', 'get', agent], { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
+    if (result.code !== 0) return null
+    const value: unknown = JSON.parse(result.stdout)?.result?.agent?.agent_status
+    return value !== 'unknown' && HERDR_STATUSES.includes(value as HerdrStatus)
+      ? (value as Exclude<HerdrStatus, 'unknown'>)
+      : null
+  } catch {
+    return null
+  }
+}
+
 /** How often a host asks Herdr about running delegates while its Status shows. */
 export const HERDR_CHECK_MS = 30_000
 

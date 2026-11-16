@@ -12,6 +12,22 @@ export type TaskOwner = {
   machine: string
 }
 
+export type TaskOwnerState = 'working' | 'idle' | 'blocked' | 'done'
+
+/** The first time this host observed the owner in its current non-working state. */
+export type TaskOwnerFact = { state: TaskOwnerState; since: number }
+
+export type TaskOwnerFacts = Record<string, TaskOwnerFact>
+
+export type TaskProgressSegments = {
+  total: number
+  done: number
+  working: number
+  stalled: number
+  waiting: number
+  queued: number
+}
+
 export type TaskLinks = {
   pr?: string
   issue?: string
@@ -20,11 +36,9 @@ export type TaskLinks = {
 
 export type TaskPrState = 'OPEN' | 'CLOSED' | 'MERGED'
 
-export type TaskFactWarning = {
-  taskId: string
-  pr: string
-  message: 'PR merged, task still open' | 'PR closed without merge'
-}
+export type TaskFactWarning =
+  | { taskId: string; pr: string; message: 'PR merged, task still open' | 'PR closed without merge' }
+  | { taskId: string; owner: TaskOwner; message: 'Owner idle 15m+' | 'Owner finished, task open' }
 
 export type TaskNode = {
   id: string

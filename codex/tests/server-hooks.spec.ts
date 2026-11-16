@@ -7,8 +7,53 @@ import { test } from 'node:test'
 import { noteHook } from '../src/core'
 import { makeServer } from '../src/server'
 import { readState, updateState } from '../src/state'
+import { sessionView } from '../../hooks/session-view'
 import { fakeRunner, tempDir, turnRow } from './helpers'
 import { setup } from './server-fixtures'
+import type { TaskNode } from '../../types'
+
+test('Codex polls a local task owner through its host runner and derives the stalled marker', async () => {
+  const now = 1_000_000
+  const { dir, calls, call } = await setup(
+    0,
+    () => now,
+    async () => 'codex',
+    false,
+    undefined,
+    args =>
+      args[0] === 'herdr'
+        ? {
+            code: 0,
+            stdout: JSON.stringify({ result: { agent: { agent_status: 'idle' } } }),
+            stderr: '',
+          }
+        : { code: 1, stdout: '', stderr: 'no pull requests found' },
+  )
+  const task: TaskNode = {
+    id: 't1',
+    parentId: null,
+    status: 'working',
+    weight: 1,
+    title: 'Implement the host check',
+    detail: '',
+    notes: [],
+    createdAt: now,
+    updatedAt: now,
+    history: [],
+    links: { owner: { machine: 'local', agent: 'worker-1' } },
+  }
+  await updateState(dir, 's1', s => ({ ...s, taskTree: [task] }))
+
+  await call('inbox_view', {}, { thread_id: 's1' })
+  let saved = await readState(dir, 's1')
+  for (let attempt = 0; attempt < 100 && Object.keys(saved.taskOwnerFacts).length === 0; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    saved = await readState(dir, 's1')
+  }
+  assert.ok(calls.some(args => args.join(' ') === 'herdr agent get worker-1'))
+  assert.equal(Object.keys(saved.taskOwnerFacts).length, 1)
+  assert.deepEqual(sessionView(saved, now + 15 * 60_000, 30_000).taskStalledSince, { t1: now })
+})
 
 test('Codex’s own tool calls reach their session through the turn metadata', async () => {
   const { dir, call } = await setup(0)

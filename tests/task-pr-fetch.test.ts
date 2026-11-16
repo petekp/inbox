@@ -1,8 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 
-import { fetchPrs } from '../hooks/host-prs'
+import { fetchPrs, TASK_OWNER_FETCH_LIMIT } from '../hooks/host-prs'
+import type { Run } from '../hooks/gh'
 import { NO_PR_SHARED } from '../hooks/pr-fetch'
 import { emptySession } from '../hooks/session-files'
+import { taskOwnerKey } from '../hooks/task-facts'
 import type { SessionHost } from '../hooks/session-host'
 import { prNodeOf, prsAnswerOf, queriedPrs } from './gh-answers'
 import type { PrAnswer, ViewJson } from './gh-answers'
@@ -29,13 +31,14 @@ function ghStandIn(answerOf: (number: string, repo: string) => PrAnswer) {
   return { run, queried }
 }
 
-function hostOf(run: (args: string[]) => Promise<Answer>, start: Session) {
+function hostOf(run: (args: string[]) => Promise<Answer>, start: Session, ownerRun?: Run) {
   let state = start
   let shared = NO_PR_SHARED
-  const host: Pick<SessionHost<Session>, 'now' | 'read' | 'update' | 'gh'> = {
+  const host: Pick<SessionHost<Session>, 'now' | 'read' | 'update' | 'gh' | 'run'> = {
     now: () => NOW,
     read: async () => state,
     update: async change => (state = await change(state)),
+    run: ownerRun,
     gh: {
       shared: {
         read: async () => shared,
@@ -52,6 +55,11 @@ function hostOf(run: (args: string[]) => Promise<Answer>, start: Session) {
 
   return { host, state: () => state }
 }
+
+const taskWithOwner = (id: string, agent: string): TaskNode => ({
+  ...taskWithPr(id, `https://github.com/acme/app/pull/${id.slice(1) || '1'}`),
+  links: { owner: { machine: 'local', agent } },
+})
 
 const taskWithPr = (id: string, pr: string): TaskNode => ({
   id,
@@ -125,4 +133,67 @@ test('untracked task PR checks are capped at eight per poll and continue after t
     'acme/app#5',
     'acme/app#6',
   ])
+})
+
+test('each owner pass gets the named local Herdr status and keeps its first idle time', async () => {
+  const owner = { machine: 'local', agent: 'worker-1' }
+  const key = taskOwnerKey(owner)
+  const start = {
+    ...emptySession(),
+    taskTree: [taskWithOwner('t1', owner.agent)],
+    taskOwnerFacts: { [key]: { state: 'idle' as const, since: NOW - 15 * 60_000 } },
+  }
+  const calls: string[][] = []
+  const run: Run = async args => {
+    calls.push(args)
+    return {
+      code: 0,
+      stdout: JSON.stringify({ result: { agent: { agent_status: 'idle' } } }),
+      stderr: '',
+    }
+  }
+  const gh = ghStandIn(() => null)
+  const { host, state } = hostOf(gh.run, start, run)
+
+  await fetchPrs(host, false)
+  await fetchPrs(host, false)
+
+  expect(calls).toEqual([['herdr', 'agent', 'get', owner.agent]])
+  expect(state().taskOwnerFacts[key]).toEqual({ state: 'idle', since: NOW - 15 * 60_000 })
+})
+
+test('failed owner lookups leave task facts and warnings unchanged', async () => {
+  const start = { ...emptySession(), taskTree: [taskWithOwner('t1', 'worker-1')] }
+  const run: Run = async () => ({ code: -1, stdout: '', stderr: 'not found' })
+  const gh = ghStandIn(() => null)
+  const { host, state } = hostOf(gh.run, start, run)
+
+  await fetchPrs(host, false)
+
+  expect(state().taskTree).toEqual(start.taskTree)
+  expect(state().taskOwnerFacts).toEqual({})
+  expect(state().taskFactWarnings).toEqual([])
+})
+
+test('owner fetches are bounded to five local owners per pass', async () => {
+  const tasks = Array.from({ length: TASK_OWNER_FETCH_LIMIT + 2 }, (_, index) =>
+    taskWithOwner(`t${index}`, `worker-${index}`),
+  )
+  const start = { ...emptySession(), taskTree: tasks }
+  const calls: string[][] = []
+  const run: Run = async args => {
+    calls.push(args)
+    return {
+      code: 0,
+      stdout: JSON.stringify({ result: { agent: { agent_status: 'working' } } }),
+      stderr: '',
+    }
+  }
+  const gh = ghStandIn(() => null)
+  const { host } = hostOf(gh.run, start, run)
+
+  await fetchPrs(host, false)
+
+  expect(calls).toHaveLength(TASK_OWNER_FETCH_LIMIT)
+  expect(calls.every(args => args.slice(0, 3).join(' ') === 'herdr agent get')).toBe(true)
 })
