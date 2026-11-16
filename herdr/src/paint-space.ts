@@ -240,9 +240,13 @@ function spaceEl(s: Space, p: Paint, columns: Element[]): Element {
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above)
 }
 
-/** The path's line and the nesting connectors: the text mixed into the panel's background at the Codex tab's `--tree-line` share. */
+/**
+ * The path's line and the nesting connectors: the text mixed into the panel's background at the Codex tab's `--tree-line`
+ * share, or into `under` where a connector runs through a box that has a color of its own, as a selected row's.
+ */
 const TREE_LINE_SHARE = 0.2
-export const lineColor = (t: Theme) => mixInto(t.foreground, t.background, TREE_LINE_SHARE)
+export const lineColor = (t: Theme, under: Theme[keyof Theme] = t.background) =>
+  mixInto(t.foreground, under, TREE_LINE_SHARE)
 
 /** Where the path's line runs: under the middle of a milestone's mark. */
 export const PATH_X = EDGE + 4

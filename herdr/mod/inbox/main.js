@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T06:32:27.287Z. 268380 characters follow.
+// Built at 2026-11-16T06:48:52.873Z. 268419 characters follow.
 
 // src/main.ts
 import { View, div as div8 } from "gpui-kit";
@@ -5593,7 +5593,7 @@ function spaceEl(s, p, columns) {
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
 var TREE_LINE_SHARE = 0.2;
-var lineColor = (t) => mixInto(t.foreground, t.background, TREE_LINE_SHARE);
+var lineColor = (t, under = t.background) => mixInto(t.foreground, under, TREE_LINE_SHARE);
 var PATH_X = EDGE + 4;
 function pathLineEl(line, top, height, t) {
   if (line === null)
@@ -5765,12 +5765,12 @@ var buttonsEl = (buttons, p, indent, isInert = false) => h_flex4().flex_wrap().i
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div7().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div7().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div7().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
 var trunkEl = (top, height, t) => {
-  const el = div7().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div7().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, t.selected));
   return height === null ? el.bottom(0) : el.h(height);
 };
 var bodyLineEl = (l, t) => {
   const armAt = INSIDE_GAP + LINE_HEIGHT / 2;
-  const arm = div7().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t));
+  const arm = div7().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, t.selected));
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t)] : l.tree === "tee" ? [trunkEl(0, null, t), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t), arm] : [];
   return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes);
 };

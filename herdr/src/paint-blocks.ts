@@ -131,7 +131,7 @@ const trunkEl = (top: number, height: number | null, t: Theme): Element => {
     .top(top)
     .w(1)
     .border_l_1()
-    .border_color(lineColor(t))
+    .border_color(lineColor(t, t.selected))
 
   return height === null ? el.bottom(0) : el.h(height)
 }
@@ -146,7 +146,7 @@ const bodyLineEl = (l: RowBlock['body'][number], t: Theme): Element => {
     .w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP)
     .h(1)
     .border_t_1()
-    .border_color(lineColor(t))
+    .border_color(lineColor(t, t.selected))
   const strokes =
     l.tree === 'trunk'
       ? [trunkEl(0, null, t)]
