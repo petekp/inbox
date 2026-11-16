@@ -323,7 +323,7 @@ export function paneStatus(
    * drawn.
    */
   const pressGoal = async (
-    action: 'remove-goal' | 'restore-goal' | 'take-goal' | 'dismiss-suggestion',
+    action: 'remove-goal' | 'restore-goal' | 'take-goal',
     surface: UiPressArgument['surface'],
   ) => {
     await runPress({ action, id: GOAL_KEYS_ID }, surface)

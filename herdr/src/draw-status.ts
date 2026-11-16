@@ -1,7 +1,7 @@
 import type { StatusTone } from '../../hooks/help'
-import { goalKeys, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
+import { goalKeyGroups, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { StatusKey } from '../../hooks/status-keys'
-import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL, shownMilestones } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../hooks/status-goal-page'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
@@ -37,8 +37,8 @@ function doesOf(k: StatusKey): Does {
 }
 
 /** The buttons of a Status target, in its plan's order. The Status page selects no row, so its keys press nothing. */
-function keyButtons(id: string, keys: StatusKey[]): Button[] {
-  return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)))
+function keyButtons(id: string, keys: StatusKey[], from = 0): Button[] {
+  return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)))
 }
 
 /** A parent's fold, drawn after its name and stall. Null for a row with nothing under it. */
@@ -216,7 +216,7 @@ const note = (id: string, text: string, tone: Tone): Extract<Block, { kind: 'not
 })
 
 /** A line of the page's head, at the panel's edge, with no padding above or below. */
-const headNote = (id: string, text: string, tone: Tone): Block => ({
+const headNote = (id: string, text: string, tone: Tone): Extract<Block, { kind: 'note' }> => ({
   ...note(id, text, tone),
   isHead: true,
   isAtEdge: true,
@@ -243,6 +243,7 @@ type StatusUi = {
  */
 function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: StatusUi): Block[] {
   const g = page.goal
+  const groups = goalKeyGroups(page)
   const isSuggested = goalField === null && page.suggestedGoal !== null
   const heading: Block = {
     kind: 'heading',
@@ -250,15 +251,17 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: 'success', isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page)),
+    buttons: keyButtons(GOAL_KEYS_ID, groups.heading),
     isLabel: true,
   }
   const field: Block[] = goalField
     ? [{ kind: 'field', id: 'goal field', field: goalField, isAtEdge: g?.mark == null }]
     : []
   const suggestion: Block[] = [
-    headNote('goal suggested', SUGGESTED_GOAL_LABEL, 'muted'),
-    headTitle('goal text', page.suggestedGoal ?? ''),
+    {
+      ...headNote('goal text', suggestedGoalOffer(page.suggestedGoal ?? ''), 'muted'),
+      buttons: keyButtons(GOAL_KEYS_ID, groups.offer, groups.heading.length),
+    },
   ]
   if (g === null) {
     const empty = isSuggested ? suggestion : [headNote('goal text', NO_GOAL_TEXT, 'muted')]
@@ -317,8 +320,13 @@ export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
     const setGoal = empty.under?.is === 'set-goal' ? empty.under : null
     const parts = setGoal && {
       id: GOAL_KEYS_ID,
-      text: setGoal.suggestion === null ? null : `${SUGGESTED_GOAL_LABEL}: ${setGoal.suggestion}`,
-      buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
+      text: setGoal.suggestion === null ? null : suggestedGoalOffer(setGoal.suggestion),
+      buttons: setGoal.isFieldOpen
+        ? []
+        : [
+            ...keyButtons(GOAL_KEYS_ID, setGoal.keys),
+            ...keyButtons(GOAL_KEYS_ID, setGoal.offerKeys, setGoal.keys.length),
+          ],
       feedback: null,
       field: setGoal.isFieldOpen ? ui.goalField : null,
     }

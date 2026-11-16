@@ -1483,9 +1483,7 @@ function pressText(p) {
     case "restore-goal":
       return "Undo";
     case "take-goal":
-      return "Set";
-    case "dismiss-suggestion":
-      return "Dismiss";
+      return "Set this goal";
     default:
       return capitalized(p.action);
   }
@@ -3512,13 +3510,6 @@ function takeSuggestedGoal(o, now) {
   const set = setTypedGoal(o, text, now);
   return set.goal === null ? o : { ...set, goal: { ...set.goal, source: "inferred" }, suggestedGoal: null };
 }
-function dismissSuggestedGoal(o) {
-  const text = o.suggestedGoal;
-  if (text === null)
-    return o;
-  const removedGoals = [...o.removedGoals.filter((k) => k !== nameKey(text)), nameKey(text)];
-  return { ...o, suggestedGoal: null, removedGoals: removedGoals.slice(-REMOVED_KEPT) };
-}
 
 // ../hooks/goal-press.ts
 function goalPressed(ledger, p, record, now) {
@@ -3540,12 +3531,6 @@ function goalPressed(ledger, p, record, now) {
     if (taken === o)
       return { stale: true };
     return { ledger: { ...ledger, overview: taken }, last: record("mark"), effects: [] };
-  }
-  if (p.action === "dismiss-suggestion") {
-    const dismissed = dismissSuggestedGoal(o);
-    if (dismissed === o)
-      return { stale: true };
-    return { ledger: { ...ledger, overview: dismissed }, last: record("mark"), effects: [] };
   }
   if (p.action !== "type")
     return { stale: true };
@@ -3904,7 +3889,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var SUGGESTED_GOAL_LABEL = "Suggested";
+var suggestedGoalOffer = (text) => `Next goal: \u201C${text}\u201D?`;
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -4048,15 +4033,18 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
-    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    { press: { action: "dismiss-suggestion" }, label: "Dismiss", hotkey: "d", kind: "mark", emphasis: "quiet" }
+    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
-function goalKeys(page) {
+function goalKeyGroups(page) {
   if (page.suggestedGoal === null)
-    return goalKeyPlan(page);
-  return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], ...suggestionKeyPlan(page.suggestedGoal)];
+    return { heading: goalKeyPlan(page), offer: [] };
+  return { heading: page.canRestoreGoal ? [RESTORE_GOAL] : [], offer: suggestionKeyPlan(page.suggestedGoal) };
+}
+function goalKeys(page) {
+  const { heading, offer } = goalKeyGroups(page);
+  return [...heading, ...offer];
 }
 function parentFoldKeys(p, isCollapsed) {
   if (p.foldCount === 0)
@@ -7966,7 +7954,8 @@ function emptyTab(view, look) {
       ...EMPTY_STATUS_TEXT,
       under: {
         is: "set-goal",
-        keys: goalKeys(page),
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
         isFieldOpen: look.isGoalFieldOpen,
         suggestion: page.suggestedGoal
       }
@@ -8144,12 +8133,15 @@ function goalPartId(part) {
     return part.fold.id;
   if (part.is === "heading")
     return part.page ? GOAL_KEYS_ID : null;
-  return part.is === "keys" ? GOAL_KEYS_ID : null;
+  if (part.is === "title")
+    return part.suggestion ? GOAL_KEYS_ID : null;
+  return part.is === "keys" || part.is === "suggestion" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
 function goalSection(page, typing, isUnfolded, isCollapsed) {
   const isTyping = typing === GOAL_KEYS_ID;
-  const suggestion = isTyping ? null : page.suggestedGoal;
+  const groups = goalKeyGroups(page);
+  const suggestion = isTyping || page.suggestedGoal === null ? null : { text: page.suggestedGoal, keys: groups.offer, before: groups.heading };
   const g = page.goal;
   const milestones = shownMilestones(g, isUnfolded);
   const fold = g?.milestonesFold ?? null;
@@ -8194,13 +8186,37 @@ function setGoal(under) {
   if (under.isFieldOpen)
     return [goalEntry({ is: "field" })];
   return [
-    ...under.suggestion === null ? [] : [goalEntry({ is: "suggestion", text: under.suggestion })],
-    goalEntry({ is: "keys", keys: under.keys })
+    ...under.keys.length === 0 ? [] : [goalEntry({ is: "keys", keys: under.keys })],
+    ...under.suggestion === null ? [] : [
+      goalEntry({ is: "suggestion", offer: { text: under.suggestion, keys: under.offerKeys, before: under.keys } })
+    ]
   ];
 }
-function suggestionLines(text, d, at) {
+function offerFaces(offer, d, isSelected) {
+  const before = offer.before.length;
+  const target = { id: GOAL_KEYS_ID, keys: [...offer.before, ...offer.keys] };
+  const focus = isSelected ? pageFocus(target, d.ui) - before : -1;
+  const faces = offer.keys.map((k) => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false,
+    ...k.emphasis === "quiet" ? { isQuiet: true } : {}
+  }));
+  return { faces, focused: focus >= 0 && focus < faces.length ? focus : -1 };
+}
+function offerLines(offer, d, at, isSelected) {
   const { width, style: s } = d;
-  return [" ".repeat(at) + s.dim(SUGGESTED_GOAL_LABEL), ...indented(text, at, width, Infinity, s.bold)];
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim);
+  const { faces, focused } = offerFaces(offer, d, isSelected);
+  if (faces.length === 0)
+    return text;
+  const keys = faceLines(faces, focused, 0, width, s, s.dim("\xB7"));
+  const last = text[text.length - 1] ?? "";
+  const first = keys[0] ?? "";
+  if (keys.length === 1 && visibleLength(last) + visibleLength(first) + 1 <= width - 1)
+    return [...text.slice(0, -1), `${last} ${first}`];
+  return [...text, ...faceLines(faces, focused, at - 1, width, s, s.dim("\xB7"))];
 }
 function fieldLines(d, at) {
   const { ui, width, style: s } = d;
@@ -8236,7 +8252,7 @@ function milestoneLines(m, d, isSelected) {
 }
 function headingLines(part, d, isSelected) {
   const { width, now, style: s } = d;
-  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeys(part.page) }, d, isSelected, 1, s.dim("\xB7")) : [];
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim("\xB7")) : [];
   const right = width - 1;
   const { mark } = part;
   const at = mark === null ? PAGE_MARK_AT : PAGE_TEXT_AT;
@@ -8266,7 +8282,7 @@ function drawGoalPart(part, d, isSelected) {
     return [partHeading(LATER_TEXT, width, s)];
   if (part.is === "title") {
     const g = part.suggestion === null ? part.goal : null;
-    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? suggestionLines(part.suggestion, d, textAt) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
+    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? offerLines(part.suggestion, d, textAt, isSelected) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
     return [
       ...text,
       ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
@@ -8277,7 +8293,7 @@ function drawGoalPart(part, d, isSelected) {
   if (part.is === "milestone")
     return milestoneLines(part.row, d, isSelected);
   if (part.is === "suggestion")
-    return suggestionLines(part.text, d, PAGE_MARK_AT);
+    return offerLines(part.offer, d, PAGE_MARK_AT, isSelected);
   if (part.is === "keys")
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT);
   return fieldLines(d, PAGE_MARK_AT);
@@ -9173,7 +9189,7 @@ function pageKey(screen, ui, key, now) {
     const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } };
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } };
   }
-  const isGoalPress = press.action === "remove-goal" || press.action === "restore-goal" || press.action === "take-goal" || press.action === "dismiss-suggestion";
+  const isGoalPress = press.action === "remove-goal" || press.action === "restore-goal" || press.action === "take-goal";
   if (!isGoalPress)
     return null;
   return {
@@ -12521,7 +12537,6 @@ var PRESS_TARGETS = {
   "remove-goal": "id",
   "restore-goal": "id",
   "take-goal": "id",
-  "dismiss-suggestion": "id",
   "thread-address": "ref",
   "thread-draft": "ref",
   "thread-discuss": "ref",

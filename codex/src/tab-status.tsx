@@ -1,8 +1,8 @@
 import { Icon } from './row-actions'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeys, goalSubmitLabel, milestoneKeyPlan } from '../../hooks/status-keys'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, goalSubmitLabel, milestoneKeyPlan } from '../../hooks/status-keys'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, suggestedGoalOffer } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
@@ -74,12 +74,14 @@ function GoalField({ page }: { page: StatusPage }) {
   )
 }
 
-/** The goal the Status call offers, in the goal text's style under a muted label. */
-function Suggestion({ text }: { text: string }) {
+/** The goal the Status call offers, as a muted line where "No goal yet" draws, with its buttons inline after it. */
+function Offer({ text, keys }: { text: string; keys: StatusKey[] }) {
   return (
-    <div class="suggested">
-      <p class="muted">{SUGGESTED_GOAL_LABEL}</p>
-      <h1>{text}</h1>
+    <div class="goal-offer">
+      <p class="muted">{suggestedGoalOffer(text)}</p>
+      <span class="offer-actions">
+        {keys.flatMap((k, n) => [...(n > 0 ? [<span class="muted">·</span>] : []), <Keys key={k.label} keys={[k]} />])}
+      </span>
     </div>
   )
 }
@@ -297,9 +299,10 @@ function GoalSection({
 }) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
+  const groups = goalKeyGroups(page)
   const text =
     page.suggestedGoal !== null ? (
-      <Suggestion text={page.suggestedGoal} />
+      <Offer text={page.suggestedGoal} keys={groups.offer} />
     ) : g ? (
       <h1>{g.text}</h1>
     ) : (
@@ -317,9 +320,9 @@ function GoalSection({
         ) : null}
         <span class={mark?.tone ? `goal-title tone-${mark.tone}` : 'goal-title'}>{g?.label ?? GOAL_HEADING}</span>
         <span class="goal-rule" />
-        {isTyping ? null : (
+        {isTyping || groups.heading.length === 0 ? null : (
           <span class="goal-actions">
-            {goalKeys(page).flatMap((k, n) => [
+            {groups.heading.flatMap((k, n) => [
               ...(n > 0 ? [<span class="muted">·</span>] : []),
               <Keys key={k.label} keys={[k]} />,
             ])}
@@ -345,15 +348,17 @@ function GoalSection({
   )
 }
 
-/** New, the suggested goal, or the field New opened, under the empty page's centred text. */
+/** New, the suggested goal's offer, or the field New opened, under the empty page's centred text. */
 function SetGoal({
   page,
   keys,
+  offerKeys,
   isFieldOpen,
   suggestion,
 }: {
   page: StatusPage
   keys: StatusKey[]
+  offerKeys: StatusKey[]
   isFieldOpen: boolean
   suggestion: string | null
 }) {
@@ -363,7 +368,7 @@ function SetGoal({
         <GoalField page={page} />
       ) : (
         <>
-          {suggestion === null ? null : <Suggestion text={suggestion} />}
+          {suggestion === null ? null : <Offer text={suggestion} keys={offerKeys} />}
           <Keys keys={keys} />
         </>
       )}

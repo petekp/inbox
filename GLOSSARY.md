@@ -155,13 +155,12 @@ It stays until it is met.
 **Suggested goal**:
 The goal the inbox model offers while no goal is set or the goal is met, and
 the next goal is not clear enough to set. It shows at once in the goal's place,
-with Set, Edit and Dismiss. Set makes it an inferred goal. Edit opens the goal's
-field holding its words, and that field's Cancel shows the suggestion again.
-Dismiss hides it and the model does not suggest it again, and New then opens an
-empty field.
+as a dim line, "Next goal: …?", with Set this goal and Edit after it. Set this
+goal makes it an inferred goal. Edit opens the goal's field holding its words,
+and that field's Cancel shows the suggestion again.
 
 **Removed goal**:
-A goal the person cleared with the goal's Remove button, or a suggested goal they dismissed. The inbox model does not set it
+A goal the person cleared with the goal's Remove button. The inbox model does not set it
 again, in the same words or in other words.
 
 **Milestone**:

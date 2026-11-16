@@ -240,11 +240,7 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
   }
 
   // The goal's buttons change with the press, so the goal's place keeps the selection: Undo after Remove.
-  const isGoalPress =
-    press.action === 'remove-goal' ||
-    press.action === 'restore-goal' ||
-    press.action === 'take-goal' ||
-    press.action === 'dismiss-suggestion'
+  const isGoalPress = press.action === 'remove-goal' || press.action === 'restore-goal' || press.action === 'take-goal'
   if (!isGoalPress) return null
 
   return {

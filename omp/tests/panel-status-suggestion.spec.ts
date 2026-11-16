@@ -16,19 +16,25 @@ const screenWith = (fields: Partial<SessionStatus>) => {
   return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, NO_HOLDS) })
 }
 const suggesting = () => screenWith({ suggestedGoal: SUGGESTED })
-const headingOf = (lines: string[]) => lines.filter(l => l.startsWith(' Goal ─')).join(' ')
 
-test('the suggestion shows at once with Set, Edit and Dismiss in order, focused on Set', () => {
+test('the suggestion shows at once as a dim offer with Set this goal and Edit after it, and no New or Dismiss', () => {
   const screen = suggesting()
-  const lines = text(screen, onPage, 60).split('\n')
-  const label = lines.findIndex(l => l.trim() === 'Suggested')
-  expect(label).toBeGreaterThan(-1)
-  expect(lines[label + 1]!.trim()).toBe(SUGGESTED)
-  const heading = headingOf(lines)
-  expect(heading.indexOf('Set')).toBeLessThan(heading.indexOf('Edit'))
-  expect(heading.indexOf('Edit')).toBeLessThan(heading.indexOf('Dismiss'))
-  expect(heading).not.toContain('New')
-  expect(drawn(screen, onPage, 60).join('\n')).toContain(style.bold(SUGGESTED))
+  const lines = text(screen, onPage, 120).split('\n')
+  const offer = lines.find(l => l.includes('Next goal:'))
+  expect(offer?.trim()).toMatch(/^Next goal: “Ship 0.5.0 to the store”\?\s+↵ Set this goal\s+·\s+e Edit$/)
+  const goal = lines.slice(
+    lines.findIndex(l => l.startsWith(' Goal ─')),
+    lines.findIndex(l => l.includes('Next goal:')) + 1,
+  )
+  expect(goal.join('\n')).not.toMatch(/Suggested|Dismiss|New/)
+  expect(drawn(screen, onPage, 120).join('\n')).toContain(style.dim('Next goal: “Ship 0.5.0 to the store”?'))
+})
+
+test('at a width where the buttons do not fit after the offer, they sit under it', () => {
+  const lines = text(suggesting(), onPage, 60).split('\n')
+  const at = lines.findIndex(l => l.includes('Next goal:'))
+  expect(lines[at]).not.toContain('Edit')
+  expect(lines[at + 1]).toMatch(/Set this goal.*Edit/)
 })
 
 test('Edit opens the field holding the suggestion with a Set submit, and the field’s Cancel shows the suggestion again', () => {
@@ -37,18 +43,11 @@ test('Edit opens the field holding the suggestion with a Set submit, and the fie
   expect(edited.typing).toBe('goal')
   expect(edited.drafts.goal!.text).toBe(SUGGESTED)
   const shown = text(screen, edited, 60)
-  expect(shown).toContain(`${SUGGESTED}`)
+  expect(shown).toContain(SUGGESTED)
   expect(shown).toContain('↵ Set')
   const cancelled = keys(screen, edited, 'escape')
   expect(cancelled.typing).toBeNull()
-  expect(text(screen, cancelled, 60)).toContain('Suggested')
-})
-
-test('Dismiss sends dismiss-suggestion for the goal and keeps the goal selected', () => {
-  const screen = suggesting()
-  const dismissed = handleKey(screen, onPage, 'd', NOW)
-  expect(dismissed.press).toEqual({ action: 'dismiss-suggestion', id: 'goal' })
-  expect(dismissed.ui).toMatchObject({ selectedId: 'goal' })
+  expect(text(screen, cancelled, 60)).toContain('Next goal:')
 })
 
 test('Set sends take-goal for the goal', () => {
@@ -91,6 +90,6 @@ test('the suggestion draws at a narrow width without a line wider than the panel
   for (const width of [30, 40]) {
     const lines = drawn(screen, onPage, width).map(strip)
     expect(lines.every(l => l.length <= width)).toBe(true)
-    expect(lines.join('\n')).toContain('Suggested')
+    expect(lines.join('\n')).toContain('Next goal')
   }
 })

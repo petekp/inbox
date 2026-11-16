@@ -3,7 +3,7 @@ import { MAYBE_STALE_TEXT, NOTHING_NEEDED_TEXT } from './banners'
 import { ghNoticeOf } from './pr-rows'
 import type { PrRefreshView } from './pr-refresh'
 import type { SessionView } from './session-view'
-import { goalKeys } from './status-keys'
+import { goalKeyGroups } from './status-keys'
 import type { StatusKey } from './status-keys'
 import { screenTabOf } from './tabs'
 
@@ -23,7 +23,7 @@ export type EmptyText = { title: string; hint: string | null }
  */
 type EmptyUnder =
   | { is: 'pr-refresh'; refresh: PrRefreshView }
-  | { is: 'set-goal'; keys: StatusKey[]; isFieldOpen: boolean; suggestion: string | null }
+  | { is: 'set-goal'; keys: StatusKey[]; offerKeys: StatusKey[]; isFieldOpen: boolean; suggestion: string | null }
 
 export type EmptyTab = EmptyText & { under: EmptyUnder | null }
 
@@ -77,7 +77,8 @@ export function emptyTab(view: SessionView, look: EmptyTabLook): EmptyTab | null
       ...EMPTY_STATUS_TEXT,
       under: {
         is: 'set-goal',
-        keys: goalKeys(page),
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
         isFieldOpen: look.isGoalFieldOpen,
         suggestion: page.suggestedGoal,
       },

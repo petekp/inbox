@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T03:41:43.593Z. 257051 characters follow.
+// Built at 2026-11-16T03:53:49.628Z. 257471 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -1496,7 +1496,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var SUGGESTED_GOAL_LABEL = "Suggested";
+var suggestedGoalOffer = (text) => `Next goal: “${text}”?`;
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -1636,15 +1636,14 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
-    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    { press: { action: "dismiss-suggestion" }, label: "Dismiss", hotkey: "d", kind: "mark", emphasis: "quiet" }
+    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
-function goalKeys(page) {
+function goalKeyGroups(page) {
   if (page.suggestedGoal === null)
-    return goalKeyPlan(page);
-  return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], ...suggestionKeyPlan(page.suggestedGoal)];
+    return { heading: goalKeyPlan(page), offer: [] };
+  return { heading: page.canRestoreGoal ? [RESTORE_GOAL] : [], offer: suggestionKeyPlan(page.suggestedGoal) };
 }
 var GOAL_FIELD = { placeholder: "An outcome to work toward" };
 var goalSubmitLabel = (page) => page.goal === null || page.goal.isMet ? "Set" : "Save";
@@ -3702,7 +3701,8 @@ function emptyTab(view, look) {
       ...EMPTY_STATUS_TEXT,
       under: {
         is: "set-goal",
-        keys: goalKeys(page),
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
         isFieldOpen: look.isGoalFieldOpen,
         suggestion: page.suggestedGoal
       }
@@ -4002,8 +4002,8 @@ function doesOf(k) {
     return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
   return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
 }
-function keyButtons(id, keys) {
-  return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)));
+function keyButtons(id, keys, from = 0) {
+  return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)));
 }
 function foldOf(p, isCollapsed) {
   if (p.foldCount === 0)
@@ -4165,6 +4165,7 @@ var headTitle = (id, text) => ({
 });
 function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
   const g = page.goal;
+  const groups = goalKeyGroups(page);
   const isSuggested = goalField === null && page.suggestedGoal !== null;
   const heading = {
     kind: "heading",
@@ -4172,13 +4173,15 @@ function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page)),
+    buttons: keyButtons(GOAL_KEYS_ID, groups.heading),
     isLabel: true
   };
   const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
   const suggestion = [
-    headNote("goal suggested", SUGGESTED_GOAL_LABEL, "muted"),
-    headTitle("goal text", page.suggestedGoal ?? "")
+    {
+      ...headNote("goal text", suggestedGoalOffer(page.suggestedGoal ?? ""), "muted"),
+      buttons: keyButtons(GOAL_KEYS_ID, groups.offer, groups.heading.length)
+    }
   ];
   if (g === null) {
     const empty = isSuggested ? suggestion : [headNote("goal text", NO_GOAL_TEXT, "muted")];
@@ -4223,8 +4226,11 @@ function statusBlocks(view, ui) {
     const setGoal = empty.under?.is === "set-goal" ? empty.under : null;
     const parts = setGoal && {
       id: GOAL_KEYS_ID,
-      text: setGoal.suggestion === null ? null : `${SUGGESTED_GOAL_LABEL}: ${setGoal.suggestion}`,
-      buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
+      text: setGoal.suggestion === null ? null : suggestedGoalOffer(setGoal.suggestion),
+      buttons: setGoal.isFieldOpen ? [] : [
+        ...keyButtons(GOAL_KEYS_ID, setGoal.keys),
+        ...keyButtons(GOAL_KEYS_ID, setGoal.offerKeys, setGoal.keys.length)
+      ],
       feedback: null,
       field: setGoal.isFieldOpen ? ui.goalField : null
     };
@@ -5482,9 +5488,9 @@ function ruleEl(b, t) {
     return h_flex3().pl(EDGE).pr(EDGE).child(ruleLine(t));
   return h_flex3().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div5().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
 }
-function noteEl(b, t) {
+function noteEl(b, t, buttons = []) {
   const text = div5().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  return h_flex3().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text);
+  return h_flex3().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex3().flex_none().items_center().gap(CONTROL_GAP).pl(CONTROL_GAP).children(buttons)));
 }
 
 // src/paint-blocks.ts
@@ -5651,7 +5657,7 @@ function blockEl(b, p) {
   if (b.kind === "field")
     return div6().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
-    return noteEl(b, t);
+    return noteEl(b, t, (b.buttons ?? []).map((x) => buttonEl(x, p, isLeaving)));
   if (b.kind === "caption")
     return div6().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")

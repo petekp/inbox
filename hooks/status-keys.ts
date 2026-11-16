@@ -9,8 +9,7 @@ import type { StatusPage, StatusRow } from './status-page'
 
 /**
  * A press on the Status page. `show-ask` opens Asks with that ask selected. `type-goal` opens Reply's field for the
- * goal, prefilled with `text`. `take-goal` makes the suggested goal the goal, and `dismiss-suggestion` hides it for
- * good. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, a
+ * goal, prefilled with `text`. `take-goal` makes the suggested goal the goal. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, a
  * done milestone folded to its name or a met goal's milestones, or folds it again, in the look that drew it.
  * `toggle-collapse` folds a subject or milestone by its name, or opens it, and the session saves it as a collapse. None
  * sends a message.
@@ -21,7 +20,6 @@ type StatusPress =
   | { action: 'remove-goal' }
   | { action: 'restore-goal' }
   | { action: 'take-goal' }
-  | { action: 'dismiss-suggestion' }
   | { action: 'toggle-fold'; foldId: string }
   | { action: 'toggle-collapse'; id: string }
 
@@ -123,22 +121,31 @@ export function goalKeyPlan(page: StatusPage): StatusKey[] {
 }
 
 /**
- * The suggested goal's buttons: Set makes it the goal, Edit opens the goal's field with its words, and Dismiss hides it
- * for good. The field's own Cancel shows the suggestion again.
+ * The suggested goal's buttons, drawn inline after its offer: Set this goal makes it the goal, and Edit opens the goal's
+ * field with its words. The field's own Cancel shows the suggestion again.
  */
 function suggestionKeyPlan(suggested: string): StatusKey[] {
   return [
-    { press: { action: 'take-goal' }, label: 'Set', hotkey: 's', kind: 'mark', emphasis: 'normal' },
+    { press: { action: 'take-goal' }, label: 'Set this goal', hotkey: 's', kind: 'mark', emphasis: 'quiet' },
     { press: { action: 'type-goal', text: suggested }, label: 'Edit', hotkey: 'e', kind: 'view', emphasis: 'quiet' },
-    { press: { action: 'dismiss-suggestion' }, label: 'Dismiss', hotkey: 'd', kind: 'mark', emphasis: 'quiet' },
   ]
 }
 
-/** The goal target's buttons: the suggested goal's while the page has one, after Undo while a removed goal can come back, else the goal's own. */
-export function goalKeys(page: StatusPage): StatusKey[] {
-  if (page.suggestedGoal === null) return goalKeyPlan(page)
+/**
+ * The goal target's buttons in two places: `heading` on the goal's heading row, and `offer` after the suggested goal's
+ * offer while the page has one. With a suggestion, the heading keeps only Undo while a removed goal can come back.
+ */
+export function goalKeyGroups(page: StatusPage): { heading: StatusKey[]; offer: StatusKey[] } {
+  if (page.suggestedGoal === null) return { heading: goalKeyPlan(page), offer: [] }
 
-  return [...(page.canRestoreGoal ? [RESTORE_GOAL] : []), ...suggestionKeyPlan(page.suggestedGoal)]
+  return { heading: page.canRestoreGoal ? [RESTORE_GOAL] : [], offer: suggestionKeyPlan(page.suggestedGoal) }
+}
+
+/** The goal target's buttons in reading order: the heading's, then the offer's. */
+export function goalKeys(page: StatusPage): StatusKey[] {
+  const { heading, offer } = goalKeyGroups(page)
+
+  return [...heading, ...offer]
 }
 
 /**

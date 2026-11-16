@@ -514,7 +514,12 @@ export function blockEl(b: Block, p: Paint): Element {
       .pl(b.isAtEdge ? EDGE : TEXT_X)
       .pr(EDGE)
       .child(fieldEl(b.field, p, 0, isLeaving))
-  if (b.kind === 'note') return noteEl(b, t)
+  if (b.kind === 'note')
+    return noteEl(
+      b,
+      t,
+      (b.buttons ?? []).map(x => buttonEl(x, p, isLeaving)),
+    )
   if (b.kind === 'caption') return div().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text)
   if (b.kind === 'banner')
     return bannerEl(

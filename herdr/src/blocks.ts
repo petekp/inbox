@@ -263,6 +263,8 @@ export type Block =
       isAtEdge: boolean
       isStrong: boolean
       depth: number
+      /** Buttons drawn after the text on its last line, or under it when they do not fit. */
+      buttons?: Button[]
       path?: PathSide
       tree?: TreeStroke[]
     }
