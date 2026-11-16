@@ -123,12 +123,20 @@ export function desktopCountsLines(counts: StatusCount[], widthPt: number): Line
 }
 
 /**
- * Rows with `blank(n)` before each top-level row that it or the row above draws on more than one line, as the docked
- * terminal spaces Status items: `ITEM_GAP_PT` rounds to one line there, and the smaller steps to none.
+ * Rows with `blank(n)` before each top-level item when it or the item above draws on more than one line, as the docked
+ * terminal spaces Status items: `ITEM_GAP_PT` rounds to one line there, and the smaller steps to none. An item is a
+ * top-level row with the rows nested under it. A part, such as Other work, keeps its own space, so no blank follows one.
  */
-export function spacedItems(rows: { depth: number }[], drawn: Drawn[], blank: (n: number) => Drawn): Drawn[] {
+export function spacedItems(rows: { depth: number; kind: string }[], drawn: Drawn[], blank: (n: number) => Drawn): Drawn[] {
   const isLong = (d: Drawn | undefined) => (d?.lines?.least ?? 0) > 1
-  const isSpaced = (d: Drawn, n: number) => n > 0 && rows[n]?.depth === 0 && (isLong(d) || isLong(drawn[n - 1]))
+  const isItem = (n: number) => rows[n]?.depth === 0 && rows[n]?.kind !== 'part'
+  const itemStart = (n: number) => rows.findLastIndex((r, k) => k < n && r.depth === 0)
+  const isAboveLong = (n: number, start: number) => n - 1 > start || isLong(drawn[start])
+  const isSpaced = (d: Drawn, n: number) => {
+    const start = itemStart(n)
+
+    return isItem(n) && isItem(start) && (isLong(d) || isAboveLong(n, start))
+  }
 
   return drawn.flatMap((d, n) => (isSpaced(d, n) ? [blank(n), d] : [d]))
 }
