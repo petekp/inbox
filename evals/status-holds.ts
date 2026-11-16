@@ -13,10 +13,16 @@ const hold = (r: Pick<Rule, 'id' | 'property' | 'text' | 'failures'>): Rule => (
   isHold: true,
 })
 
-/** The ids of the subject rows the page draws after the goal, above Other work and under it. */
-function listIds(page: StatusPage): { main: string[]; other: string[] } {
-  const start = page.rows.findIndex(r => r.kind === 'part' && r.id === 'other')
+/**
+ * The ids of the subject rows the page draws after the goal, above Other work and under it. With no "Other work" label,
+ * the head stands in for it when the list starts with work the goal does not need.
+ */
+function listIds(page: StatusPage, isOther: (id: string) => boolean): { main: string[]; other: string[] } {
   const ids = (rows: StatusPage['rows']) => rows.flatMap(r => (r.kind === 'subject' ? [r.id] : []))
+  const labelAt = page.rows.findIndex(r => r.kind === 'part' && r.id === 'other')
+  const [first] = ids(page.rows)
+  const isHeadLabel = labelAt < 0 && page.rows[0]?.kind === 'part' && first !== undefined && isOther(first)
+  const start = isHeadLabel ? 0 : labelAt
 
   return start < 0
     ? { main: ids(page.rows), other: [] }
@@ -146,7 +152,7 @@ export const HOLD_RULES: Rule[] = [
       if (!o?.goal) return []
       const name = (id: string) => `"${o.subjects.find(x => x.id === id)?.name ?? id}"`
       const isOther = (id: string) => isOtherWork(o.serves, result.page, id)
-      const { main, other } = listIds(result.page)
+      const { main, other } = listIds(result.page, isOther)
       return [
         ...other.filter(id => !isOther(id)).map(id => `${name(id)} is under Other work, and the goal needs it`),
         ...main.filter(isOther).map(id => `${name(id)} sits above Other work, and belongs under it`),

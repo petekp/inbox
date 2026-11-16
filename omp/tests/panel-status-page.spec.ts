@@ -36,7 +36,11 @@ test('the Status page shows the head’s title and description, then its rows in
   const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const order = [page.head!.title, page.head!.description!, ...page.rows.filter(r => !(r.kind === 'part' && r.isTitle)).map(labelOf)].map(at)
+  const order = [
+    page.head!.title,
+    page.head!.description!,
+    ...page.rows.filter(r => !(r.kind === 'part' && r.isTitle)).map(labelOf),
+  ].map(at)
   expect(order.every(n => n >= 0)).toBe(true)
   expect(order).toEqual([...order].sort((a, b) => a - b))
   const headAt = lines[at(page.head!.title)]!.search(/\S/)

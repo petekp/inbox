@@ -215,10 +215,10 @@ export function paneStatus(
   }
   /** The head's description under its title's rule, wrapped at the text column. */
   const statusPartDescription = (id: string, text: string): Drawn => {
-    const width = statusTextWidth(0)
-    const lines = look === 'desktop'
+    const lines =
+      look === 'desktop'
         ? desktopTextLines(text, desktopBlockWidth - desktopStatusRuleLeft * DESKTOP_CELL_PT)
-        : inkLines(text, width)
+        : inkLines(text, statusTextWidth(0))
 
     return {
       el: (
@@ -484,7 +484,8 @@ export function paneStatus(
             isSelected: r.id === statusKeyRow?.id,
           })
     }
-    if (r.kind === 'part') return statusPartLine(r.id, r.text, n === 0, r.isTitle ? { description: r.description } : undefined)
+    if (r.kind === 'part')
+      return statusPartLine(r.id, r.text, n === 0, r.isTitle ? { description: r.description } : undefined)
     if (r.kind === 'counts')
       return statusRowLine({
         key: `status-${r.id}`,

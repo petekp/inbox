@@ -203,11 +203,7 @@ test('on the Status page, a done milestone’s fold opening and closing, a work 
     serves: { ...o.serves, s9: 'm2' },
   })
   const toNow = withMilestones(m =>
-    m.id === 'm2'
-      ? { ...m, status: 'done', closedAt: NOW }
-      : m.id === 'm3'
-        ? { ...m, status: 'working' }
-        : m,
+    m.id === 'm2' ? { ...m, status: 'done', closedAt: NOW } : m.id === 'm3' ? { ...m, status: 'working' } : m,
   )
   const moves: [string, Block[], Block[]][] = [
     ['the fold opens', statusOf(), statusOf(undefined, [fold])],
