@@ -78,6 +78,9 @@ section.pr-entry {
 section.other-prs {
   padding-bottom: 0;
 }
+section.other-prs .group-title.unmarked {
+  padding-left: var(--text-x);
+}
 section.other-prs + section::before {
   display: none;
 }
