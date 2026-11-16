@@ -143,7 +143,6 @@ test('a release build, with no next-build mark, keys Status, Asks, Finds and PRs
   const pane = await $.ui.mount(PANE)
   await clock.settle()
   expect(w.files).toEqual([])
-  expect(await pane.find({ text: 'v1.2.3' })).toBeDefined()
   expect((await pane.find({ key: 'status-head' }))?.text).toBe(
     'Adding a greeting CLIBuilding a CLI that greets by name',
   )

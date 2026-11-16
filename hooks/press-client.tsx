@@ -1,13 +1,14 @@
 import type { ClientModule } from 'claude-code'
 
-export type UndoProps = {
+/** A region that posts `pressKey` when it is clicked anywhere and tints itself under the pointer. */
+export type PressAreaProps = {
   pressKey: string
   hover: string
 }
 
 type State = { hover: boolean }
 
-const Undo: ClientModule<UndoProps, State> = (props, surface) => {
+const PressArea: ClientModule<PressAreaProps, State> = (props, surface) => {
   const { Box } = surface.elements
   const hover = surface.state?.hover ?? false
   // Set on every call, so the listener reads this call's props.
@@ -15,7 +16,8 @@ const Undo: ClientModule<UndoProps, State> = (props, surface) => {
     const inside =
       e.type !== 'leave' && e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < Math.max(1, surface.rows)
     if (inside !== hover) surface.setState({ hover: inside })
-    if (e.type === 'down' && e.button === 'left' && inside) surface.post({ key: props.pressKey })
+    // A button goes down only inside the region. Moves past its edge arrive only while a button is held.
+    if (e.type === 'down' && e.button === 'left') surface.post({ key: props.pressKey })
   })
 
   return Box({
@@ -25,4 +27,4 @@ const Undo: ClientModule<UndoProps, State> = (props, surface) => {
   })
 }
 
-export default Undo
+export default PressArea

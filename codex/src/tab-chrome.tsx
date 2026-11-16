@@ -17,9 +17,21 @@ import { HerdrAskBanner } from './tab-herdr-ask'
 import { bannerMotion, lineMotion } from './tab-line-steps'
 import type { BannerLine } from './tab-line-steps'
 
-/** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
-export function HelpPage() {
-  const keys = helpKeys('codex', drawnTab(), false)
+/** The Help control's drawn form: a question mark in a circle, in the button's text color. */
+export function HelpIcon() {
+  return (
+    <svg class="help-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.8" fill="none" stroke="currentColor" stroke-width="1.2" />
+      <text x="8" y="8.4" text-anchor="middle" dominant-baseline="central" fill="currentColor">
+        {HELP_COPY.icon}
+      </text>
+    </svg>
+  )
+}
+
+/** Help in place of the tab's body: the keys this tab takes, then what each mark means, then which inbox build this is. */
+export function HelpPage({ version }: { version: string }) {
+  const keys = helpKeys('codex')
 
   return (
     <main class="status-page help">
@@ -36,15 +48,15 @@ export function HelpPage() {
       </section>
       <section>
         <GroupTitle title={HELP_COPY.marks} count={0} />
-        <div class="list">
-          {MARK_LEGEND.map(m => (
-            <div key={m.mark} class="row">
-              <span class={legendMarkClass(m)} ref={m.isRunning ? pulseInStep : undefined}>
-                <MarkGlyph text={m.mark} />
-              </span>
-              <div class="content tight muted">{m.words}</div>
-            </div>
-          ))}
+        <div class="help-marks">
+          {MARK_LEGEND.flatMap(m => [
+            <span key={`${m.mark}-mark`} class={legendMarkClass(m)} ref={m.isRunning ? pulseInStep : undefined}>
+              <MarkGlyph text={m.mark} />
+            </span>,
+            <span key={`${m.mark}-words`} class="muted">
+              {m.words}
+            </span>,
+          ])}
         </div>
       </section>
       <section>
@@ -58,6 +70,7 @@ export function HelpPage() {
           ])}
         </div>
       </section>
+      <p class="help-version muted">{version}</p>
     </main>
   )
 }
@@ -178,6 +191,7 @@ export async function toggleDemo() {
   tabState.seen = new Map()
   tabState.rowsSeen = {}
   tabState.newRows = new Map()
+  tabState.closedSeen = new Map()
   drawnRows.clear()
   tabState.lastLists = null
   selection.needsYou = null

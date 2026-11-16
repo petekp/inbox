@@ -14,6 +14,8 @@ type ClientTab = {
 export type TabsProps = {
   tabs: ClientTab[]
   shown: string
+  /** While Help shows, a press on the shown tab closes Help. */
+  isHelpShown: boolean
   gap: number
   /** False when only the shown tab has its rounded frame, so the others take only their label's width. */
   isEachFramed: boolean
@@ -63,7 +65,8 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
   surface.onPointer(e => {
     const at = e.type === 'leave' ? null : tabAt(props, e.x, e.y)
     if (at !== (surface.state?.hover ?? null)) surface.setState({ hover: at })
-    if (e.type === 'down' && e.button !== 'right' && at !== null && at !== props.shown) surface.post({ tab: at })
+    if (e.type === 'down' && e.button !== 'right' && at !== null && (props.isHelpShown || at !== props.shown))
+      surface.post({ tab: at })
   })
   const { colors } = props
 

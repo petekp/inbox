@@ -14,6 +14,7 @@ import { agedText } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { readSession } from '../src/files'
+import { helpBlocks } from '../src/draw-help'
 import { NO_LINES_ABOVE, holdLinesAbove } from '../src/held-line'
 import { keyMove } from '../src/keys'
 import { screenOf } from '../src/screen'
@@ -129,7 +130,7 @@ test('the Status page draws the goal’s milestones on a path: a seen done one a
   expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
 })
 
-test('a met goal draws a ✓ in the met tone beside its Goal met label, its lines at the text column, and its milestones folded into a line that names them with the chevron after, which opens to the milestones, and its field at the text column', () => {
+test('a met goal draws a ✓ in the success tone beside its Goal met label, its lines at the text column, and its milestones folded into a line that names them with the chevron after, which opens to the milestones, and its field at the text column', () => {
   const s = demoSession(NOW, AGENT)
   const o = s.ledger.overview!
   const met = {
@@ -148,7 +149,10 @@ test('a met goal draws a ✓ in the met tone beside its Goal met label, its line
   const open = tabBlocks(screen, uiOn('overview', { statusUnfolded: [fold.id] }))
   const milestoneIds = view.statusPage.goal!.milestones.map(m => m.id)
 
-  expect(shut.find(b => b.id === 'goal heading')).toMatchObject({ text: 'Goal met', mark: { text: '✓', tone: 'met' } })
+  expect(shut.find(b => b.id === 'goal heading')).toMatchObject({
+    text: 'Goal met',
+    mark: { text: '✓', tone: 'success' },
+  })
   expect(shut.find(b => b.id === 'goal text')).toMatchObject({ isAtEdge: false })
   expect(shut.find(b => b.id === fold.id)).toMatchObject({
     kind: 'fold',
@@ -391,4 +395,19 @@ test('a subject an open ask holds up draws what it waits on in its own line, and
     expect(b.stall).toBeNull()
     expect(b.buttons.length).toBeGreaterThan(0)
   }
+})
+
+test('Help names the build the host published, with the next-build mark, and names none for a file without one', () => {
+  const o = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW }, queue: { outs: [], notes: {}, lines: {} } }
+  const followed: Followed = { is: 'session', terminal: 't1', sessionId: 's1' }
+  const helpVersionOf = (overrides: Record<string, unknown>) => {
+    const screen = screenOf(followed, readSession(demoEnvelopeText(overrides)), uiOn('needsYou'), o)
+
+    return screen.is === 'inbox' ? screen.helpVersion : 'no inbox'
+  }
+  expect(helpVersionOf({ version: '1.2.3' })).toBe('Inbox v1.2.3')
+  expect(helpVersionOf({ version: '1.2.3', isNextBuild: true })).toBe('Inbox v1.2.3 · next')
+  expect(helpVersionOf({})).toBeNull()
+  expect(helpBlocks('Inbox v1.2.3').at(-1)).toMatchObject({ does: 'Inbox v1.2.3' })
+  expect(helpBlocks(null).some(b => b.kind === 'status' && b.id === 'help version')).toBe(false)
 })

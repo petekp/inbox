@@ -37,8 +37,7 @@ export type FeatureId =
   | 'compare-in-background'
   | 'compare-page'
   | 'running-marks'
-  | 'new-row-bar'
-  | 'settled-row-bar'
+  | 'title-tint'
   | 'pending-answer-mark'
   | 'tab-symbols'
   | 'dim-pressed-button'
@@ -117,8 +116,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
-      'new-row-bar': { kind: 'different', reason: 'The terminal steps the fade in 6 colors. Desktop fades an Svg.' },
-      'settled-row-bar': { kind: 'full' },
+      'title-tint': {
+        kind: 'different',
+        reason: 'The terminal steps the fade in 6 colors. Desktop holds the tint, then drops it.',
+      },
       'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {
@@ -239,8 +240,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
-      'new-row-bar': { kind: 'full' },
-      'settled-row-bar': { kind: 'full' },
+      'title-tint': { kind: 'full' },
       'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': { kind: 'full' },
@@ -358,10 +358,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: "omp's panel takes keys only, so a row due to fold waits on keys.",
       },
-      'version-label': {
-        kind: 'different',
-        reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
-      },
+      'version-label': { kind: 'full' },
       'status-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
       'host-task-list': { kind: 'full' },
@@ -372,8 +369,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
-      'new-row-bar': { kind: 'different', reason: 'Steps the fade in 6 colors.' },
-      'settled-row-bar': { kind: 'full' },
+      'title-tint': { kind: 'different', reason: 'Steps the fade in 6 colors.' },
       'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {

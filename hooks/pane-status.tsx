@@ -506,5 +506,3 @@ export function paneStatus(
 
   return { statusRowLine, statusKeys, statusView, statusTops }
 }
-
-export type PaneStatus = ReturnType<typeof paneStatus>

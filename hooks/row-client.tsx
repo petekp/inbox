@@ -6,6 +6,8 @@ export type RowProps = {
   before: string
   /** Already fitted to the lines the row shows. */
   title: string
+  /** The title's tint, or null for the theme's own. */
+  titleColor: string | null
   after: string
   /** A muted line under the title and `after`, or empty for none. */
   note: string
@@ -102,7 +104,7 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
         children: [
           Text({
             wrap: 'wrap',
-            ...colored(null),
+            ...colored(props.titleColor),
             children: [
               ...(props.before ? [Text({ ...colored(props.colors.muted), children: props.before })] : []),
               props.title,

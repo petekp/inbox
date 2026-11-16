@@ -11,7 +11,6 @@ import {
   HELD_MARK,
   MARK_LEGEND,
   PR_MARKS,
-  ROW_BAR,
   RUNNING_FRAMES,
   SUBJECT_MARKS,
 } from '../hooks/help'
@@ -170,7 +169,7 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
     'i1 | Ask i1? | s1\ni3 | Ask i3? | - | PRs 4 / 5 block the 2.5 release',
   )
   expect(held).toMatchObject({ mark: '◆', tone: 'needsYou', isRunning: false })
-  expect(answered).toMatchObject({ mark: '●', tone: null, isRunning: true })
+  expect(answered).toMatchObject({ mark: '●', tone: 'working', isRunning: true })
   expect(page(after(o, 'DONE: s1 | works offline', MIN), MIN, {}, [askItem('i1')]).rows[0]).toMatchObject({
     mark: '✓',
   })
@@ -301,7 +300,6 @@ test('the Help legend explains every mark a row or group title draws, once each'
     ...Object.values(CLOSED_MARKS),
     ...Object.values(FINDING_GROUPS).map(g => g.mark),
     ...Object.values(PR_MARKS).map(m => m.text),
-    ROW_BAR,
   ])
   const explained = MARK_LEGEND.map(m => m.mark)
 

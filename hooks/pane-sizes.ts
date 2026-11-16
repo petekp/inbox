@@ -44,6 +44,8 @@ export const DESKTOP_LINK_GAP_CELLS = 1.5
 /** Room a link takes past its label's estimated width. At the estimate alone, app 3.6556.2 cut a link's label, as "Re…". */
 export const DESKTOP_LINK_SLACK_CELLS = 0.5
 export const UNDO_CELLS = 9
+/** The cells the desktop Help icon's Svg and click region take. */
+export const HELP_ICON_CELLS = 3
 export const UNDO_HEIGHT_PT = 23
 /**
  * A Box in the hooks tree counts padding in half lines, so it pads twice this.

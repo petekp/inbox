@@ -144,11 +144,11 @@ test('in a theme without tone colors, a replied question’s ✓ takes the done 
           .reduce<Drawn | undefined>((found, c) => found ?? markIn(c), undefined)
   const doneMark = async () => markIn(await pane.find({ key: 'row-i1' }))?.props.color
   expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied: Deno/)
-  expect(await doneMark()).toBe('success')
+  expect(await doneMark()).toBe('suggestion')
 
   await selectRow(pane, 'i2')
   expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied: Deno/)
-  expect(await doneMark()).toBe('success')
+  expect(await doneMark()).toBe('suggestion')
 })
 
 test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismissed one’s ✕ as text, so the two read apart', async ($, on) => {

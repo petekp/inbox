@@ -1,4 +1,4 @@
-import type { NewRows } from '../../hooks/arrivals'
+import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
 import type { Context } from 'gpui-kit'
 import type { InputState } from 'gpui-base'
 import type { ShownTab } from '../../hooks/tabs'
@@ -32,19 +32,22 @@ export type Theme = Record<
 
 /**
  * Needs-you and warnings take the theme's yellow, as the other looks draw them in amber. Findings, PRs and errors take
- * its magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. Done takes the color Herdr's
- * sidebar gives an agent that is done. A met goal takes the theme's green, which each theme picks to read on its own
- * background, as the other looks draw a met goal in their done green.
+ * its magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. An issue takes the red
+ * of an error. Done takes the color Herdr's sidebar gives an agent that is done. A met goal and a ready PR take the success
+ * green, as an opportunity does: the theme's green, which each theme picks to read on its own background. A working mark takes the
+ * theme's text color.
  */
 const TONE_COLORS: Record<Exclude<Tone, null>, keyof Theme> = {
   needsYou: 'ansi3',
-  issue: 'ansi3',
+  issue: 'ansi1',
   notice: 'ansi4',
   warning: 'ansi3',
   findings: 'ansi5',
   prs: 'ansi6',
   done: 'done',
-  met: 'ansi2',
+  success: 'ansi2',
+  opportunity: 'ansi2',
+  working: 'foreground',
   error: 'ansi1',
   muted: 'muted',
 }
@@ -116,6 +119,15 @@ export const NARROW_PANE = 280
 export const BUTTON_H = 28
 export const BOX_RADIUS = 10
 export const TAB_RADIUS = 6
+/**
+ * The width of Help's left column, which holds a key or a mark, so every line's words start at one x. It is the widest
+ * key, about 30 px, and `INSET` after it, rounded up to two mark columns. A key does not fit the mark column.
+ */
+export const HELP_COLUMN = MARK_W * 2
+/** The Help control's circle, about the size of the Codex tab's and the desktop pane's. */
+export const HELP_ICON = 14
+/** The question mark inside the Help control's circle. */
+export const HELP_ICON_TEXT = 10
 
 /** The separator between a status and its reasons, and between a heading and its count. */
 export const SEP = ' · '
@@ -139,8 +151,10 @@ export type Paint = {
   /** Saves a measured size under `key`, and draws again when its height changed. */
   measure: (key: string, size: { width: number; height: number }, cx: Context) => void
   now: number
-  /** The rows whose bar shows that they are new, by id, and the tab the look draws. */
+  /** The rows whose title is tinted as new, by id, and the tab the look draws. */
   newRows: NewRows
+  /** When the look first drew each closed row, which starts its title's tint. */
+  closedSeen: ClosedSeen
   tab: ShownTab
   /** The time left each timed button draws, by its id. */
   timeLeft: ReadonlyMap<string, TimeLeft>

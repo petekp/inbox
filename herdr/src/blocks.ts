@@ -12,11 +12,23 @@ import type { EmptyTab, EmptyText } from '../../hooks/empty-tab'
 import type { ShownTab } from '../../hooks/tabs'
 
 /**
- * A color the paint maps onto Herdr's theme. The first six are the shared tones of `hooks/tones.ts`, so a tone means
- * the same thing in every look, and done means what it does in Herdr's sidebar. Met is a met goal's ✓ and heading.
+ * A color the paint maps onto Herdr's theme. The first nine are the shared tones of `hooks/tones.ts`, so a tone means
+ * the same thing in every look, and done means what it does in Herdr's sidebar.
  */
 export type Tone =
-  'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error' | 'notice' | 'warning' | 'muted' | 'met' | null
+  | 'needsYou'
+  | 'issue'
+  | 'findings'
+  | 'prs'
+  | 'done'
+  | 'success'
+  | 'opportunity'
+  | 'working'
+  | 'error'
+  | 'notice'
+  | 'warning'
+  | 'muted'
+  | null
 
 export type Mark = { text: string; tone: Tone; isRunning: boolean }
 
@@ -83,7 +95,7 @@ export type RowBlock = {
   feedback: { text: string; tone: Tone; source: Feedback | null; aged?: Aged } | null
   /** Shown once the row has closed, until it folds. */
   /** `bar` is the tone of the bar at the row's left edge, or null for a PR, which draws none. */
-  settled: { label: string; tone: Tone; bar: 'done' | 'muted' | 'error' | null } | null
+  settled: { label: string; tone: Tone; tint: 'done' | 'muted' | 'error' | null; at: number } | null
   isDim: boolean
   /** Whether the person can select it to see its body and buttons. */
   isSelectable: boolean
@@ -142,6 +154,11 @@ export type StatusLine = {
   stall: { text: string; tone: StatusStall['tone'] } | null
   /** What a subject waits on, in the needs-you tone, as its first line under the name. */
   waitsOn?: string
+  /**
+   * A Help line's words, in the column that starts after `HELP_COLUMN`. The left column holds the line's key, in `name`, or
+   * its mark, or nothing for the version line. Such a line has nothing under it.
+   */
+  does?: string
   /** A milestone's "now" or "next", muted at the right of its name's line where the name and it fit on one line. */
   word?: string
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */

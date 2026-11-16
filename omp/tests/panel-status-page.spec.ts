@@ -136,8 +136,10 @@ test('each subject’s mark takes its tone, and a mark with no tone is muted', (
   const subjects = drawnRows.flatMap(r => (r.kind === 'subject' ? [r] : []))
   const lines = render(screen, onPage, 200, NOW, toneNamed)
   const lineOf = (s: string) => lines.find(l => l.includes(s))!
-  for (const row of subjects.filter(r => r.tone !== null))
+  for (const row of subjects.filter(r => r.tone !== null && !r.isRunning))
     expect(lineOf(row.name)).toContain(`<${row.tone}>${row.mark}</${row.tone}> `)
+  const running = subjects.find(r => r.tone === 'working' && r.isRunning)!
+  expect(lineOf(running.name)).toContain('<working>')
   const muted = subjects.find(r => r.tone === null && !r.isRunning)!
   expect(lineOf(muted.name)).toContain(`${ESC}2m${muted.mark}${ESC}22m `)
 })

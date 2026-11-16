@@ -4,8 +4,8 @@ import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
-import { newRowIn, steppedShare } from '../../hooks/arrivals'
-import { ROW_BAR, UNDO_KEY } from '../../hooks/help'
+import { closedTitleClock, newRowIn, steppedTitleTint } from '../../hooks/arrivals'
+import { UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
@@ -15,6 +15,9 @@ import { AGENT, INDENT, UNLED_INDENT, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
 import { cutTitle, fit, indented, spread, visibleLength, wrapText } from './panel-text'
 import type { PanelScreen, PanelUi, Style, Tone } from './panel'
+
+/** The tint a row's title, lead and mark take, at its strength now. */
+type Tint = { tone: 'key' | 'done' | 'muted' | 'error'; share: number }
 
 export type Draw = { screen: PanelScreen; ui: PanelUi; width: number; now: number; style: Style }
 
@@ -99,13 +102,17 @@ export function leadPaint(lead: Lead, text: string, s: Style): string {
 }
 
 /** A lead and the space after it, or nothing for a line with no lead. */
-function leadText(lead: Lead | null, s: Style): string {
-  return lead === null ? '' : `${leadPaint(lead, lead.text.padEnd(2), s)} `
+function leadText(lead: Lead | null, s: Style, tint?: Tint): string {
+  if (lead === null) return ''
+  const text = lead.text.padEnd(2)
+
+  return `${tint ? s.tint(tint.tone, tint.share, text, lead.tone) : leadPaint(lead, text, s)} `
 }
 
 /** A result mark and the space after it. */
-function markText(mark: ResultMark | null, now: number, s: Style): string {
+function markText(mark: ResultMark | null, now: number, s: Style, tint?: Tint): string {
   if (mark === null) return ''
+  if (tint) return `${s.tint(tint.tone, tint.share, resultGlyph(mark, now), mark.tone ?? 'dim')} `
 
   return `${feedbackPaint(mark.tone ?? null, s)(resultGlyph(mark, now))} `
 }
@@ -145,7 +152,15 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isOpen)
       ? line.feedback
       : null
-  const mark = markText(line.mark, now, s)
+  const clock = line.settled
+    ? closedTitleClock(ui.closedSeen, line.id, line.settled.at, now)
+    : line.isPrHead
+      ? undefined
+      : newRowIn(ui.newRows, line.id, ui.tab)
+  const tintTone = line.settled ? line.settled.tint : 'key'
+  const tintShare = steppedTitleTint(clock, now)
+  const tint: Tint | undefined = tintTone && tintShare > 0 ? { tone: tintTone, share: tintShare } : undefined
+  const mark = markText(line.mark, now, s, line.settled ? tint : undefined)
   const after = line.settled
     ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ''}`
     : line.feedback && !statusUnder
@@ -153,22 +168,20 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : ''
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
-  const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now)
-  const bar = line.settled?.bar ?? null
-  const edge = bar ? s.settledBar(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : ' '
-  const head = `${edge}${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}`
+  const head = ` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s, tint)}`
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width
   const shownTitle = line.mark
     ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after))
     : line.title
-  const title = line.isDim
+  const ownTitle = line.isDim
     ? s.dim(shownTitle)
     : line.titleTone
       ? s.tone(line.titleTone, s.bold(shownTitle))
       : isOpen
         ? s.bold(shownTitle)
         : shownTitle
+  const title = tint ? s.tint(tint.tone, tint.share, ownTitle) : ownTitle
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad

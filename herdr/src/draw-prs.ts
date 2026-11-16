@@ -45,7 +45,7 @@ const PLACE = 'session'
 
 const PR_TONE: Record<Exclude<(typeof PR_TONES)[keyof typeof PR_TONES], null>, Tone> = {
   needsYou: 'needsYou',
-  done: 'done',
+  success: 'success',
   findings: 'findings',
   error: 'error',
 }
@@ -156,7 +156,7 @@ function settledPr(d: DrawnPr & { state: { is: 'settled' } }): RowBlock {
     title: pr.title,
     age: `#${pr.number}`,
     feedback: null,
-    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: 'muted', bar: null },
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: 'muted', tint: null, at: state.at },
     isDim: true,
     isSelectable: false,
     isSelected: false,

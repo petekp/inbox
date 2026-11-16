@@ -29,29 +29,86 @@ footer {
   gap: 16px;
   margin-left: auto;
 }
-.version {
-  color: color-mix(in srgb, var(--muted) 50%, var(--bg));
-}
 .demo-toggle,
 .help-toggle {
   padding: 0 6px;
   border-radius: 5px;
   color: var(--muted);
 }
+.help-toggle:has(.help-icon) {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+}
+.help-icon text {
+  font-size: 10px;
+  font-weight: 600;
+}
+.help-version {
+  grid-column: 4;
+  margin: 0;
+  padding: var(--row-pad) 14px var(--row-pad) 0;
+}
 .demo-toggle:hover,
 .help-toggle:hover {
   color: var(--text);
   background: var(--hover);
 }
-/* The keys are text with no marks, so they keep the text column under their heading, and every description lines up after the widest key. */
-.help-keys {
+/*
+ * Help's sections share one pair of columns. A key or a mark starts at the mark column, and its words start at the
+ * text column, or 12px after the widest key when that is further. Each section takes the page's columns as a subgrid, so
+ * the keys, the marks, the tabs and the version line all use the same two.
+ */
+.help {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 4px 12px;
-  padding: var(--row-pad) 14px var(--row-pad) var(--text-x);
+  grid-template-columns: var(--mark-x) minmax(calc(var(--text-x) - var(--mark-x) - 12px), max-content) 12px minmax(
+      0,
+      1fr
+    );
 }
-.help-keys b {
+.help > section {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+.help .group-title {
+  grid-column: 1 / -1;
+  padding-right: 0;
+}
+.help-keys,
+.help-marks {
+  display: contents;
+}
+.help-keys > :nth-child(odd),
+.help-marks > :nth-child(odd) {
+  grid-column: 2;
+}
+.help-keys > :nth-child(even),
+.help-marks > :nth-child(even) {
+  grid-column: 4;
+}
+.help-keys > * {
+  padding: 2px 0;
+}
+.help-keys > :nth-child(-n + 2) {
+  padding-top: var(--row-pad);
+}
+.help-keys > :nth-last-child(-n + 2) {
+  padding-bottom: var(--row-pad);
+}
+.help-keys > :nth-child(even),
+.help-marks > :nth-child(even) {
+  padding-right: 14px;
+}
+.help-marks > * {
+  padding: var(--status-row-pad) 0;
+}
+.help-keys b,
+.help-marks .mark {
   white-space: nowrap;
+}
+.help-marks .mark {
+  padding-right: 0;
 }
 .earlier {
   padding: 2px 14px 2px var(--text-x);

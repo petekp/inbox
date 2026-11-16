@@ -1,10 +1,10 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
 // src/update-main.ts
-import { existsSync } from "node:fs";
+import { existsSync as existsSync2 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { dirname as dirname5, join as join6 } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/cli.ts
 function namedCli(env) {
@@ -31,7 +31,9 @@ function dataDir(env, pluginRoot) {
 
 // src/host.ts
 import { appendFile, mkdir as mkdir2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname as dirname2, join as join3 } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // src/state.ts
 import { execFileSync } from "node:child_process";
@@ -128,9 +130,9 @@ function isNumberOnly(name) {
   const isNumber = (w) => isTagged(w) || hasKind && isBare(w);
   return all.some(isNumber) && all.every((w) => isNumber(w) || NUMBER_KINDS.has(w));
 }
-var VERSION = /^v?\d+(\.\d+)+$/;
+var VERSION2 = /^v?\d+(\.\d+)+$/;
 function namesOtherVersion(name, other) {
-  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
+  const versions = (text2) => [...words(text2)].filter((w) => VERSION2.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
   const mine = versions(name);
   const theirs = new Set(versions(other));
   return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
@@ -1838,6 +1840,10 @@ function withoutGoal(o) {
   return withoutLinksTo({ ...o, goal: null, goalRefused: null, milestones: [], serves: {} }, []);
 }
 
+// ../hooks/banners.ts
+var NEXT_BUILD_MARK = ".next-build";
+var MAYBE_STALE_TEXT = "May be out of date";
+
 // ../hooks/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
@@ -1865,10 +1871,10 @@ var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
 var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
+  working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
   done: { mark: "\u2713", tone: "done" },
@@ -1877,8 +1883,7 @@ var SUBJECT_MARKS = {
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
-var IDLE_MARK = { mark: "\u25D0", tone: null };
-var ROW_BAR = "\u258D";
+var IDLE_MARK = { mark: "\u25D0", tone: "working" };
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -1894,11 +1899,11 @@ var stoppedWords = (what) => `Stopped before it finished: ${what}`;
 var MARK_LEGEND = [
   {
     mark: RUNNING_MARK,
-    tone: null,
+    tone: "working",
     isRunning: true,
     words: "Working. It moves while the work runs or your message is on its way."
   },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
+  { mark: IDLE_MARK.mark, tone: IDLE_MARK.tone, isRunning: false, words: "Working, with nothing running right now" },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
   {
     mark: SUBJECT_MARKS["waits-on-other"].mark,
@@ -1927,12 +1932,6 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
-  },
-  {
-    mark: ROW_BAR,
-    tone: null,
-    isRunning: false,
-    words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
 
@@ -1944,7 +1943,7 @@ function namedList(names) {
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
 var CHILD_ROWS = 3;
-var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var CHILD_MARK = SUBJECT_MARKS.working;
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting"
@@ -2154,7 +2153,7 @@ function goalPage(o, items, now) {
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
-      mark: isMet ? SUBJECT_MARKS.done : null,
+      mark: isMet ? { mark: SUBJECT_MARKS.done.mark, tone: "success" } : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
@@ -4386,10 +4385,6 @@ function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
-// ../hooks/banners.ts
-var NEXT_BUILD_MARK = ".next-build";
-var MAYBE_STALE_TEXT = "May be out of date";
-
 // ../hooks/band.ts
 function isMaybeStale(view, isReadFailed = false) {
   return isReadFailed || view.status.error !== null || view.status.isRetrying;
@@ -4591,13 +4586,14 @@ var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
-  const { projectFolder, isFetchingPrs, ...rest } = source;
+  const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
     ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
     ...isFetchingPrs && { isFetchingPrs: true },
+    ...isNextBuild && { isNextBuild: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
@@ -4726,7 +4722,9 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           terminal: target.terminal,
           writtenAt: seq,
           projectFolder: s.root,
-          isFetchingPrs: isPrFetchRunning(s)
+          isFetchingPrs: isPrFetchRunning(s),
+          version: "0.4.0",
+          isNextBuild: existsSync(join3(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
         log
@@ -6019,14 +6017,14 @@ var STATUS_REFRESH = "status-refresh";
 async function main() {
   const sessionId = process.argv[2] ?? "";
   const isStatusRefresh = process.argv[3] === STATUS_REFRESH;
-  const pluginRoot = dirname5(dirname5(fileURLToPath(import.meta.url)));
+  const pluginRoot = dirname5(dirname5(fileURLToPath2(import.meta.url)));
   const dir = dataDir(process.env, pluginRoot);
   const { cliPath } = await readState(dir, sessionId);
   const cli = cliPath ?? await findCli(process.env, run, process.ppid);
   const personHome = process.env.CODEX_HOME || join6(homedir3(), ".codex");
   const ask = codexAsk(run, cli, dir, personHome);
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
-  const records = existsSync(join6(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
+  const records = existsSync2(join6(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
   else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records);
 }

@@ -1,4 +1,4 @@
-import type { NewRows } from '../../hooks/arrivals'
+import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
 import type { Draft, FoldKind, Stop } from '../../types'
 import type { PrPress } from '../../hooks/pr-press'
 import { noteText } from '../../hooks/press-reducer'
@@ -18,7 +18,7 @@ import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
-import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
+import { PAGE_MARK_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
 import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
@@ -68,10 +68,11 @@ export type Style = {
   tone(name: Tone, s: string): string
   /** A banner's border, or its fill behind `s`. */
   banner(tone: BannerTone, part: 'line' | 'fill', s: string): string
-  /** A new row's bar at `share` of its strength, faded toward the background. */
-  newBar(share: number, s: string): string
-  /** A settled row's bar, in the colors the terminal draws it with. */
-  settledBar(tone: 'done' | 'muted' | 'error', s: string): string
+  /**
+   * `s` in a row's tint: `tone` at `share` of its strength, faded toward `rest`, the color the text has without the
+   * tint. It is the theme's text color when `rest` is null.
+   */
+  tint(tone: 'key' | 'done' | 'muted' | 'error', share: number, s: string, rest?: Tone | 'dim' | null): string
 }
 
 export type PanelUi = {
@@ -114,8 +115,10 @@ export type PanelUi = {
   isHelpShown: boolean
   /** The person's latest run of keys, which keeps a row due to fold in place until they stop. */
   listInput: ListInput | null
-  /** The rows that arrived since the panel opened, whose bar shows until it fades. */
+  /** The rows that arrived since the panel opened, whose title is tinted until it fades. */
   newRows: NewRows
+  /** When the panel first drew each closed row, which starts its title's tint. */
+  closedSeen: ClosedSeen
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -139,6 +142,7 @@ export const INITIAL_UI: PanelUi = {
   isHelpShown: false,
   listInput: null,
   newRows: new Map(),
+  closedSeen: new Map(),
 }
 
 export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince' | 'listInput'>): Holds {
@@ -259,8 +263,8 @@ export function drawPanel(
     else if (e.kind === 'legend') {
       const mark = paintMark(e.entry, now, style)
       body.push(
-        ...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) =>
-          n === 0 ? `${' '.repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l,
+        ...indented(e.entry.words, e.textAt, width, Infinity, style.dim).map((l, n) =>
+          n === 0 ? `${' '.repeat(PAGE_MARK_AT)}${mark}${' '.repeat(e.textAt - PAGE_MARK_AT - 1)}${l.trimStart()}` : l,
         ),
       )
     } else if (e.kind === 'note')

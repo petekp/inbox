@@ -2,19 +2,19 @@ import type { Finding, SubjectStatus } from '../types'
 import type { ClosedState } from './ledger-close'
 import type { ToneName } from './tones'
 import type { Look } from './rows'
-import { shownTabs, isRowTab } from './tabs'
-import type { ShownTab } from './tabs'
+import { versionLabel } from './banners'
+import { shownTabs } from './tabs'
 
-export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: string; tone: 'issue' | 'done' }> = {
+export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: string; tone: 'issue' | 'opportunity' }> = {
   issue: { title: 'Issues', mark: '▲', tone: 'issue' },
-  opportunity: { title: 'Opportunities', mark: '✦', tone: 'done' },
+  opportunity: { title: 'Opportunities', mark: '✦', tone: 'opportunity' },
 }
 
 /** A mark's tone on the Status. Null draws it muted. */
-export type StatusTone = 'needsYou' | 'done' | null
+export type StatusTone = 'needsYou' | 'done' | 'success' | 'working' | null
 
 export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
-  working: { mark: '●', tone: null },
+  working: { mark: '●', tone: 'working' },
   queued: { mark: '○', tone: null },
   'waits-on-other': { mark: '◌', tone: null },
   done: { mark: '✓', tone: 'done' },
@@ -30,13 +30,7 @@ export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
 export const RUNNING_MARK = RUNNING_FRAMES[0]
 
 /** The mark of a working subject while no turn runs and no child under it works. */
-export const IDLE_MARK: { mark: string; tone: StatusTone } = { mark: '◐', tone: null }
-
-/**
- * The bar a look that draws text puts at a row's left edge, narrower than the terminal cursor's `▌`: on a new row, and on
- * a settled row.
- */
-export const ROW_BAR = '▍'
+export const IDLE_MARK: { mark: string; tone: StatusTone } = { mark: '◐', tone: 'working' }
 
 export const CLOSED_MARKS: Record<ClosedState, string> = {
   handled: SUBJECT_MARKS.done.mark,
@@ -65,11 +59,11 @@ const stoppedWords = (what: string) => `Stopped before it finished: ${what}`
 export const MARK_LEGEND: readonly LegendEntry[] = [
   {
     mark: RUNNING_MARK,
-    tone: null,
+    tone: 'working',
     isRunning: true,
     words: 'Working. It moves while the work runs or your message is on its way.',
   },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: 'Working, with nothing running right now' },
+  { mark: IDLE_MARK.mark, tone: IDLE_MARK.tone, isRunning: false, words: 'Working, with nothing running right now' },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: 'Queued: not started yet' },
   {
     mark: SUBJECT_MARKS['waits-on-other'].mark,
@@ -99,16 +93,25 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     isRunning: false,
     words: 'Opportunity: something that could be better',
   },
-  {
-    mark: ROW_BAR,
-    tone: null,
-    isRunning: false,
-    words:
-      "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed.",
-  },
 ]
 
-export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks', tabs: 'Tabs' } as const
+/**
+ * The words of Help. `name` is the control's accessible name and tooltip, since its drawn form is a question mark in
+ * every look. `icon` is that mark where a look draws only text. `close` is the control's text while Help shows.
+ */
+export const HELP_COPY = {
+  name: 'Help',
+  icon: '?',
+  close: '✕ Close help',
+  keys: 'Keys',
+  marks: 'Marks',
+  tabs: 'Tabs',
+  version: 'Inbox',
+} as const
+
+/** The line at the end of Help that says which inbox build this is, as the footer's version label did. */
+export const helpVersionText = (version: string, isNextBuild: boolean): string =>
+  `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`
 
 export type HelpKey = { keys: string; does: string }
 
@@ -124,23 +127,19 @@ export const COLLAPSE_KEY = 'z'
 
 /** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prClearActions` bind from any row of the tab. */
 const PR_TAB_HELP_KEYS: HelpKey[] = [
-  { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
-  { keys: 'm', does: 'Clear the merged and closed PRs' },
+  { keys: 'g', does: 'On PRs, rank the PRs again, once a ranked PR changed' },
+  { keys: 'm', does: 'On PRs, clear the merged and closed PRs' },
 ]
 
 /**
- * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a
- * button, which the terminal and omp select with j and k. Desktop takes no keys, so its Help lists marks only. Each
- * look binds these keys in its own adapter.
+ * The keys a look's Help lists. Help is one page whatever tab it opened over, and switching tabs closes it. Desktop
+ * takes no keys, so its Help lists marks only. Each look binds these keys in its own adapter.
  */
-export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): HelpKey[] {
+export function helpKeys(look: Look): HelpKey[] {
   const tabKeys = shownTabs()
     .map(t => t.hotkey)
     .join(' ')
-  const hasRows = isRowTab(tab)
-  const selectsStatusRows = tab === 'overview' && hasStatusButtons
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
-  const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
   const undoKey = { keys: UNDO_KEY, does: 'Undo the last close' }
   const collapseKey = { keys: COLLAPSE_KEY, does: 'Collapse or expand the selected row' }
   switch (look) {
@@ -149,50 +148,42 @@ export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): 
     case 'terminal':
       return [
         switchTabs,
-        ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
-        ...(hasRows ? [collapseKey, undoKey] : []),
-        ...prTabKeys,
+        { keys: 'j k', does: 'Select the next or previous row' },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
       ]
     case 'codex':
       return [
         switchTabs,
-        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }, collapseKey, undoKey] : []),
-        ...prTabKeys,
+        { keys: 'j k ↑ ↓', does: 'Select the next or previous row' },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, or leave a reply field' },
       ]
     case 'omp':
       return [
         { keys: `tab ${tabKeys}`, does: 'Switch tabs' },
-        ...(hasRows
-          ? [
-              { keys: '↑ ↓ j k', does: 'Move between rows' },
-              { keys: '← →', does: 'Pick a button' },
-              { keys: '↵', does: 'Press the picked button' },
-              { keys: 't', does: 'Reply to the selected row' },
-              collapseKey,
-              undoKey,
-              ...prTabKeys,
-            ]
-          : [
-              ...(selectsStatusRows
-                ? [
-                    { keys: 'j k', does: 'Select the next or previous row with a button' },
-                    { keys: '← →', does: 'Pick a button' },
-                    { keys: '↵', does: 'Press the picked button' },
-                  ]
-                : []),
-              { keys: '↑ ↓', does: 'Scroll the page' },
-            ]),
+        { keys: '↑ ↓ j k', does: 'Move between rows, or scroll a page' },
+        { keys: '← →', does: 'Pick a button' },
+        { keys: '↵', does: 'Press the picked button' },
+        { keys: 't', does: 'Reply to the selected row' },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, then the panel' },
       ]
     case 'herdr':
       return [
         { keys: '← →', does: 'Switch tabs' },
-        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }, collapseKey, undoKey] : []),
-        ...prTabKeys,
+        { keys: 'j k', does: 'Select the next or previous row' },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: 'esc', does: "Move focus back to the agent's terminal" },
       ]
   }

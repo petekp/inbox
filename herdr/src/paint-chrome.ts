@@ -14,6 +14,8 @@ import {
   CONTROL_GAP,
   EDGE,
   GROUP_GAP,
+  HELP_ICON,
+  HELP_ICON_TEXT,
   INSET,
   LINE_GAP,
   SMALL_TEXT,
@@ -25,12 +27,28 @@ import type { Paint, Theme } from './paint-theme'
 
 const helpButton = (isHelpShown: boolean): Button => ({
   id: 'help',
-  label: isHelpShown ? HELP_COPY.close : HELP_COPY.open,
+  label: isHelpShown ? HELP_COPY.close : HELP_COPY.name,
   emphasis: 'quiet',
   isOut: false,
   hotkey: null,
   does: { is: 'view', change: { toggleHelp: true } },
 })
+
+/** The Help control while Help is closed: a question mark in a circle, in the colors of the text beside it. */
+const helpIconEl = (t: Theme): Element =>
+  h_flex()
+    .w(HELP_ICON)
+    .h(HELP_ICON)
+    .flex_none()
+    .items_center()
+    .justify_center()
+    .rounded(HELP_ICON / 2)
+    .border_1()
+    .border_color(t.muted)
+    .hover(s => s.border_color(t.foreground))
+    .text_size(HELP_ICON_TEXT)
+    .font_semibold()
+    .child(HELP_COPY.icon)
 
 /**
  * The tab row: the tabs with their counts, then the status line and Help at its right end, inside the panel's padding.
@@ -93,7 +111,7 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
         .hover(s => s.text_color(t.foreground))
         .accessibility_label(help.label)
         .on_click((_e, cx) => p.press(help, cx))
-        .child(help.label),
+        .child(isHelpShown ? help.label : helpIconEl(t)),
     )
 }
 

@@ -3189,10 +3189,10 @@ function goalPressed(ledger, p, record, now) {
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
 var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
+  working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
   done: { mark: "\u2713", tone: "done" },
@@ -3201,8 +3201,7 @@ var SUBJECT_MARKS = {
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
-var IDLE_MARK = { mark: "\u25D0", tone: null };
-var ROW_BAR = "\u258D";
+var IDLE_MARK = { mark: "\u25D0", tone: "working" };
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -3218,11 +3217,11 @@ var stoppedWords = (what) => `Stopped before it finished: ${what}`;
 var MARK_LEGEND = [
   {
     mark: RUNNING_MARK,
-    tone: null,
+    tone: "working",
     isRunning: true,
     words: "Working. It moves while the work runs or your message is on its way."
   },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
+  { mark: IDLE_MARK.mark, tone: IDLE_MARK.tone, isRunning: false, words: "Working, with nothing running right now" },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
   {
     mark: SUBJECT_MARKS["waits-on-other"].mark,
@@ -3251,30 +3250,30 @@ var MARK_LEGEND = [
     tone: FINDING_GROUPS.opportunity.tone,
     isRunning: false,
     words: "Opportunity: something that could be better"
-  },
-  {
-    mark: ROW_BAR,
-    tone: null,
-    isRunning: false,
-    words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
-var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
+var HELP_COPY = {
+  name: "Help",
+  icon: "?",
+  close: "\u2715 Close help",
+  keys: "Keys",
+  marks: "Marks",
+  tabs: "Tabs",
+  version: "Inbox"
+};
+var helpVersionText = (version, isNextBuild) => `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`;
 function tabLegend() {
   return shownTabs().map((t) => ({ keys: t.symbol, does: t.label }));
 }
 var UNDO_KEY = "u";
 var COLLAPSE_KEY = "z";
 var PR_TAB_HELP_KEYS = [
-  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
-  { keys: "m", does: "Clear the merged and closed PRs" }
+  { keys: "g", does: "On PRs, rank the PRs again, once a ranked PR changed" },
+  { keys: "m", does: "On PRs, clear the merged and closed PRs" }
 ];
-function helpKeys(look, tab, hasStatusButtons) {
+function helpKeys(look) {
   const tabKeys = shownTabs().map((t) => t.hotkey).join(" ");
-  const hasRows = isRowTab(tab);
-  const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
-  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
   const collapseKey = { keys: COLLAPSE_KEY, does: "Collapse or expand the selected row" };
   switch (look) {
@@ -3283,46 +3282,42 @@ function helpKeys(look, tab, hasStatusButtons) {
     case "terminal":
       return [
         switchTabs,
-        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
-        ...hasRows ? [collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k \u2191 \u2193", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, or leave a reply field" }
       ];
     case "omp":
       return [
         { keys: `tab ${tabKeys}`, does: "Switch tabs" },
-        ...hasRows ? [
-          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
-          { keys: "\u2190 \u2192", does: "Pick a button" },
-          { keys: "\u21B5", does: "Press the picked button" },
-          { keys: "t", does: "Reply to the selected row" },
-          collapseKey,
-          undoKey,
-          ...prTabKeys
-        ] : [
-          ...selectsStatusRows ? [
-            { keys: "j k", does: "Select the next or previous row with a button" },
-            { keys: "\u2190 \u2192", does: "Pick a button" },
-            { keys: "\u21B5", does: "Press the picked button" }
-          ] : [],
-          { keys: "\u2191 \u2193", does: "Scroll the page" }
-        ],
+        { keys: "\u2191 \u2193 j k", does: "Move between rows, or scroll a page" },
+        { keys: "\u2190 \u2192", does: "Pick a button" },
+        { keys: "\u21B5", does: "Press the picked button" },
+        { keys: "t", does: "Reply to the selected row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, then the panel" }
       ];
     case "herdr":
       return [
         { keys: "\u2190 \u2192", does: "Switch tabs" },
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];
   }
@@ -3336,7 +3331,7 @@ function namedList(names) {
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
 var CHILD_ROWS = 3;
-var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var CHILD_MARK = SUBJECT_MARKS.working;
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting"
@@ -3579,7 +3574,7 @@ function goalPage(o, items, now) {
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
-      mark: isMet ? SUBJECT_MARKS.done : null,
+      mark: isMet ? { mark: SUBJECT_MARKS.done.mark, tone: "success" } : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
@@ -4446,7 +4441,7 @@ function canUndoRefused(delivery) {
 function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
 }
-function settledBarTone(state) {
+function closedTitleTone(state) {
   if (isSendRefused(state.delivery))
     return "error";
   return state.closedAs === "handled" ? "done" : "muted";
@@ -4919,7 +4914,7 @@ function prRowWaits(prs, lastActions, collapsed = []) {
   ]);
 }
 var PR_TONES = {
-  ready: "done",
+  ready: "success",
   blocked: "needsYou",
   waiting: null,
   draft: null,
@@ -5299,13 +5294,14 @@ var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
-  const { projectFolder, isFetchingPrs, ...rest } = source;
+  const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
     ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
     ...isFetchingPrs && { isFetchingPrs: true },
+    ...isNextBuild && { isNextBuild: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
@@ -6621,8 +6617,34 @@ function steppedShare(row, now, steps = NEW_STEPS) {
   const faded = Math.max(0, now - row.shownAt - NEW_HOLD_MS);
   return newRowShare(row, row.shownAt + NEW_HOLD_MS + Math.floor(faded / step) * step);
 }
-function isNewRowFading(rows, now) {
-  return [...rows.values()].some((r) => r.shownAt !== null && newRowShare(r, now) > 0);
+var TITLE_TINT = 0.65;
+function closedTitleClock(seen, id, closedAt, now) {
+  const key = `${id}:${closedAt}`;
+  const total = NEW_HOLD_MS + NEW_FADE_MS;
+  let shownAt = seen.get(key);
+  if (shownAt === undefined) {
+    if (now - closedAt >= total)
+      return;
+    shownAt = now;
+    seen.set(key, shownAt);
+  }
+  return now - shownAt < total ? { tab: "", shownAt } : undefined;
+}
+function steppedTitleTint(clock, now) {
+  return steppedShare(clock, now) * TITLE_TINT;
+}
+function titleTintEndsAt(rows, v, seen, now) {
+  const total = NEW_HOLD_MS + NEW_FADE_MS;
+  const ends = [...rows.values()].flatMap((r) => r.shownAt === null ? [] : [r.shownAt + total]);
+  for (const r of [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]) {
+    if (r.state.is !== "settled" || closedTitleTone(r.state) === "muted")
+      continue;
+    const shownAt = seen.get(`${r.id}:${r.state.at}`) ?? (now - r.state.at < total ? now : undefined);
+    if (shownAt !== undefined)
+      ends.push(shownAt + total);
+  }
+  const next = Math.min(...ends.filter((at) => at > now), Infinity);
+  return next === Infinity ? null : next;
 }
 
 // ../hooks/action-plan.ts
@@ -8044,7 +8066,7 @@ function lineOfRow(row, isAllShown) {
     settled: state.is === "settled" ? {
       label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
-      bar: settledBarTone(state),
+      tint: closedTitleTone(state) === "muted" ? null : closedTitleTone(state),
       undo: undo ? undo.press : null,
       at: state.at
     } : null,
@@ -8284,7 +8306,7 @@ function prEntries(screen, ui, now) {
           settled: {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
-            bar: null,
+            tint: null,
             undo: state.canUndo ? { action: "pr-undo", ref: pr.ref } : null,
             at: state.at
           }
@@ -8429,23 +8451,26 @@ function pageEntries(view, typing, isUnfolded) {
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
 }
-function helpEntries(screen, tab) {
-  const keys = helpKeys("omp", tab, statusKeyRows(screen.view.statusPage).length > 0);
+function helpEntries(screen) {
+  const keys = helpKeys("omp");
   const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
+  const textAt = PAGE_MARK_AT + column;
   return [
     { kind: "heading", text: HELP_COPY.keys },
     ...keys.map((key) => ({ kind: "key", key, column })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.marks },
-    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry })),
+    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry, textAt })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.tabs },
-    ...tabLegend().map((key) => ({ kind: "key", key, column: Math.max(column, 4) }))
+    ...tabLegend().map((key) => ({ kind: "key", key, column })),
+    { kind: "note", text: "" },
+    { kind: "note", text: helpVersionText(screen.version, screen.isNextBuild === true), indent: textAt }
   ];
 }
 function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
-    return helpEntries(screen, tab);
+    return helpEntries(screen);
   if (!isRowTab(tab))
     return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id));
   const collapsed = new Set(screen.view.collapsed);
@@ -8696,12 +8721,17 @@ function faceLines(buttons, focused, indent, width, s, between = "") {
 function leadPaint(lead, text, s) {
   return lead.tone === "dim" ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text;
 }
-function leadText(lead, s) {
-  return lead === null ? "" : `${leadPaint(lead, lead.text.padEnd(2), s)} `;
+function leadText(lead, s, tint) {
+  if (lead === null)
+    return "";
+  const text = lead.text.padEnd(2);
+  return `${tint ? s.tint(tint.tone, tint.share, text, lead.tone) : leadPaint(lead, text, s)} `;
 }
-function markText(mark, now, s) {
+function markText(mark, now, s, tint) {
   if (mark === null)
     return "";
+  if (tint)
+    return `${s.tint(tint.tone, tint.share, resultGlyph(mark, now), mark.tone ?? "dim")} `;
   return `${feedbackPaint(mark.tone ?? null, s)(resultGlyph(mark, now))} `;
 }
 function feedbackPaint(tone, s) {
@@ -8729,17 +8759,19 @@ function drawLine(line, isSelected, d) {
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isOpen) ? line.feedback : null;
-  const mark = markText(line.mark, now, s);
+  const clock = line.settled ? closedTitleClock(ui.closedSeen, line.id, line.settled.at, now) : line.isPrHead ? undefined : newRowIn(ui.newRows, line.id, ui.tab);
+  const tintTone = line.settled ? line.settled.tint : "key";
+  const tintShare = steppedTitleTint(clock, now);
+  const tint = tintTone && tintShare > 0 ? { tone: tintTone, share: tintShare } : undefined;
+  const mark = markText(line.mark, now, s, line.settled ? tint : undefined);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
-  const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now);
-  const bar = line.settled?.bar ?? null;
-  const edge = bar ? s.settledBar(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : " ";
-  const head = `${edge}${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
+  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s, tint)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
   const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
-  const title = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isOpen ? s.bold(shownTitle) : shownTitle;
+  const ownTitle = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isOpen ? s.bold(shownTitle) : shownTitle;
+  const title = tint ? s.tint(tint.tone, tint.share, ownTitle) : ownTitle;
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width));
   if (line.settled || isShut(line, ui))
     return out;
@@ -8848,7 +8880,7 @@ function footer(d, isPageScrolling) {
     "tab switch",
     "? help"
   ];
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(screen.version, screen.isNextBuild === true)} `;
+  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
   if (fitsBesideHints)
@@ -8913,7 +8945,8 @@ var INITIAL_UI = {
   shownSince: 0,
   isHelpShown: false,
   listInput: null,
-  newRows: new Map
+  newRows: new Map,
+  closedSeen: new Map
 };
 function holdsOf(ui) {
   return {
@@ -8976,7 +9009,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       body.push(...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) => n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l));
     else if (e.kind === "legend") {
       const mark = paintMark(e.entry, now, style);
-      body.push(...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l));
+      body.push(...indented(e.entry.words, e.textAt, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark}${" ".repeat(e.textAt - PAGE_MARK_AT - 1)}${l.trimStart()}` : l));
     } else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : e.isPlain ? (text) => text : style.dim));
     else {
@@ -9033,7 +9066,7 @@ var ANIMATION_MS = 200;
 var collapsedAfter = (collapsed, p) => p.isCollapsed ? [...collapsed.filter((id) => id !== p.id), p.id] : collapsed.filter((id) => id !== p.id);
 function createPanel(deps) {
   const { source, style, timers } = deps;
-  let ui = { ...INITIAL_UI, shownSince: deps.openedAt };
+  let ui = { ...INITIAL_UI, closedSeen: new Map, shownSince: deps.openedAt };
   let screen = null;
   let animation = null;
   let frames = null;
@@ -9044,7 +9077,7 @@ function createPanel(deps) {
   let heldHeight = null;
   const stops = [];
   const syncFrames = () => {
-    const hasFrames = screen !== null && (isNewRowFading(ui.newRows, deps.now()) || showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind)));
+    const hasFrames = screen !== null && (titleTintEndsAt(ui.newRows, screen.view, ui.closedSeen, deps.now()) !== null || showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind)));
     if (hasFrames && frames === null)
       frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS);
     if (!hasFrames && frames !== null) {
@@ -9803,8 +9836,10 @@ var CLIENTS = {
       "compare-in-background": { kind: "full" },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
-      "new-row-bar": { kind: "different", reason: "The terminal steps the fade in 6 colors. Desktop fades an Svg." },
-      "settled-row-bar": { kind: "full" },
+      "title-tint": {
+        kind: "different",
+        reason: "The terminal steps the fade in 6 colors. Desktop holds the tint, then drops it."
+      },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -9913,8 +9948,7 @@ var CLIENTS = {
       },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
-      "new-row-bar": { kind: "full" },
-      "settled-row-bar": { kind: "full" },
+      "title-tint": { kind: "full" },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": { kind: "full" },
@@ -10018,10 +10052,7 @@ var CLIENTS = {
         kind: "different",
         reason: "omp's panel takes keys only, so a row due to fold waits on keys."
       },
-      "version-label": {
-        kind: "different",
-        reason: "omp's panel footer ends with the inbox model's name, so the version follows it there."
-      },
+      "version-label": { kind: "full" },
       "status-tab": { kind: "full" },
       "turn-working": { kind: "full" },
       "host-task-list": { kind: "full" },
@@ -10032,8 +10063,7 @@ var CLIENTS = {
       "compare-in-background": { kind: "full" },
       "compare-page": { kind: "full" },
       "running-marks": { kind: "full" },
-      "new-row-bar": { kind: "different", reason: "Steps the fade in 6 colors." },
-      "settled-row-bar": { kind: "full" },
+      "title-tint": { kind: "different", reason: "Steps the fade in 6 colors." },
       "pending-answer-mark": { kind: "full" },
       "tab-symbols": { kind: "full" },
       "dim-pressed-button": {
@@ -11403,10 +11433,13 @@ function demoSource(deps) {
 var DARK_AMBER = "#ffc107";
 var DARK_TONES = {
   needsYou: DARK_AMBER,
-  issue: DARK_AMBER,
+  issue: "#ff6b80",
   findings: "#cab0ff",
   prs: "#8cc8c0",
-  done: "#7ecd8f",
+  done: "#82c1ff",
+  success: "#7ecd8f",
+  opportunity: "#7ecd8f",
+  working: "#ffffff",
   error: "#ffa3b0",
   errorMark: "#ff6b80",
   key: "#b1b9f9"
@@ -11414,10 +11447,13 @@ var DARK_TONES = {
 var LIGHT_AMBER = "#745417";
 var LIGHT_TONES = {
   needsYou: LIGHT_AMBER,
-  issue: LIGHT_AMBER,
+  issue: "#a5293d",
   findings: "#7b00e8",
   prs: "#006363",
-  done: "#25652f",
+  done: "#0a54a0",
+  success: "#25652f",
+  opportunity: "#25652f",
+  working: "#1a1a1a",
   error: "#a5293d",
   errorMark: "#a5293d",
   key: "#243bf5"
@@ -11436,7 +11472,7 @@ var LIGHT_BANNER_TINTS = {
   notice: LIGHT_BLUE_TINT,
   ask: LIGHT_BLUE_TINT
 };
-var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
+var THEME_TEXT = { dark: "#ececec", light: "#1b1b1b" };
 var MUTED_TEXT = { dark: "#bdbdbd", light: "#595959" };
 function fadedOver(hex, under, share) {
   const channel = (c, i) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
@@ -11457,16 +11493,16 @@ function truecolorFill(hex, text) {
 }
 function styleOf(theme) {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
+  const mode = theme.isLight ? "light" : "dark";
   const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
   return {
     bold: theme.bold.bind(theme),
     dim: (text) => `${ESC}2m${text}${ESC}22m`,
     inverse: theme.inverse.bind(theme),
     underline: theme.underline.bind(theme),
-    tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
+    tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : name === "working" ? text : truecolor(tones[name], text),
     banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
-    newBar: (share, text) => truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? "light" : "dark"], share), text),
-    settledBar: (tone, text) => truecolor(tone === "muted" ? MUTED_TEXT[theme.isLight ? "light" : "dark"] : tones[tone === "error" ? "errorMark" : "done"], text)
+    tint: (tone, share, text, rest = null) => truecolor(fadedOver(tone === "key" ? tones.key : tone === "muted" ? MUTED_TEXT[mode] : tones[tone === "error" ? "errorMark" : "done"], rest === "dim" ? MUTED_TEXT[mode] : rest && rest !== "sep" && rest !== "accent" ? tones[rest] : THEME_TEXT[mode], share), text)
   };
 }
 
@@ -13343,7 +13379,9 @@ function sessionCalls(context) {
         terminal: target.terminal,
         writtenAt: now,
         projectFolder: memory.shownCwd?.(),
-        isFetchingPrs: prFetches.isFetching(id)
+        isFetchingPrs: prFetches.isFetching(id),
+        version,
+        isNextBuild: deps.isNextBuild
       }, s, context.logHerdr);
       const view = sessionView(s, now, deps.settleWindowMs);
       return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };

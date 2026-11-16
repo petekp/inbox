@@ -226,8 +226,8 @@ export function prRowWaits(
   ])
 }
 
-export const PR_TONES: Record<PrStatus, 'needsYou' | 'done' | 'findings' | 'error' | null> = {
-  ready: 'done',
+export const PR_TONES: Record<PrStatus, 'needsYou' | 'success' | 'findings' | 'error' | null> = {
+  ready: 'success',
   blocked: 'needsYou',
   waiting: null,
   draft: null,

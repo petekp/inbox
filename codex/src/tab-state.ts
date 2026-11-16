@@ -7,7 +7,7 @@ import type { Feedback } from '../../hooks/feedback'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft, Finding, Tab } from '../../types'
 import type { FoldGroup, SeenRows } from './arrivals'
-import type { NewRows } from '../../hooks/arrivals'
+import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
 import type { TabView as View } from './core'
 import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
@@ -16,7 +16,7 @@ import type { DrawnStatus } from './tab-status-steps'
 import type { BannerLine } from './tab-line-steps'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 
-export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
+export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'opportunity' | 'error'
 
 type Emphasis = ActionEmphasis
 
@@ -167,7 +167,9 @@ class TabState {
   seen = new Map<string, number>()
   rowsSeen: SeenRows = {}
   newRows: NewRows = new Map()
-  /** Whether the page was visible at the last read, so a row that arrived while it was hidden gets no bar. */
+  /** When the tab first drew each closed row, which starts its title's tint. */
+  closedSeen: ClosedSeen = new Map()
+  /** Whether the page was visible at the last read, so a row that arrived while it was hidden gets no tint. */
   wasVisibleAtRead = false
   lastLists: Lists | null = null
   /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
