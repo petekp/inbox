@@ -1,7 +1,17 @@
 /* The head starts where the list's marks do. */
 .status-head {
-  padding: 0 14px 0 var(--mark-x);
+  padding: 0 var(--edge) 0 var(--mark-x);
   overflow-wrap: anywhere;
+}
+/* Each row pads half the gap it keeps from its neighbours: `item` around a row with more than one line, `list` between
+   one-line rows. A milestone's group takes its milestone row's padding, which the path's line reads. */
+.status-page .row,
+.status-page .milestone-group {
+  --status-row-pad: calc(var(--item-gap) / 2);
+}
+.status-page .row:has(> .content > :only-child),
+.status-page .milestone-group:has(> .row.milestone > .content > :only-child) {
+  --status-row-pad: calc(var(--list-gap) / 2);
 }
 .status-page .row {
   padding-top: var(--status-row-pad);
@@ -26,7 +36,7 @@
   padding-left: calc(var(--mark-x) + var(--depth, 0) * var(--step));
 }
 .status-page .content > .actions {
-  margin-top: 6px;
+  margin-top: var(--control-gap);
 }
 .status-page .clamp {
   display: -webkit-box;
@@ -94,7 +104,7 @@
 .status-head h1 {
   margin: 0;
   font-size: 15px;
-  line-height: 22px;
+  line-height: calc(6 * var(--unit));
   font-weight: 600;
 }
 .status-head p {
@@ -106,16 +116,16 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  column-gap: 8px;
-  row-gap: 4px;
-  padding: 0 14px 0 var(--mark-x);
+  column-gap: var(--control-gap);
+  row-gap: var(--list-gap);
+  padding: 0 var(--edge) 0 var(--mark-x);
   color: var(--muted);
 }
 /* A met goal hangs its ✓ in the mark column, centred as a row's mark is, so its title starts at the text column. */
 .status-page .goal-heading .goal-mark {
   flex-shrink: 0;
   align-self: center;
-  width: calc(var(--text-x) - var(--mark-x) - 8px);
+  width: calc(var(--text-x) - var(--mark-x) - var(--control-gap));
   padding-right: 0;
 }
 .status-page .status-head.goal.marked {
@@ -123,8 +133,8 @@
 }
 /* The line a met goal's milestones fold into, at the text column under its text. */
 .status-page .milestones-fold {
-  margin-top: 6px;
-  padding: 0 14px 0 var(--text-x);
+  margin-top: var(--control-gap);
+  padding: 0 var(--edge) 0 var(--text-x);
 }
 .status-page .goal-heading .goal-rule {
   flex: 1 0 32px;
@@ -133,20 +143,20 @@
 .status-page .goal-heading .goal-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--control-gap);
   margin-left: auto;
 }
 .status-page .goal-heading .actions {
   margin: 0;
 }
 .status-head .actions {
-  margin-top: 6px;
+  margin-top: var(--control-gap);
 }
 .status-head .goal-offer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  column-gap: 8px;
+  column-gap: var(--control-gap);
 }
 .status-head .goal-offer p {
   margin: 0;
@@ -154,7 +164,7 @@
 .status-head .goal-offer .offer-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--control-gap);
 }
 .status-head .goal-offer .actions {
   margin: 0;
@@ -163,11 +173,11 @@
 .status-head .goal-text {
   display: flow-root;
 }
-/* A blank line's space between the goal's buttons and its milestones, as the terminal and omp leave. A milestone's rows
-   follow its name as a subject's children do. A row's padding more sits above a milestone that `isSpacedAbove` spaces,
-   and above the Later label, so a milestone's work sits closer to its own name than to the next milestone. */
+/* The goal's milestones follow it as a heading's items do. A milestone's rows follow its name as a subject's children do.
+   A milestone that `isSpacedAbove` spaces sits `item` above the work before it, so a milestone's work sits closer to its
+   own name than to the next milestone. */
 .status-head.goal + .list {
-  margin-top: var(--section-gap);
+  margin-top: calc(var(--item-gap) / 2);
 }
 @property --space-above {
   syntax: '<length>';
@@ -183,7 +193,7 @@
   transition: --space-above var(--settle);
 }
 .status-page .milestone-group.spaced {
-  --space-above: var(--status-row-pad);
+  --space-above: calc(var(--item-gap) - var(--list-gap));
 }
 .status-page .milestone-group + .row.part-line {
   margin-top: var(--status-row-pad);
@@ -272,7 +282,7 @@
 .status-page .milestone-fold {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--unit);
   margin: 0;
   padding: 0;
 }
@@ -280,11 +290,13 @@
   margin-left: 0;
 }
 /* "Other work" at the text column, then a solid rule to the tab's edge. The head's title takes its place, with its
-   description under it. */
+   description under it. It sits `section` under the item above and `head` over the row under it, each side counting the
+   rows' padding. */
 .status-page .row.part-line {
   padding-left: 0;
   padding-right: 0;
-  margin-top: var(--section-gap);
+  padding-bottom: calc(var(--head-gap) - var(--item-gap) / 2);
+  margin-top: calc(var(--section-gap) - var(--item-gap) / 2 - var(--list-gap) / 2);
 }
 .status-page .list > .row.part-line:first-child {
   margin-top: 0;
@@ -293,7 +305,7 @@
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--control-gap);
   margin-left: var(--text-x);
   color: var(--muted);
 }
@@ -304,7 +316,7 @@
 .status-page .part-description {
   grid-column: 1 / -1;
   margin-left: var(--text-x);
-  padding-right: 14px;
+  padding-right: var(--edge);
 }
 .status-page .part-rule::after {
   content: '';
@@ -328,20 +340,20 @@
 }
 .field-keys {
   display: flex;
-  gap: 6px;
+  gap: var(--control-gap);
 }
 /* A done fold draws as the Closed fold does: its count at the text column, its chevron after it. */
 .status-page .row.fold-row {
   display: block;
 }
 .status-page .fold-row .fold {
-  margin: 0 0 0 calc(var(--text-x) - var(--mark-x) - 4px);
+  margin: 0 0 0 calc(var(--text-x) - var(--mark-x) - var(--unit));
 }
 /* A parent's name line takes the click that folds its rows. Its chevron and count sit after the name, in the muted tone, and
    brighten while the line is hovered. */
 .status-page .parent-name {
-  margin: 0 -4px;
-  padding: 0 4px;
+  margin: 0 calc(-1 * var(--unit));
+  padding: 0 var(--unit);
   border-radius: 5px;
 }
 .status-page .parent-name:hover .parent-chevron {
