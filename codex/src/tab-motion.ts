@@ -117,7 +117,7 @@ function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
   const easing = el
     .getAnimations({ subtree: true })
-    .filter(a => (a as Partial<CSSTransition>).transitionProperty === 'font-weight')
+    .filter(a => (a as Partial<CSSTransition>).transitionProperty === 'font-variation-settings')
   const times = easing.map(a => a.currentTime)
   easing.forEach(a => (a.currentTime = a.effect?.getComputedTiming().endTime ?? 0))
   const height = el.getBoundingClientRect().height

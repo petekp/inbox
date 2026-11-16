@@ -102,7 +102,8 @@
   min-width: 0;
 }
 .line .text {
-  transition: font-weight var(--fade);
+  font-variation-settings: 'wght' 400;
+  transition: font-variation-settings var(--fade);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -138,6 +139,7 @@
 }
 .row.selected .line .text {
   font-weight: 600;
+  font-variation-settings: 'wght' 600;
 }
 .row.selected .line .after,
 .row.closing .line .after {
@@ -147,6 +149,7 @@
 .line .lead {
   color: var(--muted);
   font-weight: 400;
+  font-variation-settings: 'wght' 400;
 }
 .line .meta {
   display: block;

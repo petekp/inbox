@@ -13,7 +13,6 @@ nav {
 }
 .tab {
   position: relative;
-  transition: font-weight var(--fade);
   white-space: nowrap;
   padding: calc(var(--item-gap) / 2) calc(3 * var(--unit));
   border-radius: 6px;
@@ -32,6 +31,11 @@ nav {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
+  font-variation-settings: 'wght' 400;
+  transition: font-variation-settings var(--fade);
+}
+.tab.shown .tab-word {
+  font-variation-settings: 'wght' 600;
 }
 .tab-word::after {
   content: attr(data-label);
@@ -39,6 +43,7 @@ nav {
   overflow: hidden;
   visibility: hidden;
   font-weight: 600;
+  font-variation-settings: 'wght' 600;
 }
 .help-tab {
   display: inline-flex;
