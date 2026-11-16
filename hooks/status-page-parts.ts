@@ -172,6 +172,7 @@ export function partRows(
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
+      foldCount: lone === null ? under.length : 0,
       ask: c.oldestAskOf(x),
     })
     if (lone === null)
@@ -193,9 +194,4 @@ export function partRows(
   rows.push(...afterClosed)
 
   return rows
-}
-
-/** `rows` as a look draws them: each done fold that `isUnfolded` names by id followed by the finished rows it holds. */
-export function unfoldedRows(rows: StatusRow[], isUnfolded: (id: string) => boolean): StatusRow[] {
-  return rows.flatMap(r => (r.kind === 'done-fold' && isUnfolded(r.id) ? [r, ...r.rows] : [r]))
 }

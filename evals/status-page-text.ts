@@ -2,7 +2,8 @@ import { EMPTY_STATUS_TEXT } from '../hooks/empty-tab'
 import { mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/status-page'
 import type { StatusPage, StatusRow, StatusStall } from '../hooks/status-page'
 import type { MilestoneRow } from '../hooks/status-goal-page'
-import { LATER_TEXT, milestoneRows } from '../hooks/status-path'
+import { milestoneRows } from '../hooks/status-folds'
+import { LATER_TEXT } from '../hooks/status-path'
 
 /** A row's name, with its stall word after it. */
 function nameLine(name: string, stall: StatusStall | null): string {

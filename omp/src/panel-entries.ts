@@ -36,7 +36,7 @@ import { isRowTab } from '../../hooks/tabs'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { SessionView } from '../../hooks/session-view'
 import { goalSection, setGoal } from './panel-goal'
-import { unfoldedRows } from '../../hooks/status-page-parts'
+import { unfoldedRows } from '../../hooks/status-folds'
 import type { ShownTab } from '../../hooks/tabs'
 import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../hooks/herdr-ask'
 import {

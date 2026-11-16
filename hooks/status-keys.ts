@@ -1,6 +1,8 @@
 import type { Item, PressKind } from '../types'
 import { UNDO_KEY } from './help'
 import type { ActionEmphasis } from './rows'
+import { isParentCollapsed, milestoneRows, unfoldedRows } from './status-folds'
+import type { IsCollapsed } from './status-folds'
 import { shownMilestones } from './status-goal-page'
 import type { GoalBlock, MilestoneRow } from './status-goal-page'
 import type { StatusPage, StatusRow } from './status-page'
@@ -8,7 +10,9 @@ import type { StatusPage, StatusRow } from './status-page'
 /**
  * A press on the Status page. `show-ask` opens Asks with that ask selected. `type-goal` opens Reply's field for the
  * goal, prefilled with `text`. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, a
- * done milestone folded to its name or a met goal's milestones, or folds it again, in the look that drew it. None sends a message.
+ * done milestone folded to its name or a met goal's milestones, or folds it again, in the look that drew it.
+ * `toggle-collapse` folds a subject or milestone by its name, or opens it, and the session saves it as a collapse. None
+ * sends a message.
  */
 type StatusPress =
   | { action: 'show-ask'; askId: string }
@@ -16,6 +20,7 @@ type StatusPress =
   | { action: 'remove-goal' }
   | { action: 'restore-goal' }
   | { action: 'toggle-fold'; foldId: string }
+  | { action: 'toggle-collapse'; id: string }
 
 export type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind; emphasis: ActionEmphasis }
 
@@ -114,40 +119,71 @@ export function goalKeyPlan(page: StatusPage): StatusKey[] {
   ]
 }
 
-const rowTarget = (r: StatusRow): StatusKeyTarget => ({ id: r.id, keys: statusKeyPlan(r) })
+/**
+ * A parent's fold, which each look draws as the parent's name line rather than as a button: "Fold" while its rows
+ * show, "Unfold" while the person has it folded. A parent with nothing under it has none.
+ */
+function parentFoldKeys(p: { id: string; foldCount: number }, isCollapsed: IsCollapsed): StatusKey[] {
+  if (p.foldCount === 0) return []
+
+  return [
+    {
+      press: { action: 'toggle-collapse', id: p.id },
+      label: isParentCollapsed(p, isCollapsed) ? 'Unfold' : 'Fold',
+      hotkey: 'f',
+      kind: 'view',
+      emphasis: 'quiet',
+    },
+  ]
+}
+
+const rowTarget =
+  (isCollapsed: IsCollapsed) =>
+  (r: StatusRow): StatusKeyTarget => ({
+    id: r.id,
+    keys: [...statusKeyPlan(r), ...(r.kind === 'subject' ? parentFoldKeys(r, isCollapsed) : [])],
+  })
 
 /**
  * Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. The
  * goal's buttons come first, as its section does, then a met goal's milestones fold, then the milestones a look draws,
- * each with its rows after it. `isUnfolded` says which folds the look has open.
+ * each with the rows it draws after it. A parent's own target holds its buttons, then its fold. `isUnfolded` says which
+ * done folds the look has open, and `isCollapsed` which parents the person folded.
  */
-export function statusKeyRows(page: StatusPage, isUnfolded: (id: string) => boolean = () => false): StatusKeyTarget[] {
+export function statusKeyRows(
+  page: StatusPage,
+  isUnfolded: (id: string) => boolean = () => false,
+  isCollapsed: IsCollapsed = () => false,
+): StatusKeyTarget[] {
   const fold = page.goal?.milestonesFold ?? null
+  const toTarget = rowTarget(isCollapsed)
 
   return [
     { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...(fold === null ? [] : [{ id: fold.id, keys: milestonesFoldKeyPlan(page.goal) }]),
     ...shownMilestones(page.goal, isUnfolded).flatMap(m => [
-      { id: m.id, keys: milestoneKeyPlan(m) },
-      ...m.rows.map(rowTarget),
+      { id: m.id, keys: [...milestoneKeyPlan(m), ...parentFoldKeys(m, isCollapsed)] },
+      ...milestoneRows(m, isUnfolded, isCollapsed).map(toTarget),
     ]),
-    ...page.rows.map(rowTarget),
+    ...unfoldedRows(page.rows, isUnfolded, isCollapsed).map(toTarget),
   ].filter(t => t.keys.length > 0)
 }
 
 /**
  * The target whose keys work: the selected one while it still has buttons, else the first that opens an ask, else the
- * first that is not a done fold, else the first. An ask holds up work and a missing goal does not, so View wins over
+ * first that is not only a fold, else the first. An ask holds up work and a missing goal does not, so View wins over
  * New.
  */
 export function statusSelected(
   page: StatusPage,
   selectedId: string | null,
   isUnfolded: (id: string) => boolean = () => false,
+  isCollapsed: IsCollapsed = () => false,
 ): StatusKeyTarget | null {
-  const targets = statusKeyRows(page, isUnfolded)
+  const targets = statusKeyRows(page, isUnfolded, isCollapsed)
   const opensAsk = (t: StatusKeyTarget) => t.keys.some(k => k.press.action === 'show-ask')
-  const isFold = (t: StatusKeyTarget) => t.keys.some(k => k.press.action === 'toggle-fold')
+  const isFold = (t: StatusKeyTarget) =>
+    t.keys.every(k => k.press.action === 'toggle-fold' || k.press.action === 'toggle-collapse')
 
   return (
     targets.find(t => t.id === selectedId) ??

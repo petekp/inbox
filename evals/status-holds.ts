@@ -1,7 +1,7 @@
 import { HELD_MARK } from '../hooks/help'
 import { restatesGoal } from '../hooks/status-goal-ops'
 import { isNumberOnly, isOpen } from '../hooks/status-limits'
-import { drawnStatusRows } from '../hooks/status-page'
+import { drawnStatusRows } from '../hooks/status-folds'
 import type { StatusPage } from '../hooks/status-page'
 import type { Rule } from './status-rules'
 

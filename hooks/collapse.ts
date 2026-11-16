@@ -2,11 +2,15 @@ import type { RowCollapse, Session } from '../types'
 import { blockingChecks } from './pr-checks'
 import { prCheckId, prThreadId } from './pr-rows'
 import { waitingThreads } from './prs'
+import { waitingUnderParents } from './status-folds'
 
 type CollapseSource = Pick<Session, 'ledger' | 'prViews' | 'lastActions'> & Partial<Pick<Session, 'collapsed'>>
 
-/** The newest thing on a row: when it arrived, and the address of its newest entry GitHub gave no time, if any. */
-type News = { at: number; untimedUrl: string | null }
+/**
+ * The newest thing on a row: when it arrived, the address of its newest entry GitHub gave no time, if any, and for a
+ * Status parent, the ids of what waits on the person under it.
+ */
+type News = { at: number; untimedUrl: string | null; waiting: string[] }
 
 const latest = (...times: (number | null | undefined)[]): number =>
   Math.max(-Infinity, ...times.filter((t): t is number => typeof t === 'number'))
@@ -14,34 +18,40 @@ const latest = (...times: (number | null | undefined)[]): number =>
 /**
  * The newest thing on each row a tab can list, by row id. A press on the row counts, since only the person makes one.
  * So does a question or task the agent recorded again, a finding a question gave back, a review thread's new comment,
- * and a check's new failed run.
+ * and a check's new failed run. A Status parent's news is what waits on the person under it.
  */
 function newsByRow({ ledger, prViews, lastActions }: CollapseSource): Map<string, News> {
   const pressed = (id: string) => lastActions[id]?.at
   const prs = Object.values(prViews.views)
 
+  const timed = (at: number, untimedUrl: string | null = null): News => ({ at, untimedUrl, waiting: [] })
+
   return new Map([
-    ...ledger.items.map(i => [i.id, { at: latest(i.reportedAt, pressed(i.id)), untimedUrl: null }] as const),
-    ...ledger.findings.map(f => [f.id, { at: latest(f.reopenedAt, pressed(f.id)), untimedUrl: null }] as const),
+    ...ledger.items.map(i => [i.id, timed(latest(i.reportedAt, pressed(i.id)))] as const),
+    ...ledger.findings.map(f => [f.id, timed(latest(f.reopenedAt, pressed(f.id)))] as const),
     ...prs.flatMap(pr =>
       waitingThreads(pr).map(t => {
         const id = prThreadId(pr, t)
         const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null
-        return [id, { at: latest(t.reply?.at, pressed(id)), untimedUrl }] as const
+        return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)] as const
       }),
     ),
     ...prs.flatMap(pr =>
       blockingChecks(pr).map(c => {
         const id = prCheckId(pr, c)
         const untimedUrl = c.finishedAt === undefined ? (c.url ?? '') : null
-        return [id, { at: latest(c.finishedAt, pressed(id)), untimedUrl }] as const
+        return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)] as const
       }),
     ),
+    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }] as const),
   ])
 }
 
 const isUnchanged = (news: News | undefined, c: RowCollapse) =>
-  news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null)
+  news !== undefined &&
+  news.at <= c.at &&
+  news.untimedUrl === (c.untimedUrl ?? null) &&
+  news.waiting.every(id => c.waiting?.includes(id))
 
 /** The rows that draw collapsed: those the person collapsed, still listed, with nothing new on them since. */
 export function collapsedRows(s: CollapseSource): string[] {
@@ -60,7 +70,8 @@ export function withCollapse<S extends CollapseSource>(
   const news = newsByRow(s)
   const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)))
   const untimedUrl = news.get(row)?.untimedUrl ?? null
-  const collapse: RowCollapse = { at, ...(untimedUrl !== null && { untimedUrl }) }
+  const waiting = news.get(row)?.waiting ?? []
+  const collapse: RowCollapse = { at, ...(untimedUrl !== null && { untimedUrl }), ...(waiting.length > 0 && { waiting }) }
 
   return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept }
 }

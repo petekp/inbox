@@ -4,7 +4,7 @@ import { isPrRowId } from './presses'
 import { RUNNING_FRAMES } from './help'
 import { textMark } from './marks'
 import type { ClosedDelivery, SettledState, RowView, ResultMark } from './rows'
-import { statusListRows } from './status-page'
+import { statusListRows } from './status-folds'
 import type { StatusPage } from './status-page'
 import type { ViewInput } from './view'
 

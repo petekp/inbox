@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { SUBJECT_MARKS } from '../hooks/help'
 import { EMPTY } from '../hooks/ledger'
+import { collapsedRows, withCollapse } from '../hooks/collapse'
 import { allRows } from '../hooks/rows'
 import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
@@ -9,7 +10,7 @@ import { withChild } from '../hooks/status-children'
 import { setTypedGoal } from '../hooks/status-goal-ops'
 import { shownMilestones } from '../hooks/status-goal-page'
 import { statusKeyRows } from '../hooks/status-keys'
-import { unfoldedRows } from '../hooks/status-page-parts'
+import { milestoneRows, parentChevron, unfoldedRows } from '../hooks/status-folds'
 import { NO_HOLDS } from '../hooks/timing'
 import type { StatusRow } from '../hooks/status-page'
 import type { SessionStatus } from '../types'
@@ -50,7 +51,7 @@ test('a goal shows its milestones as a path, its Edit comes before its milestone
   expect(p.goal?.milestones[1]?.ask).toEqual({ id: 'i1', kind: 'question' })
   expect(statusKeyRows(p).map(t => [t.id, t.keys.map(k => k.label)])).toEqual([
     ['goal', ['Edit', 'Remove']],
-    ['m2', ['View question']],
+    ['m2', ['View question', 'Fold']],
     ['s2', ['View question']],
   ])
 })
@@ -360,4 +361,46 @@ test('an ask linked to a milestone names it as what it holds up, and a milestone
   const changed = after(o, 'WAS: m2 | demo by hand', 50, new Set(['i1']))
   expect(wasOf(changed)).toEqual([null, 'demo by hand', null])
   expect(wasOf({ ...changed, lastLookAt: 55 })).toEqual([null, null, null])
+})
+
+test('a milestone or a subject with rows under it folds by its name, which hides its rows from the list and from j and k, and a fold opens again once something new under it waits on the person', () => {
+  const withDelegate = (o: SessionStatus, delegateState: 'working' | 'blocked') =>
+    after(
+      withChild(
+        o,
+        { ref: 'review', kind: 'subagent', name: 'Review bot', startedAt: 32, endedAt: null, lastActivityAt: 33, delegateState },
+        34,
+      ),
+      'LINK: c1 | s1',
+      34,
+      new Set(['i1']),
+    )
+  const o = withDelegate(linked(), 'working')
+  const asked = [askItem('i1')]
+  const p = page(o, 40, {}, asked)
+  const m2 = p.goal?.milestones.find(m => m.id === 'm2')
+  const s1 = m2?.rows.find(r => r.id === 's1')
+  const folded = new Set(['m2', 's1'])
+  const isCollapsed = (id: string) => folded.has(id)
+
+  expect(m2?.foldCount).toBe(2)
+  expect(s1).toMatchObject({ kind: 'subject', foldCount: 1 })
+  expect([parentChevron(false, 2), parentChevron(true, 2)]).toEqual(['▾', '▸ 2'])
+  expect(milestoneRows(m2!, () => false, isCollapsed)).toEqual([])
+  expect(unfoldedRows(m2!.rows, () => false, id => id === 's1').map(r => r.id)).toEqual(['s2', 's1'])
+  expect(statusKeyRows(p, () => false, isCollapsed).map(t => [t.id, t.keys.map(k => k.label)])).toEqual([
+    ['goal', ['Edit', 'Remove']],
+    ['m2', ['View question', 'Unfold']],
+  ])
+
+  const session = (status: SessionStatus, items = asked) => ({
+    ...emptySession(),
+    ledger: { ...EMPTY, overview: status, items },
+  })
+  const collapsed = withCollapse(withCollapse(session(o), 'm2', true, 41), 's1', true, 41)
+  expect(collapsedRows(collapsed).sort()).toEqual(['m2', 's1'])
+  const blocked = withDelegate(linked(), 'blocked')
+  expect(collapsedRows({ ...collapsed, ledger: session(blocked).ledger })).toEqual([])
+  const askedAgain = after(o, 'LINK: i2 | s1', 45, new Set(['i1', 'i2']))
+  expect(collapsedRows({ ...collapsed, ledger: session(askedAgain, [...asked, askItem('i2')]).ledger })).toEqual(['s1'])
 })

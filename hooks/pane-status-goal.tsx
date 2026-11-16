@@ -38,7 +38,8 @@ import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
-import { isSpacedAbove, LATER_TEXT, milestoneRows, workJoints } from './status-path'
+import { milestoneRows } from './status-folds'
+import { isSpacedAbove, LATER_TEXT, workJoints } from './status-path'
 import { ROW_COPY } from './rows'
 
 /** One line of the Status list, as `paneStatus` draws it, so milestones line up with subjects. */

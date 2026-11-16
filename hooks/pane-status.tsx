@@ -43,7 +43,7 @@ import {
   WAITS_ON_PREFIX,
   WAS_PREFIX,
 } from './status-page'
-import { unfoldedRows } from './status-page-parts'
+import { unfoldedRows } from './status-folds'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
 
