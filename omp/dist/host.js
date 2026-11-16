@@ -862,6 +862,19 @@ function prsQuery(refs) {
   return `query { viewer { login } ${fields.join(" ")} }
 ${PR_FIELDS}`;
 }
+function prStatesQuery(refs) {
+  const repos = new Map;
+  for (const ref of refs) {
+    const { repo } = parseRef(ref);
+    repos.set(repo, [...repos.get(repo) ?? [], ref]);
+  }
+  const fields = [...repos.values()].map((repoRefs, n) => {
+    const { owner, name } = parseRef(repoRefs[0] ?? "");
+    const prs = repoRefs.map((ref) => `${prAlias(refs.indexOf(ref))}: pullRequest(number: ${parseRef(ref).number}) { url state }`);
+    return `${repoAlias(n)}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { ${prs.join(" ")} }`;
+  });
+  return `query { ${fields.join(" ")} }`;
+}
 function msOf(iso) {
   const ms = iso ? Date.parse(iso) : NaN;
   return Number.isFinite(ms) && ms > 0 ? ms : undefined;
@@ -3292,6 +3305,8 @@ function updateTask(tree, id, changes, at, source) {
       delete updated.links;
     else if (links !== undefined)
       updated.links = { ...links, ...links.owner ? { owner: { ...links.owner } } : {} };
+    if (updated.prMergedApplied && updated.links?.pr && updated.links.pr !== updated.prMergedApplied)
+      delete updated.prMergedApplied;
     return updated;
   }));
 }
@@ -3318,11 +3333,11 @@ function moveTask(tree, id, parentId, at, source) {
     return failed("limit");
   return succeeded(tree.map((node) => node.id === id ? { ...node, parentId, updatedAt: at, history: boundedHistory(node.history, event) } : node));
 }
-function completeTask(tree, id, at, source) {
+function completeTask(tree, id, at, source, detail) {
   const task = tree.find((node) => node.id === id);
   if (!task)
     return failed("unknown-task");
-  const event = { at, source, kind: "completed" };
+  const event = { at, source, kind: "completed", ...detail === undefined ? {} : { detail } };
   if (!eventIsValid(event))
     return failed("limit");
   return succeeded(tree.map((node) => node.id === id ? { ...node, status: "done", updatedAt: at, history: boundedHistory(node.history, event) } : node));
@@ -5376,6 +5391,9 @@ function emptySession() {
   return {
     ledger: EMPTY,
     taskTree: [],
+    taskPrStates: {},
+    taskFactWarnings: [],
+    taskPrFactCursor: null,
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -5448,6 +5466,9 @@ function sessionFields(saved, views) {
   return {
     ledger,
     taskTree: Array.isArray(saved.taskTree) ? saved.taskTree : taskTreeFromStatus(ledger.overview),
+    taskPrStates: Object.fromEntries(Object.entries(saved.taskPrStates ?? {}).filter((entry) => entry[1] === "OPEN" || entry[1] === "CLOSED" || entry[1] === "MERGED")),
+    taskFactWarnings: saved.taskFactWarnings ?? [],
+    taskPrFactCursor: saved.taskPrFactCursor ?? null,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
@@ -7764,7 +7785,8 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
-    statusPage: statusPage(s, now)
+    statusPage: statusPage(s, now),
+    taskFactWarnings: s.taskFactWarnings
   };
 }
 function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
@@ -7967,10 +7989,89 @@ async function withDocumentPreview(input, file) {
   return "text" in result ? { ...input, document: path, document_preview: documentExcerpt(result.text) } : { ...input, document: undefined, document_error: result.error };
 }
 
+// ../hooks/task-facts.ts
+var MERGED_WARNING = "PR merged, task still open";
+var CLOSED_WARNING = "PR closed without merge";
+function applyTaskPrFacts(tree, states, at) {
+  let next = tree;
+  const warnings = [];
+  for (const task of tree) {
+    const pr = task.links?.pr;
+    const state = pr ? states[pr] : undefined;
+    if (!pr || !state || task.status === "done" || task.status === "dropped")
+      continue;
+    if (state === "CLOSED") {
+      warnings.push({ taskId: task.id, pr, message: CLOSED_WARNING });
+      continue;
+    }
+    if (state !== "MERGED")
+      continue;
+    if (task.prMergedApplied === pr)
+      continue;
+    if (task.history.some((event) => event.source === "pr" && event.kind === "completed" && event.detail === pr))
+      continue;
+    if (tree.some((child) => child.parentId === task.id && child.status !== "done" && child.status !== "dropped")) {
+      warnings.push({ taskId: task.id, pr, message: MERGED_WARNING });
+      continue;
+    }
+    const completed = completeTask(next, task.id, at, "pr", pr);
+    if (completed.ok)
+      next = completed.tree.map((node) => node.id === task.id ? { ...node, prMergedApplied: pr } : node);
+  }
+  return { tree: next, warnings };
+}
+
 // ../hooks/host-prs.ts
 var PRS_REFRESH_MS = 120000;
 var PRS_HIDDEN_REFRESH_MS = 10 * 60000;
 var NEW_PR_FETCH_MS = 15000;
+var TASK_PR_FETCH_LIMIT = 8;
+function stateOf(value) {
+  return value === "OPEN" || value === "CLOSED" || value === "MERGED" ? value : undefined;
+}
+function taskPrRef(url) {
+  const [ref] = prRefs(url);
+  return ref;
+}
+function taskPrUrls(s) {
+  return [
+    ...new Set(s.taskTree.flatMap((task) => task.status === "done" || task.status === "dropped" || !task.links?.pr ? [] : [task.links.pr]))
+  ];
+}
+function afterCursor(urls, cursor) {
+  if (urls.length === 0)
+    return [];
+  const index = cursor ? urls.indexOf(cursor) : -1;
+  const start = (index + 1) % urls.length;
+  return [...urls.slice(start), ...urls.slice(0, start)];
+}
+async function fetchUntrackedTaskPrStates(host, s, bin, tracked) {
+  const urls = taskPrUrls(s).filter((url) => {
+    const ref = taskPrRef(url);
+    return ref !== undefined && !tracked.has(ref) && s.taskPrStates[url] !== "MERGED";
+  });
+  const selected = afterCursor(urls, s.taskPrFactCursor).slice(0, TASK_PR_FETCH_LIMIT);
+  if (selected.length === 0)
+    return { states: {}, cursor: s.taskPrFactCursor };
+  const refs = selected.map(taskPrRef);
+  if (refs.some((ref) => ref === undefined))
+    return null;
+  const run = host.gh.run(s, bin, () => host.gh.forget());
+  const result = await run(["api", "graphql", "-f", `query=${prStatesQuery(refs)}`]);
+  if (result.exitCode !== 0)
+    return null;
+  const answer = readPrsAnswer(result.stdout, refs);
+  if (!answer)
+    return null;
+  const states = {};
+  selected.forEach((url, index) => {
+    const node = answer.prs[refs[index]]?.node;
+    const state = stateOf(node?.state);
+    if (state)
+      states[url] = state;
+  });
+  return { states, cursor: selected.at(-1) ?? s.taskPrFactCursor };
+}
 function isPrFetchDue(s, lastFetchedAt, now, isTabShown) {
   if (lastFetchedAt === undefined)
     return true;
@@ -8022,6 +8123,7 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
   host.gh.noteMissing(bin === null);
   if (bin === null)
     return;
+  let ghBin = bin;
   let sawUnstartable = false;
   const accountPrsPromise = fetchAccountPrs(host.gh.run(s, bin, () => {}));
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
@@ -8034,8 +8136,10 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
     host.gh.noteMissing(refound === null);
     if (refound === null)
       return;
-    if (refound !== bin)
+    if (refound !== bin) {
+      ghBin = refound;
       fetch = await fetchWith(refound);
+    }
   }
   const accountPrs = await accountPrsPromise;
   const { views: fetched, branchRef, isGhSignedOut, failure, read, unread } = fetch;
@@ -8044,7 +8148,33 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
     views: Object.fromEntries([...Object.entries(cur.views), ...read.map((ref) => [ref, fetched[ref]])].filter(([, view]) => at - (view.fetchedAt ?? 0) < PR_SHARED_MS)),
     limit: failure?.kind === "limit" ? failure : failure === null ? null : cur.limit
   }));
-  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread, accountPrs));
+  const tracked = new Set(splitLinked(s.prViews, s.ledger).tracked);
+  const taskFacts = failure === null ? await fetchUntrackedTaskPrStates(host, s, ghBin, tracked) : null;
+  await host.update((cur) => {
+    const next = withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread, accountPrs);
+    if (!taskFacts)
+      return next;
+    const linked = new Set(next.taskTree.flatMap((task) => task.links?.pr ? [task.links.pr] : []));
+    const taskPrStates = Object.fromEntries(Object.entries(cur.taskPrStates).filter(([url]) => linked.has(url)));
+    for (const task of next.taskTree) {
+      const url = task.links?.pr;
+      const ref = url ? taskPrRef(url) : undefined;
+      if (!url || !ref || !tracked.has(ref))
+        continue;
+      const state = stateOf(fetched[ref]?.state ?? s.prViews.views[ref]?.state);
+      if (state)
+        taskPrStates[url] = state;
+    }
+    Object.assign(taskPrStates, taskFacts.states);
+    const facts = applyTaskPrFacts(next.taskTree, taskPrStates, at);
+    return {
+      ...next,
+      taskTree: facts.tree,
+      taskPrStates,
+      taskFactWarnings: facts.warnings,
+      taskPrFactCursor: taskFacts.cursor
+    };
+  });
 }
 var ALREADY_RUNNING = /already running/i;
 async function rerunRun(host, e) {
@@ -10471,7 +10601,7 @@ var CLIENTS = {
       "fold-on-typed-message": { kind: "full" },
       "fold-waits-for-list-use": {
         kind: "different",
-        reason: "The terminal reports no pointer, so a row due to fold waits only on presses, keys and scrolls. On desktop a settled row is drawn as text, which reports no pointer, so a row waits on presses and on pointer moves over open rows."
+        reason: "The terminal reports no pointer, so a row waits to fold on presses, keys and scrolls. Desktop settled text reports no pointer, so rows wait on presses and pointer moves over open rows."
       },
       "version-label": { kind: "full" },
       "status-tab": { kind: "full" },
@@ -10529,6 +10659,7 @@ var CLIENTS = {
       "item-document": { kind: "full" },
       "document-preview": { kind: "full" },
       "record-link-guard": { kind: "full" },
+      "task-pr-facts": { kind: "full" },
       timeline: { kind: "full" }
     }
   },
@@ -10685,6 +10816,7 @@ var CLIENTS = {
       "item-document": { kind: "full" },
       "document-preview": { kind: "full" },
       "record-link-guard": { kind: "full" },
+      "task-pr-facts": { kind: "full" },
       timeline: { kind: "full" }
     }
   },
@@ -10802,6 +10934,7 @@ var CLIENTS = {
       "item-document": { kind: "full" },
       "document-preview": { kind: "full" },
       "record-link-guard": { kind: "full" },
+      "task-pr-facts": { kind: "full" },
       timeline: { kind: "full" }
     }
   }

@@ -5,10 +5,10 @@ import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { feedbackOf, feedbackText } from '../../hooks/feedback'
 import { GH_TIMED_OUT_TEXT } from '../../hooks/pr-fetch'
 import { ghNoticeOf, PR_REFRESH_ID } from '../../hooks/pr-rows'
-import type { LastAction, Session } from '../../types'
-import { readState } from '../src/state'
+import type { LastAction, Session, TaskNode } from '../../types'
+import { readState, updateState } from '../src/state'
 import { run } from '../src/run'
-import { ghAnswer, PRS_STALE_MS, prServer, viewAfterFetch } from './server-fixtures'
+import { GH_VIEW, ghAnswer, prsAnswer, PRS_STALE_MS, prServer, viewAfterFetch } from './server-fixtures'
 import { PRS_HIDDEN_REFRESH_MS } from '../../hooks/host-prs'
 
 test('a view starts a fetch of the session’s PRs through gh in its folder, and the next view shows them', async () => {
@@ -27,6 +27,58 @@ test('a view starts a fetch of the session’s PRs through gh in its folder, and
   assert.equal(prs.count, 1)
   assert.ok(calls.some(c => c[0] === 'gh' && c[1] === 'pr'))
   assert.equal((await readState(dir, 's1')).prViews.branchRef, 'acme/app#7')
+})
+
+const linkedTask = (pr: string): TaskNode => ({
+  id: 'task-1',
+  parentId: null,
+  status: 'working',
+  weight: 1,
+  title: 'Complete the change',
+  detail: '',
+  notes: [],
+  createdAt: 1,
+  updatedAt: 1,
+  history: [],
+  links: { pr },
+})
+
+test('Codex saves task completion from its tracked PR view and leaves the task unchanged when gh fails', async () => {
+  const url = 'https://github.com/acme/app/pull/7'
+  const ref = 'acme/app#7'
+  const merged = JSON.stringify({ ...(JSON.parse(GH_VIEW) as object), state: 'MERGED' })
+  const { dir, call } = await prServer(args =>
+    args[0] === 'gh' && args[2] === 'graphql'
+      ? { code: 0, stdout: prsAnswer(args, () => merged), stderr: '' }
+      : ghAnswer(args),
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: [ref] },
+    taskTree: [linkedTask(url)],
+  }))
+
+  await call('inbox_view', { tab: 'prs' })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.deepEqual((await readState(dir, 's1')).taskTree[0], {
+    ...linkedTask(url),
+    status: 'done',
+    updatedAt: 100,
+    history: [{ at: 100, source: 'pr', kind: 'completed', detail: url }],
+    prMergedApplied: url,
+  })
+
+  const failed = await prServer(args =>
+    args[0] === 'gh' && args[2] === 'graphql' ? { code: 1, stdout: '', stderr: 'HTTP 502' } : ghAnswer(args),
+  )
+  await updateState(failed.dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: [ref] },
+    taskTree: [linkedTask(url)],
+  }))
+  await failed.call('inbox_view', { tab: 'prs' })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.deepEqual((await readState(failed.dir, 's1')).taskTree, [linkedTask(url)])
 })
 
 test('a view says gh was not found when no gh can start', async () => {

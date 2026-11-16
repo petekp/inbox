@@ -45,7 +45,12 @@ type World = {
   statusHold: Promise<void> | null
   statusCompletions: { model: Model; system: string[]; prompt: string }[]
   isIdle: boolean
-  execResults: Map<string, { code: number; stdout?: string; stderr?: string; killed?: boolean } | Error>
+  execResults: Map<
+    string,
+    | { code: number; stdout?: string; stderr?: string; killed?: boolean }
+    | Error
+    | ((args: string[]) => { code: number; stdout?: string; stderr?: string; killed?: boolean } | Error)
+  >
   execCalls: { command: string; args: string[] }[]
   copied: string[]
   agentKind: 'main' | 'sub' | undefined
@@ -109,7 +114,8 @@ export const pi = () =>
     },
     exec: async (command: string, args: string[]) => {
       w.execCalls.push({ command, args })
-      const result = w.execResults.get(command) ?? { code: 0 }
+      const configured = w.execResults.get(command)
+      const result = (typeof configured === 'function' ? configured(args) : configured) ?? { code: 0 }
       if (result instanceof Error) throw result
 
       return { stdout: '', stderr: '', killed: false, ...result }

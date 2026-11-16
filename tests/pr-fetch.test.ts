@@ -39,6 +39,31 @@ const savedView = (ref: string, state = 'OPEN', fetchedAt = NOW - 10 * 60_000): 
 
 type Answer = { exitCode: number; stdout: string; stderr: string }
 
+/** A host over one session and the shared record, whose gh is `run`. */
+function hostOf(run: (args: string[]) => Promise<Answer>, start: Session, now: () => number) {
+  let state = start
+  let shared: PrShared = NO_PR_SHARED
+  const host: Pick<SessionHost<Session>, 'now' | 'read' | 'update' | 'gh'> = {
+    now,
+    read: async () => state,
+    update: async change => (state = await change(state)),
+    gh: {
+      shared: {
+        read: async () => shared,
+        write: async change => {
+          shared = change(shared)
+        },
+      },
+      find: async () => 'gh',
+      forget: () => {},
+      run: () => run,
+      noteMissing: () => {},
+    },
+  }
+
+  return { host, state: () => state, shared: () => shared }
+}
+
 /** A stand-in gh that answers the PRs query from `answerOf`, and records each run. */
 function ghStandIn(answerOf: (number: string, repo: string) => PrAnswer, more: Partial<Record<string, Answer>> = {}) {
   const runs: string[][] = []
@@ -172,31 +197,6 @@ test('a session with 40 tracked PRs, 10 of them merged, reads the rest in one gh
     ['api', 'graphql'],
   ])
 })
-
-/** A host over one session and the shared record, whose gh is `run`. */
-function hostOf(run: (args: string[]) => Promise<Answer>, start: Session, now: () => number) {
-  let state = start
-  let shared: PrShared = NO_PR_SHARED
-  const host: Pick<SessionHost<Session>, 'now' | 'read' | 'update' | 'gh'> = {
-    now,
-    read: async () => state,
-    update: async change => (state = await change(state)),
-    gh: {
-      shared: {
-        read: async () => shared,
-        write: async change => {
-          shared = change(shared)
-        },
-      },
-      find: async () => 'gh',
-      forget: () => {},
-      run: () => run,
-      noteMissing: () => {},
-    },
-  }
-
-  return { host, state: () => state, shared: () => shared }
-}
 
 test('a limit error stops every session’s polling until GitHub’s reset time, keeps each PR’s view with no error of its own, says so once at the top, and a press reads again at once', async () => {
   const base = emptySession()

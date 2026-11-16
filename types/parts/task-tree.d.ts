@@ -18,6 +18,14 @@ export type TaskLinks = {
   owner?: TaskOwner
 }
 
+export type TaskPrState = 'OPEN' | 'CLOSED' | 'MERGED'
+
+export type TaskFactWarning = {
+  taskId: string
+  pr: string
+  message: 'PR merged, task still open' | 'PR closed without merge'
+}
+
 export type TaskNode = {
   id: string
   parentId: string | null
@@ -32,6 +40,8 @@ export type TaskNode = {
   goalId?: string
   streamId?: string
   mergedIntoId?: string
+  /** The linked PR whose merge fact completed this task, retained if bounded history rolls over. */
+  prMergedApplied?: string
   links?: TaskLinks
 }
 

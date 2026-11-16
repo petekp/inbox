@@ -50,6 +50,25 @@ export function prsQuery(refs: string[]): string {
   return `query { viewer { login } ${fields.join(' ')} }\n${PR_FIELDS}`
 }
 
+/** One lightweight query for the state of linked task PRs the PRs tab does not track. */
+export function prStatesQuery(refs: string[]): string {
+  const repos = new Map<string, string[]>()
+  for (const ref of refs) {
+    const { repo } = parseRef(ref)
+    repos.set(repo, [...(repos.get(repo) ?? []), ref])
+  }
+  const fields = [...repos.values()].map((repoRefs, n) => {
+    const { owner, name } = parseRef(repoRefs[0] ?? '')
+    const prs = repoRefs.map(
+      ref => `${prAlias(refs.indexOf(ref))}: pullRequest(number: ${parseRef(ref).number}) { url state }`,
+    )
+
+    return `${repoAlias(n)}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { ${prs.join(' ')} }`
+  })
+
+  return `query { ${fields.join(' ')} }`
+}
+
 type RollupEntry = {
   __typename?: string
   name?: string

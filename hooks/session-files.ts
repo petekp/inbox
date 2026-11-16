@@ -17,6 +17,9 @@ export function emptySession(): Session {
   return {
     ledger: EMPTY,
     taskTree: [],
+    taskPrStates: {},
+    taskFactWarnings: [],
+    taskPrFactCursor: null,
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -129,6 +132,14 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
   return {
     ledger,
     taskTree: Array.isArray(saved.taskTree) ? saved.taskTree : taskTreeFromStatus(ledger.overview),
+    taskPrStates: Object.fromEntries(
+      Object.entries(saved.taskPrStates ?? {}).filter(
+        (entry): entry is [string, 'OPEN' | 'CLOSED' | 'MERGED'] =>
+          entry[1] === 'OPEN' || entry[1] === 'CLOSED' || entry[1] === 'MERGED',
+      ),
+    ),
+    taskFactWarnings: saved.taskFactWarnings ?? [],
+    taskPrFactCursor: saved.taskPrFactCursor ?? null,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },

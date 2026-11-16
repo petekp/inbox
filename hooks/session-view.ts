@@ -22,7 +22,7 @@ import type { InboxView } from './view'
 import type { StatusPage } from './status-page'
 import type { Holds } from './timing'
 import type { ShownTab } from './tabs'
-import type { FoldKind, LastAction, PrFetchFailure, RowNote, Session, Turns } from '../types'
+import type { FoldKind, LastAction, PrFetchFailure, RowNote, Session, TaskFactWarning, Turns } from '../types'
 
 export const PRESS_TIMEOUT_MS = 60_000
 
@@ -58,6 +58,8 @@ export type SessionView = InboxView & {
   turns: Turns
   prs: PrTab
   statusPage: StatusPage
+  /** Derived linked-task PR warnings for the Status and Timeline looks. */
+  taskFactWarnings: TaskFactWarning[]
 }
 
 /** Drops a Local result still pending after `PRESS_TIMEOUT_MS`, whose press will not finish. */
@@ -115,6 +117,7 @@ export function sessionView(
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now),
+    taskFactWarnings: s.taskFactWarnings,
   }
 }
 

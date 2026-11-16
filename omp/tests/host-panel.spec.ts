@@ -6,6 +6,8 @@ import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
+import type { TaskNode } from '../../types'
+import { prNodeOf, prsAnswerOf } from '../../tests/gh-answers'
 import { call, deps, endWorld, makeCtx, pi, prompt, record, settle, startWorld, state, w } from './host-harness'
 
 beforeEach(startWorld)
@@ -119,6 +121,89 @@ test('opening the panel does not find gh missing when every gh run times out', a
   await inbox.openPanel(makeCtx(), w.clock)
   await settle()
   expect((await inbox.screen(makeCtx())).isGhMissing).toBe(false)
+})
+
+const taskWithPr = (pr: string): TaskNode => ({
+  id: 'task-1',
+  parentId: null,
+  status: 'working',
+  weight: 1,
+  title: 'Change',
+  detail: '',
+  notes: [],
+  createdAt: 1,
+  updatedAt: 1,
+  history: [],
+  links: { pr },
+})
+
+function taskPrAnswer(args: string[], state: string) {
+  const query = args[3]!.slice('query='.length)
+  return prsAnswerOf(
+    query,
+    (number, repo) => ({
+      node: prNodeOf({
+        number: Number(number),
+        title: 'Change',
+        url: `https://github.com/${repo}/pull/${number}`,
+        state,
+      }),
+    }),
+    'me',
+  )
+}
+
+test('omp saves merged PR completion', async () => {
+  const ref = 'acme/app#7'
+  const url = 'https://github.com/acme/app/pull/7'
+  const inbox = createInbox(pi(), deps())
+  await call('session_start', { type: 'session_start' }, makeCtx())
+  await settle()
+  const start = state()
+  writeFileSync(
+    join(w.dir, 'sessions', 's1.json'),
+    JSON.stringify({ ...start, ledger: { ...start.ledger, prs: [ref] }, taskTree: [taskWithPr(url)] }),
+  )
+  w.execResults.set('gh', args => {
+    if (args[0] === '--version') return { code: 0, stdout: 'gh version 2.0' }
+    if (args[0] === 'pr') return { code: 0, stdout: JSON.stringify({ url }) }
+    if (args[0] === 'api' && args[1] === 'graphql') return { code: 0, stdout: taskPrAnswer(args, 'MERGED') }
+    if (args[0] === 'api' && args[1] === 'user') return { code: 0, stdout: 'me' }
+    if (args[0] === 'api' && args[1] === 'user/orgs') return { code: 0, stdout: '' }
+    if (args[0] === 'search') return { code: 0, stdout: '[]' }
+    return { code: 1, stdout: '', stderr: 'unsupported' }
+  })
+
+  await inbox.openPanel(makeCtx(), w.clock)
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(state().taskTree[0]).toMatchObject({
+    status: 'done',
+    history: [{ source: 'pr', kind: 'completed', detail: url }],
+  })
+  expect(w.execCalls.filter(c => c.command === 'gh' && c.args[0] === 'api' && c.args[1] === 'graphql')).toHaveLength(1)
+})
+
+test('omp leaves task facts unchanged on gh failure', async () => {
+  const url = 'https://github.com/acme/app/pull/8'
+  const inbox = createInbox(pi(), deps())
+  await call('session_start', { type: 'session_start' }, makeCtx())
+  await settle()
+  const start = state()
+  writeFileSync(join(w.dir, 'sessions', 's1.json'), JSON.stringify({ ...start, taskTree: [taskWithPr(url)] }))
+  w.execResults.set('gh', args => {
+    if (args[0] === '--version') return { code: 0, stdout: 'gh version 2.0' }
+    if (args[0] === 'api' && args[1] === 'graphql') return { code: 1, stdout: '', stderr: 'HTTP 502' }
+    if (args[0] === 'api' && args[1] === 'user') return { code: 0, stdout: 'me' }
+    if (args[0] === 'api' && args[1] === 'user/orgs') return { code: 0, stdout: '' }
+    if (args[0] === 'search') return { code: 0, stdout: '[]' }
+    if (args[0] === 'pr') return { code: 1, stdout: '', stderr: 'no pull requests found' }
+    return { code: 1, stdout: '', stderr: 'unsupported' }
+  })
+
+  await inbox.openPanel(makeCtx(), w.clock)
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(state().taskTree).toEqual([taskWithPr(url)])
+  expect(state().taskFactWarnings).toEqual([])
 })
 
 test('opening the panel finds gh signed out, and a later fetch that gh answers without asking clears it', async () => {

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T02:24:06.684Z. 210675 characters follow.
+// Built at 2026-11-16T05:37:06.581Z. 211068 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2606,6 +2606,9 @@ function emptySession() {
   return {
     ledger: EMPTY,
     taskTree: [],
+    taskPrStates: {},
+    taskFactWarnings: [],
+    taskPrFactCursor: null,
     turn: NO_TURN,
     told: TOLD_NOTHING,
     presence: {
@@ -2669,6 +2672,9 @@ function sessionFields(saved, views) {
   return {
     ledger,
     taskTree: Array.isArray(saved.taskTree) ? saved.taskTree : taskTreeFromStatus(ledger.overview),
+    taskPrStates: Object.fromEntries(Object.entries(saved.taskPrStates ?? {}).filter((entry) => entry[1] === "OPEN" || entry[1] === "CLOSED" || entry[1] === "MERGED")),
+    taskFactWarnings: saved.taskFactWarnings ?? [],
+    taskPrFactCursor: saved.taskPrFactCursor ?? null,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
@@ -3430,7 +3436,8 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
-    statusPage: statusPage(s, now)
+    statusPage: statusPage(s, now),
+    taskFactWarnings: s.taskFactWarnings
   };
 }
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {

@@ -228,6 +228,8 @@ export function updateTask(
       const updated = { ...node, ...fields, updatedAt: at, history: boundedHistory(node.history, event) }
       if (links === null) delete updated.links
       else if (links !== undefined) updated.links = { ...links, ...(links.owner ? { owner: { ...links.owner } } : {}) }
+      if (updated.prMergedApplied && updated.links?.pr && updated.links.pr !== updated.prMergedApplied)
+        delete updated.prMergedApplied
       return updated
     }),
   )
@@ -266,10 +268,10 @@ export function moveTask(
 }
 
 /** Marks a task done and records when and where it was completed. */
-export function completeTask(tree: TaskTree, id: string, at: number, source: string): TaskTreeResult {
+export function completeTask(tree: TaskTree, id: string, at: number, source: string, detail?: string): TaskTreeResult {
   const task = tree.find(node => node.id === id)
   if (!task) return failed('unknown-task')
-  const event: TaskHistoryEvent = { at, source, kind: 'completed' }
+  const event: TaskHistoryEvent = { at, source, kind: 'completed', ...(detail === undefined ? {} : { detail }) }
   if (!eventIsValid(event)) return failed('limit')
 
   return succeeded(

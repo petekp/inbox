@@ -5,6 +5,8 @@ import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 import { PR_POLL_MS } from '../hooks/mod-sessions'
 import { PRS_HIDDEN_REFRESH_MS } from '../hooks/host-prs'
+import { emptySession } from '../hooks/session-files'
+import type { TaskNode } from '../types'
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -48,6 +50,97 @@ test('opening the PRs tab while another PR fetch runs still finds the branch’s
 
   expect(await pane.find({ text: /Linked work/ })).toBeDefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
+})
+
+function linkedTask(pr: string): TaskNode {
+  return {
+    id: 'task-1',
+    parentId: null,
+    status: 'working',
+    weight: 1,
+    title: 'Complete the change',
+    detail: '',
+    notes: [],
+    createdAt: 1,
+    updatedAt: 1,
+    history: [],
+    links: { pr },
+  }
+}
+
+test('the mod saves task completion from its tracked merged PR view', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const ref = 'acme/app#7'
+  const url = 'https://github.com/acme/app/pull/7'
+  const view = (state: string) =>
+    JSON.stringify({
+      number: 7,
+      title: 'Complete the change',
+      url,
+      isDraft: false,
+      state,
+      baseRefName: 'main',
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'APPROVED',
+      statusCheckRollup: [],
+    })
+  const base = emptySession()
+  w.stored.set(
+    's:session-1',
+    JSON.stringify({ ...base, ledger: { ...base.ledger, prs: [ref] }, taskTree: [linkedTask(url)] }),
+  )
+  w.ghAnswers.push({
+    match: argv => argv[0] === 'gh' && argv[1] === 'pr' && argv.includes('7'),
+    stdout: view('MERGED'),
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  w.paneState = { isShown: true, isFocused: true }
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  const saved = JSON.parse(w.stored.get('s:session-1') ?? '{}')
+  expect(saved.taskTree[0]).toMatchObject({
+    status: 'done',
+    history: [{ source: 'pr', kind: 'completed', detail: url }],
+  })
+})
+
+test('the mod leaves a linked task open when gh fails', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const ref = 'acme/app#7'
+  const url = 'https://github.com/acme/app/pull/7'
+  const view = (state: string) =>
+    JSON.stringify({
+      number: 7,
+      title: 'Complete the change',
+      url,
+      isDraft: false,
+      state,
+      baseRefName: 'main',
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'APPROVED',
+      statusCheckRollup: [],
+    })
+  const failed = emptySession()
+  w.stored.set(
+    's:session-1',
+    JSON.stringify({ ...failed, ledger: { ...failed.ledger, prs: [ref] }, taskTree: [linkedTask(url)] }),
+  )
+  w.ghAnswers = [
+    { match: argv => argv[0] === 'gh' && argv[1] === 'pr' && argv.includes('7'), stdout: view('OPEN') },
+    { match: argv => argv[0] === 'gh' && argv.includes('graphql'), stdout: '', fails: 'HTTP 502' },
+  ]
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  w.paneState = { isShown: true, isFocused: true }
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  const saved = JSON.parse(w.stored.get('s:session-1') ?? '{}')
+  expect(w.ran.some(argv => argv.includes('graphql'))).toBe(true)
+  expect(saved.taskTree).toEqual([linkedTask(url)])
 })
 
 test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch found it open, and settles it as Merged once a fetch finds it merged while the tab shows, while a task naming a teammate’s PR keeps its Open PR step', async ($, on) => {

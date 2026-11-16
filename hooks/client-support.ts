@@ -38,7 +38,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'fold-waits-for-list-use': {
         kind: 'different',
         reason:
-          'The terminal reports no pointer, so a row due to fold waits only on presses, keys and scrolls. On desktop a settled row is drawn as text, which reports no pointer, so a row waits on presses and on pointer moves over open rows.',
+          'The terminal reports no pointer, so a row waits to fold on presses, keys and scrolls. Desktop settled text reports no pointer, so rows wait on presses and pointer moves over open rows.',
       },
       'version-label': { kind: 'full' },
       'status-tab': { kind: 'full' },
@@ -98,6 +98,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'item-document': { kind: 'full' },
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
+      'task-pr-facts': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },
@@ -275,6 +276,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'item-document': { kind: 'full' },
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
+      'task-pr-facts': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },
@@ -397,6 +399,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'item-document': { kind: 'full' },
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
+      'task-pr-facts': { kind: 'full' },
       timeline: { kind: 'full' },
     },
   },
