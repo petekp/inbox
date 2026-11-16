@@ -15,7 +15,6 @@ import type { PaneStatusLines } from './pane-status-lines'
 import { exactly, inkLines, stackedIn } from './pane-status-tops'
 import type { Drawn } from './pane-status-tops'
 import type { MilestoneRow } from './status-goal-page'
-import { STALL_GAP } from './status-page'
 import type { PathLine, WorkJoint } from './status-path'
 import { terminalSpanLines } from './terminal-text'
 import { cellWidth } from './text'
@@ -178,9 +177,8 @@ export function paneStatusPath(
   /** Whether the word fits at the right of the name's first line, which it never shortens or pushes to more lines. */
   const wordFits = (m: MilestoneRow, word: string) => {
     const width = statusTextWidth(0)
-    const name = m.stall ? `${m.name}${STALL_GAP}${m.stall.text}` : m.name
-    if (look === 'desktop') return desktopTextPt(`${desktopLines(name, width)[0] ?? ''}${WORD_GAP}${word}`) <= width
-    const first = (terminalSpanLines([{ text: name }], width)[0] ?? []).map(s => s.text).join('')
+    if (look === 'desktop') return desktopTextPt(`${desktopLines(m.name, width)[0] ?? ''}${WORD_GAP}${word}`) <= width
+    const first = (terminalSpanLines([{ text: m.name }], width)[0] ?? []).map(s => s.text).join('')
 
     return cellWidth(`${first}${WORD_GAP}${word}`) <= width
   }

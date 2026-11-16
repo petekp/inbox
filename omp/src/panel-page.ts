@@ -1,14 +1,7 @@
 import { cellWidth, cutForEllipsis } from '../../hooks/text'
 import { statusKeyPlan } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
-import {
-  mergedLine,
-  nameBeforeStall,
-  STATUS_TEXT_LINES,
-  STALL_GAP,
-  WAITS_ON_PREFIX,
-  WAS_PREFIX,
-} from '../../hooks/status-page'
+import { mergedLine, nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusBranch, StatusRow, StatusStall } from '../../hooks/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
@@ -41,7 +34,7 @@ const GLUE = '\uE000'
 
 /**
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
- * stall's tone on the line of the name's last word. Then what it waits on, in the needs-you tone, and where it stands, dim.
+ * muted on the line of the name's last word. Then what it waits on, in the needs-you tone, and where it stands, dim.
  */
 export function pageLine(
   d: Draw,
@@ -61,9 +54,7 @@ export function pageLine(
   const names = stall
     ? stalledName(name, stall, room, namePaint, s)
     : pageText(name, room, STATUS_TEXT_LINES, namePaint)
-  const waits = waitsOn
-    ? pageText(`${WAITS_ON_PREFIX}${waitsOn}`, room, STATUS_TEXT_LINES, t => s.tone('needsYou', t))
-    : []
+  const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, t => s.tone('needsYou', t)) : []
   const seconds = [...waits, ...(text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [])]
 
   return [
@@ -83,7 +74,7 @@ function stalledName(
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(' ', GLUE)
   const wrapped = (shown: string) => wrapText(`${shown}${tail}`, room)
   const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= STATUS_TEXT_LINES))
-  const words = stall.tone === 'muted' ? s.dim(stall.text) : s.tone('needsYou', stall.text)
+  const words = s.dim(stall.text)
 
   return lines.map(l =>
     l.endsWith(tail)
@@ -176,8 +167,8 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   }
   if (row.kind === 'child') {
     const mark = paintMark(row, now, s)
-    if (!row.branch) return pageLine(d, at, mark, row.name, s.dim, { stall: row.stall })
-    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim, { stall: row.stall })
+    if (!row.branch) return pageLine(d, at, mark, row.name, s.dim)
+    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim)
 
     return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s)
   }

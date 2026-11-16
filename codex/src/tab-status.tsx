@@ -119,7 +119,7 @@ function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion
         {fold === null ? (
           <div class="milestone-name">
             <div class={nameClass}>
-              <NameLine name={m.name} stall={m.stall} />
+              <NameLine name={m.name} stall={null} />
             </div>
             {m.word ? (
               <span class="path-word muted" ref={fitPathWord}>

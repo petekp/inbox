@@ -259,7 +259,7 @@ Judge a milestone's mark by the work it stands for: the facts' milestones it cov
 - `●` or `◐` fits when any of it is being worked on now.
 - `○` fits when none of it has started, or all of it is set aside.
 - `◌` fits when it waits on something outside the session and none of it is being worked on.
-- `◆` and `waiting` fit when an open ask holds up the milestone, or a piece that serves it.
+- `◆` fits when an open ask holds up the milestone, or a piece that serves it.
 
 The check passes when every milestone row is an outcome the goal needs, its mark fits the work it stands for, and together the rows cover every outcome the goal needs.
 

@@ -258,7 +258,7 @@ export function paneStatusGoal(
       key: `status-${m.id}`,
       mark,
       content: [
-        statusNameLine(`goal-${m.id}-name`, name, m.stall, 0),
+        statusNameLine(`goal-${m.id}-name`, name, null, 0),
         ...path.pathWord(m),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
         ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),

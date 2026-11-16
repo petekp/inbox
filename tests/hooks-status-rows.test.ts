@@ -74,7 +74,7 @@ test('on the Status in the terminal, the rows under a subject hang from its mark
   expect(await tree('s3')).toBeUndefined()
   expect((await textLines('c3')).length).toBeGreaterThan(1)
   await pane.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be · waiting'])
+  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be'])
 })
 
 test('on the Status, while the goal shows milestones, work linked to none of them draws under Other work, and the desktop hairline between the goal and that list draws no line', async ($, on) => {

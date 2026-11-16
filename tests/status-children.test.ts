@@ -129,7 +129,7 @@ test('running children sit under their subject, at most three, each tied to it a
     },
     now,
   )
-  expect(page(quiet, now).rows[0]).toMatchObject({ kind: 'child', branch: null, isRunning: true, stall: null })
+  expect(page(quiet, now).rows[0]).toMatchObject({ kind: 'child', branch: null, isRunning: true })
   expect(page(after(quiet, 'LINK: c1 | s1', now), now).rows[0]).toMatchObject({
     kind: 'subject',
     isRunning: true,
@@ -152,7 +152,7 @@ test('a working subject with a child at work draws the running mark, and one wit
   expect(rows.filter(r => r.kind === 'subject').map(r => r.isRunning)).toEqual([false, true])
 })
 
-test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, its subject unseen, and one Herdr no longer lists leaves', () => {
+test('a delegate says what Herdr shows: nothing while it works, the needs-you mark and no word while blocked, and finished from when it is ready until the person has looked, its subject unseen, and one Herdr no longer lists leaves', () => {
   let o: SessionStatus | null = {
     ...after(null, 'NEW: working | Export | layout next', 10 * MIN),
     lastLookAt: 20 * MIN,
@@ -174,19 +174,18 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   ])
   const working = delegatesSettled(o, herdr('working'), 2 * 60 * MIN)
   expect(rows(working, 2 * 60 * MIN)).toEqual(['● Export: layout next ┐', '└ ● pdf'])
-  expect(page(working, 2 * 60 * MIN).rows[1]).toMatchObject({ isRunning: true, stall: null })
+  expect(page(working, 2 * 60 * MIN).rows[1]).toMatchObject({ isRunning: true })
   expect(delegatesSettled(working, herdr('unknown'), 3 * 60 * MIN)).toBe(working)
   const blocked = delegatesSettled(working, herdr('blocked'), 3 * 60 * MIN)
   expect(page(blocked, 3 * 60 * MIN).rows[1]).toMatchObject({
     mark: '◆',
     tone: 'needsYou',
     isRunning: false,
-    stall: { text: 'waiting', tone: 'needsYou' },
   })
   const finished = delegatesSettled(blocked, herdr('done'), 4 * 60 * MIN)
   expect(page(finished, 4 * 60 * MIN).rows).toMatchObject([
     { kind: 'subject', isRunning: false },
-    { kind: 'child', mark: '✓', tone: 'done', stall: null },
+    { kind: 'child', mark: '✓', tone: 'done' },
   ])
   expect(isSubjectSeen(finished!, finished!.subjects[0]!)).toBe(false)
   const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS, 'all')
@@ -212,7 +211,7 @@ test('the page lists running work linked to no subject first, then each subject 
 
   expect(shape(rows)).toEqual([
     '● Review loose',
-    '◆ Sync: needs a pick · waits on you: Ask i1?',
+    '◆ Sync: needs a pick · Ask i1?',
     '● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
@@ -229,8 +228,8 @@ test('a child saved with no activity time moves and shows no words for as long a
     now,
   )
 
-  expect(page(o, 50 * MIN).rows[0]).toMatchObject({ kind: 'child', stall: null, isRunning: true })
-  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', stall: null, isRunning: true, branch: null })
+  expect(page(o, 50 * MIN).rows[0]).toMatchObject({ kind: 'child', isRunning: true })
+  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', isRunning: true, branch: null })
 })
 
 const OPEN_PLACES = [
@@ -271,13 +270,13 @@ test('a subject an ask holds up or that changed since the last look never folds,
   const draw = (o: SessionStatus) => shape(page(o, 20 * MIN, {}, asks.map(askItem)).rows)
 
   expect(draw(changedOne)).toEqual([
-    '◆ Part 7: step 7 · waits on you: Ask i1?',
+    '◆ Part 7: step 7 · Ask i1?',
     ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
     '○ Part 8: started over',
     '○ 3 more',
   ])
   expect(draw(heldSeven)).toEqual([
-    ...[6, 5, 4, 3, 2, 1, 0].map(n => `◆ Part ${n}: step ${n} · waits on you: Ask i${n + 1}?`),
+    ...[6, 5, 4, 3, 2, 1, 0].map(n => `◆ Part ${n}: step ${n} · Ask i${n + 1}?`),
     '○ 2 more',
   ])
   expect(draw(openSubjects(9)).filter(r => r.includes('Part'))).toHaveLength(9)
