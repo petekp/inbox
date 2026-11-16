@@ -100,6 +100,7 @@ export function sessionView(
 
   const inbox = inboxView({
     ledger: l,
+    taskTree: s.taskTree,
     lastActions,
     notes,
     turns: s.presence,

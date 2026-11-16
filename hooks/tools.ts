@@ -10,6 +10,7 @@ import { bodyChanges, missingText, questionBody, withBody } from './question-che
 import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA, TASKS_SCHEMA, V0_3_TOOL_FIELDS } from './tool-schemas'
 import { CLOSE_DESCRIPTION, orderDescription, recordDescription, tasksDescription } from './tool-descriptions'
 import { taskTreeAnswer } from './task-tool'
+import { goalTaskId } from './status-goal-gate'
 import type { Closed, Help, Item, LastAction, Ledger, TaskTree, ToolFields } from '../types'
 import { recordLinksAnswer } from './record-links'
 
@@ -49,6 +50,7 @@ export function toolAnswer(
   fields: ToolFields,
   taskTree: TaskTree = [],
 ): ToolAnswer {
+  const goalId = ledger.overview?.goal ? goalTaskId(ledger.overview.goal) : undefined
   switch (tool) {
     case 'record':
       return (
@@ -59,7 +61,7 @@ export function toolAnswer(
     case 'order_prs':
       return orderPrs(host, ledger, input, now, presses.lastActions)
     case 'tasks':
-      return { ledger, ...taskTreeAnswer(taskTree, input, now), personLine: null }
+      return { ledger, ...taskTreeAnswer(taskTree, input, now, goalId), personLine: null }
   }
 }
 

@@ -3,7 +3,7 @@ import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, hostStatusSyste
 import type { StatusCallInput } from './status-prompt'
 import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './clients'
-import type { Exchange, Session, SessionStatus, HostTask } from '../types'
+import type { Exchange, Session, SessionStatus } from '../types'
 import type { Ask, UpdateHost, CallKind } from './session-host'
 import { heardCall, withCall } from './call-record'
 import type { HeardCall } from './call-record'
@@ -151,11 +151,10 @@ export async function askAndWriteStatus<S extends Session>(
   host: Pick<StatusHost<S>, 'now' | 'update' | 'records' | 'names' | 'readPersonInstructions'>,
   s: S,
   call: StatusCall,
-  tasks: HostTask[],
   appliedAfter: number,
 ): Promise<void> {
   if (!isStatusCallCurrent(s, appliedAfter)) return
-  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
+  const input = { last: s.ledger.overview, asks: s.ledger.items, taskTree: s.taskTree, now: await host.now() }
   const prompt = statusCallPrompt(input, call.exchange)
   let system: string | null = null
   const heards: { kind: CallKind; heard: HeardCall }[] = []
@@ -216,6 +215,6 @@ export function refreshStatus<S extends Session>(host: StatusHost<S>): Promise<v
     if (!s.presence.isTurnRunning) return
     const { person, trigger, activity } = s.turn
     const call: StatusCall = { exchange: { kind: 'mid-turn', turn: { person, trigger, activity } }, ask: host.ask }
-    await askAndWriteStatus(host, s, call, s.hostTasks, s.presence.turnsApplied)
+    await askAndWriteStatus(host, s, call, s.presence.turnsApplied)
   })
 }

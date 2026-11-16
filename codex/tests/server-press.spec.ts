@@ -267,8 +267,23 @@ test('on a next build, Remove goal clears the goal the Status call set and a typ
     async () => 'codex',
     true,
   )
+  const taskTree = [
+    {
+      id: 'fixes',
+      parentId: null,
+      status: 'working' as const,
+      weight: 1,
+      title: 'Fixes',
+      detail: '',
+      notes: [],
+      createdAt: 1,
+      updatedAt: 1,
+      history: [],
+    },
+  ]
   await updateState(dir, 's1', s => ({
     ...s,
+    taskTree,
     ledger: {
       ...s.ledger,
       overview: applyStatus(
@@ -278,14 +293,13 @@ test('on a next build, Remove goal clears the goal the Status call set and a typ
         )!,
         50,
         new Set(),
+        null,
+        taskTree,
       ),
     },
   }))
   const goalOf = async () => (await readState(dir, 's1')).ledger.overview
-  assert.deepEqual(
-    [(await goalOf())?.goal?.text, (await goalOf())?.milestones.map(m => m.name)],
-    ['Pilot ready to announce', ['Fixes built', 'Announced']],
-  )
+  assert.deepEqual([(await goalOf())?.goal?.text, (await goalOf())?.milestones], ['Pilot ready to announce', []])
   const removed = await call(
     'inbox_press',
     { press: { action: 'remove-goal', id: 'goal' }, thread: 's1' },

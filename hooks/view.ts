@@ -1,17 +1,5 @@
-import type {
-  Ledger,
-  LastAction,
-  RowNote,
-  Turns,
-  Closed,
-  ClosedFinding,
-  Item,
-  SessionStatus,
-  Subject,
-  Finding,
-} from '../types'
+import type { Ledger, LastAction, RowNote, Turns, Closed, ClosedFinding, Item, TaskTree, Finding } from '../types'
 import { closedAt, reopenFinding, reopenItem, closedState } from './ledger-close'
-import { isOpen } from './status-limits'
 import { questionNumbers } from './inbox-text'
 import { capitalized } from './press-labels'
 import { baseName } from './open-targets'
@@ -33,6 +21,7 @@ type ItemStatus = { isUpdating: boolean; isRetrying: boolean; error: string | nu
 
 export type ViewInput = {
   ledger: Ledger
+  taskTree?: TaskTree
   lastActions: Record<string, LastAction>
   notes: Record<string, RowNote>
   turns: Turns
@@ -87,16 +76,16 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   return { questions: newestReplyFirst('question'), tasks: newestReplyFirst('task') }
 }
 
-/** The open subjects, and open milestones of a set goal, the Status call linked an ask to, by the ask's id. */
-function heldSubjectsOf(o: SessionStatus | null, askId: string): Pick<Subject, 'name'>[] {
-  const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []
-  const linkable = [...(o?.subjects ?? []), ...milestones]
-
-  return (o?.askSubjects[askId] ?? []).flatMap(id => linkable.filter(s => s.id === id && isOpen(s)))
+function heldTasksOf(ledger: Ledger, tree: TaskTree, askId: string): string[] {
+  return (ledger.overview?.askSubjects[askId] ?? []).flatMap(id => {
+    const task = tree.find(node => node.id === id)
+    return task && task.status !== 'done' && task.status !== 'dropped' ? [task.title] : []
+  })
 }
 
 export function inboxView({
   ledger,
+  taskTree = [],
   lastActions,
   notes,
   turns,
@@ -262,7 +251,7 @@ export function inboxView({
       pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt),
     )
 
-    const held = state.is === 'open' ? heldSubjectsOf(ledger.overview, row.id) : []
+    const held = state.is === 'open' ? heldTasksOf(ledger, taskTree, row.id) : []
 
     return {
       ...row,
@@ -272,7 +261,7 @@ export function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map(s => s.name).join(', ')}` : null,
+      holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.join(', ')}` : null,
       recLine: state.is === 'open' ? recLineOf(row.item) : null,
       contextLine: state.is === 'open' ? (row.item?.context ?? null) : null,
     }

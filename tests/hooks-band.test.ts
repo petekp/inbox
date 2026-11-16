@@ -5,7 +5,7 @@ import { PRESS_POLL_MS } from '../hooks/herdr-app'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { reportedLabels } from './session-script'
-import { BAND, PANE, selectRow, sidebarLines, sidebarTokens, NO_COUNTS } from './hooks-helpers'
+import { BAND, PANE, selectRow, sidebarLines, sidebarTokens, NO_COUNTS, seedTasks } from './hooks-helpers'
 
 test(
   'a question’s handle is the number a typed answer reaches, and the band counts what the tab counts',
@@ -243,12 +243,15 @@ test('in a Herdr app terminal, a look file the look wrote counts the Status subj
   const lookPath = '/app/inbox/presses/session-1/l1.json'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  w.statusReply =
-    'HEAD: Offline sync | Adding offline sync\nNEW: working | Queue | built\nNEW: queued | Docs | not started'
+  w.statusReply = 'HEAD: Offline sync | Adding offline sync'
   await $.prompt.submit({ text: 'add offline sync', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [
+    { id: 's1', title: 'Queue', status: 'working', detail: 'built' },
+    { id: 's2', title: 'Docs', status: 'queued', detail: 'not started' },
+  ])
   await $.turn.complete({ answer: 'Queue built.', durationMs: 5, isAborted: false, turnId: 't', reason: 'answer' })
   await clock.settle()
-  const changedAt = envelope().session.ledger.overview.subjects[0].changedAt as number
+  const changedAt = envelope().session.taskTree[0].updatedAt as number
   const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
   w.written[lookPath] = JSON.stringify({ format: 1, id: 'l1', look })
   await clock.advance(PRESS_POLL_MS)

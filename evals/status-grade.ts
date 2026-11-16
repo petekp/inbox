@@ -20,7 +20,7 @@ function isOpportunity(reads: Reads, { step, result }: RuleContext): boolean {
 }
 
 /** Runs every rule on one step. `previous` is what they found at the last step with a call. */
-export function gradeStep(ctx: RuleContext, previous: RuleResult[] = []): RuleResult[] {
+function gradeStep(ctx: RuleContext, previous: RuleResult[] = []): RuleResult[] {
   return RULES.map(r => {
     const failures = r.failures(ctx)
     const keyOf = r.key ?? ((f: string) => f)

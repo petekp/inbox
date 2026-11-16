@@ -55,16 +55,12 @@ import { basename, dirname, isAbsolute, join as join2, resolve } from "node:path
 
 // ../hooks/status-limits.ts
 var NAME_WORDS = 3;
-var TEXT_WORDS = 4;
 var DESCRIPTION_WORDS = 8;
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
 var DESCRIPTION_KEPT = 14;
 var ASK_READ_WORDS = 30;
-var FINISHED_READ = 10;
-var MILESTONES_MAX = 5;
-var MILESTONES_MIN = 2;
 var GOAL_LEFT_MS = 30 * 6e4;
 var REMOVED_KEPT = 10;
 var IDLE_AFTER_MS = 24 * 60 * 6e4;
@@ -108,8 +104,7 @@ var EMPTY_SESSION_STATUS = {
   serves: {},
   goalRefused: null
 };
-var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+var STATUSES = ["working", "queued", "waits-on-other", "done", "dropped"];
 function clipWords(text2, limit) {
   const words3 = text2.trim().split(/\s+/).filter(Boolean);
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
@@ -1049,7 +1044,9 @@ function fromLists(o) {
 }
 function missedOf(saved, ids) {
   const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
-  return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
+  return Object.fromEntries(
+    entries.slice(0, 200).filter(([id, at]) => (ids.has(id) || id.length <= 100) && (at === null || time2(at) !== null))
+  );
 }
 function upgradeStatus(saved) {
   const o = saved;
@@ -1356,8 +1353,6 @@ function upgradeLastActions(saved) {
 }
 
 // ../hooks/host-tasks.ts
-var NL5 = "\n";
-var TASKS_KEPT = 12;
 var STATUSES2 = {
   pending: "pending",
   in_progress: "in-progress",
@@ -1376,26 +1371,37 @@ function upgradeHostTasks(saved) {
     return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
   });
 }
-function keptTasks(tasks) {
-  let toCut = tasks.length - TASKS_KEPT;
-  if (toCut <= 0) return tasks;
-  const kept = tasks.filter((t) => {
-    const isFinished = t.status === "done" || t.status === "dropped";
-    if (!isFinished || toCut <= 0) return true;
-    toCut -= 1;
-    return false;
-  });
-  return kept.slice(-TASKS_KEPT);
-}
-function tasksText(tasks) {
-  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL5);
-}
 
 // ../hooks/task-tree.ts
 var TASK_NOTES_LIMIT = 40;
 var TASK_NOTE_LENGTH = 2e3;
 function notesOf(notes) {
   return notes.slice(0, TASK_NOTES_LIMIT).map((note) => note.slice(0, TASK_NOTE_LENGTH));
+}
+function taskRootGroups(tree) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const task of tree.filter((task2) => task2.parentId === null)) {
+    const key = task.streamId ? `stream:${task.streamId}` : `task:${task.id}`;
+    const roots = groups.get(key);
+    if (roots) roots.push(task);
+    else groups.set(key, [task]);
+  }
+  return [...groups.values()].map((roots) => ({ id: roots[0].id, roots }));
+}
+function weightedTaskProgress(tree, rootIds) {
+  const children = /* @__PURE__ */ new Map();
+  for (const task of tree) children.set(task.parentId, [...children.get(task.parentId) ?? [], task]);
+  const progress = (task) => {
+    if (task.status === "done") return 1;
+    if (task.status === "dropped") return 0;
+    return weightedAverage((children.get(task.id) ?? []).map((child) => [progress(child), child.weight]));
+  };
+  const roots = rootIds === void 0 ? children.get(null) ?? [] : tree.filter((task) => Array.isArray(rootIds) ? rootIds.includes(task.id) : task.id === rootIds);
+  return weightedAverage(roots.map((task) => [progress(task), task.weight]));
+}
+function weightedAverage(values) {
+  const total = values.reduce((sum, [, weight]) => sum + weight, 0);
+  return total ? values.reduce((sum, [value, weight]) => sum + value * weight, 0) / total : 0;
 }
 function taskTreeFromStatus(status) {
   if (!status) return [];
@@ -1648,253 +1654,71 @@ function capitalized(text2) {
 var ISSUE_LABEL = "File issue";
 
 // ../hooks/status-goal-gate.ts
-function heldSubjects(o) {
-  const open2 = new Set(o.milestones.filter(isOpen).map((m) => m.id));
-  return o.subjects.filter((s) => open2.has(o.serves[s.id] ?? ""));
+var goalTaskId = (goal) => `goal-${goal.setAt}`;
+var tasksForGoal = (tree, goal) => tree.filter((task) => task.goalId === goalTaskId(goal));
+function isGoalMet(goal, tree) {
+  const tasks = goal === null ? [] : tasksForGoal(tree, goal);
+  return tasks.length > 0 && tasks.every((task) => task.status === "done" || task.status === "dropped");
 }
-function lastProgressAt(o, g) {
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  const ids = new Set(kept.map((m) => m.id));
-  const done = o.subjects.flatMap(
-    (s) => s.status === "done" && s.closedAt !== null && ids.has(o.serves[s.id] ?? "") ? [s.closedAt] : []
-  );
-  return Math.max(g.setAt, ...kept.map((m) => m.changedAt), ...done);
-}
-function isGoalMet(o) {
-  const g = o.goal;
-  if (g === null || g.isAwaitingMilestones) return false;
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  return g.metAt != null || kept.length > 0 && kept.every((m) => m.status === "done");
-}
-function goalLeftFor(o, now) {
-  const g = o.goal;
-  if (g === null || isGoalMet(o) || g.source !== "inferred" || heldSubjects(o).some(isOpen)) return null;
-  const left = now - lastProgressAt(o, g);
+var lastProgressAt = (goal, tree) => Math.max(goal.setAt, ...tasksForGoal(tree, goal).map((task) => task.updatedAt));
+function goalLeftFor(o, tree, now) {
+  const goal = o.goal;
+  if (goal === null || goal.source !== "inferred" || tasksForGoal(tree, goal).length) return null;
+  const left = now - lastProgressAt(goal, tree);
   return left >= GOAL_LEFT_MS ? left : null;
 }
-function hasWorkForGoal(o) {
-  const held = new Set(heldSubjects(o).map((s) => s.id));
-  return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
+function refusalOf(o, tree, kind, now) {
+  const goal = o.goal;
+  if (goal === null || isGoalMet(goal, tree)) return goal === null && kind === "retire" ? "met" : null;
+  if (goal.source === "typed") return "typed";
+  if (tasksForGoal(tree, goal).some((task) => task.status !== "done" && task.status !== "dropped")) return "work-open";
+  return goalLeftFor(o, tree, now) === null ? "moved" : null;
 }
-function refusalOf(o, kind, now) {
-  const g = o.goal;
-  if (g === null || isGoalMet(o)) return kind === "goal" ? null : "met";
-  if (g.source === "typed") return "typed";
-  if (heldSubjects(o).some(isOpen)) return "work-open";
-  return goalLeftFor(o, now) === null ? "moved" : null;
-}
-function goalRefusal(o, start, kind, now) {
-  const why = refusalOf(o, kind, now);
-  const isSameGoal = o.goal?.setAt === start.goal?.setAt;
-  if (why === null || start === o || !isSameGoal) return why;
-  return refusalOf(start, kind, now) === null ? null : why;
-}
+var goalRefusal = (o, start, tree, kind, now) => {
+  const why = refusalOf(o, tree, kind, now);
+  if (why === null || start === o || o.goal?.setAt !== start.goal?.setAt) return why;
+  return refusalOf(start, tree, kind, now) === null ? null : why;
+};
 
 // ../hooks/status-goal-ops.ts
 var RESTATED_SHARE = 0.8;
 function restatesGoal(text2, goal) {
-  const own = [...stems(text2)];
-  const theirs = stems(goal);
-  const shared = own.filter((w) => theirs.has(w)).length;
-  const hasNewNumber = own.some((w) => /\d/.test(w) && !theirs.has(w));
+  const own = [...stems(text2)], theirs = stems(goal);
+  const shared = own.filter((word) => theirs.has(word)).length, hasNewNumber = own.some((word) => /\d/.test(word) && !theirs.has(word));
   return own.length > 0 && !hasNewNumber && shared >= RESTATED_SHARE * own.length;
 }
-function hasGoalMilestones(o, written) {
-  if (o.goal === null || o.goal.isAwaitingMilestones) return false;
-  const keys = (names) => names.map(nameKey).sort().join(NL);
-  const kept = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.name);
-  return kept.length > 0 && keys(kept) === keys(written.map((m) => m.name));
-}
 function hasSameWords(a, b) {
-  const x = words(a);
-  const y = words(b);
-  return x.size === y.size && [...x].every((w) => y.has(w));
+  const [x, y] = [words(a), words(b)];
+  return x.size === y.size && [...x].every((word) => y.has(word));
 }
-function findMilestone(o, ref) {
-  const key = nameKey(clipWords(ref, NAME_KEPT));
-  return o.milestones.find((m) => m.id === ref) ?? o.milestones.find((m) => m.status !== "dropped" && nameKey(m.name) === key) ?? null;
-}
-function linkableMilestone(o, ref) {
-  const m = findMilestone(o, ref);
-  return m && m.status !== "dropped" ? m : null;
-}
-function forgetSeenWas(m, lastLookAt) {
-  if (lastLookAt !== null && m.changedAt <= lastLookAt) m.was = null;
-}
-function moveMilestone(o, m, op, now) {
-  if (op.kind === "set") {
-    const isReworded = m.status === op.status && hasSameWords(m.text, op.text);
-    if (isReworded) return;
-    m.status = op.status;
-    m.text = clipWords(op.text, TEXT_KEPT);
-    m.closedAt = null;
-  } else if (op.kind === "done") {
-    if (m.status === "done") return;
-    m.status = "done";
-    if (op.text) m.text = clipWords(op.text, TEXT_KEPT);
-    m.closedAt = now;
-  } else if (op.kind === "drop") {
-    const target = op.into ? linkableMilestone(o, op.into) : null;
-    m.status = "dropped";
-    m.text = clipWords(op.why, TEXT_KEPT);
-    m.closedAt = now;
-    const into = target && target.id !== m.id ? target.id : null;
-    for (const [id, to] of Object.entries(o.serves)) {
-      if (to !== m.id) continue;
-      if (into) o.serves[id] = into;
-      else delete o.serves[id];
-    }
-    for (const [ask, ids] of Object.entries(o.askSubjects)) {
-      if (!ids.includes(m.id)) continue;
-      const kept = (into ? linksWith(ids, into) : ids).filter((id) => id !== m.id);
-      if (kept.length > 0) o.askSubjects[ask] = kept;
-      else delete o.askSubjects[ask];
-    }
-  } else {
-    forgetSeenWas(m, o.lastLookAt);
-    m.was = op.text;
-    m.changedAt = now;
-    return;
-  }
-  forgetSeenWas(m, o.lastLookAt);
-  m.changedAt = now;
-}
-function addMilestone(o, op, now) {
-  const known = findMilestone(o, op.name);
-  if (known) {
-    const text2 = op.text || known.text;
-    if (op.status === "done" || op.status === "dropped")
-      moveMilestone(
-        o,
-        known,
-        op.status === "done" ? { kind: "done", ref: known.id, text: text2 } : { kind: "drop", ref: known.id, why: text2, into: null },
-        now
-      );
-    else moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text: text2 }, now);
-    return o;
-  }
-  const isFull = !o.goal.isAwaitingMilestones && o.milestones.filter((m2) => m2.status !== "dropped").length >= MILESTONES_MAX;
-  if (isFull) return o;
-  const m = {
-    id: `m${o.nextMilestoneId}`,
-    name: clipWords(op.name, NAME_KEPT),
-    status: op.status,
-    text: clipWords(op.text, TEXT_KEPT),
-    was: null,
-    changedAt: now,
-    closedAt: op.status === "done" || op.status === "dropped" ? now : null
+function setGoal(o, text2, now, source) {
+  return {
+    ...o,
+    goal: { text: text2, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true, source },
+    goalRemoved: null,
+    goalRefused: null
   };
-  return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] };
-}
-function withRestatedGoalAsMilestones(o, ops, readSetAt) {
-  const g = o?.goal;
-  const isReadJustSet = g != null && g.isAwaitingMilestones && readSetAt === g.setAt;
-  if (!isReadJustSet) return ops;
-  return ops.flatMap(
-    (op) => op.kind === "goal" && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text) ? op.milestones.map((m) => ({ kind: "milestone", status: m.status, name: m.name, text: "" })) : [op]
-  );
-}
-function inferredGoal(o, text2, named, now) {
-  const milestones = named.map((m, n) => ({
-    id: `m${o.nextMilestoneId + n}`,
-    name: m.name,
-    status: m.status,
-    text: "",
-    was: null,
-    changedAt: now,
-    closedAt: isOpen(m) ? null : now
-  }));
-  const goal = {
-    text: text2,
-    setAt: now,
-    metAt: null,
-    was: o.goal?.text ?? null,
-    isAwaitingMilestones: false,
-    source: "inferred"
-  };
-  return withoutLinksTo(
-    {
-      ...o,
-      goal,
-      goalRemoved: null,
-      goalRefused: null,
-      milestones,
-      nextMilestoneId: o.nextMilestoneId + milestones.length,
-      serves: {}
-    },
-    milestones
-  );
 }
 function goalLineRefusal(o, op) {
   const text2 = clipWords(op.text, DESCRIPTION_KEPT);
-  const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT) }));
-  const g = o.goal;
-  const isCurrent = g !== null && (restatesGoal(text2, g.text) || hasGoalMilestones(o, milestones));
-  const isPrevious = g?.was != null && restatesGoal(text2, g.was);
-  const isRemoved = o.removedGoals.some((key) => restatesGoal(text2, key));
-  if (op.milestones.length < MILESTONES_MIN) return "few-milestones";
-  if (isCurrent || isPrevious || isRemoved) return "restates";
-  return hasWorkForGoal(o) ? null : "no-work";
+  return [o.goal?.text, o.goal?.was, ...o.removedGoals].some((old) => old != null && restatesGoal(text2, old)) ? "restates" : null;
 }
-function applyGoalOp(o, op, now, findSubject, start = o) {
-  if (op.kind === "goal" || op.kind === "retire") {
-    const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now);
-    const why = op.kind === "goal" && goalLineRefusal(settled, op) || goalRefusal(settled, start, op.kind, now);
-    if (why !== null) return { ...o, goalRefused: { line: op.kind, why } };
-    if (op.kind === "retire") return withoutGoal(o);
-    const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
-    return inferredGoal(o, clipWords(op.text, DESCRIPTION_KEPT), milestones, now);
-  }
-  if (o.goal === null) return o;
-  if (op.kind === "milestone") return addMilestone(o, op, now);
-  const subject = findSubject(op.subject);
-  const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone);
-  if (!subject || op.milestone !== null && !milestone) return o;
-  const isOtherVersion = milestone !== null && namesOtherVersion(subject.name, milestone.name);
-  return { ...o, serves: { ...o.serves, [subject.id]: milestone === null || isOtherVersion ? "none" : milestone.id } };
+function applyGoalOp(o, op, now, tree, start = o) {
+  const why = op.kind === "goal" ? goalLineRefusal(o, op) : null;
+  const refused = why ?? goalRefusal(o, start, tree, op.kind, now);
+  if (refused !== null) return { ...o, goalRefused: { line: op.kind, why: refused } };
+  if (op.kind === "retire") return { ...o, goal: null, goalRefused: null };
+  return setGoal(o, clipWords(op.text, DESCRIPTION_KEPT), now, "inferred");
 }
-function withWorkDoneMilestones(o, now) {
-  let isChanged = false;
-  const milestones = o.milestones.map((m) => {
-    if (!isOpen(m)) return m;
-    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
-    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
-    if (!isWorkDone) return m;
-    isChanged = true;
-    return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
-  });
-  return isChanged ? { ...o, milestones } : o;
-}
-function settleGoal(saved, now, readSetAt, named) {
-  const g = saved.goal;
-  if (g === null) return saved;
-  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now);
-  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
-  const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
-  const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").slice(0, MILESTONES_MAX) : o.milestones;
-  const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
-  const kept = milestones.filter((m) => m.status !== "dropped");
-  const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
-  const was = isSeen ? null : g.was;
-  const metAt = isMet ? g.metAt ?? now : null;
-  const isSame = milestones.length === o.milestones.length && was === g.was && isAwaiting === g.isAwaitingMilestones && metAt === g.metAt;
-  if (isSame) return o;
-  const settled = { ...o, milestones, goal: { ...g, was, isAwaitingMilestones: isAwaiting, metAt } };
-  return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled;
-}
-var linksWith = (ids, id) => ids.includes(id) ? [...ids] : [...ids, id];
-function withoutLinksTo(o, milestones) {
-  const ids = new Set(milestones.map((m) => m.id));
-  const isKept = (to) => to === "none" || !/^m\d+$/.test(to) || ids.has(to);
-  const askLinks = Object.entries(o.askSubjects).map(([ask, to]) => [ask, to.filter(isKept)]);
-  return {
-    ...o,
-    serves: Object.fromEntries(Object.entries(o.serves).filter(([, to]) => isKept(to))),
-    askSubjects: Object.fromEntries(askLinks.filter(([, to]) => to.length > 0))
-  };
-}
-function withoutGoal(o) {
-  return withoutLinksTo({ ...o, goal: null, goalRefused: null, milestones: [], serves: {} }, []);
+function settleGoal(saved, tree, now) {
+  const goal = saved.goal;
+  if (goal === null) return saved;
+  const linked = tasksForGoal(tree, goal);
+  const awaiting = linked.length === 0;
+  const was = saved.lastLookAt !== null && goal.setAt <= saved.lastLookAt ? null : goal.was;
+  const metAt = linked.length > 0 && linked.every((task) => task.status === "done" || task.status === "dropped") ? goal.metAt ?? now : null;
+  if (awaiting === goal.isAwaitingMilestones && metAt === goal.metAt && was === goal.was) return saved;
+  return { ...saved, goal: { ...goal, isAwaitingMilestones: awaiting, metAt, was } };
 }
 
 // ../hooks/tabs.ts
@@ -2032,82 +1856,37 @@ function isHeldSend(last) {
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
-function subjectsText(o, now) {
-  const subjects = o?.subjects ?? [];
-  const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
-  const open2 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"} | ${ago(now - s.changedAt)}${serves(s.id)}`);
-  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open2.join(NL) || "(none yet)", finished: finished.join(NL) };
-}
-function servesText(o, subjectId) {
-  const to = o.serves[subjectId];
-  return to === void 0 ? "?" : to === "none" ? "-" : to;
-}
 function asksText(o, asks) {
   return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(", ") || "-"}`).join(NL);
 }
 function runningText(o, now) {
   return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL);
 }
-function subjectSeenAt(o, id) {
-  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
-}
-function isSubjectSeen(o, s) {
-  const seenAt = subjectSeenAt(o, s.id);
-  return seenAt !== null && s.changedAt <= seenAt;
-}
 
 // ../hooks/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  const oldest = items.filter((item) => links[item.id]?.includes(id)).sort((a, b) => (a.at ?? -Infinity) - (b.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
 }
-function milestoneRow(m, o, items) {
-  const isOpen2 = m.status !== "done" && m.status !== "dropped";
-  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
-  const holds = items.filter((i) => {
-    const to = o.askSubjects[i.id] ?? [];
-    return to.some((id) => id === m.id || servingIds.has(id));
-  });
-  const isHeld = isOpen2 && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return {
-    id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
-    name: m.name,
-    text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
-    was: isChanged ? m.was : null,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
-    rows: []
-  };
-}
-function goalPage(o, items) {
-  const g = o?.goal ?? null;
-  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
-  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  const shown = o.milestones.filter(
-    (m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt
-  );
-  const done = kept.filter((m) => m.status === "done").length;
-  const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
-  const head = o.head;
+function goalPage(o, _items, tree) {
+  const goal = o?.goal ?? null;
+  if (o === null || goal === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
+  const linked = tasksForGoal(tree, goal);
+  const isMet = isGoalMet(goal, tree);
+  const awaiting = linked.length === 0;
+  const done = linked.filter((task) => task.status === "done").length;
+  const was = goal.was !== null && (o.lastLookAt === null || goal.setAt > o.lastLookAt) ? goal.was : null;
   return {
     goal: {
       label: isMet ? "Goal met" : GOAL_HEADING,
-      text: g.text,
-      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
+      text: goal.text,
+      count: isMet || awaiting ? null : `${done} of ${linked.filter((task) => task.status !== "dropped").length} tasks done`,
       isMet,
-      was: isWasShown ? g.was : null,
-      now: head ? `Now: ${head.description || head.title}` : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
+      was,
+      now: o.head ? `Now: ${o.head.description || o.head.title}` : null,
+      awaiting: awaiting ? "No tasks linked yet" : null,
+      milestones: []
     },
     canRestoreGoal: false
   };
@@ -2116,16 +1895,6 @@ function goalPage(o, items) {
 // ../hooks/status-page-parts.ts
 var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
-var COUNT_WORDS = {
-  working: "working",
-  "waits-on-other": "waiting"
-};
-function countsByMark(folded) {
-  return ["working", "waits-on-other"].flatMap((status) => {
-    const n = folded.filter((x) => x.status === status).length;
-    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
-  });
-}
 function isFinishedUnseen(c, lastLookAt) {
   return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
 }
@@ -2157,6 +1926,7 @@ function childRow(c, branch, depth) {
     branch
   };
 }
+var looseChildRows = (children, depth) => children.map((c) => childRow(c, null, depth));
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -2203,155 +1973,89 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
 
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var OTHER_WORK = "Other work";
-var NEW_CLOSED_ROWS = 2;
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
-var NAMED_FOLD_NAMES = 2;
-var IS_FOLD_MORE_SEEN = true;
-var namedFoldMore = (n) => `+${n} more`;
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function statusOf(roots) {
+  if (roots.every((task) => task.status === "done" || task.status === "dropped"))
+    return roots.some((task) => task.status === "done") ? "done" : "dropped";
+  if (roots.some((task) => task.status === "working")) return "working";
+  return roots.some((task) => task.status === "waits-on-other") ? "waits-on-other" : "queued";
+}
 function statusPage(s, now) {
   const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => o === null || !isSubjectSeen(o, x);
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items);
-  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
-  const servedBy = (x) => o?.goal ? o.serves[x.id] : void 0;
-  const milestoneOf2 = (x) => {
-    const to = servedBy(x);
-    return to !== void 0 && milestoneIds.has(to) ? to : null;
+  const tree = s.taskTree ?? [];
+  const byId = new Map(tree.map((task) => [task.id, task]));
+  const groups = taskRootGroups(tree);
+  const rootIds = new Map(groups.flatMap((group) => group.roots.map((root) => [root.id, group.id])));
+  const rootIdOf = (id) => {
+    let task = id === null ? void 0 : byId.get(id);
+    while (task?.parentId !== null && task?.parentId !== void 0) task = byId.get(task.parentId);
+    return task ? rootIds.get(task.id) ?? task.id : null;
   };
-  const hasMilestones = milestoneIds.size > 0;
-  const isUnneeded = (x) => servedBy(x) === "none";
-  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf2(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const needed = subjects.filter((x) => !isUnneeded(x));
-  const main2 = needed.filter((x) => !isOther(x));
-  const other = subjects.filter(isOther);
-  const open2 = needed.filter(isOpen).sort(pageOrder);
-  const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
-  const split = (part) => {
-    const unseenClosed = unseenClosedOf(part);
-    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const openAskIds = new Set(s.ledger.items.map((item) => item.id));
+  const askLinks = Object.fromEntries(
+    Object.entries(o?.askSubjects ?? {}).filter(([ask]) => openAskIds.has(ask)).map(([ask, ids]) => [ask, [...new Set(ids.map(rootIdOf).filter((id) => id !== null))]])
+  );
+  const heldIds = new Set(Object.values(askLinks).flat());
+  const lastLookAt = o?.lastLookAt ?? null;
+  const missed = o?.missedInLastLook ?? {};
+  const runningChildren = (o?.children ?? []).filter((child) => isChildRunning(child, now) || isFinishedUnseen(child, lastLookAt)).map((child) => ({ ...child, subjectId: rootIdOf(child.subjectId) })).sort((a, b) => (b.lastActivityAt ?? b.startedAt) - (a.lastActivityAt ?? a.startedAt));
+  const taskRows = groups.map(({ id, roots }) => {
+    const detail = roots.map((task) => task.detail).filter(Boolean).join("; ");
+    const progress = Math.round(weightedTaskProgress(tree, roots.map((task) => task.id)) * 100);
+    const changedAt = Math.max(...roots.map((task) => task.updatedAt));
+    const closed = roots.every((task) => task.status === "done" || task.status === "dropped");
     return {
-      shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
-      newClosed,
-      named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter((x) => folded.includes(x)),
-      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
+      id,
+      name: roots.map((task) => task.title).join(", "),
+      status: statusOf(roots),
+      text: `${progress}% complete${detail ? ` \xB7 ${detail}` : ""}`,
+      createdAt: Math.min(...roots.map((task) => task.createdAt)),
+      changedAt,
+      closedAt: closed ? changedAt : null,
+      was: null,
+      merged: null,
+      into: null
     };
+  });
+  const place = { working: 0, "waits-on-other": 1, queued: 2, done: 3, dropped: 3 };
+  taskRows.sort((a, b) => Number(heldIds.has(b.id)) - Number(heldIds.has(a.id)) || place[a.status] - place[b.status] || b.changedAt - a.changedAt);
+  const isNew = (task) => {
+    const seenAt = task.id in missed ? missed[task.id] : lastLookAt;
+    return seenAt === null || seenAt === void 0 || task.changedAt > seenAt;
   };
-  const top = split(main2.filter((x) => milestoneOf2(x) === null));
-  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main2.filter((x) => milestoneOf2(x) === m.id)));
-  const otherUnseenClosed = unseenClosedOf(other);
-  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
-  const otherFolded = other.filter(isOtherFolded);
-  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
+  const isHeld = (task) => isOpen(task) && heldIds.has(task.id);
+  const oldestAskOf = (task) => isHeld(task) ? oldestAsk(s.ledger.items, askLinks, task.id) : null;
   const ctx = {
     isNew,
     isHeld,
     oldestAskOf,
-    running,
+    running: runningChildren,
     isTurnRunning: s.presence.isTurnRunning,
     now
   };
-  const foldCtx = { ...ctx, running: [] };
-  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const closed = named.filter((x) => x.status === status);
-    const names = closed.map((x) => x.name);
-    const hidden = names.length - NAMED_FOLD_NAMES;
-    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
-    return names.length === 0 ? [] : [
-      {
-        kind: "fold",
-        id: `${prefix}also-${status}`,
-        depth,
-        ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
-        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
-      }
-    ];
-  });
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
-    {
-      kind: "fold",
-      id: `${prefix}open`,
-      depth,
-      ...SUBJECT_MARKS.queued,
-      text: `${foldedOpen.length} more`,
-      subjectIds: []
-    }
-  ];
-  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
-    {
+  const shown = taskRows.filter((task) => isOpen(task) || isNew(task));
+  const done = taskRows.filter((task) => task.status === "done" && !isNew(task));
+  const shownIds = new Set(shown.map((task) => task.id));
+  const loose = runningChildren.filter((child) => child.subjectId === null || !shownIds.has(child.subjectId));
+  const rows = [...looseChildRows(loose, 0), ...partRows(shown, ctx, 0)];
+  if (done.length > 0)
+    rows.push({
       kind: "done-fold",
-      id: `${prefix}done`,
-      depth,
-      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
-    }
-  ];
-  const foldedPart = (prefix, p, depth) => [
-    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
-  ];
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
-    const x = subjects.find((y) => y.id === c.subjectId);
-    return { child: c, milestoneId: x === void 0 ? null : milestoneOf2(x) };
-  });
-  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
-  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
-  const afterOtherOpen = [
-    ...openFold(
-      "other-",
-      otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)),
-      0
-    ),
-    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
-  ];
-  const otherRows = [
-    ...hasMilestones ? looseRows(null, 0) : [],
-    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    ...doneFold(
-      "other-",
-      otherFolded.filter((x) => x.status === "done"),
-      otherNewClosed,
-      0
-    )
-  ];
-  const rows = [
-    ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0),
-    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
-  ];
-  const milestoneRows = (id, p) => [...looseRows(id, 1), ...foldedPart(`${id}-`, p, 1)];
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]) }))
-  };
+      id: "done",
+      depth: 0,
+      text: `${done.length} done`,
+      rows: partRows(done, { ...ctx, running: [] }, 1)
+    });
+  const goalParts = goalPage(o, s.ledger.items, tree);
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    isEmpty: head === null && rows.length === 0 && goalParts.goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
-    goal,
     rows,
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+      hint: "What this session's work is for, where each top-level task stands, and what changed."
     }
   };
 }
@@ -3410,13 +3114,15 @@ function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
-function heldSubjectsOf(o, askId) {
-  const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : [];
-  const linkable = [...o?.subjects ?? [], ...milestones];
-  return (o?.askSubjects[askId] ?? []).flatMap((id) => linkable.filter((s) => s.id === id && isOpen(s)));
+function heldTasksOf(ledger, tree, askId) {
+  return (ledger.overview?.askSubjects[askId] ?? []).flatMap((id) => {
+    const task = tree.find((node) => node.id === id);
+    return task && task.status !== "done" && task.status !== "dropped" ? [task.title] : [];
+  });
 }
 function inboxView({
   ledger,
+  taskTree = [],
   lastActions,
   notes,
   turns,
@@ -3541,7 +3247,7 @@ function inboxView({
       state,
       pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt)
     );
-    const held2 = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
+    const held2 = state.is === "open" ? heldTasksOf(ledger, taskTree, row.id) : [];
     return {
       ...row,
       document,
@@ -3550,7 +3256,7 @@ function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
+      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.join(", ")}` : null,
       recLine: state.is === "open" ? recLineOf(row.item) : null,
       contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
@@ -3667,6 +3373,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   const lastActions = withoutStalePending(s.lastActions, now);
   const inbox = inboxView({
     ledger: l,
+    taskTree: s.taskTree,
     lastActions,
     notes,
     turns: s.presence,
@@ -4052,191 +3759,43 @@ function applied(s, parsed, now, promptAt) {
 }
 
 // ../hooks/status-ops.ts
-function isUnderWay(s) {
-  return s.status === "working" || s.status === "waits-on-other";
-}
-function answerWork(before, o, now) {
-  const was = new Map(before.map((s) => [s.id, s]));
-  const closed = o.subjects.filter((s) => {
-    const earlier = was.get(s.id);
-    return !isOpen(s) && s.closedAt === now && (earlier === void 0 || isOpen(earlier));
-  });
-  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
-  const isUnderWayWorkClosed = closed.some((s) => {
-    const earlier = was.get(s.id);
-    return earlier !== void 0 && isUnderWay(earlier);
-  });
-  return {
-    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
-    isWorkUnderWay: o.subjects.some(
-      (s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now
-    ),
-    namesClosed: (description) => {
-      const said = words(description);
-      return closed.some((s) => {
-        const name = [...words(s.name)];
-        return name.length > 0 && name.every((w) => said.has(w));
-      });
-    }
-  };
-}
-function isDescriptionStale(head, work) {
-  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
-}
-function headAfter(last, op, work) {
-  const isComplete = last !== null && last.description !== "";
-  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
-  const isStale = isDescriptionStale(last, work);
-  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
-  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
-}
-var OP_ORDER = {
-  none: 0,
-  new: 0,
-  set: 0,
-  done: 0,
-  drop: 0,
-  goal: 1,
-  retire: 1,
-  milestone: 2,
-  head: 3,
-  was: 3,
-  link: 4,
-  serves: 4
-};
-function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
+var linksWith = (ids, id) => ids.includes(id) ? [...ids] : [...ids, id];
+function applyOps(last, ops, now, askIds, tree = []) {
   let o = {
     ...last ?? EMPTY_SESSION_STATUS,
-    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
-    children: (last?.children ?? []).map((c) => ({ ...c })),
-    milestones: (last?.milestones ?? []).map((m) => ({ ...m })),
-    serves: { ...last?.serves },
+    children: (last?.children ?? []).map((child) => ({ ...child })),
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
     goalRefused: null
   };
-  const find = (ref) => {
-    const key = nameKey(clipWords(ref, NAME_KEPT));
-    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
-  };
-  const closedUnseen = (name) => {
-    const said = words(clipWords(name, NAME_KEPT));
-    const repeats = (s) => {
-      const own = [...words(s.name)];
-      return nameKey(s.name) === nameKey([...said].join(" ")) || own.length >= 2 && own.every((w) => said.has(w));
-    };
-    return o.subjects.findLast((s) => !isOpen(s) && !isSubjectSeen(o, s) && repeats(s)) ?? null;
-  };
-  const forgetSeenWas2 = (s) => {
-    if (isSubjectSeen(o, s)) {
-      s.was = null;
-      s.merged = null;
-    }
-  };
-  const unfold = (s) => {
-    const target = s.into === null ? void 0 : o.subjects.find((x) => x.id === s.into);
-    if (target?.merged)
-      target.merged = target.merged.split(", ").filter((name) => name !== s.name).join(", ") || null;
-    s.into = null;
-  };
-  const set = (s, status, text2) => {
-    const isReworded = s.status === status && hasSameWords(s.text, text2);
-    if (isReworded) return;
-    s.status = status;
-    s.text = clipWords(text2, TEXT_KEPT);
-    s.closedAt = null;
-    unfold(s);
-    forgetSeenWas2(s);
-    s.changedAt = now;
-  };
-  const named = /* @__PURE__ */ new Set();
-  const markNamed = (m) => {
-    if (m) named.add(m.id);
-  };
-  const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op } of ordered) {
+  const taskIds = new Set(tree.map((task) => task.id));
+  const findTask = (id) => taskIds.has(id);
+  const start = last ?? o;
+  for (const op of ops) {
     if (op.kind === "none") continue;
-    if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find, last ?? o);
-      if (op.kind === "milestone") markNamed(findMilestone(o, op.name));
-      if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone));
+    if (op.kind === "goal" || op.kind === "retire") {
+      o = applyGoalOp(o, op, now, tree, start);
     } else if (op.kind === "head") {
-      if (!isNumberOnly(op.title)) o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
-    } else if (op.kind === "link") {
-      const child = o.children.find((c) => c.id === op.ref);
-      const subject = find(op.subject);
-      const milestone = subject ? null : linkableMilestone(o, op.subject);
-      const linked = subject ?? milestone;
-      if (child && subject) child.subjectId = subject.id;
-      else if (linked && askIds.has(op.ref)) o.askSubjects[op.ref] = linksWith(o.askSubjects[op.ref] ?? [], linked.id);
-      markNamed(milestone);
-    } else if (op.kind === "new") {
-      if (isNumberOnly(op.name)) continue;
-      const known = find(op.name);
-      const repeated = known && isOpen(known) ? known : closedUnseen(op.name);
-      if (repeated) {
-        set(repeated, op.status, op.text);
-        continue;
+      if (!isNumberOnly(op.title)) {
+        const title = clipWords(op.title, NAME_KEPT);
+        const description = clipWords(op.description, DESCRIPTION_KEPT);
+        if (!o.head || !hasSameWords(o.head.title, title) || o.head.description !== description)
+          o = { ...o, head: { title, description } };
       }
-      const s = {
-        id: `s${o.nextId}`,
-        name: clipWords(op.name, NAME_KEPT),
-        status: op.status,
-        text: clipWords(op.text, TEXT_KEPT),
-        was: null,
-        merged: null,
-        createdAt: now,
-        changedAt: now,
-        closedAt: null,
-        into: null
-      };
-      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
     } else {
-      const s = find(op.ref);
-      const milestone = s ? null : findMilestone(o, op.ref);
-      if (milestone) moveMilestone(o, milestone, op, now);
-      markNamed(milestone);
-      if (!s) continue;
-      if (op.kind === "set") set(s, op.status, op.text);
-      else if (op.kind === "done") {
-        if (s.status === "done") continue;
-        s.status = "done";
-        unfold(s);
-        if (op.text) s.text = clipWords(op.text, TEXT_KEPT);
-        forgetSeenWas2(s);
-        s.closedAt = now;
-        s.changedAt = now;
-      } else if (op.kind === "drop") {
-        const target = op.into ? find(op.into) : null;
-        unfold(s);
-        s.status = "dropped";
-        s.text = clipWords(op.why, TEXT_KEPT);
-        s.closedAt = now;
-        s.into = target && target.id !== s.id ? target.id : null;
-        s.changedAt = now;
-        if (target && s.into) {
-          forgetSeenWas2(target);
-          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
-          target.changedAt = now;
-          for (const [ask, ids] of Object.entries(o.askSubjects))
-            if (ids.includes(s.id)) o.askSubjects[ask] = linksWith(ids, target.id).filter((id) => id !== s.id);
-        }
-      } else {
-        forgetSeenWas2(s);
-        s.was = op.text;
-        s.changedAt = now;
-      }
+      const task = findTask(op.taskId) ? op.taskId : null;
+      if (task === null) continue;
+      const child = o.children.find((item) => item.id === op.ref);
+      if (child) child.subjectId = task;
+      else if (askIds.has(op.ref)) o.askSubjects[op.ref] = linksWith(o.askSubjects[op.ref] ?? [], task);
     }
   }
-  const isHeadKept = o.head === (last?.head ?? null);
-  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
-    o = { ...o, head: { ...o.head, description: "" } };
-  return settleGoal(o, now, readSetAt, named);
+  return settleGoal(o, tree, now);
 }
-function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
+function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null, taskTree = []) {
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last;
-  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : read;
+  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, taskTree) : read;
   if (o === null) return null;
-  const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Set());
+  const settled = settleGoal(o, taskTree, now);
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
   return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
 }
@@ -4247,12 +3806,11 @@ function isStatusCallCurrent(s, appliedAfter) {
 }
 function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null, isCatchUp = false) {
   if (!isStatusCallCurrent(s, appliedAfter)) return s;
+  const askIds = new Set(s.ledger.items.map((i) => i.id));
+  const overview = applyStatus(s.ledger.overview, answer, now, askIds, readSetAt, s.taskTree);
   return {
     ...s,
-    ledger: {
-      ...s.ledger,
-      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)), readSetAt)
-    },
+    ledger: { ...s.ledger, overview },
     overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter
@@ -4684,61 +4242,32 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
 
 // ../hooks/status.ts
 var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i;
+var IGNORED = /* @__PURE__ */ new Set(["NEW", "SET", "DONE", "DROP", "WAS", "MILESTONE", "SERVES"]);
 function fields(value) {
   return value.split("|").map((f) => f.trim());
 }
-function openStatus(s) {
-  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
-}
-function anyStatus(s) {
-  return STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
-}
-function goalMilestones(value) {
-  return (value ?? "").split(";").flatMap((part) => {
-    const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part);
-    const status = anyStatus(m?.[1]);
-    return status && m?.[2] ? [{ status, name: m[2] }] : [];
-  });
-}
 function opOf(key, f) {
   if (key === "NOCHANGE" || key === "UNCHANGED") return { kind: "none" };
-  if (key === "NEW") {
-    const status = openStatus(f[0]);
-    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
-  }
-  if (key === "SET") {
-    const isDone = f[1]?.toLowerCase() === "done";
-    if (f[0] && isDone) return { kind: "done", ref: f[0], text: f[2] ?? "" };
-    const status = openStatus(f[1]);
-    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
-  }
-  if (key === "DONE") return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
-  if (key === "DROP") {
-    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
-    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
-  }
-  if (key === "WAS") return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
   if (key === "HEAD") return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
-  if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
-  if (key === "GOAL") return f[0] ? { kind: "goal", text: f[0], milestones: goalMilestones(f[1]) } : null;
+  if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], taskId: f[1] } : null;
+  if (key === "GOAL") return f[0] ? { kind: "goal", text: f[0] } : null;
   if (key === "RETIRE") return { kind: "retire", why: f[0] ?? "" };
-  if (key === "MILESTONE") {
-    const status = anyStatus(f[0]);
-    return status && f[1] ? { kind: "milestone", status, name: f[1], text: f[2] ?? "" } : null;
-  }
-  if (key === "SERVES") {
-    const isNone = f[1] === "-" || f[1]?.toLowerCase() === "none";
-    return f[0] && f[1] ? { kind: "serves", subject: f[0], milestone: isNone ? null : f[1] } : null;
-  }
   return null;
 }
 function parseStatus(text2) {
+  let ignoredLegacy = false;
   const ops = (text2 ?? "").split(NL).flatMap((raw) => {
     const m = LINE.exec(raw.trim());
-    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
+    if (!m) return [];
+    const key = m[1].toUpperCase().replace(" ", "");
+    if (IGNORED.has(key)) {
+      ignoredLegacy = true;
+      return [];
+    }
+    const op = opOf(key, fields(m[2] ?? ""));
     return op === null ? [] : [op];
   });
-  if (ops.length === 0) return null;
+  if (ops.length === 0) return ignoredLegacy ? { kind: "unchanged" } : null;
   return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
 }
 async function askStatus(ask) {
@@ -4748,166 +4277,123 @@ async function askStatus(ask) {
 }
 
 // ../hooks/status-prompt-goal.ts
-var NO_WORK_LINKED = "no work linked";
-var GOAL_LINES = `GOAL: outcome | status name; status name
+var GOAL_LINES = `GOAL: outcome
 RETIRE: why the goal no longer fits the work
-MILESTONE: status | name | where it stands
-SERVES: subject id or name | milestone id or name, or - when the goal does not need it
-GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
-var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
-- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
-- <removed>: goals the person removed, as their key words, one per line
-- While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
+LINK: ask or running child id | task id
+GOAL sets only the session outcome. Task status, details and links come from the task tree and are never changed here.`;
+var GOAL_INPUT = `- <goal>: the outcome, its stable task-link id, and whether it is typed, met, awaiting linked tasks, or has had no linked work for a time. It may also say why code did not apply the last GOAL or RETIRE line; fix that cause before writing that line again.
+- <removed>: goals the person removed, as their key words, one per line.`;
 var GOAL_PARTS = {
-  "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Never write GOAL from a summary of work that already finished.`,
-  "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
-  "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
-  "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
-  "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
-  "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
-  "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
-  "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
-  "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
-  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,
-  "serves-in-outcome": `A subject serves a milestone only when finishing it is part of that milestone's named outcome, as a crash fix is part of "Launch crash fixed" and a store listing is part of "2.5 published". Work that merely goes on while a milestone is open is not part of it, and a broad name such as "Cleanup done" or "Fixes landed" is not a home for whatever comes later: write - for that work, even when nothing else serves the goal. Work for a later version or release than the one a milestone names, as a 2.6 beta under "2.5 published", is never part of it: write - for it.`
+  "goal-when-clear": `Write GOAL only when the task tree and exchange support one checkable outcome for the session. Never invent an outcome from a summary of finished work.`,
+  "goal-finish-line": `A goal has a finish line someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction such as "make search faster" is not a goal.`,
+  "goal-wait": `When the next outcome is not clear, write no GOAL and wait. Keep a met goal if it still fits; RETIRE it when it no longer fits and no next outcome is clear.`,
+  "goal-not-again": `Never write the goal in <goal> or one in <removed> again, in the same words or other words. A goal the person removed stays removed until they type it.`,
+  "goal-typed-kept": `A goal marked typed belongs to the person. Never reword, replace or retire it before its linked task tree is met.`,
+  "goal-outcome-happened": `The task tree is the source of task status. Do not mark a goal met from prose; task updates are made through the tasks tool.`,
+  "goal-work-left": `Do not replace an unmet goal while one of its linked tasks is open. Once work is met, write GOAL for a clear next outcome, or RETIRE when the goal no longer fits and none is clear.`,
+  "task-links": `Write LINK only to connect an open ask or a live child to a task already listed in <task tree>. Use its exact task id. Never create, close, rename or relink a task here.`
 };
 function goalRules(without = []) {
-  return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL4);
+  return Object.entries(GOAL_PARTS).filter(([id]) => !without.includes(id)).map(([, rule]) => `- ${rule}`).join(NL4);
 }
-function refusedLine(o, now) {
-  const r = o.goalRefused;
-  const g = o.goal;
-  if (r === null || g === null) return null;
-  const line = r.line.toUpperCase();
-  const texts = {
-    typed: () => "the person typed this goal, so it is theirs until it is met.",
+function refusedLine(o, tree, now) {
+  const refusal = o.goalRefused;
+  const goal = o.goal;
+  if (refusal === null || goal === null) return null;
+  const line = refusal.line.toUpperCase();
+  const linked = tasksForGoal(tree, goal);
+  const text2 = {
+    typed: () => "the person typed this goal, so it belongs to them until its task tree is met.",
     met: () => "the goal is met. It stays until GOAL sets the next one.",
     "work-open": () => {
-      const open2 = heldSubjects(o).filter(isOpen);
-      return open2.length === 0 ? null : `the goal's work is still open: ${open2.map((s) => s.name).join(", ")}. In the same answer, close that work with DONE or DROP, or write SERVES to - for work the goal does not need, then write ${line} again.`;
+      const open2 = linked.filter((task) => task.status !== "done" && task.status !== "dropped");
+      return open2.length === 0 ? null : `the goal's linked work is still open: ${open2.map((task) => task.title).join(", ")}. Update task status with the tasks tool before writing ${line} again.`;
     },
-    moved: () => goalLeftFor(o, now) !== null ? null : `the work has not left the goal: it moved ${duration(now - lastProgressAt(o, g))} ago. When its outcome happened, write DONE for each open milestone instead, so it is met. Else write ${line} once this line says no work for a time.`,
-    "no-work": () => "no open subject is outside the goal, so there is no work for a new one. Write NEW for the new goal's work in the same answer.",
+    moved: () => goalLeftFor(o, tree, now) !== null ? null : `the work has not left the goal: its task tree changed ${duration(now - lastProgressAt(goal, tree))} ago.`,
+    "no-work": () => "no open task is outside the current goal, so there is no work for a new one.",
     restates: () => "it restates the goal, the goal before it, or a removed goal.",
-    "few-milestones": () => `a goal needs ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones.`
+    "few-milestones": () => null
   };
-  const text2 = texts[r.why]();
-  return text2 === null ? null : `${line} refused: ${text2}`;
+  const reason = text2[refusal.why]();
+  return reason === null ? null : `${line} refused: ${reason}`;
 }
-function goalBlocks(o, now) {
+function goalBlocks(o, tree = [], now = 0) {
   if (o === null) return [];
-  const g = o.goal;
-  const left = goalLeftFor(o, now);
-  const refused = refusedLine(o, now);
-  const marks = g ? [
-    ...g.source === "typed" ? ["typed"] : [],
-    ...g.isAwaitingMilestones ? ["just set"] : g.metAt != null ? ["met"] : [],
+  const goal = o.goal;
+  if (goal === null)
+    return o.removedGoals.length === 0 ? [] : [`<removed>${NL4}${o.removedGoals.join(NL4)}${NL4}</removed>`];
+  const left = goalLeftFor(o, tree, now);
+  const status = isGoalMet(goal, tree) ? "met" : tasksForGoal(tree, goal).length === 0 ? "awaiting tasks" : "active";
+  const marks = [
+    ...goal.source === "typed" ? ["typed"] : [],
+    status,
     ...left === null ? [] : [`no work for ${duration(left)}`]
-  ] : [];
-  const state = marks.length > 0 ? ` (${marks.join(", ")})` : "";
-  const served = new Set(Object.values(o.serves));
-  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => {
-    const isUnserved = m.status !== "done" && !served.has(m.id);
-    return `${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}${isUnserved ? ` | ${NO_WORK_LINKED}` : ""}`;
-  });
-  const block = (tag, body) => `<${tag}>${NL4}${body}${NL4}</${tag}>`;
+  ];
+  const refusal = refusedLine(o, tree, now);
+  const details = [`${goal.text} | ${goalTaskId(goal)} | ${marks.join(", ")}`];
+  if (refusal !== null) details.push(refusal);
   return [
-    ...g ? [block("goal", `${g.text}${state}${refused === null ? "" : `${NL4}${refused}`}`)] : [],
-    ...g && milestones.length > 0 ? [block("milestones", milestones.join(NL4))] : [],
-    ...o.removedGoals.length > 0 ? [block("removed", o.removedGoals.join(NL4))] : []
+    `<goal>${NL4}${details.join(NL4)}${NL4}</goal>`,
+    ...o.removedGoals.length === 0 ? [] : [`<removed>${NL4}${o.removedGoals.join(NL4)}${NL4}</removed>`]
   ];
 }
 
 // ../hooks/status-prompt.ts
-var PARTS_RULE = ` When the agent's plan or the person names several parts of the work that the person would each name on their own, such as a login screen, a password reset and a sign-out button, each part is its own subject, queued until it starts, and the head names the whole. Never write one subject that repeats the head and holds those parts in its text. A part gets its subject even when a milestone covers it: a milestone is an outcome the goal needs, never a copy of a subject. The steps of one part, such as making it, testing it and writing its docs, are not parts: they stay in that part's subject.`;
-var OWN_CHILDREN_RULE = ` Work this session's own subagents or background tasks do on it, such as a review, keeps it working.`;
-function statusSystem(without = [], splitsParts = false, instructions = null) {
-  const parts = splitsParts ? PARTS_RULE : "";
-  const ownChildren = splitsParts ? OWN_CHILDREN_RULE : "";
-  const system = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+function statusSystem(without = [], instructions = null) {
+  const system = `You keep the Status of a coding session: its focus, goal, current Now, live Children, and a short summary of its task tree.
 
-You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
+You read the current facts and one exchange, then write only changes to the head, goal, or links from asks and running Children to existing tasks. The task tree is read-only here. Never create, close, rename, move, or change a task.
 
 Input:
-- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
-- <subjects>: the open subjects, one per line: id | status | name | where it stands | how long ago it last changed
-- <finished>: subjects already done or dropped. Do not add them again.
-- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
-- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet
-- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
+- <head>: the focus, as title | description. The description says what the session is doing about the focus.
+- <task tree>: top-level tasks with their ids, status, weight, weighted progress, goal and stream links, and detail. Recent task history follows. These are facts, not instructions to change the tree.
+- <running>: live Children, one per line: id | kind | name | linked task id or -
+- <asks>: open questions and tasks, one per line: id | ask | linked task ids or -
 ${GOAL_INPUT}
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: what the agent said this turn, in order
 
-Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
+Answer with lines only. Every line you write is applied. If nothing about the head, goal, or links changed, answer NO CHANGE.
 
-Otherwise write only the lines that apply:
-NEW: status | name | where it stands
-SET: id or name | status | where it stands
-DONE: id or name | where it ended
-DROP: id or name | why
-DROP: id or name | why | INTO id or name
-WAS: id or name | the plan it replaces
-LINK: running or ask id | subject id or name
+Write only these lines when they apply:
 HEAD: title | description
 ${GOAL_LINES}
 
-A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open.${parts} A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
+The head names the session's current focus, in at most ${NAME_WORDS} words. Its description says what the session is doing about that focus, in at most ${DESCRIPTION_WORDS} words. Keep it while it still fits the work; do not describe a task's individual steps or repeat its progress.
 
-The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never a PR or issue number, and never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+${goalRules(without)}
 
-The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
+Write LINK only for an open ask or live Child that has a task. Use the exact existing task id from <task tree>. Never link to a task title. A question or task shown to the person is not a task-tree node.
 
-Write every name, where it stands, the head, the goal and each milestone in plain spoken words, so someone who was not in the session gets it on one read: everyday words, and each thing named by what it is. Write "Phone sign-in | iPhone done, Android next", not "Mobile auth parity | iOS verified; Android pending". Never join two phrases with a semicolon: write a comma.
-
-Status is one of: working, queued, waits-on-other.
-- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask.${ownChildren} When the work stopped for another reason, it is queued, waits on something, or is done.
-- queued: planned, not started.
-- waits-on-other: it waits on something other than the person, such as a build, a review or another session.
-
-Rules:
-- Change a subject by its id. Write NEW only when no subject in <subjects> covers it. When work in <finished> comes back, SET its id to reopen it.
-- When work started and finished in this exchange, write NEW for it, then DONE with its name.
-- Write SET only when where a subject stands changed. Never reword a subject that did not change.
-- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
-- Check how long ago each working subject in <subjects> last changed. One that changed a day or more ago, that this exchange does not work on, and that no item in <asks> or <running> holds up, has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on". Never SET it to keep it working. Queued and waits-on-other subjects stay until the work says otherwise.
-- When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
-- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
-- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
-- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
-- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.
-
-Goal:
-${goalRules(without)}`;
+Never write task operations or a task plan. Use the task tree as the sole durable work plan. A task's status and progress change only through the tasks tool.`;
   return `${system}
 
 ${personInstructionsBlock(instructions)}`;
 }
 var STATUS_SYSTEM = statusSystem();
-var PARTS_STATUS_SYSTEM = statusSystem([], true);
-function hostStatusSystem(names, instructions = null) {
-  return statusSystem([], names.splitsPlanIntoSubjects, instructions);
+var PARTS_STATUS_SYSTEM = statusSystem();
+function hostStatusSystem(_names, instructions = null) {
+  return statusSystem([], instructions);
 }
 function headText(o) {
   if (!o?.head) return "(none yet)";
   return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
 }
-function statusBlocks({ last, asks, tasks, now }) {
-  const { open: open2, finished } = subjectsText(last, now);
+function taskTreeText(tree, now) {
+  const top = tree.filter((task) => task.parentId === null).map((task) => `${task.id} | ${task.status} | weight ${task.weight} | ${Math.round(weightedTaskProgress(tree, task.id) * 100)}% | ${task.goalId ?? "-"} | ${task.streamId ?? "-"} | ${task.title} | ${task.detail || "-"}`);
+  const recent = tree.flatMap((task) => task.history.map((event) => ({ task, event }))).sort((a, b) => b.event.at - a.event.at).slice(0, 8).map(({ task, event }) => `${task.id} | ${event.kind} | ${Math.max(0, now - event.at)}ms ago${event.detail ? ` | ${event.detail}` : ""}`);
+  return [...top, ...recent.length ? ["Recent changes:", ...recent] : []].join(NL4) || "(no tasks yet)";
+}
+function statusBlocks({ last, asks, taskTree, now }) {
   const running = runningText(last, now);
   const held = asksText(last, asks);
-  const list = tasksText(tasks);
   return [
-    ...goalBlocks(last, now),
+    ...goalBlocks(last, taskTree, now),
     `<head>${NL4}${headText(last)}${NL4}</head>`,
-    `<subjects>${NL4}${open2}${NL4}</subjects>`,
-    ...finished === "" ? [] : [`<finished>${NL4}${finished}${NL4}</finished>`],
+    `<task tree>${NL4}${clipMiddle(taskTreeText(taskTree ?? [], now), 8e3, 2e3)}${NL4}</task tree>`,
     ...running === "" ? [] : [`<running>${NL4}${running}${NL4}</running>`],
-    ...held === "" ? [] : [`<asks>${NL4}${held}${NL4}</asks>`],
-    ...list === "" ? [] : [`<tasks>${NL4}${list}${NL4}</tasks>`]
+    ...held === "" ? [] : [`<asks>${NL4}${held}${NL4}</asks>`]
   ];
 }
 function statusPrompt(input, ex) {
@@ -4921,7 +4407,7 @@ function statusPrompt(input, ex) {
 }
 function statusMidTurnPrompt(input, turn) {
   return [
-    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes. Where it stands says what works so far and what is left, never what the agent is doing: "CSV export works, PDF not started", not "export edits underway" or "writing the PDF export". When a piece has started and nothing in it works yet, say that: "PDF export started, not working yet", not "PDF edits begun, untested".',
+    "The turn is still running. Treat <person> and <activity> as the exchange so far; there is no reply yet. Describe only the current focus in the head. Do not turn activity or task steps into a plan.",
     ...statusBlocks(input),
     `<person>${NL4}${clipMiddle(personText(turn.person, turn.trigger), 4e3, 1500)}${NL4}</person>`,
     `<activity>${NL4}${clipMiddle(turn.activity.join(NL4), 2500, 500)}${NL4}</activity>`
@@ -4929,7 +4415,7 @@ function statusMidTurnPrompt(input, turn) {
 }
 function statusCatchUpPrompt(input, transcript) {
   return [
-    "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.",
+    "Treat the conversation in <conversation> as the exchange. Its start may be cut. Update the head and links to match the conversation at its end; task-tree facts stay read-only.",
     ...statusBlocks(input),
     `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`
   ].join(NL4);
@@ -5030,9 +4516,9 @@ function attemptOf({ text: text2, report, thrown, ms }) {
     ms
   };
 }
-async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
+async function askAndWriteStatus(host, s, call, appliedAfter) {
   if (!isStatusCallCurrent(s, appliedAfter)) return;
-  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
+  const input = { last: s.ledger.overview, asks: s.ledger.items, taskTree: s.taskTree, now: await host.now() };
   const prompt = statusCallPrompt(input, call.exchange);
   let system = null;
   const heards = [];
@@ -5084,7 +4570,7 @@ function refreshStatus(host) {
     if (!s.presence.isTurnRunning) return;
     const { person, trigger, activity } = s.turn;
     const call = { exchange: { kind: "mid-turn", turn: { person, trigger, activity } }, ask: host.ask };
-    await askAndWriteStatus(host, s, call, s.hostTasks, s.presence.turnsApplied);
+    await askAndWriteStatus(host, s, call, s.presence.turnsApplied);
   });
 }
 
@@ -5127,7 +4613,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeStatus = (after, call, tasks) => host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, tasks, after.presence.turnsApplied));
+  const writeStatus = (after, call) => host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, after.presence.turnsApplied));
   const followUp = (run2) => {
     const settled = run2.catch(() => void 0);
     if (host.background) host.background(settled);
@@ -5152,8 +4638,7 @@ async function runUpdates(host) {
               const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed2 !== null, at) : x;
               const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed2, at));
               if (!parsed2) return "stop";
-              if (reply.kind === "reply" && reply.statusCall)
-                followUp(writeStatus(after2, reply.statusCall, s.hostTasks));
+              if (reply.kind === "reply" && reply.statusCall) followUp(writeStatus(after2, reply.statusCall));
               continue;
             }
             const next = s.pending[0];
@@ -5177,9 +4662,7 @@ async function runUpdates(host) {
               return applied(x, parsed, at, promptAt);
             });
             if (isApplied)
-              followUp(
-                writeStatus(after, { exchange: { kind: "reply", exchange: next.ex }, ask: host.ask }, next.ex.tasks)
-              );
+              followUp(writeStatus(after, { exchange: { kind: "reply", exchange: next.ex }, ask: host.ask }));
             if (after.pending[0]?.failed && !next.failed) return "stop";
           }
         } finally {
@@ -5360,7 +4843,7 @@ var jsonRecord = (raw) => {
 };
 
 // ../hooks/conversation.ts
-var NL6 = "\n";
+var NL5 = "\n";
 var TRANSCRIPT_MAX = 8e4;
 var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
@@ -5385,7 +4868,7 @@ function flattenConversation(turns) {
     }
     kept.push(line);
   }
-  return kept.reverse().join(NL6);
+  return kept.reverse().join(NL5);
 }
 
 // src/rollout-commands.ts

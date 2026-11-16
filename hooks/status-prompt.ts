@@ -1,104 +1,54 @@
-import type { Exchange, HostTask, Item, Session, SessionStatus } from '../types'
+import type { Exchange, Item, Session, SessionStatus, TaskTree } from '../types'
 import type { Host } from './model-text'
-import { tasksText } from './host-tasks'
 import { NL, personText } from './ledger-prompt'
-import { asksText, runningText, subjectsText } from './status-children'
-import { DESCRIPTION_WORDS, NAME_WORDS, OPEN_SUBJECTS, TEXT_WORDS } from './status-limits'
+import { asksText, runningText } from './status-children'
+import { DESCRIPTION_WORDS, NAME_WORDS } from './status-limits'
 import { GOAL_INPUT, GOAL_LINES, goalBlocks, goalRules } from './status-prompt-goal'
 import type { GoalPartId } from './status-prompt-goal'
 import { clipMiddle, numberBlocks } from './text'
+import { weightedTaskProgress } from './task-tree'
 import { personInstructionsBlock } from './person-instructions'
 
-/** The rules that give each part of the work the person would name its own subject, for a host that reads them. */
-const PARTS_RULE = ` When the agent's plan or the person names several parts of the work that the person would each name on their own, such as a login screen, a password reset and a sign-out button, each part is its own subject, queued until it starts, and the head names the whole. Never write one subject that repeats the head and holds those parts in its text. A part gets its subject even when a milestone covers it: a milestone is an outcome the goal needs, never a copy of a subject. The steps of one part, such as making it, testing it and writing its docs, are not parts: they stay in that part's subject.`
-const OWN_CHILDREN_RULE = ` Work this session's own subagents or background tasks do on it, such as a review, keeps it working.`
+export function statusSystem(without: readonly GoalPartId[] = [], instructions: string | null = null): string {
+  const system = `You keep the Status of a coding session: its focus, goal, current Now, live Children, and a short summary of its task tree.
 
-/**
- * The system text of the call that changes the Status tab's list, apart from the ledger call, leaving out the goal's
- * rules in `without`. With `splitsParts`, it adds the rules a host's `splitsPlanIntoSubjects` asks for.
- */
-export function statusSystem(
-  without: readonly GoalPartId[] = [],
-  splitsParts = false,
-  instructions: string | null = null,
-): string {
-  const parts = splitsParts ? PARTS_RULE : ''
-  const ownChildren = splitsParts ? OWN_CHILDREN_RULE : ''
-
-  const system = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
-
-You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
+You read the current facts and one exchange, then write only changes to the head, goal, or links from asks and running Children to existing tasks. The task tree is read-only here. Never create, close, rename, move, or change a task.
 
 Input:
-- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
-- <subjects>: the open subjects, one per line: id | status | name | where it stands | how long ago it last changed
-- <finished>: subjects already done or dropped. Do not add them again.
-- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
-- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet
-- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
+- <head>: the focus, as title | description. The description says what the session is doing about the focus.
+- <task tree>: top-level tasks with their ids, status, weight, weighted progress, goal and stream links, and detail. Recent task history follows. These are facts, not instructions to change the tree.
+- <running>: live Children, one per line: id | kind | name | linked task id or -
+- <asks>: open questions and tasks, one per line: id | ask | linked task ids or -
 ${GOAL_INPUT}
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: what the agent said this turn, in order
 
-Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
+Answer with lines only. Every line you write is applied. If nothing about the head, goal, or links changed, answer NO CHANGE.
 
-Otherwise write only the lines that apply:
-NEW: status | name | where it stands
-SET: id or name | status | where it stands
-DONE: id or name | where it ended
-DROP: id or name | why
-DROP: id or name | why | INTO id or name
-WAS: id or name | the plan it replaces
-LINK: running or ask id | subject id or name
+Write only these lines when they apply:
 HEAD: title | description
 ${GOAL_LINES}
 
-A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open.${parts} A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
+The head names the session's current focus, in at most ${NAME_WORDS} words. Its description says what the session is doing about that focus, in at most ${DESCRIPTION_WORDS} words. Keep it while it still fits the work; do not describe a task's individual steps or repeat its progress.
 
-The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never a PR or issue number, and never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+${goalRules(without)}
 
-The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
+Write LINK only for an open ask or live Child that has a task. Use the exact existing task id from <task tree>. Never link to a task title. A question or task shown to the person is not a task-tree node.
 
-Write every name, where it stands, the head, the goal and each milestone in plain spoken words, so someone who was not in the session gets it on one read: everyday words, and each thing named by what it is. Write "Phone sign-in | iPhone done, Android next", not "Mobile auth parity | iOS verified; Android pending". Never join two phrases with a semicolon: write a comma.
-
-Status is one of: working, queued, waits-on-other.
-- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask.${ownChildren} When the work stopped for another reason, it is queued, waits on something, or is done.
-- queued: planned, not started.
-- waits-on-other: it waits on something other than the person, such as a build, a review or another session.
-
-Rules:
-- Change a subject by its id. Write NEW only when no subject in <subjects> covers it. When work in <finished> comes back, SET its id to reopen it.
-- When work started and finished in this exchange, write NEW for it, then DONE with its name.
-- Write SET only when where a subject stands changed. Never reword a subject that did not change.
-- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
-- Check how long ago each working subject in <subjects> last changed. One that changed a day or more ago, that this exchange does not work on, and that no item in <asks> or <running> holds up, has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on". Never SET it to keep it working. Queued and waits-on-other subjects stay until the work says otherwise.
-- When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
-- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
-- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
-- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
-- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.
-
-Goal:
-${goalRules(without)}`
+Never write task operations or a task plan. Use the task tree as the sole durable work plan. A task's status and progress change only through the tasks tool.`
 
   return `${system}\n\n${personInstructionsBlock(instructions)}`
 }
 
 export const STATUS_SYSTEM = statusSystem()
-export const PARTS_STATUS_SYSTEM = statusSystem([], true)
+export const PARTS_STATUS_SYSTEM = statusSystem()
 
-/** The Status call's system text for the host whose names are `names`. */
-export function hostStatusSystem(names: Host, instructions: string | null = null): string {
-  return statusSystem([], names.splitsPlanIntoSubjects, instructions)
+export function hostStatusSystem(_names: Host, instructions: string | null = null): string {
+  return statusSystem([], instructions)
 }
 
-/**
- * What the Status call reads besides the exchange: the Status before it, the open asks, the agent's task list, and
- * the time the running children are read at.
- */
-export type StatusCallInput = { last: SessionStatus | null; asks: readonly Item[]; tasks: HostTask[]; now: number }
+export type StatusCallInput = { last: SessionStatus | null; asks: readonly Item[]; taskTree?: TaskTree; now: number }
 
 function headText(o: SessionStatus | null): string {
   if (!o?.head) return '(none yet)'
@@ -106,26 +56,29 @@ function headText(o: SessionStatus | null): string {
   return `${o.head.title} | ${o.head.description || '(no description yet)'}`
 }
 
-function statusBlocks({ last, asks, tasks, now }: StatusCallInput): string[] {
-  const { open, finished } = subjectsText(last, now)
+// prettier-ignore
+function taskTreeText(tree: TaskTree, now: number): string {
+  const top = tree.filter(task => task.parentId === null).map(task => `${task.id} | ${task.status} | weight ${task.weight} | ${Math.round(weightedTaskProgress(tree, task.id) * 100)}% | ${task.goalId ?? '-'} | ${task.streamId ?? '-'} | ${task.title} | ${task.detail || '-'}`)
+  const recent = tree.flatMap(task => task.history.map(event => ({ task, event })))
+    .sort((a, b) => b.event.at - a.event.at).slice(0, 8)
+    .map(({ task, event }) => `${task.id} | ${event.kind} | ${Math.max(0, now - event.at)}ms ago${event.detail ? ` | ${event.detail}` : ''}`)
+  return [...top, ...(recent.length ? ['Recent changes:', ...recent] : [])].join(NL) || '(no tasks yet)'
+}
+
+function statusBlocks({ last, asks, taskTree, now }: StatusCallInput): string[] {
   const running = runningText(last, now)
   const held = asksText(last, asks)
-  const list = tasksText(tasks)
-
   return [
-    ...goalBlocks(last, now),
+    ...goalBlocks(last, taskTree, now),
     `<head>${NL}${headText(last)}${NL}</head>`,
-    `<subjects>${NL}${open}${NL}</subjects>`,
-    ...(finished === '' ? [] : [`<finished>${NL}${finished}${NL}</finished>`]),
+    `<task tree>${NL}${clipMiddle(taskTreeText(taskTree ?? [], now), 8000, 2000)}${NL}</task tree>`,
     ...(running === '' ? [] : [`<running>${NL}${running}${NL}</running>`]),
     ...(held === '' ? [] : [`<asks>${NL}${held}${NL}</asks>`]),
-    ...(list === '' ? [] : [`<tasks>${NL}${list}${NL}</tasks>`]),
   ]
 }
 
 export function statusPrompt(input: StatusCallInput, ex: Exchange): string {
   const person = personText(ex.person, ex.trigger)
-
   return [
     ...statusBlocks(input),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
@@ -134,13 +87,12 @@ export function statusPrompt(input: StatusCallInput, ex: Exchange): string {
   ].join(NL)
 }
 
-/** The Status call for a turn that is still running: what the person sent, and the work so far. */
 export function statusMidTurnPrompt(
   input: StatusCallInput,
   turn: Pick<Session['turn'], 'person' | 'trigger' | 'activity'>,
 ): string {
   return [
-    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes. Where it stands says what works so far and what is left, never what the agent is doing: "CSV export works, PDF not started", not "export edits underway" or "writing the PDF export". When a piece has started and nothing in it works yet, say that: "PDF export started, not working yet", not "PDF edits begun, untested".',
+    'The turn is still running. Treat <person> and <activity> as the exchange so far; there is no reply yet. Describe only the current focus in the head. Do not turn activity or task steps into a plan.',
     ...statusBlocks(input),
     `<person>${NL}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(turn.activity.join(NL), 2500, 500)}${NL}</activity>`,
@@ -149,7 +101,7 @@ export function statusMidTurnPrompt(
 
 export function statusCatchUpPrompt(input: StatusCallInput, transcript: string): string {
   return [
-    'Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.',
+    'Treat the conversation in <conversation> as the exchange. Its start may be cut. Update the head and links to match the conversation at its end; task-tree facts stay read-only.',
     ...statusBlocks(input),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)

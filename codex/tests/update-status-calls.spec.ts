@@ -106,7 +106,8 @@ test('a ledger update shows before its Status call returns', async () => {
   assert.deepEqual(shown.ledger.items, [])
   assert.equal(shown.ledger.closed[0]?.outcome, 'MIT')
   assert.equal(shown.presence.isUpdating, false)
-  assert.ok(statusPrompt.includes('<subjects>'))
+  assert.ok(statusPrompt.includes('<task tree>'))
+  assert.ok(!statusPrompt.includes('<subjects>'))
   release('HEAD: Adding a license | Adding a license file to the repo')
   await running
 

@@ -59,7 +59,7 @@ test('a catch-up writes its Status with a separate call over the transcript', as
 
   expect(session!.ledger.overview).toMatchObject({
     head: { title: 'Adding a greeting CLI' },
-    subjects: [{ name: 'Command', status: 'queued' }],
+    subjects: [],
   })
   expect(w.statusPrompts.at(-1)).toContain('<conversation>\nPerson: Add a greeting CLI.')
 })

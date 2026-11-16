@@ -1,7 +1,5 @@
 import { expect, test } from 'bun:test'
 
-import { parseStatus } from '../../hooks/status'
-import { applyStatus } from '../../hooks/status-ops'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import { STATUS_TEXT_LINES } from '../../hooks/status-page'
 import { sessionView } from '../../hooks/session-view'
@@ -11,7 +9,7 @@ import type { Style } from '../src/panel'
 import { demoState } from '../src/demo'
 import { emptyState } from '../src/state'
 import { PAGE_TEXT_AT } from '../src/panel-entries'
-import { drawn, ESC, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
+import { drawn, ESC, labelOf, NOW, onPage, screenOf, strip, style, taskNode, taskScreen, text } from './panel-harness'
 
 const toneNamed: Style = { ...style, tone: (name, s) => `<${name}>${s}</${name}>` }
 
@@ -27,6 +25,7 @@ function trialChangedScreen() {
   const o = state.ledger.overview!
   const subjects = o.subjects.map(x => (x.name === 'Glasses trial' ? { ...x, changedAt: NOW - 60_000 } : x))
   state.ledger = { ...state.ledger, overview: { ...o, subjects } }
+  state.taskTree = state.taskTree.map(task => (task.id === 's5' ? { ...task, updatedAt: NOW - 60_000 } : task))
   return screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
@@ -42,23 +41,19 @@ test('the Status page shows the head’s title and description, then its rows in
   expect(lines[at(page.head!.description!)]!.search(/\S/)).toBe(headAt)
   const subjects = page.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
   for (const row of subjects) expect(lines[at(row.name)]!.search(/\S/)).toBe(headAt)
-  const withWas = subjects.filter(r => r.was !== null && r.text !== null)
-  expect(withWas.length).toBeGreaterThan(0)
-  for (const row of withWas) {
-    expect(lines[at(row.name) + 1]).toContain(row.text!)
-    expect(lines[at(row.name) + 2]).toContain(`was: ${row.was}`)
-  }
+  expect(subjects.length).toBeGreaterThan(0)
+  for (const row of subjects) expect(lines[at(row.name) + 1]).toContain('% complete')
 })
 
 test('on the Status page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
   const lines = text(screenOf(), onPage, 28).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
   const [subject, first, mid, last, next] = [
-    at('Dismiss gesture'),
+    at('Pinch dismisses reliably'),
     at('Review the'),
     at('Tune how hard'),
     at('Time the'),
-    at('Flick decided'),
+    at('Glasses trial'),
   ]
   const col = lines[subject]!.search(/\S/)
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
@@ -95,7 +90,8 @@ test('on the Status page, the list after the goal’s milestones starts with Oth
   }
   const screen = screenOf()
 
-  expect(screen.view.statusPage.rows[0]!.kind).toBe('part')
+  expect(screen.view.statusPage.goal?.milestones).toEqual([])
+  expect(screen.view.statusPage.rows.some(row => row.kind === 'subject')).toBe(true)
   expect(bareRules(screen)).toEqual([])
   expect(bareRules(noGoalScreen())).toEqual([])
 })
@@ -103,27 +99,22 @@ test('on the Status page, the list after the goal’s milestones starts with Oth
 test('on the Status page, a subject’s name stays plain, and where it stands goes dim under it, wrapped to three lines and cut with an ellipsis past them', () => {
   const name = 'Help text for every greeting command'
   const where = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
-  const state = emptyState('s1')
-  state.ledger = {
-    ...state.ledger,
-    overview: applyStatus(null, parseStatus(`NEW: working | ${name} | ${where}`)!, NOW, new Set()),
-  }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
+  const screen = taskScreen([taskNode('t1', name, 'queued', NOW, { detail: where })], { children: [], askSubjects: {} })
   const raw = drawn(screen, onPage, 34)
   const first = raw.findIndex(l => strip(l).includes('Help text'))
   const subject = raw.slice(first, first + 2 + STATUS_TEXT_LINES + 1).map(strip)
 
   expect(subject.slice(0, 3)).toEqual([
-    ' ◐ Help text for every greeting',
+    ' ○ Help text for every greeting',
     '   command',
-    '   being written with examples,',
+    '   0% complete · being written',
   ])
   expect(subject[1 + STATUS_TEXT_LINES]).toMatch(/…$/)
   expect(subject[2 + STATUS_TEXT_LINES]?.trim() ?? '').not.toMatch(/^[a-z]/)
   expect(raw[first + 1]).not.toContain(ESC)
-  expect(raw[first + 2]).toContain(`${ESC}2mbeing`)
+  expect(raw[first + 2]).toContain(`${ESC}2m0% complete`)
   const wide = text(screen, onPage, 200).split('\n')
-  expect(wide[wide.findIndex(l => l.includes(name)) + 1]?.trim()).toBe(where)
+  expect(wide[wide.findIndex(l => l.includes(name)) + 1]?.trim()).toBe(`0% complete · ${where}`)
 })
 
 test('each subject’s mark takes its tone, and a mark with no tone is muted', () => {

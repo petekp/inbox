@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import { RUNNING_FRAME_MS, SETTLED_MS, runningMark } from '../hooks/timing'
 import { IDLE_MARK, RUNNING_FRAMES } from '../hooks/help'
 import { w, arrive, world } from './hooks-world'
-import { PANE } from './hooks-helpers'
+import { PANE, seedTasks } from './hooks-helpers'
 
 test(
   'an answer on its way runs its mark each frame in the terminal and as an Svg on desktop, holds the row in place until it arrives, then folds it into Closed with ✓',
@@ -65,6 +65,10 @@ test('a working subject’s mark on the Status moves each frame only while a tur
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [
+    { id: 's1', title: 'Help text', status: 'working', detail: 'being written' },
+    { id: 's2', title: 'Loud flag', status: 'queued', detail: 'after the help text' },
+  ])
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
@@ -119,6 +123,7 @@ test('a running mark on the terminal Status keeps moving while the desktop app d
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [{ id: 's1', title: 'Help text', status: 'working', detail: 'being written' }])
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
@@ -168,6 +173,7 @@ test('a running mark moves again at the next redraw after the engine ends its ti
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [{ id: 's1', title: 'Help text', status: 'working', detail: 'being written' }])
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   const pane = await $.ui.mount(PANE)

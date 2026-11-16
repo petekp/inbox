@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
+import { LOOK_MIN_MS } from '../../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
@@ -437,40 +437,44 @@ test('a look starts when the panel shows the Status and ends on another tab or w
   expect(state().ledger.overview.look).toBeNull()
 })
 
-test('a look counts as seen only the Status subjects the panel reported on screen, on another tab and when the panel closes', async () => {
+test('a look counts as seen only the task roots the panel reported on screen, on another tab and when the panel closes', async () => {
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   const saved = state()
-  const subject = (id: string) => ({
+  const task = (id: string) => ({
     id,
-    name: id,
+    parentId: null,
     status: 'working',
-    text: '',
-    was: null,
-    merged: null,
+    weight: 1,
+    title: id,
+    detail: '',
+    notes: [],
     createdAt: 1,
-    changedAt: 1,
-    closedAt: null,
-    into: null,
+    updatedAt: 1,
+    history: [],
   })
-  const overview = { ...EMPTY_SESSION_STATUS, subjects: ['s1', 's2', 's3'].map(subject), nextId: 4 }
-  writeFileSync(join(w.dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
+  const overview = { ...EMPTY_SESSION_STATUS }
+  const taskTree = ['s1', 's2', 's3'].map(task)
+  writeFileSync(
+    join(w.dir, 'sessions', 's1.json'),
+    JSON.stringify({ ...saved, taskTree, ledger: { ...saved.ledger, overview } }),
+  )
   await inbox.openPanel(makeCtx(), w.clock)
-  const look = async (shown: string[], end: () => void) => {
+  const look = async (id: string, end: () => void) => {
     inbox.showTab(makeCtx(), 'overview', NO_HOLDS)
     await settle()
-    inbox.showRows(makeCtx(), shown)
+    inbox.showRows(makeCtx(), [id])
     w.clock += LOOK_MIN_MS
     end()
     await settle()
     const o = state().ledger.overview
-    return o.subjects
-      .filter((x: { id: string; changedAt: number }) => isSubjectSeen(o, x))
+    return state()
+      .taskTree.filter((x: { id: string }) => !(x.id in o.missedInLastLook))
       .map((x: { id: string }) => x.id)
   }
 
-  expect(await look(['s1'], () => inbox.showTab(makeCtx(), 'needsYou', NO_HOLDS))).toEqual(['s1'])
-  expect(await look(['s2'], () => inbox.closePanel(makeCtx()))).toEqual(['s1', 's2'])
+  expect(await look('s1', () => inbox.showTab(makeCtx(), 'needsYou', NO_HOLDS))).toEqual(['s1'])
+  expect(await look('s2', () => inbox.closePanel(makeCtx()))).toEqual(['s1', 's2'])
 })
 
 test('every row the agent closes while the panel shows its tab keeps its closed record through more closes than the Closed list keeps, until the panel closes', async () => {

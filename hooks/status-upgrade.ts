@@ -147,7 +147,9 @@ function fromLists(o: Record<string, unknown>): SessionStatus {
 function missedOf(saved: unknown, ids: ReadonlySet<string>): Record<string, number | null> {
   const entries = typeof saved === 'object' && saved !== null ? Object.entries(saved) : []
 
-  return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time(at) !== null)))
+  return Object.fromEntries(
+    entries.slice(0, 200).filter(([id, at]) => (ids.has(id) || id.length <= 100) && (at === null || time(at) !== null)),
+  )
 }
 
 /** A saved Status, from this build or an earlier one, with anything wrongly shaped left out. Null for none. */

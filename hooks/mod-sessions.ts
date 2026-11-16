@@ -6,6 +6,7 @@ import { CLAUDE_CODE } from './model-text'
 import type { AgentTool } from './tools'
 import { exclusiveKeys, orderedKeys } from './session-host'
 import { withDemoPresence } from './demo'
+import { taskTreeFromStatus } from './task-tree'
 
 /** The drawn conversation's session. `revision` counts its writes, so a write computed from an older one is retried. */
 export type ModSession = Session & { revision: number }
@@ -59,7 +60,11 @@ export function drawnSession(
   now: number,
 ): Session {
   const { ledger, stop, prViews, lastActions, turns } = drawn
-  const s = { ...session, ledger, stop, prViews, lastActions, presence: { ...session.presence, ...turns } }
+  // prettier-ignore
+  const s = {
+    ...session, ledger, taskTree: isDemo ? taskTreeFromStatus(ledger.overview) : session.taskTree,
+    stop, prViews, lastActions, presence: { ...session.presence, ...turns },
+  }
 
   return isDemo ? withDemoPresence(s, now) : s
 }

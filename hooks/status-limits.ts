@@ -2,7 +2,6 @@ import type { SessionStatus, Subject, SubjectStatus } from '../types'
 
 /** The most words the call may write in a subject's name and where it stands, and in the head's description. The head's title is a name. */
 export const NAME_WORDS = 3
-export const TEXT_WORDS = 4
 export const DESCRIPTION_WORDS = 8
 /**
  * The most open subjects the call keeps. The Status page folds the open subjects past it into "N more", except held
@@ -73,9 +72,7 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
 
 export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
 
-export const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-other']
-
-export const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
+export const STATUSES: readonly SubjectStatus[] = ['working', 'queued', 'waits-on-other', 'done', 'dropped']
 
 /** The first `limit` words of `text`, with an ellipsis when words were cut. */
 export function clipWords(text: string, limit: number): string {

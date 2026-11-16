@@ -10,6 +10,7 @@ import { waitingThreads } from '../hooks/prs'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { inboxView, perTurnStatus } from '../hooks/view'
 import { statusPage } from '../hooks/status-page'
+import { taskTreeFromStatus } from '../hooks/task-tree'
 import { rowKeyPlan } from '../hooks/action-plan'
 import { statusKeyPlan, statusKeyRows } from '../hooks/status-keys'
 import { shownTabs } from '../hooks/tabs'
@@ -237,7 +238,10 @@ for (const isNextBuild of [false, true])
           await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
         }
         await clock.settle()
-        const page = statusPage({ ledger, presence: emptySession().presence }, 1_000_000)
+        const page = statusPage(
+          { ledger, taskTree: taskTreeFromStatus(ledger.overview), presence: emptySession().presence },
+          1_000_000,
+        )
         const targets = statusKeyRows(page)
         const planned = targets.flatMap(t =>
           t.keys.filter(k => k.press.action !== 'toggle-fold').map(k => `${t.id} ${k.label}`),

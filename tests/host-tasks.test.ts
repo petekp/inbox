@@ -104,7 +104,7 @@ test('a Codex plan and an omp todo result each give the whole list, and anything
   expect(ompTodoOf({})).toBeNull()
 })
 
-test('a saved list keeps only well-formed tasks, and the Status call reads the list only when there is one', () => {
+test('a saved host task list is not read by Status, which reads the task tree', () => {
   const saved = upgradeHostTasks([
     { id: '1', text: 'Fine', status: 'done' },
     { id: 2, text: 'Bad id', status: 'done' },
@@ -115,8 +115,7 @@ test('a saved list keeps only well-formed tasks, and the Status call reads the l
   expect(tasksText(saved)).toBe('TASK: done | Fine')
 
   const ex = { turn: 1, person: 'go', trigger: null, activity: [], reply: 'ok', press: null, screen: '', tasks: [] }
-  expect(statusPrompt({ last: null, asks: [], tasks: saved, now: 0 }, ex)).toContain(
-    '<tasks>\nTASK: done | Fine\n</tasks>',
-  )
-  expect(statusPrompt({ last: null, asks: [], tasks: [], now: 0 }, ex)).not.toContain('<tasks>')
+  const prompt = statusPrompt({ last: null, asks: [], taskTree: [], now: 0 }, ex)
+  expect(prompt).toContain('<task tree>\n(no tasks yet)\n</task tree>')
+  expect(prompt).not.toContain('<tasks>')
 })

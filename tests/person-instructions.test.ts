@@ -26,7 +26,9 @@ test('ledger and both Status system texts append exactly one block without chang
   }
   expect(ledger).toContain('NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>')
   expect(status).toContain('NO CHANGE')
-  expect(status).toContain('SET: id or name | status | where it stands')
+  expect(status).toContain('HEAD: title | description')
+  expect(status).toContain('<task tree>')
+  expect(status).not.toMatch(/NEW:|SET:|MILESTONE:|SERVES:/)
   expect(partsStatus).toBe(PARTS_STATUS_SYSTEM.replace(DEFAULT_PERSON_INSTRUCTIONS, custom))
   expect(STATUS_SYSTEM).toContain(`Person's instructions:\n${DEFAULT_PERSON_INSTRUCTIONS}`)
 })

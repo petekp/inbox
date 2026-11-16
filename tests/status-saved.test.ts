@@ -273,5 +273,6 @@ test('a Status saved before looks counted rows on screen counts every subject th
   expect(upgradeStatus({ ...saved, missedInLastLook: { s1: 5, s2: null, s9: 1, s3: 'x' } })?.missedInLastLook).toEqual({
     s1: 5,
     s2: null,
+    s9: 1,
   })
 })

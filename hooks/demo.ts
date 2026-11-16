@@ -1,5 +1,6 @@
 import type { DemoCopy, Session, Subject } from '../types'
 import { emptySession } from './session-files'
+import { taskTreeFromStatus } from './task-tree'
 
 const MIN = 60_000
 const REPO = 'https://github.com/acme/visor'
@@ -41,6 +42,7 @@ export function demoSession(now: number, agent: string): Session {
     {
       ...s,
       ledger: d.ledger,
+      taskTree: taskTreeFromStatus(d.ledger.overview),
       lastActions: d.lastActions,
       prViews: d.prViews,
       presence: { ...s.presence, ...d.turns },

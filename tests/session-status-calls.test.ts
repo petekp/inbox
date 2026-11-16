@@ -283,7 +283,7 @@ test('a session keeps the records of its newest 100 Status calls, and a session 
         at,
         system: 's',
         prompt: 'p',
-        input: { last: null, asks: [], tasks: [], now: at },
+        input: { last: null, asks: [], taskTree: [], now: at },
         exchange: { kind: 'catch-up', conversation: 'c' },
         attempts: [],
         isParsed: false,

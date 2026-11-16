@@ -224,18 +224,19 @@ const openSubjects = (count: number) =>
   )!
 const seenAt10 = (o: SessionStatus) => ({ ...o, lastLookAt: 10 * MIN })
 
-test('past six open subjects, the page folds the ones it draws last into one "N more" row: queued first, then waiting on others', () => {
+test('the page lists every open task, with working, waiting, and queued rows grouped by status', () => {
   expect(shape(page(seenAt10(openSubjects(9)), 20 * MIN).rows)).toEqual([
     ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
     '◌ Part 6: step 6',
     '◌ Part 5: step 5',
-    '○ 3 more',
+    '◌ Part 4: step 4',
+    '○ Part 8: step 8',
+    '○ Part 7: step 7',
   ])
-  expect(page(seenAt10(openSubjects(7)), 20 * MIN).rows.at(-1)).toMatchObject({ kind: 'fold', text: '1 more' })
   expect(page(seenAt10(openSubjects(6)), 20 * MIN).rows.map(r => r.kind)).toEqual(Array(6).fill('subject'))
 })
 
-test('a subject an ask holds up or that changed since the last look never folds, so more than six can show, and a page never looked at folds nothing', () => {
+test('ask-held and changed tasks stay visible with every other open task', () => {
   const asks = ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7']
   const seen = seenAt10(openSubjects(9))
   const heldOne = after(seen, 'LINK: i1 | s8', 10 * MIN, new Set(asks))
@@ -246,15 +247,21 @@ test('a subject an ask holds up or that changed since the last look never folds,
   expect(draw(changedOne)).toEqual([
     '◆ Part 7: step 7 · waiting',
     ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
+    '◌ Part 6: step 6',
+    '◌ Part 5: step 5',
+    '◌ Part 4: step 4',
     '○ Part 8: started over',
-    '○ 3 more',
   ])
-  expect(draw(heldSeven)).toEqual([...[6, 5, 4, 3, 2, 1, 0].map(n => `◆ Part ${n}: step ${n} · waiting`), '○ 2 more'])
+  expect(draw(heldSeven)).toEqual([
+    ...[3, 2, 1, 0, 6, 5, 4].map(n => `◆ Part ${n}: step ${n} · waiting`),
+    '○ Part 8: step 8',
+    '○ Part 7: step 7',
+  ])
   expect(draw(openSubjects(9)).filter(r => r.includes('Part'))).toHaveLength(9)
   expect(draw(openSubjects(9)).some(r => r.includes('more'))).toBe(false)
 })
 
-test('a subject with a child row under it never folds, so its child stays under it, and more than six can show', () => {
+test('all task rows stay visible, with children under their root task', () => {
   const withChildOn = (o: SessionStatus, s: number) =>
     after(
       withChild(
@@ -278,14 +285,16 @@ test('a subject with a child row under it never folds, so its child stays under 
 
   expect(draw(withChildOn(withChildOn(seen, 5), 8))).toEqual([
     ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
+    '◌ Part 6: step 6',
+    '◌ Part 5: step 5',
     '◌ Part 4: step 4 ┐',
     '└ ● Review s5',
+    '○ Part 8: step 8',
     '○ Part 7: step 7 ┐',
     '└ ● Review s8',
-    '○ 3 more',
   ])
   expect(draw(sevenWithChildren).filter(r => r.startsWith('└'))).toHaveLength(7)
-  expect(draw(sevenWithChildren).at(-1)).toBe('○ 2 more')
+  expect(draw(sevenWithChildren).some(r => r.includes('more'))).toBe(false)
 })
 
 test('a running child of a done subject in the done fold shows once, at the top of the list', () => {

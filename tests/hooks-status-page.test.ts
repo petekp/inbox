@@ -1,20 +1,24 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { FoldProps } from '../hooks/fold-client'
-import { isSubjectSeen, LOOK_MIN_MS } from '../hooks/status-children'
+import { LOOK_MIN_MS } from '../hooks/status-children'
 import { statusPage } from '../hooks/status-page'
+import { emptySession } from '../hooks/session-files'
 import { w, world } from './hooks-world'
-import { PANE } from './hooks-helpers'
+import { PANE, seedTasks } from './hooks-helpers'
 
 test('on a next build, a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, j and k wrap past its last and first rows, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
-  w.statusReply =
-    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
+  w.statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nLINK: i1 | s1'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [
+    { id: 's1', title: 'Runtime', status: 'working', detail: 'Node or Python' },
+    { id: 's2', title: 'Plan', status: 'done', detail: 'written' },
+  ])
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
@@ -33,9 +37,9 @@ test('on a next build, a look starts when the Status page shows, the page shows 
     'Adding a greeting CLIBuilding a CLI that greets by name',
   )
   expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime · waiting')
-  expect((await pane.find({ key: 'status-s1-text' }))?.text).toBe('Node or Python')
+  expect((await pane.find({ key: 'status-s1-text' }))?.text).toContain('Node or Python')
   expect((await pane.find({ key: 'status-s1' }))?.text).toContain('◆')
-  expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
+  expect((await pane.find({ key: 'status-s2-text' }))?.text).toContain('written')
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
   const rowKeys = async () =>
     (await pane.findAll({ type: 'Button' }))
@@ -78,7 +82,7 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
 })
 
-test('on a next build, a look at the Status that ends while a Status call is out keeps its time, and the answer that lands after it stays unseen', async ($, on) => {
+test('on a next build, a Status call that lands after a look does not change its time or task freshness', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -94,14 +98,17 @@ test('on a next build, a look at the Status that ends while a Status call is out
     await clock.settle()
   }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  w.statusReply =
-    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Plan | being written'
-  await reply('add a greeting cli', 't1')
+  w.statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [{ id: 's1', title: 'Plan', status: 'working', detail: 'being written' }])
+  await $.turn.complete({ answer: 'Noted.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
   const pane = await $.ui.mount(PANE)
   let release: () => void = () => undefined
   w.statusHold = new Promise<void>(resolve => (release = resolve))
-  w.statusReply = 'NEW: working | Command | named greet'
+  w.statusReply = 'UNCHANGED'
   await reply('name it greet', 't2')
+  await seedTasks($, [{ id: 's2', title: 'Command', status: 'working', detail: 'named greet' }])
   expect(w.statusPrompts).toHaveLength(2)
 
   await pane.press({ key: 'tab-key-overview' })
@@ -111,16 +118,14 @@ test('on a next build, a look at the Status that ends while a Status call is out
   await clock.settle()
   const seenAt = session!.ledger.overview?.lastLookAt
   expect(seenAt).toBe(1_000_000 + LOOK_MIN_MS)
+  const missed = session!.ledger.overview?.missedInLastLook
   await clock.advance(1)
   release()
   await clock.settle()
 
   expect(session!.ledger.overview).toMatchObject({ lastLookAt: seenAt, look: null })
-  const o = session!.ledger.overview!
-  expect(o.subjects.map(x => [x.name, isSubjectSeen(o, x)])).toEqual([
-    ['Plan', true],
-    ['Command', false],
-  ])
+  expect(session!.ledger.overview?.missedInLastLook).toEqual(missed)
+  expect(session!.taskTree?.map(task => task.title)).toEqual(['Plan', 'Command'])
 })
 
 test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {
@@ -128,8 +133,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
   const prompts: string[] = []
   world($, on, prompts)
   w.paneState = { isShown: true, isFocused: true }
-  w.statusReply =
-    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
+  w.statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nLINK: i1 | s1'
   let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
   on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
   on('state.set', { plugin: 'inbox', key: 'page' } as const, (_$, e) => {
@@ -139,6 +143,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [{ id: 's1', title: 'Runtime', status: 'working', detail: 'Node or Python' }])
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
@@ -165,17 +170,11 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
   expect(page.value).toBeNull()
 })
 
-test('the Status page says what it is for before the session has any work', async ($, on) => {
-  mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-  w.files = ['/.next-build']
+test('the Status page says what it is for before the session has any work', async () => {
+  const session = emptySession()
+  const page = statusPage({ ledger: session.ledger, taskTree: session.taskTree, presence: session.presence }, 1_000_000)
 
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  const terminal = await $.ui.mount(PANE)
-  await terminal.press({ key: 'tab-key-overview' })
-  expect(await terminal.find({ text: /once the work starts\./ })).toBeDefined()
-  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
+  expect(page.empty.hint).toBe("What this session's work is for, where each top-level task stands, and what changed.")
 })
 
 test('on a next build, seen finished work folds into "N done" with no mark, a press unfolds it to list the finished rows one step in and a second folds it, and j selects the fold so f unfolds it, and desktop’s fold line takes its click', async ($, on) => {
@@ -183,10 +182,13 @@ test('on a next build, seen finished work folds into "N done" with no mark, a pr
   world($, on, [])
   w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
-  w.statusReply =
-    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node chosen\nNEW: working | Plan | being written\nDONE: s2 | written'
+  w.statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [
+    { id: 's1', title: 'Runtime', status: 'working', detail: 'Node chosen' },
+    { id: 's2', title: 'Plan', status: 'done', detail: 'written' },
+  ])
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   const pane = await $.ui.mount(PANE)

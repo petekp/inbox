@@ -10,7 +10,7 @@ import type { AnswerMessage } from './press-messages'
 import { parsedReply, applied } from './session-turns'
 import { needsCatchUp, appliedCatchUp } from './session-status'
 import type { SendOutcome } from './session-presses'
-import type { CallKind, ProcessFailure, Session, HostTask } from '../types'
+import type { CallKind, ProcessFailure, Session } from '../types'
 import { askAndWriteStatus } from './status-records'
 import { askedCall, heardCall, withCall } from './call-record'
 import type { HeardCall } from './call-record'
@@ -268,8 +268,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
   /** Runs the Status call for an applied update, once the session's earlier Status calls have finished. */
-  const writeStatus = (after: S, call: StatusCall, tasks: HostTask[]) =>
-    host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, tasks, after.presence.turnsApplied))
+  const writeStatus = (after: S, call: StatusCall) =>
+    host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, after.presence.turnsApplied))
   const followUp = (run: Promise<void>) => {
     const settled = run.catch(() => undefined)
     if (host.background) host.background(settled)
@@ -294,8 +294,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               const noted = (x: S) => (reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at) : x)
               const after = await host.update(x => appliedCatchUp(noted(x), s, parsed, at))
               if (!parsed) return 'stop' as const
-              if (reply.kind === 'reply' && reply.statusCall)
-                followUp(writeStatus(after, reply.statusCall, s.hostTasks))
+              if (reply.kind === 'reply' && reply.statusCall) followUp(writeStatus(after, reply.statusCall))
               continue
             }
             const next = s.pending[0]!
@@ -320,9 +319,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               return applied(x, parsed, at, promptAt)
             })
             if (isApplied)
-              followUp(
-                writeStatus(after, { exchange: { kind: 'reply', exchange: next.ex }, ask: host.ask }, next.ex.tasks),
-              )
+              followUp(writeStatus(after, { exchange: { kind: 'reply', exchange: next.ex }, ask: host.ask }))
             if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }
         } finally {

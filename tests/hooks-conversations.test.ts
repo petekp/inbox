@@ -88,7 +88,7 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   const branched = await contextOf('session-3', 'resume', 'try another way')
   expect(branched).toContain('Pin Node?')
   expect(branched).toContain('Working on: Fixing the build')
-  expect(branched).toContain('- Answer: Waiting on an answer (queued)')
+  expect(branched).not.toContain('- Answer: Waiting on an answer (queued)')
 
   const resumed = await contextOf('session-1', 'resume', 'where were we?')
   expect(resumed).toContain('Pick a cache?')

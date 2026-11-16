@@ -2,26 +2,12 @@ import type { Child, Item, Subject } from '../types'
 import { HELD_MARK, IDLE_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { IDLE_AFTER_MS, isOpen } from './status-limits'
-import type { StatusBranch, StatusCount, StatusRow, StatusStall } from './status-page'
+import type { StatusBranch, StatusRow, StatusStall } from './status-page'
 
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
 
 const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
-
-/** The words a `counts` row gives each mark. */
-const COUNT_WORDS: Record<'working' | 'waits-on-other', string> = {
-  working: 'working',
-  'waits-on-other': 'waiting',
-}
-
-/** Open subjects folded into one count for each status that is under way, in the page's order of marks. Queued work gets no count. */
-export function countsByMark(folded: Subject[]): StatusCount[] {
-  return (['working', 'waits-on-other'] as const).flatMap(status => {
-    const n = folded.filter(x => x.status === status).length
-    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
-  })
-}
 
 /** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
 export function isFinishedUnseen(c: Child, lastLookAt: number | null): boolean {
@@ -58,7 +44,7 @@ function childStall(c: Child): StatusStall | null {
   return null
 }
 
-export function childRow(c: Child, branch: StatusBranch | null, depth: number): StatusRow {
+function childRow(c: Child, branch: StatusBranch | null, depth: number): StatusRow {
   const marks =
     c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
@@ -73,6 +59,8 @@ export function childRow(c: Child, branch: StatusBranch | null, depth: number): 
     branch,
   }
 }
+
+export const looseChildRows = (children: Child[], depth: number) => children.map(c => childRow(c, null, depth))
 
 /** What every part of the list reads to place and draw a subject. */
 export type ListContext = {

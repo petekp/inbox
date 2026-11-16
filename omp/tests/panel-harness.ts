@@ -5,6 +5,7 @@ import { rowKeyPlan } from '../../hooks/action-plan'
 import type { StatusRow } from '../../hooks/status-page'
 import type { RowView } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
+import type { SessionStatus, TaskNode, TaskTree } from '../../types'
 import { demoState } from '../src/demo'
 import { INITIAL_UI, render } from '../src/panel'
 import type { PanelScreen, PanelUi, Style } from '../src/panel'
@@ -31,6 +32,36 @@ export const screenOf = (overrides: Partial<PanelScreen> = {}, holds = NO_HOLDS)
   version: '1.2.3',
   ...overrides,
 })
+
+export function taskNode(
+  id: string,
+  title: string,
+  status: TaskNode['status'],
+  updatedAt = NOW,
+  options: Partial<Pick<TaskNode, 'parentId' | 'weight' | 'detail' | 'goalId' | 'streamId'>> = {},
+): TaskNode {
+  return {
+    id,
+    title,
+    status,
+    updatedAt,
+    createdAt: updatedAt,
+    parentId: null,
+    weight: 1,
+    detail: '',
+    notes: [],
+    history: [],
+    ...options,
+  }
+}
+
+export function taskScreen(tree: TaskTree, patch: Partial<SessionStatus> = {}): PanelScreen {
+  const state = demoState(NOW)
+  const overview = { ...state.ledger.overview!, ...patch }
+  return screenOf({
+    view: sessionView({ ...state, taskTree: tree, ledger: { ...state.ledger, overview } }, NOW, SETTLED_MS, NO_HOLDS),
+  })
+}
 
 export const drawn = (screen: PanelScreen, ui: PanelUi, width = 200) => render(screen, ui, width, NOW, style)
 export const text = (screen: PanelScreen, ui: PanelUi, width = 200) => drawn(screen, ui, width).map(strip).join('\n')

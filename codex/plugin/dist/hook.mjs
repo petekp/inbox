@@ -90,8 +90,7 @@ var EMPTY_SESSION_STATUS = {
   serves: {},
   goalRefused: null
 };
-var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+var STATUSES = ["working", "queued", "waits-on-other", "done", "dropped"];
 function clipWords(text2, limit) {
   const words3 = text2.trim().split(/\s+/).filter(Boolean);
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
@@ -558,7 +557,9 @@ function fromLists(o) {
 }
 function missedOf(saved, ids) {
   const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
-  return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
+  return Object.fromEntries(
+    entries.slice(0, 200).filter(([id, at]) => (ids.has(id) || id.length <= 100) && (at === null || time2(at) !== null))
+  );
 }
 function upgradeStatus(saved) {
   const o = saved;
@@ -938,6 +939,31 @@ var TASK_NOTE_LENGTH = 2e3;
 function notesOf(notes) {
   return notes.slice(0, TASK_NOTES_LIMIT).map((note) => note.slice(0, TASK_NOTE_LENGTH));
 }
+function taskRootGroups(tree) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const task of tree.filter((task2) => task2.parentId === null)) {
+    const key = task.streamId ? `stream:${task.streamId}` : `task:${task.id}`;
+    const roots = groups.get(key);
+    if (roots) roots.push(task);
+    else groups.set(key, [task]);
+  }
+  return [...groups.values()].map((roots) => ({ id: roots[0].id, roots }));
+}
+function weightedTaskProgress(tree, rootIds) {
+  const children = /* @__PURE__ */ new Map();
+  for (const task of tree) children.set(task.parentId, [...children.get(task.parentId) ?? [], task]);
+  const progress = (task) => {
+    if (task.status === "done") return 1;
+    if (task.status === "dropped") return 0;
+    return weightedAverage((children.get(task.id) ?? []).map((child) => [progress(child), child.weight]));
+  };
+  const roots = rootIds === void 0 ? children.get(null) ?? [] : tree.filter((task) => Array.isArray(rootIds) ? rootIds.includes(task.id) : task.id === rootIds);
+  return weightedAverage(roots.map((task) => [progress(task), task.weight]));
+}
+function weightedAverage(values) {
+  const total = values.reduce((sum, [, weight]) => sum + weight, 0);
+  return total ? values.reduce((sum, [value, weight]) => sum + value * weight, 0) / total : 0;
+}
 function taskTreeFromStatus(status) {
   if (!status) return [];
   const goalId = status.goal && !status.goal.isAwaitingMilestones ? `goal-${status.goal.setAt}` : void 0;
@@ -1192,6 +1218,14 @@ function capitalized(text2) {
 }
 var ISSUE_LABEL = "File issue";
 
+// ../hooks/status-goal-gate.ts
+var goalTaskId = (goal) => `goal-${goal.setAt}`;
+var tasksForGoal = (tree, goal) => tree.filter((task) => task.goalId === goalTaskId(goal));
+function isGoalMet(goal, tree) {
+  const tasks = goal === null ? [] : tasksForGoal(tree, goal);
+  return tasks.length > 0 && tasks.every((task) => task.status === "done" || task.status === "dropped");
+}
+
 // ../hooks/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
@@ -1386,56 +1420,29 @@ function isSubjectSeen(o, s) {
 }
 
 // ../hooks/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  const oldest = items.filter((item) => links[item.id]?.includes(id)).sort((a, b) => (a.at ?? -Infinity) - (b.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
 }
-function milestoneRow(m, o, items) {
-  const isOpen2 = m.status !== "done" && m.status !== "dropped";
-  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
-  const holds = items.filter((i) => {
-    const to = o.askSubjects[i.id] ?? [];
-    return to.some((id) => id === m.id || servingIds.has(id));
-  });
-  const isHeld = isOpen2 && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return {
-    id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
-    name: m.name,
-    text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
-    was: isChanged ? m.was : null,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
-    rows: []
-  };
-}
-function goalPage(o, items) {
-  const g = o?.goal ?? null;
-  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
-  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  const shown = o.milestones.filter(
-    (m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt
-  );
-  const done = kept.filter((m) => m.status === "done").length;
-  const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
-  const head = o.head;
+function goalPage(o, _items, tree) {
+  const goal = o?.goal ?? null;
+  if (o === null || goal === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
+  const linked = tasksForGoal(tree, goal);
+  const isMet = isGoalMet(goal, tree);
+  const awaiting = linked.length === 0;
+  const done = linked.filter((task) => task.status === "done").length;
+  const was = goal.was !== null && (o.lastLookAt === null || goal.setAt > o.lastLookAt) ? goal.was : null;
   return {
     goal: {
       label: isMet ? "Goal met" : GOAL_HEADING,
-      text: g.text,
-      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
+      text: goal.text,
+      count: isMet || awaiting ? null : `${done} of ${linked.filter((task) => task.status !== "dropped").length} tasks done`,
       isMet,
-      was: isWasShown ? g.was : null,
-      now: head ? `Now: ${head.description || head.title}` : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
+      was,
+      now: o.head ? `Now: ${o.head.description || o.head.title}` : null,
+      awaiting: awaiting ? "No tasks linked yet" : null,
+      milestones: []
     },
     canRestoreGoal: false
   };
@@ -1444,16 +1451,6 @@ function goalPage(o, items) {
 // ../hooks/status-page-parts.ts
 var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
-var COUNT_WORDS = {
-  working: "working",
-  "waits-on-other": "waiting"
-};
-function countsByMark(folded) {
-  return ["working", "waits-on-other"].flatMap((status) => {
-    const n = folded.filter((x) => x.status === status).length;
-    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
-  });
-}
 function isFinishedUnseen(c, lastLookAt) {
   return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
 }
@@ -1485,6 +1482,7 @@ function childRow(c, branch, depth) {
     branch
   };
 }
+var looseChildRows = (children, depth) => children.map((c) => childRow(c, null, depth));
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -1531,155 +1529,89 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
 
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var OTHER_WORK = "Other work";
-var NEW_CLOSED_ROWS = 2;
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
-var NAMED_FOLD_NAMES = 2;
-var IS_FOLD_MORE_SEEN = true;
-var namedFoldMore = (n) => `+${n} more`;
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function statusOf2(roots) {
+  if (roots.every((task) => task.status === "done" || task.status === "dropped"))
+    return roots.some((task) => task.status === "done") ? "done" : "dropped";
+  if (roots.some((task) => task.status === "working")) return "working";
+  return roots.some((task) => task.status === "waits-on-other") ? "waits-on-other" : "queued";
+}
 function statusPage(s, now) {
   const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => o === null || !isSubjectSeen(o, x);
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items);
-  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
-  const servedBy = (x) => o?.goal ? o.serves[x.id] : void 0;
-  const milestoneOf2 = (x) => {
-    const to = servedBy(x);
-    return to !== void 0 && milestoneIds.has(to) ? to : null;
+  const tree = s.taskTree ?? [];
+  const byId = new Map(tree.map((task) => [task.id, task]));
+  const groups = taskRootGroups(tree);
+  const rootIds = new Map(groups.flatMap((group) => group.roots.map((root) => [root.id, group.id])));
+  const rootIdOf = (id) => {
+    let task = id === null ? void 0 : byId.get(id);
+    while (task?.parentId !== null && task?.parentId !== void 0) task = byId.get(task.parentId);
+    return task ? rootIds.get(task.id) ?? task.id : null;
   };
-  const hasMilestones = milestoneIds.size > 0;
-  const isUnneeded = (x) => servedBy(x) === "none";
-  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf2(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const needed = subjects.filter((x) => !isUnneeded(x));
-  const main2 = needed.filter((x) => !isOther(x));
-  const other = subjects.filter(isOther);
-  const open2 = needed.filter(isOpen).sort(pageOrder);
-  const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
-  const split = (part) => {
-    const unseenClosed = unseenClosedOf(part);
-    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const openAskIds = new Set(s.ledger.items.map((item) => item.id));
+  const askLinks = Object.fromEntries(
+    Object.entries(o?.askSubjects ?? {}).filter(([ask]) => openAskIds.has(ask)).map(([ask, ids]) => [ask, [...new Set(ids.map(rootIdOf).filter((id) => id !== null))]])
+  );
+  const heldIds = new Set(Object.values(askLinks).flat());
+  const lastLookAt = o?.lastLookAt ?? null;
+  const missed = o?.missedInLastLook ?? {};
+  const runningChildren = (o?.children ?? []).filter((child) => isChildRunning(child, now) || isFinishedUnseen(child, lastLookAt)).map((child) => ({ ...child, subjectId: rootIdOf(child.subjectId) })).sort((a, b) => (b.lastActivityAt ?? b.startedAt) - (a.lastActivityAt ?? a.startedAt));
+  const taskRows = groups.map(({ id, roots }) => {
+    const detail = roots.map((task) => task.detail).filter(Boolean).join("; ");
+    const progress = Math.round(weightedTaskProgress(tree, roots.map((task) => task.id)) * 100);
+    const changedAt = Math.max(...roots.map((task) => task.updatedAt));
+    const closed = roots.every((task) => task.status === "done" || task.status === "dropped");
     return {
-      shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
-      newClosed,
-      named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter((x) => folded.includes(x)),
-      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
+      id,
+      name: roots.map((task) => task.title).join(", "),
+      status: statusOf2(roots),
+      text: `${progress}% complete${detail ? ` \xB7 ${detail}` : ""}`,
+      createdAt: Math.min(...roots.map((task) => task.createdAt)),
+      changedAt,
+      closedAt: closed ? changedAt : null,
+      was: null,
+      merged: null,
+      into: null
     };
+  });
+  const place = { working: 0, "waits-on-other": 1, queued: 2, done: 3, dropped: 3 };
+  taskRows.sort((a, b) => Number(heldIds.has(b.id)) - Number(heldIds.has(a.id)) || place[a.status] - place[b.status] || b.changedAt - a.changedAt);
+  const isNew = (task) => {
+    const seenAt = task.id in missed ? missed[task.id] : lastLookAt;
+    return seenAt === null || seenAt === void 0 || task.changedAt > seenAt;
   };
-  const top = split(main2.filter((x) => milestoneOf2(x) === null));
-  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main2.filter((x) => milestoneOf2(x) === m.id)));
-  const otherUnseenClosed = unseenClosedOf(other);
-  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
-  const otherFolded = other.filter(isOtherFolded);
-  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
+  const isHeld = (task) => isOpen(task) && heldIds.has(task.id);
+  const oldestAskOf = (task) => isHeld(task) ? oldestAsk(s.ledger.items, askLinks, task.id) : null;
   const ctx = {
     isNew,
     isHeld,
     oldestAskOf,
-    running,
+    running: runningChildren,
     isTurnRunning: s.presence.isTurnRunning,
     now
   };
-  const foldCtx = { ...ctx, running: [] };
-  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const closed = named.filter((x) => x.status === status);
-    const names = closed.map((x) => x.name);
-    const hidden = names.length - NAMED_FOLD_NAMES;
-    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
-    return names.length === 0 ? [] : [
-      {
-        kind: "fold",
-        id: `${prefix}also-${status}`,
-        depth,
-        ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
-        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
-      }
-    ];
-  });
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
-    {
-      kind: "fold",
-      id: `${prefix}open`,
-      depth,
-      ...SUBJECT_MARKS.queued,
-      text: `${foldedOpen.length} more`,
-      subjectIds: []
-    }
-  ];
-  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
-    {
+  const shown = taskRows.filter((task) => isOpen(task) || isNew(task));
+  const done = taskRows.filter((task) => task.status === "done" && !isNew(task));
+  const shownIds = new Set(shown.map((task) => task.id));
+  const loose = runningChildren.filter((child) => child.subjectId === null || !shownIds.has(child.subjectId));
+  const rows = [...looseChildRows(loose, 0), ...partRows(shown, ctx, 0)];
+  if (done.length > 0)
+    rows.push({
       kind: "done-fold",
-      id: `${prefix}done`,
-      depth,
-      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
-    }
-  ];
-  const foldedPart = (prefix, p, depth) => [
-    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
-  ];
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
-    const x = subjects.find((y) => y.id === c.subjectId);
-    return { child: c, milestoneId: x === void 0 ? null : milestoneOf2(x) };
-  });
-  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
-  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
-  const afterOtherOpen = [
-    ...openFold(
-      "other-",
-      otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)),
-      0
-    ),
-    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
-  ];
-  const otherRows = [
-    ...hasMilestones ? looseRows(null, 0) : [],
-    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    ...doneFold(
-      "other-",
-      otherFolded.filter((x) => x.status === "done"),
-      otherNewClosed,
-      0
-    )
-  ];
-  const rows = [
-    ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0),
-    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
-  ];
-  const milestoneRows = (id, p) => [...looseRows(id, 1), ...foldedPart(`${id}-`, p, 1)];
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]) }))
-  };
+      id: "done",
+      depth: 0,
+      text: `${done.length} done`,
+      rows: partRows(done, { ...ctx, running: [] }, 1)
+    });
+  const goalParts = goalPage(o, s.ledger.items, tree);
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    isEmpty: head === null && rows.length === 0 && goalParts.goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
-    goal,
     rows,
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+      hint: "What this session's work is for, where each top-level task stands, and what changed."
     }
   };
 }
@@ -2748,13 +2680,15 @@ function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
-function heldSubjectsOf(o, askId) {
-  const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : [];
-  const linkable = [...o?.subjects ?? [], ...milestones];
-  return (o?.askSubjects[askId] ?? []).flatMap((id) => linkable.filter((s) => s.id === id && isOpen(s)));
+function heldTasksOf(ledger, tree, askId) {
+  return (ledger.overview?.askSubjects[askId] ?? []).flatMap((id) => {
+    const task = tree.find((node) => node.id === id);
+    return task && task.status !== "done" && task.status !== "dropped" ? [task.title] : [];
+  });
 }
 function inboxView({
   ledger,
+  taskTree = [],
   lastActions,
   notes,
   turns,
@@ -2879,7 +2813,7 @@ function inboxView({
       state,
       pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt)
     );
-    const held2 = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
+    const held2 = state.is === "open" ? heldTasksOf(ledger, taskTree, row.id) : [];
     return {
       ...row,
       document,
@@ -2888,7 +2822,7 @@ function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
+      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.join(", ")}` : null,
       recLine: state.is === "open" ? recLineOf(row.item) : null,
       contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
@@ -3005,6 +2939,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   const lastActions = withoutStalePending(s.lastActions, now);
   const inbox = inboxView({
     ledger: l,
+    taskTree: s.taskTree,
     lastActions,
     notes,
     turns: s.presence,

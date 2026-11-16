@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { isSubjectSeen } from '../../hooks/status-children'
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
 import {
@@ -286,7 +285,7 @@ test('in a Herdr app terminal, a press the look ran itself records its result an
   expect(existsSync(join(folder, 'p1.json'))).toBe(false)
   expect(w.execCalls.filter(c => c.command === 'open')).toEqual([])
   const screen = await inbox.screen(makeCtx())
-  expect(JSON.stringify(screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]?.result)).toContain('no browser')
+  expect(JSON.stringify(screen.view.lastActions[stepPress(1).id]?.result)).toContain('no browser')
   const published = () => JSON.parse(readFileSync(sessionFile, 'utf8'))
   expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
 
@@ -300,14 +299,16 @@ test('in a Herdr app terminal, a look file the look wrote counts the Status subj
   const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
   createInbox(pi(), { ...deps(), herdrTarget: target })
   await call('session_start', { type: 'session_start' })
+  await w.tools
+    .get('tasks')
+    .execute('call', { operation: 'add', task_id: 's1', title: 'Queue' }, undefined, undefined, makeCtx())
   const sessionFile = join(appHome, 'inbox/sessions/s1.json')
   for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
-  w.statusReply =
-    'HEAD: Offline sync | Adding offline sync\nNEW: working | Queue | built\nNEW: queued | Docs | not started'
+  w.statusReply = 'HEAD: Offline sync | Adding offline sync'
   await prompt('add offline sync')
   await endAgent('Queue built.')
   await settle()
-  const changedAt = state().ledger.overview.subjects[0].changedAt as number
+  const changedAt = state().taskTree[0].updatedAt
   const folder = join(appHome, 'inbox/presses/s1')
   mkdirSync(folder, { recursive: true })
   const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
@@ -318,26 +319,27 @@ test('in a Herdr app terminal, a look file the look wrote counts the Status subj
 
   const overview = state().ledger.overview
   expect(
-    overview.subjects
-      .filter((s: { id: string; changedAt: number }) => isSubjectSeen(overview, s))
-      .map((s: { id: string }) => s.id),
+    state()
+      .taskTree.filter((task: { id: string }) => !(task.id in overview.missedInLastLook))
+      .map((task: { id: string }) => task.id),
   ).toEqual(['s1'])
   expect(state().lastHerdrPress).toBeUndefined()
 })
 
 test('a goal the Status call writes is set at once, Remove goal clears it, a typed goal sets the saved goal, and none sends a message', async () => {
   const inbox = createInbox(pi(), deps())
-  w.statusReply = [
-    'HEAD: Pilot | Shipping the pilot',
-    'NEW: working | Fixes | built',
-    'NEW: queued | Announcement | not started',
-    'GOAL: Pilot ready to announce | done Fixes built; queued Announced',
-  ].join('\n')
+  await w.tools
+    .get('tasks')
+    .execute('call', { operation: 'add', task_id: 't1', title: 'Fixes' }, undefined, undefined, makeCtx())
+  await w.tools
+    .get('tasks')
+    .execute('call', { operation: 'add', task_id: 't2', title: 'Announcement' }, undefined, undefined, makeCtx())
+  w.statusReply = ['HEAD: Pilot | Shipping the pilot', 'GOAL: Pilot ready to announce'].join('\n')
   await prompt('get the pilot ready to announce')
   await endAgent('Fixes built.')
   await settle()
   expect(state().ledger.overview.goal).toMatchObject({ text: 'Pilot ready to announce', source: 'inferred' })
-  expect(state().ledger.overview.milestones.map((m: { name: string }) => m.name)).toEqual(['Fixes built', 'Announced'])
+  expect(state().ledger.overview.goal.isAwaitingMilestones).toBe(true)
 
   await inbox.press(makeCtx(), { action: 'remove-goal', id: 'goal' }, NO_HOLDS)
   expect(state().ledger.overview).toMatchObject({ goal: null, removedGoals: ['announce pilot ready'] })

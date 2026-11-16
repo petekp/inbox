@@ -72,9 +72,9 @@ test('the list shows held, working, waiting, queued, then finished rows, newest 
     '◆ Seen queue: later · waiting',
     '◐ Sync: step two',
     '◐ Export: step one',
+    '◐ Seen work: old step',
     '◌ Review: sent for review',
     '○ Help menu: outline ready',
-    '○ 1 more',
     '✓ Banner: shipped',
   ])
 })
@@ -200,7 +200,7 @@ test('a page with no head and no rows shows its empty state, even while a turn r
   )
 })
 
-test('work closed since the last look shows as two rows, the rest is named in a fold for each status, and finished work folds into a count once seen', () => {
+test('closed tasks changed since the last look remain visible, while seen done tasks fold together', () => {
   const now = 100 * MIN
   const opened = after(
     null,
@@ -226,13 +226,14 @@ test('work closed since the last look shows as two rows, the rest is named in a 
   expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
     '✓ Four: done d',
     '✓ Three: done c',
-    '✓ Also done: Five, Two',
-    '✗ Also dropped: Six',
-    '▸ 1 more done',
+    '✓ Five: done e',
+    '✗ Six: not needed',
+    '✓ Two: done b',
+    '▸ 1 done',
   ])
 })
 
-test('when every row on the page closed since the last look, the named fold ends the rows', () => {
+test('done task rows remain visible until a later look folds them', () => {
   const opened = after(
     null,
     ['NEW: working | One | a', 'NEW: working | Two | b', 'NEW: working | Three | c'].join('\n'),
@@ -246,11 +247,11 @@ test('when every row on the page closed since the last look, the named fold ends
   expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 60 * MIN).rows)).toEqual([
     '✓ Three: done c',
     '✓ Two: done b',
-    '✓ Also done: One',
+    '✓ One: done a',
   ])
 })
 
-test('a look that showed a named fold counts as seen the work it names and the work its +N more counts, so the page after folds that work into its done count', () => {
+test('a look that shows every done task folds them into one done count', () => {
   const opened = after(
     null,
     ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].map((name, n) => `NEW: working | ${name} | step ${n}`).join('\n'),
@@ -262,14 +263,14 @@ test('a look that showed a named fold counts as seen the work it names and the w
   )
   const before = { ...closed, lastLookAt: 15 * MIN }
   const rows = page(before, 60 * MIN).rows
-  expect(shape(rows)).toEqual(['◐ Six: step 5', '✓ Five: e', '✓ Four: d', '✓ Also done: Three, Two, +1 more'])
+  expect(shape(rows)).toEqual(['◐ Six: step 5', '✓ Five: e', '✓ Four: d', '✓ Three: c', '✓ Two: b', '✓ One: a'])
 
   const shown = Object.fromEntries(rows.flatMap(seenSubjectIds).map(id => [id, 61 * MIN]))
   const looked = lookEnded(lookStarted(before, 60 * MIN), 60 * MIN + LOOK_MIN_MS, shown)!
   expect(shape(page(looked, 70 * MIN).rows)).toEqual(['◐ Six: step 5', '▸ 5 done'])
 })
 
-test('a named line shows two names, the newest first, and counts the rest as +N more', () => {
+test('done tasks stay individually readable until they have been seen', () => {
   const names = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven']
   const opened = after(null, names.map(n => `NEW: working | ${n} | x`).join('\n'), 10 * MIN)
   const closed = names.reduce((o, _, n) => after(o, `DONE: s${n + 1} | done`, (20 + 5 * n) * MIN), opened)
@@ -277,7 +278,11 @@ test('a named line shows two names, the newest first, and counts the rest as +N 
   expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 90 * MIN).rows)).toEqual([
     '✓ Seven: done',
     '✓ Six: done',
-    '✓ Also done: Five, Four, +3 more',
+    '✓ Five: done',
+    '✓ Four: done',
+    '✓ Three: done',
+    '✓ Two: done',
+    '✓ One: done',
   ])
 })
 

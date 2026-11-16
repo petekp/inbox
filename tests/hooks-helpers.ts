@@ -1,5 +1,6 @@
 import { mock } from 'claude-code/testing'
-import type { Mounted } from 'claude-code/testing'
+import type { Engine, Mounted } from 'claude-code/testing'
+import type { TaskStatus } from '../types'
 import { reportedTokens } from './session-script'
 import { w } from './hooks-world'
 
@@ -36,6 +37,21 @@ export async function selectRow(
   id: string,
 ) {
   if (await pane.find({ key: `title-${id}` })) await pane.press({ key: `title-${id}` })
+}
+
+export async function seedTasks(
+  $: Pick<Engine, 'tool'>,
+  tasks: { id: string; title: string; status: TaskStatus; detail?: string }[],
+) {
+  for (const task of tasks)
+    await $.tool.call({
+      tool: 'mcp__inbox__tasks',
+      operation: 'add',
+      task_id: task.id,
+      title: task.title,
+      detail: task.detail ?? '',
+      status: task.status,
+    })
 }
 
 export async function leaveAndReturn(

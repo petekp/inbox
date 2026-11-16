@@ -5,8 +5,9 @@ import type { Update } from './reply-parse'
 import { lookEnded, lookReported, lookStarted } from './status-children'
 import type { ReportedLook, ShownRows } from './status-children'
 import { applyStatus } from './status-ops'
+import { taskRootGroups } from './task-tree'
 import type { StatusAnswer } from './status'
-import type { Ledger, SessionStatus, StatusFailure, Session } from '../types'
+import type { Ledger, SessionStatus, StatusFailure, Session, TaskTree } from '../types'
 
 /**
  * Whether a Status call made for `appliedAfter` applied turns may still write. It may not when the session now has
@@ -31,13 +32,12 @@ export function appliedStatus<S extends Session>(
   isCatchUp = false,
 ): S {
   if (!isStatusCallCurrent(s, appliedAfter)) return s
+  const askIds = new Set(s.ledger.items.map(i => i.id))
+  const overview = applyStatus(s.ledger.overview, answer, now, askIds, readSetAt, s.taskTree)
 
   return {
     ...s,
-    ledger: {
-      ...s.ledger,
-      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map(i => i.id)), readSetAt),
-    },
+    ledger: { ...s.ledger, overview },
     overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter,
@@ -120,13 +120,45 @@ function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
 }
 
 /** The Status tab stopped being shown at `at`: the look ends, and counts the subjects `shown` names as seen. */
-export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number, shown: ShownRows): S {
-  return statusChanged(s, o => lookEnded(o, at, shown))
+function taskLook<S extends { ledger: Ledger; taskTree?: TaskTree }>(
+  s: S,
+  at: number,
+  shown: ShownRows,
+  baseline: number | null,
+  before: Record<string, number | null> = {},
+  late = false,
+): S {
+  const overview = s.ledger.overview
+  if (overview === null) return s
+  const missed = { ...before, ...overview.missedInLastLook }
+  for (const { id, roots } of taskRootGroups(s.taskTree ?? [])) {
+    const updatedAt = Math.max(...roots.map(task => task.updatedAt))
+    const shownAt = shown === 'all' ? at : (shown[id] ?? -Infinity)
+    const seenAt = id in missed ? (missed[id] ?? null) : baseline
+    if (shownAt >= updatedAt && (!late || seenAt === null || seenAt < at)) {
+      if (late) missed[id] = at
+      else delete missed[id]
+    } else if (!late && !(id in missed) && (baseline === null || updatedAt > baseline)) missed[id] = baseline
+  }
+  return { ...s, ledger: { ...s.ledger, overview: { ...overview, missedInLastLook: missed } } }
+}
+
+export function lookEndedOn<S extends { ledger: Ledger; taskTree?: TaskTree }>(s: S, at: number, shown: ShownRows): S {
+  const baseline = s.ledger.overview?.lastLookAt ?? null
+  const ended = statusChanged(s, o => lookEnded(o, at, shown))
+  return s.ledger.overview?.look && at - s.ledger.overview.look.startedAt >= 5_000
+    ? taskLook(ended, at, shown, baseline, s.ledger.overview?.missedInLastLook)
+    : ended
 }
 
 /** Counts a look another program reported, as the Herdr look does, and keeps the look this host has in progress. */
-export function lookReportedOn<S extends { ledger: Ledger }>(s: S, look: ReportedLook): S {
-  return statusChanged(s, o => lookReported(o, look))
+export function lookReportedOn<S extends { ledger: Ledger; taskTree?: TaskTree }>(s: S, look: ReportedLook): S {
+  const reported = statusChanged(s, o => lookReported(o, look))
+  const lastLookAt = s.ledger.overview?.lastLookAt ?? null
+  const late = lastLookAt !== null && look.endedAt <= lastLookAt
+  return look.endedAt - look.startedAt >= 5_000
+    ? taskLook(reported, look.endedAt, look.shown, lastLookAt, {}, late)
+    : reported
 }
 
 /** The session with its Status after `change`, or the same session when the Status did not change. */

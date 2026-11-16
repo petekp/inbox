@@ -36,10 +36,6 @@ type TaskTreeError =
   | 'invalid-owner'
 type TaskTreeResult = { ok: true; tree: TaskTree } | { ok: false; reason: TaskTreeError }
 
-function taskId(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
 function taskText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -64,12 +60,12 @@ function failure(tree: TaskTree, result: TaskTreeResult, id: string): TaskToolAn
 type TaskToolAnswer = { taskTree: TaskTree; result: string }
 
 /** Applies a task tool call and returns its normalized result for the calling agent. */
-export function taskTreeAnswer(tree: TaskTree, input: Record<string, unknown>, now: number): TaskToolAnswer {
+export function taskTreeAnswer(tree: TaskTree, input: Record<string, unknown>, now: number, goalId?: string) {
   const operation = input.operation
   if (!['add', 'update', 'move', 'complete', 'note'].includes(String(operation)))
     return { taskTree: tree, result: 'Not saved: operation must be add, update, move, complete or note.' }
 
-  const id = taskId(input.task_id)
+  const id = taskText(input.task_id)
   if (!id || id.length > TASK_ID_LENGTH)
     return { taskTree: tree, result: `Not saved: task_id must be 1–${TASK_ID_LENGTH} characters.` }
 
@@ -99,6 +95,7 @@ export function taskTreeAnswer(tree: TaskTree, input: Record<string, unknown>, n
         taskTree: tree,
         result: `Not saved: parent_id must be an existing task id up to ${TASK_ID_LENGTH} characters, or null.`,
       }
+    const linkedGoalId = typeof parent === 'string' ? tree.find(task => task.id === parent.trim())?.goalId : goalId
     const node: TaskNode = {
       id,
       parentId: typeof parent === 'string' ? parent.trim() : null,
@@ -110,6 +107,7 @@ export function taskTreeAnswer(tree: TaskTree, input: Record<string, unknown>, n
       createdAt: now,
       updatedAt: now,
       history: [],
+      ...(linkedGoalId ? { goalId: linkedGoalId } : {}),
       ...(linkInput.links ? { links: linkInput.links } : {}),
     }
     result = createTask(tree, node, 'agent')

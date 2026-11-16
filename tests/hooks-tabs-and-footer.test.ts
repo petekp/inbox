@@ -3,7 +3,7 @@ import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
 import { cellWidth } from '../hooks/text'
 import { shownTabs } from '../hooks/tabs'
 import { w, world } from './hooks-world'
-import { PANE } from './hooks-helpers'
+import { PANE, seedTasks } from './hooks-helpers'
 
 test('the pane footer shows the version from the plugin manifest', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
@@ -52,12 +52,15 @@ test('on a next build, at 20 desktop columns the tabs show their symbols with th
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
-  w.statusReply =
-    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
+  w.statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nLINK: i1 | s1'
   w.surfaces = ['desktop']
 
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [
+    { id: 's1', title: 'Runtime', status: 'working', detail: 'Node or Python' },
+    { id: 's2', title: 'Plan', status: 'done', detail: 'written' },
+  ])
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   await $.tool.call({
@@ -87,7 +90,7 @@ test('on a next build, at 20 desktop columns the tabs show their symbols with th
   expect((await pane.find({ key: 'status-head' }))?.text).toBe(
     'Adding a greeting CLIBuilding a CLI that greets by name',
   )
-  expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
+  expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('100% complete · written')
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
 })
 

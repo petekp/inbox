@@ -2,7 +2,7 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { w, world } from './hooks-world'
-import { PANE, replyField, replyKey } from './hooks-helpers'
+import { PANE, replyField, replyKey, seedTasks } from './hooks-helpers'
 import { NO_GOAL_TEXT } from '../hooks/status-goal-page'
 
 const INFERRING = [
@@ -21,6 +21,10 @@ async function statusShown($: Engine, on: On) {
   on('ui.focus', () => ({}))
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'get the pilot ready to announce', wait: false, origin: { kind: 'composer' } })
+  await seedTasks($, [
+    { id: 's1', title: 'Fixes', status: 'done', detail: 'built' },
+    { id: 's2', title: 'Announcement', status: 'queued', detail: 'not started' },
+  ])
   await $.turn.complete({ answer: 'Fixes built.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
@@ -29,22 +33,20 @@ async function statusShown($: Engine, on: On) {
   return { clock, pane }
 }
 
-test('on a next build, a goal the Status call writes shows at once under the Goal heading with its milestones, Edit and Remove draw at the right end of the heading row, the head draws as its Now line, and nothing is sent', async ($, on) => {
+test('on a next build, a goal the Status call writes keeps its controls and Now line while its tasks remain tree-owned', async ($, on) => {
   const { pane } = await statusShown($, on)
 
   expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+e: Edit · r: Remove$/)
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('e: Edit')
   expect((await pane.find({ key: 'remove-goal-goal' }))?.text).toBe('r: Remove')
-  expect((await pane.find({ key: 'goal-text' }))?.text.replaceAll('\u00a0', ' ')).toBe(
-    'Pilot ready to announce · 1 of 2 done',
-  )
-  expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
+  expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
+  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('No tasks linked yet')
   expect((await pane.find({ key: 'goal-now' }))?.text).toBe('Now: Shipping the pilot')
   expect(await pane.find({ key: 'status-head' })).toBeUndefined()
   expect(w.sent).toEqual([])
 })
 
-test('on a next build, Remove goal leaves the Goal heading with the line that says no goal is set and offers Undo, which brings the goal back, then New, which opens an empty goal field that sets the typed goal and waits for its milestones', async ($, on) => {
+test('on a next build, Remove goal offers Undo, then New opens a field for a user-owned goal', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
 
   await pane.press({ key: 'remove-goal-goal-key' })
@@ -58,7 +60,7 @@ test('on a next build, Remove goal leaves the Goal heading with the line that sa
   expect(hotkeys.filter(k => k === 'u')).toHaveLength(1)
   await pane.press({ key: 'restore-goal-goal-key' })
   await clock.settle()
-  expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
+  expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
   await pane.press({ key: 'remove-goal-goal-key' })
   await clock.settle()
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
@@ -71,7 +73,7 @@ test('on a next build, Remove goal leaves the Goal heading with the line that sa
   await clock.settle()
   expect(await replyField(pane, 'goal')).toBeUndefined()
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot live for every team')
-  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('Milestones after the next reply')
+  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('No tasks linked yet')
   expect(w.sent).toEqual([])
 })
 
@@ -101,9 +103,7 @@ test('on a next build, the goal’s Edit opens the field with the goal in it in 
   await pane.press({ key: 'cancel-goal' })
   await clock.settle()
   expect(await replyField(pane, 'goal')).toBeUndefined()
-  expect((await pane.find({ key: 'goal-text' }))?.text.replaceAll('\u00a0', ' ')).toBe(
-    'Pilot ready to announce · 1 of 2 done',
-  )
+  expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
 })
 
 test('on a next build, New on the empty Status page sets the typed goal before any Status call', async ($, on) => {
@@ -122,5 +122,5 @@ test('on a next build, New on the empty Status page sets the typed goal before a
   await pane.input({ key: await replyKey(pane, 'goal'), text: 'Greeting CLI on npm' })
   await clock.settle()
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Greeting CLI on npm')
-  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('Milestones after the next reply')
+  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('No tasks linked yet')
 })

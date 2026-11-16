@@ -1,112 +1,56 @@
-import type { SubjectStatus } from '../types'
-import { NL, OPEN_STATUSES, STATUSES } from './status-limits'
-import type { OpenStatus } from './status-limits'
+import { NL } from './status-limits'
 
 /** One line of the Status call's answer. */
 export type Op =
   | { kind: 'none' }
-  | { kind: 'new'; status: OpenStatus; name: string; text: string }
-  | { kind: 'set'; ref: string; status: OpenStatus; text: string }
-  | { kind: 'done'; ref: string; text: string }
-  | { kind: 'drop'; ref: string; why: string; into: string | null }
-  | { kind: 'was'; ref: string; text: string }
   | { kind: 'head'; title: string; description: string }
-  /** `ref` is a running child's id or an open ask's id. `subject` may name a milestone. */
-  | { kind: 'link'; ref: string; subject: string }
-  /** A goal the call sets from the session's work, with the milestones it needs. Code applies it only when it may. */
-  | { kind: 'goal'; text: string; milestones: { status: SubjectStatus; name: string }[] }
+  | { kind: 'link'; ref: string; taskId: string }
+  | { kind: 'goal'; text: string }
   /** Clears an inferred goal the session's work has left, when no next goal is clear. */
   | { kind: 'retire'; why: string }
-  | { kind: 'milestone'; status: SubjectStatus; name: string; text: string }
-  /** `milestone` is null for work the goal does not need. */
-  | { kind: 'serves'; subject: string; milestone: string | null }
 
 /** What the Status call answered: nothing to change, or the changes to make. */
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
 const LINE =
   /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i
+const IGNORED = new Set(['NEW', 'SET', 'DONE', 'DROP', 'WAS', 'MILESTONE', 'SERVES'])
 
 function fields(value: string): string[] {
   return value.split('|').map(f => f.trim())
 }
 
-function openStatus(s: string | undefined): OpenStatus | null {
-  return OPEN_STATUSES.find(o => o === s?.toLowerCase()) ?? null
-}
-
-function anyStatus(s: string | undefined): SubjectStatus | null {
-  return STATUSES.find(o => o === s?.toLowerCase()) ?? null
-}
-
-/** A GOAL line's milestones, as `status name; status name`. A milestone with no known status is left out. */
-function goalMilestones(value: string | undefined): { status: SubjectStatus; name: string }[] {
-  return (value ?? '').split(';').flatMap(part => {
-    const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part)
-    const status = anyStatus(m?.[1])
-    return status && m?.[2] ? [{ status, name: m[2] }] : []
-  })
-}
-
 function opOf(key: string, f: string[]): Op | null {
   if (key === 'NOCHANGE' || key === 'UNCHANGED') return { kind: 'none' }
-  if (key === 'NEW') {
-    const status = openStatus(f[0])
-
-    return status && f[1] ? { kind: 'new', status, name: f[1], text: f[2] ?? '' } : null
-  }
-  if (key === 'SET') {
-    const isDone = f[1]?.toLowerCase() === 'done'
-    if (f[0] && isDone) return { kind: 'done', ref: f[0], text: f[2] ?? '' }
-    const status = openStatus(f[1])
-
-    return f[0] && status ? { kind: 'set', ref: f[0], status, text: f[2] ?? '' } : null
-  }
-  if (key === 'DONE') return f[0] ? { kind: 'done', ref: f[0], text: f[1] ?? '' } : null
-  if (key === 'DROP') {
-    const into = (f[2] ?? '').replace(/^INTO\s+/i, '').trim()
-
-    return f[0] ? { kind: 'drop', ref: f[0], why: f[1] ?? '', into: into || null } : null
-  }
-  if (key === 'WAS') return f[0] && f[1] ? { kind: 'was', ref: f[0], text: f[1] } : null
   if (key === 'HEAD') return f[0] ? { kind: 'head', title: f[0], description: f[1] ?? '' } : null
-  if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], subject: f[1] } : null
-  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0], milestones: goalMilestones(f[1]) } : null
+  if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], taskId: f[1] } : null
+  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0] } : null
   if (key === 'RETIRE') return { kind: 'retire', why: f[0] ?? '' }
-  if (key === 'MILESTONE') {
-    const status = anyStatus(f[0])
-
-    return status && f[1] ? { kind: 'milestone', status, name: f[1], text: f[2] ?? '' } : null
-  }
-  if (key === 'SERVES') {
-    const isNone = f[1] === '-' || f[1]?.toLowerCase() === 'none'
-
-    return f[0] && f[1] ? { kind: 'serves', subject: f[0], milestone: isNone ? null : f[1] } : null
-  }
 
   return null
 }
 
-/**
- * Parses the Status call's answer. A line that is not an operation is left out, so a stray line of prose does not
- * throw away the lines around it. Null when no line is an operation.
- */
+/** Parses Status updates; legacy subject and milestone lines are ignored as unchanged input. */
 export function parseStatus(text: string | null): StatusAnswer | null {
+  let ignoredLegacy = false
   const ops = (text ?? '').split(NL).flatMap(raw => {
     const m = LINE.exec(raw.trim())
-    const op = m ? opOf(m[1]!.toUpperCase().replace(' ', ''), fields(m[2] ?? '')) : null
+    if (!m) return []
+    const key = m[1]!.toUpperCase().replace(' ', '')
+    if (IGNORED.has(key)) {
+      ignoredLegacy = true
+      return []
+    }
+    const op = opOf(key, fields(m[2] ?? ''))
+
     return op === null ? [] : [op]
   })
-  if (ops.length === 0) return null
+  if (ops.length === 0) return ignoredLegacy ? { kind: 'unchanged' } : null
 
   return ops.every(o => o.kind === 'none') ? { kind: 'unchanged' } : { kind: 'ops', ops }
 }
 
-/**
- * Asks the Status call through `ask`, and once more when the answer holds no operation, as `parseStatus` refuses it.
- * A call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
- * the call was asked once.
- */
+/** Asks again only when a reply contains no recognized Status line, not when it contains ignored legacy lines. */
 export async function askStatus<T extends { text: string | null }>(
   ask: () => Promise<T>,
 ): Promise<{ first: T; last: T }> {

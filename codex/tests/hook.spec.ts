@@ -164,7 +164,7 @@ test('a hook without CODEX_CLI_PATH saves the CLI the app names in CODEX_APP_RUN
   assert.equal((await readState(dir, 'unnamed')).cliPath, null)
 })
 
-test('a start after compaction carries the Status head and where each open subject stands', async () => {
+test('a start after compaction carries the Status head without legacy subject lines', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
@@ -183,7 +183,7 @@ test('a start after compaction carries the Status head and where each open subje
   }))
   const context = JSON.stringify(await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps))
   assert.match(context, /Working on: Adding caching/)
-  assert.match(context, /- Cache: Redis or memory \(queued\)/)
+  assert.doesNotMatch(context, /Cache: Redis or memory/)
 })
 
 test('a main-agent prompt starts a turn that runs until Stop or a start that is not a compact, and a subagent prompt does not', async () => {

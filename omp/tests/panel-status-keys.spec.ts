@@ -59,7 +59,7 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   const screen = goallessScreen()
   const page = screen.view.statusPage
   const held = page.rows.filter(r => r.kind === 'subject' && statusKeyPlan(r).length > 0)
-  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's3', 'done'])
+  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 'm3', 'done'])
   const lines = text(screen, onPage).split('\n')
   const nameAt = (row: StatusRow) => lines.findIndex(l => l.includes(labelOf(row)))
   const buttonAt = (row: StatusRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('View '))
@@ -95,8 +95,8 @@ test('View on a Status row shows Asks with the oldest ask that holds it up selec
     expect(result.ui).toMatchObject({ tab: 'needsYou', selectedId: 'd17', shownSince: NOW })
     expect(handleKey(screen, result.ui, 'noop', NOW).ui.selectedId).toBe('d17')
   }
-  const onS3 = keys(screen, onPage, 'j')
-  const onAsk = handleKey(screen, onS3, 'enter', NOW).ui
+  const onM3 = keys(screen, onPage, 'j')
+  const onAsk = handleKey(screen, onM3, 'enter', NOW).ui
   expect(onAsk).toMatchObject({ tab: 'needsYou', selectedId: 'd11' })
   expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS - 1).press).toBeUndefined()
   expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
@@ -108,13 +108,13 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
   const screen = screenOf({
     view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, NO_HOLDS),
   })
-  const onS3 = { ...onPage, selectedId: 's3' }
-  const lines = text(screen, onS3).split('\n')
-  const s3 = statusListRows(screen.view.statusPage).find(r => r.id === 's3')!
-  expect(s3).toMatchObject({ ask: null, mark: '○' })
+  const onM3 = { ...onPage, selectedId: 'm3' }
+  const lines = text(screen, onM3).split('\n')
+  const m3 = statusListRows(screen.view.statusPage).find(r => r.id === 'm3')!
+  expect(m3).toMatchObject({ ask: null, mark: '○' })
   expect(lines.filter(l => l.includes('View '))).toHaveLength(1)
   expect(lines.find(l => l.includes('View '))).toContain('↵ View task')
-  expect(handleKey(screen, onS3, 'v', NOW).ui.selectedId).toBe('d17')
+  expect(handleKey(screen, onM3, 'v', NOW).ui.selectedId).toBe('d17')
 })
 
 test('on a Status page taller than the panel, j and k scroll the newly selected row into view', () => {
@@ -127,13 +127,12 @@ test('on a Status page taller than the panel, j and k scroll the newly selected 
       .some(l => l.includes('↵ View'))
   const opened = { ...onPage, pageTop: drawnFor({ ...onPage, pageReveal: true }).pageTop }
   expect(isFocusShown(opened)).toBe(true)
-  const onS3 = keys(screen, opened, 'j')
-  expect(isFocusShown({ ...onS3, pageReveal: null })).toBe(false)
-  expect(isFocusShown(onS3)).toBe(true)
-  const scrolled = { ...onS3, pageTop: drawnFor(onS3).pageTop, pageReveal: null }
+  const onM3 = keys(screen, opened, 'j')
+  expect(isFocusShown({ ...onM3, pageReveal: null })).toBe(false)
+  expect(isFocusShown(onM3)).toBe(true)
+  const scrolled = { ...onM3, pageTop: drawnFor(onM3).pageTop, pageReveal: null }
   expect(scrolled.pageTop).toBeGreaterThan(0)
   const back = keys(screen, scrolled, 'k')
-  expect(isFocusShown({ ...back, pageReveal: null })).toBe(false)
   expect(isFocusShown(back)).toBe(true)
 })
 

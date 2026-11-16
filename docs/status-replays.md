@@ -1,5 +1,7 @@
 # The Status replays
 
+> These fixtures predate the task-tree-only Status model. Their subject and milestone stories are archival input, not behavior expectations for the current product. `check.sh` verifies that their saved replies still parse and that legacy task-operation lines are ignored. The model replay suite is paused until its fixtures and graders are rebuilt around task-tree facts; do not use the tables below as the current Status contract.
+
 The cases that judge the Status tab. [How the Status is judged](plans/status/judging.md) gives the fixed rules, the code holds, the judge and the pass bar.
 
 Three replays and seventeen short cases run 3 times each on Sonnet and on Codex, and three short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.

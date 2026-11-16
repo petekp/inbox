@@ -20,7 +20,7 @@ import { GOAL_KEYS_ID } from '../hooks/status-keys'
 import type { RowPress } from '../hooks/presses'
 import type { StatusPage } from '../hooks/status-page'
 import { CODEX } from '../codex/src/texts'
-import type { ChildKind, Exchange, HostTask, Item, Ledger, Place, Session } from '../types'
+import type { ChildKind, Exchange, HostTask, Item, Ledger, Place, Session, TaskTree } from '../types'
 import { factsAfter } from './status-facts'
 import type { Facts, FactsChange } from './status-facts'
 import type { JudgeCheckId } from './status-judge'
@@ -47,8 +47,8 @@ type StepCall =
   /** A call during a turn that started `turnStartedAt` minutes into the replay. */
   | { kind: 'mid-turn'; person: string | null; activity: string[]; turnStartedAt: number; tasks?: HostTask[] }
   | { kind: 'catch-up'; conversation: string }
-  /** A recorded call's exchange and task list, read as they were. */
-  | { kind: 'recorded'; read: StatusExchange; tasks: HostTask[] }
+  /** A recorded call's exchange, read with the saved task tree. */
+  | { kind: 'recorded'; read: StatusExchange; taskTree: TaskTree }
 
 export type Step = {
   label: string
@@ -77,7 +77,7 @@ export type Replay = {
   hasLedgerCalls: boolean
   /** A short case: it runs 5 times per model, and each model's runs are judged apart. Else 3 runs, judged together. */
   isShort?: true
-  start: { ledger: Partial<Ledger>; facts: Facts; place?: Place }
+  start: { ledger: Partial<Ledger>; facts: Facts; place?: Place; taskTree?: TaskTree }
   steps: Step[]
 }
 
@@ -210,11 +210,10 @@ async function statusCall(
   deps: ReplayDeps,
   s: Session,
   read: StatusExchange,
-  tasks: HostTask[],
   now: number,
   during: (s: Session) => Session,
 ): Promise<{ session: Session; log: CallLog; isFailed: boolean; readSetAt: number | null }> {
-  const input: StatusCallInput = { last: s.ledger.overview, asks: s.ledger.items, tasks, now }
+  const input: StatusCallInput = { last: s.ledger.overview, asks: s.ledger.items, taskTree: s.taskTree, now }
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
   const { last } = await askStatus(async () => {
@@ -265,6 +264,7 @@ export function startSession(replay: Pick<Replay, 'start'>): Session {
   return {
     ...base,
     ledger: upgradeLedger({ ...EMPTY, ...replay.start.ledger } as Ledger),
+    taskTree: replay.start.taskTree ?? base.taskTree,
     place: replay.start.place ?? null,
   }
 }
@@ -310,7 +310,7 @@ async function runStep(
       const fixed = call.answer
       const statusDeps =
         fixed === undefined ? deps : { ...deps, ask: async () => ({ text: fixed, model: 'fixed answer' }) }
-      const r = await statusCall(statusDeps, session, { kind: 'reply', exchange: ex }, ex.tasks, now, during)
+      const r = await statusCall(statusDeps, session, { kind: 'reply', exchange: ex }, now, during)
       ;({ session, isFailed: isStatusFailed, readSetAt } = r)
       calls.push(r.log)
     }
@@ -320,7 +320,7 @@ async function runStep(
       presence: { ...session.presence, isTurnRunning: true, turnStartedAt: minutes(call.turnStartedAt) },
     }
     const turn = { person: call.person, trigger: null, activity: call.activity }
-    const r = await statusCall(deps, session, { kind: 'mid-turn', turn }, call.tasks ?? [], now, during)
+    const r = await statusCall(deps, session, { kind: 'mid-turn', turn }, now, during)
     ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   } else if (call?.kind === 'catch-up') {
@@ -328,13 +328,14 @@ async function runStep(
       ...session,
       presence: { ...session.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt: now },
     }
-    const r = await statusCall(deps, session, { kind: 'catch-up', conversation: call.conversation }, [], now, during)
+    const r = await statusCall(deps, session, { kind: 'catch-up', conversation: call.conversation }, now, during)
     ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   } else if (call?.kind === 'recorded') {
     const isTurnRunning = call.read.kind === 'mid-turn'
     session = { ...session, presence: { ...session.presence, isTurnRunning, lastReplyAt: isTurnRunning ? null : now } }
-    const r = await statusCall(deps, session, call.read, call.tasks, now, during)
+    session = { ...session, taskTree: call.taskTree }
+    const r = await statusCall(deps, session, call.read, now, during)
     ;({ session, isFailed: isStatusFailed, readSetAt } = r)
     calls.push(r.log)
   }
@@ -384,13 +385,17 @@ export function replayFromRecord(
     name,
     about: `Starts from a recorded ${exchange.kind} call.`,
     hasLedgerCalls: false,
-    start: { ledger: { overview: input.last, items: [...input.asks] }, facts: facts.before },
+    start: {
+      ledger: { overview: input.last, items: [...input.asks] },
+      facts: facts.before,
+      taskTree: input.taskTree ?? [],
+    },
     steps: [
       {
         label: 'the recorded call',
         at: (input.now - REPLAY_START) / 60_000,
         time: input.now,
-        call: { kind: 'recorded', read: exchange, tasks: [...input.tasks] },
+        call: { kind: 'recorded', read: exchange, taskTree: [...(input.taskTree ?? [])] },
         facts: facts.after,
       },
     ],

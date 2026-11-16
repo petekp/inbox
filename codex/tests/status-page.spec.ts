@@ -4,7 +4,7 @@ import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
 import { closeItem } from '../../hooks/ledger-close'
 import { parseStatus } from '../../hooks/status'
-import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
+import { LOOK_MIN_MS } from '../../hooks/status-children'
 import { applyStatus } from '../../hooks/status-ops'
 import { goalPressed } from '../../hooks/goal-press'
 import { NO_GOAL_TEXT } from '../../hooks/status-goal-page'
@@ -14,15 +14,36 @@ import { shownTabs } from '../../hooks/tabs'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
 import { lookOnView, viewOf } from '../src/core'
-import type { SessionState } from '../src/state'
 import { noteShownRows, rowsInView, takeShownRows } from '../src/tab-shown'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { TOOL_FIELDS } from '../../hooks/tool-schemas'
+import type { TaskNode } from '../../types'
 
 const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
+
+const task = (
+  id: string,
+  title: string,
+  status: TaskNode['status'],
+  now: number,
+  detail = '',
+  goalId?: string,
+): TaskNode => ({
+  id,
+  parentId: null,
+  status,
+  weight: 1,
+  title,
+  detail,
+  notes: [],
+  createdAt: now,
+  updatedAt: now,
+  history: [],
+  ...(goalId ? { goalId } : {}),
+})
 
 test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its count after its text, its Now line and the field Edit opens draw in place', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
@@ -36,25 +57,29 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     now,
     TOOL_FIELDS,
   ).ledger
+  const taskTree = [
+    task('omp-task', 'omp panel', 'working', now, 'reading the draw code'),
+    task('label-task', 'Label', 'working', now, 'pick one'),
+    task('page-task', 'Page', 'done', now, 'built'),
+  ]
   const shownStatus = {
     ...applyStatus(
       null,
       parseStatus(
         [
           'HEAD: Shipping the Status tab | Drawing the Status in the Codex tab',
-          'NEW: working | omp panel | reading the draw code',
-          'NEW: working | Label | pick one',
-          `LINK: ${asked.items[0]!.id} | Label`,
-          'NEW: working | Page | being built',
-          'DONE: s3 | built',
+          `LINK: ${asked.items[0]!.id} | label-task`,
         ].join('\n'),
       )!,
       now,
       new Set(asked.items.map(i => i.id)),
+      null,
+      taskTree,
     )!,
     look: { startedAt: now },
   }
   state.ledger = { ...asked, overview: shownStatus }
+  state.taskTree = taskTree
   state.presence = { ...state.presence, isTurnRunning: true }
   document.body.innerHTML = '<div id="app"></div>'
   Object.defineProperty(window, '__inboxPage', { value: 'status-page', configurable: true })
@@ -172,9 +197,9 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
         [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
       ]),
       [
-        ['mark tone-needsYou', '◆', ['Label · waiting', 'pick one', 'View question']],
-        ['mark running', '●', ['omp panel', 'reading the draw code']],
-        ['mark done', '✓', ['Page', 'built']],
+        ['mark tone-needsYou', '◆', ['Label · waiting', '0% complete · pick one', 'View question']],
+        ['mark running', '●', ['omp panel', '0% complete · reading the draw code']],
+        ['mark done', '✓', ['Page', '100% complete · built']],
       ],
     )
     assert.deepEqual(
@@ -269,13 +294,17 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(root.querySelector('.goal-heading .actions')?.textContent, 'New')
     assert.equal(root.querySelector('.status-head.goal p')?.textContent, NO_GOAL_TEXT)
 
+    state.taskTree = [
+      task('page-task', 'Page', 'done', now, 'built', `goal-${now}`),
+      task('label-task', 'Label', 'queued', now, 'pick one', `goal-${now}`),
+    ]
     const withGoal = applyStatus(
       state.ledger.overview,
-      parseStatus(
-        'NEW: working | Status page | drawn\nNEW: queued | Tab label | not started\nGOAL: Status tab shipped | done Page; queued Label',
-      )!,
+      parseStatus('GOAL: Status tab shipped')!,
       now,
       new Set(),
+      null,
+      state.taskTree,
     )!
     state.ledger = { ...state.ledger, overview: withGoal }
     await afterPoll()
@@ -289,7 +318,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(root.querySelector('.goal-heading')?.textContent, 'GoalEdit·Remove')
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
+      ['Status tab shipped · 1 of 2 tasks done', 'Now: Drawing the Status in the Codex tab'],
     )
     assert.equal(root.querySelector('.status-head:not(.goal)'), null)
     assert.deepEqual(buttons(), ['Edit', 'Remove'])
@@ -299,20 +328,18 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
-    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 done')
+    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 tasks done')
 
     await click('Edit')
     const field = window.document.querySelector('#type-goal')!
     Object.assign(field, { value: 'Status tab in the store' })
     field.dispatchEvent(new window.Event('input', { bubbles: true }))
+    context.mock.timers.tick(1)
     await click('Save')
     assert.deepEqual(presses.at(-1), { action: 'type', id: 'goal', text: 'Status tab in the store' })
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab in the store')
-    assert.equal(
-      [...root.querySelectorAll('.status-head.goal p')].at(-1)?.textContent,
-      'Milestones after the next reply',
-    )
+    assert.equal([...root.querySelectorAll('.status-head.goal p')].at(-1)?.textContent, 'No tasks linked yet')
 
     await click('Remove')
     assert.deepEqual(presses.at(-1), { action: 'remove-goal', id: 'goal' })
@@ -356,32 +383,26 @@ test('a look starts when the tab shows the Status, ends when it shows another ta
   assert.equal(never.ledger.overview?.lastLookAt, null)
 })
 
-test('a look counts as seen only the Status subjects the tab reported on screen, across its requests and when the pane closed, and not rows a later showing reported', () => {
+test('a look counts only the task roots the tab reported on screen, across its requests and when the pane closed', () => {
   const state = emptyState('look-rows')
   state.ledger = {
     ...EMPTY,
-    overview: applyStatus(
-      null,
-      parseStatus(
-        'NEW: working | Sync | under way\nNEW: working | Search | under way\nNEW: queued | Docs | after the code',
-      )!,
-      500,
-      new Set(),
-    ),
+    overview: applyStatus(null, parseStatus('HEAD: Shipping | First version')!, 500, new Set()),
   }
-  const seenOf = (s: SessionState) => {
-    const o = s.ledger.overview!
-    return o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.name)
-  }
+  state.taskTree = [
+    task('s1', 'Sync', 'working', 500, 'under way'),
+    task('s2', 'Search', 'working', 500, 'under way'),
+    task('s3', 'Docs', 'queued', 500, 'after the code'),
+  ]
   const open = lookOnView({ ...state, tabSeenAt: 1000 }, 'overview', 1000, { s1: 1000 })
   const scrolled = lookOnView({ ...open, tabSeenAt: 4000 }, 'overview', 4000, { s2: 3500 })
   const ended = lookOnView({ ...scrolled, tabSeenAt: 7000 }, 'needsYou', 7000, {})
-  assert.deepEqual(seenOf(ended), ['Sync', 'Search'])
+  assert.deepEqual(ended.ledger.overview?.missedInLastLook, { s3: null })
   assert.deepEqual(ended.lookRows, {})
 
   const reopened = lookOnView({ ...ended, tabSeenAt: 7000 }, 'overview', 8000, { s3: 8000 })
   const afterClose = lookOnView({ ...reopened, tabSeenAt: 8000 + LOOK_MIN_MS }, 'overview', 90_000, { s1: 90_000 })
-  assert.deepEqual(seenOf(afterClose), ['Sync', 'Search', 'Docs'])
+  assert.deepEqual(afterClose.ledger.overview?.missedInLastLook, {})
   assert.deepEqual(afterClose.lookRows, { s1: 90_000 })
 })
 

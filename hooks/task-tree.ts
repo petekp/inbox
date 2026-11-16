@@ -313,26 +313,34 @@ export function appendTaskHistory(tree: TaskTree, id: string, event: TaskHistory
   )
 }
 
-/** Computes the weighted share of completed root work. Parent weights weight their child group; progress is never saved. */
-export function weightedTaskProgress(tree: TaskTree): number {
+export function taskRootGroups(tree: TaskTree): { id: string; roots: TaskNode[] }[] {
+  const groups = new Map<string, TaskNode[]>()
+  for (const task of tree.filter(task => task.parentId === null)) {
+    const key = task.streamId ? `stream:${task.streamId}` : `task:${task.id}`
+    const roots = groups.get(key)
+    if (roots) roots.push(task)
+    else groups.set(key, [task])
+  }
+  return [...groups.values()].map(roots => ({ id: roots[0]!.id, roots }))
+}
+
+export function weightedTaskProgress(tree: TaskTree, rootIds?: string | string[]): number {
   const children = new Map<string | null, TaskNode[]>()
   for (const task of tree) children.set(task.parentId, [...(children.get(task.parentId) ?? []), task])
-
-  const progress = (task: TaskNode, seen: Set<string>): number => {
+  const progress = (task: TaskNode): number => {
     if (task.status === 'done') return 1
-    if (task.status === 'dropped' || seen.has(task.id)) return 0
-    const descendants = children.get(task.id) ?? []
-    if (descendants.length === 0) return 0
-    const path = new Set(seen).add(task.id)
-    return weightedAverage(descendants.map(child => [progress(child, path), child.weight]))
+    if (task.status === 'dropped') return 0
+    return weightedAverage((children.get(task.id) ?? []).map(child => [progress(child), child.weight]))
   }
 
-  return weightedAverage((children.get(null) ?? []).map(task => [progress(task, new Set()), task.weight]))
+  // prettier-ignore
+  const roots = rootIds === undefined ? (children.get(null) ?? []) : tree.filter(task => Array.isArray(rootIds) ? rootIds.includes(task.id) : task.id === rootIds)
+  return weightedAverage(roots.map(task => [progress(task), task.weight]))
 }
 
 function weightedAverage(values: [number, number][]): number {
   const total = values.reduce((sum, [, weight]) => sum + weight, 0)
-  return total === 0 ? 0 : values.reduce((sum, [value, weight]) => sum + value * weight, 0) / total
+  return total ? values.reduce((sum, [value, weight]) => sum + value * weight, 0) / total : 0
 }
 
 /** Converts the current Status work rows once, retaining source order and their explicit goal links. */

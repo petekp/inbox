@@ -76,8 +76,8 @@ if (unknownParts.length > 0)
   throw new Error(`Unknown --without ${unknownParts.join(', ')}. Use ${Object.keys(GOAL_PARTS).join(', ')}.`)
 /** Each agent's Status call system text: its host's, or a copy without the goal rules `--without` names. */
 const statusSystemTexts: Record<Agent, string> = {
-  claude: statusSystem(without, CLAUDE_CODE.splitsPlanIntoSubjects),
-  codex: statusSystem(without, CODEX.splitsPlanIntoSubjects),
+  claude: statusSystem(without),
+  codex: statusSystem(without),
 }
 const judgeSets = values['judge-set'] === undefined ? [1, 2] : [Number(values['judge-set'])]
 if (!judgeSets.every(n => n === 1 || n === 2))
