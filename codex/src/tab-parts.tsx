@@ -7,7 +7,7 @@ import { markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { BannerView } from '../../hooks/banners'
 import type { EmptyTab } from '../../hooks/empty-tab'
-import type { StatusTone, LegendEntry } from '../../hooks/help'
+import type { ToneName } from '../../hooks/tones'
 import type { ResultMark, RowView } from '../../hooks/rows'
 import { parseInline } from '../../hooks/inline'
 import { isUndoLeft } from './settle'
@@ -60,15 +60,20 @@ export function pulseInStep(el: HTMLElement | null) {
   for (const a of el?.getAnimations?.() ?? []) a.startTime = 0
 }
 
-const TONE_CLASS: Record<NonNullable<StatusTone>, string> = {
+const MARK_TONE_CLASS: Record<ToneName, string> = {
   needsYou: 'tone-needsYou',
+  issue: 'issue',
+  findings: 'findings',
+  prs: 'prs',
   done: 'done',
   success: 'success',
+  opportunity: 'opportunity',
   working: 'working',
+  error: 'error',
 }
 
-export function markClassOf(tone: StatusTone, isRunning: boolean): string {
-  return ['mark', tone ? TONE_CLASS[tone] : null, isRunning ? 'running' : null].filter(Boolean).join(' ')
+export function markClassOf(tone: ToneName | null, isRunning: boolean): string {
+  return ['mark', tone ? MARK_TONE_CLASS[tone] : null, isRunning ? 'running' : null].filter(Boolean).join(' ')
 }
 
 /** The tab's ○ glyph, as measured in the Codex app: centred 6 px into the mark, and 0.75 px above an 8 px box's middle. */
@@ -111,11 +116,6 @@ export function ResultMarkView({
   )
 }
 
-export function legendMarkClass(m: LegendEntry): string {
-  const tone = m.tone === 'needsYou' ? 'tone-needsYou' : m.tone
-  return ['mark', tone, m.isRunning ? 'running' : null].filter(Boolean).join(' ')
-}
-
 /** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. A title with no mark starts at the mark column, where its rows' marks do. */
 export function GroupTitle({
   title,
@@ -128,7 +128,7 @@ export function GroupTitle({
 }) {
   return (
     <div class={mark ? 'group-title' : 'group-title unmarked'}>
-      {mark ? <span class={`group-mark ${mark.tone}`}>{mark.mark}</span> : null}
+      {mark ? <span class={`group-mark ${MARK_TONE_CLASS[mark.tone]}`}>{mark.mark}</span> : null}
       <b>{title}</b>
       {count > 0 ? (
         <span class="count">
