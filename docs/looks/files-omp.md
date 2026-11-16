@@ -18,6 +18,7 @@ Part of [the look map](../looks.md#files).
 | `omp/src/ask-form-dom.ts` | omp host. Reads form HTML into elements, closing tags as omp's HTML reader does. It imports no omp package. |
 | `omp/src/ask-form-entities.ts` | omp host. Decodes the named entities and numeric references omp's HTML reader decodes. It imports no omp package. |
 | `omp/src/state.ts` | omp host. One JSON file per session under omp's agent folder, with a lock held in the process. `OmpState` extends the shared `Session`. |
+| `omp/src/question-history.ts` | omp host. The question history's file calls through `node:fs`, and the sessions omp keeps, which seed its first history files. `createInbox` turns the history on from `HostDeps.questionHistory`. |
 | `omp/src/commands.ts` | omp host. Opens links and paths for omp's `SessionHost`. |
 | `omp/src/theme.ts` | omp host. Maps the panel's styles onto omp's theme. |
 | `omp/src/texts.ts` | omp host. The `OMP` host names the shared guidance uses. |

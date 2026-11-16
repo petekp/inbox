@@ -4,6 +4,7 @@ import type { ClosedState } from './ledger-close'
 import { clipLabel, ago } from './text'
 import { capitalized } from './press-labels'
 import type { HelpStep } from './help-steps'
+import type { EarlierLine } from './earlier-answers'
 import type { RowPress } from './presses'
 import { offersUndo } from './pressed'
 import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK } from './help'
@@ -122,6 +123,8 @@ export type ActionView = {
   hotkey?: string
   /** Its press is out, so it draws dim and ignores another press until the press settles. */
   isOut: boolean
+  /** The answer button a row adds for its earlier answer, after the agent's options. */
+  isEarlier?: true
 }
 
 export type RowView = {
@@ -151,6 +154,8 @@ export type RowView = {
    * title, on the selected row only.
    */
   contextLine: string | null
+  /** The person's earlier answer to a similar question, on an open question that has a shown one, drawn after the context. */
+  earlierLine: EarlierLine | null
 }
 
 /**
@@ -168,7 +173,7 @@ export function optionDescriptionsOf(item: Item | null, actions: ActionView[]): 
   const descriptions = item?.optionDescriptions
 
   return actions.flatMap(a => {
-    if (a.press.action !== 'answer') return []
+    if (a.press.action !== 'answer' || a.isEarlier) return []
     const description =
       descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option]! : null
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null

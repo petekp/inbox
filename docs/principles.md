@@ -103,7 +103,7 @@ Write every label, row, question and explanation in plain, short, spoken words, 
 - **Native look, shared behavior.** The host owns the look; the inbox owns the words, order and states.
 - **Agent first, person when needed.** The agent does what it can. The person sees only what only they can do or decide, with a recommendation. Don't be overly cautious: when the agent is allowed to run a step, it runs it instead of making a task.
 - **Agent-managed, person in control.** The agent keeps the goal current. The person can always set it, and their choice wins.
-- **One session at a time.** Each session has its own inbox. A coordinator shows its children's asks as its own and rolls up their work. Views across sessions come later.
+- **One session at a time.** Each session has its own inbox. A coordinator shows its children's asks as its own and rolls up their work. Views across sessions come later. A question's earlier answer is the first such view: it can come from any session, project or host, and it shows only on the person's own row.
 
 ## What we reject
 

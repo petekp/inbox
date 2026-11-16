@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+// Compares, in the question history, the share of matched questions answered with their earlier answer when the row
+// drew the line and when it did not, as "What shows it works" in docs/plans/repeated-questions.md sets out. The
+// comparison counts only questions whose earlier answer is one of their options, since a shown row adds a button for
+// any other earlier answer, so its rise would measure the button as well as the line. The interval resamples
+// sessions. Run: node scripts/earlier-answers-report.mjs [history folder]
+import { readdirSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+const RESAMPLES = 2000
+const WORKS_RISE = 0.03
+const FAILS_BELOW = 0.01
+
+const folder =
+  process.argv[2] ?? join(process.env.XDG_STATE_HOME?.trim() || join(homedir(), '.local/state'), 'inbox', 'questions')
+
+const files = readdirSync(folder)
+  .filter(name => name.endsWith('.json'))
+  .flatMap(name => {
+    try {
+      const file = JSON.parse(readFileSync(join(folder, name), 'utf8'))
+      return file.version === 1 && Array.isArray(file.questions) ? [file] : []
+    } catch {
+      return []
+    }
+  })
+
+const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase()
+const isOption = q => q.options.some(o => same(o, q.earlier.answer))
+const matchedOf = file => file.questions.filter(q => q.earlier)
+const isAddedButton = q => q.earlier.isShown && q.isAnsweredWithEarlier && !isOption(q)
+
+function shares(sessions) {
+  const count = { shown: [0, 0], hidden: [0, 0] }
+  for (const questions of sessions)
+    for (const q of questions) {
+      const group = count[q.earlier.isShown ? 'shown' : 'hidden']
+      group[0] += q.isAnsweredWithEarlier ? 1 : 0
+      group[1] += 1
+    }
+  const share = ([hits, all]) => (all > 0 ? hits / all : NaN)
+
+  return {
+    count,
+    rise: share(count.shown) - share(count.hidden),
+    shown: share(count.shown),
+    hidden: share(count.hidden),
+  }
+}
+
+const sessions = files.map(f => matchedOf(f).filter(isOption)).filter(questions => questions.length > 0)
+const found = shares(sessions)
+const rises = []
+for (let n = 0; n < RESAMPLES; n++) {
+  const drawn = sessions.map(() => sessions[Math.floor(Math.random() * sessions.length)])
+  const { rise } = shares(drawn)
+  if (Number.isFinite(rise)) rises.push(rise)
+}
+rises.sort((a, b) => a - b)
+const low = rises[Math.floor(rises.length * 0.025)]
+const high = rises[Math.ceil(rises.length * 0.975) - 1]
+
+const percent = x => (Number.isFinite(x) ? `${(x * 100).toFixed(1)}%` : 'none')
+const verdict =
+  !Number.isFinite(found.rise) || low === undefined
+    ? 'inconclusive: one group has no matched answers'
+    : found.rise >= WORKS_RISE && low > 0
+      ? 'works'
+      : high < FAILS_BELOW
+        ? 'fails: remove the line'
+        : 'inconclusive: the owner says whether the line helps'
+const byHow = how => files.flatMap(matchedOf).filter(q => isAddedButton(q) && q.how === how).length
+
+console.log(`Sessions with a matched answer among the options: ${sessions.length} of ${files.length}`)
+console.log(`Answered with the earlier answer, line shown: ${found.count.shown.join(' of ')}, ${percent(found.shown)}`)
+console.log(`Answered with the earlier answer, no line: ${found.count.hidden.join(' of ')}, ${percent(found.hidden)}`)
+console.log(`Rise: ${percent(found.rise)}, 95% interval ${percent(low)} to ${percent(high)}`)
+console.log(`Verdict: ${verdict}`)
+console.log(`Answers through the added button: ${byHow('answered')} answered, ${byHow('update')} update`)

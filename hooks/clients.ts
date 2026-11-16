@@ -1,77 +1,15 @@
+import type { FeatureId } from './client-features'
+
 /**
  * The parity record: how each host supports each feature. `full` means the host does what the shared flow
  * describes. `different` means the person gets the feature another way. `unsupported` means the person gets none of it.
  * `docs/looks.md` explains each feature that is not `full` in "Differences on purpose", in a row whose first column
- * names the feature id in backticks. `scripts/check-structure.mjs` fails when such a row is missing, and reads this file
- * with the TypeScript AST, so write each entry as an object literal.
+ * names the feature id in backticks. `hooks/client-features.ts` lists the feature ids. `scripts/check-structure.mjs`
+ * fails when such a row is missing, and reads this file with the TypeScript AST, so write each entry as an object literal.
  */
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */
 export type ClientId = 'claude-code' | 'codex' | 'omp'
-
-export type FeatureId =
-  | 'catch-up'
-  | 'failed-update-recovery'
-  | 'ledger-behind-state'
-  | 'dialog-outcome'
-  | 'dialog-answer'
-  | 'dialog-answer-closes-copy'
-  | 'dialog-descriptions'
-  | 'tool-output-urls'
-  | 'pr-link-from-output'
-  | 'pr-arrivals'
-  | 'prs-empty-hint'
-  | 'gh-signed-out-notice'
-  | 'link-open-rule'
-  | 'fork-ledger'
-  | 'band-and-stop-rows'
-  | 'exchange-trigger'
-  | 'settle-window'
-  | 'fold-on-typed-message'
-  | 'fold-waits-for-list-use'
-  | 'version-label'
-  | 'status-tab'
-  | 'turn-working'
-  | 'host-task-list'
-  | 'hooks-need-trust'
-  | 'compare-in-background'
-  | 'compare-page'
-  | 'running-marks'
-  | 'title-tint'
-  | 'pending-answer-mark'
-  | 'tab-symbols'
-  | 'dim-pressed-button'
-  | 'herdr-sidebar'
-  | 'herdr-look'
-  | 'herdr-open'
-  | 'herdr-install'
-  | 'status-children'
-  | 'child-names'
-  | 'status-failed-warning'
-  | 'asks-holds-up-line'
-  | 'asks-tree'
-  | 'asks-context-line'
-  | 'status-mid-turn-refresh'
-  | 'ran-call-activity'
-  | 'ran-call-delegates'
-  | 'tool-result-line'
-  | 'status-call-records'
-  | 'pr-order'
-  | 'pr-rank-again'
-  | 'clear-merged-and-closed-prs'
-  | 'pr-check-rerun'
-  | 'pr-fetch-notice'
-  | 'help-page'
-  | 'status-view-ask'
-  | 'status-goal'
-  | 'status-done-fold'
-  | 'status-named-fold'
-  | 'status-parent-fold'
-  | 'seen-on-screen'
-  | 'status-idle-age'
-  | 'question-back-stays-open'
-  | 'collapse-rows'
-  | 'suggested-goal'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -139,6 +77,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'asks-holds-up-line': { kind: 'full' },
       'asks-tree': { kind: 'full' },
       'asks-context-line': { kind: 'full' },
+      'earlier-answers': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },
@@ -277,6 +216,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'asks-holds-up-line': { kind: 'full' },
       'asks-tree': { kind: 'full' },
       'asks-context-line': { kind: 'full' },
+      'earlier-answers': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': {
         kind: 'different',
@@ -404,6 +344,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'asks-holds-up-line': { kind: 'full' },
       'asks-tree': { kind: 'full' },
       'asks-context-line': { kind: 'full' },
+      'earlier-answers': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },

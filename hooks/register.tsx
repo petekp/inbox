@@ -269,6 +269,7 @@ import {
 import { withCollapse } from './collapse'
 import { desktopSpaceLines } from './pane-status-tops'
 import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import { type HistoryEngine, withHistory } from './mod-history'
 import { runningSessions } from './running-sessions'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
@@ -564,6 +565,7 @@ async function changeSession(
   change: (s: Session) => Session | Promise<Session>,
   held: Set<string>,
 ): Promise<Changed> {
+  change = withHistory(historyEngine($), owner.id, change)
   for (let tries = 0; tries < MAX_TRIES; tries++) {
     if (!isCurrent(owner)) return changeSaved(saveEngine($), owner.id, change)
     const drawn = await read($, SESSION)
@@ -592,6 +594,16 @@ async function changeSession(
     return { before, after: written, isDrawn: isCurrent(owner) }
   }
   throw new Error('The session kept changing under this write.')
+}
+
+function historyEngine($: EngineInterface): HistoryEngine {
+  const fs = {
+    list: (p: string) => $.fs.list(p),
+    read: (p: string) => $.fs.read(p),
+    write: (p: string, text: string) => $.fs.write(p, text),
+  }
+  const stateEnv = async () => ({ XDG_STATE_HOME: await $.env.get('XDG_STATE_HOME'), HOME: await $.env.get('HOME') })
+  return { ...saveEngine($), stateEnv, fs }
 }
 
 /** The store, clock, debug log and running-conversation calls that `hooks/mod-saves.ts` makes. */

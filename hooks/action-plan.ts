@@ -1,5 +1,6 @@
 import type { Item, PressKind, Finding, LastAction, Tab } from '../types'
 import { clipLabel } from './text'
+import { addedEarlierAnswer } from './earlier-answers'
 import { actionId, ISSUE_LABEL } from './press-labels'
 import { stepIconKind } from './help-steps'
 import type { HelpStep } from './help-steps'
@@ -148,6 +149,7 @@ export function actionsOf(
   const isFolding = item.options.length > OPTIONS_FOLD_AT
   const options =
     item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter(o => o !== item.rec)] : item.options
+  const earlier = addedEarlierAnswer(item)
 
   return [
     ...options.map((option, n) =>
@@ -156,6 +158,14 @@ export function actionsOf(
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1,
       }),
     ),
+    ...(earlier === null
+      ? []
+      : [
+          {
+            ...action({ action: 'answer', id, option: earlier }, clipLabel(earlier, OPTION_LABEL_CHARS), 'mark'),
+            isEarlier: true as const,
+          },
+        ]),
     ...stepActions,
     action({ action: 'type', id, text: '' }, 'Reply', 'mark'),
     action({ action: 'explain', id }, 'Explain', 'talk'),
@@ -294,7 +304,9 @@ export type PlannedKey =
 export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[]; more: ActionKey[] } {
   const shown = r.actions.filter(a => isAllShown || !a.isFolded)
   const folded = r.actions.length - shown.length
-  const lastOption = shown.map(a => a.press.action).lastIndexOf('answer')
+  const isOption = (a: ActionView) => a.press.action === 'answer' && !a.isEarlier
+  const lastOption = shown.findLastIndex(isOption)
+  const optionCount = r.actions.filter(isOption).length
   const keys: PlannedKey[] = []
   const more: ActionKey[] = []
   const retry = r.feedback?.is === 'notSent' ? r.feedback.retry : null
@@ -311,8 +323,8 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
       if (n === lastOption && folded > 0)
         keys.push({
           slot: 'allOptions',
-          count: r.actions.filter(x => x.press.action === 'answer').length,
-          label: ROW_COPY.allOptions(r.actions.filter(x => x.press.action === 'answer').length),
+          count: optionCount,
+          label: ROW_COPY.allOptions(optionCount),
           emphasis: 'quiet',
         })
     } else if (a.hotkey)

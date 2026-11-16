@@ -33,6 +33,9 @@ import type { PanelScreen } from './panel'
 import { wrapText } from './panel-text'
 import { styleOf } from './theme'
 import type { OmpState } from './state'
+import { useQuestionHistory } from './state'
+import { questionHistoryPlace } from './question-history'
+import type { HistoryPlace } from '../../hooks/history-store'
 import { OMP, TOOL_LABELS } from './texts'
 import { activityHandlers } from './host-activity'
 import { isUnattended, sessionIdOf } from './host-context'
@@ -79,6 +82,8 @@ export type HostDeps = {
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
   /** The Herdr pane or app terminal omp runs in, from `herdrTarget`, or null outside Herdr. */
   herdrTarget: HerdrTarget | null
+  /** The question history for the sessions saved in `dir`. A host without one saves no history. */
+  questionHistory?: (dir: string) => HistoryPlace | null
 }
 
 async function defaultComplete(
@@ -130,6 +135,7 @@ const defaultDeps: HostDeps = {
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
   herdrTarget: herdrTarget(process.env),
+  questionHistory: dir => questionHistoryPlace(process.env, dir),
 }
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -163,6 +169,7 @@ function inboxModel(ctx: ExtensionContext): Model | null {
 
 export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inbox {
   const dir = deps.stateDir(pi)
+  useQuestionHistory(deps.questionHistory?.(dir) ?? null)
 
   const run: Run = async (args, { cwd, timeoutMs }) => {
     const [file = '', ...rest] = args

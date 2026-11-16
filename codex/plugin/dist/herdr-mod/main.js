@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T03:11:45.021Z. 258149 characters follow.
+// Built at 2026-11-16T04:17:45.822Z. 260525 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -1156,6 +1156,50 @@ function stepEffects(item, step) {
 // ../hooks/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 
+// ../hooks/earlier-answers.ts
+var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/));
+var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+function earlierOption(item) {
+  const answer = item.earlier?.answer;
+  return answer === undefined ? null : item.options.find((o) => sameAnswer(o, answer)) ?? null;
+}
+var ADDED_ANSWER_CHARS = 80;
+function addedEarlierAnswer(item) {
+  const earlier = item.earlier;
+  const isTooLong = (earlier?.answer.length ?? 0) > ADDED_ANSWER_CHARS;
+  if (item.kind !== "question" || !earlier?.isShown || isTooLong || earlierOption(item) !== null)
+    return null;
+  return earlier.answer;
+}
+var DAY_MS = 24 * 60 * 60000;
+function agoText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60)
+    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24)
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  const days = Math.round(ms / DAY_MS);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+function earlierLineOf(earlier, now) {
+  if (!earlier?.isShown)
+    return null;
+  const where = earlier.repo ? `, in ${earlier.repo},` : "";
+  return {
+    lead: "You answered ",
+    answer: earlier.answer,
+    rest: ` ${agoText(now - earlier.at)}${where} to “${earlier.ask}”`
+  };
+}
+function earlierLineText(line) {
+  return `${line.lead}${line.answer}${line.rest}`;
+}
+
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "▲", tone: "issue" },
@@ -1353,13 +1397,13 @@ function countsByMark(folded) {
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
 }
-var DAY_MS = 24 * 60 * 60000;
+var DAY_MS2 = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
   if (isHeld)
     return null;
   const idleMs = now - x.changedAt;
   const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS;
-  return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS)}d`, tone: "muted" } : null;
+  return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS2)}d`, tone: "muted" } : null;
 }
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
@@ -1835,7 +1879,7 @@ function closedLineAction(d) {
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   return actions.flatMap((a) => {
-    if (a.press.action !== "answer")
+    if (a.press.action !== "answer" || a.isEarlier)
       return [];
     const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
@@ -3063,11 +3107,18 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
+  const earlier = addedEarlierAnswer(item);
   return [
     ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
+    ...earlier === null ? [] : [
+      {
+        ...action({ action: "answer", id, option: earlier }, clipLabel(earlier, OPTION_LABEL_CHARS), "mark"),
+        isEarlier: true
+      }
+    ],
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
@@ -3133,7 +3184,9 @@ function rowsIn(entries) {
 function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
-  const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
+  const isOption = (a) => a.press.action === "answer" && !a.isEarlier;
+  const lastOption = shown.findLastIndex(isOption);
+  const optionCount = r.actions.filter(isOption).length;
   const keys = [];
   const more = [];
   const retry = r.feedback?.is === "notSent" ? r.feedback.retry : null;
@@ -3150,8 +3203,8 @@ function rowKeyPlan(r, isAllShown) {
       if (n === lastOption && folded > 0)
         keys.push({
           slot: "allOptions",
-          count: r.actions.filter((x) => x.press.action === "answer").length,
-          label: ROW_COPY.allOptions(r.actions.filter((x) => x.press.action === "answer").length),
+          count: optionCount,
+          label: ROW_COPY.allOptions(optionCount),
           emphasis: "quiet"
         });
     } else if (a.hotkey)
@@ -3287,7 +3340,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      contextLine: state.is === "open" ? row.item?.context ?? null : null
+      contextLine: state.is === "open" ? row.item?.context ?? null : null,
+      earlierLine: state.is === "open" ? earlierLineOf(row.item?.earlier, now) : null
     };
   };
   const itemRow = (item) => {
@@ -4321,6 +4375,11 @@ function rowBody(row, isAllShown) {
   const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
   const lines = [
     { text: row.contextLine ?? "", tone: "muted", ...hasTree ? { tree: "trunk" } : {} },
+    {
+      text: row.earlierLine ? earlierLineText(row.earlierLine) : "",
+      tone: "muted",
+      ...hasTree ? { tree: "trunk" } : {}
+    },
     { text: row.detail ?? "", tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
     ...branches.flatMap((lines, branch) => lines.map((l, line) => {

@@ -271,7 +271,7 @@ test('in the terminal and desktop looks, a question’s context draws whole, mut
   }
 })
 
-test('in the terminal and desktop looks, a recommended answer with a description draws its reason after the description on its own line, and the answers hang on the row’s tree', async ($, on) => {
+test('in the terminal and desktop looks, a recommended answer with a description draws its reason after the description on its own line, the earlier answer draws between the context and the answers, and the answers hang on the row’s tree', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -297,6 +297,12 @@ test('in the terminal and desktop looks, a recommended answer with a description
       texts.some(t => t.startsWith('Flick')),
       look,
     ).toBe(true)
+    const earlierAt = texts.findIndex(t =>
+      t.includes('3 days ago, in glasses-app, to “Which gesture should clear a glance?”'),
+    )
+    const contextAt = texts.findIndex(t => t.startsWith('A glance stays up until it times out'))
+    const optionAt = texts.findIndex(t => t.includes('Touch thumb and finger together'))
+    expect([contextAt < earlierAt, earlierAt < optionAt], look).toEqual([true, true])
     if (look === 'terminal') {
       for (const key of ['trunk-d11', 'tree-context', 'tree-option-0', 'tree-option-1', 'tree-holds-up'])
         expect(await pane.find({ key }), `${look} ${key}`).toBeTruthy()

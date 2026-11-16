@@ -3,20 +3,28 @@ import type { RowView } from '../../hooks/rows'
 import type { Row } from './tab-state'
 
 /**
- * An open question's context, its answers' lines and its Holds up line, as the body of its panel. With an answer line
+ * An open question's context, its earlier answer, its answers' lines and its Holds up line, as the body of its panel. With an answer line
  * or Holds up, they hang from the ◆ in the row's mark column as one tree, and Holds up is the last branch.
  */
 export function askTree(r: RowView, isAllShown: boolean): Pick<Row, 'body' | 'hasTree'> {
   const options = shownOptionDescriptions(r, isAllShown)
   const holdsUp = r.state.is === 'open' ? r.holdsUpLine : null
   const hasTree = options.length > 0 || holdsUp !== null
-  if (!hasTree && !r.contextLine) return {}
+  const earlier = r.earlierLine
+  if (!hasTree && !r.contextLine && !earlier) return {}
 
   return {
     hasTree,
     body: (
       <div class={hasTree ? 'tree' : 'tree plain'}>
         {r.contextLine ? <p class="context-line">{r.contextLine}</p> : null}
+        {earlier ? (
+          <p class="context-line">
+            {earlier.lead}
+            <strong class="option-label">{earlier.answer}</strong>
+            {earlier.rest}
+          </p>
+        ) : null}
         {options.map(o => {
           const body = optionBody(o)
           const reasonLine = optionReasonLine(o)
