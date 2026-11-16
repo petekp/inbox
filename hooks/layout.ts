@@ -40,13 +40,11 @@ export const EDGE_PT = 4 * SPACE_UNIT
 export const MARK_PT = 6 * SPACE_UNIT
 
 /**
- * The padding above and below a closed row's text. A row's padding counts toward the gap beside it, so two closed
- * one-line rows sit `LIST_GAP_PT` apart.
+ * The padding above and below a row's text, closed or open: half of `ITEM_GAP_PT`. A row's padding counts toward the
+ * gap beside it, so rows sit `ITEM_GAP_PT` apart and their boxes meet. A closed one-line row is then
+ * `LINE_PT + 2 * ROW_PAD_PT` (32 pt) tall to click, and no space between two rows belongs to neither.
  */
-export const ROW_PAD_PT = LIST_GAP_PT / 2
-
-/** The padding above and below an open row, whose box shows: half of `ITEM_GAP_PT` on each side. */
-export const OPEN_ROW_PAD_PT = ITEM_GAP_PT / 2
+export const ROW_PAD_PT = ITEM_GAP_PT / 2
 
 /** The padding above and below a banner's text. */
 export const BANNER_PAD_Y_PT = CONTROL_GAP_PT

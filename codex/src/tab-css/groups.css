@@ -21,9 +21,6 @@ section + section::before {
   position: relative;
   padding: 0 var(--edge) calc(var(--head-gap) - var(--row-pad)) var(--text-x);
 }
-.group-title:has(+ .list > .entry:first-child > .row.selected) {
-  padding-bottom: calc(var(--head-gap) - var(--open-row-pad));
-}
 .group-title.unmarked {
   padding-left: var(--mark-x);
 }

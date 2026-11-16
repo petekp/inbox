@@ -31,7 +31,7 @@ import { checkboxEl } from './paint-checkbox'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
-import { PATH_X, lineColor, panelId, restId, rowPadEl, sizeEl, titleEl } from './paint-space'
+import { PATH_X, lineColor, panelId, restId, sizeEl, titleEl } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -230,7 +230,6 @@ function rowEl(r: RowBlock, p: Paint): Element {
         .hover(s => s.bg(t.hover))
         .on_click((e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))),
     )
-    .child(rowPadEl(r, 'top', p))
     .child(titleEl(r, p, line))
     .child(
       sizeEl(
@@ -247,7 +246,6 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .children(panelEl(r, m, p, isLeaving)),
       ),
     )
-    .child(rowPadEl(r, 'bottom', p))
 }
 
 /**
