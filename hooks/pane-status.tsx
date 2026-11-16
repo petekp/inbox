@@ -318,8 +318,7 @@ export function paneStatus(
     lines: look === 'desktop' ? desktopTextLines(text, statusTextWidth(depth)) : inkLines(text, statusTextWidth(depth)),
   })
   /**
-   * Removes the goal and selects its Undo, or brings it back, sets the suggested goal and selects Edit, or dismisses the
-   * suggested goal and selects New, then scrolls to the button and focuses it. The pressed button is gone, and the terminal would move its focus to the next button
+   * Removes the goal and selects its Undo, or brings it back, or sets the suggested goal and selects Edit, then scrolls to the button and focuses it. The pressed button is gone, and the terminal would move its focus to the next button
    * drawn.
    */
   const pressGoal = async (

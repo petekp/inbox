@@ -1,5 +1,12 @@
 import { foldGlyph } from '../../hooks/fold-chevron'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, milestoneKeyPlan, type StatusKey } from '../../hooks/status-keys'
+import {
+  GOAL_FIELD,
+  GOAL_KEYS_ID,
+  goalKeyGroups,
+  goalKeys,
+  milestoneKeyPlan,
+  type StatusKey,
+} from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../hooks/status-goal-page'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
@@ -245,7 +252,10 @@ function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[]
 function headingLines(part: GoalPart & { is: 'heading' }, d: Draw, isSelected: boolean): string[] {
   const { width, now, style: s } = d
   const keys = part.page
-    ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim('·'))
+    ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim('·'), {
+        id: GOAL_KEYS_ID,
+        keys: goalKeys(part.page),
+      })
     : []
   const right = width - 1
   const { mark } = part

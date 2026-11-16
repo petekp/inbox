@@ -8043,7 +8043,7 @@ function partHeading(text, width, s, at = PAGE_TEXT_AT, isTitle = false) {
   const rule = "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)));
   return `${" ".repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`;
 }
-function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
+function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "", focusAmong = target) {
   const faces = target.keys.map((k) => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
@@ -8051,7 +8051,8 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between =
     isFollowUp: false,
     ...k.emphasis === "quiet" ? { isQuiet: true } : {}
   }));
-  const focused = isSelected ? pageFocus(target, d.ui) : -1;
+  const focus = isSelected ? pageFocus(focusAmong, d.ui) : -1;
+  const focused = focus < target.keys.length ? focus : -1;
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : [];
 }
 function foldChevron(p, d, isSelected) {
@@ -8259,7 +8260,10 @@ function milestoneLines(m, d, isSelected) {
 }
 function headingLines(part, d, isSelected) {
   const { width, now, style: s } = d;
-  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim("\xB7")) : [];
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim("\xB7"), {
+    id: GOAL_KEYS_ID,
+    keys: goalKeys(part.page)
+  }) : [];
   const right = width - 1;
   const { mark } = part;
   const at = mark === null ? PAGE_MARK_AT : PAGE_TEXT_AT;

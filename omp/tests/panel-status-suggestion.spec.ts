@@ -93,3 +93,24 @@ test('the suggestion draws at a narrow width without a line wider than the panel
     expect(lines.join('\n')).toContain('Next goal')
   }
 })
+
+test('with Undo on the heading and the offer below, only the pressed button draws as focused', () => {
+  const goal = {
+    text: 'Old goal',
+    setAt: NOW - 60_000,
+    metAt: null,
+    was: null,
+    isAwaitingMilestones: false,
+    source: 'inferred',
+  } as const
+  const screen = screenWith({
+    suggestedGoal: SUGGESTED,
+    goalRemoved: { goal, milestones: [], serves: {}, askSubjects: {} },
+  })
+  const focused = (ui: typeof onPage) =>
+    text(screen, ui, 120)
+      .split('\n')
+      .filter(l => /Undo|Set this goal/.test(l) && l.includes('↵')).length
+  expect(focused(keys(screen, onPage, 'right'))).toBe(1)
+  expect(focused(keys(screen, onPage, 'right', 'right'))).toBe(1)
+})
