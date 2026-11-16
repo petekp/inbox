@@ -7,8 +7,11 @@ import { closeItem } from './ledger-close'
 
 type AskedQuestion = Pick<DialogQuestion, 'question' | 'options'>
 
+/** A letter or number that labels an option, as in "A — Session rail", "1. Node" or "(b) Wait". */
+const OPTION_LABEL = /^\s*\(?(?:[a-z]|\d{1,2})\s*(?:[.):]|[—–-])\s+/i
+
 function optionKey(option: string): string {
-  return option.replace(RECOMMENDED_SUFFIX, '').trim().toLowerCase()
+  return option.replace(RECOMMENDED_SUFFIX, '').replace(OPTION_LABEL, '').trim().toLowerCase()
 }
 
 function optionsKey(options: string[]): string {
