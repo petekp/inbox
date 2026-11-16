@@ -3,18 +3,18 @@ nav {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
-  padding: 12px 12px 0;
+  gap: var(--list-gap) var(--edge);
+  padding: calc(3 * var(--unit)) calc(3 * var(--unit)) 0;
 }
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--list-gap);
 }
 .tab {
   position: relative;
   white-space: nowrap;
-  padding: 6px 12px;
+  padding: calc(var(--item-gap) / 2) calc(3 * var(--unit));
   border-radius: 6px;
   color: var(--muted);
 }
@@ -34,7 +34,7 @@ nav {
 }
 .tab .count {
   font-weight: 600;
-  margin-left: 6px;
+  margin-left: var(--unit);
 }
 /* --muted is see-through in the Codex app, and a color emoji takes its color's transparency. */
 .tab-symbol {

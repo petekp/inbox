@@ -1,11 +1,11 @@
 main {
   display: flex;
   flex-direction: column;
-  padding: 8px 0 4px;
+  padding: var(--control-gap) 0 var(--unit);
 }
 section {
   position: relative;
-  padding: 10px 0;
+  padding: calc(var(--section-gap) / 2) 0;
 }
 section + section::before {
   content: '';
@@ -16,9 +16,13 @@ section + section::before {
   height: 1px;
   background: var(--soft);
 }
+/* A title sits `head` over its first row's text, counting the row's padding. */
 .group-title {
   position: relative;
-  padding: 0 14px 6px var(--text-x);
+  padding: 0 var(--edge) calc(var(--head-gap) - var(--row-pad)) var(--text-x);
+}
+.group-title:has(+ .list > .entry:first-child > .row.selected) {
+  padding-bottom: calc(var(--head-gap) - var(--open-row-pad));
 }
 .group-title.unmarked {
   padding-left: var(--mark-x);
@@ -29,7 +33,7 @@ section + section::before {
 .group-mark {
   position: absolute;
   left: var(--mark-x);
-  width: calc(var(--text-x) - var(--mark-x) - 8px);
+  width: calc(var(--text-x) - var(--mark-x) - var(--control-gap));
   text-align: center;
 }
 .group-mark.opportunity {
@@ -55,7 +59,7 @@ section + section::before {
 }
 .group-title .group-aside {
   position: absolute;
-  right: 14px;
+  right: var(--edge);
   color: var(--muted);
   font-family: var(--mono);
   font-size: 12px;

@@ -3,16 +3,16 @@
 .pr-actions,
 .pr-last,
 .pr-order > div {
-  padding: 0 14px 0 var(--text-x);
+  padding: 0 var(--edge) 0 var(--text-x);
   overflow-wrap: anywhere;
 }
 .pr-order-changed {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  column-gap: 10px;
-  row-gap: 6px;
-  margin-top: 8px;
+  column-gap: var(--control-gap);
+  row-gap: var(--control-gap);
+  margin-top: var(--control-gap);
 }
 .pr-order-changed .pr-actions {
   padding: 0;
@@ -46,20 +46,20 @@
   font-weight: 400;
 }
 .pr-actions {
-  margin-top: 8px;
+  margin-top: var(--control-gap);
 }
 .pr-last {
-  padding-top: 6px;
+  padding-top: var(--control-gap);
 }
 .pr-groups {
-  --mark-x: 41px;
-  margin-top: 12px;
+  --mark-x: calc(var(--edge) + var(--mark));
+  margin-top: var(--item-gap);
 }
 .pr-groups .list {
-  --text-x: 67px;
+  --text-x: calc(var(--edge) + 2 * var(--mark));
 }
 .pr-group .list {
-  padding-bottom: 6px;
+  padding-bottom: calc(var(--item-gap) / 2);
 }
 .link {
   padding: 0;
@@ -85,7 +85,7 @@ section.other-prs + section::before {
   display: none;
 }
 .pr-entry-content {
-  padding: 10px 0;
+  padding: calc(var(--item-gap) / 2) 0;
 }
 /* A settling block's settled line has a row's padding, so the body it drew open fades while the height shrinks over it. */
 .pr-was-open {

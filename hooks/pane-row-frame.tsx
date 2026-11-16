@@ -8,6 +8,7 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
     side = null,
     fill,
     padY = space.rowPad,
+    padBelow = padY,
     isSideCentered = false,
     indent = 0,
     isMarkHung = true,
@@ -26,6 +27,8 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
     tree?: JSX.Element | null
     fill?: string | undefined
     padY?: number
+    /** The padding under its text, where it differs from `padY` above. */
+    padBelow?: number
     /** Centers the side and the mark with its text on each other, for a side taller than a line of text, as Undo is. */
     isSideCentered?: boolean
     indent?: number
@@ -58,7 +61,8 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
         marginY={gapY}
         borderStyle="single"
         borderColor="#0000"
-        paddingY={padY}
+        paddingTop={padY}
+        paddingBottom={padBelow}
         {...(fill ? { backgroundColor: fill } : {})}
       >
         {isSideCentered ? (

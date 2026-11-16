@@ -6,10 +6,10 @@ type TreeLineShape = 'down' | 'mid' | 'last'
 
 /**
  * Where a desktop tree line sits in its frame's mark column, as cells from that column's left edge. `at` is the
- * line's center. `arm` is the length of the arm that reaches across to a child. `edge` is the padding the frame
- * has above and below its content, in half lines, which the line reaches across to meet the next frame's line.
+ * line's center. `arm` is the length of the arm that reaches across to a child. `edge` and `edgeBelow` are the padding
+ * the frame has above and below its content, in half lines, which the line reaches across to meet the next frame's line.
  */
-type TreeLineBox = { at: number; arm: number; edge: number }
+type TreeLineBox = { at: number; arm: number; edge: number; edgeBelow?: number }
 
 export function paneDesktopTree({
   Box,
@@ -21,8 +21,9 @@ export function paneDesktopTree({
    * `down` runs from under the parent's mark to the end of its frame. `mid` and `last` reach across to a child,
    * and `mid` runs on to the next frame.
    */
-  const desktopTreeLine = (key: string, shape: TreeLineShape, { at, arm, edge }: TreeLineBox) => {
+  const desktopTreeLine = (key: string, shape: TreeLineShape, { at, arm, edge, edgeBelow = edge }: TreeLineBox) => {
     const reach = -(edge + 2 * DESKTOP_HAIR_LINES)
+    const reachBelow = -(edgeBelow + 2 * DESKTOP_HAIR_LINES)
     const firstLineMiddle = 0.5
     const hair = (hairKey: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
       <Box key={hairKey} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
@@ -31,11 +32,11 @@ export function paneDesktopTree({
     )
     const parts =
       shape === 'down'
-        ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reach })]
+        ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reachBelow })]
         : [
             hair('to-arm', false, { marginTop: reach }),
             desktopHairline('arm', 'across', { width: arm }, pal.line),
-            ...(shape === 'mid' ? [hair('on', true, { marginBottom: reach })] : []),
+            ...(shape === 'mid' ? [hair('on', true, { marginBottom: reachBelow })] : []),
           ]
 
     return (

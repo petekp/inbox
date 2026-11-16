@@ -13,11 +13,12 @@ import {
   BUTTON_H,
   CONTROL_GAP,
   EDGE,
-  GROUP_GAP,
+  END_SPACE,
   HELP_ICON,
   HELP_ICON_TEXT,
   INSET,
-  LINE_GAP,
+  INSIDE_GAP,
+  SMALL_GAP,
   TAB_RADIUS,
   colorOf,
   tint,
@@ -63,7 +64,7 @@ export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element
     .px(EDGE)
     .pt(EDGE)
     .pb(CONTROL_GAP)
-    .gap_x(LINE_GAP)
+    .gap_x(SMALL_GAP)
     .gap_y(CONTROL_GAP)
     .items_center()
     .children(
@@ -84,7 +85,7 @@ export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element
           .when(tab.badge !== null, e =>
             e.child(
               div()
-                .ml(LINE_GAP)
+                .ml(SMALL_GAP)
                 .font_normal()
                 .text_color(colorOf(t, tab.id === 'overview' ? null : tab.id))
                 .child(tab.badge ?? ''),
@@ -152,8 +153,8 @@ export function messageEl(m: Message, t: Theme): Element {
     .flex_1()
     .justify_center()
     .items_center()
-    .p(GROUP_GAP)
-    .gap(LINE_GAP)
+    .p(END_SPACE)
+    .gap(INSIDE_GAP)
     .child(
       div()
         .font_semibold()
@@ -199,5 +200,5 @@ export function scrollFadeEl(t: Theme, edge: 'top' | 'bottom'): Element {
     .left(0)
     .right(0)
     .when(isTop, e => e.top(0).h(EDGE))
-    .when(!isTop, e => e.bottom(0).h(GROUP_GAP))
+    .when(!isTop, e => e.bottom(0).h(END_SPACE))
 }

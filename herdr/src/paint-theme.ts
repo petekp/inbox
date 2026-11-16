@@ -1,4 +1,17 @@
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
+import {
+  CHILD_GAP_PT,
+  CONTROL_GAP_PT,
+  EDGE_PT,
+  HEAD_GAP_PT,
+  INSIDE_GAP_PT,
+  ITEM_GAP_PT,
+  LINE_PT,
+  LIST_GAP_PT,
+  MARK_PT,
+  SECTION_GAP_PT,
+  SPACE_UNIT,
+} from '../../hooks/layout'
 import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
 import type { Context } from 'gpui-kit'
 import type { InputState } from 'gpui-base'
@@ -87,38 +100,43 @@ export function mixInto(c: Color, under: Color, share: number): Color {
  * `line_height` as a multiplier, so the line heights are px strings.
  */
 export const TEXT = 13
-export const LINE_HEIGHT = 20
+export const LINE_HEIGHT = LINE_PT
 export const LINE = `${LINE_HEIGHT}px`
 export const HEAD_TEXT = 15
 export const HEAD_LINE = '24px'
 
 /**
- * The spacing scale. Every gap, padding and inset the look draws is one of these steps, so distances repeat and each
- * step is far enough from the next for the eye to tell them apart.
+ * The spacing roles, each a step of the shared scale in `hooks/layout.ts`, so every look spaces its blocks alike. The
+ * vertical gaps rise from `INSIDE_GAP` to `SECTION_GAP`, so space shows what belongs together.
  */
-export const SPACE = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 } as const
-
 /** A title to each line under it, and the head's title to its notes. */
-export const LINE_GAP = SPACE.xs
-/** Text to the buttons under it, one button to the next, and two one-line items in a row, as a subject's later children. */
-export const CONTROL_GAP = SPACE.s
+export const INSIDE_GAP = INSIDE_GAP_PT
+/** Two one-line items of a list, as a subject's later children or two Help lines. */
+export const LIST_GAP = LIST_GAP_PT
+/** Two Status items nested under one parent, when either has more than one line. */
+export const CHILD_GAP = CHILD_GAP_PT
+/** Two Status items when either has more than one line. */
+export const ITEM_GAP = ITEM_GAP_PT
 /** A heading to what it heads, so it reads as that part's label. */
-export const HEAD_GAP = SPACE.m
-/** A pill's and a banner's side padding, a row's title to its age, and a nested Status item to the line above, as a subject's first child. */
-export const INSET = SPACE.m
-/** The panel's padding on every side, and half a section's break on each side of a rule. */
-export const EDGE = SPACE.l
-/** Two top-level items of the Status page. */
-export const ITEM_GAP = SPACE.xl
-/** Two sections, such as two groups or two PRs, and the space under the list's last block. */
-export const GROUP_GAP = SPACE.xxl
-export const END_SPACE = GROUP_GAP
+export const HEAD_GAP = HEAD_GAP_PT
+/** Text to the buttons under it, and one button to the next. */
+export const CONTROL_GAP = CONTROL_GAP_PT
+/** Two sections, such as two groups or two PRs. A rule between them sits halfway. */
+export const SECTION_GAP = SECTION_GAP_PT
+/** The panel's padding on every side. */
+export const EDGE = EDGE_PT
+/** A chevron to the words before it, one tab to the next, and a tree's arm to the mark it points at. */
+export const SMALL_GAP = SPACE_UNIT
+/** A pill's and a banner's side padding, and a row's title to its age. */
+export const INSET = 3 * SPACE_UNIT
+/** The space under the list's last block, around an empty tab's words, the list's bottom fade and a labelled rule's shortest line. */
+export const END_SPACE = 2 * EDGE
 
 /**
  * Marks hang in a column at the edge, and text after a mark starts at `TEXT_X`. A nested item's mark column starts
  * where its parent's text does.
  */
-export const MARK_W = SPACE.xl
+export const MARK_W = MARK_PT
 export const TEXT_X = EDGE + MARK_W
 export const NEST = MARK_W
 
@@ -126,7 +144,7 @@ export const NEST = MARK_W
 const NARROW_PANE = 280
 
 /** A button's and a tab's height, and the corner of a box such as a banner or the goal's input. */
-export const BUTTON_H = 28
+export const BUTTON_H = 7 * SPACE_UNIT
 export const BOX_RADIUS = 10
 export const TAB_RADIUS = 6
 /** Help's keys and marks sit one nesting step under their section titles, as a nested Status item's marks do. */
