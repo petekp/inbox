@@ -11,7 +11,7 @@ import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt } from '../../hook
 import type { ListInput } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
-import { footerStatus } from '../../hooks/view'
+import { footerError } from '../../hooks/view'
 import { statusSelected } from '../../hooks/status-keys'
 import { seenSubjectIds } from '../../hooks/status-page'
 import type { Holds } from '../../hooks/timing'
@@ -210,15 +210,10 @@ export function drawPanel(
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
   const rule = style.dim('─'.repeat(width))
-  const status = footerStatus(
-    ui.tab,
-    screen.view.status,
-    { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
-    screen.view.statusPage.error,
-  )
+  const error = footerError(ui.tab, screen.view.status, screen.view.statusPage.error)
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
   const host = screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []
-  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null)
+  const banners = tabBarBanners(host, error, isNoticeShown ? ui.notice : null)
   const head = [
     ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
     rule,

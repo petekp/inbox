@@ -114,7 +114,7 @@ import { isPressConfirmed, type Effect } from './press-reducer'
 import { openTarget } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
-import { footerStatus } from './view'
+import { footerError } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf } from './banners'
 import { comparePagePath, nextBuildMarkPath } from './mod-plugin-files'
@@ -3028,7 +3028,6 @@ export const register: Register = on => {
     paneState.inlineSize = size
     const shownPrs = view.prs.drawn
     const settledLayout = settledLayoutId(tab, view, shownPrs, lastActions, notes, now, paneState.terminalInlineSize)
-    const prViews = shownPrs.map(x => x.pr)
     const pal = paletteFor(theme, look)
     const { inlineText, terminalText } = paneText({ Text, pal })
     const raise = {
@@ -3224,13 +3223,7 @@ export const register: Register = on => {
       handlers,
     )
 
-    const shownStatus = footerStatus(
-      shownTab,
-      view.status,
-      { isFetching: prState.isFetching, hasPrs: prViews.length > 0 },
-      view.statusPage.error,
-    )
-    const status = shownStatus.text ?? ''
+    const shownError = footerError(shownTab, view.status, view.statusPage.error)
 
     const openIds = openRowIds(view)
     const drawnIds = new Set([...openIds.needsYou, ...openIds.findings, ...prRowIds(shownPrs)])
@@ -3255,7 +3248,7 @@ export const register: Register = on => {
         Text,
         isNarrowDesktop,
         Box,
-        shownStatus,
+        shownError,
         lineNote,
         tabText,
         termProgram,
@@ -3263,7 +3256,6 @@ export const register: Register = on => {
         tabTone,
         raiseEdge,
         raise,
-        status,
         railWidth,
         hasRail,
         blankLine,

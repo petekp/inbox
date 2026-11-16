@@ -24,7 +24,7 @@ test(
       turns,
       extraSteps: {},
       settleWindowMs: SETTLED_MS,
-      status: perTurnStatus(false, 'none'),
+      status: perTurnStatus('none'),
       now: 1_000_000,
       replies: {},
       discarded: {},

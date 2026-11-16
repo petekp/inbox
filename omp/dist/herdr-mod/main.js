@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:51:22.261Z. 262301 characters follow.
+// Built at 2026-11-16T05:15:20.265Z. 261630 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -3434,14 +3434,10 @@ function heldLabel(c) {
     return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
-var UPDATING_TEXT = "Updating…";
-var RETRYING_TEXT = "Retrying the last update…";
-var REFRESHING_PRS_TEXT = "Refreshing PRs…";
-function footerStatus(tab, status, prs, statusPageError) {
+function footerError(tab, status, statusPageError) {
   if (tab === "prs")
-    return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
-  const error = (tab === "overview" ? statusPageError : null) ?? status.error;
-  return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error };
+    return null;
+  return (tab === "overview" ? statusPageError : null) ?? status.error;
 }
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
@@ -3449,9 +3445,9 @@ var FAILED_UPDATE_TEXT = {
   "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
   unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
-function perTurnStatus(isUpdating, recovery) {
+function perTurnStatus(recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
-  return { isUpdating, isRetrying: recovery === "retrying", error };
+  return { isRetrying: recovery === "retrying", error };
 }
 
 // ../hooks/collapse.ts
@@ -3693,7 +3689,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
+    status: perTurnStatus(updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
@@ -4551,8 +4547,8 @@ function tabCells(screen, tab) {
   }));
 }
 function chrome(screen, tab) {
-  const status = footerStatus(tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
-  return { banners: tabBarBanners([], status.error, null), status: status.text };
+  const error = footerError(tab, screen.view.status, screen.view.statusPage.error);
+  return { banners: tabBarBanners([], error, null) };
 }
 function tabBlocks(screen, ui) {
   if (ui.tab === "overview") {
@@ -5149,7 +5145,6 @@ function mixInto(c, under, share) {
 var TEXT = 13;
 var LINE_HEIGHT = 20;
 var LINE = `${LINE_HEIGHT}px`;
-var SMALL_TEXT = 12;
 var HEAD_TEXT = 15;
 var HEAD_LINE = "24px";
 var SPACE = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 };
@@ -5543,10 +5538,10 @@ var helpButton = (isHelpShown) => ({
   does: { is: "view", change: { toggleHelp: true } }
 });
 var helpIconEl = (t) => h_flex2().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(t.muted).hover((s) => s.border_color(t.foreground)).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
-function tabsEl(tabs, status, isHelpShown, p) {
+function tabsEl(tabs, isHelpShown, p) {
   const { t } = p;
   const help = helpButton(isHelpShown);
-  return h_flex2().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex2().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div3().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div3().flex_1()).when(status !== null, (e) => e.child(div3().min_w(0).whitespace_normal().px(LINE_GAP).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex2().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(isHelpShown ? help.label : helpIconEl(t)));
+  return h_flex2().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex2().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div3().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div3().flex_1()).child(h_flex2().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(isHelpShown ? help.label : helpIconEl(t)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
@@ -6550,7 +6545,7 @@ class Inbox extends View {
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

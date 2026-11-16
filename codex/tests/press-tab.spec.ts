@@ -17,15 +17,14 @@ test('the tab reports active work separately from pending exchanges and failed u
   const s = { ...withItems(), presence: { ...withItems().presence, isUpdating: false, ledgerState: 'failed' as const } }
   const waiting = endTurn(s, 'Done.', 50)
   assert.equal(waiting.pending.length, 1)
-  assert.equal(viewOf(waiting, 60).status.isUpdating, false)
   assert.match(
     viewOf(waiting, 60).status.error ?? '',
     /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
   )
   const running = { ...waiting, presence: { ...waiting.presence, isUpdating: true } }
-  assert.deepEqual(viewOf(running, 60).status, { isUpdating: true, isRetrying: true, error: null })
+  assert.deepEqual(viewOf(running, 60).status, { isRetrying: true, error: null })
   const scheduled = { ...waiting, presence: { ...waiting.presence, ledgerState: 'current' as const } }
-  assert.deepEqual(viewOf(scheduled, 60).status, { isUpdating: false, isRetrying: false, error: null })
+  assert.deepEqual(viewOf(scheduled, 60).status, { isRetrying: false, error: null })
   assert.equal(
     viewOf(s, 60).status.error,
     "The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing. It tries again after the next reply.",

@@ -72,7 +72,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
   const prompts: string[] = []
   const answers = ['NEW: decide | - | Deploy now? | Yes / No | Yes', null]
   const ask = async (p: string) => (prompts.push(p), answers.shift() ?? null)
-  assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isUpdating: false, isRetrying: false, error: null })
+  assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isRetrying: false, error: null })
   await runUpdates(dir, 's1', ask, () => 5)
 
   const kept = await readState(dir, 's1')
@@ -99,14 +99,9 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     lastReplyAt: null,
     lastTypedMessageAt: null,
   })
-  assert.equal(viewOf(kept, 5).status.isUpdating, false)
   assert.match(
     viewOf(kept, 5).status.error ?? '',
     /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
-  )
-  assert.equal(
-    viewOf({ ...kept, pending: [...kept.pending, { ex: ex(3, 'More work.'), turnsStarted: 3 }] }, 5).status.isUpdating,
-    false,
   )
 
   await runUpdates(
@@ -114,7 +109,6 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     's1',
     async prompt => {
       assert.deepEqual(viewOf(await readState(dir, 's1'), 6).status, {
-        isUpdating: true,
         isRetrying: true,
         error: null,
       })
@@ -138,7 +132,6 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     lastReplyAt: null,
     lastTypedMessageAt: null,
   })
-  assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(
     viewOf(dropped, 6).status.error ?? '',
     /^The inbox couldn't read this conversation\..*tries again after the next reply\.$/,
@@ -265,14 +258,13 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
     })
     return (answer?.result as { structuredContent: ReturnType<typeof viewOf> }).structuredContent
   }
-  assert.equal((await poll()).status.isUpdating, true)
+  assert.equal((await readState(dir, 's1')).presence.isUpdating, true)
   assert.equal((await readState(dir, 's1')).pending[0]?.failed, undefined)
   assert.equal(worker.exitCode, null)
   const exited = once(worker, 'exit')
   assert.ok(worker.kill('SIGKILL'))
   await exited
   const stopped = await poll()
-  assert.equal(stopped.status.isUpdating, false)
   assert.match(
     stopped.status.error ?? '',
     /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
@@ -281,7 +273,6 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   assert.equal(state.presence.isUpdating, false)
   assert.equal(state.pending.length, 1)
   assert.equal(state.pending[0]?.failed, undefined)
-  assert.equal((await poll()).status.isUpdating, false)
   let calls = 0
   await runUpdates(
     dir,
@@ -306,5 +297,5 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   assert.equal(calls, 2)
   assert.deepEqual((await readState(dir, 's1')).pending, [])
   await updateState(dir, 's1', s => ({ ...s, presence: { ...s.presence, isUpdating: true, ledgerState: 'current' } }))
-  assert.deepEqual((await poll()).status, { isUpdating: false, isRetrying: false, error: null })
+  assert.deepEqual((await poll()).status, { isRetrying: false, error: null })
 })

@@ -4,7 +4,7 @@ Part of [the look map](../looks.md#files).
 
 | File | Role |
 | --- | --- |
-| `hooks/view.ts` | Shared module. `inboxView` builds the inbox view: the Asks order and count, each row's state, feedback and actions, and the closed rows. `footerStatus` is the status line under the inbox. |
+| `hooks/view.ts` | Shared module. `inboxView` builds the inbox view: the Asks order and count, each row's state, feedback and actions, and the closed rows. `footerError` is the failure text under the tabs. |
 | `hooks/timing.ts` | Shared module. The timing constants: how long a row stays settled, the press guard, when a send reads Queued, and the running mark's frames. Which rows a look draws in place, and which replies and discards it holds. |
 | `hooks/rows.ts` | Shared module. The `Look`, `RowView` and `RowState` types. Row handles, titles, reply hints and action labels, a closed row's state, outcome label and mark, and the labels of the closed folds. |
 | `hooks/row-motion.ts` | Shared module. The motion state machine for rows, how long each moving state lasts, and each state's fade length. |

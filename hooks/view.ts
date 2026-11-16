@@ -30,7 +30,7 @@ import { actionsOf } from './action-plan'
 import { earlierLineOf } from './earlier-answers'
 
 /** `isRetrying`: the update that runs retries a failed one. */
-type ItemStatus = { isUpdating: boolean; isRetrying: boolean; error: string | null }
+type ItemStatus = { isRetrying: boolean; error: string | null }
 
 export type ViewInput = {
   ledger: Ledger
@@ -379,25 +379,14 @@ function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
   return c.how === 'claude' ? capitalized(c.outcome) : `Closed: ${c.outcome}`
 }
 
-const UPDATING_TEXT = 'Updating…'
-const RETRYING_TEXT = 'Retrying the last update…'
-const REFRESHING_PRS_TEXT = 'Refreshing PRs…'
-
 /**
- * The status line under the inbox for the shown tab. The PRs tab says when PRs refresh, and only once it lists some,
- * since an empty PRs tab already reads "Checking for PRs…". A failed ledger update is about rows, so it shows on every
- * tab but the PRs tab. On the Status tab, `statusPageError` shows in its place.
+ * The failed-update text under the tabs for the shown tab, or null. A failed ledger update is about rows, so it shows on
+ * every tab but the PRs tab. On the Status tab, `statusPageError` shows in its place.
  */
-export function footerStatus(
-  tab: ShownTab,
-  status: ItemStatus,
-  prs: { isFetching: boolean; hasPrs: boolean },
-  statusPageError: string | null,
-): { text: string | null; error: string | null } {
-  if (tab === 'prs') return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null }
-  const error = (tab === 'overview' ? statusPageError : null) ?? status.error
+export function footerError(tab: ShownTab, status: ItemStatus, statusPageError: string | null): string | null {
+  if (tab === 'prs') return null
 
-  return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error }
+  return (tab === 'overview' ? statusPageError : null) ?? status.error
 }
 
 /**
@@ -415,8 +404,8 @@ const FAILED_UPDATE_TEXT: Record<Exclude<UpdateRecovery, 'none' | 'retrying'>, s
   unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`,
 }
 
-export function perTurnStatus(isUpdating: boolean, recovery: UpdateRecovery): ItemStatus {
+export function perTurnStatus(recovery: UpdateRecovery): ItemStatus {
   const error = recovery === 'none' || recovery === 'retrying' ? null : FAILED_UPDATE_TEXT[recovery]
 
-  return { isUpdating, isRetrying: recovery === 'retrying', error }
+  return { isRetrying: recovery === 'retrying', error }
 }

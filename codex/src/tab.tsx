@@ -95,7 +95,7 @@ function App({
           </button>
         )}
         <div class="footer-end">
-          <Status v={v} />
+          <Status />
         </div>
       </footer>
     </>
