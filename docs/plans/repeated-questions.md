@@ -181,7 +181,9 @@ Questions the inbox model adds from a reply make up 75 of the 163 repeats and al
 
 ## Decisions
 
-- Run the near-miss test first, about 150 model calls and $3? Recommended: yes. It measures the main risk on real questions before any build.
-- Build this, as written, if the near-miss test passes? Recommended: yes. It needs no model call in use, and it reaches up to 37% of repeats. It also builds the history the next step needs.
-- Let answers cross sessions, projects and hosts, including to Codex's and omp's model providers? Recommended: yes, across every repository. Every repository catches 117 of the 163 repeats; one project folder catches 76. The alternative is one repository only.
-- Run the agent suite priced above: about 110 model calls for the new cases, then about 1,290 for the whole suite.
+Decided by the owner on 11-16:
+
+- Run the near-miss test first, about 150 model calls and $3: yes.
+- Build this, as written, if the near-miss test passes: yes.
+- Let answers cross sessions, projects and hosts, including to Codex's and omp's model providers: yes, across every repository. Every repository catches 117 of the 163 repeats, and one project folder catches 76.
+- Run the agent suite priced above at build time: about 110 model calls for the new cases, then about 1,290 for the whole suite.
