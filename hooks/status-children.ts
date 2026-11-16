@@ -20,6 +20,20 @@ function isFinishedAfter(c: Child, at: number | null): boolean {
   return c.delegateState === 'finished' && c.endedAt !== null && (at === null || c.endedAt > at)
 }
 
+/**
+ * Whether `c` is a delegate that finished before the person's last look, within `CHILD_KEPT_MS`. The page then draws
+ * no row of its own for it in real time, and a done fold keeps it reachable.
+ */
+export function isChildSettled(c: Child, now: number, lastLookAt: number | null): boolean {
+  return (
+    c.delegateState === 'finished' &&
+    c.endedAt !== null &&
+    lastLookAt !== null &&
+    c.endedAt <= lastLookAt &&
+    now - c.endedAt < CHILD_KEPT_MS
+  )
+}
+
 /** Whether the page draws a row for `c`: it runs, or it is a delegate that finished after the person last looked. */
 export function isChildShown(c: Child, now: number, lastLookAt: number | null): boolean {
   return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt)

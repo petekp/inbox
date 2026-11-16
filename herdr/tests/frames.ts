@@ -25,10 +25,11 @@ type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean;
 const linesOf = (n: Painted): number =>
   n.style.isTruncated ? 1 : Math.max(1, Math.ceil((n.text ?? '').length / WRAP_AT))
 
-function layout(root: Painted, shown: (id: string) => number | undefined) {
+export function layout(root: Painted, shown: (id: string) => number | undefined, line = 0) {
   const boxes = new Map<string, Box>()
   const placed = new Map<Painted, Box>()
   const sized: { node: Painted; height: number }[] = []
+  const fits: { id: string | null; height: number; content: number }[] = []
   const place = (n: Painted, top: number, line: number): number => {
     const lh = n.style.line ?? line
     const pt = n.style.pt ?? 0
@@ -46,16 +47,19 @@ function layout(root: Painted, shown: (id: string) => number | undefined) {
       content = y - top - pt
     }
     const sprung = n.id !== null && n.springs.has('height') ? shown(n.id) : undefined
-    const height = sprung ?? n.style.h ?? pt + content + (n.style.pb ?? 0)
+    const natural = pt + content + (n.style.pb ?? 0)
+    const height = sprung ?? n.style.h ?? natural
+    const isSet = sprung !== undefined || n.style.h !== undefined
+    if (n.style.isClipped && isSet) fits.push({ id: n.id, height, content: natural })
     sized.push({ node: n, height })
     placed.set(n, { top, height })
     if (n.id !== null) boxes.set(n.id, { top, height })
 
     return height
   }
-  place(root, 0, 0)
+  place(root, 0, line)
 
-  return { boxes, sized, placed }
+  return { boxes, sized, placed, fits }
 }
 
 function segmentsOf(root: Painted, placed: Map<Painted, Box>): Segment[] {
@@ -147,6 +151,7 @@ class Frames {
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
   listHeights: number[] = []
+  slides: number[][] = []
 
   draw(blocks: Block[], now: number) {
     const isFirst = this.last === null
@@ -165,7 +170,7 @@ class Frames {
       motion: moved.motion,
       heights: this.heights,
       isAtOnce: (key: string) => isFirst || resized.has(key),
-      measure: (key: string, size: { width: number; height: number }) => void this.heights.measure(key, size),
+      measure: (key: string, size: { width: number; height: number }) => void this.heights.measure(key, size, 1),
       now,
       newRows: new Map(),
       tab: 'needsYou',
@@ -184,6 +189,7 @@ class Frames {
     const { boxes, sized, placed } = layout(tree, id => shown.get(id))
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
+    this.slides.push(sized.flatMap(({ node }) => (node.transitions.has('top') ? [node.style.top ?? 0] : [])))
     for (const gap of gapsOf(segmentsOf(tree, placed), end)) this.gaps.push({ at: now, ...gap })
     if (this.last) {
       const stillAt = (id: string) => (was.has(id) && shown.has(id) ? this.lastShown.get(id) : shown.get(id))
@@ -213,10 +219,10 @@ class Frames {
 export function framesOf(
   steps: [number, Block[]][],
   ms = 1500,
-): { jumps: Jump[]; titles: TitleForm[]; gaps: ColumnGap[]; heights: number[] } {
+): { jumps: Jump[]; titles: TitleForm[]; gaps: ColumnGap[]; heights: number[]; slides: number[][] } {
   const frames = new Frames()
   const [first] = steps
-  if (!first) return { jumps: [], titles: [], gaps: [], heights: [] }
+  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [] }
   const start = 1_000_000
   for (let at = -500; at < ms; at += FRAME_MS) {
     const step = steps.findLast(([from]) => at >= from) ?? first
@@ -228,6 +234,7 @@ export function framesOf(
     titles: frames.titles.map(t => ({ ...t, at: t.at - start })),
     gaps: frames.gaps.map(g => ({ ...g, at: g.at - start })),
     heights: frames.listHeights,
+    slides: frames.slides,
   }
 }
 

@@ -597,13 +597,11 @@ async function changeSession(
 }
 
 function historyEngine($: EngineInterface): HistoryEngine {
-  const fs = {
-    list: (p: string) => $.fs.list(p),
-    read: (p: string) => $.fs.read(p),
-    write: (p: string, text: string) => $.fs.write(p, text),
+  return {
+    ...saveEngine($),
+    stateEnv: async () => ({ XDG_STATE_HOME: await $.env.get('XDG_STATE_HOME'), HOME: await $.env.get('HOME') }),
+    fs: { list: p => $.fs.list(p), read: p => $.fs.read(p), write: (p, text) => $.fs.write(p, text) },
   }
-  const stateEnv = async () => ({ XDG_STATE_HOME: await $.env.get('XDG_STATE_HOME'), HOME: await $.env.get('HOME') })
-  return { ...saveEngine($), stateEnv, fs }
 }
 
 /** The store, clock, debug log and running-conversation calls that `hooks/mod-saves.ts` makes. */
@@ -820,6 +818,7 @@ async function commit(
     new Set(Object.keys(heldReplies(typing, drafts))),
   )
   if (!isDrawn || after === before) return after
+  if (before.ledger.overview === null && after.ledger.overview !== null) void syncLook($)
   void publishStatus($)
   void followNewRows($).catch(() => undefined)
 
@@ -3448,6 +3447,7 @@ export const register: Register = on => {
       ToneSvg,
       svgCell,
       markGlyph,
+      markWidth,
       section,
       groupTitle,
       sections,

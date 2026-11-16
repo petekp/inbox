@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:17:45.822Z. 260525 characters follow.
+// Built at 2026-11-16T04:21:35.600Z. 261881 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -14,6 +14,7 @@ import {
   props,
   readTextFile,
   run,
+  settings,
   spaces,
   terminals,
   theme,
@@ -253,6 +254,9 @@ function isChildRunning(c, now) {
 }
 function isFinishedAfter(c, at) {
   return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
+}
+function isChildSettled(c, now, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && lastLookAt !== null && c.endedAt <= lastLookAt && now - c.endedAt < CHILD_KEPT_MS;
 }
 function isChildShown(c, now, lastLookAt) {
   return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
@@ -1385,6 +1389,20 @@ function namedList(names) {
   const hidden = names.length - LISTED_NAMES;
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+  const closed = named.filter((x) => x.status === status);
+  return closed.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}also-${status}`,
+      depth,
+      ...SUBJECT_MARKS[status],
+      text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
+      subjectIds: closed.map((x) => x.id)
+    }
+  ];
+});
 var CHILD_ROWS = 3;
 var CHILD_MARK = SUBJECT_MARKS.working;
 var COUNT_WORDS = {
@@ -3489,7 +3507,6 @@ var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " · ";
 var NEW_CLOSED_ROWS = 2;
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
@@ -3556,19 +3573,6 @@ function statusPage(s, now) {
     now
   };
   const foldCtx = { ...ctx, running: [] };
-  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const closed = named.filter((x) => x.status === status);
-    return closed.length === 0 ? [] : [
-      {
-        kind: "fold",
-        id: `${prefix}also-${status}`,
-        depth,
-        ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
-        subjectIds: closed.map((x) => x.id)
-      }
-    ];
-  });
   const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
     {
       kind: "fold",
@@ -3579,19 +3583,23 @@ function statusPage(s, now) {
       subjectIds: []
     }
   ];
-  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
+  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : [
     {
       kind: "done-fold",
       id: `${prefix}done`,
       depth,
-      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
+      text: `${done.length + settled.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: [
+        ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
+        ...settled.map((c) => childRow(c, null, depth + 1))
+      ]
     }
   ];
-  const foldedPart = (prefix, p, depth) => [
+  const foldedPart = (prefix, p, depth, settled = []) => [
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled)
   ];
+  const settled = (o?.children ?? []).filter((c) => isChildSettled(c, now, look) && !o?.subjects.some((x) => x.id === c.subjectId)).sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
   const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
     const x = subjects.find((y) => y.id === c.subjectId);
     return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
@@ -3605,14 +3613,14 @@ function statusPage(s, now) {
   const otherRows = [
     ...hasMilestones ? looseRows(null, 0) : [],
     ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
+    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0, hasMilestones ? settled : [])
   ];
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   const g = goalParts.goal;
   const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0),
+    ...foldedPart("", top, 0, hasMilestones ? [] : settled),
     ...otherRows.length > 0 ? [
       { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
       ...otherRows
@@ -4946,6 +4954,7 @@ var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
 // ../hooks/row-motion.ts
 var ENTER_FADE_MS = 300;
 var FADE_MS = 200;
+var SLIDE_PX = 8;
 var ROW_FADE_MS = {
   entering: ENTER_FADE_MS,
   opening: FADE_MS,
@@ -5149,10 +5158,16 @@ var NARROW_PANE = 280;
 var BUTTON_H = 28;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
-var HELP_COLUMN = MARK_W * 2;
+var HELP_INDENT = NEST;
+var HELP_KEY_W = 32;
+var HELP_COLUMN = HELP_KEY_W + CONTROL_GAP;
 var HELP_ICON = 14;
 var HELP_ICON_TEXT = 10;
 var SEP = " · ";
+var paneFit = (reported, zoom) => ({
+  isNarrow: reported.paneWidth / zoom < NARROW_PANE,
+  listRoom: reported.listHeight === null ? null : Math.max(0, reported.listHeight / zoom - EDGE - END_SPACE)
+});
 var onSize = (view, key, read) => (size, cx) => {
   const value = read(size);
   if (value === view[key])
@@ -5243,19 +5258,28 @@ function nextDrawAt(now, ui, screen, moved) {
 }
 
 // src/heights.ts
+function zoomOf(settings) {
+  const zoom = settings.zoom;
+  return typeof zoom === "number" && zoom > 0 ? zoom : 1;
+}
+
 class Heights {
   sizes = new Map;
   resized = new Set;
+  zoom = null;
   get(key) {
     return this.sizes.get(key)?.height;
   }
-  measure(key, size) {
+  measure(key, reported, zoom) {
+    const size = { width: reported.width / zoom, height: reported.height / zoom };
+    const isZoomChanged = this.zoom !== null && this.zoom !== zoom;
+    this.zoom = zoom;
     const was = this.sizes.get(key);
     this.sizes.set(key, { width: size.width, height: size.height });
     const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
     if (isRewrapped)
       this.resized.add(key);
-    return was?.height !== size.height;
+    return was?.height !== size.height || isZoomChanged;
   }
   takeResized() {
     const resized = this.resized;
@@ -5489,7 +5513,11 @@ function spacedEls(blocks, p, el) {
     const m = p.motion.get(b.id);
     const isOpen = m?.box === "open" && fitHeight(b, m, p) !== undefined;
     const fade = (e) => m?.box ? e.opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" }) : e;
-    return v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, fade(el(b)), [...contentStrokeEls(b, p.t, fade), ...passes.map((c) => wholeColumnEl(c, p.t))]));
+    const slide = (e) => m?.box ? e.relative().top(isOpen ? 0 : -SLIDE_PX).transition("top", { duration: m.fadeMs, easing: "ease-out" }) : e;
+    return v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
+      ...contentStrokeEls(b, p.t, fade),
+      ...passes.map((c) => wholeColumnEl(c, p.t))
+    ]));
   });
 }
 
@@ -5642,7 +5670,7 @@ function panelEl(r, m, p, isLeaving) {
 }
 var statusPartEl = (text) => div6().min_w(0).max_w_full().whitespace_normal().child(text);
 function keyEl(s, does, t) {
-  return h_flex4().items_start().px(EDGE).child(div6().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div6().font_semibold().child(s.name))).child(div6().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LINE_GAP).child(div6().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div6().font_semibold().child(s.name))).child(div6().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;
@@ -6170,8 +6198,8 @@ class Inbox extends View {
   ui = freshUi("needsYou");
   shownSince = Date.now();
   isHelpShown = false;
-  isNarrow = false;
-  listRoom = null;
+  paneWidth = Infinity;
+  listHeight = null;
   drafts = {};
   left = {};
   confirmed = [];
@@ -6474,7 +6502,7 @@ class Inbox extends View {
       heights: this.heights,
       isAtOnce: (key) => isFirst || resized.has(key),
       measure: (key, size, cx) => {
-        if (this.heights.measure(key, size))
+        if (this.heights.measure(key, size, zoomOf(settings())))
           cx.notify();
       },
       now,
@@ -6483,10 +6511,9 @@ class Inbox extends View {
       tab: this.ui.tab,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
-      isNarrow: this.isNarrow,
-      listRoom: this.listRoom
+      ...paneFit(this, zoomOf(settings()))
     };
-    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "isNarrow", (s) => s.width < NARROW_PANE));
+    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
@@ -6501,7 +6528,7 @@ class Inbox extends View {
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
     const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
-    const room = moved.nextAt === null ? this.listRoom : null;
+    const room = moved.nextAt === null ? paint.listRoom : null;
     this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
@@ -6509,7 +6536,7 @@ class Inbox extends View {
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listRoom", (s) => Math.max(0, s.height - EDGE - END_SPACE))).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div7().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

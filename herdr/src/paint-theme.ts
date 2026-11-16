@@ -113,17 +113,18 @@ export const TEXT_X = EDGE + MARK_W
 export const NEST = MARK_W
 
 /** Under this pane width, a PR's number moves from the end of its title line to the start of its status line. */
-export const NARROW_PANE = 280
+const NARROW_PANE = 280
 
 /** A button's and a tab's height, and the corner of a box such as a banner or the goal's input. */
 export const BUTTON_H = 28
 export const BOX_RADIUS = 10
 export const TAB_RADIUS = 6
-/**
- * The width of Help's left column, which holds a key or a mark, so every line's words start at one x. It is the widest
- * key, about 30 px, and `INSET` after it, rounded up to two mark columns. A key does not fit the mark column.
- */
-export const HELP_COLUMN = MARK_W * 2
+/** Help's keys and marks sit one nesting step under their section titles, as a nested Status item's marks do. */
+export const HELP_INDENT = NEST
+/** The widest key Help draws, "← →", is about 28 px wide, and 4 px more leave room for a font that draws it wider. */
+const HELP_KEY_W = 32
+/** The width of Help's left column, which holds a key or a mark, so every line's words start at one x: the widest key and `CONTROL_GAP`. */
+export const HELP_COLUMN = HELP_KEY_W + CONTROL_GAP
 /** The Help control's circle, about the size of the Codex tab's and the desktop pane's. */
 export const HELP_ICON = 14
 /** The question mark inside the Help control's circle. */
@@ -164,6 +165,15 @@ export type Paint = {
   /** The list's height inside its padding, from its last measure, which an empty tab's block fills. Null until measured. */
   listRoom: number | null
 }
+
+/**
+ * Whether the pane is narrow and the list's room, at zoom 1, from the pane's width and the list's height as the app
+ * reported them, which its zoom has already scaled.
+ */
+export const paneFit = (reported: { paneWidth: number; listHeight: number | null }, zoom: number) => ({
+  isNarrow: reported.paneWidth / zoom < NARROW_PANE,
+  listRoom: reported.listHeight === null ? null : Math.max(0, reported.listHeight / zoom - EDGE - END_SPACE),
+})
 
 /** A size callback that keeps what `read` takes from a box's size as `view[key]`, and draws again when that changed. */
 export const onSize =

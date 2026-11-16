@@ -117,10 +117,10 @@ export type Entry =
   | { kind: 'page'; row: StatusRow; joint?: WorkJoint }
   | { kind: 'goal'; part: GoalPart }
   | { kind: 'banner'; banner: BannerView }
-  /** A key Help lists, its keys padded to `column`. */
-  | { kind: 'key'; key: HelpKey; column: number }
-  /** A mark Help lists, its words starting at cell `textAt`, where the keys' words start. */
-  | { kind: 'legend'; entry: LegendEntry; textAt: number }
+  /** A key Help lists, starting at cell `at`, its keys padded to `column`. */
+  | { kind: 'key'; key: HelpKey; at: number; column: number }
+  /** A mark Help lists, at cell `at`, its words starting at cell `textAt`, where the keys' words start. */
+  | { kind: 'legend'; entry: LegendEntry; at: number; textAt: number }
 
 export const blankLine = (id: string): Line => ({
   id,

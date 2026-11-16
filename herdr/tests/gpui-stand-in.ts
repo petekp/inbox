@@ -65,6 +65,10 @@ class StandInField {
 }
 
 let keys: 'panel' | StandInField | null = null
+let zoom = 1
+export const setZoom = (to: number) => {
+  zoom = to
+}
 let focusedTerminal = 't1'
 export const focusTerminal = (address: string) => {
   focusedTerminal = address
@@ -217,6 +221,7 @@ mock.module('herdr', () => ({
     { address: 't2', labels: {}, program: { name: 'zsh', shell: true } },
   ],
   theme: () => new Proxy({}, { get: () => '#808080' }),
+  settings: () => ({ zoom }),
   readTextFile: async (path: string) => (path.endsWith('s1.json') ? demoEnvelopeText() : ''),
   writeTextFile: async (path: string, text: string) => (writtenFiles.push({ path, text }), null),
   watchFolder: () => new Promise(() => {}),
@@ -252,8 +257,8 @@ export async function openPanel() {
       ?.keyDown?.({ keystroke: key }, cx)
   }
 
-  const measure = (size: (node: Painted) => { width: number; height: number }) => {
-    for (const node of allOf(paint())) node.onSize?.(size(node), cx)
+  const measure = (size: (node: Painted) => { width: number; height: number }, root = paint()) => {
+    for (const node of allOf(root)) node.onSize?.(size(node), cx)
   }
 
   return { panel, paint, click, press, settle, measure }

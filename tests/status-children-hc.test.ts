@@ -1,10 +1,15 @@
 import { expect, test } from 'claude-code/testing'
 
 import { delegatesSettled } from '../hooks/children'
-import { delegatesInHerdr, herdrTarget } from '../hooks/herdr'
+import { childEnded, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
+import { applyHerdrFile } from '../hooks/herdr-app'
+import { delegatesInHerdr, HERDR_FORMAT, herdrTarget } from '../hooks/herdr'
+import { emptySession } from '../hooks/session-files'
+import type { PressHost } from '../hooks/host-press'
+import type { Session } from '../types'
 import type { Run } from '../hooks/gh'
 import type { SessionStatus } from '../types'
-import { MIN, after, page } from './status-helpers'
+import { MIN, after, page, shape } from './status-helpers'
 
 const HC_TARGET = herdrTarget({ HC_TERMINAL_ID: 't9', HOME: '/home/person' })
 const hcList = (terminals: object[]): Run => {
@@ -62,4 +67,54 @@ test('inside a Herdr app terminal, nothing asks herdr, and hc is asked while the
   }
   await delegatesInHerdr(null, run, HC_TARGET)
   expect(asked).toEqual(['hc ls --json'])
+})
+
+test('a finished delegate no subject holds draws a row until a look ends, then folds into "1 done", which unfolds to its row one step in', () => {
+  const now = 100 * MIN
+  const base = after(null, 'NEW: working | Export | layout next', 10 * MIN)
+  const started = withChild(
+    base,
+    {
+      ref: 'd1',
+      kind: 'delegate',
+      name: 'pdf layout',
+      startedAt: 20 * MIN,
+      endedAt: null,
+      lastActivityAt: null,
+      delegateState: 'finished',
+    },
+    30 * MIN,
+  )
+  const finished = childEnded(started, 'd1', 40 * MIN)!
+
+  expect(shape(page({ ...finished, lastLookAt: 30 * MIN }, now).rows)).toEqual([
+    '✓ pdf layout',
+    '◐ Export: layout next',
+  ])
+
+  const looked = lookEnded(lookStarted(finished, 50 * MIN), 50 * MIN + LOOK_MIN_MS, 'all')
+  const rows = page(looked, now).rows
+
+  expect(shape(rows)).toEqual(['◐ Export: layout next', '› 1 done'])
+  expect(rows.flatMap(r => (r.kind === 'done-fold' ? r.rows : [])).map(r => [r.kind, r.depth])).toEqual([['child', 1]])
+})
+
+test('a look file the Herdr look wrote sets the last look on the saved Status', async () => {
+  let saved: Session = {
+    ...emptySession(),
+    ledger: { ...emptySession().ledger, overview: after(null, 'NEW: working | Export | layout next', 10 * MIN) },
+  }
+  const host = {
+    update: async (change: (s: Session) => Session) => void (saved = change(saved)),
+  } as unknown as PressHost<Session>
+  const look = {
+    startedAt: 20 * MIN,
+    endedAt: 20 * MIN + LOOK_MIN_MS,
+    shown: { s1: 20 * MIN + 1 },
+    drawnWrittenAt: 21 * MIN,
+  }
+
+  await applyHerdrFile(host, { format: HERDR_FORMAT, id: 'p1', look })
+
+  expect(saved.ledger.overview?.lastLookAt).toBe(20 * MIN + LOOK_MIN_MS)
 })
