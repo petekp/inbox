@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T01:12:02.355Z. 250433 characters follow.
+// Built at 2026-11-16T01:16:12.650Z. 250536 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -1155,10 +1155,10 @@ function stepEffects(item, step) {
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "▲", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "✦", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "✦", tone: "opportunity" }
 };
 var SUBJECT_MARKS = {
-  working: { mark: "●", tone: null },
+  working: { mark: "●", tone: "working" },
   queued: { mark: "○", tone: null },
   "waits-on-other": { mark: "◌", tone: null },
   done: { mark: "✓", tone: "done" },
@@ -1167,7 +1167,7 @@ var SUBJECT_MARKS = {
 var HELD_MARK = { mark: "◆", tone: "needsYou" };
 var RUNNING_FRAMES = ["●", "◉", "◎", "◉"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
-var IDLE_MARK = { mark: "◐", tone: null };
+var IDLE_MARK = { mark: "◐", tone: "working" };
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "✕",
@@ -1183,11 +1183,11 @@ var stoppedWords = (what) => `Stopped before it finished: ${what}`;
 var MARK_LEGEND = [
   {
     mark: RUNNING_MARK,
-    tone: null,
+    tone: "working",
     isRunning: true,
     words: "Working. It moves while the work runs or your message is on its way."
   },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
+  { mark: IDLE_MARK.mark, tone: IDLE_MARK.tone, isRunning: false, words: "Working, with nothing running right now" },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
   {
     mark: SUBJECT_MARKS["waits-on-other"].mark,
@@ -1294,7 +1294,7 @@ function namedList(names) {
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
 var CHILD_ROWS = 3;
-var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var CHILD_MARK = SUBJECT_MARKS.working;
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting"
@@ -1513,7 +1513,7 @@ function goalPage(o, items, now) {
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
-      mark: isMet ? SUBJECT_MARKS.done : null,
+      mark: isMet ? { mark: SUBJECT_MARKS.done.mark, tone: "success" } : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
@@ -2610,7 +2610,7 @@ function prRowWaits(prs, lastActions, collapsed = []) {
   ]);
 }
 var PR_TONES = {
-  ready: "done",
+  ready: "success",
   blocked: "needsYou",
   waiting: null,
   draft: null,
@@ -3662,7 +3662,7 @@ var LOOK = "herdr";
 var PLACE = "session";
 var PR_TONE = {
   needsYou: "needsYou",
-  done: "done",
+  success: "success",
   findings: "findings",
   error: "error"
 };
@@ -4075,7 +4075,7 @@ function goalBlocks(page, { isUnfolded, goalField }) {
     id: "goal heading",
     text: g?.label ?? GOAL_HEADING,
     count: null,
-    mark: g?.mark ? { text: g.mark.mark, tone: "met", isRunning: false } : null,
+    mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
     isLabel: true
   };
@@ -4967,13 +4967,15 @@ var BANNER_PAD_Y_PT = 8;
 // src/paint-theme.ts
 var TONE_COLORS = {
   needsYou: "ansi3",
-  issue: "ansi3",
+  issue: "ansi1",
   notice: "ansi4",
   warning: "ansi3",
   findings: "ansi5",
   prs: "ansi6",
   done: "done",
-  met: "ansi2",
+  success: "ansi2",
+  opportunity: "ansi2",
+  working: "foreground",
   error: "ansi1",
   muted: "muted"
 };

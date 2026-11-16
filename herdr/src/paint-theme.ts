@@ -32,19 +32,22 @@ export type Theme = Record<
 
 /**
  * Needs-you and warnings take the theme's yellow, as the other looks draw them in amber. Findings, PRs and errors take
- * its magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. Done takes the color Herdr's
- * sidebar gives an agent that is done. A met goal takes the theme's green, which each theme picks to read on its own
- * background, as the other looks draw a met goal in their done green.
+ * its magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. An issue takes the red
+ * of an error. Done takes the color Herdr's sidebar gives an agent that is done. A met goal and a ready PR take the success
+ * green, as an opportunity does: the theme's green, which each theme picks to read on its own background. A working mark takes the
+ * theme's text color.
  */
 const TONE_COLORS: Record<Exclude<Tone, null>, keyof Theme> = {
   needsYou: 'ansi3',
-  issue: 'ansi3',
+  issue: 'ansi1',
   notice: 'ansi4',
   warning: 'ansi3',
   findings: 'ansi5',
   prs: 'ansi6',
   done: 'done',
-  met: 'ansi2',
+  success: 'ansi2',
+  opportunity: 'ansi2',
+  working: 'foreground',
   error: 'ansi1',
   muted: 'muted',
 }

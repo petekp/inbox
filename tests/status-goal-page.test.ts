@@ -238,7 +238,7 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     isMet: true,
     awaiting: null,
     now: null,
-    mark: SUBJECT_MARKS.done,
+    mark: { mark: SUBJECT_MARKS.done.mark, tone: 'success' },
   })
   expect(page(met, 55).isHeadApart).toBe(true)
   expect(page(linked(), 40).isHeadApart).toBe(false)

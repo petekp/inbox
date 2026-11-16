@@ -16,6 +16,15 @@
 .mark.done {
   color: var(--done);
 }
+.mark.success {
+  color: var(--success);
+}
+.mark.working {
+  color: var(--text);
+}
+.mark.opportunity {
+  color: var(--opportunity);
+}
 .mark-shape {
   width: 8px;
   height: 8px;

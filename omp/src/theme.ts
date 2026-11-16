@@ -46,7 +46,9 @@ export function styleOf(theme: OmpTheme): Style {
     tone: (name: Tone, text) =>
       name === 'sep' || name === 'accent'
         ? theme.fg(name === 'sep' ? 'statusLineSep' : 'accent', text)
-        : truecolor(tones[name], text),
+        : name === 'working'
+          ? text
+          : truecolor(tones[name], text),
     banner: (tone, part, text) =>
       part === 'line' ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
     tint: (tone, share, text, rest = null) =>

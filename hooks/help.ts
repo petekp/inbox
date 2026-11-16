@@ -5,16 +5,16 @@ import type { Look } from './rows'
 import { versionLabel } from './banners'
 import { shownTabs } from './tabs'
 
-export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: string; tone: 'issue' | 'done' }> = {
+export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: string; tone: 'issue' | 'opportunity' }> = {
   issue: { title: 'Issues', mark: '▲', tone: 'issue' },
-  opportunity: { title: 'Opportunities', mark: '✦', tone: 'done' },
+  opportunity: { title: 'Opportunities', mark: '✦', tone: 'opportunity' },
 }
 
 /** A mark's tone on the Status. Null draws it muted. */
-export type StatusTone = 'needsYou' | 'done' | null
+export type StatusTone = 'needsYou' | 'done' | 'success' | 'working' | null
 
 export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
-  working: { mark: '●', tone: null },
+  working: { mark: '●', tone: 'working' },
   queued: { mark: '○', tone: null },
   'waits-on-other': { mark: '◌', tone: null },
   done: { mark: '✓', tone: 'done' },
@@ -30,7 +30,7 @@ export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
 export const RUNNING_MARK = RUNNING_FRAMES[0]
 
 /** The mark of a working subject while no turn runs and no child under it works. */
-export const IDLE_MARK: { mark: string; tone: StatusTone } = { mark: '◐', tone: null }
+export const IDLE_MARK: { mark: string; tone: StatusTone } = { mark: '◐', tone: 'working' }
 
 export const CLOSED_MARKS: Record<ClosedState, string> = {
   handled: SUBJECT_MARKS.done.mark,
@@ -59,11 +59,11 @@ const stoppedWords = (what: string) => `Stopped before it finished: ${what}`
 export const MARK_LEGEND: readonly LegendEntry[] = [
   {
     mark: RUNNING_MARK,
-    tone: null,
+    tone: 'working',
     isRunning: true,
     words: 'Working. It moves while the work runs or your message is on its way.',
   },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: 'Working, with nothing running right now' },
+  { mark: IDLE_MARK.mark, tone: IDLE_MARK.tone, isRunning: false, words: 'Working, with nothing running right now' },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: 'Queued: not started yet' },
   {
     mark: SUBJECT_MARKS['waits-on-other'].mark,

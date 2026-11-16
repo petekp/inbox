@@ -160,7 +160,7 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
     'i1 | Ask i1? | s1\ni3 | Ask i3? | - | PRs 4 / 5 block the 2.5 release',
   )
   expect(held).toMatchObject({ mark: '◆', tone: 'needsYou', isRunning: false })
-  expect(answered).toMatchObject({ mark: '●', tone: null, isRunning: true })
+  expect(answered).toMatchObject({ mark: '●', tone: 'working', isRunning: true })
   expect(page(after(o, 'DONE: s1 | works offline', MIN), MIN, {}, [askItem('i1')]).rows[0]).toMatchObject({
     mark: '✓',
   })

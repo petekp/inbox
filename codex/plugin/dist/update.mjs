@@ -1871,10 +1871,10 @@ var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
 var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
+  working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
   done: { mark: "\u2713", tone: "done" },
@@ -1883,7 +1883,7 @@ var SUBJECT_MARKS = {
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
-var IDLE_MARK = { mark: "\u25D0", tone: null };
+var IDLE_MARK = { mark: "\u25D0", tone: "working" };
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -1899,11 +1899,11 @@ var stoppedWords = (what) => `Stopped before it finished: ${what}`;
 var MARK_LEGEND = [
   {
     mark: RUNNING_MARK,
-    tone: null,
+    tone: "working",
     isRunning: true,
     words: "Working. It moves while the work runs or your message is on its way."
   },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
+  { mark: IDLE_MARK.mark, tone: IDLE_MARK.tone, isRunning: false, words: "Working, with nothing running right now" },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
   {
     mark: SUBJECT_MARKS["waits-on-other"].mark,
@@ -1943,7 +1943,7 @@ function namedList(names) {
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
 var CHILD_ROWS = 3;
-var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var CHILD_MARK = SUBJECT_MARKS.working;
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting"
@@ -2132,7 +2132,7 @@ function goalPage(o, items, now) {
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
-      mark: isMet ? SUBJECT_MARKS.done : null,
+      mark: isMet ? { mark: SUBJECT_MARKS.done.mark, tone: "success" } : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,

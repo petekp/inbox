@@ -24,7 +24,7 @@ export function namedList(names: readonly string[]): string {
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
 
-const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
+const CHILD_MARK: { mark: string; tone: StatusTone } = SUBJECT_MARKS.working
 
 /** The words a `counts` row gives each mark. */
 const COUNT_WORDS: Record<'working' | 'waits-on-other', string> = {

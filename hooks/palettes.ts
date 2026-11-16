@@ -15,11 +15,15 @@ import {
 } from './tones'
 
 const NEEDS_YOU = 'warning'
-const DONE = 'success'
+const OPPORTUNITY = 'success'
+const DONE = 'suggestion'
+/** The theme key of the text color, which a working mark draws in. */
+export const WORKING = 'text'
+const ISSUE = 'error'
 const FINDINGS = 'autoAccept'
 const PRS = 'planMode'
 
-export type Tone = Tab | 'issue' | 'done' | 'error'
+export type Tone = Tab | 'issue' | 'done' | 'success' | 'opportunity' | 'working' | 'error'
 /**
  * The pane's colors in one Claude Code theme. Each text color meets WCAG AA,
  * 4.5:1, on every background the pane draws it on, and each marker meets 3:1.
@@ -68,7 +72,7 @@ const DARK_PALETTE: Palette = {
   selectionLine: '#5a6f88',
   divider: '#444444',
   tone: DARK_TONES,
-  mark: { ...DARK_TONES, error: DARK_TONES.errorMark },
+  mark: { ...DARK_TONES, working: WORKING, error: DARK_TONES.errorMark },
   banner: DARK_BANNER_TINTS,
 }
 const LIGHT_PALETTE: Palette = {
@@ -85,7 +89,7 @@ const LIGHT_PALETTE: Palette = {
   selectionLine: '#7490b8',
   divider: '#c8c8c8',
   tone: LIGHT_TONES,
-  mark: LIGHT_TONES,
+  mark: { ...LIGHT_TONES, working: WORKING },
   banner: LIGHT_BANNER_TINTS,
 }
 const DARK_ANSI_PALETTE: Palette = {
@@ -98,7 +102,17 @@ const DARK_ANSI_PALETTE: Palette = {
   line: 'userMessageBackground',
   divider: 'userMessageBackground',
   tone: {},
-  mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
+  mark: {
+    needsYou: NEEDS_YOU,
+    issue: ISSUE,
+    findings: FINDINGS,
+    prs: PRS,
+    done: DONE,
+    success: OPPORTUNITY,
+    opportunity: OPPORTUNITY,
+    working: WORKING,
+    error: 'error',
+  },
   banner: THEME_KEY_BANNERS,
 }
 const LIGHT_ANSI_PALETTE: Palette = {
@@ -111,8 +125,19 @@ const LIGHT_ANSI_PALETTE: Palette = {
   line: 'userMessageBackground',
   divider: 'userMessageBackground',
   tone: {},
-  // Red, magenta, blue, green and red: the theme's yellow and cyan fall under 3:1 on bright white.
-  mark: { needsYou: 'error', issue: 'error', findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
+  // Red, magenta, blue, green and text: the theme's yellow and cyan fall under 3:1 on bright white, so a wait and an issue
+  // share red here.
+  mark: {
+    needsYou: 'error',
+    issue: ISSUE,
+    findings: FINDINGS,
+    prs: 'suggestion',
+    done: DONE,
+    success: OPPORTUNITY,
+    opportunity: OPPORTUNITY,
+    working: WORKING,
+    error: 'error',
+  },
   banner: THEME_KEY_BANNERS,
 }
 const PALETTES: Record<string, Palette> = {
@@ -121,7 +146,7 @@ const PALETTES: Record<string, Palette> = {
     ...DARK_PALETTE,
     key: DARK_DALTONIZED_TONES.key,
     tone: DARK_DALTONIZED_TONES,
-    mark: { ...DARK_DALTONIZED_TONES, error: DARK_DALTONIZED_TONES.errorMark },
+    mark: { ...DARK_DALTONIZED_TONES, working: WORKING, error: DARK_DALTONIZED_TONES.errorMark },
   },
   light: LIGHT_PALETTE,
   'light-daltonized': {
@@ -134,7 +159,7 @@ const PALETTES: Record<string, Palette> = {
     key: LIGHT_DALTONIZED_TONES.key,
     divider: '#c0c0c0',
     tone: LIGHT_DALTONIZED_TONES,
-    mark: LIGHT_DALTONIZED_TONES,
+    mark: { ...LIGHT_DALTONIZED_TONES, working: WORKING },
   },
   'dark-ansi': DARK_ANSI_PALETTE,
   'light-ansi': LIGHT_ANSI_PALETTE,
@@ -149,7 +174,17 @@ const THEME_KEY_PALETTE: Palette = {
   line: 'subtle',
   divider: 'subtle',
   tone: {},
-  mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
+  mark: {
+    needsYou: NEEDS_YOU,
+    issue: ISSUE,
+    findings: FINDINGS,
+    prs: PRS,
+    done: DONE,
+    success: OPPORTUNITY,
+    opportunity: OPPORTUNITY,
+    working: WORKING,
+    error: 'error',
+  },
   banner: THEME_KEY_BANNERS,
 }
 // Theme keys resolve to the app's colors, so the desktop pane draws text in theme keys.
@@ -166,7 +201,17 @@ const DESKTOP_PALETTE: Palette = {
   line: 'rgba(128, 128, 128, 0.45)',
   divider: 'rgba(128, 128, 128, 0.25)',
   tone: { error: 'error' },
-  mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
+  mark: {
+    needsYou: NEEDS_YOU,
+    issue: ISSUE,
+    findings: FINDINGS,
+    prs: PRS,
+    done: DONE,
+    success: OPPORTUNITY,
+    opportunity: OPPORTUNITY,
+    working: WORKING,
+    error: 'error',
+  },
   banner: {
     error: { line: 'rgba(214, 69, 80, 0.32)', fill: 'rgba(214, 69, 80, 0.1)' },
     warning: { line: 'rgba(212, 160, 23, 0.36)', fill: 'rgba(212, 160, 23, 0.1)' },

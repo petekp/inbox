@@ -53,6 +53,8 @@ export function toneSvg(tone: ToneName, mark: string, tint?: string): string {
 }
 /** A muted mark's color in an Svg, in the light and dark appearances. */
 export const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }
+/** A working mark's color in an Svg, which cannot read the theme's text key. */
+export const WORKING_MARK = { light: LIGHT_TONES.working, dark: DARK_TONES.working }
 /** A mark in an Svg `cells` wide: its `shape` when it has one, else its text. */
 function markSvg(mark: string, shape: string | null, lightMark: string, darkMark: string, cells = 1): string {
   const width = cells * DESKTOP_CELL_PT
@@ -88,12 +90,12 @@ export const RESULT_MARK_CELLS = RUNNING_SVG_CELLS
  * A running mark on desktop: a dot that fades and returns. SMIL runs it, since a pane redraw loop stops clicks there.
  * Each pane redraw starts the animation again, so it begins at the clock's point in the pulse.
  */
-export function runningSvg(now: number): string {
+export function runningSvg(now: number, colors: { light: string; dark: string } = MUTED_MARK): string {
   const width = RUNNING_SVG_CELLS * DESKTOP_CELL_PT
   const height = DESKTOP_LINE_PT
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>.mark{fill:${MUTED_MARK.light}}@media (prefers-color-scheme: dark){.mark{fill:${MUTED_MARK.dark}}}</style>` +
+    `<style>.mark{fill:${colors.light}}@media (prefers-color-scheme: dark){.mark{fill:${colors.dark}}}</style>` +
     `<circle class="mark" cx="${MARK_GLYPH_MID_PT}" cy="${height / 2}" r="${MARK_GLYPH_PT / 2}">` +
     `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" begin="-${now % RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
     `</circle></svg>`

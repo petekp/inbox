@@ -3189,10 +3189,10 @@ function goalPressed(ledger, p, record, now) {
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
 var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
+  working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
   done: { mark: "\u2713", tone: "done" },
@@ -3201,7 +3201,7 @@ var SUBJECT_MARKS = {
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
-var IDLE_MARK = { mark: "\u25D0", tone: null };
+var IDLE_MARK = { mark: "\u25D0", tone: "working" };
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -3217,11 +3217,11 @@ var stoppedWords = (what) => `Stopped before it finished: ${what}`;
 var MARK_LEGEND = [
   {
     mark: RUNNING_MARK,
-    tone: null,
+    tone: "working",
     isRunning: true,
     words: "Working. It moves while the work runs or your message is on its way."
   },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
+  { mark: IDLE_MARK.mark, tone: IDLE_MARK.tone, isRunning: false, words: "Working, with nothing running right now" },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
   {
     mark: SUBJECT_MARKS["waits-on-other"].mark,
@@ -3331,7 +3331,7 @@ function namedList(names) {
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
 var CHILD_ROWS = 3;
-var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var CHILD_MARK = SUBJECT_MARKS.working;
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting"
@@ -3550,7 +3550,7 @@ function goalPage(o, items, now) {
   return {
     goal: {
       label: isMet ? MET_LABEL : GOAL_HEADING,
-      mark: isMet ? SUBJECT_MARKS.done : null,
+      mark: isMet ? { mark: SUBJECT_MARKS.done.mark, tone: "success" } : null,
       text: g.text,
       isMet,
       was: isWasShown ? g.was : null,
@@ -4888,7 +4888,7 @@ function prRowWaits(prs, lastActions, collapsed = []) {
   ]);
 }
 var PR_TONES = {
-  ready: "done",
+  ready: "success",
   blocked: "needsYou",
   waiting: null,
   draft: null,
@@ -11402,10 +11402,13 @@ function demoSource(deps) {
 var DARK_AMBER = "#ffc107";
 var DARK_TONES = {
   needsYou: DARK_AMBER,
-  issue: DARK_AMBER,
+  issue: "#ff6b80",
   findings: "#cab0ff",
   prs: "#8cc8c0",
-  done: "#7ecd8f",
+  done: "#82c1ff",
+  success: "#7ecd8f",
+  opportunity: "#7ecd8f",
+  working: "#ffffff",
   error: "#ffa3b0",
   errorMark: "#ff6b80",
   key: "#b1b9f9"
@@ -11413,10 +11416,13 @@ var DARK_TONES = {
 var LIGHT_AMBER = "#745417";
 var LIGHT_TONES = {
   needsYou: LIGHT_AMBER,
-  issue: LIGHT_AMBER,
+  issue: "#a5293d",
   findings: "#7b00e8",
   prs: "#006363",
-  done: "#25652f",
+  done: "#0a54a0",
+  success: "#25652f",
+  opportunity: "#25652f",
+  working: "#1a1a1a",
   error: "#a5293d",
   errorMark: "#a5293d",
   key: "#243bf5"
@@ -11463,7 +11469,7 @@ function styleOf(theme) {
     dim: (text) => `${ESC}2m${text}${ESC}22m`,
     inverse: theme.inverse.bind(theme),
     underline: theme.underline.bind(theme),
-    tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
+    tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : name === "working" ? text : truecolor(tones[name], text),
     banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
     tint: (tone, share, text, rest = null) => truecolor(fadedOver(tone === "key" ? tones.key : tone === "muted" ? MUTED_TEXT[mode] : tones[tone === "error" ? "errorMark" : "done"], rest === "dim" ? MUTED_TEXT[mode] : rest && rest !== "sep" && rest !== "accent" ? tones[rest] : THEME_TEXT[mode], share), text)
   };
