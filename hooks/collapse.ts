@@ -60,6 +60,31 @@ export function collapsedRows(s: CollapseSource): string[] {
   return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => (isUnchanged(news.get(id), c) ? [id] : []))
 }
 
+/**
+ * `s`'s collapses as a write saves them. A row that opened because something new arrived on it, or that no tab lists,
+ * loses its entry, so it stays open. A Status parent's entry keeps only the ids still waiting under it, so one that
+ * waits again counts as new.
+ */
+export function settledCollapses<S extends CollapseSource>(s: S): S {
+  if (s.collapsed === undefined) return s
+  const news = newsByRow(s)
+  let isChanged = false
+  const kept = Object.entries(s.collapsed).flatMap(([id, c]): [string, RowCollapse][] => {
+    const n = news.get(id)
+    if (!isUnchanged(n, c)) {
+      isChanged = true
+      return []
+    }
+    const waiting = c.waiting?.filter(w => n?.waiting.includes(w)) ?? []
+    if (waiting.length === (c.waiting?.length ?? 0)) return [[id, c]]
+    isChanged = true
+    const settled: RowCollapse = { at: c.at, ...(c.untimedUrl !== undefined && { untimedUrl: c.untimedUrl }) }
+    return [[id, waiting.length > 0 ? { ...settled, waiting } : settled]]
+  })
+
+  return isChanged ? { ...s, collapsed: Object.fromEntries(kept) } : s
+}
+
 /** `s` with `row` collapsed at `at`, or expanded. It keeps only the entries of rows a tab can still list. */
 export function withCollapse<S extends CollapseSource>(
   s: S,

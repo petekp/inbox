@@ -3,10 +3,11 @@ import type { MilestoneRow } from './status-goal-page'
 import type { StatusPage, StatusRow } from './status-page'
 
 /**
- * Status parents and what waits on the person under each, by parent id. A parent is a subject or a milestone of the
- * goal, which the person can fold by its name. Under a subject, what waits is each running delegate of it that Herdr
- * shows blocked. Under a milestone, it is each open ask that holds up a subject serving it, and each blocked delegate of
- * such a subject. An ask that holds up the parent itself shows on the parent's own line, so it waits on no fold.
+ * Status parents and what waits on the person under each, by parent id. A parent is a subject with a delegate under it,
+ * or a milestone of the goal that a subject serves, which the person can fold by its name. Under a subject, what waits
+ * is each running delegate of it that Herdr shows blocked. Under a milestone, it is each open ask that holds up a subject
+ * serving it, and each blocked delegate of such a subject. An ask that holds up the parent itself shows on the parent's
+ * own line, so it waits on no fold.
  */
 export function waitingUnderParents(ledger: Pick<Ledger, 'overview' | 'items'>): Map<string, string[]> {
   const o = ledger.overview
@@ -16,10 +17,11 @@ export function waitingUnderParents(ledger: Pick<Ledger, 'overview' | 'items'>):
   const asksOf = (subjectId: string) =>
     ledger.items.filter(i => o.askSubjects[i.id]?.includes(subjectId)).map(i => i.id)
   const subjects = o.subjects.filter(x => x.into === null)
-  const milestones = o.goal ? o.milestones : []
+  const delegating = subjects.filter(x => o.children.some(c => c.subjectId === x.id))
+  const milestones = o.goal ? o.milestones.filter(m => subjects.some(x => o.serves[x.id] === m.id)) : []
 
   return new Map<string, string[]>([
-    ...subjects.map((x): [string, string[]] => [x.id, blockedOf(x.id)]),
+    ...delegating.map((x): [string, string[]] => [x.id, blockedOf(x.id)]),
     ...milestones.map((m): [string, string[]] => {
       const serving = subjects.filter(x => o.serves[x.id] === m.id)
       return [m.id, [...new Set(serving.flatMap(x => [...asksOf(x.id), ...blockedOf(x.id)]))]]
