@@ -18,7 +18,7 @@ const CHEVRON_GAP = ' '
 /**
  * A Status parent's name line, with the fold's chevron after the name and stall word, and the press that folds the
  * parent's rows or opens them. The terminal draws the chevron as a plain button after the last line of the name. Desktop
- * draws the whole line as a `Client`, so a click anywhere on it presses, and hover colors it.
+ * draws the whole line as a `Client`, so a click anywhere on it presses, and hover brightens the chevron and count.
  */
 export function paneStatusParent(
   {
@@ -101,8 +101,7 @@ export function paneStatusParent(
       colors: {
         muted: pal.muted ?? null,
         needsYou: pal.tone.needsYou ?? pal.mark.needsYou ?? null,
-        hover: pal.raised ?? null,
-        hoverText: pal.raisedText ?? null,
+        hoverText: 'text',
       },
     }
 

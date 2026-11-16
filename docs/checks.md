@@ -8,6 +8,10 @@ The script also checks that omp's files import only shared modules, and that onl
 
 The script also checks the class names Codex builds from variables, with `scripts/structure/class-names.mjs`. It fails on a `class` value in `codex/src` whose variable part has no literal prefix ending in `-`, as in `tint-${tone}`, unless the value is looked up in an object of strings or chosen between strings, or is the component's own `class` prop passed through, since each caller's value is checked where the caller writes it. It also fails on a rule in `codex/src/tab-css` that selects a tone word, such as `.done`, with no other class beside it. A tone `key` once matched the global `.key` button rule and drew each new row's title as a button. It does not follow a function call that returns a class, so a helper such as `markClassOf` is checked at its own join or template.
 
+The script also fails on `cursor: pointer` in `codex/src/tab-css` and on `cursor_pointer()` in `herdr/src`, with `scripts/structure/cursors.mjs`. Every inbox control keeps the default cursor, and hover states show what is clickable. The check leaves out `hooks/compare-page`, which is a separate browser page and not one of the looks.
+
+The script also fails on a disclosure glyph other than the fold chevron (`▸ ▾ ▴ ▿ ▹ ⌄ ˅`) in a `.ts` or `.tsx` file under `hooks`, `herdr/src`, `omp/src` or `codex/src`, with `scripts/structure/chevrons.mjs`. Every fold draws the same chevron: `foldGlyph` in the text looks, and the chevron icon in the Codex tab and the Herdr look.
+
 `codex/tests/structure.spec.ts` checks the command against disposable fixtures. Mounted row-action tests check Codex controls and outcomes. The mod demo test checks terminal and desktop titles and actions, with settled rows and PRs outside that test. Full-page behavior, native painting, clipboard, focus and measured motion still need their own checks.
 
 `omp/tests/session.spec.ts` runs the shared session script from `tests/session-script.ts` against omp's `SessionHost`. `omp/tests/panel.spec.ts` checks that the panel draws buttons in the shared plan order, in place of the demo test in `tests/hooks.test.ts`.

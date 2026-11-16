@@ -35,7 +35,7 @@ test('Enter on a Closed line shows the newest closed rows, Enter on the earlier 
   expect(closed.length).toBeGreaterThan(CLOSED_SHOWN)
   const unfolded = keys(screen, { ...INITIAL_UI, selectedId: 'fold question' }, 'enter')
   const shown = text(screen, unfolded)
-  expect(shown).toContain(`${foldLabel(closed.length)} ▾`)
+  expect(shown).toContain(`${foldLabel(closed.length)} v`)
   for (const d of closed.slice(0, CLOSED_SHOWN)) expect(shown).toContain(d.ask)
   expect(shown).not.toContain(closed[CLOSED_SHOWN]!.ask)
   expect(shown).toContain(earlierLabel(closed.length, CLOSED_SHOWN)!)

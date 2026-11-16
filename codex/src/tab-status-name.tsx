@@ -1,3 +1,5 @@
+import { Icon } from './row-actions'
+import type { ParentChevron } from './tab-status-fold'
 import { nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP } from '../../hooks/status-page'
 import type { StatusStall } from '../../hooks/status-page'
 
@@ -41,7 +43,7 @@ export function NameLine({
 }: {
   name: string
   stall: StatusStall | null
-  chevron?: string | null
+  chevron?: ParentChevron | null
 }) {
   if (!stall && !chevron)
     return (
@@ -63,7 +65,13 @@ export function NameLine({
               <span class="muted">{stall.text}</span>
             </>
           ) : null}
-          {chevron ? <span class="muted parent-chevron"> {chevron}</span> : null}
+          {chevron ? (
+            <span class="muted parent-chevron">
+              {' '}
+              <Icon name={chevron.isFolded ? 'right' : 'down'} />
+              {chevron.isFolded ? <span class="parent-count"> {chevron.count}</span> : null}
+            </span>
+          ) : null}
         </span>
       </span>
     </div>

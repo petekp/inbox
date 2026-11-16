@@ -9,6 +9,7 @@ import { PAGE_CHILD_AT, PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
 import { pageFocus } from './panel-keys'
 import type { ButtonFace } from './panel-lines'
 import { collapsedIn, indented, wrapText } from './panel-text'
+import { foldGlyph } from '../../hooks/fold-chevron'
 import { isParentCollapsed, parentChevron } from '../../hooks/status-folds'
 import type { Style } from './panel'
 
@@ -212,7 +213,7 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s)
   }
   if (row.kind === 'done-fold') {
-    const chevron = d.ui.statusUnfolded.includes(row.id) ? '▾' : '▸'
+    const chevron = foldGlyph(d.ui.statusUnfolded.includes(row.id))
 
     return pageLine(d, at, ' ', row.text, isSelected ? s.bold : s.dim, {
       chevron: { text: chevron, paint: isSelected ? t => s.tone('accent', t) : s.dim },

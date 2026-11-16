@@ -123,27 +123,27 @@ test('on the Status, a parent folds its rows by its name or its f key and opens 
   await terminal.press({ key: 'tab-key-overview' })
   await clock.settle()
   const chevron = async () => (await terminal.find({ key: 'parent-s1' }))?.props.label
-  expect(await chevron()).toBe('▾')
+  expect(await chevron()).toBe('v')
   expect(await terminal.find({ key: 'status-c1' })).toBeDefined()
   expect(await terminal.find({ key: 'status-s1-tree' })).toBeDefined()
 
   await terminal.press({ key: 'parent-s1' })
   await clock.settle()
-  expect(await chevron()).toMatch(/^▸ \d+$/)
+  expect(await chevron()).toMatch(/^› \d+$/)
   expect(await terminal.find({ key: 'status-c1' })).toBeUndefined()
   expect(await terminal.find({ key: 'status-s1-tree' })).toBeUndefined()
   expect(await terminal.find({ key: 'status-s1' })).toBeDefined()
 
   await terminal.press({ key: 'parent-s1' })
   await clock.settle()
-  expect(await chevron()).toBe('▾')
+  expect(await chevron()).toBe('v')
   expect(await terminal.find({ key: 'status-c1' })).toBeDefined()
 
   for (let n = 0; n < 12 && !(await terminal.find({ key: 'toggle-collapse-s1-key' })); n++) {
     await terminal.press({ key: 'next' })
     await clock.settle()
   }
-  expect((await terminal.find({ key: 'parent-s1' }))?.text).toBe('f: ▾')
+  expect((await terminal.find({ key: 'parent-s1' }))?.text).toBe('f: v')
   await terminal.press({ key: 'toggle-collapse-s1-key' })
   await clock.settle()
   expect(await terminal.find({ key: 'status-c1' })).toBeUndefined()
@@ -153,7 +153,7 @@ test('on the Status, a parent folds its rows by its name or its f key and opens 
   expect(await terminal.find({ key: 'status-c1' })).toBeDefined()
   await terminal.press({ key: 'parent-m2' })
   await clock.settle()
-  expect((await terminal.find({ key: 'parent-m2' }))?.props.label).toMatch(/^▸ \d+$/)
+  expect((await terminal.find({ key: 'parent-m2' }))?.props.label).toMatch(/^› \d+$/)
   expect(await terminal.find({ key: 'status-s1' })).toBeUndefined()
   expect(await terminal.find({ key: 'goal-m2-name' })).toBeUndefined()
   expect(await terminal.find({ key: 'status-m2' })).toBeDefined()

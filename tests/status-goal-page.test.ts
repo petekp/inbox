@@ -79,10 +79,10 @@ test('finished work under a milestone shows as a row until the person looks, the
   const rowsOf = (o: SessionStatus) => page(o, 80, {}, [askItem('i1')]).goal?.milestones[1]?.rows ?? []
 
   expect(shape(rowsOf(finished))).toEqual(['◆ Error copy: not started · Ask i1?', '✓ CSV import: import ships'])
-  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · Ask i1?', '▸ 1 done'])
+  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · Ask i1?', '› 1 done'])
   expect(shape(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true))).toEqual([
     '◆ Error copy: not started · Ask i1?',
-    '▸ 1 done',
+    '› 1 done',
     '✓ CSV import',
   ])
   expect(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true).map(r => r.depth)).toEqual([1, 1, 2])
@@ -144,7 +144,7 @@ test('while the goal shows milestones, a subject linked to none of them draws un
   expect(subjectIds(page(unlinked, 40).goal!.milestones[1]!.rows)).toEqual(['s1'])
   expect(page(unlinked, 40).rows[0]!.kind).toBe('part')
   expect(subjectIds(page(unlinked, 40).rows).sort()).toEqual(['s2', 's3', 's4'])
-  expect(shape(page(typed, 20).rows).filter(l => !l.startsWith('▸'))).toEqual([
+  expect(shape(page(typed, 20).rows).filter(l => !l.startsWith('›'))).toEqual([
     '◐ CSV import: bad rows skipped',
     '○ Error copy: not started',
     '○ Logo refresh: not started',

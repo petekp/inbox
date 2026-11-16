@@ -24,7 +24,7 @@ import { NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
 import { goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
-import { lineMotion } from './tab-line-steps'
+import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
 import { foldMotion, Keys, StatusLine, toggleStatusFold } from './tab-status-line'
 
@@ -92,12 +92,13 @@ function Suggestion({ text }: { text: string }) {
   )
 }
 
-function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion: string; isConnectorDown: boolean }) {
+function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: string; connector: string | null }) {
   const fold = m.foldId
+  const classes = ['row milestone', connector === null ? '' : 'connector-down', connector ?? '']
   const nameClass = [m.isChanged ? 'changed' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
 
   return (
-    <div class={isConnectorDown ? 'row milestone connector-down' : 'row milestone'} {...lineMotion(motion)}>
+    <div class={classes.filter(Boolean).join(' ')} {...lineMotion(motion)}>
       <span class={markClassOf(m.tone, false)}>
         <MarkGlyph text={m.mark} />
       </span>
@@ -137,11 +138,27 @@ function MilestoneLine({ m, motion, isConnectorDown }: { m: MilestoneRow; motion
 }
 
 /** A work row in its joint with the column under its milestone's mark, as `workJoints` places it. */
-function JointedLine({ row, joint, motion }: { row: StatusRow; joint: WorkJoint | undefined; motion?: string }) {
-  const line = <StatusLine row={row} motion={motion} />
+function JointedLine({
+  row,
+  joint,
+  motion,
+  under,
+  column,
+}: {
+  row: StatusRow
+  joint: WorkJoint | undefined
+  motion?: string
+  under?: string[]
+  column?: 'leaving' | null
+}) {
+  const line = <StatusLine row={row} motion={motion} under={under} />
   if (!joint) return line
+  const own = motion ? connectorMotion([motion]) : null
+  const columnMotion = joint.arm === 'elbow' ? own : joint.beside === 'connector' ? (column ?? null) : null
   const classes = [
     'work-joint',
+    own ? 'arm-leaving' : '',
+    connectorClass(columnMotion),
     joint.arm ? `arm-${joint.arm}` : '',
     joint.beside === 'connector' ? 'beside-connector' : '',
   ]
@@ -160,6 +177,13 @@ function milestoneGroups(lines: DrawnStatus['goal']): MilestoneGroupLines[] {
   }
 
   return groups
+}
+
+/** How the connector under a done milestone moves while its fold shuts, as its list fades with it. */
+function foldConnectorMotion(fold: string | null, motion: string): 'leaving' | null {
+  if (fold === null || statusUnfolded.has(fold)) return null
+
+  return closingFolds.has(motion) ? 'leaving' : null
 }
 
 /**
@@ -181,6 +205,8 @@ function MilestoneGroup({
   const isFoldShown = motion !== null && fold !== null && (statusUnfolded.has(fold) || closingFolds.has(motion))
   const shown = motion === null ? rows : isFoldShown ? unfoldedRows(m.rows, () => false, isParentFolded) : []
   const joints = workJoints(shown, m.line)
+  const connectorState =
+    motion === null ? connectorMotion(rows.map(r => goalLineMotion(r.id))) : foldConnectorMotion(fold, motion)
   const classes = [
     'milestone-group',
     isSpaced ? 'spaced' : '',
@@ -190,9 +216,22 @@ function MilestoneGroup({
 
   return (
     <div class={classes.filter(Boolean).join(' ')}>
-      <MilestoneLine m={m} motion={goalLineMotion(m.id)} isConnectorDown={shown.length > 0 && m.line === null} />
+      <MilestoneLine
+        m={m}
+        motion={goalLineMotion(m.id)}
+        connector={shown.length > 0 && m.line === null ? connectorClass(connectorState) : null}
+      />
       {motion === null ? (
-        rows.map((r, n) => <JointedLine key={r.id} row={r} joint={joints[n]} motion={goalLineMotion(r.id)} />)
+        rows.map((r, n) => (
+          <JointedLine
+            key={r.id}
+            row={r}
+            joint={joints[n]}
+            motion={goalLineMotion(r.id)}
+            under={rowsUnder(rows, n, goalLineMotion)}
+            column={connectorState}
+          />
+        ))
       ) : isFoldShown ? (
         <div class="fold-rows" data-motion={`closed-${motion}`}>
           {shown.map((r, n) => (
@@ -348,6 +387,18 @@ function GoalError() {
   return error ? <p class="tone-error">{error}</p> : null
 }
 
+/** The motion keys of the rows drawn under the row at `n`: the rows after it that sit deeper, leaving rows too. */
+function rowsUnder(rows: StatusRow[], n: number, motion: (id: string) => string): string[] {
+  const depth = rows[n]?.depth ?? 0
+  const under: string[] = []
+  for (const r of rows.slice(n + 1)) {
+    if (r.depth <= depth) break
+    under.push(motion(r.id))
+  }
+
+  return under
+}
+
 export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   const page = v.statusPage
   const empty = emptyTab(v, {
@@ -371,8 +422,13 @@ export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
       {drawn.rows.length > 0 ? (
         <section class={isUnruledAfterGoal ? 'unruled' : undefined}>
           <div class="list">
-            {drawn.rows.map(r => (
-              <StatusLine key={r.id} row={r} motion={statusRowMotion(r.id)} />
+            {drawn.rows.map((r, n) => (
+              <StatusLine
+                key={r.id}
+                row={r}
+                motion={statusRowMotion(r.id)}
+                under={rowsUnder(drawn.rows, n, statusRowMotion)}
+              />
             ))}
           </div>
         </section>

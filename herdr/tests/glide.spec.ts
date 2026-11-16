@@ -169,13 +169,17 @@ test('an opening row wraps its title from its first frame, and a close that turn
 type Overview = NonNullable<ReturnType<typeof demoSession>['ledger']['overview']>
 type Milestone = Overview['milestones'][number]
 
-function statusOf(change: (o: Overview) => Overview = o => o, unfolded: string[] = []): Block[] {
+function statusOf(
+  change: (o: Overview) => Overview = o => o,
+  unfolded: string[] = [],
+  collapsed: string[] = [],
+): Block[] {
   const s = demoSession(NOW, AGENT)
   const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
   const ledger = { ...s.ledger, overview: change(s.ledger.overview!) }
   const view = sessionView({ ...s, ledger }, NOW, SETTLED_MS, holds)
 
-  return tabBlocks({ ...demoScreen(), view }, uiOn('overview', { statusUnfolded: unfolded }))
+  return tabBlocks({ ...demoScreen(), view: { ...view, collapsed } }, uiOn('overview', { statusUnfolded: unfolded }))
 }
 
 const withMilestones =
@@ -218,4 +222,49 @@ test('on the Status page, a done milestone’s fold opening and closing, a work 
 test.failing('a dropped milestone moves below the path without the rows between its old and new place jumping', () => {
   const dropped = withMilestones(m => (m.id === 'm3' ? { ...m, status: 'dropped', closedAt: NOW } : m))
   expect(glideOf(statusOf(), statusOf(dropped))).toEqual({ jumps: [], gaps: [] })
+})
+
+const REST_PX = 2
+const STALL_SHARE = 0.02
+
+function stepsOf(heights: number[]): { start: number; end: number; stalled: number } {
+  const start = heights[0] ?? 0
+  const end = heights.at(-1) ?? 0
+  const first = heights.findIndex(h => Math.abs(h - start) >= 0.5)
+  const stalled = heights.filter((h, i) => {
+    const before = heights[i - 1]
+    if (first < 0 || i < first || before === undefined || Math.abs(h - end) < REST_PX) return false
+
+    return Math.abs(h - before) < STALL_SHARE * Math.abs(h - end)
+  }).length
+
+  return { start, end, stalled }
+}
+
+test('folding a milestone down to its name takes the list’s height down on every frame to the folded height, and opening it takes it up the same way', () => {
+  const nameOnly = withMilestones(m => (m.id === 'm2' ? { ...m, text: '' } : m))
+  const open = statusOf(nameOnly)
+  const folded = statusOf(nameOnly, [], ['m2'])
+  const fold = stepsOf(
+    framesOf(
+      [
+        [0, open],
+        [0, folded],
+      ],
+      1200,
+    ).heights.slice(-76),
+  )
+  expect(fold.end).toBeLessThan(fold.start)
+  expect(fold.stalled).toBe(0)
+  const opens = stepsOf(
+    framesOf(
+      [
+        [0, folded],
+        [0, open],
+      ],
+      1200,
+    ).heights.slice(-76),
+  )
+  expect(opens.end).toBeGreaterThan(opens.start)
+  expect(opens.stalled).toBe(0)
 })

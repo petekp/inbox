@@ -162,10 +162,10 @@ export type StatusLine = {
    */
   does?: string
   /**
-   * A parent's fold: its chevron after its name and stall, and the press that folds its rows away or opens them, which
+   * A parent's fold: its chevron after its name and stall, and the count of rows it hides while folded, and the press that folds its rows away or opens them, which
    * the whole name line takes.
    */
-  fold?: { chevron: string; toggle: Button }
+  fold?: { isFolded: boolean; count: number; toggle: Button }
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */
   under: string[]
   buttons: Button[]

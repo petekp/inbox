@@ -15,7 +15,7 @@ import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
 import { pulseInStep, markClassOf, MarkGlyph } from './tab-parts'
-import { lineMotion } from './tab-line-steps'
+import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 
 let measuring: CanvasRenderingContext2D | null | undefined
 
@@ -83,14 +83,26 @@ export function toggleStatusFold(id: string) {
 /** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
 const depthStyle = (row: StatusRow) => ({ '--depth': row.depth })
 
-export function StatusLine({ row, motion }: { row: StatusRow; motion?: string }) {
+/**
+ * A subject's tree line runs down while its rows show, and while they leave or enter as the person folds or opens it.
+ * `under` is the motion keys of the rows drawn under it, which a done fold's rows, drawn with their list, leave out.
+ */
+function subjectConnector(row: Extract<StatusRow, { kind: 'subject' }>, under: string[] | undefined): string | null {
+  if (!row.hasChildren) return null
+  if (under !== undefined && under.length > 0) return connectorClass(connectorMotion(under))
+
+  return isParentFolded(row.id) ? null : ''
+}
+
+export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: string; under?: string[] }) {
   if (row.kind === 'subject') {
+    const connector = subjectConnector(row, under)
     const merged = row.merged
     const keys = statusKeyPlan(row).map(statusKey)
 
     return (
       <div
-        class={row.hasChildren && !isParentFolded(row.id) ? 'row has-children' : 'row'}
+        class={['row', connector === null ? '' : 'has-children', connector ?? ''].filter(Boolean).join(' ')}
         style={depthStyle(row)}
         {...{ [SUBJECTS_ATTRIBUTE]: row.id }}
         {...lineMotion(motion)}

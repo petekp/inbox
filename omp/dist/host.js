@@ -3677,6 +3677,11 @@ function helpKeys(look) {
   }
 }
 
+// ../hooks/fold-chevron.ts
+var FOLD_CLOSED_CHEVRON = "\u203A";
+var FOLD_OPEN_CHEVRON = "v";
+var foldGlyph = (isOpen) => isOpen ? FOLD_OPEN_CHEVRON : FOLD_CLOSED_CHEVRON;
+
 // ../hooks/status-folds.ts
 function waitingUnderParents(ledger) {
   const o = ledger.overview;
@@ -3695,7 +3700,7 @@ function waitingUnderParents(ledger) {
     })
   ]);
 }
-var parentChevron = (isCollapsed, foldCount) => isCollapsed ? `\u25B8 ${foldCount}` : "\u25BE";
+var parentChevron = (isCollapsed, foldCount) => isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true);
 var NONE_COLLAPSED = () => false;
 function withoutCollapsed(rows, isCollapsed) {
   let hiddenBelow = null;
@@ -8078,7 +8083,7 @@ function drawPageRow(row, d, isSelected = false) {
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s);
   }
   if (row.kind === "done-fold") {
-    const chevron = d.ui.statusUnfolded.includes(row.id) ? "\u25BE" : "\u25B8";
+    const chevron = foldGlyph(d.ui.statusUnfolded.includes(row.id));
     return pageLine(d, at, " ", row.text, isSelected ? s.bold : s.dim, {
       chevron: { text: chevron, paint: isSelected ? (t) => s.tone("accent", t) : s.dim }
     });
@@ -8190,7 +8195,7 @@ function fieldLines(d, at) {
 }
 function foldedNameLines(d, mark, name, foldId, isSelected) {
   const s = d.style;
-  const chevron = d.ui.statusUnfolded.includes(foldId) ? "\u25BE" : "\u25B8";
+  const chevron = foldGlyph(d.ui.statusUnfolded.includes(foldId));
   const [namePaint, chevronPaint] = isSelected ? [s.bold, (t) => s.tone("accent", t)] : [s.dim, s.dim];
   return pageLine(d, PAGE_MARK_AT, mark, `${name} ${chevron}`, (t) => t.endsWith(chevron) ? namePaint(t.slice(0, -chevron.length)) + chevronPaint(chevron) : namePaint(t));
 }
@@ -8596,7 +8601,7 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
     line: {
       ...blankLine(foldId(g.kind)),
       lead: g.mark ? null : { text: "", tone: null },
-      title: `${foldLabel(total)} ${isUnfolded ? "\u25BE" : "\u25B8"}`,
+      title: `${foldLabel(total)} ${foldGlyph(isUnfolded)}`,
       isDim: true,
       fold: g.kind,
       isWaiting: false

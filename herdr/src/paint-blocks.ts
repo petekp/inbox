@@ -24,6 +24,7 @@ import {
   TEXT_X,
   colorOf,
 } from './paint-theme'
+import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
 import { PATH_X, lineColor, panelId, restId, sizeEl, titleEl } from './paint-space'
@@ -296,8 +297,16 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
     .when(s.isBold, e => e.font_semibold())
     .when(s.isMuted, e => e.text_color(t.muted))
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : []
-  const chevron = s.fold ? [statusPartEl(s.fold.chevron).text_color(t.muted).ml(LINE_GAP)] : []
   const toggle = s.fold?.toggle
+  const chevron = s.fold
+    ? [
+        foldChevronEl(t, {
+          isOpen: !s.fold.isFolded,
+          isLive: toggle !== undefined && !isInert,
+          ...(s.fold.isFolded ? { count: s.fold.count } : {}),
+        }),
+      ]
+    : []
 
   return v_flex()
     .pl(EDGE + s.depth * NEST)
@@ -306,9 +315,7 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
       h_flex()
         .id(`fold ${s.id}`)
         .items_start()
-        .when(toggle !== undefined && !isInert, e =>
-          e.hover(x => x.text_color(t.foreground)).on_click((_e, cx) => (toggle ? p.press(toggle, cx) : undefined)),
-        )
+        .when(toggle !== undefined && !isInert, e => e.on_click((_e, cx) => (toggle ? p.press(toggle, cx) : undefined)))
         .child(markEl(s.mark, t))
         .child(
           h_flex()
@@ -471,7 +478,7 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolea
 
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
-  const fold: Button = {
+  const press: Button = {
     id: b.id,
     label: b.text,
     emphasis: 'quiet',
@@ -479,8 +486,8 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     hotkey: null,
     does: { is: 'view', change: b.change },
   }
-  const mark = b.kind === 'fold' ? b.mark : undefined
-  const chevron = b.kind === 'fold' ? (b.isOpen ? '▾' : '▸') : null
+  const fold = b.kind === 'fold' ? b : null
+  const mark = fold?.mark
 
   return h_flex()
     .id(`fold ${b.id}`)
@@ -490,17 +497,10 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .items_start()
     .text_color(t.muted)
     .accessibility_label(b.text)
-    .when(!isInert, e => e.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx)))
+    .when(!isInert, e => e.on_click((_e, cx) => p.press(press, cx)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(div().min_w(0).whitespace_normal().child(b.text))
-    .when(chevron !== null, e =>
-      e.child(
-        div()
-          .flex_none()
-          .ml(LINE_GAP)
-          .child(chevron ?? ''),
-      ),
-    )
+    .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))
 }
 
 /**

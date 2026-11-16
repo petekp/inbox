@@ -1,3 +1,4 @@
+import { foldGlyph } from './fold-chevron'
 import { foldKey } from './fold-keys'
 import type { PaneBase } from './pane-context'
 import type { PaneRowParts } from './pane-row-parts'
@@ -183,7 +184,7 @@ export function paneStatusPath(
 
     return {
       el: <Box key={`goal-${m.id}-fold`}>{foldButton(key, m.name, isOpen, toggle)}</Box>,
-      lines: inkLines(`${m.name} ▸`, statusTextWidth(0)),
+      lines: inkLines(`${m.name} ${foldGlyph(false)}`, statusTextWidth(0)),
     }
   }
 

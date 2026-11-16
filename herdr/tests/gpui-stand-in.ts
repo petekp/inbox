@@ -186,7 +186,7 @@ const pathBuilder: Record<string, () => unknown> = new Proxy({}, { get: () => ()
 mock.module('gpui-kit', () => ({
   View: class {},
   div: () => element(),
-  PathBuilder: { fill: () => pathBuilder },
+  PathBuilder: { fill: () => pathBuilder, stroke: () => pathBuilder },
   Background: { linear_gradient: () => ({}) },
 }))
 
