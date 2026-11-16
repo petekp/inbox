@@ -35,7 +35,7 @@ function rowText(r: StatusRow): string[] {
     case 'fold':
       return [`${pad}${r.mark} ${r.text}`]
     case 'done-fold':
-      return [`${pad}▸ ${r.text}`]
+      return [`${pad}› ${r.text}`]
     case 'part':
       return [`── ${r.text}`]
     case 'counts':
@@ -44,12 +44,12 @@ function rowText(r: StatusRow): string[] {
 }
 
 /**
- * A milestone in the goal's path: the Later label above the first one under Later, its word after an arrow, and ▸ after
+ * A milestone in the goal's path: the Later label above the first one under Later, its word after an arrow, and › after
  * a done milestone folded to its name, whose rows stay folded.
  */
 function milestoneText(m: MilestoneRow): string[] {
   const word = m.word ? `  ← ${m.word}` : ''
-  const fold = m.foldId ? ' ▸' : ''
+  const fold = m.foldId ? ' ›' : ''
 
   return [
     ...(m.startsLater ? [LATER_TEXT] : []),

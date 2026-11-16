@@ -42,6 +42,16 @@ export function stepLines<T extends { id: string }>(
   })
 }
 
+/** `leaving` once every one of `motions` is leaving, so the connector under them fades with its rows, else null. */
+export function connectorMotion(motions: string[]): 'leaving' | null {
+  const isLeaving = motions.length > 0 && motions.every(m => drawnRows.get(m)?.track.state === 'leaving')
+
+  return isLeaving ? 'leaving' : null
+}
+
+/** The class that makes a connector fade out as `connectorMotion` says. */
+export const connectorClass = (motion: 'leaving' | null) => (motion ? 'connector-leaving' : '')
+
 /** A line's motion key, and its buttons out of reach while it leaves. */
 export const lineMotion = (motion: string | undefined) =>
   motion ? { 'data-motion': motion, inert: drawnRows.get(motion)?.track.state === 'leaving' } : {}

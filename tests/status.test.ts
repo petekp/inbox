@@ -232,7 +232,7 @@ test('work closed since the last look shows as two rows, the rest is named in a 
     '✓ Three: done c',
     '✓ Also done: Five, Two',
     '✗ Also dropped: Six',
-    '▸ 1 more done',
+    '› 1 more done',
   ])
 })
 
@@ -270,7 +270,7 @@ test('a look that showed a named fold counts as seen the work it names and the w
 
   const shown = Object.fromEntries(rows.flatMap(seenSubjectIds).map(id => [id, 61 * MIN]))
   const looked = lookEnded(lookStarted(before, 60 * MIN), 60 * MIN + LOOK_MIN_MS, shown)!
-  expect(shape(page(looked, 70 * MIN).rows)).toEqual(['◐ Six: step 5', '▸ 5 done'])
+  expect(shape(page(looked, 70 * MIN).rows)).toEqual(['◐ Six: step 5', '› 5 done'])
 })
 
 test('a named line shows two names, the newest first, and counts the rest as +N more', () => {

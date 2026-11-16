@@ -1,4 +1,5 @@
 import type { Ledger } from '../types'
+import { foldGlyph } from './fold-chevron'
 import type { MilestoneRow } from './status-goal-page'
 import type { StatusPage, StatusRow } from './status-page'
 
@@ -31,8 +32,9 @@ export function waitingUnderParents(ledger: Pick<Ledger, 'overview' | 'items'>):
   ])
 }
 
-/** What follows a parent's name: ▾ while its rows show, else ▸ and how many rows of work its fold hides. */
-export const parentChevron = (isCollapsed: boolean, foldCount: number) => (isCollapsed ? `▸ ${foldCount}` : '▾')
+/** What follows a parent's name: ⌄ while its rows show, else › and how many rows of work its fold hides. */
+export const parentChevron = (isCollapsed: boolean, foldCount: number) =>
+  isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true)
 
 /** Whether `id` names a parent the person folded, as a look reads its view's `collapsed`. */
 export type IsCollapsed = (id: string) => boolean

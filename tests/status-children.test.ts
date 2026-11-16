@@ -216,7 +216,7 @@ test('the page lists running work linked to no subject first, then each subject 
     '├ ● Review r1',
     '└ ● Review r2',
     '○ Docs: outline ready',
-    '▸ 1 done',
+    '› 1 done',
   ])
 })
 

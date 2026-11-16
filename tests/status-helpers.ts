@@ -60,6 +60,6 @@ export const shape = (rows: StatusRow[]) =>
             : r.kind === 'counts'
               ? r.counts.map(c => `${c.mark} ${c.text}`).join(' · ')
               : r.kind === 'done-fold'
-                ? `▸ ${r.text}`
+                ? `› ${r.text}`
                 : `${r.mark} ${r.text}`,
   )

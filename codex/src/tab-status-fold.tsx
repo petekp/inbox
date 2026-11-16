@@ -1,5 +1,4 @@
 import type { ComponentChildren } from 'preact'
-import { parentChevron } from '../../hooks/status-folds'
 import { pressCollapse } from './tab-rows'
 import { tabState } from './tab-state'
 
@@ -9,9 +8,11 @@ export const isParentFolded = (id: string) => tabState.view?.collapsed.includes(
 /** Folds the Status parent `id`, or opens it once folded. The tab's selection stays where it was. */
 export const toggleParentFold = (id: string) => pressCollapse(id, !isParentFolded(id))
 
-/** What follows a parent's name, or null for a row that is no parent. */
-export const chevronOf = (p: { id: string; foldCount: number }) =>
-  p.foldCount > 0 ? parentChevron(isParentFolded(p.id), p.foldCount) : null
+/** What follows a parent's name: whether its rows are folded, and how many the fold hides. Null for a row that is no parent. */
+export type ParentChevron = { isFolded: boolean; count: number }
+
+export const chevronOf = (p: { id: string; foldCount: number }): ParentChevron | null =>
+  p.foldCount > 0 ? { isFolded: isParentFolded(p.id), count: p.foldCount } : null
 
 /** A parent's name line, which takes the click that folds its rows or opens them, as a keyboard press on it does. */
 export function ParentName({

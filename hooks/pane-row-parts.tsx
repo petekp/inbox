@@ -4,6 +4,7 @@ import { groupEmptyText } from './banners'
 import { foldSpacerSvg, RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
 import { closedTitleTint } from './pane-title-tint'
 import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
+import { foldGlyph } from './fold-chevron'
 import type { FoldProps } from './fold-client'
 import { ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
@@ -261,7 +262,7 @@ export function paneRowParts(
         )
   /** The terminal's fold control: `label`, a space and the chevron, one Button. */
   const foldButton = (key: string, label: string, isUnfolded: boolean, toggle: () => void) => (
-    <Button plain dimColor key={`fold-${key}`} label={`${label} ${isUnfolded ? '▾' : '▸'}`} onPress={toggle} />
+    <Button plain dimColor key={`fold-${key}`} label={`${label} ${foldGlyph(isUnfolded)}`} onPress={toggle} />
   )
   // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
   /** A fold's line: `label`, then the chevron. Desktop posts its click under `fold-` and `key`. */
@@ -286,6 +287,7 @@ export function paneRowParts(
                 markCells: DESKTOP_MARK_CELLS,
                 label,
                 isUnfolded,
+                chevron: foldGlyph(isUnfolded),
                 padY: DESKTOP_ROW_PAD,
                 colors: {
                   rest: isInline ? null : (pal.card ?? null),

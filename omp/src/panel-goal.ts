@@ -1,3 +1,4 @@
+import { foldGlyph } from '../../hooks/fold-chevron'
 import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey } from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from '../../hooks/status-goal-page'
@@ -137,7 +138,7 @@ function fieldLines(d: Draw, at: number): string[] {
  */
 function foldedNameLines(d: Draw, mark: string, name: string, foldId: string, isSelected: boolean): string[] {
   const s = d.style
-  const chevron = d.ui.statusUnfolded.includes(foldId) ? '▾' : '▸'
+  const chevron = foldGlyph(d.ui.statusUnfolded.includes(foldId))
   const [namePaint, chevronPaint] = isSelected ? [s.bold, (t: string) => s.tone('accent', t)] : [s.dim, s.dim]
 
   return pageLine(d, PAGE_MARK_AT, mark, `${name} ${chevron}`, t =>
