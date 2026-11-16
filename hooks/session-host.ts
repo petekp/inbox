@@ -98,6 +98,8 @@ export type SessionHost<S extends Session> = {
   exclusive<T>(fn: () => Promise<T>): Promise<Exclusive<T>>
   /** Calls the inbox model, once for the ledger and once for the Status. Null when a call fails. */
   ask: Ask
+  /** Reads the person's inbox-model instructions for each call. */
+  readPersonInstructions(): Promise<string | null>
   /** Sends a message to the agent as if the person typed it. Runs outside a change, so it may change the session itself. */
   deliver(s: S, text: string, deliveryId: string): Promise<SendOutcome>
   /** True when `deliver` returns only once the message runs, which can be a whole turn later. Until then its press reads Queued. */
@@ -156,7 +158,10 @@ export type CatchUpReply =
   /** There is no conversation to read, so the pending exchanges run instead. */
   | { kind: 'unreadable' }
 
-export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'exclusive' | 'ask'> & {
+export type UpdateHost<S extends Session> = Pick<
+  SessionHost<S>,
+  'now' | 'read' | 'update' | 'exclusive' | 'ask' | 'readPersonInstructions'
+> & {
   /** The host's names, which the ledger call's system text uses. */
   names: Host
   /**
@@ -197,7 +202,7 @@ export function isRecordedItemsOnly(value: string | null | undefined): boolean {
  * or empty `conversation` is unreadable. `screen` is what the person sees of the inbox.
  */
 export async function askOverConversation(
-  host: Pick<UpdateHost<Session>, 'ask' | 'now'>,
+  host: Pick<UpdateHost<Session>, 'ask' | 'now' | 'readPersonInstructions'>,
   names: Host,
   s: Session,
   screen: string,
@@ -205,7 +210,8 @@ export async function askOverConversation(
 ): Promise<CatchUpReply> {
   if (!conversation) return { kind: 'unreadable' }
   const prompt = transcriptCatchUpPrompt(s.ledger, screen, conversation)
-  const heard = await heardCall(host.ask, prompt, systemText(names), CATCH_UP_CALL, () => host.now())
+  const instructions = await host.readPersonInstructions()
+  const heard = await heardCall(host.ask, prompt, systemText(names, instructions), CATCH_UP_CALL, () => host.now())
 
   return heard.text === null
     ? { kind: 'failed', heard }
@@ -295,7 +301,13 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             const next = s.pending[0]!
             const promptAt = await host.now()
             const kind = { call: 'ledger', reads: 'reply', isRetry: next.failed === true } as const
-            const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind)
+            const instructions = await host.readPersonInstructions()
+            const asked = await askedCall(
+              host.ask,
+              buildPrompt(s.ledger, next.ex),
+              systemText(host.names, instructions),
+              kind,
+            )
             const parsed = kept(parsedReply(next.ex, asked.text))
             let isApplied = false as boolean
             const after = await host.update(async current => {

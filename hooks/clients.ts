@@ -64,6 +64,7 @@ export type FeatureId =
   | 'ran-call-delegates'
   | 'tool-result-line'
   | 'status-call-records'
+  | 'model-instructions'
   | 'pr-order'
   | 'pr-rank-again'
   | 'clear-merged-and-closed-prs'

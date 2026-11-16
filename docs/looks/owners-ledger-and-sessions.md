@@ -25,3 +25,11 @@ Part of [the look map](../looks.md#who-owns-each-rule).
 | Undo result | `hooks/press-reducer.ts:applyPress`, `hooks/pr-tab.ts:applyPrPress` | Every host clears its closed-note acknowledgement when the result names an actual reopen |
 | Arrival acknowledgement | `hooks/press-reducer.ts:withArrival` | Every host; one bulk press can affect several rows |
 | The comparison page template, and where each host finds it | `hooks/compare-page.html`, `hooks/press-messages.ts:compareRequest` | Every agent, through the Compare message, which names the template's absolute path. Each host passes the path as `SessionHost.comparePage`. The mod uses `hooks/compare-page.html` in `$.plugin.root` (`hooks/register.tsx:comparePagePath`). `codex/build.mjs` copies the template beside the handler bundle, to `codex/plugin/dist` and to `codex/.dev`, and `codex/src/server-handler.ts:createHandler` names the copy in its own folder. `omp/build.ts` copies it to `omp/dist`, and `omp/src/host.ts:defaultDeps` names the copy beside `dist/host.js`. Both builds' `--check` fail when a copy differs from the template. |
+
+The mod, Codex and omp reread `${XDG_CONFIG_HOME:-$HOME/.config}/inbox/instructions.md` for each inbox-owned ledger and Status call. This includes reply, mid-turn and catch-up calls. The shared prompt helper keeps the first 4,000 characters.
+
+Missing, unreadable or blank files use the default sentence below.
+
+Default: `Write every free-text value in the same language as the person's messages in this conversation. Keep protocol keywords and labels in English.`
+
+The file is not added to agent guidance or tool descriptions.

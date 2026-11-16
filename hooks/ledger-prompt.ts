@@ -2,16 +2,17 @@ import type { Closed, Exchange, Item, Ledger } from '../types'
 import { CLOSED_CONTEXT_LIMIT, isAskedForChoices, LIST_CHOICES } from './ask-match'
 import { MAX_CLOSED } from './ledger-close'
 import type { Host } from './model-text'
+import { personInstructionsBlock } from './person-instructions'
 import { clipMiddle, numberBlocks } from './text'
 
 export const NL = '\n'
 
 const MODEL_KIND: Record<Item['kind'], 'decide' | 'do'> = { question: 'decide', task: 'do' }
 
-export function systemText(host: Host): string {
+export function systemText(host: Host, instructions: string | null = null): string {
   const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : ''
 
-  return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
+  const system = `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
@@ -55,6 +56,8 @@ TODO: <work>
   For a todo in <person>: work the person sets aside for later, as in "todo: X", and the reply leaves undone. work: at most 12 words, worded to follow "Ready to start on".
 
 Write plainly. No jargon, no filler, no markdown.`
+
+  return `${system}\n\n${personInstructionsBlock(instructions)}`
 }
 
 export function ledgerBlocks(ledger: Ledger): string[] {

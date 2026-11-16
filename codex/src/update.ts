@@ -15,6 +15,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { screenText } from '../../hooks/inbox-text'
@@ -46,6 +47,13 @@ const TIMEOUT_MS = 120_000
 const RESULTS_WAIT_MS = 4 * TIMEOUT_MS
 /** Keeps one process's results calls in the order they arrived. The file lock orders them across processes. */
 const resultsOrder = orderedKeys()
+
+/** Reads the person's inbox instructions from the XDG config folder or their home folder. */
+export function readInboxInstructions(env: { HOME?: string; XDG_CONFIG_HOME?: string }): Promise<string | null> {
+  const configHome = env.XDG_CONFIG_HOME || join(env.HOME || homedir(), '.config')
+
+  return readFile(join(configHome, 'inbox', 'instructions.md'), 'utf8').catch(() => null)
+}
 
 /** A release that drops one of these rejects it by name, so askModel drops any name rejected and tries again. */
 const OFF = [
@@ -233,16 +241,23 @@ export const refreshStatus = (
   now: () => number,
   onWrite?: OnWrite,
   records?: StatusRecords,
+  readPersonInstructions: () => Promise<string | null> = () => readInboxInstructions(process.env),
 ): Promise<void> =>
   refreshSessionStatus({
     ...codexStore(dir, sessionId, now, onWrite),
     ask,
+    readPersonInstructions,
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
   })
 
-type RunUpdateOptions = { onWrite?: OnWrite; records?: StatusRecords; recordedItemsOnly?: boolean }
+type RunUpdateOptions = {
+  onWrite?: OnWrite
+  records?: StatusRecords
+  recordedItemsOnly?: boolean
+  readPersonInstructions?: () => Promise<string | null>
+}
 
 export const runUpdates = (
   dir: string,
@@ -256,12 +271,18 @@ export const runUpdates = (
     typeof optionsOrOnWrite === 'function'
       ? { onWrite: optionsOrOnWrite, records: positionalRecords }
       : optionsOrOnWrite
-  const { onWrite, records, recordedItemsOnly = false } = options
+  const {
+    onWrite,
+    records,
+    recordedItemsOnly = false,
+    readPersonInstructions = () => readInboxInstructions(process.env),
+  } = options
   const store = codexStore(dir, sessionId, now, onWrite)
 
   return runSessionUpdates({
     ...store,
     ask,
+    readPersonInstructions,
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
@@ -271,7 +292,7 @@ export const runUpdates = (
       const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath
 
       return askOverConversation(
-        { ask, now: store.now },
+        { ask, now: store.now, readPersonInstructions },
         CODEX,
         s,
         screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),

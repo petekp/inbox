@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { systemText } from '../../hooks/ledger-prompt'
@@ -41,6 +41,27 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
 
 const assistant = (text: string, isWorking = false) => ({
   message: { role: 'assistant', content: [{ type: 'text', text }, ...(isWorking ? [{ type: 'toolCall' }] : [])] },
+})
+
+test('omp reads the XDG instructions file again for each reply and Status call', async () => {
+  const configHome = join(w.dir, 'xdg-config')
+  const instructionsFile = join(configHome, 'inbox', 'instructions.md')
+  mkdirSync(join(configHome, 'inbox'), { recursive: true })
+  writeFileSync(instructionsFile, 'Use compact sentences.')
+  createInbox(pi(), { ...deps(), configHome })
+
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  expect(w.completions[0]!.system[0]).toContain("Person's instructions:\nUse compact sentences.")
+  expect(w.statusCompletions[0]!.system[0]).toContain("Person's instructions:\nUse compact sentences.")
+
+  writeFileSync(instructionsFile, 'Use one sentence.')
+  await prompt('Continue')
+  await endAgent('The command works.')
+  await settle()
+  expect(w.completions[1]!.system[0]).toContain("Person's instructions:\nUse one sentence.")
+  expect(w.statusCompletions[1]!.system[0]).toContain("Person's instructions:\nUse one sentence.")
 })
 
 test('the inbox model reads the text of each assistant message in the turn, in order, including one that called tools', async () => {

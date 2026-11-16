@@ -43,6 +43,7 @@ export const SHARED = [
   'status-upgrade',
   'status-upgrade-goal',
   'model-text',
+  'person-instructions',
   'ledger-prompt',
   'catch-up-text',
   'call-record',

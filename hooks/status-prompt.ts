@@ -7,6 +7,7 @@ import { DESCRIPTION_WORDS, NAME_WORDS, OPEN_SUBJECTS, TEXT_WORDS } from './stat
 import { GOAL_INPUT, GOAL_LINES, goalBlocks, goalRules } from './status-prompt-goal'
 import type { GoalPartId } from './status-prompt-goal'
 import { clipMiddle, numberBlocks } from './text'
+import { personInstructionsBlock } from './person-instructions'
 
 /** The rules that give each part of the work the person would name its own subject, for a host that reads them. */
 const PARTS_RULE = ` When the agent's plan or the person names several parts of the work that the person would each name on their own, such as a login screen, a password reset and a sign-out button, each part is its own subject, queued until it starts, and the head names the whole. Never write one subject that repeats the head and holds those parts in its text. A part gets its subject even when a milestone covers it: a milestone is an outcome the goal needs, never a copy of a subject. The steps of one part, such as making it, testing it and writing its docs, are not parts: they stay in that part's subject.`
@@ -16,11 +17,15 @@ const OWN_CHILDREN_RULE = ` Work this session's own subagents or background task
  * The system text of the call that changes the Status tab's list, apart from the ledger call, leaving out the goal's
  * rules in `without`. With `splitsParts`, it adds the rules a host's `splitsPlanIntoSubjects` asks for.
  */
-export function statusSystem(without: readonly GoalPartId[] = [], splitsParts = false): string {
+export function statusSystem(
+  without: readonly GoalPartId[] = [],
+  splitsParts = false,
+  instructions: string | null = null,
+): string {
   const parts = splitsParts ? PARTS_RULE : ''
   const ownChildren = splitsParts ? OWN_CHILDREN_RULE : ''
 
-  return `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+  const system = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -77,14 +82,16 @@ Rules:
 
 Goal:
 ${goalRules(without)}`
+
+  return `${system}\n\n${personInstructionsBlock(instructions)}`
 }
 
 export const STATUS_SYSTEM = statusSystem()
 export const PARTS_STATUS_SYSTEM = statusSystem([], true)
 
 /** The Status call's system text for the host whose names are `names`. */
-export function hostStatusSystem(names: Host): string {
-  return names.splitsPlanIntoSubjects ? PARTS_STATUS_SYSTEM : STATUS_SYSTEM
+export function hostStatusSystem(names: Host, instructions: string | null = null): string {
+  return statusSystem([], names.splitsPlanIntoSubjects, instructions)
 }
 
 /**

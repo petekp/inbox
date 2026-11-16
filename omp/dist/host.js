@@ -2747,13 +2747,22 @@ function howFromOutcome(outcome) {
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
 
+// ../hooks/person-instructions.ts
+var DEFAULT_PERSON_INSTRUCTIONS = "Write every free-text value in the same language as the person's messages in this conversation. Keep protocol keywords and labels in English.";
+var MAX_PERSON_INSTRUCTIONS = 4000;
+function personInstructionsBlock(text) {
+  const content = text === null || text.trim() === "" ? DEFAULT_PERSON_INSTRUCTIONS : Array.from(text).slice(0, MAX_PERSON_INSTRUCTIONS).join("");
+  return `Person's instructions:
+${content}`;
+}
+
 // ../hooks/ledger-prompt.ts
 var NL5 = `
 `;
 var MODEL_KIND = { question: "decide", task: "do" };
-function systemText(host) {
+function systemText(host, instructions = null) {
   const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
-  return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
+  const system = `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
@@ -2797,6 +2806,9 @@ TODO: <work>
   For a todo in <person>: work the person sets aside for later, as in "todo: X", and the reply leaves undone. work: at most 12 words, worded to follow "Ready to start on".
 
 Write plainly. No jargon, no filler, no markdown.`;
+  return `${system}
+
+${personInstructionsBlock(instructions)}`;
 }
 function ledgerBlocks(ledger) {
   const open = ledger.items.filter((i) => !i.sourceManaged).map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`).join(NL5);
@@ -10063,6 +10075,7 @@ var CLIENTS = {
       "ran-call-delegates": { kind: "full" },
       "tool-result-line": { kind: "full" },
       "status-call-records": { kind: "full" },
+      "model-instructions": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
       "clear-merged-and-closed-prs": { kind: "full" },
@@ -10208,6 +10221,7 @@ var CLIENTS = {
         reason: "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone."
       },
       "status-call-records": { kind: "full" },
+      "model-instructions": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
       "clear-merged-and-closed-prs": { kind: "full" },
@@ -10320,6 +10334,7 @@ var CLIENTS = {
       "ran-call-delegates": { kind: "full" },
       "tool-result-line": { kind: "full" },
       "status-call-records": { kind: "full" },
+      "model-instructions": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
       "clear-merged-and-closed-prs": { kind: "full" },
@@ -11061,10 +11076,10 @@ function goalBlocks(o, now) {
 // ../hooks/status-prompt.ts
 var PARTS_RULE = ` When the agent's plan or the person names several parts of the work that the person would each name on their own, such as a login screen, a password reset and a sign-out button, each part is its own subject, queued until it starts, and the head names the whole. Never write one subject that repeats the head and holds those parts in its text. A part gets its subject even when a milestone covers it: a milestone is an outcome the goal needs, never a copy of a subject. The steps of one part, such as making it, testing it and writing its docs, are not parts: they stay in that part's subject.`;
 var OWN_CHILDREN_RULE = ` Work this session's own subagents or background tasks do on it, such as a review, keeps it working.`;
-function statusSystem(without = [], splitsParts = false) {
+function statusSystem(without = [], splitsParts = false, instructions = null) {
   const parts = splitsParts ? PARTS_RULE : "";
   const ownChildren = splitsParts ? OWN_CHILDREN_RULE : "";
-  return `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+  const system = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -11121,11 +11136,14 @@ Rules:
 
 Goal:
 ${goalRules(without)}`;
+  return `${system}
+
+${personInstructionsBlock(instructions)}`;
 }
 var STATUS_SYSTEM = statusSystem();
 var PARTS_STATUS_SYSTEM = statusSystem([], true);
-function hostStatusSystem(names) {
-  return names.splitsPlanIntoSubjects ? PARTS_STATUS_SYSTEM : STATUS_SYSTEM;
+function hostStatusSystem(names, instructions = null) {
+  return statusSystem([], names.splitsPlanIntoSubjects, instructions);
 }
 function headText(o) {
   if (!o?.head)
@@ -11281,11 +11299,13 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     return;
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
   const prompt = statusCallPrompt(input, call.exchange);
-  const system = hostStatusSystem(host.names);
+  let system = null;
   const heards = [];
   const { last } = await askStatus(async () => {
     const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
-    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now());
+    const currentSystem = hostStatusSystem(host.names, await host.readPersonInstructions());
+    system ??= currentSystem;
+    const heard = await heardCall(call.ask, prompt, currentSystem, kind, () => host.now());
     heards.push({ kind, heard });
     return heard;
   });
@@ -11309,7 +11329,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system,
+    system: system ?? hostStatusSystem(host.names, null),
     prompt,
     input,
     exchange: call.exchange,
@@ -11376,7 +11396,8 @@ async function askOverConversation(host, names, s, screen, conversation) {
   if (!conversation)
     return { kind: "unreadable" };
   const prompt = transcriptCatchUpPrompt(s.ledger, screen, conversation);
-  const heard = await heardCall(host.ask, prompt, systemText(names), CATCH_UP_CALL, () => host.now());
+  const instructions = await host.readPersonInstructions();
+  const heard = await heardCall(host.ask, prompt, systemText(names, instructions), CATCH_UP_CALL, () => host.now());
   return heard.text === null ? { kind: "failed", heard } : {
     kind: "reply",
     text: heard.text,
@@ -11443,7 +11464,8 @@ async function runUpdates(host) {
             const next = s.pending[0];
             const promptAt = await host.now();
             const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
-            const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind);
+            const instructions = await host.readPersonInstructions();
+            const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names, instructions), kind);
             const parsed = kept(parsedReply(next.ex, asked.text));
             let isApplied = false;
             const after = await host.update(async (current) => {
@@ -13126,7 +13148,7 @@ function panelCalls(context, sessions, herdrAsk) {
 }
 
 // src/host-sessions.ts
-import { mkdir as mkdir3, readdir as readdir4, rename as rename3, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
+import { mkdir as mkdir3, readFile as readFile4, readdir as readdir4, rename as rename3, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
 import { dirname as dirname2, join as join4 } from "path";
 
 // ../hooks/conversation.ts
@@ -13276,6 +13298,7 @@ function sessionCalls(context) {
       update: (fn) => change(id, fn),
       exclusive: (fn) => exclusiveRun(dir, id, fn),
       ask: askFor(ctx, id),
+      readPersonInstructions: () => readFile4(join4(deps.configHome, "inbox", "instructions.md"), "utf8").catch(() => null),
       deliver: async (_s, text) => {
         const why = await sendToAgent(ctx, text);
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
@@ -13702,6 +13725,7 @@ async function isUsageLimitOutcome(status, message) {
 }
 var defaultDeps = {
   stateDir: (pi) => join5(pi.pi.getAgentDir(), "inbox"),
+  configHome: process.env.XDG_CONFIG_HOME || join5(homedir2(), ".config"),
   now: Date.now,
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,

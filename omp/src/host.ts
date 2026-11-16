@@ -85,6 +85,8 @@ type Complete = (
 export type HostDeps = {
   /** The folder that holds the inbox's saved sessions. */
   stateDir: (pi: ExtensionAPI) => string
+  /** XDG config folder for the person's inbox instructions file. */
+  configHome: string
   now: () => number
   newId: () => string
   settleWindowMs: number
@@ -129,6 +131,7 @@ async function isUsageLimitOutcome(status: number | undefined, message: string):
 
 const defaultDeps: HostDeps = {
   stateDir: pi => join(pi.pi.getAgentDir(), 'inbox'),
+  configHome: process.env.XDG_CONFIG_HOME || join(homedir(), '.config'),
   now: Date.now,
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,

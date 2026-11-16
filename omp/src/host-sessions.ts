@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { flattenConversation } from '../../hooks/conversation'
@@ -187,6 +187,8 @@ export function sessionCalls(context: HostContext) {
       update: fn => change(id, fn),
       exclusive: fn => exclusiveRun(dir, id, fn),
       ask: askFor(ctx, id),
+      readPersonInstructions: () =>
+        readFile(join(deps.configHome, 'inbox', 'instructions.md'), 'utf8').catch(() => null),
       deliver: async (_s, text) => {
         const why = await sendToAgent(ctx, text)
 

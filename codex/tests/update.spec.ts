@@ -3,20 +3,23 @@ import { randomUUID } from 'node:crypto'
 import { fork } from 'node:child_process'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
-import { mkdir, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { noteActivity } from '../../hooks/session-turns'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
-import { runUpdates as runBothCalls } from '../src/update'
+import { readInboxInstructions, runUpdates as runBothCalls } from '../src/update'
 import { makeServer } from '../src/server'
 import { ledgerOnly, movedRollout, rolloutAt, tempDir } from './helpers'
 import { ex } from './update-fixtures'
 
 const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
-  runBothCalls(dir, id, ledgerOnly(ask), now)
+  runBothCalls(dir, id, ledgerOnly(ask), now, {
+    readPersonInstructions: () => readInboxInstructions({ HOME: '/tmp/inbox-codex-test-home' }),
+  })
 
 if (process.env.INBOX_STATUS_WORKER_DIR) {
   setInterval(() => undefined, 1_000)
@@ -30,6 +33,24 @@ if (process.env.INBOX_STATUS_WORKER_DIR) {
     Date.now,
   )
 }
+
+test('the Codex instructions reader prefers XDG and falls back to a temporary HOME config folder', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'inbox-instructions-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const home = join(root, 'home')
+  const xdg = join(root, 'xdg')
+  const writeInstructions = async (folder: string, text: string) => {
+    const file = join(folder, 'inbox', 'instructions.md')
+    await mkdir(join(folder, 'inbox'), { recursive: true })
+    await writeFile(file, text)
+  }
+  await writeInstructions(join(home, '.config'), 'home instructions')
+  await writeInstructions(xdg, 'XDG instructions')
+
+  assert.equal(await readInboxInstructions({ HOME: home, XDG_CONFIG_HOME: xdg }), 'XDG instructions')
+  assert.equal(await readInboxInstructions({ HOME: home }), 'home instructions')
+  assert.equal(await readInboxInstructions({ HOME: home, XDG_CONFIG_HOME: join(root, 'missing') }), null)
+})
 
 test('a killed update worker leaves pending exchanges recoverable', async t => {
   const dir = tempDir()

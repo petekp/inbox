@@ -8,6 +8,7 @@ import type { HostDeps } from '../src/host'
 type Handler = (event: any, ctx: any) => unknown
 
 export const MODEL_ANSWER = ['NEW: decide | 1 | Use Node or Python? | Node / Python | Node'].join('\n')
+const STATUS_RULES = STATUS_SYSTEM.slice(0, STATUS_SYSTEM.lastIndexOf("\n\nPerson's instructions:"))
 
 type Model = { id: string; name: string; provider: string; identity: { family?: string; revision?: string } }
 export const sonnet: Model = {
@@ -149,10 +150,11 @@ export const deps = (): HostDeps => ({
   })(),
   settleWindowMs: 1000,
   home: '/home/me',
+  configHome: join(w.dir, 'config'),
   isNextBuild: false,
   comparePage: '/omp/dist/compare-page.html',
   complete: async (model, context) => {
-    const isStatusCall = context.systemPrompt?.[0] === STATUS_SYSTEM
+    const isStatusCall = context.systemPrompt?.[0]?.startsWith(STATUS_RULES) ?? false
     const call = {
       model: model as never,
       system: context.systemPrompt ?? [],

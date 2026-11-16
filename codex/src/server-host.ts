@@ -32,7 +32,7 @@ import { SETTLE_WINDOW_MS } from './settle'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
 import { newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
-import { reconcileUpdateStatus } from './update'
+import { readInboxInstructions, reconcileUpdateStatus } from './update'
 
 const ROLLOUT_LOOKUP_MS = 60_000
 
@@ -72,6 +72,7 @@ export function makeSessionHost(
     let preparedCli: string | undefined
     return {
       ...codexStore(dir, id, now, deps.onWrite),
+      readPersonInstructions: () => readInboxInstructions(process.env),
       prepare: async s => {
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },

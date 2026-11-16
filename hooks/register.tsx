@@ -85,6 +85,7 @@ import { CLAUDE_CODE, guidedCloseDescription } from './model-text'
 import { statusCarryText, screenText, type ScreenTab } from './inbox-text'
 import { catchUpPrompt, dialogActivity, dialogQuestions, toolActivity, transcriptCatchUpPrompt } from './catch-up-text'
 import { systemText } from './ledger-prompt'
+import { readInboxInstructions } from './mod-instructions'
 import {
   commandRowLine,
   dialogOutcome,
@@ -648,7 +649,7 @@ async function askInboxModel(
   return r.isAnswered ? r.text : null
 }
 
-/** The engine has no call that removes a file, so removing runs `rm` and `rmdir`. */
+/** The engine lacks file removal, so the mod runs `rm` and `rmdir`. */
 function recordFiles($: EngineInterface): RecordFiles {
   return {
     write: (path, text) => $.fs.write(path, text),
@@ -658,14 +659,22 @@ function recordFiles($: EngineInterface): RecordFiles {
   }
 }
 
-/** Claude Code's configuration folder: `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+/** `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
 async function configFolder($: EngineInterface): Promise<string | null> {
   const home = await $.env.get('HOME')
 
   return (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
 }
 
-/** The folder a next build keeps its Status call records in, under Claude Code's configuration folder. */
+function readPersonInstructions($: EngineInterface): Promise<string | null> {
+  return readInboxInstructions(
+    () => $.env.get('XDG_CONFIG_HOME'),
+    () => $.env.get('HOME'),
+    path => $.fs.read(path),
+  )
+}
+
+/** A next build's Status call records folder. */
 async function recordsFolder($: EngineInterface): Promise<string | null> {
   const config = await configFolder($)
 
@@ -741,12 +750,12 @@ async function deliver($: EngineInterface, owner: Owner, text: string, deliveryI
   return outcome
 }
 
-/** The page template for a comparison, as the mod ships it. */
+/** The shipped comparison template. */
 function comparePagePath($: EngineInterface): string {
   return `${$.plugin.root}/hooks/${COMPARE_PAGE_FILE}`
 }
 
-/** The mod's SessionHost for the conversation `owner`, with copies going to `surface`. */
+/** The mod host for one conversation. */
 function sessionHost(
   $: EngineInterface,
   owner: Owner,
@@ -773,6 +782,7 @@ function sessionHost(
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
     ask: (prompt, system, _kind, report) => askInboxModel($, prompt, system, 45_000, report),
+    readPersonInstructions: () => readPersonInstructions($),
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
@@ -797,7 +807,7 @@ function sessionHost(
   }
 }
 
-/** Changes the ledger of `owner`'s session. */
+/** Changes one session's ledger. */
 function commitLedger(
   $: EngineInterface,
   change: (l: Ledger) => Ledger,
@@ -810,8 +820,7 @@ function commitLedger(
 }
 
 /**
- * Changes `owner`'s session, keeping the rows the person replies on. After a write to the drawn session, the status
- * line follows it, rows that just closed redraw as they leave, and the pane moves to rows that arrived.
+ * Writes `owner`'s session while keeping reply rows in place. A drawn session also redraws its Status and new rows.
  */
 async function commit(
   $: EngineInterface,
@@ -867,7 +876,7 @@ function later($: EngineInterface, waitMs: number, run: () => unknown) {
   })().catch(() => undefined)
 }
 
-/** Redraws when the soonest Compare press reaches its limit, then waits for the next one. */
+/** Redraws when a Compare press reaches its limit. */
 async function redrawAtCompareEnd($: EngineInterface) {
   const { lastActions, now } = await drawnState($)
   const at = compareEndsAt(lastActions, now)
@@ -913,10 +922,10 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     screen($),
     $.session.messages().then(transcriptText),
   ])
-  // The Status call reads the transcript.
   const statusCall = transcript ? catchUpStatus($, owner, transcript) : null
   const forkedAt = await $.clock.now()
-  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
+  const instructions = await readPersonInstructions($)
+  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown, instructions) })
   if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
@@ -928,7 +937,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   return text === null ? { kind: 'failed', heard } : { kind: 'reply', text, source: null, statusCall, heard }
 }
 
-/** The model's answer to a catch-up over the transcript, for a conversation with nothing to fork. */
+/** Catches up from the transcript when no fork is available. */
 async function transcriptReply(
   $: EngineInterface,
   owner: Owner,
@@ -940,7 +949,8 @@ async function transcriptReply(
   const statusCall = catchUpStatus($, owner, transcript)
   const prompt = transcriptCatchUpPrompt(ledger, shown, transcript)
   const ask: Ask = (p, system, _kind, report) => askInboxModel($, p, system, 90_000, report)
-  const heard = await heardCall(ask, prompt, systemText(CLAUDE_CODE), CATCH_UP_CALL, () => $.clock.now())
+  const instructions = await readPersonInstructions($)
+  const heard = await heardCall(ask, prompt, systemText(CLAUDE_CODE, instructions), CATCH_UP_CALL, () => $.clock.now())
   if (!isCurrent(owner)) return { kind: 'failed', heard: null }
 
   return heard.text === null
@@ -986,7 +996,7 @@ function recordsOf($: EngineInterface, owner: Owner): StatusRecords | undefined 
   return mod.statusRecordsFolder === null ? undefined : statusRecords($, mod.statusRecordsFolder, owner)
 }
 
-/** The mod's SessionHost for `owner`'s conversation. A press passes its surface, which copies go to. */
+/** The mod host for `owner`; a press names its target surface. */
 function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['surface']): SessionHost<Session> {
   return sessionHost($, owner, {
     update: change => commit($, owner, change),

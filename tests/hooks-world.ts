@@ -12,6 +12,7 @@ class World {
   ledgerReply = LEDGER_REPLY
   statusReply: string | null | string[] = 'UNCHANGED'
   statusPrompts: string[] = []
+  modelSystems: string[] = []
   statusHold: Promise<void> | null = null
   sessionId = 'session-1'
 
@@ -275,6 +276,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.ledgerReply = LEDGER_REPLY
   w.statusReply = 'UNCHANGED'
   w.statusPrompts = []
+  w.modelSystems = []
   w.statusHold = null
   w.sessionId = 'session-1'
   w.surfaces = []
@@ -449,8 +451,11 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     return { value: await gh(e.argv) }
   })
   on('model.complete', async (_$, e) => {
-    const isStatusCall =
-      (e.systemBlocks ?? []).some(block => block.text === STATUS_SYSTEM) || e.system === STATUS_SYSTEM
+    const systems = (e.systemBlocks ?? []).map(block => block.text)
+    const system = e.system ?? systems.join('\n\n')
+    w.modelSystems.push(system)
+    const statusRules = STATUS_SYSTEM.slice(0, STATUS_SYSTEM.lastIndexOf("\n\nPerson's instructions:"))
+    const isStatusCall = systems.some(block => block.startsWith(statusRules)) || system.startsWith(statusRules)
     if (isStatusCall) w.statusPrompts.push(e.prompt)
     else prompts.push(e.prompt)
     if (isStatusCall) await w.statusHold

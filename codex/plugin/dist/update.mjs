@@ -2,7 +2,7 @@
 
 // src/update-main.ts
 import { existsSync } from "node:fs";
-import { homedir as homedir3 } from "node:os";
+import { homedir as homedir4 } from "node:os";
 import { dirname as dirname5, join as join6 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -1161,12 +1161,21 @@ function checkVersion(saved) {
   if (version !== SESSION_VERSION) throw new Error(`Unsupported inbox state version: ${version}`);
 }
 
+// ../hooks/person-instructions.ts
+var DEFAULT_PERSON_INSTRUCTIONS = "Write every free-text value in the same language as the person's messages in this conversation. Keep protocol keywords and labels in English.";
+var MAX_PERSON_INSTRUCTIONS = 4e3;
+function personInstructionsBlock(text2) {
+  const content = text2 === null || text2.trim() === "" ? DEFAULT_PERSON_INSTRUCTIONS : Array.from(text2).slice(0, MAX_PERSON_INSTRUCTIONS).join("");
+  return `Person's instructions:
+${content}`;
+}
+
 // ../hooks/ledger-prompt.ts
 var NL4 = "\n";
 var MODEL_KIND = { question: "decide", task: "do" };
-function systemText(host) {
+function systemText(host, instructions = null) {
   const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
-  return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
+  const system = `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
@@ -1210,6 +1219,9 @@ TODO: <work>
   For a todo in <person>: work the person sets aside for later, as in "todo: X", and the reply leaves undone. work: at most 12 words, worded to follow "Ready to start on".
 
 Write plainly. No jargon, no filler, no markdown.`;
+  return `${system}
+
+${personInstructionsBlock(instructions)}`;
 }
 function ledgerBlocks(ledger) {
   const open2 = ledger.items.filter((i) => !i.sourceManaged).map(
@@ -4754,10 +4766,10 @@ function goalBlocks(o, now) {
 // ../hooks/status-prompt.ts
 var PARTS_RULE = ` When the agent's plan or the person names several parts of the work that the person would each name on their own, such as a login screen, a password reset and a sign-out button, each part is its own subject, queued until it starts, and the head names the whole. Never write one subject that repeats the head and holds those parts in its text. A part gets its subject even when a milestone covers it: a milestone is an outcome the goal needs, never a copy of a subject. The steps of one part, such as making it, testing it and writing its docs, are not parts: they stay in that part's subject.`;
 var OWN_CHILDREN_RULE = ` Work this session's own subagents or background tasks do on it, such as a review, keeps it working.`;
-function statusSystem(without = [], splitsParts = false) {
+function statusSystem(without = [], splitsParts = false, instructions = null) {
   const parts = splitsParts ? PARTS_RULE : "";
   const ownChildren = splitsParts ? OWN_CHILDREN_RULE : "";
-  return `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+  const system = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -4814,11 +4826,14 @@ Rules:
 
 Goal:
 ${goalRules(without)}`;
+  return `${system}
+
+${personInstructionsBlock(instructions)}`;
 }
 var STATUS_SYSTEM = statusSystem();
 var PARTS_STATUS_SYSTEM = statusSystem([], true);
-function hostStatusSystem(names) {
-  return names.splitsPlanIntoSubjects ? PARTS_STATUS_SYSTEM : STATUS_SYSTEM;
+function hostStatusSystem(names, instructions = null) {
+  return statusSystem([], names.splitsPlanIntoSubjects, instructions);
 }
 function headText(o) {
   if (!o?.head) return "(none yet)";
@@ -4963,11 +4978,13 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   if (!isStatusCallCurrent(s, appliedAfter)) return;
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
   const prompt = statusCallPrompt(input, call.exchange);
-  const system = hostStatusSystem(host.names);
+  let system = null;
   const heards = [];
   const { last } = await askStatus(async () => {
     const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
-    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now());
+    const currentSystem = hostStatusSystem(host.names, await host.readPersonInstructions());
+    system ??= currentSystem;
+    const heard = await heardCall(call.ask, prompt, currentSystem, kind, () => host.now());
     heards.push({ kind, heard });
     return heard;
   });
@@ -4993,7 +5010,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system,
+    system: system ?? hostStatusSystem(host.names, null),
     prompt,
     input,
     exchange: call.exchange,
@@ -5038,7 +5055,8 @@ function isRecordedItemsOnly(value) {
 async function askOverConversation(host, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
   const prompt = transcriptCatchUpPrompt(s.ledger, screen, conversation);
-  const heard = await heardCall(host.ask, prompt, systemText(names), CATCH_UP_CALL, () => host.now());
+  const instructions = await host.readPersonInstructions();
+  const heard = await heardCall(host.ask, prompt, systemText(names, instructions), CATCH_UP_CALL, () => host.now());
   return heard.text === null ? { kind: "failed", heard } : {
     kind: "reply",
     text: heard.text,
@@ -5085,7 +5103,13 @@ async function runUpdates(host) {
             const next = s.pending[0];
             const promptAt = await host.now();
             const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
-            const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind);
+            const instructions = await host.readPersonInstructions();
+            const asked = await askedCall(
+              host.ask,
+              buildPrompt(s.ledger, next.ex),
+              systemText(host.names, instructions),
+              kind
+            );
             const parsed = kept(parsedReply(next.ex, asked.text));
             let isApplied = false;
             const after = await host.update(async (current) => {
@@ -5172,6 +5196,7 @@ import {
   writeFile as writeFile3
 } from "node:fs/promises";
 import { dirname as dirname4, join as join5 } from "node:path";
+import { homedir as homedir3 } from "node:os";
 
 // src/transcript.ts
 import { readdir as readdir2, stat as stat4 } from "node:fs/promises";
@@ -5677,6 +5702,10 @@ var MODEL = "gpt-6-luna";
 var TIMEOUT_MS = 12e4;
 var RESULTS_WAIT_MS = 4 * TIMEOUT_MS;
 var resultsOrder = orderedKeys();
+function readInboxInstructions(env) {
+  const configHome = env.XDG_CONFIG_HOME || join5(env.HOME || homedir3(), ".config");
+  return readFile2(join5(configHome, "inbox", "instructions.md"), "utf8").catch(() => null);
+}
 var OFF = [
   "shell_tool",
   "unified_exec",
@@ -5816,20 +5845,27 @@ var statusRecords = (dir, sessionId) => ({
   session: sessionId,
   files: recordFiles
 });
-var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStatus({
+var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records, readPersonInstructions = () => readInboxInstructions(process.env)) => refreshStatus({
   ...codexStore(dir, sessionId, now, onWrite),
   ask,
+  readPersonInstructions,
   names: CODEX,
   inOrder: inOrderFor(dir, sessionId),
   records
 });
 var runUpdates2 = (dir, sessionId, ask, now, optionsOrOnWrite = {}, positionalRecords) => {
   const options = typeof optionsOrOnWrite === "function" ? { onWrite: optionsOrOnWrite, records: positionalRecords } : optionsOrOnWrite;
-  const { onWrite, records, recordedItemsOnly = false } = options;
+  const {
+    onWrite,
+    records,
+    recordedItemsOnly = false,
+    readPersonInstructions = () => readInboxInstructions(process.env)
+  } = options;
   const store = codexStore(dir, sessionId, now, onWrite);
   return runUpdates({
     ...store,
     ask,
+    readPersonInstructions,
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
@@ -5838,7 +5874,7 @@ var runUpdates2 = (dir, sessionId, ask, now, optionsOrOnWrite = {}, positionalRe
       const isMoved = await withCurrentRollout(s) !== s;
       const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath;
       return askOverConversation(
-        { ask, now: store.now },
+        { ask, now: store.now, readPersonInstructions },
         CODEX,
         s,
         screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
@@ -5859,7 +5895,7 @@ async function main() {
   const dir = dataDir(process.env, pluginRoot);
   const { cliPath } = await readState(dir, sessionId);
   const cli = cliPath ?? await findCli(process.env, run, process.ppid);
-  const personHome = process.env.CODEX_HOME || join6(homedir3(), ".codex");
+  const personHome = process.env.CODEX_HOME || join6(homedir4(), ".codex");
   const ask = codexAsk(run, cli, dir, personHome);
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
   const records = existsSync(join6(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;

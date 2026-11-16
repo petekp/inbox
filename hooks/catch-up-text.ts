@@ -6,7 +6,7 @@ import { clip, numberBlocks } from './text'
 const CATCH_UP =
   'The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.'
 
-export function catchUpPrompt(host: Host, ledger: Ledger, screen: string): string {
+export function catchUpPrompt(host: Host, ledger: Ledger, screen: string, instructions: string | null = null): string {
   return [
     'Pause the task. Do not use tools. Instead, act as the ledger keeper described below, over this whole conversation.',
     `Treat the whole conversation as the exchange. ${CATCH_UP}`,
@@ -14,7 +14,7 @@ export function catchUpPrompt(host: Host, ledger: Ledger, screen: string): strin
     `<screen>${NL}${screen}${NL}</screen>`,
     'Code blocks here carry no [block N] marker, so a copy HELP must be one line of text.',
     '',
-    systemText(host),
+    systemText(host, instructions),
   ].join(NL)
 }
 

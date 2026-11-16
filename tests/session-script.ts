@@ -35,6 +35,7 @@ export function fakeHostWith<S extends Session>(
       inOrder: fn => order.run('session', fn),
       now: () => (clock += 10),
       ask,
+      readPersonInstructions: async () => null,
       deliver: async (_s, text) => {
         delivered.push(text)
         return { state: 'accepted', queuedId: null }

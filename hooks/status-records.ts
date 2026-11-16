@@ -36,7 +36,7 @@ export type StatusCall = { exchange: StatusExchange; ask: Ask }
 
 type StatusHost<S extends Session> = Pick<
   UpdateHost<S>,
-  'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records' | 'names'
+  'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records' | 'names' | 'readPersonInstructions'
 >
 
 /** One model call of a Status call. An answer with no operation is asked once more, so a call makes one or two. */
@@ -148,7 +148,7 @@ function attemptOf({ text, report, thrown, ms }: HeardCall): StatusAttempt {
  * `records`, it then writes the call's record in the background, and drops a failed write.
  */
 export async function askAndWriteStatus<S extends Session>(
-  host: Pick<StatusHost<S>, 'now' | 'update' | 'records' | 'names'>,
+  host: Pick<StatusHost<S>, 'now' | 'update' | 'records' | 'names' | 'readPersonInstructions'>,
   s: S,
   call: StatusCall,
   tasks: HostTask[],
@@ -157,11 +157,13 @@ export async function askAndWriteStatus<S extends Session>(
   if (!isStatusCallCurrent(s, appliedAfter)) return
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
   const prompt = statusCallPrompt(input, call.exchange)
-  const system = hostStatusSystem(host.names)
+  let system: string | null = null
   const heards: { kind: CallKind; heard: HeardCall }[] = []
   const { last } = await askStatus(async () => {
     const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
-    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now())
+    const currentSystem = hostStatusSystem(host.names, await host.readPersonInstructions())
+    system ??= currentSystem
+    const heard = await heardCall(call.ask, prompt, currentSystem, kind, () => host.now())
     heards.push({ kind, heard })
     return heard
   })
@@ -190,7 +192,7 @@ export async function askAndWriteStatus<S extends Session>(
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system,
+    system: system ?? hostStatusSystem(host.names, null),
     prompt,
     input,
     exchange: call.exchange,
