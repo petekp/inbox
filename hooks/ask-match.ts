@@ -4,6 +4,17 @@ import { stem } from './status-limits'
 import { linkLabel } from './inline'
 
 export const CLOSED_CONTEXT_LIMIT = 12
+export const MAX_UNRECORDED_DECISIONS = 12
+export const MAX_UNRECORDED_ASK = 200
+export const MAX_UNRECORDED_QUOTE = 160
+
+export function cleanUnrecordedText(text: string, max: number): string {
+  return text
+    .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
+}
 
 export function words(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []

@@ -17,6 +17,31 @@ test('with INBOX_RECORDED_ITEMS_ONLY=1, a reply whose question the agent did not
   expect(state().ledger.items).toEqual([])
 })
 
+test('omp sends a quoted candidate in the next hidden inbox message once', async () => {
+  createInbox(pi(), { ...deps(), recordedItemsOnly: '1' })
+  w.reply =
+    'NEW: decide | - | Should the command be greet or hello? | greet / hello | greet | - | We should choose whether the command is greet or hello.'
+
+  await prompt('Add a greeting CLI')
+  await endAgent('We should choose whether the command is greet or hello.')
+  await settle()
+  expect(state().ledger.unrecordedDecisions).toEqual([
+    {
+      kind: 'question',
+      ask: 'Should the command be greet or hello?',
+      quote: 'We should choose whether the command is greet or hello.',
+    },
+  ])
+
+  const next = await prompt('Continue')
+  expect(next.message.content).toContain('Possibly unrecorded decisions in your last reply:')
+  expect(next.message.content).toContain('We should choose whether the command is greet or hello.')
+  expect(state().ledger.unrecordedDecisions).toEqual([])
+
+  const following = await prompt('Continue again')
+  expect(following.message?.content ?? '').not.toContain('Possibly unrecorded decisions in your last reply:')
+})
+
 test('with INBOX_RECORDED_ITEMS_ONLY=1, a legacy ask closes only on an answer while TODOs stay and NEW asks drop', async () => {
   createInbox(pi(), { ...deps(), recordedItemsOnly: '1' })
   await prompt('I will revisit the current threshold.')

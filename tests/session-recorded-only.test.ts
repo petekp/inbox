@@ -1,8 +1,14 @@
 import { expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
+import { EMPTY } from '../hooks/ledger'
+import { closeItem } from '../hooks/ledger-close'
+import { applyUpdate, isPersonsAnswer } from '../hooks/ledger-update'
 import { upgradeLedger } from '../hooks/ledger'
+import { inboxText } from '../hooks/inbox-text'
+import { parseReply, recordedAsksOnly } from '../hooks/reply-parse'
 import { isRecordedItemsOnly, runUpdates } from '../hooks/session-host'
+import { notePrompt } from '../hooks/session-turns'
 import { recordItem } from '../hooks/tools'
 import type { Item, Session } from '../types'
 import { fakeHost } from './session-fake-host'
@@ -81,6 +87,110 @@ test('with recordedItemsOnly, an update drops NEW asks, keeps TODOs and recorded
   const closed = (await host.read()).ledger
   expect(closed.items.map(i => i.id)).toEqual(['i1', 'i2'])
   expect(closed.closed).toEqual([])
+})
+
+test('recorded-only keeps one quoted candidate from headed and unheaded replies, then shows it once', async () => {
+  for (const heading of ['', 'Decisions:\n']) {
+    const reply = `${heading}The runtime should be Node. We need choose the command name: greet or hello.`
+    const answer = [
+      'NEW: decide | - | Which runtime should greet use? | Node / Python | Node | - | The runtime should be Node.',
+      'NEW: decide | - | Should the command be greet or hello? | greet / hello | greet | - | We need choose the command name: greet or hello.',
+    ].join('\n')
+    const { host } = fakeHost(async () => answer)
+    await host.update(s => {
+      const ledger = recordItem(
+        CLAUDE_CODE,
+        s.ledger,
+        { kind: 'question', ask: 'Which runtime should greet use?', options: ['Node', 'Python'] },
+        1,
+      ).ledger
+
+      return finishTurn({ ...s, ledger }, reply)
+    })
+    await runUpdates({ ...host, recordedItemsOnly: true })
+
+    const after = await host.read()
+    expect(after.ledger.items.map(item => item.ask)).toEqual(['Which runtime should greet use?'])
+    expect(after.ledger.unrecordedDecisions).toEqual([
+      {
+        kind: 'question',
+        ask: 'Should the command be greet or hello?',
+        quote: 'We need choose the command name: greet or hello.',
+      },
+    ])
+
+    const delivered = notePrompt(CLAUDE_CODE, after, 'continue', false)
+    expect(delivered.notes.join('\n')).toContain('Possibly unrecorded decisions in your last reply:')
+    expect(delivered.notes.join('\n')).toContain('reply quote: "We need choose the command name: greet or hello."')
+    expect(delivered.state.ledger.unrecordedDecisions).toEqual([])
+
+    const next = notePrompt(CLAUDE_CODE, delivered.state, 'continue again', false)
+    expect(next.notes.join('\n')).not.toContain('Possibly unrecorded decisions in your last reply:')
+  }
+})
+
+test('recording a matching candidate clears it, while normal mode still creates the item without saving its quote', async () => {
+  const candidate = { kind: 'question' as const, ask: 'Which cache?', quote: 'We should choose Redis.' }
+  const pending = { ...EMPTY, unrecordedDecisions: [candidate] }
+  const recorded = recordItem(
+    CLAUDE_CODE,
+    pending,
+    {
+      kind: 'question',
+      ask: candidate.ask,
+      options: ['Redis', 'Memory'],
+    },
+    2,
+  ).ledger
+  expect(recorded.unrecordedDecisions).toEqual([])
+
+  const parsed = parseReply(
+    'NEW: decide | - | Which cache? | Redis / Memory | Redis | - | We should choose Redis.',
+    'We should choose Redis.',
+  )!
+  const normal = applyUpdate(EMPTY, parsed, 3, 1)
+  expect(normal.items).toMatchObject([{ ask: 'Which cache?' }])
+  expect(normal.items[0]).not.toHaveProperty('quote')
+})
+
+test('recorded-only drops a candidate that matches a recently closed item', () => {
+  const open = recordItem(
+    CLAUDE_CODE,
+    EMPTY,
+    { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Memory'] },
+    1,
+  ).ledger
+  const closed = closeItem(open, 'i1', { how: 'answered', outcome: 'Redis' }, 10)
+  const reply = 'The API should use Redis.'
+  const update = parseReply(
+    'NEW: decide | - | Which cache should the API use? | Redis / Memory | Redis | - | The API should use Redis.',
+    reply,
+  )!
+
+  expect(recordedAsksOnly(update, closed, isPersonsAnswer, 20).unrecordedDecisions).toEqual([])
+})
+
+test('a reminder JSON-escapes quoted text after stripping control characters', () => {
+  const quote = 'We said "go".\u0001'
+  const parsed = parseReply(`NEW: decide | - | Should we go? | Go / Stop | Go | - | ${quote}`, quote)!
+  const candidates = recordedAsksOnly(parsed, EMPTY, isPersonsAnswer, 20).unrecordedDecisions!
+  const text = inboxText(CLAUDE_CODE, { ...EMPTY, unrecordedDecisions: candidates }, false)
+
+  expect(text).toContain(`reply quote: ${JSON.stringify('We said "go".')}`)
+  expect(text).not.toContain('\u0001')
+})
+
+test('upgrade cleans and safely renders legacy unrecorded candidates', () => {
+  const upgraded = upgradeLedger({
+    ...EMPTY,
+    unrecordedDecisions: [{ kind: 'question', ask: 'Which "go" option?\u0001', quote: 'We said "go".\u0001' }],
+  })
+  const candidate = upgraded.unrecordedDecisions[0]!
+  const text = inboxText(CLAUDE_CODE, upgraded, false)
+
+  expect(candidate).toEqual({ kind: 'question', ask: 'Which "go" option?', quote: 'We said "go".' })
+  expect(text).toContain(`question: ${JSON.stringify(candidate.ask)} — reply quote: ${JSON.stringify(candidate.quote)}`)
+  expect(text).not.toContain('\u0001')
 })
 
 test('seven agent-recorded questions stay open after either CLOSED outcome in both modes', async () => {

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T07:48:24.435Z. 212112 characters follow.
+// Built at 2026-11-16T08:40:26.033Z. 213139 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -294,6 +294,12 @@ function linkLabel(text) {
 }
 
 // ../hooks/ask-match.ts
+var MAX_UNRECORDED_DECISIONS = 12;
+var MAX_UNRECORDED_ASK = 200;
+var MAX_UNRECORDED_QUOTE = 160;
+function cleanUnrecordedText(text, max) {
+  return text.replace(/[\p{Cc}\u2028\u2029]/gu, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
 function words2(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -690,6 +696,7 @@ function upgradeStatus(saved) {
 var EMPTY = {
   overview: null,
   items: [],
+  unrecordedDecisions: [],
   closed: [],
   findings: [],
   closedFindings: [],
@@ -715,6 +722,7 @@ function upgradeLedger(ledger) {
     prOrder: rest.prOrder ? upgradePrOrder(rest.prOrder, rest.prs) : null,
     updates,
     overview: upgradeStatus(rest.overview),
+    unrecordedDecisions: upgradeUnrecordedDecisions(rest.unrecordedDecisions),
     findings: [...rest.findings ?? [], ...notes ?? []],
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
     items: rest.items.map(upgradeItem),
@@ -725,6 +733,22 @@ function upgradeLedger(ledger) {
       ...d.item ? { item: upgradeItem(d.item) } : {}
     }))
   };
+}
+function upgradeUnrecordedDecisions(value) {
+  if (!Array.isArray(value))
+    return [];
+  return value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object")
+      return [];
+    const { kind, ask, quote } = candidate;
+    if (kind !== "question" && kind !== "task")
+      return [];
+    const cleanKind = kind;
+    const clean = (text, max) => typeof text === "string" ? cleanUnrecordedText(text, max) : "";
+    const cleanAsk = clean(ask, MAX_UNRECORDED_ASK);
+    const cleanQuote = clean(quote, MAX_UNRECORDED_QUOTE);
+    return cleanAsk && cleanQuote ? [{ kind: cleanKind, ask: cleanAsk, quote: cleanQuote }] : [];
+  }).slice(-MAX_UNRECORDED_DECISIONS);
 }
 function upgradePrOrder(order, prs) {
   return {

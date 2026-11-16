@@ -1,6 +1,12 @@
-import type { Closed, ClosedFinding, Finding, Item, Ledger, PrOrder } from '../types'
+import type { Closed, ClosedFinding, Finding, Item, Ledger, PrOrder, UnrecordedDecision } from '../types'
 
-import { recommendedOption } from './ask-match'
+import {
+  cleanUnrecordedText,
+  MAX_UNRECORDED_ASK,
+  MAX_UNRECORDED_DECISIONS,
+  MAX_UNRECORDED_QUOTE,
+  recommendedOption,
+} from './ask-match'
 import { EXPIRED } from './ledger-update'
 import { readKind } from './reply-parse'
 import { upgradeStatus } from './status-upgrade'
@@ -11,6 +17,7 @@ export const KEPT_SESSIONS = 40
 export const EMPTY: Ledger = {
   overview: null,
   items: [],
+  unrecordedDecisions: [],
   closed: [],
   findings: [],
   closedFindings: [],
@@ -64,6 +71,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
     prOrder: rest.prOrder ? upgradePrOrder(rest.prOrder, rest.prs) : null,
     updates,
     overview: upgradeStatus(rest.overview),
+    unrecordedDecisions: upgradeUnrecordedDecisions(rest.unrecordedDecisions),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -75,6 +83,24 @@ export function upgradeLedger(ledger: Ledger): Ledger {
       ...(d.item ? { item: upgradeItem(d.item) } : {}),
     })),
   }
+}
+
+function upgradeUnrecordedDecisions(value: unknown): UnrecordedDecision[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .flatMap(candidate => {
+      if (!candidate || typeof candidate !== 'object') return []
+      const { kind, ask, quote } = candidate as Record<string, unknown>
+      if (kind !== 'question' && kind !== 'task') return []
+      const cleanKind: UnrecordedDecision['kind'] = kind
+      const clean = (text: unknown, max: number) => (typeof text === 'string' ? cleanUnrecordedText(text, max) : '')
+      const cleanAsk = clean(ask, MAX_UNRECORDED_ASK)
+      const cleanQuote = clean(quote, MAX_UNRECORDED_QUOTE)
+
+      return cleanAsk && cleanQuote ? [{ kind: cleanKind, ask: cleanAsk, quote: cleanQuote }] : []
+    })
+    .slice(-MAX_UNRECORDED_DECISIONS)
 }
 
 /**

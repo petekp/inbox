@@ -174,6 +174,16 @@ export function inboxText(host: Host, ledger: Ledger, isOpen: boolean): string {
     out.push('Findings you recorded, still open:')
     for (const f of findings) out.push(findingLine(f))
   }
+  if (ledger.unrecordedDecisions.length > 0) {
+    out.push(
+      'Possibly unrecorded decisions in your last reply:',
+      ...ledger.unrecordedDecisions.map(
+        candidate =>
+          `- ${candidate.kind}: ${JSON.stringify(candidate.ask)} — reply quote: ${JSON.stringify(candidate.quote)}`,
+      ),
+      'Record each candidate that waits on the user with `record`, and ignore the rest.',
+    )
+  }
   out.push(isOpen ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`)
 
   return out.join(NL)
@@ -201,16 +211,18 @@ export function promptNotes(
   ledger: Ledger,
   prompt: { text: string; isPress: boolean; isOpen: boolean },
   told: Told,
-): { notes: string[]; told: Told } {
+): { notes: string[]; told: Told; shownUnrecorded: boolean } {
   const notes: string[] = []
   const answer = prompt.isPress ? null : answerNote(ledger, prompt.text)
   if (answer) notes.push(answer)
   const inbox = inboxText(host, ledger, prompt.isOpen)
   const toldClosed = new Set(told.closed)
   const closed = closedText(ledger.closed.filter(d => !toldClosed.has(d.id)))
+  const hasUnrecorded = ledger.unrecordedDecisions.length > 0
   const isEmpty = promptItems(ledger).length === 0 && ledger.findings.every(f => f.feedOwned)
-  if (!closed && (inbox === told.inbox || (isEmpty && told.inbox === null))) return { notes, told }
+  if (!closed && !hasUnrecorded && (inbox === told.inbox || (isEmpty && told.inbox === null)))
+    return { notes, told, shownUnrecorded: false }
   notes.push(closed ? `${inbox}${NL}${closed}` : inbox)
 
-  return { notes, told: { inbox, closed: ledger.closed.map(d => d.id) } }
+  return { notes, told: { inbox, closed: ledger.closed.map(d => d.id) }, shownUnrecorded: hasUnrecorded }
 }

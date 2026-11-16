@@ -161,6 +161,12 @@ function linkLabel(text2) {
 
 // ../hooks/ask-match.ts
 var CLOSED_CONTEXT_LIMIT = 12;
+var MAX_UNRECORDED_DECISIONS = 12;
+var MAX_UNRECORDED_ASK = 200;
+var MAX_UNRECORDED_QUOTE = 160;
+function cleanUnrecordedText(text2, max) {
+  return text2.replace(/[\p{Cc}\u2028\u2029]/gu, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
 function words2(text2) {
   return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -596,6 +602,7 @@ function upgradeStatus(saved) {
 var EMPTY = {
   overview: null,
   items: [],
+  unrecordedDecisions: [],
   closed: [],
   findings: [],
   closedFindings: [],
@@ -626,6 +633,7 @@ function upgradeLedger(ledger) {
     prOrder: rest.prOrder ? upgradePrOrder(rest.prOrder, rest.prs) : null,
     updates,
     overview: upgradeStatus(rest.overview),
+    unrecordedDecisions: upgradeUnrecordedDecisions(rest.unrecordedDecisions),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -637,6 +645,19 @@ function upgradeLedger(ledger) {
       ...d.item ? { item: upgradeItem(d.item) } : {}
     }))
   };
+}
+function upgradeUnrecordedDecisions(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const { kind, ask, quote } = candidate;
+    if (kind !== "question" && kind !== "task") return [];
+    const cleanKind = kind;
+    const clean = (text2, max) => typeof text2 === "string" ? cleanUnrecordedText(text2, max) : "";
+    const cleanAsk = clean(ask, MAX_UNRECORDED_ASK);
+    const cleanQuote = clean(quote, MAX_UNRECORDED_QUOTE);
+    return cleanAsk && cleanQuote ? [{ kind: cleanKind, ask: cleanAsk, quote: cleanQuote }] : [];
+  }).slice(-MAX_UNRECORDED_DECISIONS);
 }
 function upgradePrOrder(order, prs) {
   return {
@@ -819,6 +840,15 @@ function inboxText(host, ledger, isOpen2) {
     out.push("Findings you recorded, still open:");
     for (const f of findings) out.push(findingLine(f));
   }
+  if (ledger.unrecordedDecisions.length > 0) {
+    out.push(
+      "Possibly unrecorded decisions in your last reply:",
+      ...ledger.unrecordedDecisions.map(
+        (candidate) => `- ${candidate.kind}: ${JSON.stringify(candidate.ask)} \u2014 reply quote: ${JSON.stringify(candidate.quote)}`
+      ),
+      "Record each candidate that waits on the user with `record`, and ignore the rest."
+    );
+  }
   out.push(isOpen2 ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
   return out.join(NL2);
 }
@@ -838,10 +868,12 @@ function promptNotes(host, ledger, prompt, told) {
   const inbox = inboxText(host, ledger, prompt.isOpen);
   const toldClosed = new Set(told.closed);
   const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
+  const hasUnrecorded = ledger.unrecordedDecisions.length > 0;
   const isEmpty = promptItems(ledger).length === 0 && ledger.findings.every((f) => f.feedOwned);
-  if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
+  if (!closed && !hasUnrecorded && (inbox === told.inbox || isEmpty && told.inbox === null))
+    return { notes, told, shownUnrecorded: false };
   notes.push(closed ? `${inbox}${NL2}${closed}` : inbox);
-  return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
+  return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) }, shownUnrecorded: hasUnrecorded };
 }
 
 // ../hooks/last-actions.ts
@@ -3497,7 +3529,7 @@ ${text2}`;
   return {
     state: {
       ...s,
-      ledger,
+      ledger: r.shownUnrecorded ? { ...ledger, unrecordedDecisions: [] } : ledger,
       told: r.told,
       turn: { ...s.turn, person, trigger: null, press: sentBy?.press ?? s.turn.press }
     },

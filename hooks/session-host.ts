@@ -266,8 +266,8 @@ export async function reconcileUpdateStatus<S extends Session>(
  */
 export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promise<void> {
   let canCatchUp = host.catchUp !== undefined
-  const kept = (u: Update | null, ledger: S['ledger']) =>
-    u && host.recordedItemsOnly ? recordedAsksOnly(u, ledger, isPersonsAnswer) : u
+  const kept = (u: Update | null, ledger: S['ledger'], promptAt = 0) =>
+    u && host.recordedItemsOnly ? recordedAsksOnly(u, ledger, isPersonsAnswer, promptAt) : u
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
@@ -293,8 +293,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
                 await host.update(x => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }))
                 continue
               }
-              const parsed = kept(reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null, s.ledger)
               const at = await host.now()
+              const parsed = kept(reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null, s.ledger, at)
               const noted = (x: S) => (reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at) : x)
               const after = await host.update(x => appliedCatchUp(noted(x), s, parsed, at))
               if (!parsed) return 'stop' as const
@@ -311,7 +311,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               systemText(host.names, instructions),
               kind,
             )
-            const parsed = kept(parsedReply(next.ex, asked.text), s.ledger)
+            const parsed = kept(parsedReply(next.ex, asked.text), s.ledger, promptAt)
             let isApplied = false as boolean
             const after = await host.update(async current => {
               const at = await host.now()

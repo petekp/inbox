@@ -1,6 +1,17 @@
-import type { Help, Item, Ledger } from '../types'
+import type { Help, Item, Ledger, UnrecordedDecision } from '../types'
 import { parseInline } from './inline'
-import { keyWords, recommendedOption, words } from './ask-match'
+import {
+  keyWords,
+  cleanUnrecordedText,
+  matchOpen,
+  MAX_UNRECORDED_ASK,
+  MAX_UNRECORDED_DECISIONS,
+  MAX_UNRECORDED_QUOTE,
+  recommendedOption,
+  repeatsClosed,
+  sameAsk,
+  words,
+} from './ask-match'
 import { codeBlocks, dash } from './text'
 
 const NL = '\n'
@@ -30,7 +41,9 @@ const PERSON_ONLY_REASON =
 
 export type Update = {
   closed: { id: string; outcome: string }[]
-  added: (Omit<Item, 'id' | 'turn' | 'at' | 'helps' | 'from'> & { helps: Help[] })[]
+  added: (Omit<Item, 'id' | 'turn' | 'at' | 'helps' | 'from'> & { helps: Help[]; quote?: string | null })[]
+  /** Candidates retained only when recorded-items-only mode is enabled. */
+  unrecordedDecisions?: UnrecordedDecision[]
   helped: { id: string; help: Help }[]
   /** New options or a new recommendation for open questions. Null keeps what the question has. */
   updated: { id: string; options: string[] | null; rec: string | null }[]
@@ -41,18 +54,42 @@ export type Update = {
 
 /**
  * The part of an update that keeps every ask as the agent recorded it, for a host where `INBOX_RECORDED_ITEMS_ONLY`
- * is on. It drops NEW and UPDATE lines, and keeps a CLOSED line for an ask only when its outcome is the person's
+ * is on. It turns quoted NEW lines into one-time candidates and drops UPDATE lines, and keeps a CLOSED line only when its outcome is the person's
  * answer and the item came from an update. A recorded item never closes from this call. Findings still close as before. It keeps TODO lines because they come from work the person set aside, and
  * still adds steps to open items. A CLOSED line for a question that an UPDATE line asks again stays dropped, as
  * `applyUpdate` drops it, so the question stays open.
  */
 export function recordedAsksOnly(
   u: Update,
-  ledger: Pick<Ledger, 'items'>,
+  ledger: Pick<Ledger, 'items'> & Partial<Pick<Ledger, 'closed' | 'closedFindings' | 'unrecordedDecisions'>>,
   isPersonsAnswer: (outcome: string) => boolean,
+  promptAt = 0,
 ): Update {
   const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
   const recorded = new Set(ledger.items.filter(i => i.from === 'record').map(i => i.id))
+  const candidates = [
+    ...(ledger.unrecordedDecisions ?? []),
+    ...u.added.flatMap(({ kind, ask, quote }) => {
+      if (!quote) return []
+      const cleanAsk = cleanUnrecordedText(ask, MAX_UNRECORDED_ASK)
+      const cleanQuote = cleanUnrecordedText(quote, MAX_UNRECORDED_QUOTE)
+
+      return cleanAsk && cleanQuote ? [{ kind, ask: cleanAsk, quote: cleanQuote }] : []
+    }),
+  ]
+  const unrecordedDecisions: UnrecordedDecision[] = []
+  for (const candidate of candidates) {
+    const item = candidateItem(candidate)
+    if (
+      !candidate.ask ||
+      !candidate.quote ||
+      matchOpen(ledger.items, item) >= 0 ||
+      repeatsClosed(ledger.closed ?? [], item, promptAt, isPersonsAnswer, ledger.closedFindings ?? []) ||
+      unrecordedDecisions.some(previous => previous.kind === candidate.kind && sameAsk(previous.ask, candidate.ask))
+    )
+      continue
+    unrecordedDecisions.push(candidate)
+  }
 
   return {
     ...u,
@@ -61,7 +98,13 @@ export function recordedAsksOnly(
     ),
     added: [],
     updated: [],
+    unrecordedDecisions: unrecordedDecisions.slice(-MAX_UNRECORDED_DECISIONS),
   }
+}
+
+/** The matching shape used for a candidate in the existing ledger ask matcher. */
+export function candidateItem(candidate: UnrecordedDecision): Update['added'][number] {
+  return { ...candidate, label: null, options: [], rec: null, helps: [] }
 }
 
 function readHelp(
@@ -191,7 +234,11 @@ function lastAnswerStart(lines: string[]): number {
  * the reply followed by the activity: HELP values must appear in it, and
  * "copy | block N" names its code blocks. Null skips both, so block copies drop.
  */
-export function parseReply(text: string, source: string | null = null): Update | null {
+export function parseReply(
+  text: string,
+  source: string | null = null,
+  quoteSource: string | null = source,
+): Update | null {
   const blocks = source === null ? [] : codeBlocks(source)
   const closed: Update['closed'] = []
   const added: Update['added'] = []
@@ -221,6 +268,11 @@ export function parseReply(text: string, source: string | null = null): Update |
       const fields = value.split('|')
       const isLabelSkipped = !dash(fields[2]) && /\s/.test((fields[1] ?? '').trim())
       const [kind, label, ask, ...rest] = (isLabelSkipped ? [fields[0], '-', ...fields.slice(1)] : fields).map(dash)
+      const quoteField = rest.length > 3 ? rest.pop() : null
+      const quote =
+        quoteField && quoteField.length <= MAX_UNRECORDED_QUOTE && quoteSource?.includes(quoteField)
+          ? cleanUnrecordedText(quoteField, MAX_UNRECORDED_QUOTE) || null
+          : null
       // A sixth field is the design mark only when it reads "design" or "-", so an answer written after a stray "|"
       // in an older five-field line stays an answer.
       const last = rest.at(-1)
@@ -240,6 +292,7 @@ export function parseReply(text: string, source: string | null = null): Update |
         options,
         rec: recommendedOption(options, rec ?? null),
         helps: [],
+        ...(quote ? { quote } : {}),
         ...(isDesignChoice ? { isDesignChoice } : {}),
       }
       added.push(item)

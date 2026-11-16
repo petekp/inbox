@@ -183,7 +183,7 @@ export function recordPrompt<S extends Session>(
   return {
     state: {
       ...s,
-      ledger,
+      ledger: r.shownUnrecorded ? { ...ledger, unrecordedDecisions: [] } : ledger,
       told: r.told,
       turn: { ...s.turn, person, trigger: null, press: sentBy?.press ?? s.turn.press },
     },
@@ -265,7 +265,7 @@ export function endTurn<S extends Session>(
 
 /** The model's answer for `ex`, parsed. Null when there is no answer or it cannot be read. */
 export function parsedReply(ex: Exchange, reply: string | null): Update | null {
-  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join('\n'))
+  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join('\n'), ex.reply)
 }
 
 /**

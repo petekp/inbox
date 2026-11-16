@@ -154,7 +154,8 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
       addedIds.push(null)
       continue
     }
-    items.push({ ...a, id: `i${nextId}`, turn, at: now, from: 'update' })
+    const { quote: _quote, ...item } = a
+    items.push({ ...item, id: `i${nextId}`, turn, at: now, from: 'update' })
     addedIds.push(`i${nextId}`)
     created.add(`i${nextId}`)
     nextId += 1
@@ -200,6 +201,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     {
       ...ledger,
       items,
+      unrecordedDecisions: u.unrecordedDecisions ?? ledger.unrecordedDecisions,
       closed,
       findings,
       closedFindings,

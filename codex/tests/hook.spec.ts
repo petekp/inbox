@@ -354,3 +354,26 @@ test('the inbox line Codex reads names the Inbox tab, never the mod’s /inbox p
     assert.doesNotMatch(text, /\/inbox|pane/)
   }
 })
+
+test('a Codex prompt delivers a saved unrecorded candidate once', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      unrecordedDecisions: [
+        { kind: 'question', ask: 'Which cache should the API use?', quote: 'We should pick Redis.' },
+      ],
+    },
+  }))
+
+  const first = await handleHook(input('UserPromptSubmit', { prompt: 'continue', turn_id: 't1' }), deps)
+  assert.match(JSON.stringify(first), /Possibly unrecorded decisions in your last reply/)
+  assert.match(JSON.stringify(first), /We should pick Redis/)
+  assert.deepEqual((await readState(dir, 's1')).ledger.unrecordedDecisions, [])
+
+  const second = await handleHook(input('UserPromptSubmit', { prompt: 'continue again', turn_id: 't2' }), deps)
+  assert.doesNotMatch(JSON.stringify(second), /Possibly unrecorded decisions in your last reply/)
+})

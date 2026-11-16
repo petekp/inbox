@@ -187,6 +187,12 @@ function linkLabel(text2) {
 
 // ../hooks/ask-match.ts
 var CLOSED_CONTEXT_LIMIT = 12;
+var MAX_UNRECORDED_DECISIONS = 12;
+var MAX_UNRECORDED_ASK = 200;
+var MAX_UNRECORDED_QUOTE = 160;
+function cleanUnrecordedText(text2, max) {
+  return text2.replace(/[\p{Cc}\u2028\u2029]/gu, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
 function words2(text2) {
   return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -518,17 +524,37 @@ function readKind(kind) {
 }
 var NEEDS_PERSON = /(?:^|[\s;&|])(?:login|logout|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen)(?=[\s:]|$)|\binit --interactive\b/i;
 var PERSON_ONLY_REASON = /credential|password|passphrase|secret|\btoken|\b2fa\b|\bmfa\b|\bdevice\b|phone|android|tablet|account|sign(?:ed)?[- ]?in|log(?:ged)?[- ]?in|only you|you hold|your (?:mac|machine|laptop|computer|keychain)|\bsudo\b/i;
-function recordedAsksOnly(u, ledger, isPersonsAnswer2) {
+function recordedAsksOnly(u, ledger, isPersonsAnswer2, promptAt = 0) {
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const recorded = new Set(ledger.items.filter((i) => i.from === "record").map((i) => i.id));
+  const candidates = [
+    ...ledger.unrecordedDecisions ?? [],
+    ...u.added.flatMap(({ kind, ask, quote }) => {
+      if (!quote) return [];
+      const cleanAsk = cleanUnrecordedText(ask, MAX_UNRECORDED_ASK);
+      const cleanQuote = cleanUnrecordedText(quote, MAX_UNRECORDED_QUOTE);
+      return cleanAsk && cleanQuote ? [{ kind, ask: cleanAsk, quote: cleanQuote }] : [];
+    })
+  ];
+  const unrecordedDecisions = [];
+  for (const candidate of candidates) {
+    const item = candidateItem(candidate);
+    if (!candidate.ask || !candidate.quote || matchOpen(ledger.items, item) >= 0 || repeatsClosed(ledger.closed ?? [], item, promptAt, isPersonsAnswer2, ledger.closedFindings ?? []) || unrecordedDecisions.some((previous) => previous.kind === candidate.kind && sameAsk(previous.ask, candidate.ask)))
+      continue;
+    unrecordedDecisions.push(candidate);
+  }
   return {
     ...u,
     closed: u.closed.filter(
       (c) => (!/^i\d+$/.test(c.id) || !recorded.has(c.id) && isPersonsAnswer2(c.outcome)) && !stillAsked.has(c.id)
     ),
     added: [],
-    updated: []
+    updated: [],
+    unrecordedDecisions: unrecordedDecisions.slice(-MAX_UNRECORDED_DECISIONS)
   };
+}
+function candidateItem(candidate) {
+  return { ...candidate, label: null, options: [], rec: null, helps: [] };
 }
 function readHelp(kind, value, name, blocks, source) {
   const isQuoted = (text2) => source === null || source.includes(text2);
@@ -609,7 +635,7 @@ function lastAnswerStart(lines) {
   });
   return start;
 }
-function parseReply(text2, source = null) {
+function parseReply(text2, source = null, quoteSource = source) {
   const blocks = source === null ? [] : codeBlocks(source);
   const closed = [];
   const added = [];
@@ -638,6 +664,8 @@ function parseReply(text2, source = null) {
       const fields2 = value.split("|");
       const isLabelSkipped = !dash(fields2[2]) && /\s/.test((fields2[1] ?? "").trim());
       const [kind, label, ask, ...rest] = (isLabelSkipped ? [fields2[0], "-", ...fields2.slice(1)] : fields2).map(dash);
+      const quoteField = rest.length > 3 ? rest.pop() : null;
+      const quote = quoteField && quoteField.length <= MAX_UNRECORDED_QUOTE && quoteSource?.includes(quoteField) ? cleanUnrecordedText(quoteField, MAX_UNRECORDED_QUOTE) || null : null;
       const last = rest.at(-1);
       const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ""));
       if (isDesignField) rest.pop();
@@ -655,6 +683,7 @@ function parseReply(text2, source = null) {
         options,
         rec: recommendedOption(options, rec ?? null),
         helps: [],
+        ...quote ? { quote } : {},
         ...isDesignChoice ? { isDesignChoice } : {}
       };
       added.push(item);
@@ -786,7 +815,8 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       addedIds.push(null);
       continue;
     }
-    items.push({ ...a, id: `i${nextId}`, turn, at: now, from: "update" });
+    const { quote: _quote, ...item } = a;
+    items.push({ ...item, id: `i${nextId}`, turn, at: now, from: "update" });
     addedIds.push(`i${nextId}`);
     created.add(`i${nextId}`);
     nextId += 1;
@@ -826,6 +856,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     {
       ...ledger,
       items,
+      unrecordedDecisions: u.unrecordedDecisions ?? ledger.unrecordedDecisions,
       closed,
       findings,
       closedFindings,
@@ -1089,6 +1120,7 @@ function upgradeStatus(saved) {
 var EMPTY = {
   overview: null,
   items: [],
+  unrecordedDecisions: [],
   closed: [],
   findings: [],
   closedFindings: [],
@@ -1114,6 +1146,7 @@ function upgradeLedger(ledger) {
     prOrder: rest.prOrder ? upgradePrOrder(rest.prOrder, rest.prs) : null,
     updates,
     overview: upgradeStatus(rest.overview),
+    unrecordedDecisions: upgradeUnrecordedDecisions(rest.unrecordedDecisions),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -1125,6 +1158,19 @@ function upgradeLedger(ledger) {
       ...d.item ? { item: upgradeItem(d.item) } : {}
     }))
   };
+}
+function upgradeUnrecordedDecisions(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const { kind, ask, quote } = candidate;
+    if (kind !== "question" && kind !== "task") return [];
+    const cleanKind = kind;
+    const clean = (text2, max) => typeof text2 === "string" ? cleanUnrecordedText(text2, max) : "";
+    const cleanAsk = clean(ask, MAX_UNRECORDED_ASK);
+    const cleanQuote = clean(quote, MAX_UNRECORDED_QUOTE);
+    return cleanAsk && cleanQuote ? [{ kind: cleanKind, ask: cleanAsk, quote: cleanQuote }] : [];
+  }).slice(-MAX_UNRECORDED_DECISIONS);
 }
 function upgradePrOrder(order, prs) {
   return {
@@ -1196,7 +1242,7 @@ CLOSED: <id> | the outcome, at most 8 words, in one of three forms. Use CLOSED o
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
   For a finding in <findings> that a NEW line or an item in <open> asks the person about. item: "new N" for the Nth NEW line in your answer, or an id from <open>. The item takes the finding's place, so the person sees it once.
-NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
+NEW: <kind> | <label> | <ask> | <options> | <rec> | <design> | <quote>
   One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide or do something about it now; then also write an ASKED line for it. Also one line per dialog in <activity> that the person dismissed or left unanswered, with an ASKED line when the dialog asks about a finding. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
   kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
   label: the reply's own number or id for it ("1", "D3"), or "-".
@@ -1204,6 +1250,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
+  quote: a short, exact excerpt from <reply> supporting the ask, at most 160 characters; use "-" when none is available. Do not use a pipe or line break.
   Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "If you agree, I'll update the runbook", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
@@ -3823,7 +3870,7 @@ async function updateState(dir, sessionId, change) {
 
 // ../hooks/session-turns.ts
 function parsedReply(ex, reply) {
-  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
+  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"), ex.reply);
 }
 function applied(s, parsed, now, promptAt) {
   const next = s.pending[0];
@@ -4705,7 +4752,7 @@ async function askOverConversation(host, names, s, screen, conversation) {
 }
 async function runUpdates(host) {
   let canCatchUp = host.catchUp !== void 0;
-  const kept = (u, ledger) => u && host.recordedItemsOnly ? recordedAsksOnly(u, ledger, isPersonsAnswer) : u;
+  const kept = (u, ledger, promptAt = 0) => u && host.recordedItemsOnly ? recordedAsksOnly(u, ledger, isPersonsAnswer, promptAt) : u;
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
@@ -4729,8 +4776,8 @@ async function runUpdates(host) {
                 await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
-              const parsed2 = kept(reply.kind === "reply" ? parseReply(reply.text, reply.source) : null, s.ledger);
               const at = await host.now();
+              const parsed2 = kept(reply.kind === "reply" ? parseReply(reply.text, reply.source) : null, s.ledger, at);
               const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed2 !== null, at) : x;
               const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed2, at));
               if (!parsed2) return "stop";
@@ -4747,7 +4794,7 @@ async function runUpdates(host) {
               systemText(host.names, instructions),
               kind
             );
-            const parsed = kept(parsedReply(next.ex, asked.text), s.ledger);
+            const parsed = kept(parsedReply(next.ex, asked.text), s.ledger, promptAt);
             let isApplied = false;
             const after = await host.update(async (current) => {
               const at = await host.now();

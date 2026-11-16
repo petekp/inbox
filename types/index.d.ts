@@ -457,10 +457,15 @@ export type PrOrder = {
   at: number
 }
 
+/** A decision or task the reply model found but the agent has not recorded yet. */
+export type UnrecordedDecision = { kind: Item['kind']; ask: string; quote: string }
+
 export type Ledger = {
   /** The session's Status page; null until the Status call writes one. Saved as `overview`, the tab's earlier name. */
   overview: SessionStatus | null
   items: Item[]
+  /** Reply candidates shown once in the next inbox text, unless the agent records them first. */
+  unrecordedDecisions: UnrecordedDecision[]
   closed: Closed[]
   findings: Finding[]
   /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */

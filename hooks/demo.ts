@@ -189,6 +189,7 @@ export function demoView(now: number, agent: string): DemoCopy {
         serves: { s1: 'm2', s3: 'm3', s4: 'm1', s6: 'none', s7: 'none' },
         goalRefused: null,
       },
+      unrecordedDecisions: [],
       items: [
         {
           id: 'd11',

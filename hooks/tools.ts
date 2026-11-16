@@ -1,7 +1,7 @@
-import { isQuestionBack, recommendedOption } from './ask-match'
+import { isQuestionBack, matchOpen, recommendedOption } from './ask-match'
 import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding, isPersonsAnswer } from './ledger-update'
-import { stepHelp } from './reply-parse'
+import { candidateItem, stepHelp } from './reply-parse'
 import { cutInline } from './inline'
 import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
@@ -188,7 +188,13 @@ export function recordItem(
   const body = input.kind === 'question' ? questionBody(input, options) : {}
   const before = r.ledger.items.find(i => i.id === r.id)
   const after = before && withBody(before, body)
-  const recorded = { ...r.ledger, items: r.ledger.items.map(i => (i === before && after ? after : i)) }
+  const withRecorded = { ...r.ledger, items: r.ledger.items.map(i => (i === before && after ? after : i)) }
+  const recorded = {
+    ...withRecorded,
+    unrecordedDecisions: withRecorded.unrecordedDecisions.filter(
+      candidate => matchOpen(withRecorded.items, candidateItem(candidate)) < 0,
+    ),
+  }
   if (r.is === 'open') {
     const changes = [
       ...(r.addedSteps > 0 ? ['added its new steps'] : []),
