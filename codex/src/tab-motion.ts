@@ -1,5 +1,5 @@
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, SECTION_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
+import * as layout from '../../hooks/layout'
 import { ENTER_FADE_MS, FADE_MS, isMoving, ROW_STATE_MS, slideOffset } from '../../hooks/row-motion'
 import type { RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames, springStep } from '../../hooks/springs'
@@ -312,12 +312,27 @@ export function revealSelected() {
   if (!reducedMotion.matches) later(reveal, HEIGHT_SETTLE_MS)
 }
 
+/** The shared spacing scale, as the CSS variables the tab's styles read. */
+const SPACING_VARIABLES: [string, number][] = [
+  ['--unit', layout.SPACE_UNIT],
+  ['--line', layout.LINE_PT],
+  ['--inside-gap', layout.INSIDE_GAP_PT],
+  ['--list-gap', layout.LIST_GAP_PT],
+  ['--child-gap', layout.CHILD_GAP_PT],
+  ['--item-gap', layout.ITEM_GAP_PT],
+  ['--head-gap', layout.HEAD_GAP_PT],
+  ['--control-gap', layout.CONTROL_GAP_PT],
+  ['--section-gap', layout.SECTION_GAP_PT],
+  ['--edge', layout.EDGE_PT],
+  ['--mark', layout.MARK_PT],
+  ['--row-pad', layout.ROW_PAD_PT],
+  ['--open-row-pad', layout.OPEN_ROW_PAD_PT],
+  ['--banner-pad-y', layout.BANNER_PAD_Y_PT],
+  ['--banner-gap', layout.BANNER_GAP_PT],
+]
+
 export function applyPageVariables() {
-  document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
-  document.documentElement.style.setProperty('--status-row-pad', `${STATUS_ROW_PAD_PT}px`)
-  document.documentElement.style.setProperty('--section-gap', `${SECTION_GAP_PT}px`)
-  document.documentElement.style.setProperty('--banner-pad-y', `${BANNER_PAD_Y_PT}px`)
-  document.documentElement.style.setProperty('--banner-gap', `${BANNER_GAP_PT}px`)
+  for (const [name, pt] of SPACING_VARIABLES) document.documentElement.style.setProperty(name, `${pt}px`)
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--fade', `${FADE_MS}ms ${FADE_EASING}`)
   document.documentElement.style.setProperty('--settle', `${HEIGHT_SETTLE_MS}ms ease-out`)

@@ -57,7 +57,7 @@ export function paneStatusPath(
    * The line from under a milestone's mark to the next milestone's mark. The terminal draws it in text, `┆` into the
    * milestone that reads next. Desktop draws a 1 pt line, solid throughout, since stacked glyphs break into bars there.
    */
-  const lineEl = (line: NonNullable<PathLine>, isSelected?: boolean, top = 1) =>
+  const lineEl = (line: NonNullable<PathLine>, isSelected?: boolean, top = 1, edge = statusFrameEdge) =>
     look === 'terminal' ? (
       <Box key="path-line" position="absolute" top={top} bottom={0} left={statusMarkAt} width={1}>
         <Text {...glyphLook(isSelected)}>{pathTexts[line]}</Text>
@@ -66,7 +66,7 @@ export function paneStatusPath(
       <Box key="path-line" position="absolute" top={0} bottom={0} left={0} flexDirection="row">
         <Box width={FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
         <Box flexDirection="column" flexShrink={0}>
-          <Box height={statusFrameEdge + 0.9} />
+          <Box height={edge + 0.9} />
           <Box flexGrow={1} width={DESKTOP_HAIR_CELLS} backgroundColor={pal.line} marginBottom={-statusFrameEdge} />
         </Box>
       </Box>
@@ -75,17 +75,18 @@ export function paneStatusPath(
   const clip = look === 'terminal' ? { overflow: 'hidden' as const } : {}
   /**
    * A milestone's lines and the space under it, with the path's line beside them when the path goes on. Desktop draws
-   * the line once across the group. The terminal draws it beside each part that has no joint of its own, so a selected
-   * part draws it on its highlight: see `lineBeside`.
+   * the line once across the group, from `edge`, the milestone frame's padding and border above its name, past the
+   * mark. The terminal draws it beside each part that has no joint of its own, so a selected part draws it on its
+   * highlight: see `lineBeside`.
    */
-  const pathGroup = (key: string, line: PathLine, parts: Drawn[]): Drawn[] =>
+  const pathGroup = (key: string, line: PathLine, parts: Drawn[], edge = statusFrameEdge): Drawn[] =>
     line === null || look === 'terminal'
       ? parts
       : [
           stackedIn(
             <Box key={key} flexDirection="column">
               {parts.map(p => p.el)}
-              {lineEl(line)}
+              {lineEl(line, false, 1, edge)}
             </Box>,
             parts,
           ),
@@ -111,7 +112,7 @@ export function paneStatusPath(
    * A milestone with the nesting connector running down from under its mark to the end of its row, where its work's
    * joints take it on and no path's line runs.
    */
-  const connectorDown = (key: string, milestone: Drawn): Drawn => ({
+  const connectorDown = (key: string, milestone: Drawn, edge = statusFrameEdge): Drawn => ({
     ...milestone,
     el: (
       <Box key={key} flexDirection="column" {...clip}>
@@ -122,7 +123,7 @@ export function paneStatusPath(
           <Box key="down" position="absolute" top={0} bottom={0} left={0} flexDirection="row">
             <Box width={FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
             <Box flexDirection="column" flexShrink={0}>
-              <Box height={statusFrameEdge + 0.9} />
+              <Box height={edge + 0.9} />
               {desktopColumn('below', true, null)}
             </Box>
           </Box>
@@ -145,7 +146,7 @@ export function paneStatusPath(
    * On desktop the tree line's color is translucent, so each point is drawn once: the column's stretches stack, and an arm
    * beside the path's own hairline starts a hairline to its right.
    */
-  const jointEl = ({ arm, beside }: WorkJoint, isSelected?: boolean) => {
+  const jointEl = ({ arm, beside }: WorkJoint, edge: number, isSelected?: boolean) => {
     if (look === 'terminal') {
       const glyph = beside === null ? ' ' : glyphs[beside]
       const first = arm === 'tee' ? '├─' : arm === 'elbow' ? '└─' : glyph
@@ -175,15 +176,15 @@ export function paneStatusPath(
       <Box key="joint" position="absolute" top={0} bottom={0} left={0} flexDirection="row">
         <Box width={FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
         <Box flexDirection="column" flexShrink={0}>
-          {desktopColumn('above', isConnectorAbove, statusFrameEdge + 0.5)}
+          {desktopColumn('above', isConnectorAbove, edge + 0.5)}
           {armSlot}
           {desktopColumn('below', beside === 'connector', null)}
         </Box>
       </Box>
     )
   }
-  /** A work row with its joint in the milestones' mark column. */
-  const jointed = (key: string, row: Drawn, joint: WorkJoint): Drawn =>
+  /** A work row with its joint in the milestones' mark column. `edge` is its frame's padding and border above its text. */
+  const jointed = (key: string, row: Drawn, joint: WorkJoint, edge = statusFrameEdge): Drawn =>
     joint.arm === null && joint.beside === null
       ? row
       : {
@@ -191,7 +192,7 @@ export function paneStatusPath(
           el: (
             <Box key={key} flexDirection="column" {...clip}>
               {row.el}
-              {jointEl(joint, row.isSelected)}
+              {jointEl(joint, edge, row.isSelected)}
             </Box>
           ),
         }

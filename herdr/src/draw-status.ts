@@ -6,6 +6,7 @@ import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { isParentCollapsed, milestoneRows, unfoldedRows } from '../../hooks/status-folds'
+import { statusGaps } from '../../hooks/status-gaps'
 import { LATER_TEXT, isSpacedAbove, workJoints } from '../../hooks/status-path'
 import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { cellWidth } from '../../hooks/text'
@@ -135,6 +136,17 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
       buttons: [],
     },
   ]
+}
+
+/** A Status row's first block with the space above it. A part's blocks never take one: `statusGaps` sets none there. */
+const withGap = (b: Block, gap: number | null | undefined): Block =>
+  gap != null && (b.kind === 'status' || b.kind === 'note' || b.kind === 'fold') ? { ...b, gapAbove: gap } : b
+
+/** Each row's blocks, the first carrying the space `statusGaps` sets above the row. */
+function listBlocks(rows: StatusRow[], isUnfolded: (id: string) => boolean, isCollapsed: IsCollapsed): Block[][] {
+  const gaps = statusGaps(rows)
+
+  return rows.map((r, n) => rowBlocks(r, isUnfolded, isCollapsed).map((b, k) => (k === 0 ? withGap(b, gaps[n]) : b)))
 }
 
 /**
@@ -304,7 +316,9 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
         : []),
       ...(m.startsLater ? [{ kind: 'rule', id: 'goal later', text: LATER_TEXT } as const] : []),
       milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded, isCollapsed),
-      ...rows.flatMap((r, k) => rowBlocks(r, isUnfolded, isCollapsed).map(b => besidePath(b, m.line, joints[k]))),
+      ...listBlocks(rows, isUnfolded, isCollapsed)
+        .map((bs, k) => bs.map(b => besidePath(b, m.line, joints[k])))
+        .flat(),
     ]
   })
 
@@ -334,7 +348,7 @@ export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
     return [emptyBlock('overview', empty, parts)]
   }
   const top = goalBlocks(page, ui)
-  const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).flatMap(r => rowBlocks(r, isUnfolded, isCollapsed))
+  const rows = listBlocks(unfoldedRows(page.rows, isUnfolded, isCollapsed), isUnfolded, isCollapsed).flat()
 
   const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== 'part'
 

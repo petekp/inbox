@@ -28,6 +28,8 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-status-goal-field.tsx` | Mod only. The goal's text field and its Cancel, whose submit button reads Set for a new goal and Save for an edit. |
 | `hooks/pane-status-parent.tsx` | Mod only. A Status parent's name line as its fold in the terminal and desktop looks: the chevron as a dim Button in the terminal, and the line as a Client on desktop. |
 | `hooks/pane-text.tsx` | Mod only. The pane's formatted text: inline Markdown, and lines already wrapped into spans. |
+| `hooks/pane-status-part.tsx` | Mod only. A Status part's line in the terminal and desktop looks, such as Other work: the space above it, its name or the head's title, its rule, and the head's description. |
+| `hooks/pane-status-milestone-space.tsx` | Mod only. The space between the goal's milestones in the terminal and desktop looks, and the Later label above the milestones that wait. |
 | `hooks/pane-status-path.tsx` | Mod only. The goal's path in the terminal and desktop looks: the line in the milestones' mark column, and a done milestone folded to its name. |
 | `hooks/pane-help.tsx` | Mod only. The Help page: the key list and the mark legend. |
 | `hooks/pane-sizes.ts` | Mod only. The terminal and desktop looks' sizes in cells, lines and points: row columns, padding, tree lines, tab layouts and the inline tab column. `desktopTabSizes` fits the desktop tab bar to the pane's width. |

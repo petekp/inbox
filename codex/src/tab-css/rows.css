@@ -2,14 +2,19 @@
   --tree-line: color-mix(in srgb, var(--muted) 55%, transparent);
   display: grid;
   grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
-  padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);
+  padding: var(--row-pad) var(--edge) var(--row-pad) var(--mark-x);
+}
+/* A row pads half its gap: `list` between closed one-line rows, `item` around an open row or one that shows a second line. */
+.row.selected,
+.row.collapsed:has(.holds-up) {
+  --row-pad: var(--open-row-pad);
 }
 .row.selected {
   background-color: var(--selected);
 }
 .mark {
   align-self: start;
-  padding-right: 8px;
+  padding-right: var(--control-gap);
   text-align: center;
   color: var(--muted);
 }
@@ -41,7 +46,7 @@
 }
 .side {
   align-self: start;
-  margin-left: 12px;
+  margin-left: var(--item-gap);
   color: var(--age);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -65,7 +70,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: bottom;
-  margin-right: 4px;
+  margin-right: var(--unit);
 }
 .row.collapsed:hover .side {
   color: var(--muted);
@@ -79,8 +84,8 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 0 2px;
+  gap: var(--control-gap);
+  padding: var(--control-gap) 0 0;
 }
 .row > .panel {
   grid-column: 2 / -1;
@@ -202,7 +207,7 @@
   margin: 0;
 }
 .body p + p {
-  margin-top: 4px;
+  margin-top: var(--list-gap);
 }
 .body .option-description {
   color: var(--muted);
@@ -225,7 +230,7 @@
  * of the tree draws the rest from the top of its own block to its tick, `--tree-x` left of the text column.
  */
 .body .tree {
-  --tree-x: calc((var(--text-x) - var(--mark-x) - 8px) / 2 + 8px);
+  --tree-x: calc((var(--text-x) - var(--mark-x) - var(--control-gap)) / 2 + var(--control-gap));
   position: relative;
 }
 .body .tree > p {
@@ -241,7 +246,7 @@
   border-left: 1.5px solid var(--tree-line);
 }
 .body .tree > p:first-child::before {
-  top: -8px;
+  top: calc(-1 * var(--control-gap));
 }
 .body .tree > p.branch::after {
   content: '';
@@ -268,13 +273,13 @@
 .mark.has-tree::after {
   content: '';
   position: absolute;
-  left: calc((var(--text-x) - var(--mark-x) - 8px) / 2 - 0.75px);
+  left: calc((var(--text-x) - var(--mark-x) - var(--control-gap)) / 2 - 0.75px);
   top: 1.7em;
   bottom: 0;
   border-left: 1.5px solid var(--tree-line);
 }
 code {
-  padding: 1px 4px;
+  padding: 1px var(--unit);
   border-radius: 4px;
   background: var(--soft);
   font-family: var(--mono);
@@ -283,24 +288,24 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--control-gap);
 }
 .follow-ups {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--control-gap);
   max-width: 100%;
 }
 .key {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  min-height: 26px;
-  padding: 3px 11px;
+  gap: var(--unit);
+  min-height: calc(7 * var(--unit));
+  padding: var(--unit) calc(3 * var(--unit));
   border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);
-  border-radius: 13px;
+  border-radius: calc(3.5 * var(--unit));
   background: transparent;
   font-weight: 400;
   text-align: center;
@@ -314,7 +319,7 @@ code {
 .key:focus-visible {
   outline-width: 2px;
   outline-offset: 2px;
-  border-radius: 13px;
+  border-radius: calc(3.5 * var(--unit));
 }
 .key.primary {
   border-color: transparent;
@@ -330,7 +335,7 @@ code {
   height: 14px;
 }
 .key.ghost {
-  padding: 0 4px;
+  padding: 0 var(--unit);
   border-color: transparent;
   background: none;
   color: var(--muted);
@@ -346,23 +351,23 @@ code {
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--control-gap);
 }
 form {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--control-gap);
 }
 input {
   flex: 1;
   min-width: 0;
-  min-height: 28px;
+  min-height: calc(7 * var(--unit));
   font: inherit;
   color: inherit;
   background: transparent;
   border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
   border-radius: 10px;
-  padding: 4px 10px;
+  padding: var(--unit) calc(3 * var(--unit));
 }
 input::placeholder {
   color: var(--muted);

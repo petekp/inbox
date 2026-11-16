@@ -1,4 +1,4 @@
-import { PathBuilder, div } from 'gpui-kit'
+import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS } from '../../hooks/help'
@@ -15,21 +15,23 @@ import {
   EDGE,
   HELP_COLUMN,
   HELP_INDENT,
-  GROUP_GAP,
+  END_SPACE,
   INSET,
-  LINE_GAP,
+  INSIDE_GAP,
   LINE_HEIGHT,
+  LIST_GAP,
   MARK_W,
   NEST,
   SEP,
-  SPACE,
+  SMALL_GAP,
   TEXT_X,
   colorOf,
 } from './paint-theme'
+import { checkboxEl } from './paint-checkbox'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
-import { PATH_X, lineColor, panelId, restId, sizeEl, titleEl } from './paint-space'
+import { PATH_X, lineColor, panelId, restId, rowPadEl, sizeEl, titleEl } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -104,28 +106,6 @@ const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false)
     .pl(indent)
     .children(buttons.map(b => buttonEl(b, p, isInert)))
 
-const CHECKBOX_PX = 11
-const CHECK_PATH = PathBuilder.stroke(1.5).move_to('27%', '53%').line_to('43%', '69%').line_to('74%', '31%').build()
-
-/** The Tasks mark, a checked box drawn as a shape, since the font's ☑ is small beside the other marks. */
-const checkboxEl = (color: Theme[keyof Theme]): Element =>
-  div()
-    .relative()
-    .flex_none()
-    .w(CHECKBOX_PX)
-    .h(CHECKBOX_PX)
-    .border_1()
-    .border_color(color)
-    .rounded(3)
-    .child(
-      window
-        .paint_path(CHECK_PATH, color)
-        .absolute()
-        .top(0)
-        .left(0)
-        .size(`${CHECKBOX_PX - 2}px`),
-    )
-
 /** A mark, at the start of the column that hangs before the text, so a tab's first marks sit on the panel's edge. */
 const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null = null): Element =>
   m?.text === NEEDS_YOU_MARKS.task.mark
@@ -141,7 +121,7 @@ const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null = null
         .child(m?.text ?? '')
 
 const lineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W) =>
-  div().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text)
+  div().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text)
 
 /** The trunk of a row's tree under the middle of the row's mark, from `top` to the end of its box or down to `height`. */
 const trunkEl = (top: number, height: number | null, t: Theme): Element => {
@@ -158,12 +138,12 @@ const trunkEl = (top: number, height: number | null, t: Theme): Element => {
 
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (l: RowBlock['body'][number], t: Theme): Element => {
-  const armAt = LINE_GAP + LINE_HEIGHT / 2
+  const armAt = INSIDE_GAP + LINE_HEIGHT / 2
   const arm = div()
     .absolute()
     .left(PATH_X - EDGE + 1)
     .top(armAt)
-    .w(NEST - (PATH_X - EDGE) - 1 - LINE_GAP)
+    .w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP)
     .h(1)
     .border_t_1()
     .border_color(lineColor(t))
@@ -187,7 +167,7 @@ function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
         div()
           .min_h(BUTTON_H)
           .px(INSET)
-          .py(SPACE.xs)
+          .py(SMALL_GAP)
           .rounded(BOX_RADIUS)
           .border_1()
           .border_color(t.input)
@@ -250,6 +230,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
         .hover(s => s.bg(t.hover))
         .on_click((e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))),
     )
+    .child(rowPadEl(r, 'top', p))
     .child(titleEl(r, p, line))
     .child(
       sizeEl(
@@ -266,6 +247,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .children(panelEl(r, m, p, isLeaving)),
       ),
     )
+    .child(rowPadEl(r, 'bottom', p))
 }
 
 /**
@@ -311,7 +293,7 @@ function keyEl(s: StatusLine, does: string, t: Theme): Element {
     .items_start()
     .pl(EDGE + HELP_INDENT)
     .pr(EDGE)
-    .pb(LINE_GAP)
+    .pb(LIST_GAP)
     .child(
       div()
         .flex_none()
@@ -380,7 +362,7 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
   const status = h_flex()
     .flex_wrap()
     .items_start()
-    .pt(LINE_GAP)
+    .pt(INSIDE_GAP)
     .when(p.isNarrow, e => e.child(div().flex_none().text_color(t.muted).child(`${b.number}${SEP}`)))
     .child(word)
     .children(reasons)
@@ -447,7 +429,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
           .when(b.mark !== null, e => e.child(markEl(b.mark, t)))
           .child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted)),
       )
-      .child(ruleLine(t).min_w(GROUP_GAP))
+      .child(ruleLine(t).min_w(END_SPACE))
       .child(buttons)
 
   return h_flex()
@@ -482,8 +464,8 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolea
     .items_center()
     .justify_center()
     .when(p.listRoom !== null, e => e.min_h(p.listRoom ?? 0))
-    .p(GROUP_GAP)
-    .gap(LINE_GAP)
+    .p(END_SPACE)
+    .gap(INSIDE_GAP)
     .child(centred(empty.title).font_semibold())
     .when(empty.hint !== null, e => e.child(centred(empty.hint ?? '', t.muted)))
     .when(under?.text != null, e => e.child(centred(under?.text ?? '').pt(CONTROL_GAP)))

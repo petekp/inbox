@@ -1,19 +1,55 @@
-/** The padding above and below a row's text, in points. The Codex tab's CSS pixels are points on macOS. */
-export const ROW_PAD_PT = 8
+/**
+ * The spacing scale every look draws from, in points. The Codex tab's CSS pixels are points on macOS. The desktop pane
+ * converts a step to its 19-point lines, and the terminal and omp to whole rows, as `docs/looks/differences-spacing.md`
+ * says. Each step is a whole number of `SPACE_UNIT`, and the gaps rise in this order, so space shows what belongs
+ * together: `INSIDE_GAP_PT`, `LIST_GAP_PT`, `CHILD_GAP_PT`, `ITEM_GAP_PT`, `SECTION_GAP_PT`.
+ */
+export const SPACE_UNIT = 4
 
-/** The padding above and below a row on the Status page, in points, so its rows sit half of the desktop pane's 19-point line apart. */
-export const STATUS_ROW_PAD_PT = 19 / 4
+/** The line height of the Herdr panel's and the Codex tab's 13-point text. */
+export const LINE_PT = 5 * SPACE_UNIT
+
+/** Between the lines of one item, such as a title and its detail. */
+export const INSIDE_GAP_PT = 0
+
+/** Between two one-line items of a list. */
+export const LIST_GAP_PT = SPACE_UNIT
+
+/** Between two items when either has more than one line. */
+export const ITEM_GAP_PT = 3 * SPACE_UNIT
 
 /**
- * The space where the terminal and omp leave a blank line on the Status page, in points: above Other work when rows
- * come before it, and between the goal's text and its milestones. It is half the desktop pane's 19-point line, past a
- * row's padding. Between two milestones, where they also leave a blank line, desktop and Codex leave `STATUS_ROW_PAD_PT`,
- * so a milestone's work sits closer to its own name than to the next milestone while the step still shows.
+ * Between two items nested under one parent, when either has more than one line. Less than `ITEM_GAP_PT`, so a
+ * parent's children read as one group under it.
  */
-export const SECTION_GAP_PT = 19 / 2
+export const CHILD_GAP_PT = 2 * SPACE_UNIT
 
-/** The padding above and below a banner's text, in points. */
-export const BANNER_PAD_Y_PT = 8
+/** A heading to its first item. Less than `ITEM_GAP_PT`, so the heading reads as part of what it heads. */
+export const HEAD_GAP_PT = 2 * SPACE_UNIT
 
-/** The space between two banners, in points. */
-export const BANNER_GAP_PT = 8
+/** Text to the buttons under it, and one button to the next. */
+export const CONTROL_GAP_PT = 2 * SPACE_UNIT
+
+/** Between two groups or sections. A rule between them sits halfway. */
+export const SECTION_GAP_PT = 6 * SPACE_UNIT
+
+/** The space between the panel's edges and its content. */
+export const EDGE_PT = 4 * SPACE_UNIT
+
+/** The width of the column marks hang in. Text after a mark starts at `EDGE_PT + MARK_PT`. */
+export const MARK_PT = 6 * SPACE_UNIT
+
+/**
+ * The padding above and below a closed row's text. A row's padding counts toward the gap beside it, so two closed
+ * one-line rows sit `LIST_GAP_PT` apart.
+ */
+export const ROW_PAD_PT = LIST_GAP_PT / 2
+
+/** The padding above and below an open row, whose box shows: half of `ITEM_GAP_PT` on each side. */
+export const OPEN_ROW_PAD_PT = ITEM_GAP_PT / 2
+
+/** The padding above and below a banner's text. */
+export const BANNER_PAD_Y_PT = CONTROL_GAP_PT
+
+/** The space between two banners. */
+export const BANNER_GAP_PT = CONTROL_GAP_PT
