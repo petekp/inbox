@@ -11,7 +11,8 @@ export const clickFold = (e: MouseEvent, isOpen: boolean, toggle: () => void) =>
 
 /**
  * Folds every fold of the shown tab, or opens them all, as `isOpening` says, or with null by what is open now. Each fold
- * moves as it does when pressed alone, and each collapse saves as a press on that row does.
+ * moves as it does when pressed alone. The collapses draw at once and save one after another, so the server applies each
+ * to the state the last one left.
  */
 export function foldAllHere(isOpening: boolean | null) {
   const v = tabState.view
@@ -25,8 +26,9 @@ export function foldAllHere(isOpening: boolean | null) {
   }
   for (const id of new Set([...statusUnfolded, ...change.statusUnfolded]))
     if (statusUnfolded.has(id) !== change.statusUnfolded.includes(id)) toggleStatusFold(id)
+  let saved: Promise<unknown> = Promise.resolve()
   for (const { id, isCollapsed } of change.collapses) {
     if (isCollapsed && tabState.typing === id) tabState.typing = null
-    pressCollapse(id, isCollapsed)
+    saved = pressCollapse(id, isCollapsed, saved)
   }
 }

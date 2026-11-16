@@ -877,8 +877,8 @@ async function foldAll($: EngineInterface, isOpen: boolean | null) {
 /** A press on a Status parent's name or its Fold key. */
 async function toggleParent($: EngineInterface, id: string, isAll?: unknown) {
   const { view } = await drawnState($)
-  const isOpen = view.collapsed.includes(id)
-  await (isAll ? foldAll($, isOpen) : saveCollapse($, id, !isOpen))
+  const isOpening = view.collapsed.includes(id)
+  await (isAll ? foldAll($, isOpening) : saveCollapse($, id, !isOpening))
 }
 
 async function openLeftRows($: EngineInterface) {

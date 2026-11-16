@@ -188,21 +188,29 @@ function toggleCollapse(t: Tab, id: string, index: number) {
   pressCollapse(id, isCollapsed)
 }
 
-/** Saves that the row `id` is collapsed or not, and draws it so at once, ahead of the server's answer. */
-export function pressCollapse(id: string, isCollapsed: boolean) {
+/**
+ * Saves that the row `id` is collapsed or not, and draws it so at once, ahead of the server's answer. The save waits for
+ * `after`, and the returned promise settles when its answer is applied.
+ */
+export function pressCollapse(id: string, isCollapsed: boolean, after?: Promise<unknown>): Promise<unknown> {
   const v = tabState.view
-  if (!v) return
+  if (!v) return after ?? Promise.resolve()
   const seq = ++tabState.requested
   tabState.shown = seq
   tabState.view = { ...v, collapsed: isCollapsed ? [...v.collapsed, id] : v.collapsed.filter(x => x !== id) }
   tabState.draw()
   const generation = tabState.viewGeneration
-  void callTool<PressReply>('inbox_press', {
+  const request = {
     press: { action: 'collapse', id, isCollapsed },
     thread: v.thread,
     demo: tabState.isDemo,
     ...holds(),
-  })
+  }
+  return (
+    after
+      ? after.then(() => callTool<PressReply>('inbox_press', request))
+      : callTool<PressReply>('inbox_press', request)
+  )
     .then(r => {
       if (!tabState.isDisposed && generation === tabState.viewGeneration && r.view) applyView(r.view, seq)
     })
