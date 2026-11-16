@@ -281,8 +281,13 @@
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
 }
+.status-page .milestone-name > * {
+  font-variation-settings: 'wght' 400;
+  transition: font-variation-settings var(--fade);
+}
 .status-page .milestone-name .changed {
   font-weight: 600;
+  font-variation-settings: 'wght' 600;
 }
 /* A done milestone folded to its name: the name where other milestones' names start, its chevron after it. */
 .status-page .milestone-fold {
@@ -375,6 +380,7 @@
 .status-page .parent-chevron {
   white-space: nowrap;
   font-weight: 400;
+  font-variation-settings: 'wght' 400;
 }
 .status-page .parent-chevron .icon {
   width: 12px;
