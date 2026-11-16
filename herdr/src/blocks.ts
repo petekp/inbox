@@ -135,6 +135,8 @@ export type StatusLine = {
   /** A child or a plain line, or a milestone that waits or was dropped, whose name draws quiet. */
   isMuted: boolean
   stall: { text: string; tone: StatusStall['tone'] } | null
+  /** What a Help key does, drawn beside its name in a column of its own. Such a line has no mark and nothing under it. */
+  does?: string
   /** A milestone's "now" or "next", muted at the right of its name's line where the name and it fit on one line. */
   word?: string
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */

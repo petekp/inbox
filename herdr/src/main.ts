@@ -221,6 +221,14 @@ export default class Inbox extends View {
   change(c: ViewChange): void {
     if ('toggleHelp' in c) this.isHelpShown = !this.isHelpShown
     else this.ui = withChange(this.ui, c)
+    if ('showAsk' in c) this.isHelpShown = false
+    this.closeStaleField()
+  }
+
+  /** Shows `tab` and closes Help, which draws the same page over any tab. */
+  showTab(tab: ShownTab): void {
+    this.ui = withTab(this.ui, tab)
+    this.isHelpShown = false
     this.closeStaleField()
   }
 
@@ -354,7 +362,7 @@ export default class Inbox extends View {
     const move = keyMove(key, tabs, blocks, this.ui.typing, undo)
     if (move === null) return
     if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
-    else if (move.is === 'tab') this.ui = withTab(this.ui, move.tab)
+    else if (move.is === 'tab') this.showTab(move.tab)
     else if (move.is === 'select') this.ui = withSelected(this.ui, move.id)
     else if (move.is === 'collapse') this.collapse(move.id, move.isCollapsed, cx)
     else if (move.is === 'press') return this.press(move.button, cx)
@@ -405,8 +413,7 @@ export default class Inbox extends View {
         cx.notify()
       },
       pick: (tab: ShownTab, cx) => {
-        this.ui = withTab(this.ui, tab)
-        this.closeStaleField()
+        this.showTab(tab)
         cx.notify()
       },
       motion: new Map(),
@@ -436,8 +443,7 @@ export default class Inbox extends View {
       this.look.drew(null, now)
       return root.child(messageEl(screen.message, t))
     }
-    const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
-    const shown = this.isHelpShown ? helpBlocks(this.ui.tab, hasStatusButtons) : screen.blocks
+    const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
     const moved = moveRows(held.blocks, this.tracks, now, isFirst)

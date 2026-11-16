@@ -2,7 +2,7 @@
 
 // src/hook-main.ts
 import { dirname as dirname4, join as join5 } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/detached-update.ts
 import { spawn } from "node:child_process";
@@ -20,7 +20,9 @@ function detachedUpdate(dir, env, script) {
 
 // src/host.ts
 import { appendFile, mkdir as mkdir2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname as dirname2, join as join2 } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // src/state.ts
 import { execFileSync } from "node:child_process";
@@ -101,9 +103,9 @@ function words(text2) {
   const matches = text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
   return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
-var VERSION = /^v?\d+(\.\d+)+$/;
+var VERSION2 = /^v?\d+(\.\d+)+$/;
 function namesOtherVersion(name, other) {
-  const versions = (text2) => [...words(text2)].filter((w) => VERSION.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
+  const versions = (text2) => [...words(text2)].filter((w) => VERSION2.test(w)).map((w) => w.replace(/^v/, "").replace(/(\.0)+$/, ""));
   const mine = versions(name);
   const theirs = new Set(versions(other));
   return mine.length > 0 && theirs.size > 0 && !mine.some((v) => theirs.has(v));
@@ -1083,6 +1085,10 @@ function capitalized(text2) {
   return text2.charAt(0).toUpperCase() + text2.slice(1);
 }
 var ISSUE_LABEL = "File issue";
+
+// ../hooks/banners.ts
+var NEXT_BUILD_MARK = ".next-build";
+var MAYBE_STALE_TEXT = "May be out of date";
 
 // ../hooks/tabs.ts
 var TAB_NAMES = [
@@ -3578,9 +3584,6 @@ function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
-// ../hooks/banners.ts
-var MAYBE_STALE_TEXT = "May be out of date";
-
 // ../hooks/band.ts
 function isMaybeStale(view, isReadFailed = false) {
   return isReadFailed || view.status.error !== null || view.status.isRetrying;
@@ -3938,13 +3941,14 @@ var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
-  const { projectFolder, isFetchingPrs, ...rest } = source;
+  const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
     ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
     ...isFetchingPrs && { isFetchingPrs: true },
+    ...isNextBuild && { isNextBuild: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
@@ -4073,7 +4077,9 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           terminal: target.terminal,
           writtenAt: seq,
           projectFolder: s.root,
-          isFetchingPrs: isPrFetchRunning(s)
+          isFetchingPrs: isPrFetchRunning(s),
+          version: "0.4.0",
+          isNextBuild: existsSync(join2(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
         log
@@ -5024,7 +5030,7 @@ function exitCodeOf(err) {
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const dist = dirname4(fileURLToPath(import.meta.url));
+  const dist = dirname4(fileURLToPath2(import.meta.url));
   const dir = dataDir(process.env, dirname4(dist));
   const startUpdate = detachedUpdate(dir, process.env, join5(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {

@@ -1,6 +1,9 @@
-import { bannerOf, type BannerView, tabBarBanners, versionLabel } from './banners'
+import { bannerOf, type BannerView, tabBarBanners } from './banners'
 import { feedbackText } from './feedback'
 import { HELP_COPY } from './help'
+import { helpSvg } from './desktop-svg'
+import { HELP_TOGGLE } from './pane-keys'
+import type { PressAreaProps } from './press-client'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from './layout'
 import { HERDR_ASK_BUTTONS, herdrAskBanner } from './herdr-ask'
 import { pressHerdrAsk } from './mod-herdr'
@@ -8,8 +11,10 @@ import { TOOLS_REFUSED_TEXT } from './mod-records'
 import { mod } from './mod-state'
 import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import {
+  DESKTOP_CELL_PT,
   DESKTOP_LINE_PT,
   DESKTOP_TAB_PAD,
+  HELP_ICON_CELLS,
   desktopTabSizes,
   FRAMED_TAB_LAYOUTS,
   INLINE_TAB_GAPS,
@@ -92,6 +97,7 @@ export function paneFrame(
           width: tabSizes.widths[n]!,
         })),
         shown: shownTab,
+        isHelpShown,
         gap: tabSizes.gap,
         isEachFramed: tabSizes.isEachFramed,
         columns: tabColumns,
@@ -352,7 +358,6 @@ export function paneFrame(
   const faint = (text: string) =>
     look === 'desktop' ? <Text color={pal.age}>{text}</Text> : <Text dimColor>{text}</Text>
   const statusText = faint(status)
-  const versionText = mod.version ? faint(versionLabel(mod.version, mod.isNextBuild)) : null
   const rail = (
     <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
       {tabList.map(({ id, label }) => {
@@ -403,21 +408,44 @@ export function paneFrame(
       {statusLines}
     </Box>
   ) : null
+  /**
+   * Desktop draws Help's icon as an Svg under a Client, so a click anywhere on the circle opens Help. A Button takes
+   * a click only over its label and draws no icon. The terminal draws a plain question mark in a Button. While Help
+   * shows, both draw the close Button, with the same key in the terminal so its pane keeps its focus.
+   */
+  const helpControl =
+    !isHelpShown && hasClient && 'Svg' in elements ? (
+      <Box key="help-icon" width={HELP_ICON_CELLS} height={1} flexShrink={0}>
+        <elements.Svg
+          source={helpSvg()}
+          alt={HELP_COPY.name}
+          width={HELP_ICON_CELLS * DESKTOP_CELL_PT}
+          height={DESKTOP_LINE_PT}
+        />
+        <Box position="absolute" top={0} left={0}>
+          <elements.Client
+            key={HELP_TOGGLE}
+            module="./press-client.tsx"
+            width={HELP_ICON_CELLS}
+            height={1}
+            props={{ pressKey: HELP_TOGGLE, hover: 'rgba(128, 128, 128, 0.12)' } satisfies PressAreaProps}
+          />
+        </Box>
+      </Box>
+    ) : (
+      <Button
+        plain
+        dimColor={look !== 'desktop'}
+        key="help"
+        label={isHelpShown ? HELP_COPY.close : HELP_COPY.icon}
+        onPress={() => void updateHelpShown(shown => !shown)}
+      />
+    )
   const footer = (
     <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
       <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
-        {/* The same key in both states, so a desktop pane keeps its focus on the Button. */}
-        <Button
-          plain
-          dimColor={look !== 'desktop'}
-          key="help"
-          label={isHelpShown ? HELP_COPY.close : HELP_COPY.open}
-          onPress={() => void updateHelpShown(shown => !shown)}
-        />
-        <Box flexDirection="row" columnGap={2}>
-          {statusText}
-          {versionText}
-        </Box>
+        {helpControl}
+        {statusText}
       </Box>
     </Box>
   )

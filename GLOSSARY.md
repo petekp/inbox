@@ -207,8 +207,8 @@ _Avoid_: alert, error strip, status line
 
 **Help**:
 The page a look shows in place of the shown tab's body: the keys the look
-takes, then what each mark means. Desktop lists only the marks. The footer's
-Help button opens it, and so does `?` in Codex and omp. Switching tabs or
+takes, then what each mark means, then which inbox build runs. Desktop lists
+only the marks. The footer's ? icon opens it, and so does `?` in Codex and omp. Switching tabs or
 closing the inbox closes it.
 
 **Person's line**:
