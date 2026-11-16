@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { RUNNING_FRAME_MS, SETTLED_MS, runningMark } from '../hooks/timing'
-import { IDLE_MARK, RUNNING_FRAMES } from '../hooks/help'
+import { IDLE_MARK, ROW_BAR, RUNNING_FRAMES } from '../hooks/help'
+import { NEW_FADE_MS, NEW_HOLD_MS } from '../hooks/arrivals'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
@@ -51,6 +52,57 @@ test(
     expect((await pane.find({ key: 'closed-i1' }))?.text).toMatch(/✓\s*Node/)
   },
 )
+
+test('a row that arrives while the pane is open gets a bar in the terminal and on desktop, and no redraw after its fade brings it back', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  const turn = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  const bars = async (id: string) => [
+    (await pane.find({ key: `new-${id}` }))?.text ?? null,
+    ((await desktop.find({ key: `new-${id}` })) ?? null) !== null,
+  ]
+
+  await turn('add a greeting cli', 't1')
+  expect(await bars('i2')).toEqual([ROW_BAR, true])
+  await clock.advance(NEW_HOLD_MS + NEW_FADE_MS)
+  await pane.redraw()
+  await desktop.redraw()
+  expect(await bars('i2')).toEqual([null, false])
+
+  w.ledgerReply = 'NEW: decide | 3 | Print in color? | yes / no | no'
+  await turn('add color', 't2')
+  expect(await bars('i3')).toEqual([ROW_BAR, true])
+  expect(await bars('i2')).toEqual([null, false])
+})
+
+test('a row that arrives while the pane is closed gets no bar once the pane shows', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: false, isFocused: false }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  await clock.settle()
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  w.paneState = { isShown: true, isFocused: true }
+  await pane.redraw()
+
+  expect((await pane.find({ key: 'row-i2' })) ?? null).not.toBe(null)
+  expect((await pane.find({ key: 'new-i2' })) ?? null).toBe(null)
+})
 
 test('a working subject’s mark on the Status moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })

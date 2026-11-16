@@ -1,3 +1,4 @@
+import type { NewRows } from '../../hooks/arrivals'
 import type { Closed, FoldKind } from '../../types'
 import type { RowPress } from '../../hooks/presses'
 import type { ClosedDelivery, ResultMark, RowView, SettledState } from '../../hooks/rows'
@@ -16,6 +17,7 @@ import {
   rowMark,
   rowTitle,
   settledLabel,
+  settledBarTone,
   settledTone,
   shortAgo,
   optionBody,
@@ -61,6 +63,8 @@ export type LookUi = {
   optionsShown: string[]
   statusUnfolded: string[]
   typing: string | null
+  /** The rows that arrived while their tab showed, whose bar shows until it fades. */
+  newRows: NewRows
 }
 
 export const freshUi = (tab: ShownTab): LookUi => ({
@@ -71,6 +75,7 @@ export const freshUi = (tab: ShownTab): LookUi => ({
   optionsShown: [],
   statusUnfolded: [],
   typing: null,
+  newRows: new Map(),
 })
 
 /** What one draw of a session shows, from its published file. */
@@ -212,7 +217,11 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
     settled: isSettled
-      ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) }
+      ? {
+          label: settledLabel(state.label, state.delivery, state.reply),
+          tone: settledTone(state),
+          bar: settledBarTone(state),
+        }
       : null,
     isDim: isSettled,
     isSelectable: !isSettled,

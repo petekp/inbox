@@ -5,6 +5,7 @@ import { openOnArrival } from '../../hooks/action-plan'
 import type { Holds } from '../../hooks/timing'
 import { capitalized } from '../../hooks/press-labels'
 import { newRows, openRows } from './arrivals'
+import { addNewRows } from '../../hooks/arrivals'
 import type { TabView as View } from './core'
 import { POLL_MS, settledIds, settledSeen, undoShownIds } from './settle'
 import { tabState, selection, drafts, entering } from './tab-state'
@@ -28,6 +29,9 @@ export function applyView(next: View, seq: number) {
   const isOpening = LISTED_TABS.every(t => tabState.rowsSeen[t.id] === undefined)
   const rows = newRows(tabState.rowsSeen, next, next.isFetchingPrs)
   tabState.rowsSeen = rows.seen
+  const isVisible = document.visibilityState === 'visible'
+  if (isVisible && tabState.wasVisibleAtRead) tabState.newRows = addNewRows(tabState.newRows, rows.added)
+  tabState.wasVisibleAtRead = isVisible
   const added = [...rows.added.needsYou, ...rows.added.findings]
   for (const id of added) entering.add(id)
   for (const { id: t } of LISTED_TABS) {

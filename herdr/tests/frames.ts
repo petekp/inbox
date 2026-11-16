@@ -166,6 +166,8 @@ class Frames {
       isAtOnce: (key: string) => isFirst || resized.has(key),
       measure: (key: string, size: { width: number; height: number }) => void this.heights.measure(key, size),
       now,
+      newRows: new Map(),
+      tab: 'needsYou',
       timeLeft: new Map(),
       input: () => null,
       isNarrow: false,

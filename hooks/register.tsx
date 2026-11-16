@@ -109,7 +109,6 @@ import {
   type HerdrCalls,
 } from './mod-herdr'
 import { ago, cellWidth, turnReply } from './text'
-import { COMPARE_PAGE_FILE } from './press-messages'
 import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
 import { isPressConfirmed, type Effect } from './press-reducer'
 import { openTarget } from './open-targets'
@@ -117,7 +116,8 @@ import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
-import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
+import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf } from './banners'
+import { comparePagePath, nextBuildMarkPath } from './mod-plugin-files'
 import { bandCounts, isMaybeStale, noCountsText } from './band'
 import {
   drawnLists,
@@ -151,11 +151,12 @@ import {
   ARRIVAL_TABS,
   closedGroups,
   followTo,
+  isNewRowFading,
   isPrsTabEmpty,
   isTabEmpty,
-  listedRowIds,
   openRowIds,
   prRowIds,
+  showNewRows,
 } from './arrivals'
 import { parseInline } from './inline'
 import {
@@ -181,7 +182,8 @@ import {
   settledScrollKey,
   type Showing,
   type Shown,
-  newRows,
+  rowRecorder,
+  forgetRows,
   tabRowIds,
   tabWaits,
   UNDO_REDRAW_STEPS,
@@ -733,11 +735,6 @@ async function deliver($: EngineInterface, owner: Owner, text: string, deliveryI
   return outcome
 }
 
-/** The page template for a comparison, as the mod ships it. */
-function comparePagePath($: EngineInterface): string {
-  return `${$.plugin.root}/hooks/${COMPARE_PAGE_FILE}`
-}
-
 /** The mod's SessionHost for the conversation `owner`, with copies going to `surface`. */
 function sessionHost(
   $: EngineInterface,
@@ -783,7 +780,7 @@ function sessionHost(
       noteMissing: opts.onGhMissing,
     },
     settleWindowMs: opts.settleWindowMs,
-    comparePage: comparePagePath($),
+    comparePage: comparePagePath($.plugin.root),
     compareInBackground: isCompareInBackground('claude-code'),
     newId: () => crypto.randomUUID(),
   }
@@ -1569,6 +1566,7 @@ async function jumpTo($: EngineInterface, tab: Tab) {
  * that can add a row calls this.
  */
 async function followNewRows($: EngineInterface, isOpening = false) {
+  const record = rowRecorder()
   const [drawn, tab, page, unfolded, isShown] = await Promise.all([
     drawnState($),
     read($, TAB),
@@ -1577,13 +1575,9 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     isPaneShown($),
   ])
   const { prViews: prState, stop, isDemo, isUnread, view } = drawn
-  const prs = view.prs.drawn
-  if (isOpening) paneState.recordedRows = null
-  const added = newRows(isDemo, {
-    ...listedRowIds(view),
-    prs: prState.isFetching ? null : prRowIds(prs),
-  })
+  const added = record({ isDemo, view, isPrsFetching: prState.isFetching, isOpening }, isShown)
   if (!isShown) return
+  if (Object.values(added).flat().length > 0) void redraw($).catch(() => undefined)
   let opened: Tab[] = []
   await update($, SELECTION, s => {
     const arrived = arrivedSelection(view, added, s)
@@ -1591,13 +1585,12 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     return arrived.selection
   })
   if (paneState.isInlinePane && opened.includes(tab)) void scrollToOpenRow($, tab)
-  const settled = new Set(settledRowIds(allRows(view)))
   const isEmpty =
     tab === 'prs'
-      ? isPrsTabEmpty(prs.length, prState.isFetching)
+      ? isPrsTabEmpty(view.prs.drawn.length, prState.isFetching)
       : isTabEmpty({
           rows: tab === 'needsYou' ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows,
-          settled,
+          settled: new Set(settledRowIds(allRows(view))),
           closed: closedGroups(view, tab, kind => unfolded.includes(kind)),
           hasBlocker: tab === 'needsYou' && (!!stop || isUnread),
         })
@@ -1848,7 +1841,7 @@ async function runDemoPress(
       p,
       now,
       { settleWindowMs: SETTLED_MS, holds },
-      { comparePage: comparePagePath($), compareInBackground: isCompareInBackground('claude-code') },
+      { comparePage: comparePagePath($.plugin.root), compareInBackground: isCompareInBackground('claude-code') },
     )
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
@@ -2017,7 +2010,7 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
 }
 
 function readIsNextBuild($: EngineInterface): Promise<boolean> {
-  return $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
+  return $.fs.exists(nextBuildMarkPath($.plugin.root)).catch(() => false)
 }
 
 function registerInboxCommand($: EngineInterface) {
@@ -2184,7 +2177,7 @@ async function applyConversation(
   sessionState.resuming = null
   conversation.id = id
   conversation.root = sessionRoot
-  paneState.recordedRows = null
+  forgetRows()
   sessionState.isReadingAgain = false
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
@@ -2998,9 +2991,11 @@ export const register: Register = on => {
     const isStatusShown = savedPage === 'overview'
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
     const tabList = shownTabs()
+    if (!isHelpShown) paneState.newRows = showNewRows(paneState.newRows, shownTab, now)
     if (look === 'terminal')
       animateRunningMarks(
-        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
+        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)) ||
+          isNewRowFading(paneState.newRows, now),
         now,
         (ms, fn) => $.clock.every(ms, fn),
         () => void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined),
@@ -3232,6 +3227,7 @@ export const register: Register = on => {
         blankLine,
         Button,
         settledLayout,
+        shownTab,
         columnsFor,
         gutterMark,
         toned,

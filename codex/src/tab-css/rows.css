@@ -370,3 +370,27 @@ textarea {
   border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
   border-radius: 10px;
 }
+.row:has(> .new-bar),
+.row:has(> .settled-bar) {
+  position: relative;
+}
+.new-bar,
+.settled-bar {
+  position: absolute;
+  left: calc(var(--mark-x) - 9px);
+  top: calc(var(--row-pad) - 2px);
+  width: 3px;
+  height: calc(1lh + 4px);
+  border-radius: 2px;
+  background-color: var(--key);
+  pointer-events: none;
+}
+.settled-bar.done {
+  background-color: var(--done);
+}
+.settled-bar.muted {
+  background-color: var(--muted);
+}
+.settled-bar.error {
+  background-color: var(--error-mark);
+}

@@ -4,7 +4,8 @@ import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
-import { UNDO_KEY } from '../../hooks/help'
+import { newRowIn, steppedShare } from '../../hooks/arrivals'
+import { ROW_BAR, UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
@@ -152,7 +153,10 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : ''
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
-  const head = ` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}`
+  const newShare = line.isPrHead ? 0 : steppedShare(newRowIn(ui.newRows, line.id, ui.tab), now)
+  const bar = line.settled?.bar ?? null
+  const edge = bar ? s.settledBar(bar, ROW_BAR) : newShare > 0 ? s.newBar(newShare, ROW_BAR) : ' '
+  const head = `${edge}${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}`
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width
   const shownTitle = line.mark

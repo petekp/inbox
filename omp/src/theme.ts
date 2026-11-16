@@ -1,4 +1,12 @@
-import { DARK_BANNER_TINTS, DARK_TONES, LIGHT_BANNER_TINTS, LIGHT_TONES } from '../../hooks/tones'
+import {
+  DARK_BANNER_TINTS,
+  DARK_TONES,
+  fadedOver,
+  LIGHT_BANNER_TINTS,
+  LIGHT_TONES,
+  MUTED_TEXT,
+  THEME_BACKGROUND,
+} from '../../hooks/tones'
 import type { Style, Tone } from './panel'
 
 /** The slice of omp's theme the panel's style uses. */
@@ -40,5 +48,14 @@ export function styleOf(theme: OmpTheme): Style {
         : truecolor(tones[name], text),
     banner: (tone, part, text) =>
       part === 'line' ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
+    newBar: (share, text) =>
+      truecolor(fadedOver(tones.key, THEME_BACKGROUND[theme.isLight ? 'light' : 'dark'], share), text),
+    settledBar: (tone, text) =>
+      truecolor(
+        tone === 'muted'
+          ? MUTED_TEXT[theme.isLight ? 'light' : 'dark']
+          : tones[tone === 'error' ? 'errorMark' : 'done'],
+        text,
+      ),
   }
 }

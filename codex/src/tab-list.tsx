@@ -1,11 +1,12 @@
 import { RowActions } from './row-actions'
-import { settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
+import { settledBarTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
 import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
+import { newRowIn, showNewRows } from '../../hooks/arrivals'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
 import { stepRow } from '../../hooks/row-motion'
@@ -25,6 +26,7 @@ import type { BannerLine, TextLine } from './tab-line-steps'
 import { tabBanners } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
 import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
+import { NewBar } from './tab-new-bar'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
@@ -43,6 +45,8 @@ export function stepLists(v: View): {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
+  if (document.visibilityState === 'visible' && !tabState.isHelpShown)
+    tabState.newRows = showNewRows(tabState.newRows, t, now)
   const rows = isListedTab(t) ? lists.byTab[t] : []
   const openId = isRowTab(t) ? openRowId(rows, t, v) : undefined
   const changed = new Set<string>()
@@ -213,6 +217,7 @@ export function ListRow({
       onClick={isSelected ? undefined : onSelect}
     >
       {handle}
+      <NewBar row={newRowIn(tabState.newRows, row.id, drawnTab())} />
       <div class="content">
         <button type="button" class="line" aria-expanded={isSelected} onClick={isSelected ? onSelect : undefined}>
           <span class="text">
@@ -320,6 +325,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
+      <span class={`settled-bar ${settledBarTone(state)}`} aria-hidden="true" />
       <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">

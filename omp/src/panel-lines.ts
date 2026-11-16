@@ -3,6 +3,7 @@ import type { FoldKind } from '../../types'
 import type { PrAction } from '../../hooks/pr-press'
 import {
   closedLineAction,
+  settledBarTone,
   settledTone,
   closedShown,
   closedTotal,
@@ -70,7 +71,14 @@ export type Line = {
   file: string | null
   feedback: { text: string; tone: Tone | null; source: Feedback | null } | null
   /** Set once the row has closed and its label shows until it leaves. */
-  settled: { label: string; tone: 'done' | 'muted'; undo: PanelPress | null; at: number } | null
+  /** `bar` is the tone of the bar at the row's left edge, or null for a PR, which draws none. */
+  settled: {
+    label: string
+    tone: 'done' | 'muted'
+    bar: 'done' | 'muted' | 'error' | null
+    undo: PanelPress | null
+    at: number
+  } | null
   buttons: Button[]
   row: RowView | null
   /** The group a Closed line folds. Enter unfolds or folds it. */
@@ -89,6 +97,8 @@ export type Line = {
   isFolded: boolean
   /** A row the person collapsed: drawn as its one line, even while selected, until they expand it. */
   isCollapsed?: boolean
+  /** A PR's own line, which no look marks with a new row's bar: its threads and checks get the bar. */
+  isPrHead?: boolean
   /**
    * The PRs tab's own buttons, drawn on one line after the line's title, if any, with their press status after them,
    * or under them when it does not fit. Their keys work from any row of the tab.
@@ -215,6 +225,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
         ? {
             label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
+            bar: settledBarTone(state),
             undo: undo ? undo.press : null,
             at: state.at,
           }

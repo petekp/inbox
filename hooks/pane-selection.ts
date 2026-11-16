@@ -8,7 +8,7 @@ import { drawnLists, listWaits, type RowWait } from './action-plan'
 import { type InboxView } from './view'
 import { SETTLED_MS } from './timing'
 import { type ShownTab } from './tabs'
-import { recordRows } from './arrivals'
+import { addNewRows, listedRowIds, prRowIds, recordRows } from './arrivals'
 import { paneState } from './mod-state'
 
 /** The tab the pane shows, whether it shows the sample, and since when. */
@@ -119,12 +119,39 @@ export type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how'> & {
   mark: ResultMark
 }
 
-export function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record<Tab, string[]> {
-  const { seen, added } = recordRows(
-    paneState.recordedRows?.isDemo === isDemo ? paneState.recordedRows.ids : {},
-    current,
-  )
+const NO_ROWS: Record<Tab, string[]> = { needsYou: [], findings: [], prs: [] }
+
+/**
+ * A record of the rows in a view read from now on. It records each tab's rows, and returns by tab the rows the last
+ * record did not have. It records nothing when the record started over since `rowRecorder` was called, as when a
+ * conversation loaded while the view was read, since that view's row ids may name another conversation's rows.
+ */
+export function rowRecorder() {
+  const count = paneState.rowRecordCount
+
+  return (args: RowRecordArgs, isShown: boolean) =>
+    count === paneState.rowRecordCount ? newRows(args, isShown) : NO_ROWS
+}
+
+type RowRecordArgs = { isDemo: boolean; view: SessionView; isPrsFetching: boolean; isOpening: boolean }
+
+/**
+ * The PRs tab records nothing while `isPrsFetching`. Only rows that arrive while the pane `isShown` get a new row's bar.
+ * An opening, and a switch between the demo and the inbox, start the record over.
+ */
+function newRows({ isDemo, view, isPrsFetching, isOpening }: RowRecordArgs, isShown: boolean): Record<Tab, string[]> {
+  if (isOpening || (paneState.recordedRows !== null && paneState.recordedRows.isDemo !== isDemo)) forgetRows()
+  const current = { ...listedRowIds(view), prs: isPrsFetching ? null : prRowIds(view.prs.drawn) }
+  const { seen, added } = recordRows(paneState.recordedRows?.ids ?? {}, current)
   paneState.recordedRows = { isDemo, ids: seen }
+  if (isShown) paneState.newRows = addNewRows(paneState.newRows, added)
 
   return added
+}
+
+/** Starts the row record over, as the pane opens or loads a conversation, whose row ids can name other rows. */
+export function forgetRows() {
+  paneState.recordedRows = null
+  paneState.newRows = new Map()
+  paneState.rowRecordCount++
 }

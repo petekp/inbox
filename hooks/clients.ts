@@ -37,6 +37,8 @@ export type FeatureId =
   | 'compare-in-background'
   | 'compare-page'
   | 'running-marks'
+  | 'new-row-bar'
+  | 'settled-row-bar'
   | 'pending-answer-mark'
   | 'tab-symbols'
   | 'dim-pressed-button'
@@ -115,6 +117,8 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'new-row-bar': { kind: 'different', reason: 'The terminal steps the fade in 6 colors. Desktop fades an Svg.' },
+      'settled-row-bar': { kind: 'full' },
       'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {
@@ -235,6 +239,8 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'new-row-bar': { kind: 'full' },
+      'settled-row-bar': { kind: 'full' },
       'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': { kind: 'full' },
@@ -366,6 +372,8 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'new-row-bar': { kind: 'different', reason: 'Steps the fade in 6 colors.' },
+      'settled-row-bar': { kind: 'full' },
       'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {

@@ -86,3 +86,16 @@ export const LIGHT_BANNER_TINTS: Record<BannerTone, BannerTint> = {
   notice: LIGHT_BLUE_TINT,
   ask: LIGHT_BLUE_TINT,
 }
+
+/** The backgrounds a terminal theme is drawn for. A terminal does not report its own, so a fade moves toward these. */
+export const THEME_BACKGROUND = { dark: '#1e1e1e', light: '#ffffff' }
+/** Muted text over `THEME_BACKGROUND`, in the terminal's light and dark palettes and in omp's. */
+export const MUTED_TEXT = { dark: '#bdbdbd', light: '#595959' }
+
+/** `hex` at `share` of its strength over `under`, as one opaque color, for a fade a terminal draws in steps. */
+export function fadedOver(hex: string, under: string, share: number): string {
+  const channel = (c: string, i: number) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16)
+  const mixed = [0, 1, 2].map(i => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)))
+
+  return `#${mixed.map(c => c.toString(16).padStart(2, '0')).join('')}`
+}

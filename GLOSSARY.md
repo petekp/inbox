@@ -68,7 +68,11 @@ stays past that time while its message is on its way to the agent, and while
 a press is under way on a row of its tab. It also waits while the person is
 using the list, until `FOLD_QUIET_MS` after their last press, key, scroll or
 pointer move. A refused or unconfirmed message does not hold it: its Closed
-line shows what happened.
+line shows what happened. A bar at its left edge shows how it closed, from
+the press on. It is in the done tone once the row was handled (answered, done,
+or closed by the agent), at every step of its message's way. It is muted once
+the row was dismissed or lapsed, and in the error tone once a message failed to
+send (`settledBarTone`). A settled PR draws no bar.
 
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what

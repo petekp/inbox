@@ -1,3 +1,4 @@
+import type { NewRows } from '../../hooks/arrivals'
 import type { Draft, FoldKind, Stop } from '../../types'
 import type { PrPress } from '../../hooks/pr-press'
 import { noteText } from '../../hooks/press-reducer'
@@ -67,6 +68,10 @@ export type Style = {
   tone(name: Tone, s: string): string
   /** A banner's border, or its fill behind `s`. */
   banner(tone: BannerTone, part: 'line' | 'fill', s: string): string
+  /** A new row's bar at `share` of its strength, faded toward the background. */
+  newBar(share: number, s: string): string
+  /** A settled row's bar, in the colors the terminal draws it with. */
+  settledBar(tone: 'done' | 'muted' | 'error', s: string): string
 }
 
 export type PanelUi = {
@@ -109,6 +114,8 @@ export type PanelUi = {
   isHelpShown: boolean
   /** The person's latest run of keys, which keeps a row due to fold in place until they stop. */
   listInput: ListInput | null
+  /** The rows that arrived since the panel opened, whose bar shows until it fades. */
+  newRows: NewRows
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -131,6 +138,7 @@ export const INITIAL_UI: PanelUi = {
   shownSince: 0,
   isHelpShown: false,
   listInput: null,
+  newRows: new Map(),
 }
 
 export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince' | 'listInput'>): Holds {

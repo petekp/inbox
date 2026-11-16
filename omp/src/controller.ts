@@ -5,6 +5,7 @@ import type { PrPress } from '../../hooks/pr-press'
 import { isPressConfirmed } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { showsRunningMark } from '../../hooks/session-view'
+import { isNewRowFading, showNewRows } from '../../hooks/arrivals'
 import { READING_TEXT } from '../../hooks/banners'
 import { timedChangeAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
@@ -91,6 +92,18 @@ export function createPanel(deps: PanelDeps): Panel {
   let heldHeight: number | null = null
   const stops: (() => void)[] = []
 
+  const syncFrames = () => {
+    const hasFrames =
+      screen !== null &&
+      (isNewRowFading(ui.newRows, deps.now()) ||
+        showsRunningMark(screen.view, ui.tab, ui.isHelpShown, kind => ui.unfolded.includes(kind)))
+    if (hasFrames && frames === null) frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS)
+    if (!hasFrames && frames !== null) {
+      timers.stop(frames)
+      frames = null
+    }
+  }
+
   const syncAnimation = () => {
     const isMoving = screen !== null && isAnimating(screen, ui, deps.now())
     if (isMoving && animation === null) animation = timers.every(() => void refresh(), ANIMATION_MS)
@@ -98,13 +111,7 @@ export function createPanel(deps: PanelDeps): Panel {
       timers.stop(animation)
       animation = null
     }
-    const hasFrames =
-      screen !== null && showsRunningMark(screen.view, ui.tab, ui.isHelpShown, kind => ui.unfolded.includes(kind))
-    if (hasFrames && frames === null) frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS)
-    if (!hasFrames && frames !== null) {
-      timers.stop(frames)
-      frames = null
-    }
+    syncFrames()
     const now = deps.now()
     const at = screen === null ? null : timedChangeAt(screen.view.lastActions, now)
     if (timedChange !== null && timedChange.at !== at) {
@@ -177,6 +184,8 @@ export function createPanel(deps: PanelDeps): Panel {
       if (screen === null) return [` ${READING_TEXT}`]
       const now = deps.now()
       const maxHeight = deps.height()
+      if (!ui.isHelpShown) ui = { ...ui, newRows: showNewRows(ui.newRows, ui.tab, now) }
+      syncFrames()
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))
       heldHeight = Math.max(heldHeight, drawn.lines.length)
