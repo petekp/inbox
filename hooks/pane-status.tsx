@@ -7,13 +7,7 @@ import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
-import {
-  DESKTOP_HAIR_LINES,
-  DESKTOP_MARK_CELLS,
-  desktopPads,
-  DESKTOP_SECTION_SPACE,
-  STATUS_PAD_Y,
-} from './pane-sizes'
+import { DESKTOP_HAIR_LINES, DESKTOP_MARK_CELLS, desktopPads, DESKTOP_SECTION_SPACE, STATUS_PAD_Y } from './pane-sizes'
 import { emptyTab } from './empty-tab'
 import { paneStatusGoal } from './pane-status-goal'
 import { paneStatusParent } from './pane-status-parent'
@@ -370,7 +364,10 @@ export function paneStatus(
         depth: r.depth,
         mark,
         content,
-        tree: r.hasChildren && !isFolded ? statusTree(`status-${r.id}-tree`, 'down', r.depth, pad.padY, pad.padBelow) : null,
+        tree:
+          r.hasChildren && !isFolded
+            ? statusTree(`status-${r.id}-tree`, 'down', r.depth, pad.padY, pad.padBelow)
+            : null,
         isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
         ...pad,
       })
@@ -488,7 +485,9 @@ export function paneStatus(
     // A hairline between two desktop sections sits a margin under the one above, and the section below it starts a
     // margin under it, less the section's own padding, which `desktopSectionPad` counts.
     const desktopSectionGap =
-      DESKTOP_HAIR_LINES + desktopSpaceLines(DESKTOP_SECTION_SPACE) + desktopSpaceLines(DESKTOP_SECTION_SPACE - sectionPadCells)
+      DESKTOP_HAIR_LINES +
+      desktopSpaceLines(DESKTOP_SECTION_SPACE) +
+      desktopSpaceLines(DESKTOP_SECTION_SPACE - sectionPadCells)
     const sectionGap = look === 'desktop' ? desktopSectionGap : terminalSectionGap
     // The goal's section and the list after it draw no hairline between them: Other work's own rule sets that list
     // apart while the goal shows milestones, and nothing does while it shows none. With no goal, a heading's own rule
