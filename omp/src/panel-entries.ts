@@ -30,10 +30,10 @@ import { cellWidth, clipLabel } from '../../hooks/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../hooks/rows'
 import { bannerOf, isResumable, stopFix, stopText } from '../../hooks/banners'
 import { emptyTab, type EmptyTab } from '../../hooks/empty-tab'
-import { FINDING_GROUPS, HELP_COPY, helpKeys, MARK_LEGEND, tabLegend } from '../../hooks/help'
+import { FINDING_GROUPS, HELP_COPY, helpKeys, helpVersionText, MARK_LEGEND, tabLegend } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
-import { GOAL_KEYS_ID, statusKeyRows } from '../../hooks/status-keys'
+import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { SessionView } from '../../hooks/session-view'
 import { goalSection, setGoal } from './panel-goal'
 import { unfoldedRows } from '../../hooks/status-page-parts'
@@ -371,9 +371,9 @@ function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: 
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows]
 }
 
-/** Help in place of the tab's lines: the keys the panel takes, what each mark means, then each tab's symbol. */
-function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
-  const keys = helpKeys('omp', tab, statusKeyRows(screen.view.statusPage).length > 0)
+/** Help in place of the tab's lines: the keys the panel takes, what each mark means, each tab's symbol, then which inbox build this is. */
+function helpEntries(screen: PanelScreen): Entry[] {
+  const keys = helpKeys('omp')
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
 
   return [
@@ -385,11 +385,13 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.tabs },
     ...tabLegend().map((key): Entry => ({ kind: 'key', key, column: Math.max(column, 4) })),
+    { kind: 'note', text: '' },
+    { kind: 'note', text: helpVersionText(screen.version, screen.isNextBuild === true) },
   ]
 }
 
 export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
-  if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen, tab)
+  if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen)
   if (!isRowTab(tab)) return pageEntries(screen.view, ui.typing, id => ui.statusUnfolded.includes(id))
 
   const collapsed = new Set(screen.view.collapsed)

@@ -12,6 +12,7 @@ import {
   BUTTON_H,
   CONTROL_GAP,
   EDGE,
+  HELP_KEY_COLUMN,
   GROUP_GAP,
   HEAD_LINE,
   HEAD_TEXT,
@@ -298,8 +299,19 @@ const wordEl = (s: StatusLine, word: string, t: Theme): Element =>
     )
     .child(div().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word))
 
+/** A Help key in a column at the text's edge, and what it does beside it on the same line. */
+function keyEl(s: StatusLine, does: string, t: Theme): Element {
+  return h_flex()
+    .items_start()
+    .pl(TEXT_X)
+    .pr(EDGE)
+    .child(div().flex_none().w(HELP_KEY_COLUMN).font_semibold().child(s.name))
+    .child(div().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does))
+}
+
 function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const { t } = p
+  if (s.does !== undefined) return keyEl(s, s.does, t)
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)
     .when(s.isBold, e => e.font_semibold())
     .when(s.isMuted, e => e.text_color(t.muted))

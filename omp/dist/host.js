@@ -3259,22 +3259,28 @@ var MARK_LEGEND = [
     words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
-var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
+var HELP_COPY = {
+  name: "Help",
+  icon: "?",
+  close: "\u2715 Close help",
+  keys: "Keys",
+  marks: "Marks",
+  tabs: "Tabs",
+  version: "Inbox"
+};
+var helpVersionText = (version, isNextBuild) => `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`;
 function tabLegend() {
   return shownTabs().map((t) => ({ keys: t.symbol, does: t.label }));
 }
 var UNDO_KEY = "u";
 var COLLAPSE_KEY = "z";
 var PR_TAB_HELP_KEYS = [
-  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
-  { keys: "m", does: "Clear the merged and closed PRs" }
+  { keys: "g", does: "On PRs, rank the PRs again, once a ranked PR changed" },
+  { keys: "m", does: "On PRs, clear the merged and closed PRs" }
 ];
-function helpKeys(look, tab, hasStatusButtons) {
+function helpKeys(look) {
   const tabKeys = shownTabs().map((t) => t.hotkey).join(" ");
-  const hasRows = isRowTab(tab);
-  const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
-  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
   const collapseKey = { keys: COLLAPSE_KEY, does: "Collapse or expand the selected row" };
   switch (look) {
@@ -3283,46 +3289,42 @@ function helpKeys(look, tab, hasStatusButtons) {
     case "terminal":
       return [
         switchTabs,
-        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
-        ...hasRows ? [collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k \u2191 \u2193", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, or leave a reply field" }
       ];
     case "omp":
       return [
         { keys: `tab ${tabKeys}`, does: "Switch tabs" },
-        ...hasRows ? [
-          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
-          { keys: "\u2190 \u2192", does: "Pick a button" },
-          { keys: "\u21B5", does: "Press the picked button" },
-          { keys: "t", does: "Reply to the selected row" },
-          collapseKey,
-          undoKey,
-          ...prTabKeys
-        ] : [
-          ...selectsStatusRows ? [
-            { keys: "j k", does: "Select the next or previous row with a button" },
-            { keys: "\u2190 \u2192", does: "Pick a button" },
-            { keys: "\u21B5", does: "Press the picked button" }
-          ] : [],
-          { keys: "\u2191 \u2193", does: "Scroll the page" }
-        ],
+        { keys: "\u2191 \u2193 j k", does: "Move between rows, or scroll a page" },
+        { keys: "\u2190 \u2192", does: "Pick a button" },
+        { keys: "\u21B5", does: "Press the picked button" },
+        { keys: "t", does: "Reply to the selected row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, then the panel" }
       ];
     case "herdr":
       return [
         { keys: "\u2190 \u2192", does: "Switch tabs" },
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];
   }
@@ -5273,13 +5275,14 @@ var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
-  const { projectFolder, isFetchingPrs, ...rest } = source;
+  const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
     ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
     ...isFetchingPrs && { isFetchingPrs: true },
+    ...isNextBuild && { isNextBuild: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
@@ -8411,8 +8414,8 @@ function pageEntries(view, typing, isUnfolded) {
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
 }
-function helpEntries(screen, tab) {
-  const keys = helpKeys("omp", tab, statusKeyRows(screen.view.statusPage).length > 0);
+function helpEntries(screen) {
+  const keys = helpKeys("omp");
   const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
   return [
     { kind: "heading", text: HELP_COPY.keys },
@@ -8422,12 +8425,14 @@ function helpEntries(screen, tab) {
     ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.tabs },
-    ...tabLegend().map((key) => ({ kind: "key", key, column: Math.max(column, 4) }))
+    ...tabLegend().map((key) => ({ kind: "key", key, column: Math.max(column, 4) })),
+    { kind: "note", text: "" },
+    { kind: "note", text: helpVersionText(screen.version, screen.isNextBuild === true) }
   ];
 }
 function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
-    return helpEntries(screen, tab);
+    return helpEntries(screen);
   if (!isRowTab(tab))
     return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id));
   const collapsed = new Set(screen.view.collapsed);
@@ -8832,7 +8837,7 @@ function footer(d, isPageScrolling) {
     "tab switch",
     "? help"
   ];
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(screen.version, screen.isNextBuild === true)} `;
+  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
   if (fitsBesideHints)
@@ -10002,10 +10007,7 @@ var CLIENTS = {
         kind: "different",
         reason: "omp's panel takes keys only, so a row due to fold waits on keys."
       },
-      "version-label": {
-        kind: "different",
-        reason: "omp's panel footer ends with the inbox model's name, so the version follows it there."
-      },
+      "version-label": { kind: "full" },
       "status-tab": { kind: "full" },
       "turn-working": { kind: "full" },
       "host-task-list": { kind: "full" },
@@ -13327,7 +13329,9 @@ function sessionCalls(context) {
         terminal: target.terminal,
         writtenAt: now,
         projectFolder: memory.shownCwd?.(),
-        isFetchingPrs: prFetches.isFetching(id)
+        isFetchingPrs: prFetches.isFetching(id),
+        version,
+        isNextBuild: deps.isNextBuild
       }, s, context.logHerdr);
       const view = sessionView(s, now, deps.settleWindowMs);
       return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };

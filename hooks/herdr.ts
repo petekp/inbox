@@ -397,17 +397,23 @@ export type EnvelopeSource = {
   projectFolder?: string
   /** Whether the host has a PR fetch running for the session, which the saved session does not hold. */
   isFetchingPrs?: boolean
+  /** The inbox build the host runs, which Help names. A file from an older host has none, and Help then names none. */
+  version?: string
+  /** Whether the host's folder holds `NEXT_BUILD_MARK`, which adds "next" to the version. */
+  isNextBuild?: boolean
 }
 
 /**
  * The file a host publishes for the Herdr look. It has `projectFolder` only when that is an absolute path. `trimmed` is set when the host left out closed items the view does not
  * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`. `lastPress` is the session's `lastHerdrPress`.
  * `isFetchingPrs` is set only while a fetch runs, so a file without it, as from an older host, reads as not fetching.
+ * `isNextBuild` is set only on a next build.
  */
-export type HerdrEnvelope = Omit<EnvelopeSource, 'isFetchingPrs'> & {
+export type HerdrEnvelope = Omit<EnvelopeSource, 'isFetchingPrs' | 'isNextBuild'> & {
   format: typeof HERDR_FORMAT
   trimmed?: true
   isFetchingPrs?: true
+  isNextBuild?: true
   lastPress?: HerdrPressOutcome
   session: Session
 }
@@ -419,7 +425,7 @@ export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimme
   const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
 
   const { lastHerdrPress } = session
-  const { projectFolder, isFetchingPrs, ...rest } = source
+  const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source
 
   return {
     format: HERDR_FORMAT,
@@ -427,6 +433,7 @@ export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimme
     ...(projectFolder?.startsWith('/') && { projectFolder }),
     ...(isTrimmed && { trimmed: true }),
     ...(isFetchingPrs && { isFetchingPrs: true }),
+    ...(isNextBuild && { isNextBuild: true }),
     ...(lastHerdrPress && { lastPress: lastHerdrPress }),
     session: shared as Session,
   }

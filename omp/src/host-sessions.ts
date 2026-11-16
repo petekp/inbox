@@ -19,6 +19,7 @@ import { fetchPrs } from '../../hooks/host-prs'
 import { wakeAfterSettle } from '../../hooks/host-press'
 import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
 import { screenTabOf } from '../../hooks/tabs'
+import { version } from '../package.json'
 import { openTarget } from './commands'
 import { exclusiveRun, pruneSessions, readState, updateState } from './state'
 import type { OmpState } from './state'
@@ -140,6 +141,8 @@ export function sessionCalls(context: HostContext) {
                 writtenAt: now,
                 projectFolder: memory.shownCwd?.(),
                 isFetchingPrs: prFetches.isFetching(id),
+                version,
+                isNextBuild: deps.isNextBuild,
               },
               s,
               context.logHerdr,

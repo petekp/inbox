@@ -48,7 +48,7 @@ import {
 import type { TreePos } from './terminal-text'
 import { clipLabel } from './text'
 import { SETTLED_MS } from './timing'
-import type { UndoProps } from './undo-client'
+import type { PressAreaProps } from './press-client'
 
 export function paneRowParts(
   {
@@ -397,10 +397,10 @@ export function paneRowParts(
           <Box position="absolute" top={0} left={0}>
             <svgClientElements.Client
               key={key}
-              module="./undo-client.tsx"
+              module="./press-client.tsx"
               width={UNDO_CELLS}
               height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}
-              props={{ pressKey: key, hover: 'rgba(128, 128, 128, 0.12)' } satisfies UndoProps}
+              props={{ pressKey: key, hover: 'rgba(128, 128, 128, 0.12)' } satisfies PressAreaProps}
             />
           </Box>
         </Box>

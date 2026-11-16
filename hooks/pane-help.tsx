@@ -1,6 +1,7 @@
 import { toneSvg } from './desktop-svg'
-import { HELP_COPY, type HelpKey, type LegendEntry, MARK_LEGEND, tabLegend } from './help'
+import { HELP_COPY, helpVersionText, type HelpKey, type LegendEntry, MARK_LEGEND, tabLegend } from './help'
 import { markShape } from './marks'
+import { mod } from './mod-state'
 import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
@@ -73,9 +74,19 @@ export function paneHelp({
           }).el,
       ),
     ])
+  /** Which inbox build this is, in the muted words of the legend. A build with no version, as in a test, draws none. */
+  const helpVersionSection = () =>
+    mod.version
+      ? section(
+          <Box key="help-version" flexDirection="row" paddingLeft={TREE_LINE_AT}>
+            <Text color={pal.muted}>{helpVersionText(mod.version, mod.isNextBuild)}</Text>
+          </Box>,
+        )
+      : null
   /** Help in place of the tab's body: the keys where keys work, then the legend. A wide inline pane sets them side by side. */
   const helpView = () => {
-    if (keyList.length === 0) return sections([helpMarksSection(), helpTabsSection()])
+    const version = helpVersionSection()
+    if (keyList.length === 0) return sections([helpMarksSection(), helpTabsSection(), ...(version ? [version] : [])])
     if (hasRail)
       return (
         <Box flexDirection="row" columnGap={4} flexGrow={1}>
@@ -85,11 +96,12 @@ export function paneHelp({
           <Box flexDirection="column" width="50%" flexShrink={1}>
             {helpMarksSection()}
             {helpTabsSection()}
+            {version}
           </Box>
         </Box>
       )
 
-    return sections([helpKeysSection(), helpMarksSection(), helpTabsSection()])
+    return sections([helpKeysSection(), helpMarksSection(), helpTabsSection(), ...(version ? [version] : [])])
   }
 
   return { helpView }

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T00:16:38.775Z. 249165 characters follow.
+// Built at 2026-11-16T00:29:52.434Z. 249904 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -69,6 +69,9 @@ function tabBarBanners(host, statusError, pressNote) {
   ];
 }
 var READING_TEXT = "Reading the inbox…";
+function versionLabel(version, isNextBuild) {
+  return isNextBuild ? `v${version} · next` : `v${version}`;
+}
 var NOTHING_NEEDED_TEXT = "Nothing needed";
 var MAYBE_STALE_TEXT = "May be out of date";
 
@@ -1222,19 +1225,25 @@ var MARK_LEGEND = [
     words: "A bar at a row's edge marks a row that just arrived. A row that just closed keeps a bar in the color of how it closed."
   }
 ];
-var HELP_COPY = { open: "Help", close: "✕ Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
+var HELP_COPY = {
+  name: "Help",
+  icon: "?",
+  close: "✕ Close help",
+  keys: "Keys",
+  marks: "Marks",
+  tabs: "Tabs",
+  version: "Inbox"
+};
+var helpVersionText = (version, isNextBuild) => `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`;
 var UNDO_KEY = "u";
 var COLLAPSE_KEY = "z";
 var PR_TAB_HELP_KEYS = [
-  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
-  { keys: "m", does: "Clear the merged and closed PRs" }
+  { keys: "g", does: "On PRs, rank the PRs again, once a ranked PR changed" },
+  { keys: "m", does: "On PRs, clear the merged and closed PRs" }
 ];
-function helpKeys(look, tab, hasStatusButtons) {
+function helpKeys(look) {
   const tabKeys = shownTabs().map((t) => t.hotkey).join(" ");
-  const hasRows = isRowTab(tab);
-  const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
-  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
   const collapseKey = { keys: COLLAPSE_KEY, does: "Collapse or expand the selected row" };
   switch (look) {
@@ -1243,46 +1252,42 @@ function helpKeys(look, tab, hasStatusButtons) {
     case "terminal":
       return [
         switchTabs,
-        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
-        ...hasRows ? [collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k ↑ ↓", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k ↑ ↓", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, or leave a reply field" }
       ];
     case "omp":
       return [
         { keys: `tab ${tabKeys}`, does: "Switch tabs" },
-        ...hasRows ? [
-          { keys: "↑ ↓ j k", does: "Move between rows" },
-          { keys: "← →", does: "Pick a button" },
-          { keys: "↵", does: "Press the picked button" },
-          { keys: "t", does: "Reply to the selected row" },
-          collapseKey,
-          undoKey,
-          ...prTabKeys
-        ] : [
-          ...selectsStatusRows ? [
-            { keys: "j k", does: "Select the next or previous row with a button" },
-            { keys: "← →", does: "Pick a button" },
-            { keys: "↵", does: "Press the picked button" }
-          ] : [],
-          { keys: "↑ ↓", does: "Scroll the page" }
-        ],
+        { keys: "↑ ↓ j k", does: "Move between rows, or scroll a page" },
+        { keys: "← →", does: "Pick a button" },
+        { keys: "↵", does: "Press the picked button" },
+        { keys: "t", does: "Reply to the selected row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, then the panel" }
       ];
     case "herdr":
       return [
         { keys: "← →", does: "Switch tabs" },
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }, collapseKey, undoKey] : [],
-        ...prTabKeys,
+        { keys: "j k", does: "Select the next or previous row" },
+        collapseKey,
+        undoKey,
+        ...PR_TAB_HELP_KEYS,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];
   }
@@ -4460,8 +4465,8 @@ function follow(where, tab, last) {
 }
 
 // src/draw-help.ts
-function helpBlocks(tab, hasStatusButtons) {
-  const keys = helpKeys("herdr", tab, hasStatusButtons);
+function helpBlocks(version) {
+  const keys = helpKeys("herdr");
   const heading = (id, text) => ({
     kind: "heading",
     id,
@@ -4482,7 +4487,8 @@ function helpBlocks(tab, hasStatusButtons) {
       isBold: true,
       isMuted: false,
       stall: null,
-      under: [k.does],
+      does: k.does,
+      under: [],
       buttons: []
     })),
     heading("help marks", HELP_COPY.marks),
@@ -4497,7 +4503,21 @@ function helpBlocks(tab, hasStatusButtons) {
       stall: null,
       under: [],
       buttons: []
-    }))
+    })),
+    ...version === null ? [] : [
+      {
+        kind: "status",
+        id: "help version",
+        depth: 0,
+        mark: null,
+        name: version,
+        isBold: false,
+        isMuted: true,
+        stall: null,
+        under: [],
+        buttons: []
+      }
+    ]
   ];
 }
 
@@ -4969,6 +4989,8 @@ var NARROW_PANE = 280;
 var BUTTON_H = 28;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
+var HELP_KEY_COLUMN = 72;
+var HELP_ICON = 20;
 var SEP = " · ";
 var onSize = (view, key, read) => (size, cx) => {
   const value = read(size);
@@ -5162,16 +5184,17 @@ import { Background, PathBuilder, div as div2 } from "gpui-kit";
 import { h_flex, v_flex as v_flex2 } from "gpui-base";
 var helpButton = (isHelpShown) => ({
   id: "help",
-  label: isHelpShown ? HELP_COPY.close : HELP_COPY.open,
+  label: isHelpShown ? HELP_COPY.close : HELP_COPY.name,
   emphasis: "quiet",
   isOut: false,
   hotkey: null,
   does: { is: "view", change: { toggleHelp: true } }
 });
+var helpIconEl = (t) => h_flex().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(t.muted).hover((s) => s.border_color(t.foreground)).text_size(SMALL_TEXT).font_semibold().child(HELP_COPY.icon);
 function tabsEl(tabs, status, isHelpShown, p) {
   const { t } = p;
   const help = helpButton(isHelpShown);
-  return h_flex().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div2().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div2().flex_1()).when(status !== null, (e) => e.child(div2().min_w(0).whitespace_normal().px(LINE_GAP).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
+  return h_flex().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(LINE_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div2().ml(LINE_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div2().flex_1()).when(status !== null, (e) => e.child(div2().min_w(0).whitespace_normal().px(LINE_GAP).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(isHelpShown ? help.label : helpIconEl(t)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
@@ -5362,8 +5385,13 @@ function panelEl(r, m, p, isLeaving) {
 }
 var statusPartEl = (text) => div5().min_w(0).max_w_full().whitespace_normal().child(text);
 var wordEl = (s, word, t) => h_flex2().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name).invisible().when(s.isBold, (e) => e.font_semibold())).child(div5().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
+function keyEl(s, does, t) {
+  return h_flex2().items_start().pl(TEXT_X).pr(EDGE).child(div5().flex_none().w(HELP_KEY_COLUMN).font_semibold().child(s.name)).child(div5().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+}
 function statusEl(s, p, isInert) {
   const { t } = p;
+  if (s.does !== undefined)
+    return keyEl(s, s.does, t);
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
   const word = s.word === undefined ? [] : [wordEl(s, s.word, t)];
@@ -5780,6 +5808,7 @@ function screenOf(followed, read, ui, o) {
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
+    helpVersion: read.envelope.version ? helpVersionText(read.envelope.version, read.envelope.isNextBuild === true) : null,
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
     waits: rowWaits(screen, ui.tab),
     foldAt: nextFoldAt(settled, placing),
@@ -5794,6 +5823,8 @@ function nextUndoPlaceEnd(settled, now) {
 
 // src/status-look.ts
 var LOOK_TICK_MS = 1000;
+var REREAD_MS = 1e4;
+var AGE_TICK_MS = 60000;
 var LOOK_GAP_MS = 3 * LOOK_TICK_MS;
 function isPaneShown(paneId, panes, spaces, window2) {
   const own = panes.find((p) => p.pane === paneId);
@@ -5875,8 +5906,6 @@ async function writeLook(io, appHome, ended) {
 }
 
 // src/main.ts
-var REREAD_MS = 1e4;
-var AGE_TICK_MS = 60000;
 var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
 
 class Inbox extends View {
@@ -6008,6 +6037,13 @@ class Inbox extends View {
       this.isHelpShown = !this.isHelpShown;
     else
       this.ui = withChange(this.ui, c);
+    if ("showAsk" in c)
+      this.isHelpShown = false;
+    this.closeStaleField();
+  }
+  showTab(tab) {
+    this.ui = withTab(this.ui, tab);
+    this.isHelpShown = false;
     this.closeStaleField();
   }
   closeStaleField() {
@@ -6124,7 +6160,7 @@ class Inbox extends View {
     if (move.is === "close")
       this.leave(this.ui.typing ?? "", false, cx);
     else if (move.is === "tab")
-      this.ui = withTab(this.ui, move.tab);
+      this.showTab(move.tab);
     else if (move.is === "select")
       this.ui = withSelected(this.ui, move.id);
     else if (move.is === "collapse")
@@ -6177,8 +6213,7 @@ class Inbox extends View {
         cx.notify();
       },
       pick: (tab, cx) => {
-        this.ui = withTab(this.ui, tab);
-        this.closeStaleField();
+        this.showTab(tab);
         cx.notify();
       },
       motion: new Map,
@@ -6203,8 +6238,7 @@ class Inbox extends View {
       this.look.drew(null, now);
       return root.child(messageEl(screen.message, t));
     }
-    const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
-    const shown = this.isHelpShown ? helpBlocks(this.ui.tab, hasStatusButtons) : screen.blocks;
+    const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now);
     this.linesAbove = held.held;
     const moved = moveRows(held.blocks, this.tracks, now, isFirst);

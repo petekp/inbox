@@ -17,9 +17,21 @@ import { HerdrAskBanner } from './tab-herdr-ask'
 import { bannerMotion, lineMotion } from './tab-line-steps'
 import type { BannerLine } from './tab-line-steps'
 
-/** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
-export function HelpPage() {
-  const keys = helpKeys('codex', drawnTab(), false)
+/** The Help control's drawn form: a question mark in a circle, in the button's text color. */
+export function HelpIcon() {
+  return (
+    <svg class="help-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.8" fill="none" stroke="currentColor" stroke-width="1.2" />
+      <text x="8" y="8.4" text-anchor="middle" dominant-baseline="central" fill="currentColor">
+        {HELP_COPY.icon}
+      </text>
+    </svg>
+  )
+}
+
+/** Help in place of the tab's body: the keys this tab takes, then what each mark means, then which inbox build this is. */
+export function HelpPage({ version }: { version: string }) {
+  const keys = helpKeys('codex')
 
   return (
     <main class="status-page help">
@@ -58,6 +70,7 @@ export function HelpPage() {
           ])}
         </div>
       </section>
+      <p class="help-version muted">{version}</p>
     </main>
   )
 }
