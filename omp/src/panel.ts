@@ -18,7 +18,7 @@ import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
-import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
+import { PAGE_MARK_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
 import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
@@ -263,8 +263,8 @@ export function drawPanel(
     else if (e.kind === 'legend') {
       const mark = paintMark(e.entry, now, style)
       body.push(
-        ...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) =>
-          n === 0 ? `${' '.repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l,
+        ...indented(e.entry.words, e.textAt, width, Infinity, style.dim).map((l, n) =>
+          n === 0 ? `${' '.repeat(PAGE_MARK_AT)}${mark}${' '.repeat(e.textAt - PAGE_MARK_AT - 1)}${l.trimStart()}` : l,
         ),
       )
     } else if (e.kind === 'note')

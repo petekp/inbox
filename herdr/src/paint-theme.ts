@@ -116,8 +116,11 @@ export const NARROW_PANE = 280
 export const BUTTON_H = 28
 export const BOX_RADIUS = 10
 export const TAB_RADIUS = 6
-/** The width of the column that holds a Help key, so each key's words line up. */
-export const HELP_KEY_COLUMN = 72
+/**
+ * The width of Help's left column, which holds a key or a mark, so every line's words start at one x. It is the widest
+ * key, about 30 px, and `INSET` after it, rounded up to two mark columns. A key does not fit the mark column.
+ */
+export const HELP_COLUMN = MARK_W * 2
 /** The Help control's circle. */
 export const HELP_ICON = 20
 

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T00:47:53.359Z. 250338 characters follow.
+// Built at 2026-11-16T01:00:38.893Z. 250404 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -4511,10 +4511,11 @@ function helpBlocks(version) {
       id: `mark ${m.mark}`,
       depth: 0,
       mark: { text: m.mark, tone: m.tone, isRunning: m.isRunning },
-      name: m.words,
+      name: "",
       isBold: false,
       isMuted: false,
       stall: null,
+      does: m.words,
       under: [],
       buttons: []
     })),
@@ -4524,10 +4525,11 @@ function helpBlocks(version) {
         id: "help version",
         depth: 0,
         mark: null,
-        name: version,
+        name: "",
         isBold: false,
         isMuted: true,
         stall: null,
+        does: version,
         under: [],
         buttons: []
       }
@@ -5003,7 +5005,7 @@ var NARROW_PANE = 280;
 var BUTTON_H = 28;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
-var HELP_KEY_COLUMN = 72;
+var HELP_COLUMN = MARK_W * 2;
 var HELP_ICON = 20;
 var SEP = " · ";
 var onSize = (view, key, read) => (size, cx) => {
@@ -5394,7 +5396,7 @@ function panelEl(r, m, p, isLeaving) {
 var statusPartEl = (text) => div4().min_w(0).max_w_full().whitespace_normal().child(text);
 var wordEl = (s, word, t) => h_flex2().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name).invisible().when(s.isBold, (e) => e.font_semibold())).child(div4().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
 function keyEl(s, does, t) {
-  return h_flex2().items_start().pl(TEXT_X).pr(EDGE).child(div4().flex_none().w(HELP_KEY_COLUMN).font_semibold().child(s.name)).child(div4().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex2().items_start().px(EDGE).child(div4().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div4().font_semibold().child(s.name))).child(div4().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;

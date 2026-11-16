@@ -8423,17 +8423,18 @@ function pageEntries(view, typing, isUnfolded) {
 function helpEntries(screen) {
   const keys = helpKeys("omp");
   const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
+  const textAt = PAGE_MARK_AT + column;
   return [
     { kind: "heading", text: HELP_COPY.keys },
     ...keys.map((key) => ({ kind: "key", key, column })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.marks },
-    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry })),
+    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry, textAt })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.tabs },
-    ...tabLegend().map((key) => ({ kind: "key", key, column: Math.max(column, 4) })),
+    ...tabLegend().map((key) => ({ kind: "key", key, column })),
     { kind: "note", text: "" },
-    { kind: "note", text: helpVersionText(screen.version, screen.isNextBuild === true) }
+    { kind: "note", text: helpVersionText(screen.version, screen.isNextBuild === true), indent: textAt }
   ];
 }
 function entriesOf(screen, ui, tab, now) {
@@ -8977,7 +8978,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       body.push(...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) => n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l));
     else if (e.kind === "legend") {
       const mark = paintMark(e.entry, now, style);
-      body.push(...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l));
+      body.push(...indented(e.entry.words, e.textAt, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark}${" ".repeat(e.textAt - PAGE_MARK_AT - 1)}${l.trimStart()}` : l));
     } else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : e.isPlain ? (text) => text : style.dim));
     else {
