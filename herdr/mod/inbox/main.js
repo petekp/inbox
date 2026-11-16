@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T03:06:41.065Z. 259460 characters follow.
+// Built at 2026-11-16T03:16:20.265Z. 260021 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -253,6 +253,9 @@ function isChildRunning(c, now) {
 }
 function isFinishedAfter(c, at) {
   return c.delegateState === "finished" && c.endedAt !== null && (at === null || c.endedAt > at);
+}
+function isChildSettled(c, now, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && lastLookAt !== null && c.endedAt <= lastLookAt && now - c.endedAt < CHILD_KEPT_MS;
 }
 function isChildShown(c, now, lastLookAt) {
   return isChildRunning(c, now) || isFinishedAfter(c, lastLookAt);
@@ -1348,6 +1351,20 @@ function namedList(names) {
   const hidden = names.length - LISTED_NAMES;
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+  const closed = named.filter((x) => x.status === status);
+  return closed.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}also-${status}`,
+      depth,
+      ...SUBJECT_MARKS[status],
+      text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
+      subjectIds: closed.map((x) => x.id)
+    }
+  ];
+});
 var CHILD_ROWS = 3;
 var CHILD_MARK = SUBJECT_MARKS.working;
 var COUNT_WORDS = {
@@ -3459,7 +3476,6 @@ var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " · ";
 var NEW_CLOSED_ROWS = 2;
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
@@ -3526,19 +3542,6 @@ function statusPage(s, now) {
     now
   };
   const foldCtx = { ...ctx, running: [] };
-  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const closed = named.filter((x) => x.status === status);
-    return closed.length === 0 ? [] : [
-      {
-        kind: "fold",
-        id: `${prefix}also-${status}`,
-        depth,
-        ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${namedList(closed.map((x) => x.name))}`,
-        subjectIds: closed.map((x) => x.id)
-      }
-    ];
-  });
   const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
     {
       kind: "fold",
@@ -3549,19 +3552,23 @@ function statusPage(s, now) {
       subjectIds: []
     }
   ];
-  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
+  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : [
     {
       kind: "done-fold",
       id: `${prefix}done`,
       depth,
-      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: partRows([...done].sort(pageOrder), foldCtx, depth + 1)
+      text: `${done.length + settled.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: [
+        ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
+        ...settled.map((c) => childRow(c, null, depth + 1))
+      ]
     }
   ];
-  const foldedPart = (prefix, p, depth) => [
+  const foldedPart = (prefix, p, depth, settled = []) => [
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled)
   ];
+  const settled = (o?.children ?? []).filter((c) => isChildSettled(c, now, look) && !o?.subjects.some((x) => x.id === c.subjectId)).sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
   const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
     const x = subjects.find((y) => y.id === c.subjectId);
     return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
@@ -3575,11 +3582,11 @@ function statusPage(s, now) {
   const otherRows = [
     ...hasMilestones ? looseRows(null, 0) : [],
     ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
+    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0, hasMilestones ? settled : [])
   ];
   const rows = [
     ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0),
+    ...foldedPart("", top, 0, hasMilestones ? [] : settled),
     ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
