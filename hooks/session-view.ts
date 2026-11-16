@@ -19,6 +19,8 @@ import type { UpdateRecovery } from './view'
 import { isRowTab } from './tabs'
 import { statusPage } from './status-page'
 import { applyTaskOwnerFacts, taskOwnerKey } from './task-facts'
+import { timelineData } from './timeline-page'
+import type { TimelineData } from './timeline-page'
 import type { InboxView } from './view'
 import type { StatusPage } from './status-page'
 import type { Holds } from './timing'
@@ -69,6 +71,8 @@ export type SessionView = InboxView & {
   turns: Turns
   prs: PrTab
   statusPage: StatusPage
+  /** The task tree, progress bars, stall ages and warnings shared by the Timeline adapters. */
+  timeline: TimelineData
   /** Weighted task progress, with working tasks whose owners are not working counted as stalled. */
   taskProgressSegments: TaskProgressSegments
   /** Derived start times for stalled task and Progress rows, keyed by their ids. */
@@ -148,6 +152,13 @@ export function sessionView(
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now, new Set(Object.keys(taskOwnerView.stalledSince))),
+    timeline: timelineData(
+      s.taskTree,
+      taskOwnerView.segments,
+      taskOwnerView.stalledSince,
+      [...s.taskFactWarnings, ...taskOwnerView.warnings],
+      now,
+    ),
     taskProgressSegments: taskOwnerView.segments,
     taskStalledSince: taskOwnerView.stalledSince,
     feedStalledSince,

@@ -68,6 +68,7 @@ import { tabPrs } from './pr-fetch'
 import type { FetchAsk } from './pr-fetch'
 import { prSharedStore } from './mod-pr-shared'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
+import { upgradedTimelineFolded, upgradedTimelineSelection } from './timeline-state'
 import { startPress, wakeAfterSettle as wakeSessionAfterSettle } from './host-press'
 import type { Ask, CatchUpReply, SessionHost } from './session-host'
 import { callReport, MODEL } from './inbox-model'
@@ -311,6 +312,8 @@ const PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | n
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
 /** The Status row whose keys work, by id, as `statusSelected` resolves it. */
 const STATUS_SELECTION = atom({ plugin: 'inbox', key: 'statusSelection' } as const, null as string | null)
+/** The Timeline task whose keys work, by id. */
+const TIMELINE_SELECTION = atom({ plugin: 'inbox', key: 'timelineSelection' } as const, null as string | null)
 const THEME = atom({ plugin: 'inbox', key: 'theme' } as const, '')
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
@@ -326,6 +329,7 @@ const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
 const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
+const TIMELINE_FOLDED = atom({ plugin: 'inbox', key: 'timelineFolded' } as const, [] as string[])
 /** The Closed folds whose earlier lines the person opened. */
 const CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
 const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as string | null)
@@ -1072,6 +1076,8 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ) as Record<Tab, Cursor>
     }),
     update($, UNFOLDED, upgradedUnfolded),
+    update($, TIMELINE_SELECTION, upgradedTimelineSelection),
+    update($, TIMELINE_FOLDED, upgradedTimelineFolded),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
     update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
     // A draft saved as bare text began before now, so a row that closed before this load stays closed.
@@ -3154,6 +3160,7 @@ export const register: Register = on => {
       discardReply: id => discardReply($, id),
       startTyping: (id, seed) => startTyping($, id, seed),
       selectStatusRow: (id, focusKey) => selectStatusRow($, id, focusKey),
+      selectTimelineRow: id => update($, TIMELINE_SELECTION, () => id),
       updateTyping: fn => update($, TYPING, fn),
       updateDrafts: fn => update($, DRAFTS, fn),
       sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
@@ -3162,6 +3169,7 @@ export const register: Register = on => {
       updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
       updateUnfolded: fn => update($, UNFOLDED, fn),
       updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
+      updateTimelineFolded: fn => update($, TIMELINE_FOLDED, fn),
       updateClosedAll: fn => update($, CLOSED_ALL, fn),
       runPress: (p, surface) => runPress($, p, surface),
       readAgain: () => readAgain($),

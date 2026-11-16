@@ -16,6 +16,8 @@ declare module 'claude-code' {
       selection: Record<Tab, Cursor>
       /** The Status row whose keys work, by id. Null until j or k moves it. */
       statusSelection: string | null
+      /** The selected Timeline task, by id. Null until j or k moves it. */
+      timelineSelection: string | null
       dialogs: Dialog[]
       /** The row whose free-text field is open, if any. */
       typing: string | null
@@ -36,6 +38,8 @@ declare module 'claude-code' {
       closedAll: FoldKind[]
       /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
       statusUnfolded: string[]
+      /** The Timeline task branches the person folded, by task id. */
+      timelineFolded: string[]
       /** The fold under the pointer on desktop: an Asks fold's kind, or `status-` and a Status fold's id. */
       foldHover: string | null
       /** The questions whose every option shows, by the row's id. */

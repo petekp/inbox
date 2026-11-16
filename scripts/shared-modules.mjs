@@ -101,5 +101,6 @@ export const SHARED = [
   'tabs',
   'status-page',
   'status-page-parts',
+  'timeline-page',
   'action-plan',
 ]

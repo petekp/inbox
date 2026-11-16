@@ -92,6 +92,8 @@ export type PaneBase = {
   /** The Closed folds whose earlier lines the person opened. */
   closedAll: FoldKind[]
   statusUnfolded: string[]
+  timelineSelection: string | null
+  timelineFolded: string[]
   foldHover: string | null
   isHelpShown: boolean
   optionsShown: string[]
@@ -139,6 +141,7 @@ export type PaneHandlers = {
   discardReply: (id: string) => Promise<void>
   startTyping: (id: string, seed?: string) => Promise<void>
   selectStatusRow: (id: string, focusKey?: string) => Promise<void>
+  selectTimelineRow: (id: string) => Promise<unknown>
   sendTyped: (id: string, text: string, surface: UiPressArgument['surface']) => Promise<void>
   select: (tab: Tab, id: string, index: number) => Promise<void>
   showTab: (tab: ShownTab) => Promise<void>
@@ -151,5 +154,6 @@ export type PaneHandlers = {
   updateHelpShown: (fn: (isShown: boolean) => boolean) => Promise<unknown>
   updateUnfolded: (fn: (unfolded: FoldKind[]) => FoldKind[]) => Promise<unknown>
   updateStatusUnfolded: (fn: (unfolded: string[]) => string[]) => Promise<unknown>
+  updateTimelineFolded: (fn: (folded: string[]) => string[]) => Promise<unknown>
   updateClosedAll: (fn: (closedAll: FoldKind[]) => FoldKind[]) => Promise<unknown>
 }

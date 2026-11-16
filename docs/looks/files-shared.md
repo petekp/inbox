@@ -12,6 +12,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/banners.ts` | Shared module. The banners under the tab bar, including the read-only warning for live work with no open item, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
 | `hooks/tabs.ts` | Shared module. The tabs each build shows, with their names, symbols and badges, how the tab bar fits them, and the `/inbox` command's description. |
 | `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the Last seen line, the merged line and the text before a stall. |
+| `hooks/timeline-page.ts` | Shared module. Builds Timeline rows, progress bars, details and link actions. |
 | `hooks/status-page-parts.ts` | Shared module. The parts of the Status list that `statusPage` builds: subject and child rows in order, their Seen lines, folds after open or closed rows, counts by mark, and rules between rows. |
 | `hooks/action-plan.ts` | Shared module. A row's actions in order, from `actionsOf`; source-managed rows have none because their feed owns their lifecycle. Also the key plans `rowKeyPlan` and `statusKeyPlan`. `actionLines` wraps a row's buttons. `drawnLists` gives each tab's drawn rows, `rowAfterClose` the row that opens after a close, and `tabUndos` with `latestUndo` the Undo the undo key presses. |
 | `hooks/help.ts` | Shared module. The marks that rows and group titles draw, the Help legend, Help's labels, and the keys Help lists in each look. |
@@ -64,7 +65,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/task-reminder.ts` | Shared module. The per-turn 24-tool-call reminder: its threshold and text, saved counter and eligibility flag, and reset and count operations. |
 | `hooks/session-status.ts` | Shared module. Saving the Status call's answer or why it failed, and when a running turn's Status call is due. Whether an update or a catch-up is due, and `appliedCatchUp`, which applies a catch-up's answer. A forked conversation's ledger, and when a look at the Status starts and ends. |
 | `hooks/session-presses.ts` | Shared module. Applies presses and tool calls to a session, holds rows in place, prunes PR views and merges fetched PRs. |
-| `hooks/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including the PRs tab. `showsRunningMark` says whether a text look draws a running mark. |
+| `hooks/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including Timeline. `showsRunningMark` says whether a text look draws a running mark. |
 | `hooks/conversation.ts` | Shared module. `flattenConversation` turns a conversation's `Turn`s into the text a catch-up reads, and clips it. Each host maps its own conversation to turns. |
 | `hooks/clients.ts` | Shared module. The `FeatureId` list and host identity types. |
 | `hooks/client-support.ts` | Shared module. The host parity record: how each host supports each feature, and why where it does not. |

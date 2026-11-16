@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T08:59:15.904Z. 213746 characters follow.
+// Built at 2026-11-16T10:31:19.741Z. 217015 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -933,7 +933,7 @@ function weightedAverage(values) {
   const total = values.reduce((sum, [, weight]) => sum + weight, 0);
   return total ? values.reduce((sum, [value, weight]) => sum + value * weight, 0) / total : 0;
 }
-function weightedTaskProgressSegments(tree, stalledTasks = new Set) {
+function weightedTaskProgressSegments(tree, stalledTasks = new Set, rootId) {
   const children = new Map;
   for (const task of tree)
     children.set(task.parentId, [...children.get(task.parentId) ?? [], task]);
@@ -964,7 +964,8 @@ function weightedTaskProgressSegments(tree, stalledTasks = new Set) {
       segments.queued += weight;
   };
   for (const root of children.get(null) ?? [])
-    add(root, root.weight, new Set);
+    if (rootId === undefined || root.id === rootId)
+      add(root, root.weight, new Set);
   return segments;
 }
 function taskTreeFromStatus(status) {
@@ -3442,6 +3443,81 @@ function applyTaskOwnerFacts(tree, facts, at) {
   return { stalledSince, warnings, segments };
 }
 
+// ../hooks/timeline-page.ts
+var BAR_MARKS = {
+  done: "■",
+  working: "●",
+  stalled: "!",
+  waiting: "◌",
+  queued: "·"
+};
+var BAR_STATES = Object.keys(BAR_MARKS);
+function timelineTask(task, now) {
+  const { createdAt: _createdAt, updatedAt, history, ...details } = task;
+  return {
+    ...details,
+    updatedAgo: shortAgo(now - updatedAt),
+    history: history.map(({ at, ...event }) => ({ ...event, time: shortAgo(now - at) }))
+  };
+}
+function timelineBar(segments, id, label, width = 16) {
+  if (segments.total <= 0)
+    return { id, label, parts: [] };
+  let cumulative = 0;
+  let drawn = 0;
+  const parts = BAR_STATES.flatMap((state) => {
+    cumulative += segments[state];
+    const end = Math.round(cumulative / segments.total * width);
+    const count = Math.max(0, end - drawn);
+    drawn = end;
+    return count > 0 ? [{ state, mark: BAR_MARKS[state], count }] : [];
+  });
+  return { id, label, parts };
+}
+function timelineData(tree, segments, stalledSince, warnings, now) {
+  const children = new Map;
+  for (const task of tree)
+    children.set(task.parentId, [...children.get(task.parentId) ?? [], task]);
+  const stalled = new Set(Object.keys(stalledSince));
+  const rows = [];
+  const visit = (siblings, depth) => {
+    siblings.forEach((task, index) => {
+      const childrenOfTask = children.get(task.id) ?? [];
+      const stalledAt = stalledSince[task.id];
+      const status = stalledAt === undefined ? task.status : "stalled";
+      const progress = Math.round(weightedTaskProgress(tree, task.id) * 100);
+      rows.push({
+        task: timelineTask(task, now),
+        depth,
+        branch: depth === 0 ? null : index === siblings.length - 1 ? "last" : "mid",
+        hasChildren: childrenOfTask.length > 0,
+        progress,
+        measure: childrenOfTask.length ? `${progress}%` : `w${task.weight}`,
+        status,
+        statusLabel: stalledAt !== undefined ? `stalled ${shortAgo(now - stalledAt)}` : status === "waits-on-other" ? "waiting on others" : status,
+        stalledAge: stalledAt === undefined ? null : shortAgo(now - stalledAt),
+        warnings: warnings.filter((warning) => warning.taskId === task.id).map((warning) => warning.message)
+      });
+      visit(childrenOfTask, depth + 1);
+    });
+  };
+  visit(children.get(null) ?? [], 0);
+  const roots = children.get(null) ?? [];
+  const streams = new Set(roots.flatMap((task) => task.streamId ? [task.streamId] : []));
+  const summary = streams.size > 1 ? `${streams.size} streams` : segments.total > 0 ? `${Math.round(segments.done / segments.total * 100)}% complete · ${Number(segments.done.toFixed(1))}/${Number(segments.total.toFixed(1))} weight` : "no tasks yet";
+  const bars = [timelineBar(segments, "tree", "Task plan")];
+  if (streams.size > 1)
+    for (const root of roots)
+      bars.push(timelineBar(weightedTaskProgressSegments(tree, stalled, root.id), root.id, root.title));
+  return {
+    isEmpty: tree.length === 0,
+    empty: { title: "Timeline", hint: "No tasks have been recorded for this session." },
+    summary,
+    rows,
+    bars
+  };
+}
+
 // ../hooks/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
@@ -3499,6 +3575,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now, new Set(Object.keys(taskOwnerView.stalledSince))),
+    timeline: timelineData(s.taskTree, taskOwnerView.segments, taskOwnerView.stalledSince, [...s.taskFactWarnings, ...taskOwnerView.warnings], now),
     taskProgressSegments: taskOwnerView.segments,
     taskStalledSince: taskOwnerView.stalledSince,
     feedStalledSince,
