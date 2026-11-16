@@ -9,6 +9,8 @@ import { makeServer } from './server'
 import { devBuild } from './data-dir'
 import TAB_HTML from './tab.html'
 import { run } from './run'
+import { useQuestionHistory } from './state'
+import { questionHistoryPlace } from './question-history'
 import { listHooksTrust } from './hook-trust'
 import { herdrLog, herdrOnWrite } from './host'
 import { codexHerdrAsk, followCodexPresses, startCodexInHerdrApp } from './server-herdr'
@@ -57,6 +59,7 @@ export function createHandler(
   startUpdate?: (sessionId: string) => void,
 ): ReturnType<typeof makeServer> {
   const log = herdrLog(dir)
+  useQuestionHistory(questionHistoryPlace(process.env, dir))
   const here = dirname(fileURLToPath(import.meta.url))
   void startCodexInHerdrApp(process.env, run, join(here, 'herdr-mod'), log).catch(() => undefined)
 

@@ -27,6 +27,7 @@ import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
 import { doneLabel, feedbackOf, fixLabel, feedbackIn, pressUnderWaySince, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
 import { actionsOf } from './action-plan'
+import { earlierLineOf } from './earlier-answers'
 
 /** `isRetrying`: the update that runs retries a failed one. */
 type ItemStatus = { isUpdating: boolean; isRetrying: boolean; error: string | null }
@@ -244,7 +245,10 @@ export function inboxView({
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
   const rowOf = (
-    row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine' | 'contextLine'>,
+    row: Omit<
+      RowView,
+      'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine' | 'contextLine' | 'earlierLine'
+    >,
   ): RowView => {
     const state = stateOf(row.id)
     const last = lastActions[row.id]
@@ -268,6 +272,7 @@ export function inboxView({
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map(s => s.name).join(', ')}` : null,
       contextLine: state.is === 'open' ? (row.item?.context ?? null) : null,
+      earlierLine: state.is === 'open' ? earlierLineOf(row.item?.earlier, now) : null,
     }
   }
   const itemRow = (item: Item): RowView => {

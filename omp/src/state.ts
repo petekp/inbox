@@ -11,6 +11,8 @@ import {
   upgradeSession,
 } from '../../hooks/session-files'
 import { pruned } from '../../hooks/session-presses'
+import { historyStep } from '../../hooks/history-store'
+import type { HistoryPlace } from '../../hooks/history-store'
 import type { Session } from '../../types'
 import type { SavedSession } from '../../hooks/session-files'
 import { exclusiveKeys } from '../../hooks/session-host'
@@ -70,6 +72,16 @@ function inTurn<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return run
 }
 
+let questionHistory: HistoryPlace | null = null
+
+/**
+ * Turns on the question history for this process's saves: each save then searches it for the questions it adds and
+ * records the questions it closes. Only the entry points turn it on, so a test never reaches the person's history.
+ */
+export function useQuestionHistory(place: HistoryPlace | null): void {
+  questionHistory = place
+}
+
 /** Changes a session in turn with every other change to it in this process. Every save prunes it with `pruned`. */
 export async function updateState(
   dir: string,
@@ -80,7 +92,7 @@ export async function updateState(
 
   return inTurn(path, async () => {
     const { state: current, isSaved } = await readSaved(dir, sessionId)
-    const changed = await change(current)
+    const changed = await historyStep(questionHistory, sessionId, current, await change(current), Date.now())
     if (isSaved && changed === current) return current
     const next = pruned(changed)
     const folder = join(dir, 'sessions')

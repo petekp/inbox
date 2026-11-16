@@ -1,4 +1,5 @@
 import { optionBody, optionReasonLine, shownOptionDescriptions } from '../../hooks/rows'
+import { earlierLineText } from '../../hooks/earlier-answers'
 import type { Line } from './panel-lines'
 import { wrapText } from './panel-text'
 import type { Style } from './panel'
@@ -10,7 +11,7 @@ const LAST = '└─ '
 const NONE = '   '
 
 /**
- * An open ask's context, its answers' lines and its Holds up line, as a tree that hangs from the ◆ before its title.
+ * An open ask's context, its earlier answer, its answers' lines and its Holds up line, as a tree that hangs from the ◆ before its title.
  * The arms start under the ◆ and the text starts in the title's column. With no answer line or Holds up, the context
  * draws alone with no tree. `pad` is the row's extra indent.
  */
@@ -34,6 +35,20 @@ export function askTreeLines(line: Line, pad: number, width: number, s: Style, i
     })
   const out: string[] = []
   if (row.contextLine) out.push(...draw(hasTree ? TRUNK : NONE, row.contextLine, hasTree ? TRUNK : NONE))
+  const earlier = row.earlierLine
+  if (earlier) {
+    const arm = hasTree ? TRUNK : NONE
+    const head = earlier.lead + earlier.answer
+    wrapText(earlierLineText(earlier), room).forEach((l, i) => {
+      const arms = s.dim(margin + arm)
+      const isAnswerWhole = i === 0 && l.startsWith(head)
+      out.push(
+        isAnswerWhole
+          ? arms + s.dim(earlier.lead) + s.bold(earlier.answer) + s.dim(l.slice(head.length))
+          : arms + s.dim(l),
+      )
+    })
+  }
   const all = [...branches, ...(holdsUp ? [{ label: '', text: holdsUp, reason: null }] : [])]
   all.forEach((b, n) => {
     const isLast = n === all.length - 1
