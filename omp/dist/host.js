@@ -3418,7 +3418,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? carried?.stall ?? ownStall : null,
+      stall: waitsOn === null ? carried ? carried.stall : ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,

@@ -43,7 +43,7 @@ export function countsByMark(folded: Subject[]): StatusCount[] {
 const DAY_MS = 24 * 60 * 60_000
 
 /**
- * A subject's stall word: "waiting" while an ask holds it up, else how long it has gone without a change, in whole
+ * A subject's stall word: "waiting" while an ask holds it up and says nothing, else how long it has gone without a change, in whole
  * days, once it is open past `IDLE_AFTER_MS` with no child of it running.
  */
 function subjectStall(x: Subject, isHeld: boolean, isWorkRunning: boolean, now: number): StatusStall | null {
@@ -167,7 +167,7 @@ export function partRows(
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? (carried?.stall ?? ownStall) : null,
+      stall: waitsOn === null ? (carried ? carried.stall : ownStall) : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,

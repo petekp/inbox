@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T00:21:45.772Z. 249976 characters follow.
+// Built at 2026-11-16T00:27:47.803Z. 249984 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -1378,7 +1378,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? carried?.stall ?? ownStall : null,
+      stall: waitsOn === null ? carried ? carried.stall : ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,

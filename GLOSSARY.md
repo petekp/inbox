@@ -160,10 +160,10 @@ _Avoid_: step, phase
 Work that runs apart from the session's turn: a subagent, a workflow run or a
 Herdr delegate. A background command or Monitor task is not one: it is how the
 agent watches work, and the work it watches has its own row. A child shows under
-its subject while it runs, and leaves when it ends. A delegate that finished stays, reading
-"finished", until the person has seen the Status. Code follows it from the
-host's events and from Herdr. The inbox model only links it to a subject. When
-a subject's only child has the same name, ignoring case, spaces, hyphens and
+its subject while it runs, and leaves when it ends. A delegate that finished stays, marked ✓,
+until the person has seen the Status. Code follows it from the
+host's events and from Herdr. The inbox model only links it to a subject. While
+an open subject's only child has the same name, ignoring case, spaces, hyphens and
 underscores, the Status draws no row for the child, and the subject's row shows
 its state.
 _Avoid_: subitem, job
