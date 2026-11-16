@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { inPrOrder, commentLine, prRefs, prNeedsYou, prompts, readableComment, readiness } from '../hooks/prs'
 import { readPrNode } from '../hooks/pr-query'

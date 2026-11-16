@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { actionLines, drawnLists, tabUndos } from '../hooks/action-plan'
 import { demoSession } from '../hooks/demo'

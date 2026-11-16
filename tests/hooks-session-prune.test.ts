@@ -1,4 +1,5 @@
-import { expect, mock, test, type Engine } from 'claude-code/testing'
+import { expect, mock, type Engine } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import { KEPT_SESSIONS } from '../hooks/ledger'
 import { storedLength, w, world } from './hooks-world'
 import { SAVED_SESSION } from './hooks-helpers'

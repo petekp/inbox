@@ -1,4 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import type { PromptOrigin } from 'claude-code'
 import { DARK_TONES } from '../hooks/tones'
 import { w, world } from './hooks-world'

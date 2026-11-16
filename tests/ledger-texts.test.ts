@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { CLAUDE_CODE, MAX_TOOL_DESCRIPTION, guidedCloseDescription } from '../hooks/model-text'
 import { answerNote, carryText, questionNumbers } from '../hooks/inbox-text'

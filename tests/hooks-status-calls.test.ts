@@ -1,4 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Session } from '../types'

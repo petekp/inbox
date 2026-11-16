@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { EMPTY } from '../hooks/ledger'
 import { withChild } from '../hooks/status-children'

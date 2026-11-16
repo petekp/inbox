@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 
 import { parseStatus } from '../hooks/status'
 import { lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'

@@ -1,4 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock } from 'claude-code/testing'
+import { test } from './test-with-timeout'
 import { PRESS_GUARD_MS, QUEUED_AFTER_MS } from '../hooks/timing'
 import { w, arrive, arriveFirst, world } from './hooks-world'
 import { PANE, SAVED_SESSION } from './hooks-helpers'
