@@ -296,6 +296,18 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: s4 | -',
     ].join('\n'),
   ],
+  'milestone-split': [
+    [
+      'DONE: s9 | merged',
+      'MILESTONE: working | Export shipped | CSV columns picked',
+      'MILESTONE: queued | Onboarding ready | not started',
+      'SERVES: s10 | Export shipped',
+      'SERVES: s11 | Export shipped',
+      'SERVES: s12 | Onboarding ready',
+      'SERVES: s13 | Onboarding ready',
+      'DONE: m1 | first fixes merged',
+    ].join('\n'),
+  ],
   'next-milestone': [
     [
       'SET: s1 | working | deletes next',
