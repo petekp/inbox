@@ -1,7 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
-import { OPEN_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { ROW_PAD_PT } from '../../hooks/layout'
 import { isOpenRow } from './blocks'
 import type { Block, PathSide, RowBlock, TreeStroke } from './blocks'
 import type { PathLine } from '../../hooks/status-path'
@@ -25,14 +25,9 @@ import type { Paint, Theme } from './paint-theme'
 import { SLIDE_PX } from '../../hooks/row-motion'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
-/**
- * The padding a block keeps inside its own box, above and below, as a row's selection box. It counts toward the space.
- * A selected row's box shows, so it keeps half an item's gap.
- */
+/** The padding a block keeps inside its own box, above and below. It counts toward the space. */
 export function padOf(b: Block): number {
-  if (b.kind === 'row') return b.isSelected ? OPEN_ROW_PAD_PT : ROW_PAD_PT
-
-  return b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0
+  return b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0
 }
 
 /** A row that draws only its title line, with no box showing. */
@@ -135,18 +130,6 @@ const springBox = (id: string, height: number | undefined): Element =>
       .overflow_hidden()
       .when(height !== undefined, e => e.h(height ?? 0)),
   )
-
-/**
- * The padding a selected row adds past `ROW_PAD_PT`, above or below its lines, as a box whose height springs, so the
- * row's lines glide with its box as it is selected or left.
- */
-export function rowPadEl(r: RowBlock, edge: 'top' | 'bottom', p: Paint): Element {
-  const id = `pad ${edge} ${r.id}`
-  const box = springHeight(div().id(id).flex_none())
-  const extra = padOf(r) - ROW_PAD_PT
-
-  return p.isAtOnce(id) ? box.pt(extra) : box.h(extra)
-}
 
 /** Content that reports its size under `key`. */
 export const sizeEl = (key: string, p: Paint, el: Element): Element =>

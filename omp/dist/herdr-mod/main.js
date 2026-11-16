@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T19:58:17.378Z. 269167 characters follow.
+// Built at 2026-11-16T20:37:53.099Z. 268787 characters follow.
 
 // src/main.ts
 import { View, div as div8 } from "gpui-kit";
@@ -4057,8 +4057,7 @@ var SECTION_GAP_PT = 6 * SPACE_UNIT;
 var EDGE_PT = 4 * SPACE_UNIT;
 var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
 var MARK_PT = 6 * SPACE_UNIT;
-var ROW_PAD_PT = LIST_GAP_PT / 2;
-var OPEN_ROW_PAD_PT = ITEM_GAP_PT / 2;
+var ROW_PAD_PT = ITEM_GAP_PT / 2;
 var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
 
 // ../hooks/status-gaps.ts
@@ -5483,9 +5482,7 @@ function foldChevronEl(t, fold) {
 import { div as div3 } from "gpui-kit";
 import { v_flex } from "gpui-base";
 function padOf(b) {
-  if (b.kind === "row")
-    return b.isSelected ? OPEN_ROW_PAD_PT : ROW_PAD_PT;
-  return b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
+  return b.kind === "row" || b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
 }
 var isOneLineRow = (r) => !r.isSelected && r.body.length === 0 && r.settled === null && r.feedback === null && r.heldLine === undefined;
 function isOneLine(b) {
@@ -5552,12 +5549,6 @@ function spacesOf(blocks, isShut) {
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
 var springBox = (id, height) => springHeight(v_flex().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
-function rowPadEl(r, edge, p) {
-  const id = `pad ${edge} ${r.id}`;
-  const box = springHeight(div3().id(id).flex_none());
-  const extra = padOf(r) - ROW_PAD_PT;
-  return p.isAtOnce(id) ? box.pt(extra) : box.h(extra);
-}
 var sizeEl = (key, p, el) => div3().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
 function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
@@ -5801,10 +5792,10 @@ function rowEl(r, p) {
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(rowPadEl(r, "top", p)).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
     const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t, r.isSelected);
     return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
-  })).children(panelEl(r, m, p, isLeaving)))).child(rowPadEl(r, "bottom", p));
+  })).children(panelEl(r, m, p, isLeaving))));
 }
 function panelEl(r, m, p, isLeaving) {
   const { t } = p;

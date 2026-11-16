@@ -4,11 +4,6 @@
   grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
   padding: var(--row-pad) var(--edge) var(--row-pad) var(--mark-x);
 }
-/* A row pads half its gap: `list` between closed one-line rows, `item` around an open row or one that shows a second line. */
-.row.selected,
-.row.collapsed:has(.holds-up) {
-  --row-pad: var(--open-row-pad);
-}
 .row.selected {
   background-color: var(--selected);
 }
