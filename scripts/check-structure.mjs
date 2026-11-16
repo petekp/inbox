@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { checkClients } from './structure/clients.mjs'
 import { checkClassNames } from './structure/class-names.mjs'
+import { checkChevrons } from './structure/chevrons.mjs'
 import { checkCursors } from './structure/cursors.mjs'
 import { checkDocs, checkLookMap } from './structure/docs.mjs'
 import { checkEmptyTab } from './structure/empty-tab.mjs'
@@ -20,6 +21,7 @@ for (const check of [
   checkClients,
   checkEmptyTab,
   checkClassNames,
+  checkChevrons,
   checkCursors,
 ])
   check(ROOT, errors)

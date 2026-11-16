@@ -3684,7 +3684,7 @@ function helpKeys(look) {
 
 // ../hooks/fold-chevron.ts
 var FOLD_CLOSED_CHEVRON = "\u203A";
-var FOLD_OPEN_CHEVRON = "\u2304";
+var FOLD_OPEN_CHEVRON = "v";
 var foldGlyph = (isOpen) => isOpen ? FOLD_OPEN_CHEVRON : FOLD_CLOSED_CHEVRON;
 
 // ../hooks/status-folds.ts

@@ -1,11 +1,11 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
-import { foldGlyph } from '../../hooks/fold-chevron'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
+import { parentChevron } from '../../hooks/status-folds'
 import { isOpenRow } from './blocks'
 import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
 import {
@@ -26,6 +26,7 @@ import {
   TEXT_X,
   colorOf,
 } from './paint-theme'
+import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
 import { PATH_X, lineColor, panelId, restId, sizeEl, titleEl } from './paint-space'
@@ -279,7 +280,7 @@ const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whit
 
 /** A status line's name, its stall word and its fold's chevron, as one run of text. */
 const nameLineOf = (s: StatusLine): string =>
-  [s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name, s.fold?.chevron]
+  [s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name, s.fold && parentChevron(s.fold.isFolded, s.fold.count)]
     .filter(x => x !== undefined)
     .join(STALL_GAP)
 
@@ -328,10 +329,11 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const toggle = s.fold?.toggle
   const chevron = s.fold
     ? [
-        statusPartEl(s.fold.chevron)
-          .text_color(t.muted)
-          .ml(LINE_GAP)
-          .when(toggle !== undefined && !isInert, e => e.hover(x => x.text_color(t.foreground))),
+        foldChevronEl(t, {
+          isOpen: !s.fold.isFolded,
+          isLive: toggle !== undefined && !isInert,
+          ...(s.fold.isFolded ? { count: s.fold.count } : {}),
+        }),
       ]
     : []
   const word = s.word === undefined ? [] : [wordEl(s, s.word, t)]
@@ -507,7 +509,7 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolea
 
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
-  const fold: Button = {
+  const press: Button = {
     id: b.id,
     label: b.text,
     emphasis: 'quiet',
@@ -515,8 +517,8 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     hotkey: null,
     does: { is: 'view', change: b.change },
   }
-  const mark = b.kind === 'fold' ? b.mark : undefined
-  const chevron = b.kind === 'fold' ? foldGlyph(b.isOpen) : null
+  const fold = b.kind === 'fold' ? b : null
+  const mark = fold?.mark
 
   return h_flex()
     .id(`fold ${b.id}`)
@@ -526,17 +528,10 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .items_start()
     .text_color(t.muted)
     .accessibility_label(b.text)
-    .when(!isInert, e => e.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx)))
+    .when(!isInert, e => e.on_click((_e, cx) => p.press(press, cx)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(div().min_w(0).whitespace_normal().child(b.text))
-    .when(chevron !== null, e =>
-      e.child(
-        div()
-          .flex_none()
-          .ml(LINE_GAP)
-          .child(chevron ?? ''),
-      ),
-    )
+    .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))
 }
 
 /**

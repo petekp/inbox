@@ -12,7 +12,7 @@ import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL, shownMilestones } fro
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { isParentCollapsed, milestoneRows, parentChevron, unfoldedRows } from '../../hooks/status-folds'
+import { isParentCollapsed, milestoneRows, unfoldedRows } from '../../hooks/status-folds'
 import { LATER_TEXT, isSpacedAbove, workJoints } from '../../hooks/status-path'
 import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { cellWidth } from '../../hooks/text'
@@ -63,7 +63,7 @@ function foldOf(
     isCollapsed: !isFolded,
   })
 
-  return { fold: { chevron: parentChevron(isFolded, p.foldCount), toggle } }
+  return { fold: { isFolded, count: p.foldCount, toggle } }
 }
 
 function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollapsed: IsCollapsed): Block[] {

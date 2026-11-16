@@ -166,7 +166,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     : line.feedback && !statusUnder
       ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''
-  // omp marks a selected item with ❯, its `nav.cursor` symbol, and draws a fold's chevron as › and ⌄.
+  // omp marks a selected item with ❯, its `nav.cursor` symbol, and draws a fold's chevron as › and v.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
   const head = ` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s, tint)}`
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
