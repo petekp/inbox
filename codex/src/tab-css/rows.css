@@ -388,12 +388,12 @@ textarea {
   --tone: var(--key);
   color: color-mix(in oklab, var(--tone) var(--tint), currentcolor);
 }
-.title-tint.done {
+.title-tint.tint-done {
   --tone: var(--done);
 }
-.title-tint.muted {
+.title-tint.tint-muted {
   --tone: var(--muted);
 }
-.title-tint.error {
+.title-tint.tint-error {
   --tone: var(--error-mark);
 }
