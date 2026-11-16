@@ -14,6 +14,7 @@ import {
   CONTROL_GAP,
   EDGE,
   HELP_COLUMN,
+  HELP_INDENT,
   GROUP_GAP,
   INSET,
   LINE,
@@ -308,7 +309,9 @@ const wordEl = (s: StatusLine, word: string, t: Theme): Element =>
 function keyEl(s: StatusLine, does: string, t: Theme): Element {
   return h_flex()
     .items_start()
-    .px(EDGE)
+    .pl(EDGE + HELP_INDENT)
+    .pr(EDGE)
+    .pb(LINE_GAP)
     .child(
       div()
         .flex_none()

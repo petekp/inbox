@@ -3437,6 +3437,7 @@ export const register: Register = on => {
       ToneSvg,
       svgCell,
       markGlyph,
+      markWidth,
       section,
       groupTitle,
       sections,

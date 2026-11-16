@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T02:52:10.763Z. 258046 characters follow.
+// Built at 2026-11-16T03:20:17.499Z. 258141 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -5111,7 +5111,9 @@ var NARROW_PANE = 280;
 var BUTTON_H = 28;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
-var HELP_COLUMN = MARK_W * 2;
+var HELP_INDENT = NEST;
+var HELP_KEY_W = 32;
+var HELP_COLUMN = HELP_KEY_W + CONTROL_GAP;
 var HELP_ICON = 14;
 var HELP_ICON_TEXT = 10;
 var SEP = " · ";
@@ -5572,7 +5574,7 @@ var statusPartEl = (text) => div5().min_w(0).max_w_full().whitespace_normal().ch
 var nameLineOf = (s) => [s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name, s.fold?.chevron].filter((x) => x !== undefined).join(STALL_GAP);
 var wordEl = (s, word, t) => h_flex3().absolute().top(0).left(0).w_full().h(LINE).overflow_hidden().flex_wrap().child(statusPartEl(nameLineOf(s)).invisible().when(s.isBold, (e) => e.font_semibold())).child(div5().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word));
 function keyEl(s, does, t) {
-  return h_flex3().items_start().px(EDGE).child(div5().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div5().font_semibold().child(s.name))).child(div5().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex3().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LINE_GAP).child(div5().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div5().font_semibold().child(s.name))).child(div5().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;
