@@ -352,22 +352,13 @@ export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 export const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
-function pageEntries(
-  view: SessionView,
-  typing: string | null,
-  isSuggestionOpen: boolean,
-  isUnfolded: (id: string) => boolean,
-): Entry[] {
+function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isCollapsed = collapsedIn(view)
   const page = view.statusPage
   const blank: Entry = { kind: 'note', text: '' }
-  const empty = emptyTab(view, {
-    tab: 'overview',
-    isGoalFieldOpen: typing === GOAL_KEYS_ID,
-    isSuggestionOpen,
-  })
+  const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: typing === GOAL_KEYS_ID })
   if (empty) return emptyEntries(empty, empty.under?.is === 'set-goal' ? setGoal(empty.under) : [])
-  const top = goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed)
+  const top = goalSection(page, typing, isUnfolded, isCollapsed)
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row): Entry => ({ kind: 'page', row }))
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== 'part'
 
@@ -397,8 +388,7 @@ function helpEntries(screen: PanelScreen): Entry[] {
 
 export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen)
-  if (!isRowTab(tab))
-    return pageEntries(screen.view, ui.typing, ui.isSuggestionOpen, id => ui.statusUnfolded.includes(id))
+  if (!isRowTab(tab)) return pageEntries(screen.view, ui.typing, id => ui.statusUnfolded.includes(id))
 
   const collapsed = new Set(screen.view.collapsed)
   const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)

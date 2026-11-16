@@ -828,8 +828,6 @@ declare module 'claude-code' {
       closedAll: FoldKind[]
       /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
       statusUnfolded: string[]
-      /** Whether the person opened the suggested goal with New. Pressing Set, sending the goal's field or Cancel closes it. */
-      suggestionOpen: boolean
       /** The fold under the pointer on desktop: an Asks fold's kind, or `status-` and a Status fold's id. */
       foldHover: string | null
       /** The questions whose every option shows, by the row's id. */

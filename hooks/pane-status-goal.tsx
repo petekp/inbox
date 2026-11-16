@@ -20,9 +20,9 @@ import type { PaneStatusLines } from './pane-status-lines'
 import type { PaneStatusPath } from './pane-status-path'
 import type { StatusTone } from './help'
 import type { GoalBlock, MilestoneRow } from './status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, SUGGESTED_GOAL_LABEL } from './status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from './status-goal-page'
 import { paneGoalField, uncounted } from './pane-status-goal-field'
-import { GOAL_KEYS_ID, goalKeys, isSuggestionShown, milestoneKeyPlan, type StatusKey } from './status-keys'
+import { GOAL_KEYS_ID, goalKeyGroups, milestoneKeyPlan, type StatusKey } from './status-keys'
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
@@ -58,21 +58,9 @@ export function paneStatusGoal(
     keyRow,
     terminalKeyCells,
     desktopFrame,
-    isSuggestionOpen,
   }: Pick<
     PaneBase,
-    | 'e'
-    | 'look'
-    | 'Box'
-    | 'Text'
-    | 'pal'
-    | 'Input'
-    | 'typing'
-    | 'drafts'
-    | 'listColumns'
-    | 'now'
-    | 'statusKeyRow'
-    | 'isSuggestionOpen'
+    'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
   > &
     Pick<
       PaneStatusLines,
@@ -81,7 +69,7 @@ export function paneStatusGoal(
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow' | 'terminalKeyCells'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
-  handlers: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped' | 'updateSuggestionOpen'>,
+  handlers: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
   {
     statusRowLine,
     drawRows,
@@ -158,19 +146,33 @@ export function paneStatusGoal(
     handlers,
     muted,
   )
-  /** The suggested goal in the goal text's place: a dim label, then its words as the goal's text draws. */
-  const suggestionLines = (text: string, width: number): Drawn[] => [
-    muted('goal-suggested-label', SUGGESTED_GOAL_LABEL, width),
-    wrapped(
-      <Box key="goal-suggested">
-        <Text wrap="wrap" bold>
-          {text}
-        </Text>
-      </Box>,
-      text,
-      width,
-    ),
-  ]
+  /**
+   * The suggested goal's offer in the goal text's place, dim like the line that says no goal is set, with its buttons
+   * inline after it. When they do not fit on the offer's line, they sit on a line under it.
+   */
+  const offerLines = (text: string, offerKeys: StatusKey[], width: number): Drawn[] => {
+    const offer = suggestedGoalOffer(text)
+    if (offerKeys.length === 0) return [muted('goal-offer', offer, width)]
+    const inlineKeys = statusKeys({ id: GOAL_KEYS_ID, keys: offerKeys })
+    const offerWidth = look === 'desktop' ? desktopTextPt(offer) : cellWidth(offer)
+    const gap = look === 'desktop' ? desktopTextPt(STALL_GAP) : cellWidth(STALL_GAP)
+    if (offerWidth + gap + keysWidth(inlineKeys) <= width)
+      return [
+        {
+          el: (
+            <Box key="goal-offer" flexDirection="row" alignItems="center">
+              <Text color={pal.muted}>{offer}</Text>
+              <Box flexShrink={0} marginLeft={1}>
+                {headingKeys(inlineKeys)}
+              </Box>
+            </Box>
+          ),
+          lines: look === 'desktop' ? { least: 1, most: DESKTOP_BUTTON_LINES } : exactly(1),
+        },
+      ]
+
+    return [muted('goal-offer', offer, width), ...keysRow({ id: GOAL_KEYS_ID, keys: offerKeys }, width)]
+  }
   /** Marks in their tones, each with its text, on lines that wrap between them, as the Other work counts draw. */
   const markRun = (
     key: string,
@@ -366,8 +368,8 @@ export function paneStatusGoal(
    * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at its right,
    * then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then the
    * milestones, each after a blank line. While the person types a goal, the field and its Cancel take the text's place,
-   * and the buttons leave the heading. While the suggested goal shows, it takes the text's place, and its buttons the
-   * heading's.
+   * and the buttons leave the heading. While the suggested goal shows, its offer takes the text's place with its
+   * buttons after it, and the heading keeps only Undo.
    */
   const goalSection = (page: StatusPage): Drawn[] => {
     const g = page.goal
@@ -384,15 +386,16 @@ export function paneStatusGoal(
           width,
         )
       : muted('goal-none', NO_GOAL_TEXT)
-    const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) })
-    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null
+    const groups = goalKeyGroups(page)
+    const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: groups.heading })
+    const suggestion = page.suggestedGoal
     /** A met goal's lines under its text say nothing about the suggestion drawn in its place. */
     const shownGoal = suggestion === null ? g : null
     const under = [
       ...(isTypingGoal
         ? field(mark === null ? 0 : markInset, page)
         : suggestion !== null
-          ? suggestionLines(suggestion, width)
+          ? offerLines(suggestion, groups.offer, width)
           : [goalText]),
       ...(shownGoal?.was ? [muted('goal-was', `${WAS_PREFIX}${shownGoal.was}`, width)] : []),
       ...(shownGoal?.now ? [muted('goal-now', shownGoal.now, width)] : []),
@@ -432,7 +435,7 @@ export function paneStatusGoal(
   }
   /** New, the suggested goal and its buttons, or the field they opened, with no frame, for the empty page's centred column. */
   const setGoalBare = (
-    setGoal: { keys: StatusKey[]; isFieldOpen: boolean; suggestion: string | null },
+    setGoal: { keys: StatusKey[]; offerKeys: StatusKey[]; isFieldOpen: boolean; suggestion: string | null },
     page: StatusPage,
   ): Drawn[] =>
     setGoal.isFieldOpen
@@ -444,8 +447,8 @@ export function paneStatusGoal(
           ),
         ]
       : [
-          ...(setGoal.suggestion === null ? [] : suggestionLines(setGoal.suggestion, blockWidth)),
-          ...keysLine({ id: GOAL_KEYS_ID, keys: setGoal.keys }),
+          ...(setGoal.suggestion === null ? [] : offerLines(setGoal.suggestion, setGoal.offerKeys, blockWidth)),
+          ...(setGoal.keys.length === 0 ? [] : keysLine({ id: GOAL_KEYS_ID, keys: setGoal.keys })),
         ]
   return { goalSection, setGoalBare, markRun, isTypingGoal }
 }

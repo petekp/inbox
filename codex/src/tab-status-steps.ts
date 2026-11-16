@@ -1,7 +1,6 @@
 import { milestoneRows, unfoldedRows } from '../../hooks/status-folds'
 import { shownMilestones } from '../../hooks/status-goal-page'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
-import { isSuggestionShown } from '../../hooks/status-keys'
 import { WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
 import { statusUnfolded, tabState } from './tab-state'
@@ -40,7 +39,7 @@ const goalLines = (page: StatusPage): GoalLine[] =>
 
 /** The lines under the goal's text: what it was, where it stands now, and what it waits on. None under a suggestion. */
 function goalHead(page: StatusPage): TextLine[] {
-  const g = isSuggestionShown(page, tabState.isSuggestionOpen) ? null : page.goal
+  const g = page.suggestedGoal === null ? page.goal : null
 
   return [
     ...(g?.was ? [{ id: 'was', text: `${WAS_PREFIX}${g.was}` }] : []),

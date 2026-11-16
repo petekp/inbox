@@ -10,7 +10,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
 | `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: GOAL and RETIRE lines, MILESTONE and SERVES lines, milestones moved by id, met, Remove goal and its Undo, and a typed goal. |
-| `hooks/status-suggest.ts` | Shared module. The suggested goal: the SUGGEST line an answer writes, kept only while no goal runs, and Set, which makes it the goal. |
+| `hooks/status-suggest.ts` | Shared module. The suggested goal: the SUGGEST line an answer writes, kept only while no goal runs, and Set this goal, which makes it the goal. |
 | `hooks/status-milestone-work.ts` | Shared module. A milestone follows its linked work: it closes when that work closes and starts when that work is under way. Also `forgetSeenWas`, which drops a milestone's was line once the person has seen it. |
 | `hooks/status-goal-gate.ts` | Shared module. When code takes a GOAL or RETIRE line, and why it refuses one: the work the goal still holds, when it last moved forward, how long the work has left it, and whether there is work for a new goal. |
 | `hooks/status-folds.ts` | Shared module. Which Status rows a look draws while done folds and parent folds are open or shut, the chevron after a parent's name, and what waits on the person under each parent, which reopens its fold. |

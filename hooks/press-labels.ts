@@ -20,7 +20,7 @@ export function pressText(p: RowPress): string {
     case 'restore-goal':
       return 'Undo'
     case 'take-goal':
-      return 'Set'
+      return 'Set this goal'
     default:
       return capitalized(p.action)
   }

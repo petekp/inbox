@@ -1486,7 +1486,7 @@ function pressText(p) {
     case "restore-goal":
       return "Undo";
     case "take-goal":
-      return "Set";
+      return "Set this goal";
     default:
       return capitalized(p.action);
   }
@@ -3909,7 +3909,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var SUGGESTED_GOAL_LABEL = "Suggested";
+var suggestedGoalOffer = (text) => `Next goal: \u201C${text}\u201D?`;
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -4033,8 +4033,8 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
-var newGoal = (page, emphasis) => ({
-  press: page.suggestedGoal === null ? { action: "type-goal", text: "" } : { action: "show-suggestion" },
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
   label: "New",
   hotkey: "n",
   kind: "view",
@@ -4043,9 +4043,9 @@ var newGoal = (page, emphasis) => ({
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal(page, "quiet")];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
   if (g.isMet)
-    return [newGoal(page, "normal"), REMOVE_GOAL];
+    return [newGoal("normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
@@ -4053,14 +4053,18 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
-    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    { press: { action: "hide-suggestion" }, label: "Cancel", hotkey: "c", kind: "view", emphasis: "quiet" }
+    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
-var isSuggestionShown = (page, isSuggestionOpen) => isSuggestionOpen && page.suggestedGoal !== null;
-function goalKeys(page, isSuggestionOpen) {
-  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal) : goalKeyPlan(page);
+function goalKeyGroups(page) {
+  if (page.suggestedGoal === null)
+    return { heading: goalKeyPlan(page), offer: [] };
+  return { heading: page.canRestoreGoal ? [RESTORE_GOAL] : [], offer: suggestionKeyPlan(page.suggestedGoal) };
+}
+function goalKeys(page) {
+  const { heading, offer } = goalKeyGroups(page);
+  return [...heading, ...offer];
 }
 function parentFoldKeys(p, isCollapsed) {
   if (p.foldCount === 0)
@@ -4079,11 +4083,11 @@ var rowTarget = (isCollapsed) => (r) => ({
   id: r.id,
   keys: [...statusKeyPlan(r), ...r.kind === "subject" ? parentFoldKeys(r, isCollapsed) : []]
 });
-function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false, isSuggestionOpen = false) {
+function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false) {
   const fold = page.goal?.milestonesFold ?? null;
   const toTarget = rowTarget(isCollapsed);
   return [
-    { id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) },
+    { id: GOAL_KEYS_ID, keys: goalKeys(page) },
     ...fold === null ? [] : [{ id: fold.id, keys: milestonesFoldKeyPlan(page.goal) }],
     ...shownMilestones(page.goal, isUnfolded).flatMap((m) => [
       { id: m.id, keys: [...milestoneKeyPlan(m), ...parentFoldKeys(m, isCollapsed)] },
@@ -4092,8 +4096,8 @@ function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false
     ...unfoldedRows(page.rows, isUnfolded, isCollapsed).map(toTarget)
   ].filter((t) => t.keys.length > 0);
 }
-function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed = () => false, isSuggestionOpen = false) {
-  const targets = statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen);
+function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed = () => false) {
+  const targets = statusKeyRows(page, isUnfolded, isCollapsed);
   const opensAsk = (t) => t.keys.some((k) => k.press.action === "show-ask");
   const isFold = (t) => t.keys.every((k) => k.press.action === "toggle-fold" || k.press.action === "toggle-collapse");
   return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets.find((t) => !isFold(t)) ?? targets[0] ?? null;
@@ -8062,11 +8066,15 @@ function emptyTab(view, look) {
     const page = view.statusPage;
     if (!page.isEmpty)
       return null;
-    const isSuggestionOpen = look.isSuggestionOpen ?? false;
-    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion }
+      under: {
+        is: "set-goal",
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
+        isFieldOpen: look.isGoalFieldOpen,
+        suggestion: page.suggestedGoal
+      }
     };
   }
   if (look.tab === "prs") {
@@ -8144,7 +8152,7 @@ function partHeading(text, width, s, at = PAGE_TEXT_AT, isTitle = false) {
   const rule = "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)));
   return `${" ".repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`;
 }
-function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
+function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "", focusAmong = target) {
   const faces = target.keys.map((k) => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
@@ -8152,7 +8160,8 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between =
     isFollowUp: false,
     ...k.emphasis === "quiet" ? { isQuiet: true } : {}
   }));
-  const focused = isSelected ? pageFocus(target, d.ui) : -1;
+  const focus = isSelected ? pageFocus(focusAmong, d.ui) : -1;
+  const focused = focus < target.keys.length ? focus : -1;
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : [];
 }
 function foldChevron(p, d, isSelected) {
@@ -8241,12 +8250,15 @@ function goalPartId(part) {
     return part.fold.id;
   if (part.is === "heading")
     return part.page ? GOAL_KEYS_ID : null;
-  return part.is === "keys" ? GOAL_KEYS_ID : null;
+  if (part.is === "title")
+    return part.suggestion ? GOAL_KEYS_ID : null;
+  return part.is === "keys" || part.is === "suggestion" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
-function goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed) {
+function goalSection(page, typing, isUnfolded, isCollapsed) {
   const isTyping = typing === GOAL_KEYS_ID;
-  const suggestion = !isTyping && isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
+  const groups = goalKeyGroups(page);
+  const suggestion = isTyping || page.suggestedGoal === null ? null : { text: page.suggestedGoal, keys: groups.offer, before: groups.heading };
   const g = page.goal;
   const milestones = shownMilestones(g, isUnfolded);
   const fold = g?.milestonesFold ?? null;
@@ -8255,8 +8267,7 @@ function goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed) {
       is: "heading",
       text: g?.label ?? GOAL_HEADING,
       mark: g?.mark ?? null,
-      page: isTyping ? null : page,
-      isSuggestionOpen: suggestion !== null
+      page: isTyping ? null : page
     }),
     goalEntry({ is: "title", goal: g, isTyping, suggestion }),
     ...fold === null ? [] : [goalEntry({ is: "fold", fold })],
@@ -8292,13 +8303,37 @@ function setGoal(under) {
   if (under.isFieldOpen)
     return [goalEntry({ is: "field" })];
   return [
-    ...under.suggestion === null ? [] : [goalEntry({ is: "suggestion", text: under.suggestion })],
-    goalEntry({ is: "keys", keys: under.keys })
+    ...under.keys.length === 0 ? [] : [goalEntry({ is: "keys", keys: under.keys })],
+    ...under.suggestion === null ? [] : [
+      goalEntry({ is: "suggestion", offer: { text: under.suggestion, keys: under.offerKeys, before: under.keys } })
+    ]
   ];
 }
-function suggestionLines(text, d, at) {
+function offerFaces(offer, d, isSelected) {
+  const before = offer.before.length;
+  const target = { id: GOAL_KEYS_ID, keys: [...offer.before, ...offer.keys] };
+  const focus = isSelected ? pageFocus(target, d.ui) - before : -1;
+  const faces = offer.keys.map((k) => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false,
+    ...k.emphasis === "quiet" ? { isQuiet: true } : {}
+  }));
+  return { faces, focused: focus >= 0 && focus < faces.length ? focus : -1 };
+}
+function offerLines(offer, d, at, isSelected) {
   const { width, style: s } = d;
-  return [" ".repeat(at) + s.dim(SUGGESTED_GOAL_LABEL), ...indented(text, at, width, Infinity, s.bold)];
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim);
+  const { faces, focused } = offerFaces(offer, d, isSelected);
+  if (faces.length === 0)
+    return text;
+  const keys = faceLines(faces, focused, 0, width, s, s.dim("\xB7"));
+  const last = text[text.length - 1] ?? "";
+  const first = keys[0] ?? "";
+  if (keys.length === 1 && visibleLength(last) + visibleLength(first) + 1 <= width - 1)
+    return [...text.slice(0, -1), `${last} ${first}`];
+  return [...text, ...faceLines(faces, focused, at - 1, width, s, s.dim("\xB7"))];
 }
 function fieldLines(d, at) {
   const { ui, width, style: s } = d;
@@ -8334,7 +8369,10 @@ function milestoneLines(m, d, isSelected) {
 }
 function headingLines(part, d, isSelected) {
   const { width, now, style: s } = d;
-  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeys(part.page, part.isSuggestionOpen) }, d, isSelected, 1, s.dim("\xB7")) : [];
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim("\xB7"), {
+    id: GOAL_KEYS_ID,
+    keys: goalKeys(part.page)
+  }) : [];
   const right = width - 1;
   const { mark } = part;
   const at = mark === null ? PAGE_MARK_AT : PAGE_TEXT_AT;
@@ -8364,7 +8402,7 @@ function drawGoalPart(part, d, isSelected) {
     return [partHeading(LATER_TEXT, width, s)];
   if (part.is === "title") {
     const g = part.suggestion === null ? part.goal : null;
-    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? suggestionLines(part.suggestion, d, textAt) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
+    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? offerLines(part.suggestion, d, textAt, isSelected) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
     return [
       ...text,
       ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
@@ -8375,7 +8413,7 @@ function drawGoalPart(part, d, isSelected) {
   if (part.is === "milestone")
     return milestoneLines(part.row, d, isSelected);
   if (part.is === "suggestion")
-    return suggestionLines(part.text, d, PAGE_MARK_AT);
+    return offerLines(part.offer, d, PAGE_MARK_AT, isSelected);
   if (part.is === "keys")
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT);
   return fieldLines(d, PAGE_MARK_AT);
@@ -9038,18 +9076,14 @@ function orderEntries(screen, order, now) {
 var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
-function pageEntries(view, typing, isSuggestionOpen, isUnfolded) {
+function pageEntries(view, typing, isUnfolded) {
   const isCollapsed = collapsedIn(view);
   const page = view.statusPage;
   const blank = { kind: "note", text: "" };
-  const empty = emptyTab(view, {
-    tab: "overview",
-    isGoalFieldOpen: typing === GOAL_KEYS_ID,
-    isSuggestionOpen
-  });
+  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: typing === GOAL_KEYS_ID });
   if (empty)
     return emptyEntries(empty, empty.under?.is === "set-goal" ? setGoal(empty.under) : []);
-  const top = goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed);
+  const top = goalSection(page, typing, isUnfolded, isCollapsed);
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row) => ({ kind: "page", row }));
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
@@ -9076,7 +9110,7 @@ function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
     return helpEntries(screen);
   if (!isRowTab(tab))
-    return pageEntries(screen.view, ui.typing, ui.isSuggestionOpen, (id) => ui.statusUnfolded.includes(id));
+    return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id));
   const collapsed = new Set(screen.view.collapsed);
   const entries = tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
   return entries.map((e) => e.kind === "row" && collapsed.has(e.line.id) ? { ...e, line: { ...e.line, isCollapsed: true } } : e);
@@ -9158,8 +9192,7 @@ function typingKey(ui, id, key, now, text) {
   if (key === "enter") {
     if (draft.text.trim() === "")
       return { ui };
-    const closed = id === GOAL_KEYS_ID ? { ...ui, typing: null, isSuggestionOpen: false } : { ...ui, typing: null };
-    return { ui: closed, press: { action: "type", id, text: draft.text } };
+    return { ui: { ...ui, typing: null }, press: { action: "type", id, text: draft.text } };
   }
   if (key === "backspace")
     return edit([...draft.text].slice(0, -1).join(""));
@@ -9238,8 +9271,8 @@ function pageKey(screen, ui, key, now) {
   const page = screen.view.statusPage;
   const isUnfolded = (id) => ui.statusUnfolded.includes(id);
   const isCollapsed = collapsedIn(screen.view);
-  const rows = statusKeyRows(page, isUnfolded, isCollapsed, ui.isSuggestionOpen);
-  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed, ui.isSuggestionOpen);
+  const rows = statusKeyRows(page, isUnfolded, isCollapsed);
+  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed);
   if (!row)
     return null;
   if (key === "j" || key === "k") {
@@ -9277,18 +9310,8 @@ function pageKey(screen, ui, key, now) {
     const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } };
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } };
   }
-  if (press.action === "show-suggestion")
-    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: true, focus: { rowId: GOAL_KEYS_ID, index: 0 } } };
-  if (press.action === "hide-suggestion") {
-    const index = Math.max(0, goalKeys(page, false).findIndex((k) => k.press.action === "show-suggestion"));
-    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: { rowId: GOAL_KEYS_ID, index } } };
-  }
-  if (press.action === "take-goal")
-    return {
-      ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: null, pageReveal: GOAL_KEYS_ID },
-      press: { action: "take-goal", id: GOAL_KEYS_ID }
-    };
-  if (press.action !== "remove-goal" && press.action !== "restore-goal")
+  const isGoalPress = press.action === "remove-goal" || press.action === "restore-goal" || press.action === "take-goal";
+  if (!isGoalPress)
     return null;
   return {
     ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
@@ -9507,7 +9530,7 @@ function footer(d, isPageScrolling) {
     `\u21B5 ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
     `esc ${ROW_COPY.cancel}`
   ] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
-    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view), ui.isSuggestionOpen),
+    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view)),
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
     "? help"
@@ -9549,10 +9572,10 @@ function scrolled(body, selectedAt, room, s) {
     clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
   return clip;
 }
-function statusHints(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen) {
-  if (statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen).length === 0)
+function statusHints(page, selectedId, isUnfolded, isCollapsed) {
+  if (statusKeyRows(page, isUnfolded, isCollapsed).length === 0)
     return [];
-  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen);
+  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed);
   const fold = selected?.keys.find((k) => k.press.action === "toggle-collapse");
   const isPicking = (selected ? drawnKeys(selected).length : 0) > 1;
   return [
@@ -9576,7 +9599,6 @@ var INITIAL_UI = {
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
-  isSuggestionOpen: false,
   resuming: null,
   opened: null,
   pageTop: 0,
@@ -9628,7 +9650,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
-  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view), ui.isSuggestionOpen);
+  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view));
   let pageSelectedAt = null;
   const subjectAt = [];
   for (const e of entries) {
@@ -9756,8 +9778,6 @@ function createPanel(deps) {
       return;
     }
     screen = next;
-    if (ui.isSuggestionOpen && next.view.statusPage.suggestedGoal === null)
-      ui = { ...ui, isSuggestionOpen: false };
     const followed = followRows(next, ui, seen, isOpening, deps.now());
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now());
     seen = followed.seen;
@@ -11344,7 +11364,7 @@ var GOAL_PARTS = {
   "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
-  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it only when they ask for a new goal, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
+  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,

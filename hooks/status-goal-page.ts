@@ -68,7 +68,7 @@ export type GoalParts = {
   goal: GoalBlock | null
   /** Whether Undo can bring back the goal the person removed. */
   canRestoreGoal: boolean
-  /** The goal the Status call offers while no goal is set or the goal is met, which New shows. Null when none is. */
+  /** The goal the Status call offers while no goal is set or the goal is met, which the goal's place shows with Set this goal and Edit. Null when none is. */
   suggestedGoal: string | null
 }
 
@@ -77,8 +77,8 @@ const AWAITING_TEXT = 'Milestones after the next reply'
 export const GOAL_HEADING = 'Goal'
 /** The dim line under the goal's heading while no goal is set. */
 export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
-/** The dim label above the suggested goal's text while it shows in the goal's place. */
-export const SUGGESTED_GOAL_LABEL = 'Suggested'
+/** The suggested goal as a dim offer in the line where "No goal yet" would draw, with its buttons after it. */
+export const suggestedGoalOffer = (text: string): string => `Next goal: “${text}”?`
 /** What starts the id of the fold a met goal's milestones start in, apart from row and milestone ids. */
 const MILESTONES_FOLD_PREFIX = 'goal-milestones'
 

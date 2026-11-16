@@ -152,7 +152,6 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
                 ui.selectedId,
                 id => ui.statusUnfolded.includes(id),
                 collapsedIn(screen.view),
-                ui.isSuggestionOpen,
               ),
               ...(isPageScrolling ? ['↑↓ scroll'] : []),
               'tab switch',
@@ -210,10 +209,9 @@ function statusHints(
   selectedId: string | null,
   isUnfolded: (id: string) => boolean,
   isCollapsed: IsCollapsed,
-  isSuggestionOpen: boolean,
 ): string[] {
-  if (statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen).length === 0) return []
-  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen)
+  if (statusKeyRows(page, isUnfolded, isCollapsed).length === 0) return []
+  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed)
   const fold = selected?.keys.find(k => k.press.action === 'toggle-collapse')
   const isPicking = (selected ? drawnKeys(selected).length : 0) > 1
 
