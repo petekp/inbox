@@ -1202,7 +1202,7 @@ function countsByMark(folded) {
 }
 var DAY_MS = 24 * 60 * 6e4;
 function subjectStall(x, isHeld, isWorkRunning, now) {
-  if (isHeld) return { text: "waiting", tone: "needsYou" };
+  if (isHeld) return null;
   const idleMs = now - x.changedAt;
   const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS;
   return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS)}d`, tone: "muted" } : null;
@@ -1210,18 +1210,14 @@ function subjectStall(x, isHeld, isWorkRunning, now) {
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
-function childStall(c) {
-  if (c.delegateState === "blocked") return { text: "waiting", tone: "needsYou" };
-  return null;
-}
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
 }
 function carriedByChild(c, isHeld) {
-  if (c.delegateState === "blocked") return { ...HELD_MARK, isRunning: false, stall: childStall(c) };
-  if (c.delegateState === "finished" && !isHeld) return { ...SUBJECT_MARKS.done, isRunning: false, stall: null };
-  if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true, stall: null };
+  if (c.delegateState === "blocked") return { ...HELD_MARK, isRunning: false };
+  if (c.delegateState === "finished" && !isHeld) return { ...SUBJECT_MARKS.done, isRunning: false };
+  if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
 }
 function childRow(c, branch, depth) {
@@ -1233,7 +1229,6 @@ function childRow(c, branch, depth) {
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
-    stall: childStall(c),
     branch
   };
 }
@@ -1265,7 +1260,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: waitsOn === null ? carried ? carried.stall : ownStall : null,
+      stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
@@ -1376,7 +1371,6 @@ function milestoneRow(step, o, items) {
     isMuted: step.place === "later" || step.place === "dropped",
     foldId: null,
     text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []

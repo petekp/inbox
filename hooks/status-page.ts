@@ -15,16 +15,13 @@ const STATUS_FAILED =
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'
 
-/**
- * The words after a row's name: "waiting" in the needs-you tone while it waits on the person, or how long an open
- * subject has been idle, muted, as "idle 2d".
- */
-export type StatusStall = { text: string; tone: 'needsYou' | 'muted' }
+/** The words after a subject's name: how long it has been idle, muted, as "idle 2d". */
+export type StatusStall = { text: string; tone: 'muted' }
 
 /**
  * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
- * or child draws its name with its stall word after it, past `STALL_GAP`, in the stall's tone. A subject draws where it
- * stands on the line under its name.
+ * draws its name with its stall word after it, past `STALL_GAP`. A subject an open ask holds up draws the ask's words in
+ * the needs-you tone under its name, and where it stands on the line after.
  */
 export type StatusRow = {
   /** How many steps in from the list's edge it draws: a subject under a milestone at 1, a child under that subject at 2. */ depth: number
@@ -39,7 +36,7 @@ export type StatusRow = {
       name: string
       /** Where it stands. Null for a finished row the person has seen, as in a done fold. */
       text: string | null
-      /** "waiting" while its child waits on the person, else "idle 2d". Null while `waitsOn` is set. */
+      /** "idle 2d" once it has gone without a change. Null while `waitsOn` is set. */
       stall: StatusStall | null
       /** The oldest open ask that holds it up. */
       waitsOn: string | null
@@ -60,8 +57,6 @@ export type StatusRow = {
       /** Whether its work shows under way, as `isChildWorking` says. A look animates the mark while it is set. */
       isRunning: boolean
       name: string
-      /** What its work does, as `childStall` says. */
-      stall: StatusStall | null
       /**
        * Its place under its subject. Null when it is linked to no subject the list shows. It then sits first in the rows
        * of the milestone its subject serves, or else first in the list after the goal, under Other work while the goal
@@ -125,7 +120,6 @@ export type StatusPage = GoalParts & {
 const OTHER_WORK = 'Other work'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
-export const WAITS_ON_PREFIX = 'waits on you: '
 const MERGED_PREFIX = 'merged in: '
 /** What separates a row's name from its stall word. */
 export const STALL_GAP = ' · '

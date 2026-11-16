@@ -1,11 +1,6 @@
 import { nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP } from '../../hooks/status-page'
 import type { StatusStall } from '../../hooks/status-page'
 
-const STALL_CLASS: Record<StatusStall['tone'], string> = {
-  needsYou: 'tone-needsYou',
-  muted: 'muted',
-}
-
 /** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */
 function nameParts(name: string): { head: string; last: string } {
   const at = name.lastIndexOf(' ')
@@ -55,7 +50,7 @@ export function NameLine({ name, stall }: { name: string; stall: StatusStall | n
         <span class="unbroken">
           <span class="last">{last}</span>
           <span class="muted">{STALL_GAP}</span>
-          <span class={STALL_CLASS[stall.tone]}>{stall.text}</span>
+          <span class="muted">{stall.text}</span>
         </span>
       </span>
     </div>

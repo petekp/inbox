@@ -47,7 +47,7 @@ test('the Status page shows the head’s title and description, then its rows in
   expect(withWas.length).toBeGreaterThan(0)
   for (const row of withWas) {
     const first = at(row.name) + (row.waitsOn ? 2 : 1)
-    if (row.waitsOn) expect(lines[at(row.name) + 1]).toContain(`waits on you: ${row.waitsOn}`)
+    if (row.waitsOn) expect(lines[at(row.name) + 1]).toContain(row.waitsOn!)
     expect(lines[first]).toContain(row.text!)
     expect(lines[first + 1]).toContain(`was: ${row.was}`)
   }
@@ -74,17 +74,18 @@ test('on the Status page, the rows under a subject hang from its mark, ├─ fo
   expect(glyphs(last, next).map(g => g.trim())).toEqual(['└─', ...Array<string>(next - last - 1).fill('')])
 })
 
-test('on the Status page, a row’s stall word follows its name on the line of its last word, at every width, and running work and work waiting on someone else show none', () => {
+test('on the Status page, a blocked delegate, running work and work waiting on someone else show no stall word, at every width', () => {
   const wide = text(trialChangedScreen(), onPage, 80).split('\n')
-  expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting'))).toBe(true)
+  expect(wide.some(l => l.includes('◆') && l.includes('Tune how hard a pinch must be') && !l.includes(' · '))).toBe(
+    true,
+  )
   expect(wide.some(l => l.includes('Time the fade-out') && !l.includes(' · '))).toBe(true)
   expect(wide.some(l => l.includes('Search the pairing errors') && !l.includes(' · '))).toBe(true)
   expect(wide.some(l => l.includes('Glasses trial') && !l.includes(' · '))).toBe(true)
 
   for (const width of [26, 28, 30, 34, 40, 50]) {
     const lines = text(trialChangedScreen(), onPage, width).split('\n')
-    for (const word of ['waiting', 'finished'])
-      expect(lines.filter(l => l.includes(` ${word}`) && !l.includes('waits')).every(l => /\S · /.test(l))).toBe(true)
+    expect(lines.some(l => l.includes('waiting'))).toBe(false)
   }
 })
 
@@ -163,7 +164,7 @@ test('on the Status page, a subject an open ask holds up draws what it waits on 
   expect(held.length).toBeGreaterThan(0)
   const drawnText = text(screen, onPage)
   for (const row of held) {
-    expect(drawnText).toContain(`waits on you: ${row.waitsOn}`)
+    expect(drawnText).toContain(row.waitsOn!)
     expect(row.stall).toBeNull()
   }
 })
