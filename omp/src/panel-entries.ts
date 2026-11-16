@@ -135,6 +135,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
       ? NEEDS_YOU_GROUPS.map(g => ({
           kind: g.kind,
           title: g.title,
+          mark: { text: g.mark.mark, tone: g.mark.tone },
           rows: view.needsYou[g.list].filter(r => isDrawnInPlace(r, ui.shownSince)),
           closed: view.needsYou.closed[g.list].map(d => ({ ...d, title: d.ask })),
         }))
@@ -365,7 +366,7 @@ function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: 
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows]
 }
 
-/** Help in place of the tab's lines: the keys the panel takes, what each mark means, each tab's symbol, then which inbox build this is. */
+/** Help in place of the tab's lines: the keys the panel takes, what each mark means, then each tab's symbol. Which inbox build this is sits at the right end of the Keys title. */
 function helpEntries(screen: PanelScreen): Entry[] {
   const keys = helpKeys('omp')
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
@@ -373,7 +374,11 @@ function helpEntries(screen: PanelScreen): Entry[] {
   const textAt = at + column
 
   return [
-    { kind: 'heading', text: HELP_COPY.keys },
+    {
+      kind: 'heading',
+      text: HELP_COPY.keys,
+      ...(screen.version ? { aside: helpVersionText(screen.version, screen.isNextBuild === true) } : {}),
+    },
     ...keys.map((key): Entry => ({ kind: 'key', key, at, column })),
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.marks },
@@ -381,8 +386,6 @@ function helpEntries(screen: PanelScreen): Entry[] {
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.tabs },
     ...tabLegend().map((key): Entry => ({ kind: 'key', key, at, column })),
-    { kind: 'note', text: '' },
-    { kind: 'note', text: helpVersionText(screen.version, screen.isNextBuild === true), indent: textAt },
   ]
 }
 

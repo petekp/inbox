@@ -16,7 +16,7 @@ import type { DrawnStatus } from './tab-status-steps'
 import type { BannerLine } from './tab-line-steps'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 
-export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'opportunity' | 'error'
+export type Tone = 'needsYou' | 'issue' | 'findings' | 'tasks' | 'done' | 'opportunity' | 'error'
 
 type Emphasis = ActionEmphasis
 

@@ -8,6 +8,7 @@ import {
   IDLE_MARK,
   CLOSED_MARKS,
   FINDING_GROUPS,
+  NEEDS_YOU_MARKS,
   HELD_MARK,
   MARK_LEGEND,
   PR_MARKS,
@@ -300,6 +301,7 @@ test('the Help legend explains every mark a row or group title draws, once each'
     HELD_MARK.mark,
     ...Object.values(CLOSED_MARKS),
     ...Object.values(FINDING_GROUPS).map(g => g.mark),
+    ...Object.values(NEEDS_YOU_MARKS).map(g => g.mark),
     ...Object.values(PR_MARKS).map(m => m.text),
   ])
   const explained = MARK_LEGEND.map(m => m.mark)

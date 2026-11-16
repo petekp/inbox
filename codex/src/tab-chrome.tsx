@@ -29,14 +29,14 @@ export function HelpIcon() {
   )
 }
 
-/** Help in place of the tab's body: the keys this tab takes, then what each mark means, then which inbox build this is. */
+/** Help in place of the tab's body: the keys this tab takes, then what each mark means. Which inbox build this is sits at the right end of the Keys title. */
 export function HelpPage({ version }: { version: string }) {
   const keys = helpKeys('codex')
 
   return (
     <main class="status-page help">
       <section>
-        <GroupTitle title={HELP_COPY.keys} count={0} />
+        <GroupTitle title={HELP_COPY.keys} count={0} aside={version} />
         <div class="help-keys">
           {keys.flatMap(k => [
             <b key={`${k.keys}-keys`}>{k.keys}</b>,
@@ -74,7 +74,6 @@ export function HelpPage({ version }: { version: string }) {
           ])}
         </div>
       </section>
-      <p class="help-version muted">{version}</p>
     </main>
   )
 }

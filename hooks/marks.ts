@@ -11,6 +11,11 @@ export function markShape(mark: string, midY: number): string | null {
   switch (mark) {
     case '✓':
       return `<polyline points="0.6,${t + 4.4} 3,${t + 6.8} 7.4,${t + 1.4}" ${STROKE} stroke-width="1.4"/>`
+    case '☑':
+      return (
+        `<rect x="1" y="${t + 1}" width="6" height="6" rx="1.3" ${STROKE} stroke-width="0.95"/>` +
+        `<polyline points="2.4,${t + 4.1} 3.6,${t + 5.3} 5.7,${t + 2.8}" ${STROKE} stroke-width="1.1"/>`
+      )
     case '▲':
       return `<polygon points="4,${t + 0.6} 7.8,${t + 7.4} 0.2,${t + 7.4}" fill="currentColor"/>`
     case '✦':

@@ -35,8 +35,30 @@ section + section::before {
 .group-mark.opportunity {
   color: var(--opportunity);
 }
+.group-mark.tone-needsYou {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  margin-top: 2px;
+}
+.group-mark.tasks {
+  color: var(--tasks);
+}
+.group-shape {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+  overflow: visible;
+}
 .group-mark.issue {
   color: var(--issue);
+}
+.group-title .group-aside {
+  position: absolute;
+  right: 14px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
 }
 .group-title .count {
   color: var(--muted);

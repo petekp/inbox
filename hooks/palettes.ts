@@ -21,9 +21,10 @@ const DONE = 'suggestion'
 export const WORKING = 'text'
 const ISSUE = 'error'
 const FINDINGS = 'autoAccept'
+const TASKS = FINDINGS
 const PRS = 'planMode'
 
-export type Tone = Tab | 'issue' | 'done' | 'success' | 'opportunity' | 'working' | 'error'
+export type Tone = Tab | 'tasks' | 'issue' | 'done' | 'success' | 'opportunity' | 'working' | 'error'
 /**
  * The pane's colors in one Claude Code theme. Each text color meets WCAG AA,
  * 4.5:1, on every background the pane draws it on, and each marker meets 3:1.
@@ -106,6 +107,7 @@ const DARK_ANSI_PALETTE: Palette = {
     needsYou: NEEDS_YOU,
     issue: ISSUE,
     findings: FINDINGS,
+    tasks: TASKS,
     prs: PRS,
     done: DONE,
     success: OPPORTUNITY,
@@ -131,6 +133,7 @@ const LIGHT_ANSI_PALETTE: Palette = {
     needsYou: 'error',
     issue: ISSUE,
     findings: FINDINGS,
+    tasks: TASKS,
     prs: 'suggestion',
     done: DONE,
     success: OPPORTUNITY,
@@ -178,6 +181,7 @@ const THEME_KEY_PALETTE: Palette = {
     needsYou: NEEDS_YOU,
     issue: ISSUE,
     findings: FINDINGS,
+    tasks: TASKS,
     prs: PRS,
     done: DONE,
     success: OPPORTUNITY,
@@ -205,6 +209,7 @@ const DESKTOP_PALETTE: Palette = {
     needsYou: NEEDS_YOU,
     issue: ISSUE,
     findings: FINDINGS,
+    tasks: TASKS,
     prs: PRS,
     done: DONE,
     success: OPPORTUNITY,

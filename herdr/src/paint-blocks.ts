@@ -1,6 +1,7 @@
-import { div } from 'gpui-kit'
+import { PathBuilder, div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
+import { NEEDS_YOU_MARKS } from '../../hooks/help'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
@@ -103,14 +104,41 @@ const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false)
     .pl(indent)
     .children(buttons.map(b => buttonEl(b, p, isInert)))
 
+const CHECKBOX_PX = 11
+const CHECK_PATH = PathBuilder.stroke(1.5).move_to('27%', '53%').line_to('43%', '69%').line_to('74%', '31%').build()
+
+/** The Tasks mark, a checked box drawn as a shape, since the font's ☑ is small beside the other marks. */
+const checkboxEl = (color: Theme[keyof Theme]): Element =>
+  div()
+    .relative()
+    .flex_none()
+    .w(CHECKBOX_PX)
+    .h(CHECKBOX_PX)
+    .border_1()
+    .border_color(color)
+    .rounded(3)
+    .child(
+      window
+        .paint_path(CHECK_PATH, color)
+        .absolute()
+        .top(0)
+        .left(0)
+        .size(`${CHECKBOX_PX - 2}px`),
+    )
+
 /** A mark, at the start of the column that hangs before the text, so a tab's first marks sit on the panel's edge. */
 const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null = null): Element =>
-  div()
-    .w(MARK_W)
-    .flex_none()
-    .text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone)))
-    .when(m?.isRunning === true, e => e.loop('opacity', { from: 1, to: 0.3, period: RUNNING_PULSE_MS }))
-    .child(m?.text ?? '')
+  m?.text === NEEDS_YOU_MARKS.task.mark
+    ? div()
+        .w(MARK_W)
+        .flex_none()
+        .child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone))))
+    : div()
+        .w(MARK_W)
+        .flex_none()
+        .text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone)))
+        .when(m?.isRunning === true, e => e.loop('opacity', { from: 1, to: 0.3, period: RUNNING_PULSE_MS }))
+        .child(m?.text ?? '')
 
 const lineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W) =>
   div().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text)
@@ -428,6 +456,16 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
     .child(div().min_w(0).whitespace_normal().font_semibold().child(b.text))
     .when(b.count !== null, e => e.child(div().text_color(t.muted).child(`${SEP}${b.count}`)))
     .child(div().flex_1())
+    .when(b.aside !== undefined, e =>
+      e.child(
+        div()
+          .flex_none()
+          .ml(INSET)
+          .font_family(p.mono)
+          .text_color(t.muted)
+          .child(b.aside ?? ''),
+      ),
+    )
     .child(buttons)
 }
 
