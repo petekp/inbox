@@ -91,7 +91,6 @@ export type PaneBase = {
   /** The Closed folds whose earlier lines the person opened. */
   closedAll: FoldKind[]
   statusUnfolded: string[]
-  foldHover: string | null
   isHelpShown: boolean
   optionsShown: string[]
   termProgram: string | undefined

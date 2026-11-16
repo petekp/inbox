@@ -25,11 +25,11 @@ test('a Status parent draws a chevron after its name that folds its rows away an
 
   expect(statusOf(open, 's1')?.fold).toMatchObject({
     chevron: '▾',
-    toggle: { label: 'Fold', does: { is: 'collapse', id: 's1', isCollapsed: true } },
+    toggle: { does: { is: 'collapse', id: 's1', isCollapsed: true } },
   })
   expect(statusOf(folded, 's1')?.fold).toMatchObject({
     chevron: `▸ ${s1.foldCount}`,
-    toggle: { label: 'Unfold', does: { is: 'collapse', id: 's1', isCollapsed: false } },
+    toggle: { does: { is: 'collapse', id: 's1', isCollapsed: false } },
   })
   expect(statusOf(open, milestone.id)?.fold?.chevron).toBe('▾')
   expect(statusOf(folded, milestone.id)?.fold?.chevron).toBe(`▸ ${milestone.foldCount}`)
@@ -41,8 +41,21 @@ test('a Status parent draws a chevron after its name that folds its rows away an
   expect(statusOf(open, 's1')?.tree).toContainEqual(ownConnector)
   expect(statusOf(folded, 's1')?.tree ?? []).not.toContainEqual(ownConnector)
   expect(statusOf(folded, 's1')?.buttons.map(b => b.label)).toEqual(statusOf(open, 's1')?.buttons.map(b => b.label))
-  expect(statusOf(open, 's1')?.buttons.some(b => b.label === 'Fold')).toBe(false)
+  expect(statusOf(open, 's1')?.buttons.some(b => b.does.is === 'collapse')).toBe(false)
   expect(statusOf(open, 'c1')?.fold).toBeUndefined()
+})
+
+test('the press on a parent’s chevron saves its collapse and opens it again', () => {
+  const screen = demoScreen()
+  const toggleOf = (collapsed: string[]) => {
+    const blocks = tabBlocks({ ...screen, view: { ...screen.view, collapsed } }, uiOn('overview'))
+    const b = blocks.find(x => x.id === 's1')
+
+    return b?.kind === 'status' ? b.fold?.toggle.does : undefined
+  }
+
+  expect(toggleOf([])).toEqual({ is: 'collapse', id: 's1', isCollapsed: true })
+  expect(toggleOf(['s1'])).toEqual({ is: 'collapse', id: 's1', isCollapsed: false })
 })
 
 test('a collapse on the Status tab leaves the selected row, and one on a row tab selects its row', () => {

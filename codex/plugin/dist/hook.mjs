@@ -1188,9 +1188,10 @@ function waitingUnderParents(ledger) {
   const blockedOf = (subjectId) => o.children.filter((c) => c.subjectId === subjectId && c.endedAt === null && c.delegateState === "blocked").map((c) => c.id);
   const asksOf = (subjectId) => ledger.items.filter((i) => o.askSubjects[i.id]?.includes(subjectId)).map((i) => i.id);
   const subjects = o.subjects.filter((x) => x.into === null);
-  const milestones = o.goal ? o.milestones : [];
+  const delegating = subjects.filter((x) => o.children.some((c) => c.subjectId === x.id));
+  const milestones = o.goal ? o.milestones.filter((m) => subjects.some((x) => o.serves[x.id] === m.id)) : [];
   return new Map([
-    ...subjects.map((x) => [x.id, blockedOf(x.id)]),
+    ...delegating.map((x) => [x.id, blockedOf(x.id)]),
     ...milestones.map((m) => {
       const serving = subjects.filter((x) => o.serves[x.id] === m.id);
       return [m.id, [...new Set(serving.flatMap((x) => [...asksOf(x.id), ...blockedOf(x.id)]))]];
@@ -2039,6 +2040,56 @@ function sessionFields(saved, views) {
   };
 }
 
+// ../hooks/collapse.ts
+var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
+function newsByRow({ ledger, prViews, lastActions }) {
+  const pressed2 = (id) => lastActions[id]?.at;
+  const prs = Object.values(prViews.views);
+  const timed = (at, untimedUrl = null) => ({ at, untimedUrl, waiting: [] });
+  return new Map([
+    ...ledger.items.map((i) => [i.id, timed(latest(i.reportedAt, pressed2(i.id)))]),
+    ...ledger.findings.map((f) => [f.id, timed(latest(f.reopenedAt, pressed2(f.id)))]),
+    ...prs.flatMap(
+      (pr) => waitingThreads(pr).map((t) => {
+        const id = prThreadId(pr, t);
+        const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+        return [id, timed(latest(t.reply?.at, pressed2(id)), untimedUrl)];
+      })
+    ),
+    ...prs.flatMap(
+      (pr) => blockingChecks(pr).map((c) => {
+        const id = prCheckId(pr, c);
+        const untimedUrl = c.finishedAt === void 0 ? c.url ?? "" : null;
+        return [id, timed(latest(c.finishedAt, pressed2(id)), untimedUrl)];
+      })
+    ),
+    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }])
+  ]);
+}
+var isUnchanged = (news, c) => news !== void 0 && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null) && news.waiting.every((id) => c.waiting?.includes(id));
+function collapsedRows(s) {
+  const news = newsByRow(s);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
+}
+function settledCollapses(s) {
+  if (s.collapsed === void 0) return s;
+  const news = newsByRow(s);
+  let isChanged = false;
+  const kept = Object.entries(s.collapsed).flatMap(([id, c]) => {
+    const n = news.get(id);
+    if (!isUnchanged(n, c)) {
+      isChanged = true;
+      return [];
+    }
+    const waiting = c.waiting?.filter((w) => n?.waiting.includes(w)) ?? [];
+    if (waiting.length === (c.waiting?.length ?? 0)) return [[id, c]];
+    isChanged = true;
+    const settled = { at: c.at, ...c.untimedUrl !== void 0 && { untimedUrl: c.untimedUrl } };
+    return [[id, waiting.length > 0 ? { ...settled, waiting } : settled]];
+  });
+  return isChanged ? { ...s, collapsed: Object.fromEntries(kept) } : s;
+}
+
 // ../hooks/catch-up-text.ts
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
@@ -2738,38 +2789,6 @@ function perTurnStatus(isUpdating, recovery) {
   return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
-// ../hooks/collapse.ts
-var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
-function newsByRow({ ledger, prViews, lastActions }) {
-  const pressed2 = (id) => lastActions[id]?.at;
-  const prs = Object.values(prViews.views);
-  const timed = (at, untimedUrl = null) => ({ at, untimedUrl, waiting: [] });
-  return new Map([
-    ...ledger.items.map((i) => [i.id, timed(latest(i.reportedAt, pressed2(i.id)))]),
-    ...ledger.findings.map((f) => [f.id, timed(latest(f.reopenedAt, pressed2(f.id)))]),
-    ...prs.flatMap(
-      (pr) => waitingThreads(pr).map((t) => {
-        const id = prThreadId(pr, t);
-        const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
-        return [id, timed(latest(t.reply?.at, pressed2(id)), untimedUrl)];
-      })
-    ),
-    ...prs.flatMap(
-      (pr) => blockingChecks(pr).map((c) => {
-        const id = prCheckId(pr, c);
-        const untimedUrl = c.finishedAt === void 0 ? c.url ?? "" : null;
-        return [id, timed(latest(c.finishedAt, pressed2(id)), untimedUrl)];
-      })
-    ),
-    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }])
-  ]);
-}
-var isUnchanged = (news, c) => news !== void 0 && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null) && news.waiting.every((id) => c.waiting?.includes(id));
-function collapsedRows(s) {
-  const news = newsByRow(s);
-  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
-}
-
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -3084,11 +3103,11 @@ function pruned(s) {
     )
   );
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
-  return {
+  return settledCollapses({
     ...s,
     ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
-  };
+  });
 }
 
 // src/diagnostics.ts

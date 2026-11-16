@@ -213,6 +213,9 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       await pause(FOLD_QUIET_MS + 400)
       assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
       assert.match(root.textContent ?? '', /2 closed/)
+      const closedFold = root.querySelector('button.fold')!
+      assert.match(closedFold.firstChild?.textContent ?? '', /^2 closed$/)
+      assert.equal(closedFold.lastElementChild?.tagName.toLowerCase(), 'svg')
 
       state.ledger = recordItem(
         CODEX,

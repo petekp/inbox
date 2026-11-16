@@ -38,7 +38,7 @@ import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
-import { isParentCollapsed, milestoneRows, parentChevron } from './status-folds'
+import { isParentCollapsed, milestoneRows } from './status-folds'
 import type { IsCollapsed } from './status-folds'
 import type { PaneStatusParent } from './pane-status-parent'
 import { isSpacedAbove, LATER_TEXT, workJoints } from './status-path'
@@ -92,6 +92,7 @@ export function paneStatusGoal(
     isUnfolded,
     isCollapsed,
     parentName,
+    chevronText,
     path,
   }: {
     statusRowLine: StatusRowLine
@@ -103,6 +104,7 @@ export function paneStatusGoal(
     isUnfolded: (id: string) => boolean
     isCollapsed: IsCollapsed
     parentName: PaneStatusParent['parentName']
+    chevronText: PaneStatusParent['chevronText']
     path: PaneStatusPath
   },
 ) {
@@ -262,7 +264,7 @@ export function paneStatusGoal(
     }
 
     const isFolded = isParentCollapsed(m, isCollapsed)
-    const chevron = parentChevron(isFolded, m.foldCount)
+    const chevron = chevronText(m.id, { isCollapsed: isFolded, count: m.foldCount })
 
     return statusRowLine({
       key: `status-${m.id}`,

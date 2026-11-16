@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T01:38:09.470Z. 255410 characters follow.
+// Built at 2026-11-16T01:54:05.561Z. 255361 characters follow.
 
 // src/main.ts
 import { View, div as div6 } from "gpui-kit";
@@ -1294,9 +1294,10 @@ function waitingUnderParents(ledger) {
   const blockedOf = (subjectId) => o.children.filter((c) => c.subjectId === subjectId && c.endedAt === null && c.delegateState === "blocked").map((c) => c.id);
   const asksOf = (subjectId) => ledger.items.filter((i) => o.askSubjects[i.id]?.includes(subjectId)).map((i) => i.id);
   const subjects = o.subjects.filter((x) => x.into === null);
-  const milestones = o.goal ? o.milestones : [];
+  const delegating = subjects.filter((x) => o.children.some((c) => c.subjectId === x.id));
+  const milestones = o.goal ? o.milestones.filter((m) => subjects.some((x) => o.serves[x.id] === m.id)) : [];
   return new Map([
-    ...subjects.map((x) => [x.id, blockedOf(x.id)]),
+    ...delegating.map((x) => [x.id, blockedOf(x.id)]),
     ...milestones.map((m) => {
       const serving = subjects.filter((x) => o.serves[x.id] === m.id);
       return [m.id, [...new Set(serving.flatMap((x) => [...asksOf(x.id), ...blockedOf(x.id)]))]];
@@ -4176,8 +4177,7 @@ function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
       depth: 0,
       text: fold.text,
       isOpen: isUnfolded(fold.id),
-      change: { toggleFold: fold.id },
-      isLabelFirst: true
+      change: { toggleFold: fold.id }
     }
   ] : [];
   const shown = shownMilestones(g, isUnfolded);
@@ -5551,9 +5551,8 @@ function foldEl(b, p, isInert) {
     does: { is: "view", change: b.change }
   };
   const mark = b.kind === "fold" ? b.mark : undefined;
-  const chevron = b.kind === "fold" && b.isOpen ? "▾" : "▸";
-  const isChevronAfter = mark !== undefined || b.kind === "fold" && b.isLabelFirst === true;
-  return h_flex3().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(b.kind === "fold" && !isChevronAfter, (e) => e.child(div5().mr(CONTROL_GAP).child(chevron))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div5().min_w(0).whitespace_normal().child(b.text)).when(isChevronAfter, (e) => e.child(div5().flex_none().ml(LINE_GAP).child(chevron)));
+  const chevron = b.kind === "fold" ? b.isOpen ? "▾" : "▸" : null;
+  return h_flex3().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div5().min_w(0).whitespace_normal().child(b.text)).when(chevron !== null, (e) => e.child(div5().flex_none().ml(LINE_GAP).child(chevron ?? "")));
 }
 function blockEl(b, p) {
   const { t } = p;

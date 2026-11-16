@@ -143,6 +143,7 @@ test('on the Status, a parent folds its rows by its name or its f key and opens 
     await terminal.press({ key: 'next' })
     await clock.settle()
   }
+  expect((await terminal.find({ key: 'parent-s1' }))?.text).toBe('f: ▾')
   await terminal.press({ key: 'toggle-collapse-s1-key' })
   await clock.settle()
   expect(await terminal.find({ key: 'status-c1' })).toBeUndefined()

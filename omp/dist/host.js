@@ -3331,9 +3331,10 @@ function waitingUnderParents(ledger) {
   const blockedOf = (subjectId) => o.children.filter((c) => c.subjectId === subjectId && c.endedAt === null && c.delegateState === "blocked").map((c) => c.id);
   const asksOf = (subjectId) => ledger.items.filter((i) => o.askSubjects[i.id]?.includes(subjectId)).map((i) => i.id);
   const subjects = o.subjects.filter((x) => x.into === null);
-  const milestones = o.goal ? o.milestones : [];
+  const delegating = subjects.filter((x) => o.children.some((c) => c.subjectId === x.id));
+  const milestones = o.goal ? o.milestones.filter((m) => subjects.some((x) => o.serves[x.id] === m.id)) : [];
   return new Map([
-    ...subjects.map((x) => [x.id, blockedOf(x.id)]),
+    ...delegating.map((x) => [x.id, blockedOf(x.id)]),
     ...milestones.map((m) => {
       const serving = subjects.filter((x) => o.serves[x.id] === m.id);
       return [m.id, [...new Set(serving.flatMap((x) => [...asksOf(x.id), ...blockedOf(x.id)]))]];
@@ -5308,6 +5309,62 @@ function herdrPanelOpener() {
   });
 }
 
+// ../hooks/collapse.ts
+var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
+function newsByRow({ ledger, prViews, lastActions }) {
+  const pressed = (id) => lastActions[id]?.at;
+  const prs = Object.values(prViews.views);
+  const timed = (at, untimedUrl = null) => ({ at, untimedUrl, waiting: [] });
+  return new Map([
+    ...ledger.items.map((i) => [i.id, timed(latest(i.reportedAt, pressed(i.id)))]),
+    ...ledger.findings.map((f) => [f.id, timed(latest(f.reopenedAt, pressed(f.id)))]),
+    ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
+      const id = prThreadId(pr, t);
+      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
+      return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)];
+    })),
+    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
+      const id = prCheckId(pr, c);
+      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
+      return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)];
+    })),
+    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }])
+  ]);
+}
+var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null) && news.waiting.every((id) => c.waiting?.includes(id));
+function collapsedRows(s) {
+  const news = newsByRow(s);
+  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
+}
+function settledCollapses(s) {
+  if (s.collapsed === undefined)
+    return s;
+  const news = newsByRow(s);
+  let isChanged = false;
+  const kept = Object.entries(s.collapsed).flatMap(([id, c]) => {
+    const n = news.get(id);
+    if (!isUnchanged(n, c)) {
+      isChanged = true;
+      return [];
+    }
+    const waiting = c.waiting?.filter((w) => n?.waiting.includes(w)) ?? [];
+    if (waiting.length === (c.waiting?.length ?? 0))
+      return [[id, c]];
+    isChanged = true;
+    const settled = { at: c.at, ...c.untimedUrl !== undefined && { untimedUrl: c.untimedUrl } };
+    return [[id, waiting.length > 0 ? { ...settled, waiting } : settled]];
+  });
+  return isChanged ? { ...s, collapsed: Object.fromEntries(kept) } : s;
+}
+function withCollapse(s, row, isCollapsed, at) {
+  const news = newsByRow(s);
+  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
+  const untimedUrl = news.get(row)?.untimedUrl ?? null;
+  const waiting = news.get(row)?.waiting ?? [];
+  const collapse = { at, ...untimedUrl !== null && { untimedUrl }, ...waiting.length > 0 && { waiting } };
+  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
+}
+
 // ../hooks/catch-up-text.ts
 var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
 function transcriptCatchUpPrompt(ledger, screen, transcript) {
@@ -6925,42 +6982,6 @@ function perTurnStatus(isUpdating, recovery) {
   return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
-// ../hooks/collapse.ts
-var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
-function newsByRow({ ledger, prViews, lastActions }) {
-  const pressed = (id) => lastActions[id]?.at;
-  const prs = Object.values(prViews.views);
-  const timed = (at, untimedUrl = null) => ({ at, untimedUrl, waiting: [] });
-  return new Map([
-    ...ledger.items.map((i) => [i.id, timed(latest(i.reportedAt, pressed(i.id)))]),
-    ...ledger.findings.map((f) => [f.id, timed(latest(f.reopenedAt, pressed(f.id)))]),
-    ...prs.flatMap((pr) => waitingThreads(pr).map((t) => {
-      const id = prThreadId(pr, t);
-      const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
-      return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)];
-    })),
-    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
-      const id = prCheckId(pr, c);
-      const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
-      return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)];
-    })),
-    ...[...waitingUnderParents(ledger)].map(([id, waiting]) => [id, { at: -Infinity, untimedUrl: null, waiting }])
-  ]);
-}
-var isUnchanged = (news, c) => news !== undefined && news.at <= c.at && news.untimedUrl === (c.untimedUrl ?? null) && news.waiting.every((id) => c.waiting?.includes(id));
-function collapsedRows(s) {
-  const news = newsByRow(s);
-  return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
-}
-function withCollapse(s, row, isCollapsed, at) {
-  const news = newsByRow(s);
-  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
-  const untimedUrl = news.get(row)?.untimedUrl ?? null;
-  const waiting = news.get(row)?.waiting ?? [];
-  const collapse = { at, ...untimedUrl !== null && { untimedUrl }, ...waiting.length > 0 && { waiting } };
-  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
-}
-
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var OTHER_WORK = "Other work";
@@ -7311,11 +7332,11 @@ function rowsInPlace(s) {
 function pruned(s) {
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
-  return {
+  return settledCollapses({
     ...s,
     ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
-  };
+  });
 }
 function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = null, unread = {}) {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
@@ -7695,7 +7716,9 @@ function drawPageRow(row, d, isSelected = false) {
   }
   if (row.kind === "done-fold") {
     const chevron = d.ui.statusUnfolded.includes(row.id) ? "\u25BE" : "\u25B8";
-    return isSelected ? pageLine(d, at, s.tone("accent", chevron), row.text, s.bold) : pageLine(d, at, s.dim(chevron), row.text, s.dim);
+    return pageLine(d, at, " ", row.text, isSelected ? s.bold : s.dim, {
+      chevron: { text: chevron, paint: isSelected ? (t) => s.tone("accent", t) : s.dim }
+    });
   }
   if (row.kind === "part")
     return ["", partHeading(row.text, width, s)];
@@ -8194,8 +8217,8 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
     kind: "row",
     line: {
       ...blankLine(foldId(g.kind)),
-      lead: { text: isUnfolded ? "\u25BE" : "\u25B8", tone: "sep" },
-      title: foldLabel(total),
+      lead: g.mark ? null : { text: "", tone: null },
+      title: `${foldLabel(total)} ${isUnfolded ? "\u25BE" : "\u25B8"}`,
       isDim: true,
       fold: g.kind,
       isWaiting: false
@@ -10113,7 +10136,7 @@ var CLIENTS = {
       "status-named-fold": { kind: "full" },
       "status-parent-fold": {
         kind: "different",
-        reason: "A parent's fold takes clicks only, as a done fold does: the Codex Status has no row selection and is used by clicking."
+        reason: "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection."
       },
       "seen-on-screen": { kind: "full" },
       "status-idle-age": { kind: "full" },

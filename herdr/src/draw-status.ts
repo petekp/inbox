@@ -272,7 +272,6 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
           text: fold.text,
           isOpen: isUnfolded(fold.id),
           change: { toggleFold: fold.id },
-          isLabelFirst: true,
         },
       ]
     : []

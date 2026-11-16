@@ -158,24 +158,24 @@ test('in a short panel, switching to the Status page scrolls its first selected 
   expect(lines.some(l => l.includes('↵ View'))).toBe(true)
 })
 
-test('on the Status page, j reaches the done fold after the rows with buttons, Enter lists its finished rows one step in under ▾, and f folds them again', () => {
+test('on the Status page, j reaches the done fold after the rows with buttons, Enter lists its finished rows in the label column under ▾, and f folds them again', () => {
   const screen = goallessScreen()
   const fold = screen.view.statusPage.rows.find(r => r.kind === 'done-fold')!
   const finished = fold.kind === 'done-fold' ? fold.rows : []
   const onFold = keys(screen, onPage, 'j', 'j', 'j')
   expect(onFold.selectedId).toBe(fold.id)
   const folded = text(screen, onFold).split('\n')
-  expect(folded.filter(l => l.includes(`▸ ${labelOf(fold)}`))).toHaveLength(1)
+  expect(folded.filter(l => l.includes(`${labelOf(fold)} ▸`))).toHaveLength(1)
   expect(finished.length).toBeGreaterThan(0)
 
   const unfolded = keys(screen, onFold, 'enter')
   const lines = text(screen, unfolded).split('\n')
-  const foldAt = lines.findIndex(l => l.includes(`▾ ${labelOf(fold)}`))
+  const foldAt = lines.findIndex(l => l.includes(`${labelOf(fold)} ▾`))
   expect(foldAt).toBeGreaterThan(-1)
   expect(lines.slice(foldAt + 1, foldAt + 1 + finished.length).map(l => l.trim())).toEqual(
     finished.map(r => `✓ ${labelOf(r)}`),
   )
-  expect(lines[foldAt + 1]!.indexOf('✓')).toBe(lines[foldAt]!.indexOf('▾') + 2)
+  expect(lines[foldAt + 1]!.indexOf('✓')).toBe(lines[foldAt]!.indexOf(labelOf(fold)))
   expect(text(screen, keys(screen, unfolded, 'f'))).toBe(text(screen, onFold))
 })
 

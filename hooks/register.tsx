@@ -310,7 +310,6 @@ const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldK
 const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
 /** The Closed folds whose earlier lines the person opened. */
 const CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
-const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as string | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 /** Switching tabs or closing the pane closes Help. */
 const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
@@ -1543,10 +1542,6 @@ async function setFold($: EngineInterface, key: string, isUnfolded: unknown) {
     : update($, STATUS_UNFOLDED, u => withFold(u, fold.statusId, isUnfolded)))
 }
 
-async function setFoldHover($: EngineInterface, key: string, isHover: boolean) {
-  if (foldOf(key)) await update($, FOLD_HOVER, hovered => (isHover ? key : hovered === key ? null : hovered))
-}
-
 async function unlessGuarded($: EngineInterface, rowId: string, press: UiPressArgument, onPress: Action['onPress']) {
   const [selection, tab, now] = await Promise.all([read($, SELECTION), readRowTab($), $.clock.now()])
   const cursor = tab === null ? NO_CURSOR : selection[tab]
@@ -2769,7 +2764,6 @@ export const register: Register = on => {
     const data = e.data as {
       tab?: unknown
       isUnfolded?: unknown
-      hover?: unknown
       key?: unknown
       isPointer?: unknown
     } | null
@@ -2799,8 +2793,6 @@ export const register: Register = on => {
       })
     } else if (/^(select|collapse)-/.test(e.element)) await toggleRow($, e.element.replace(/^\w+-/, ''))
     else if (e.element.startsWith(PARENT_PREFIX)) await toggleParent($, e.element.slice(PARENT_PREFIX.length))
-    else if (e.element.startsWith('fold-') && typeof data?.hover === 'boolean')
-      await setFoldHover($, e.element.slice('fold-'.length), data.hover)
     else if (e.element.startsWith('fold-')) await setFold($, e.element.slice('fold-'.length), data?.isUnfolded)
 
     return r
@@ -2812,7 +2804,6 @@ export const register: Register = on => {
     void syncShown($, { isOpen: false }).then(() => syncLook($, false))
     paneHasKeys.clear()
     await update($, TYPING, () => null)
-    await update($, FOLD_HOVER, () => null)
     await update($, IS_HELP_SHOWN, () => false)
 
     return r
@@ -2970,7 +2961,6 @@ export const register: Register = on => {
       typing,
       drafts,
       unfolded,
-      foldHover,
       isHelpShown,
       optionsShown,
       termProgram,
@@ -2986,7 +2976,6 @@ export const register: Register = on => {
       read($, TYPING),
       read($, DRAFTS),
       read($, UNFOLDED),
-      read($, FOLD_HOVER),
       read($, IS_HELP_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
@@ -3298,7 +3287,6 @@ export const register: Register = on => {
         isInline,
         space,
         now,
-        foldHover,
         Button,
         settledLayout,
         desktopFrame,

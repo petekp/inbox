@@ -317,7 +317,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-parent-fold': {
         kind: 'different',
         reason:
-          "A parent's fold takes clicks only, as a done fold does: the Codex Status has no row selection and is used by clicking.",
+          "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection.",
       },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },

@@ -294,8 +294,8 @@ export function groupEntries(
     kind: 'row',
     line: {
       ...blankLine(foldId(g.kind)),
-      lead: { text: isUnfolded ? '▾' : '▸', tone: 'sep' },
-      title: foldLabel(total),
+      lead: g.mark ? null : { text: '', tone: null },
+      title: `${foldLabel(total)} ${isUnfolded ? '▾' : '▸'}`,
       isDim: true,
       fold: g.kind,
       isWaiting: false,

@@ -195,7 +195,7 @@ _Avoid_: Seen line, look line
 
 **Done fold**:
 The line on the Status that counts seen finished work it does not draw, as "3
-done", after a chevron and with no mark. Pressing it lists those rows under it,
+done", with the chevron after it and no mark. Pressing it lists those rows under it,
 one step in, as the Closed fold lists closed items, and pressing it again folds
 them. The list after the goal, each milestone and Other work each have their
 own.
@@ -204,9 +204,11 @@ _Avoid_: done row, done count
 **Parent fold**:
 A subject or milestone on the Status folded by a press on its name, which hides
 the rows under it and shows ▸ and how many rows it hides after the name. The
-same press opens it, and ▾ follows the name while it is open. The fold is saved
-with the session's collapsed rows. It opens on its own once something new under
-it waits on the person: an ask that holds up its work, or a blocked delegate.
+same press opens it, and ▾ follows the name while it is open. It counts the rows
+one step under it: a subject's delegates, or a milestone's subjects and the
+running work linked to it. The fold is saved with the session's collapsed rows.
+It opens on its own once something new under it waits on the person, an ask that
+holds up its work or a blocked delegate, and stays open after that.
 _Avoid_: collapsed subject, folded milestone
 
 **Band**:

@@ -145,8 +145,9 @@ export function paneStatus(
   const { showAsk, runPress, startTyping, selectStatusRow, updateStatusUnfolded, toggleParent } = handlers
   const isUnfolded = (id: string) => statusUnfolded.includes(id)
   const isCollapsed = (id: string) => view.collapsed.includes(id)
-  const { parentName } = paneStatusParent(
+  const { parentName, chevronText } = paneStatusParent(
     {
+      // Rebuilt in each branch so TypeScript keeps `hasClient` paired with `elements`.
       ...(hasClient ? { hasClient, elements } : { hasClient, elements }),
       look,
       Box,
@@ -157,6 +158,7 @@ export function paneStatus(
       statusNameLine,
       nameLineSpans,
       statusTextWidth,
+      statusKeyRow,
     },
     handlers,
   )
@@ -217,15 +219,12 @@ export function paneStatus(
     content,
     tree = null,
     isSelected = false,
-    isFold = false,
   }: {
     key: string
     depth?: number
     mark: JSX.Element | null
     content: Drawn | Drawn[]
     tree?: JSX.Element | null
-    /** A fold's line in the terminal, whose control draws its chevron in the mark column and its count at the text column. */
-    isFold?: boolean
     /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
     isSelected?: boolean
   }): Drawn => {
@@ -252,11 +251,9 @@ export function paneStatus(
           backgroundColor={isSelected ? pal.selection : undefined}
         >
           <Box width={statusMarkAt + markWidth * depth} flexShrink={0} />
-          {isFold ? null : (
-            <Box width={markWidth} flexShrink={0}>
-              {mark}
-            </Box>
-          )}
+          <Box width={markWidth} flexShrink={0}>
+            {mark}
+          </Box>
           <Box flexDirection="column" flexShrink={1} flexGrow={1}>
             {children}
           </Box>
@@ -366,6 +363,7 @@ export function paneStatus(
       isUnfolded,
       isCollapsed,
       parentName,
+      chevronText,
       path: paneStatusPath(
         { look, Box, Text, pal, statusMarkAt, statusFrameEdge, statusTextWidth, foldRow, foldButton, desktopFoldLines },
         { isUnfolded, toggleFold },
@@ -457,12 +455,11 @@ export function paneStatus(
             depth: r.depth,
             mark: null,
             content: plainText(
-              foldButton(key, r.text, isUnfolded(r.id), toggle, ' '.repeat(Math.max(1, markWidth - 1))),
+              foldButton(key, r.text, isUnfolded(r.id), toggle),
               r.text,
               r.depth,
             ),
             isSelected: r.id === statusKeyRow?.id,
-            isFold: true,
           })
     }
     if (r.kind === 'part') return statusPartLine(r.id, r.text, n === 0)

@@ -12,7 +12,7 @@ import { cellWidth } from './text'
 /** The element name a parent's name line and its chevron press under. */
 export const PARENT_PREFIX = 'parent-'
 
-/** What follows a parent's name and stall word on its line, and the room it takes with the space before it. */
+/** The space between the end of a parent's name and stall word and its chevron. */
 const CHEVRON_GAP = ' '
 
 /**
@@ -33,14 +33,37 @@ export function paneStatusParent(
     statusNameLine,
     nameLineSpans,
     statusTextWidth,
+    statusKeyRow,
   }: PaneClient &
-    Pick<PaneBase, 'look' | 'Box' | 'Text' | 'Button' | 'pal' | 'terminalText'> &
+    Pick<PaneBase, 'look' | 'Box' | 'Text' | 'Button' | 'pal' | 'terminalText' | 'statusKeyRow'> &
     Pick<PaneStatusLines, 'statusNameLine' | 'nameLineSpans' | 'statusTextWidth'>,
   { toggleParent }: Pick<PaneHandlers, 'toggleParent'>,
 ) {
-  const chevronButton = (id: string, chevron: string) => (
-    <Button plain dimColor key={`${PARENT_PREFIX}${id}`} label={chevron} onPress={() => void toggleParent(id)} />
-  )
+  /** The key that folds the parent, which the terminal shows on the selected parent as other selected buttons show theirs. */
+  const parentHotkey = (id: string) =>
+    look === 'terminal' && statusKeyRow?.id === id
+      ? statusKeyRow.keys.find(k => k.press.action === 'toggle-collapse')?.hotkey
+      : undefined
+  /** What the terminal draws after the name: the chevron, led by the hotkey on the selected parent. */
+  const chevronText = (id: string, fold: { isCollapsed: boolean; count: number }) => {
+    const chevron = parentChevron(fold.isCollapsed, fold.count)
+    const hotkey = parentHotkey(id)
+
+    return hotkey ? `${hotkey}: ${chevron}` : chevron
+  }
+  const chevronButton = (id: string, chevron: string) => {
+    const hotkey = parentHotkey(id)
+    const onPress = () => void toggleParent(id)
+
+    return hotkey ? (
+      <Button plain dimColor key={`${PARENT_PREFIX}${id}`} onPress={onPress}>
+        <Text color={pal.key}>{hotkey}</Text>
+        {chevron.slice(hotkey.length)}
+      </Button>
+    ) : (
+      <Button plain dimColor key={`${PARENT_PREFIX}${id}`} label={chevron} onPress={onPress} />
+    )
+  }
   const desktopName = (
     id: string,
     name: TerminalSpan,
@@ -123,14 +146,14 @@ export function paneStatusParent(
     depth: number,
     fold: { isCollapsed: boolean; count: number },
   ): Drawn => {
-    const chevron = parentChevron(fold.isCollapsed, fold.count)
+    const chevron = chevronText(id, fold)
 
     return look === 'desktop'
       ? desktopName(id, name, stall, depth, chevron)
       : terminalName(id, name, stall, depth, chevron)
   }
 
-  return { parentName }
+  return { parentName, chevronText }
 }
 
 export type PaneStatusParent = ReturnType<typeof paneStatusParent>

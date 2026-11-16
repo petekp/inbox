@@ -500,8 +500,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     does: { is: 'view', change: b.change },
   }
   const mark = b.kind === 'fold' ? b.mark : undefined
-  const chevron = b.kind === 'fold' && b.isOpen ? '▾' : '▸'
-  const isChevronAfter = mark !== undefined || (b.kind === 'fold' && b.isLabelFirst === true)
+  const chevron = b.kind === 'fold' ? (b.isOpen ? '▾' : '▸') : null
 
   return h_flex()
     .id(`fold ${b.id}`)
@@ -512,10 +511,9 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .text_color(t.muted)
     .accessibility_label(b.text)
     .when(!isInert, e => e.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx)))
-    .when(b.kind === 'fold' && !isChevronAfter, e => e.child(div().mr(CONTROL_GAP).child(chevron)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(div().min_w(0).whitespace_normal().child(b.text))
-    .when(isChevronAfter, e => e.child(div().flex_none().ml(LINE_GAP).child(chevron)))
+    .when(chevron !== null, e => e.child(div().flex_none().ml(LINE_GAP).child(chevron ?? '')))
 }
 
 /**

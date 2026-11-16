@@ -221,9 +221,9 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   if (row.kind === 'done-fold') {
     const chevron = d.ui.statusUnfolded.includes(row.id) ? '▾' : '▸'
 
-    return isSelected
-      ? pageLine(d, at, s.tone('accent', chevron), row.text, s.bold)
-      : pageLine(d, at, s.dim(chevron), row.text, s.dim)
+    return pageLine(d, at, ' ', row.text, isSelected ? s.bold : s.dim, {
+      chevron: { text: chevron, paint: isSelected ? t => s.tone('accent', t) : s.dim },
+    })
   }
   if (row.kind === 'part') return ['', partHeading(row.text, width, s)]
   if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)

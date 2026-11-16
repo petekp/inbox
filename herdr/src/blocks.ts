@@ -235,9 +235,8 @@ export type Block =
   | PrBlock
   | LineBlock
   /**
-   * A Closed fold or a Status done fold, which the person opens and shuts. A done milestone folded to its name draws
-   * its `mark` in the mark column and the chevron after its name. `isLabelFirst` draws the chevron after the text with
-   * no mark, as a met goal's folded milestones do.
+   * A Closed fold or a Status done fold, which the person opens and shuts, with its chevron after its label. A done
+   * milestone folded to its name also draws its `mark` in the mark column; any other fold starts at the text column.
    */
   | {
       kind: 'fold'
@@ -247,7 +246,6 @@ export type Block =
       isOpen: boolean
       change: ViewChange
       mark?: Mark
-      isLabelFirst?: true
       path?: PathSide
       tree?: TreeStroke[]
     }

@@ -201,8 +201,8 @@ export function paneStatusPath(
         ]
   /**
    * A done milestone folded to its name, or a met goal's milestones folded into the line that names them. The terminal
-   * draws the name muted with the fold's chevron after it, as one button. Desktop draws a fold line, whose chevron takes
-   * the mark's place, since only a `Client` takes a click across the line.
+   * draws the name muted with the fold's chevron after it, as one button. Desktop draws a fold line, since only a
+   * `Client` takes a click across the line.
    */
   const foldedName = (m: Pick<MilestoneRow, 'id' | 'name'> & { foldId: string }) => {
     const toggle = () => toggleFold(m.foldId)
@@ -212,7 +212,7 @@ export function paneStatusPath(
       return { el: <Box key={`status-${m.id}`}>{foldRow(key, m.name, isOpen, toggle)}</Box>, lines: desktopFoldLines }
 
     return {
-      el: <Box key={`goal-${m.id}-fold`}>{foldButton(key, m.name, isOpen, toggle, ' ', true)}</Box>,
+      el: <Box key={`goal-${m.id}-fold`}>{foldButton(key, m.name, isOpen, toggle)}</Box>,
       lines: inkLines(`${m.name} ▸`, statusTextWidth(0)),
     }
   }

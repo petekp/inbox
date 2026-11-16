@@ -158,8 +158,8 @@ export function StatusLine({ row, motion }: { row: StatusRow; motion?: string })
       <>
         <div class="row fold-row" style={depthStyle(row)} {...lineMotion(motion)}>
           <button type="button" class="fold" data-fold={fold} onClick={() => toggleStatusFold(row.id)}>
-            <Icon name={isUnfolded ? 'down' : 'right'} />
             {row.text}
+            <Icon name={isUnfolded ? 'down' : 'right'} />
           </button>
         </div>
         {isUnfolded || closingFolds.has(fold) ? (
