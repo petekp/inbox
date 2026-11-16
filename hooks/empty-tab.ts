@@ -3,7 +3,7 @@ import { MAYBE_STALE_TEXT, NOTHING_NEEDED_TEXT } from './banners'
 import { ghNoticeOf } from './pr-rows'
 import type { PrRefreshView } from './pr-refresh'
 import type { SessionView } from './session-view'
-import { goalKeyPlan } from './status-keys'
+import { goalKeys, isSuggestionShown } from './status-keys'
 import type { StatusKey } from './status-keys'
 import { screenTabOf } from './tabs'
 
@@ -17,9 +17,13 @@ const EMPTY_TITLES = {
 
 export type EmptyText = { title: string; hint: string | null }
 
-/** What sits under an empty tab's text: Refresh PRs while a PR could not be read, or the goal's buttons and field. */
+/**
+ * What sits under an empty tab's text: Refresh PRs while a PR could not be read, or the goal's buttons and field, with
+ * the suggested goal's text while it shows.
+ */
 type EmptyUnder =
-  { is: 'pr-refresh'; refresh: PrRefreshView } | { is: 'set-goal'; keys: StatusKey[]; isFieldOpen: boolean }
+  | { is: 'pr-refresh'; refresh: PrRefreshView }
+  | { is: 'set-goal'; keys: StatusKey[]; isFieldOpen: boolean; suggestion: string | null }
 
 export type EmptyTab = EmptyText & { under: EmptyUnder | null }
 
@@ -47,7 +51,7 @@ type EmptyTabLook =
       isFetchingPrs: boolean
       isGhMissing: boolean
     }
-  | { tab: 'overview'; isGoalFieldOpen: boolean }
+  | { tab: 'overview'; isGoalFieldOpen: boolean; isSuggestionOpen?: boolean }
 
 /** The empty Status tab's text. Its title is the tab's name. */
 export const EMPTY_STATUS_TEXT: { title: string; hint: string } = {
@@ -68,10 +72,12 @@ export function emptyTab(view: SessionView, look: EmptyTabLook): EmptyTab | null
   if (look.tab === 'overview') {
     const page = view.statusPage
     if (!page.isEmpty) return null
+    const isSuggestionOpen = look.isSuggestionOpen ?? false
+    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null
 
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: 'set-goal', keys: goalKeyPlan(page), isFieldOpen: look.isGoalFieldOpen },
+      under: { is: 'set-goal', keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion },
     }
   }
   if (look.tab === 'prs') {

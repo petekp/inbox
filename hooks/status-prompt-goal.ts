@@ -2,6 +2,7 @@ import type { GoalRefusal, SessionStatus } from '../types'
 import { NL } from './ledger-prompt'
 import { goalLeftFor, heldSubjects, lastProgressAt } from './status-goal-gate'
 import { isOpen, MILESTONES_MAX, MILESTONES_MIN, NAME_WORDS, TEXT_WORDS } from './status-limits'
+import { hasRunningGoal } from './status-suggest'
 import { duration } from './text'
 
 /** The mark on a milestone line that no subject serves. */
@@ -12,15 +13,17 @@ const NEXT_MARK = 'next'
 /** The lines the Status call writes for the goal, after the lines it writes for subjects. */
 export const GOAL_LINES = `GOAL: outcome | status name; status name
 RETIRE: why the goal no longer fits the work
+SUGGEST: outcome, or - for none
 MILESTONE: status | name | where it stands
 NEXT: milestone id or name
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
 GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`
 
 /** The input blocks the goal adds, as the system text describes them. */
-export const GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
+export const GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it or took the suggested goal, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
 - <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
 - <removed>: goals the person removed, as their key words, one per line
+- <suggested>: the goal offered to the person, while no goal is set or the goal is met
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`
 
 /**
@@ -31,6 +34,7 @@ export const GOAL_PARTS = {
   'goal-when-clear': `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   'goal-finish-line': `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   'goal-wait': `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
+  'goal-suggest': `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it only when they ask for a new goal, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Write SUGGEST when <suggested> is missing or no longer fits the work, SUGGEST: - when it no longer fits and no outcome does, and no SUGGEST while <suggested> fits. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   'goal-not-again': `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   'goal-typed-kept': `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   'goal-outcome-happened': `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
@@ -89,7 +93,7 @@ function refusedLine(o: SessionStatus, now: number): string | null {
   return text === null ? null : `${line} refused: ${text}`
 }
 
-/** The goal's input blocks at `now`: the goal and its milestones, and the removed goals. */
+/** The goal's input blocks at `now`: the goal and its milestones, the removed goals and the suggested goal. */
 export function goalBlocks(o: SessionStatus | null, now: number): string[] {
   if (o === null) return []
   const g = o.goal
@@ -118,5 +122,6 @@ export function goalBlocks(o: SessionStatus | null, now: number): string[] {
     ...(g ? [block('goal', `${g.text}${state}${refused === null ? '' : `${NL}${refused}`}`)] : []),
     ...(g && milestones.length > 0 ? [block('milestones', milestones.join(NL))] : []),
     ...(o.removedGoals.length > 0 ? [block('removed', o.removedGoals.join(NL))] : []),
+    ...(o.suggestedGoal !== null && !hasRunningGoal(o) ? [block('suggested', o.suggestedGoal)] : []),
   ]
 }

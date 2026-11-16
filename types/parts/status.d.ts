@@ -150,6 +150,11 @@ export type SessionStatus = {
   serves: Record<string, Serves>
   /** Why the last applied answer's GOAL or RETIRE line was not applied. Null when it was, or when the answer wrote none. */
   goalRefused: GoalRefusal | null
+  /**
+   * The goal the Status call offers while no goal is set or the goal is met, which the person sees after New and takes
+   * with Set. Null when the call offers none, and once a goal is set.
+   */
+  suggestedGoal: string | null
 
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null

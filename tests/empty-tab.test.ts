@@ -77,12 +77,13 @@ describe('emptyTab', () => {
     expect(VIEW.statusPage.isEmpty).toBe(true)
     expect(emptyTab(VIEW, { tab: 'overview', isGoalFieldOpen: false })).toEqual({
       ...EMPTY_STATUS_TEXT,
-      under: { is: 'set-goal', keys, isFieldOpen: false },
+      under: { is: 'set-goal', keys, isFieldOpen: false, suggestion: null },
     })
     expect(emptyTab(VIEW, { tab: 'overview', isGoalFieldOpen: true })?.under).toEqual({
       is: 'set-goal',
       keys,
       isFieldOpen: true,
+      suggestion: null,
     })
     expect(EMPTY_STATUS_TEXT.title).toBe('Status')
   })

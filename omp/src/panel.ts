@@ -96,6 +96,8 @@ export type PanelUi = {
   optionsShown: string[]
   /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
   statusUnfolded: string[]
+  /** Whether the person opened the suggested goal. It shows only while the page still has one. */
+  isSuggestionOpen: boolean
   /** A Resume press for the stop that began at `stopAt`. */
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
@@ -133,6 +135,7 @@ export const INITIAL_UI: PanelUi = {
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
+  isSuggestionOpen: false,
   resuming: null,
   opened: null,
   pageTop: 0,
@@ -236,6 +239,7 @@ export function drawPanel(
           ui.selectedId,
           id => ui.statusUnfolded.includes(id),
           collapsedIn(screen.view),
+          ui.isSuggestionOpen,
         )
   let pageSelectedAt: number[] | null = null
   /** The line each subject a Status row stands for starts on. */

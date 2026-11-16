@@ -3,7 +3,7 @@ import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
-import { isCompareInBackground } from '../../hooks/clients'
+import { isCompareInBackground } from '../../hooks/press-messages'
 import { isPrPress } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import { openTarget } from '../../hooks/open-targets'

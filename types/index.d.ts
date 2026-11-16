@@ -152,6 +152,11 @@ export type SessionStatus = {
   serves: Record<string, Serves>
   /** Why the last applied answer's GOAL or RETIRE line was not applied. Null when it was, or when the answer wrote none. */
   goalRefused: GoalRefusal | null
+  /**
+   * The goal the Status call offers while no goal is set or the goal is met, which the person sees after New and takes
+   * with Set. Null when the call offers none, and once a goal is set.
+   */
+  suggestedGoal: string | null
 
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null
@@ -812,6 +817,8 @@ declare module 'claude-code' {
       closedAll: FoldKind[]
       /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
       statusUnfolded: string[]
+      /** Whether the person opened the suggested goal with New. Pressing Set, sending the goal's field or Cancel closes it. */
+      suggestionOpen: boolean
       /** The fold under the pointer on desktop: an Asks fold's kind, or `status-` and a Status fold's id. */
       foldHover: string | null
       /** The questions whose every option shows, by the row's id. */

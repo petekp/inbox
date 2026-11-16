@@ -1,24 +1,11 @@
-import type { UiPressArgument } from 'claude-code'
 import type { PaneBase, PaneHandlers } from './pane-context'
 import type { KeyAction } from './pane-keys'
-import { fieldKey, openFields } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
-import { paneState } from './mod-state'
-import {
-  DESKTOP_CELL_PT,
-  DESKTOP_FIELD_PT,
-  DESKTOP_HAIR_LINES,
-  DESKTOP_LINE_PT,
-  DESKTOP_MARK_CELLS,
-  DESKTOP_REPLY_ROWS,
-  fieldRows,
-  REPLY_ROWS,
-} from './pane-sizes'
-import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
+import { DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_LINE_PT, DESKTOP_MARK_CELLS } from './pane-sizes'
+import { desktopButtonPt, desktopTextPt } from './desktop-metrics'
 import { SECTION_GAP_PT, STATUS_ROW_PAD_PT } from './layout'
-import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
 import {
   DESKTOP_BUTTON_LINES,
@@ -33,8 +20,9 @@ import type { PaneStatusLines } from './pane-status-lines'
 import type { PaneStatusPath } from './pane-status-path'
 import type { StatusTone } from './help'
 import type { GoalBlock, MilestoneRow } from './status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from './status-goal-page'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, type StatusKey } from './status-keys'
+import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, SUGGESTED_GOAL_LABEL } from './status-goal-page'
+import { paneGoalField, uncounted } from './pane-status-goal-field'
+import { GOAL_KEYS_ID, goalKeys, isSuggestionShown, milestoneKeyPlan, type StatusKey } from './status-keys'
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
@@ -42,7 +30,6 @@ import { isParentCollapsed, milestoneRows } from './status-folds'
 import type { IsCollapsed } from './status-folds'
 import type { PaneStatusParent } from './pane-status-parent'
 import { isSpacedAbove, LATER_TEXT, workJoints } from './status-path'
-import { ROW_COPY } from './rows'
 
 /** One line of the Status list, as `paneStatus` draws it, so milestones line up with subjects. */
 type StatusRowLine = (line: { key: string; mark: JSX.Element | null; content: Drawn[]; isSelected?: boolean }) => Drawn
@@ -71,9 +58,21 @@ export function paneStatusGoal(
     keyRow,
     terminalKeyCells,
     desktopFrame,
+    isSuggestionOpen,
   }: Pick<
     PaneBase,
-    'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
+    | 'e'
+    | 'look'
+    | 'Box'
+    | 'Text'
+    | 'pal'
+    | 'Input'
+    | 'typing'
+    | 'drafts'
+    | 'listColumns'
+    | 'now'
+    | 'statusKeyRow'
+    | 'isSuggestionOpen'
   > &
     Pick<
       PaneStatusLines,
@@ -82,7 +81,7 @@ export function paneStatusGoal(
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow' | 'terminalKeyCells'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
-  { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
+  handlers: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped' | 'updateSuggestionOpen'>,
   {
     statusRowLine,
     drawRows,
@@ -154,68 +153,26 @@ export function paneStatusGoal(
       text,
       width,
     )
-  /** An open field's height follows what is typed, so its lines are not counted. */
-  const uncounted = (el: JSX.Element): Drawn => ({ el, lines: null })
   const keysLine = (target: StatusKeyTarget) => keysRow(target, blockWidth)
   const isSelected = (id: string) => look === 'terminal' && !isTypingGoal && statusKeyRow?.id === id
-  const cancel: KeyAction = {
-    key: `cancel-${GOAL_KEYS_ID}`,
-    label: 'Cancel',
-    kind: 'view',
-    onPress: () => void updateTyping(t => (t === GOAL_KEYS_ID ? null : t)),
-  }
-  const submitLabel = look === 'desktop' ? GOAL_FIELD.submit : 'save'
-  /** The terminal draws `⏎` and the submit label beside a field `inset` cells in from the head's column. */
-  const terminalFieldColumns = (inset: number) => listColumns - statusMarkAt - inset - cellWidth(`⏎ ${submitLabel}`) - 1
-  /** A terminal field that passes one row takes all `REPLY_ROWS`, as the reply field does in `paneRows`. */
-  const fieldRowCount = (text: string, inset: number) => {
-    if (look === 'desktop')
-      return fieldRows(text, line => desktopLines(line, DESKTOP_FIELD_PT).length, DESKTOP_REPLY_ROWS)
-    const fitsOneRow = fieldRows(text, line => lineCount(line, terminalFieldColumns(inset)), REPLY_ROWS) === 1
-    return fitsOneRow ? 1 : REPLY_ROWS
-  }
-  const goalInput = (Field: NonNullable<typeof Input>, inset: number) => (
-    <Field
-      key={fieldKey(GOAL_KEYS_ID)}
-      placeholder={GOAL_FIELD.placeholder}
-      {...(openFields.get(GOAL_KEYS_ID)?.seed ? { value: openFields.get(GOAL_KEYS_ID)?.seed } : {})}
-      submitLabel={submitLabel}
-      autoFocus
-      rows={fieldRowCount(drafts[GOAL_KEYS_ID]?.text ?? openFields.get(GOAL_KEYS_ID)?.seed ?? '', inset)}
-      onInput={(value: string) =>
-        void updateDrafts(d => ({
-          ...d,
-          [GOAL_KEYS_ID]: { text: value, since: d[GOAL_KEYS_ID]?.since ?? now },
-        }))
-      }
-      onSubmit={(value: string, submit: { surface: UiPressArgument['surface'] }) =>
-        sendTyped(GOAL_KEYS_ID, value, submit.surface)
-      }
-    />
+  const { field } = paneGoalField(
+    { e, look, Box, Input, drafts, listColumns, now, statusMarkAt, keyRow },
+    handlers,
+    muted,
   )
-  /**
-   * The goal's text field, as many rows tall as `fieldRowCount` gives. Submitting sets the typed goal. When the prompt kept the
-   * keys, a line under it says to click it.
-   */
-  const fieldInput = (inset: number): Drawn[] =>
-    Input === null
-      ? []
-      : [
-          uncounted(
-            look === 'terminal' ? (
-              <Box key="goal-field" width={e.props.bodyColumns - inset} flexShrink={0}>
-                {goalInput(Input, inset)}
-              </Box>
-            ) : (
-              goalInput(Input, inset)
-            ),
-          ),
-          ...(paneState.fieldWithoutKeys === GOAL_KEYS_ID ? [muted('goal-field-click', ROW_COPY.clickField)] : []),
-        ]
-  const fieldKeys = (): Drawn[] =>
-    Input === null ? [] : [uncounted(<Box key="goal-field-keys">{keyRow(`${GOAL_KEYS_ID}-field`, [cancel])}</Box>)]
-  /** The goal's field and its keys, `inset` cells in from the head's column: the mark column under a met goal. */
-  const field = (inset: number) => [...fieldInput(inset), ...fieldKeys()]
+  /** The suggested goal in the goal text's place: a dim label, then its words as the goal's text draws. */
+  const suggestionLines = (text: string, width: number): Drawn[] => [
+    muted('goal-suggested-label', SUGGESTED_GOAL_LABEL, width),
+    wrapped(
+      <Box key="goal-suggested">
+        <Text wrap="wrap" bold>
+          {text}
+        </Text>
+      </Box>,
+      text,
+      width,
+    ),
+  ]
   /** Marks in their tones, each with its text, on lines that wrap between them, as the Other work counts draw. */
   const markRun = (
     key: string,
@@ -413,7 +370,8 @@ export function paneStatusGoal(
    * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at its right,
    * then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then the
    * milestones, each after a blank line. While the person types a goal, the field and its Cancel take the text's place,
-   * and the buttons leave the heading.
+   * and the buttons leave the heading. While the suggested goal shows, it takes the text's place, and its buttons the
+   * heading's.
    */
   const goalSection = (page: StatusPage): Drawn[] => {
     const g = page.goal
@@ -430,9 +388,14 @@ export function paneStatusGoal(
           width,
         )
       : muted('goal-none', NO_GOAL_TEXT)
-    const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
+    const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) })
+    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null
     const under = [
-      ...(isTypingGoal ? field(mark === null ? 0 : markInset) : [goalText]),
+      ...(isTypingGoal
+        ? field(mark === null ? 0 : markInset, page)
+        : suggestion !== null
+          ? suggestionLines(suggestion, width)
+          : [goalText]),
       ...(g?.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`, width)] : []),
       ...(g?.now ? [muted('goal-now', g.now, width)] : []),
       ...(g?.awaiting ? [muted('goal-awaiting', g.awaiting, width)] : []),
@@ -469,16 +432,22 @@ export function paneStatusGoal(
         : statusRowLine({ key: `status-${fold.id}`, mark: null, content: [line], isSelected: isSelected(fold.id) }),
     ]
   }
-  /** New, or the field it opened, with no frame, for the empty page's centred column. */
-  const setGoalBare = (setGoal: { keys: StatusKey[]; isFieldOpen: boolean }): Drawn[] =>
+  /** New, the suggested goal and its buttons, or the field they opened, with no frame, for the empty page's centred column. */
+  const setGoalBare = (
+    setGoal: { keys: StatusKey[]; isFieldOpen: boolean; suggestion: string | null },
+    page: StatusPage,
+  ): Drawn[] =>
     setGoal.isFieldOpen
       ? [
           uncounted(
             <Box key="goal-field-bare" flexDirection="column" width="100%">
-              {field(0).map(p => p.el)}
+              {field(0, page).map(p => p.el)}
             </Box>,
           ),
         ]
-      : keysLine({ id: GOAL_KEYS_ID, keys: setGoal.keys })
+      : [
+          ...(setGoal.suggestion === null ? [] : suggestionLines(setGoal.suggestion, blockWidth)),
+          ...keysLine({ id: GOAL_KEYS_ID, keys: setGoal.keys }),
+        ]
   return { goalSection, setGoalBare, markRun, isTypingGoal }
 }

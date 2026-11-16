@@ -1,5 +1,5 @@
 import { demoSession } from '../../hooks/demo'
-import { isCompareInBackground } from '../../hooks/clients'
+import { isCompareInBackground } from '../../hooks/press-messages'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/press-effects'
 import { pressOn } from '../../hooks/session-presses'
 import { withCollapse } from '../../hooks/collapse'
