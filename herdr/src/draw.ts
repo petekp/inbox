@@ -34,6 +34,7 @@ import { emptyTab } from '../../hooks/empty-tab'
 import { isFailure, rowFeedbackText } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
 import { FINDING_GROUPS } from '../../hooks/help'
+import { earlierLineText } from '../../hooks/earlier-answers'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
@@ -189,6 +190,11 @@ function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
     line > 0 ? (branch === lastBranch ? undefined : 'trunk') : branch === lastBranch ? 'last' : 'tee'
   const lines: RowBlock['body'] = [
     { text: row.contextLine ?? '', tone: 'muted', ...(hasTree ? { tree: 'trunk' as const } : {}) },
+    {
+      text: row.earlierLine ? earlierLineText(row.earlierLine) : '',
+      tone: 'muted',
+      ...(hasTree ? { tree: 'trunk' as const } : {}),
+    },
     { text: row.detail ?? '', tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : '', tone: 'muted' },
     ...branches.flatMap((lines, branch) =>

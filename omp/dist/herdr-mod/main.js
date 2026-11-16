@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:02:34.788Z. 259505 characters follow.
+// Built at 2026-11-16T04:25:19.001Z. 261068 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -3182,6 +3182,37 @@ function rowKeyPlan(r, isAllShown) {
   return { keys, more };
 }
 
+// ../hooks/earlier-answers.ts
+var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/));
+var DAY_MS2 = 24 * 60 * 60000;
+function agoText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60)
+    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24)
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  const days = Math.round(ms / DAY_MS2);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+function earlierLineOf(earlier, now) {
+  if (!earlier?.isShown)
+    return null;
+  const where = earlier.repo ? `, in ${earlier.repo},` : "";
+  return {
+    lead: "You answered ",
+    answer: earlier.answer,
+    rest: ` ${agoText(now - earlier.at)}${where} to “${earlier.ask}”`
+  };
+}
+function earlierLineText(line) {
+  return `${line.lead}${line.answer}${line.rest}`;
+}
+
 // ../hooks/view.ts
 var HOLDS_UP_TEXT = "Holds up";
 function needsYouOrder(ledger) {
@@ -3305,7 +3336,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      contextLine: state.is === "open" ? row.item?.context ?? null : null
+      contextLine: state.is === "open" ? row.item?.context ?? null : null,
+      earlierLine: state.is === "open" ? earlierLineOf(row.item?.earlier, now) : null
     };
   };
   const itemRow = (item) => {
@@ -4329,6 +4361,11 @@ function rowBody(row, isAllShown) {
   const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
   const lines = [
     { text: row.contextLine ?? "", tone: "muted", ...hasTree ? { tree: "trunk" } : {} },
+    {
+      text: row.earlierLine ? earlierLineText(row.earlierLine) : "",
+      tone: "muted",
+      ...hasTree ? { tree: "trunk" } : {}
+    },
     { text: row.detail ?? "", tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
     ...branches.flatMap((lines, branch) => lines.map((l, line) => {

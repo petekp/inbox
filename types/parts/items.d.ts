@@ -35,7 +35,20 @@ export type Item = {
    * else from a dialog question this item copies.
    */
   optionDescriptions?: Record<string, string>
+  /**
+   * The closest answer the person gave to an earlier question, found once when the question was added. Missing on a
+   * task, on a question with no match over the floor, and on an item saved before the search ran.
+   */
+  earlier?: Earlier
 }
+
+/**
+ * An earlier question's answer that matched a new question. `ask` and `answer` are cut to 200 characters. `repo` is the
+ * earlier session's repository name, null when its folder was not in a Git repository. `score` is the match's BM25 score
+ * divided by the best score the new question could reach. `isShown` is false during the first week of the question
+ * history, when the match is recorded and not drawn.
+ */
+export type Earlier = { ask: string; answer: string; at: number; repo: string | null; score: number; isShown: boolean }
 
 /**
  * A question in a Codex `request_user_input_async` dialog: the call's `call_id`, the question's index in the call's

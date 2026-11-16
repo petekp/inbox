@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { findCli } from './cli'
 import { dataDir } from './data-dir'
 import { herdrOnWrite } from './host'
-import { readState } from './state'
+import { readState, useQuestionHistory } from './state'
+import { questionHistoryPlace } from './question-history'
 import { run } from './run'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import { codexAsk, statusRecords, refreshStatus, runUpdates } from './update'
@@ -17,6 +18,7 @@ async function main() {
   const isStatusRefresh = process.argv[3] === STATUS_REFRESH
   const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)))
   const dir = dataDir(process.env, pluginRoot)
+  useQuestionHistory(questionHistoryPlace(process.env, dir))
   const { cliPath } = await readState(dir, sessionId)
   const cli = cliPath ?? (await findCli(process.env, run, process.ppid))
   const personHome = process.env.CODEX_HOME || join(homedir(), '.codex')

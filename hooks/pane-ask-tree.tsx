@@ -6,11 +6,13 @@ import type { TreePos } from './terminal-text'
 /** Cells the terminal's tree takes in front of a branch's text: the glyph, its dash and a space. */
 const TREE_TEXT_INDENT = 3
 
-export type AskEntry = { key: string; pos: TreePos | null; label: string; rest: string }
+/** `lead` draws muted before `label`, which then draws bold, as the earlier answer's line reads "You answered **Flick**". */
+export type AskEntry = { key: string; pos: TreePos | null; lead?: string; label: string; rest: string }
 
 /**
- * An open question's or task's context, option lines and Holds up line. In the terminal they hang from the row's ◆ on
- * one connector: the context beside it, each option and the Holds up line, the last, on a branch. `askEntries`
+ * An open question's or task's context, earlier answer, option lines and Holds up line. In the terminal they hang from
+ * the row's ◆ on one connector: the context and earlier answer beside it, each option and the Holds up line, the last,
+ * on a branch. `askEntries`
  * gives desktop the same entries, which it draws on its own hairline pieces.
  */
 export function paneAskTree(
@@ -37,7 +39,12 @@ export function paneAskTree(
       ]
     })
     const holdsUp = view.state.is === 'open' && view.holdsUpLine ? view.holdsUpLine : null
-    const context = view.contextLine ? [{ key: 'context', pos: null, label: '', rest: view.contextLine }] : []
+    const context: AskEntry[] = view.contextLine
+      ? [{ key: 'context', pos: null, label: '', rest: view.contextLine }]
+      : []
+    const earlier = view.earlierLine
+    if (earlier)
+      context.push({ key: 'earlier', pos: null, lead: earlier.lead, label: earlier.answer, rest: earlier.rest })
     const tail = holdsUp ? [{ key: 'holds-up', pos: 'mid' as const, label: '', rest: holdsUp }] : []
     const branches = [...options, ...tail]
     const hasTree = branches.some(b => b.pos === 'mid')
@@ -70,7 +77,8 @@ export function paneAskTree(
             {e.pos ? branch(e.pos, 0, 0, pal.selectionLine ?? pal.line, 0, `tree-${e.key}`) : null}
             <Box flexShrink={1} paddingLeft={isTree ? TREE_TEXT_INDENT : 0}>
               <Text wrap="wrap">
-                {e.label ? <Text>{e.label}</Text> : null}
+                {e.lead ? <Text color={pal.muted}>{e.lead}</Text> : null}
+                {e.label ? <Text bold={e.lead !== undefined}>{e.label}</Text> : null}
                 <Text color={pal.muted}>{e.rest}</Text>
               </Text>
             </Box>
