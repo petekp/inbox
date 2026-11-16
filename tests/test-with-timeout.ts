@@ -4,7 +4,7 @@ import { test as kitTest, type TestBody, type TestOptions, type TestRest } from 
 // setting for all tests. A test that draws the pane takes 1 to 5 s alone and
 // up to 34 s when four suites run at once. The bound is about three times that,
 // so only a hang reaches it.
-export const TEST_TIMEOUT_MS = 100_000
+const TEST_TIMEOUT_MS = 100_000
 
 export const test = (name: string, ...rest: TestRest) => {
   const body: TestBody = rest.length === 1 ? rest[0] : rest[1]
