@@ -15,7 +15,6 @@ import type { RowRecord } from '../../hooks/arrivals'
 import type { ToneName } from '../../hooks/tones'
 import { ROW_COPY } from '../../hooks/rows'
 import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../hooks/tabs'
-import { footerStatus } from '../../hooks/view'
 import { openOnArrival } from '../../hooks/action-plan'
 import { GOAL_KEYS_ID, goalSubmitLabel, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { IsCollapsed } from '../../hooks/status-folds'
@@ -129,13 +128,6 @@ export function tabBar(d: Draw): string {
 export function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
-  const status = footerStatus(
-    ui.tab,
-    screen.view.status,
-    { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
-    screen.view.statusPage.error,
-  )
-  if (status.text) out.push(` ${s.dim(status.text)}`)
   const hints =
     ui.typing !== null
       ? [

@@ -25,7 +25,6 @@ type Screen =
       view: SessionView
       tabs: TabCell[]
       banners: BannerView[]
-      status: string | null
       /** Says the host left out older closed items, or null when the session is whole. */
       trimmedNote: string | null
       blocks: Block[]

@@ -39,7 +39,7 @@ import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
 import { QUEUED_AFTER_MS, SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
-import { footerStatus } from '../../hooks/view'
+import { footerError } from '../../hooks/view'
 import type { PressKind } from '../../types'
 import { button, emptyBlock } from './blocks'
 import type { Block, Button, Does, Field, Mark, RowBlock, Tone } from './blocks'
@@ -403,16 +403,11 @@ export function tabCells(screen: Pick<LookScreen, 'view'>, tab: ShownTab): TabCe
   }))
 }
 
-/** The banners under the tabs and the status line at the foot, as every look draws them. */
-export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView[]; status: string | null } {
-  const status = footerStatus(
-    tab,
-    screen.view.status,
-    { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
-    screen.view.statusPage.error,
-  )
+/** The banners under the tabs, as every look draws them. */
+export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView[] } {
+  const error = footerError(tab, screen.view.status, screen.view.statusPage.error)
 
-  return { banners: tabBarBanners([], status.error, null), status: status.text }
+  return { banners: tabBarBanners([], error, null) }
 }
 
 export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {

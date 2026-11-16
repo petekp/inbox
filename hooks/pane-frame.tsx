@@ -40,7 +40,7 @@ export function paneFrame(
     Text,
     isNarrowDesktop,
     Box,
-    shownStatus,
+    shownError,
     lineNote,
     tabText,
     termProgram,
@@ -48,7 +48,6 @@ export function paneFrame(
     tabTone,
     raiseEdge,
     raise,
-    status,
     railWidth,
     hasRail,
     blankLine,
@@ -66,7 +65,7 @@ export function paneFrame(
       | 'Text'
       | 'isNarrowDesktop'
       | 'Box'
-      | 'shownStatus'
+      | 'shownError'
       | 'lineNote'
       | 'tabText'
       | 'termProgram'
@@ -74,7 +73,6 @@ export function paneFrame(
       | 'tabTone'
       | 'raiseEdge'
       | 'raise'
-      | 'status'
       | 'railWidth'
       | 'hasRail'
       | 'blankLine'
@@ -189,7 +187,7 @@ export function paneFrame(
       ...(mod.herdrModFailure ? [bannerOf('herdr-mod-failed', mod.herdrModFailure)] : []),
       ...[herdrAskBanner(mod.herdrAsk)].filter(b => b !== null),
     ],
-    shownStatus.error,
+    shownError,
     lineNote
       ? { text: feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look), isError: false }
       : null,
@@ -355,9 +353,6 @@ export function paneFrame(
       </Box>
     </Box>
   )
-  const faint = (text: string) =>
-    look === 'desktop' ? <Text color={pal.age}>{text}</Text> : <Text dimColor>{text}</Text>
-  const statusText = faint(status)
   const rail = (
     <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
       {tabList.map(({ id, label }) => {
@@ -443,9 +438,8 @@ export function paneFrame(
     )
   const footer = (
     <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
-      <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
+      <Box flexDirection="row" paddingX={1}>
         {helpControl}
-        {statusText}
       </Box>
     </Box>
   )

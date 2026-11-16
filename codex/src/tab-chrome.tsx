@@ -3,7 +3,7 @@ import { HELP_COPY, helpKeys, MARK_LEGEND, tabLegend } from '../../hooks/help'
 import { bannerOf, tabBarBanners } from '../../hooks/banners'
 import { DOT, ROW_COPY } from '../../hooks/rows'
 import { isRowTab, shownTabs, tabBadge } from '../../hooks/tabs'
-import { footerStatus } from '../../hooks/view'
+import { footerError } from '../../hooks/view'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Tab } from '../../types'
@@ -96,35 +96,29 @@ export function tabBanners(v: View): BannerLine[] {
       ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
       ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
     ],
-    footerOf(v).error,
+    footerErrorOf(v),
     tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
       ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
       : null,
   ).map(banner => ({ id: banner.kind, banner }))
 }
 
-function footerOf(v: View) {
-  return footerStatus(
-    drawnTab(),
-    v.status,
-    { isFetching: v.isFetchingPrs, hasPrs: v.prs.drawn.length > 0 },
-    v.statusPage?.error ?? null,
-  )
+function footerErrorOf(v: View) {
+  return footerError(drawnTab(), v.status, v.statusPage?.error ?? null)
 }
 
-export function Status({ v }: { v: View }) {
+export function Status() {
   const sinceRead = Date.now() - tabState.readAt
-  const status =
-    tabState.pollFailures >= 2 ? (
+  if (tabState.pollFailures < 2) return <div class="status" />
+
+  return (
+    <div class="status">
       <span class={sinceRead > LATE_READ_MS ? 'tone-error' : undefined}>
         Last read {ago(sinceRead)}
         {DOT}retrying
       </span>
-    ) : (
-      footerOf(v).text
-    )
-
-  return <div class="status">{status}</div>
+    </div>
+  )
 }
 
 export function TabBar({ v }: { v: View }) {
