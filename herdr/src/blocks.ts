@@ -39,6 +39,7 @@ export type ViewChange =
   | { earlier: FoldKind }
   | { toggleFold: string }
   | { showAsk: string }
+  | { isSuggestionOpen: boolean }
   | { toggleHelp: true }
 
 /**

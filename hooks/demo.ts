@@ -210,6 +210,7 @@ export function demoView(now: number, agent: string): DemoCopy {
         nextMilestoneId: 6,
         serves: { s1: 'm2', s3: 'm3', s4: 'm1', s5: 'm5', s6: 'm4', s7: 'none' },
         goalRefused: null,
+        suggestedGoal: null,
       },
       items: [
         {

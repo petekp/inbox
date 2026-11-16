@@ -103,6 +103,11 @@ export type Facts = {
   goal?: GoalFact | null
   /** The next goal this step makes clear. Null at a step where none is clear. */
   goalClear?: GoalClear | null
+  /**
+   * The outcome the open work most likely leads to at a step that makes no goal clear, which the goal suggested there
+   * should match. Null at a step where the facts name none.
+   */
+  goalSuggested?: GoalClear | null
   /** The ids of pieces and milestones whose state, place or plan changed at this step. Empty when nothing changed. */
   changed: string[]
 }
@@ -125,6 +130,7 @@ export type FactsChange = {
   /** The id of the queued milestone the plan now takes up next. */
   next?: string
   goalClear?: GoalClear
+  goalSuggested?: GoalClear
 }
 
 const CHANGING_KEYS = ['state', 'stands', 'parts', 'was', 'merged', 'serves'] as const
@@ -175,6 +181,7 @@ export function factsAfter(before: Facts, change: FactsChange | undefined): Fact
     children: change?.children ?? before.children,
     goal: goalAfter(before.goal, change, changed),
     goalClear: change?.goalClear ?? null,
+    goalSuggested: change?.goalSuggested ?? null,
     changed,
   }
 }

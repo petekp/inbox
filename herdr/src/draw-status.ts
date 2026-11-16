@@ -1,7 +1,14 @@
 import type { StatusTone } from '../../hooks/help'
-import { goalKeyPlan, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
+import {
+  goalKeys,
+  isSuggestionShown,
+  milestoneKeyPlan,
+  statusKeyPlan,
+  GOAL_FIELD,
+  GOAL_KEYS_ID,
+} from '../../hooks/status-keys'
 import type { StatusKey } from '../../hooks/status-keys'
-import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL, shownMilestones } from '../../hooks/status-goal-page'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
@@ -31,6 +38,8 @@ function doesOf(k: StatusKey): Does {
   if (p.action === 'show-ask') return { is: 'view', change: { showAsk: p.askId } }
   if (p.action === 'toggle-fold') return { is: 'view', change: { toggleFold: p.foldId } }
   if (p.action === 'toggle-collapse') return { is: 'nothing' }
+  if (p.action === 'show-suggestion') return { is: 'view', change: { isSuggestionOpen: true } }
+  if (p.action === 'hide-suggestion') return { is: 'view', change: { isSuggestionOpen: false } }
   if (p.action === 'type-goal') return { is: 'type', rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder }
 
   return { is: 'press', press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] }
@@ -231,37 +240,53 @@ const headTitle = (id: string, text: string): Block => ({
 })
 
 /** What the Status page draws besides the shared page: the done folds the person opened, and the goal's open field. */
-type StatusUi = { isUnfolded: (id: string) => boolean; isCollapsed: IsCollapsed; goalField: Field | null }
+type StatusUi = {
+  isUnfolded: (id: string) => boolean
+  isCollapsed: IsCollapsed
+  isSuggestionOpen: boolean
+  goalField: Field | null
+}
 
 /**
  * The goal's section: its heading with the goal's buttons, its text and the lines under it, then each milestone on the
  * path and its work, with the Later rule before the first milestone that waits under it.
  */
-function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: StatusUi): Block[] {
+function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, isSuggestionOpen, goalField }: StatusUi): Block[] {
   const g = page.goal
+  const isSuggested = goalField === null && isSuggestionShown(page, isSuggestionOpen)
   const heading: Block = {
     kind: 'heading',
     id: 'goal heading',
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: 'success', isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
+    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page, isSuggested)),
     isLabel: true,
   }
   const field: Block[] = goalField
     ? [{ kind: 'field', id: 'goal field', field: goalField, isAtEdge: g?.mark == null }]
     : []
-  if (g === null) return [heading, ...(goalField ? field : [headNote('goal text', NO_GOAL_TEXT, 'muted')])]
+  const suggestion: Block[] = [
+    headNote('goal suggested', SUGGESTED_GOAL_LABEL, 'muted'),
+    headTitle('goal text', page.suggestedGoal ?? ''),
+  ]
+  if (g === null) {
+    const empty = isSuggested ? suggestion : [headNote('goal text', NO_GOAL_TEXT, 'muted')]
+    return [heading, ...(goalField ? field : empty)]
+  }
   /** A met goal's lines start at the text column, under its heading's label. */
   const atText = (b: Block): Block => (g.mark && b.kind === 'note' ? { ...b, isAtEdge: false } : b)
   const lines = goalField
     ? field
-    : [
-        headTitle('goal text', g.text),
-        ...(g.was ? [headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
-        ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
-        ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
-      ].map(atText)
+    : (isSuggested
+        ? suggestion
+        : [
+            headTitle('goal text', g.text),
+            ...(g.was ? [headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
+            ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
+            ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
+          ]
+      ).map(atText)
   const fold = g.milestonesFold
   const foldLine: Block[] = fold
     ? [
@@ -297,12 +322,16 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
 export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
   const page = view.statusPage
   const { isUnfolded, isCollapsed } = ui
-  const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: ui.goalField !== null })
+  const empty = emptyTab(view, {
+    tab: 'overview',
+    isGoalFieldOpen: ui.goalField !== null,
+    isSuggestionOpen: ui.isSuggestionOpen,
+  })
   if (empty) {
     const setGoal = empty.under?.is === 'set-goal' ? empty.under : null
     const parts = setGoal && {
       id: GOAL_KEYS_ID,
-      text: null,
+      text: setGoal.suggestion === null ? null : `${SUGGESTED_GOAL_LABEL}: ${setGoal.suggestion}`,
       buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
       feedback: null,
       field: setGoal.isFieldOpen ? ui.goalField : null,

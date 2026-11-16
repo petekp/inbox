@@ -282,6 +282,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
     bad: s => (s.facts.goalClear = CLEAR),
   },
+  'goal-suggested': {
+    good: s => {
+      s.facts.goalSuggested = CLEAR
+      s.after = { ...s.after, suggestedGoal: 'Offline sync in both stores' }
+    },
+    bad: s => (s.facts.goalSuggested = CLEAR),
+  },
   'milestones-true': {
     good: withGoal,
     bad: s => {

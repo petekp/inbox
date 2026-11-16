@@ -24,7 +24,8 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-status-tops.ts` | Mod only. `Drawn`: a part of the Status with the terminal lines it takes, which each Status drawing function returns with its element, and how parts stack into each subject row's first line. |
 | `hooks/pane-status.tsx` | Mod only. The Status tab: each row and its buttons, Other work's rule, and the tab's page. |
 | `hooks/inbox-model.ts` | Mod only. The model the mod's ledger and Status calls ask, and the report each call gives its record. |
-| `hooks/pane-status-goal.tsx` | Mod only. The Status tab's goal section: its heading, the goal or the line that says none is set, its buttons, its text field, the Now line and the milestones. |
+| `hooks/pane-status-goal.tsx` | Mod only. The Status tab's goal section: its heading, the goal, the suggested goal or the line that says none is set, its buttons, the Now line and the milestones. |
+| `hooks/pane-status-goal-field.tsx` | Mod only. The goal's text field and its Cancel, whose submit button reads Set for a new goal and Save for an edit. |
 | `hooks/pane-status-parent.tsx` | Mod only. A Status parent's name line as its fold in the terminal and desktop looks: the chevron as a dim Button in the terminal, and the line as a Client on desktop. |
 | `hooks/pane-text.tsx` | Mod only. The pane's formatted text: inline Markdown, and lines already wrapped into spans. |
 | `hooks/pane-status-path.tsx` | Mod only. The goal's path in the terminal and desktop looks: the line in the milestones' mark column, the word at the right of a name's first line, and a done milestone folded to its name. |

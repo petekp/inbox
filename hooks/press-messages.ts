@@ -1,5 +1,7 @@
 import type { Finding, Item } from '../types'
 import { isQuestionBack } from './ask-match'
+import { CLIENTS } from './clients'
+import type { ClientId } from './clients'
 
 function findingBody(finding: Finding): string[] {
   return [
@@ -83,4 +85,9 @@ export const messages = {
 
     return [opening, ...findingBody(finding), ...(how === 'typed' ? ['', words] : [])].join('\n')
   },
+}
+
+/** Whether a Compare press on `client` may hand its work to a background subagent, whose report reaches the chat. */
+export function isCompareInBackground(client: ClientId): boolean {
+  return CLIENTS[client].support['compare-in-background'].kind === 'full'
 }

@@ -138,7 +138,12 @@ export const GOOD_RUNS: Record<string, string[]> = {
     ].join('\n'),
   ],
   'goal-wait': [
-    'NEW: working | Footer typo | fixed\nDONE: Footer typo | fixed\nNEW: working | Slow share sheet | loading attachments lazily',
+    [
+      'NEW: working | Footer typo | fixed',
+      'DONE: Footer typo | fixed',
+      'NEW: working | Slow share sheet | loading attachments lazily',
+      'SUGGEST: Share sheet opens without loading every attachment',
+    ].join('\n'),
   ],
   'no-goal-yet': [
     'HEAD: Date picker | Fixing the date picker week start\nNEW: working | Week start | reads the locale\nDONE: s1 | reads the locale',

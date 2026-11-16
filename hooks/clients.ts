@@ -71,6 +71,7 @@ export type FeatureId =
   | 'status-idle-age'
   | 'question-back-stays-open'
   | 'collapse-rows'
+  | 'suggested-goal'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -162,6 +163,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
       'collapse-rows': { kind: 'full' },
+      'suggested-goal': { kind: 'full' },
     },
   },
   codex: {
@@ -327,6 +329,10 @@ export const CLIENTS: Record<ClientId, Client> = {
           "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere.",
       },
       'collapse-rows': { kind: 'full' },
+      'suggested-goal': {
+        kind: 'different',
+        reason: 'Clicks only, as for the goal: the Codex Status has no row selection.',
+      },
     },
   },
   omp: {
@@ -421,11 +427,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-idle-age': { kind: 'full' },
       'question-back-stays-open': { kind: 'full' },
       'collapse-rows': { kind: 'full' },
+      'suggested-goal': { kind: 'full' },
     },
   },
-}
-
-/** Whether a Compare press on `client` may hand its work to a background subagent, whose report reaches the chat. */
-export function isCompareInBackground(client: ClientId): boolean {
-  return CLIENTS[client].support['compare-in-background'].kind === 'full'
 }
