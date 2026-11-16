@@ -40,7 +40,7 @@ nav {
 .tab-word::after {
   content: attr(data-label);
   height: 0;
-  overflow: hidden;
+  overflow: clip;
   visibility: hidden;
   font-weight: 600;
   font-variation-settings: 'wght' 600;
@@ -68,7 +68,7 @@ nav {
     position: absolute;
     width: 1px;
     height: 1px;
-    overflow: hidden;
+    overflow: clip;
     clip-path: inset(50%);
   }
 }
