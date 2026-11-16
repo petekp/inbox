@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T06:56:26.849Z. 268591 characters follow.
+// Built at 2026-11-16T07:21:05.418Z. 268792 characters follow.
 
 // src/main.ts
 import { View, div as div8 } from "gpui-kit";
@@ -5271,6 +5271,10 @@ var isLightTheme = (t) => {
 };
 var colorOf = (t, tone) => tone === "tasks" || tone === "needsYou" ? (isLightTheme(t) ? LIGHT_TONES : DARK_TONES)[tone] : t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
+function flatten(c, under) {
+  const alpha = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1;
+  return alpha === 1 ? c.slice(0, 7) : mixInto(c.slice(0, 7), under, alpha);
+}
 function mixInto(c, under, share) {
   const channel = (at) => Math.round(parseInt(c.slice(at, at + 2), 16) * share + parseInt(under.slice(at, at + 2), 16) * (1 - share));
   return `#${[1, 3, 5].map((at) => channel(at).toString(16).padStart(2, "0")).join("")}`;
@@ -5593,7 +5597,7 @@ function spaceEl(s, p, columns) {
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
 var TREE_LINE_SHARE = 0.2;
-var lineColor = (t, under = t.background) => mixInto(t.foreground, under, TREE_LINE_SHARE);
+var lineColor = (t, under = t.background) => mixInto(t.foreground, flatten(under, t.background), TREE_LINE_SHARE);
 var PATH_X = EDGE + 4;
 function pathLineEl(line, top, height, t) {
   if (line === null)

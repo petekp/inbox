@@ -18,6 +18,7 @@ import {
   NEST,
   SECTION_GAP,
   SMALL_GAP,
+  flatten,
   mixInto,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
@@ -242,11 +243,12 @@ function spaceEl(s: Space, p: Paint, columns: Element[]): Element {
 
 /**
  * The path's line and the nesting connectors: the text mixed into the panel's background at the Codex tab's `--tree-line`
- * share, or into `under` where a connector runs through a box that has a color of its own, as a selected row's.
+ * share, or into `under`, laid over the panel's background, where a connector runs through a box that has a translucent color of
+ * its own, as a selected row's.
  */
 const TREE_LINE_SHARE = 0.2
 export const lineColor = (t: Theme, under: Theme[keyof Theme] = t.background) =>
-  mixInto(t.foreground, under, TREE_LINE_SHARE)
+  mixInto(t.foreground, flatten(under, t.background), TREE_LINE_SHARE)
 
 /** Where the path's line runs: under the middle of a milestone's mark. */
 export const PATH_X = EDGE + 4

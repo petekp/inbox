@@ -84,6 +84,13 @@ export const tint = (c: Color, share: number): Color =>
     .toString(16)
     .padStart(2, '0')}` as Color
 
+/** `c` laid over `under` at `c`'s own alpha, as one opaque color. A theme's `selected` and `hover` are translucent. */
+export function flatten(c: Color, under: Color): Color {
+  const alpha = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1
+
+  return alpha === 1 ? (c.slice(0, 7) as Color) : mixInto(c.slice(0, 7) as Color, under, alpha)
+}
+
 /**
  * `c` at a share of its strength mixed into `under`, as one opaque color. Two strokes in it that meet then draw no
  * darker or brighter point, as two translucent strokes would.
