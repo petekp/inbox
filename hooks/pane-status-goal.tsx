@@ -390,15 +390,17 @@ export function paneStatusGoal(
       : muted('goal-none', NO_GOAL_TEXT)
     const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) })
     const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null
+    /** A met goal's lines under its text say nothing about the suggestion drawn in its place. */
+    const shownGoal = suggestion === null ? g : null
     const under = [
       ...(isTypingGoal
         ? field(mark === null ? 0 : markInset, page)
         : suggestion !== null
           ? suggestionLines(suggestion, width)
           : [goalText]),
-      ...(g?.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`, width)] : []),
-      ...(g?.now ? [muted('goal-now', g.now, width)] : []),
-      ...(g?.awaiting ? [muted('goal-awaiting', g.awaiting, width)] : []),
+      ...(shownGoal?.was ? [muted('goal-was', `${WAS_PREFIX}${shownGoal.was}`, width)] : []),
+      ...(shownGoal?.now ? [muted('goal-now', shownGoal.now, width)] : []),
+      ...(shownGoal?.awaiting ? [muted('goal-awaiting', shownGoal.awaiting, width)] : []),
     ]
     const body = [
       ...goalHeading(g?.label ?? GOAL_HEADING, keys, mark),

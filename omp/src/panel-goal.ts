@@ -250,7 +250,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   if (part.is === 'gap') return withPathLine([''], part.line, s)
   if (part.is === 'later') return [partHeading(LATER_TEXT, width, s)]
   if (part.is === 'title') {
-    const g = part.goal
+    const g = part.suggestion === null ? part.goal : null
     const text = part.isTyping
       ? fieldLines(d, textAt)
       : part.suggestion !== null

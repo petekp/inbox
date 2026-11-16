@@ -75,7 +75,7 @@ export function paneGoalField(
       }
       onSubmit={async (value: string, submit: { surface: UiPressArgument['surface'] }) => {
         await sendTyped(GOAL_KEYS_ID, value, submit.surface)
-        await updateSuggestionOpen(false)
+        if (value.trim()) await updateSuggestionOpen(false)
       }}
     />
   )
