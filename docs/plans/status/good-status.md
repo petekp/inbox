@@ -187,10 +187,10 @@ A reply that changed nothing about the work leaves every row where it was. So a 
 
 When the session drops one approach for another, the person sees both until they have looked. When one piece merges into another, the row names the merged piece by its short name.
 
-- **Good:** `● Sync conflicts: manual merge`, with `was: last-write-wins` under it.
+- **Good:** `● Sync conflicts: manual merge`, with `Prev: last-write-wins` under it.
 - **Good:** `● Offline banner: option A built`, with `merged in: Banner on hover` under it.
 - **Bad:** the text changes to "manual merge", and nothing says the plan changed.
-- **Bad:** a was line on a row that only made progress.
+- **Bad:** a Prev line on a row that only made progress.
 - **Bad:** `merged in: Show the offline banner on hover and keep it open…`. The merged piece had a sentence for a name, and the line ends cut.
 
 #### 13. The page is current, and says when it is not

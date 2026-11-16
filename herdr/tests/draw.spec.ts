@@ -107,7 +107,7 @@ test('the Status page draws the goal’s and each row’s buttons in their plans
   }
 })
 
-test('the Status page draws the goal’s milestones on a path: a seen done one as its fold, the line from each to the next and beside its work, dashed into the one that reads next, each word, and Later above the ones that wait', () => {
+test('the Status page draws the goal’s milestones on a path: a seen done one as its fold, the line from each to the next and beside its work, dashed into the next one, and Later above the ones that wait', () => {
   const screen = demoScreen()
   const blocks = tabBlocks(screen, uiOn('overview'))
   const drawn = screen.view.statusPage.goal!.milestones.map(m => blocks.find(b => b.id === m.id)!)
@@ -118,13 +118,6 @@ test('the Status page draws the goal’s milestones on a path: a seen done one a
     { is: 'milestone', above: 'continues', below: 'to-next' },
     { is: 'milestone', above: 'to-next', below: null },
     { is: 'milestone', above: null, below: null },
-  ])
-  expect(drawn.map(b => (b.kind === 'status' ? b.word : null))).toEqual([
-    null,
-    undefined,
-    'now · 1h',
-    'next',
-    undefined,
   ])
   expect(blocks.find(b => b.id === 's1')).toMatchObject({ path: { is: 'work', line: 'to-next' } })
   expect(blocks.findIndex(b => b.id === 'goal later')).toBe(blocks.findIndex(b => b.id === 'm5') - 1)
@@ -162,7 +155,7 @@ test('a met goal draws a ✓ in the success tone beside its Goal met label, its 
   expect(shut.some(b => milestoneIds.includes(b.id))).toBe(false)
   expect(open.find(b => b.id === fold.id)).toMatchObject({ isOpen: true })
   expect(open.filter(b => milestoneIds.includes(b.id)).map(b => b.id)).toEqual(milestoneIds)
-  expect(shut.some(b => b.id === 'head title')).toBe(true)
+  expect(shut.find(b => b.id === 'head')).toMatchObject({ kind: 'rule', isTitle: true })
   expect(tabBlocks(screen, uiOn('overview', { typing: 'goal' })).find(b => b.id === 'goal field')).toMatchObject({
     isAtEdge: false,
   })

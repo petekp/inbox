@@ -189,7 +189,8 @@ export function StatusLine({ row, motion, under }: { row: StatusRow; motion?: st
   if (row.kind === 'part')
     return (
       <div class="row part-line" {...lineMotion(motion)}>
-        <div class="part-rule">{row.text}</div>
+        <div class={row.isTitle ? 'part-rule part-title' : 'part-rule'}>{row.text}</div>
+        {row.description ? <div class="muted part-description">{row.description}</div> : null}
       </div>
     )
   if (row.kind === 'counts')

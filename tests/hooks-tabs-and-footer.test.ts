@@ -130,8 +130,8 @@ test('at 20 desktop columns the tabs show their symbols with their counts, at 69
   await pane.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('overview')
-  expect((await pane.find({ key: 'status-head' }))?.text).toBe(
-    'Adding a greeting CLIBuilding a CLI that greets by name',
+  expect((await pane.find({ key: 'status-head' }))?.text).toMatch(
+    /^Adding a greeting CLI ?─*Building a CLI that greets by name$/,
   )
   expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()

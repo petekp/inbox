@@ -367,18 +367,7 @@ function pageEntries(
     isSuggestionOpen,
   })
   if (empty) return emptyEntries(empty, empty.under?.is === 'set-goal' ? setGoal(empty.under) : [])
-  const description = page.head?.description
-  const head: Entry[] =
-    page.isHeadApart && page.head
-      ? [
-          { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
-          ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
-        ]
-      : []
-  const top = [
-    ...goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed),
-    ...(head.length > 0 ? [blank, ...head] : []),
-  ]
+  const top = goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed)
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row): Entry => ({ kind: 'page', row }))
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== 'part'
 

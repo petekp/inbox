@@ -16,7 +16,13 @@ export function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
     .pr(EDGE)
     .gap(CONTROL_GAP)
     .items_center()
-    .child(div().flex_none().text_color(t.muted).child(b.text))
+    .child(
+      div()
+        .flex_none()
+        .text_color(b.isTitle ? t.foreground : t.muted)
+        .when(b.isTitle, e => e.font_semibold())
+        .child(b.text),
+    )
     .child(ruleLine(t))
 }
 

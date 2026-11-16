@@ -14,8 +14,6 @@ export type MilestoneRow = {
   tone: StatusTone
   name: string
   place: PathPlace
-  /** "now", "now · 3h" or "next", drawn muted at the right of the name's first line. */
-  word: string | null
   line: PathLine
   /** Whether the "Later" label and its rule draw above it. */
   startsLater: boolean
@@ -145,7 +143,6 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     ...(isHeld ? HELD_MARK : SUBJECT_MARKS[m.status]),
     name: m.name,
     place: step.place,
-    word: step.word,
     line: step.line,
     startsLater: step.startsLater,
     isChanged,
@@ -159,8 +156,8 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
   }
 }
 
-/** The goal block with its Now line and its milestones in path order, from the saved Status and the open asks at `now`. */
-export function goalPage(o: SessionStatus | null, items: readonly Item[], now: number): GoalParts {
+/** The goal block with its Now line and its milestones in path order, from the saved Status and the open asks. */
+export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalParts {
   const g = o?.goal ?? null
   const suggestedGoal = o === null || hasRunningGoal(o) ? null : o.suggestedGoal
   if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null, suggestedGoal }
@@ -174,7 +171,7 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[], now: n
   const head = o.head
   const nowText = head ? head.description || head.title : null
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept)
-  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown, now).map(step => milestoneRow(step, o, items))
+  const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown).map(step => milestoneRow(step, o, items))
 
   return {
     goal: {

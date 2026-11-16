@@ -174,11 +174,8 @@ function foldedNameLines(d: Draw, mark: string, name: string, foldId: string, is
   )
 }
 
-/** The cells between the end of a name's first line and its word. */
-const WORD_GAP = 2
-
 /**
- * A milestone's lines: its mark and name, its word dim at the right edge of the name's first line where it fits, then
+ * A milestone's lines: its mark and name, then
  * where it stands, its was line and its buttons. A done milestone folded to its name draws the name dim with the fold's
  * chevron after it, and takes Enter as its fold.
  */
@@ -197,12 +194,10 @@ function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[]
   const namePaint = (t: string) =>
     (m.isMuted ? s.dim : (u: string) => u)(m.isChanged || (chevron && isSelected) ? s.bold(t) : t)
   const [first = '', ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron })
-  const room = width - 1 - visibleLength(first) - cellWidth(m.word ?? '')
-  const word = m.word !== null && room >= WORD_GAP ? `${' '.repeat(room)}${s.dim(m.word)}` : ''
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]
 
-  return [`${first}${word}`, ...withPathLine(after, column, s)]
+  return [first, ...withPathLine(after, column, s)]
 }
 
 /**

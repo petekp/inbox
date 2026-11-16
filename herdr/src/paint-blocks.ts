@@ -1,7 +1,6 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
-import { foldGlyph } from '../../hooks/fold-chevron'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
@@ -17,7 +16,6 @@ import {
   HELP_INDENT,
   GROUP_GAP,
   INSET,
-  LINE,
   LINE_GAP,
   LINE_HEIGHT,
   MARK_W,
@@ -27,6 +25,7 @@ import {
   TEXT_X,
   colorOf,
 } from './paint-theme'
+import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
 import { PATH_X, lineColor, panelId, restId, sizeEl, titleEl } from './paint-space'
@@ -278,33 +277,6 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
  */
 const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
 
-/** A status line's name, its stall word and its fold's chevron, as one run of text. */
-const nameLineOf = (s: StatusLine): string =>
-  [s.stall ? `${s.name}${STALL_GAP}${s.stall.text}` : s.name, s.fold?.chevron]
-    .filter(x => x !== undefined)
-    .join(STALL_GAP)
-
-/**
- * A milestone's word over its name's line. gpui-kit cannot measure text, so a hidden copy of the name and stall lays
- * out beside the word in a box one line tall: when they do not fit on one line, the word wraps out of the box and does
- * not show.
- */
-const wordEl = (s: StatusLine, word: string, t: Theme): Element =>
-  h_flex()
-    .absolute()
-    .top(0)
-    .left(0)
-    .w_full()
-    .h(LINE)
-    .overflow_hidden()
-    .flex_wrap()
-    .child(
-      statusPartEl(nameLineOf(s))
-        .invisible()
-        .when(s.isBold, e => e.font_semibold()),
-    )
-    .child(div().flex_none().ml_auto().pl(CONTROL_GAP).whitespace_nowrap().text_color(t.muted).child(word))
-
 /** A Help line: a key or a mark in the left column, then its words. */
 function keyEl(s: StatusLine, does: string, t: Theme): Element {
   return h_flex()
@@ -331,13 +303,13 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const toggle = s.fold?.toggle
   const chevron = s.fold
     ? [
-        statusPartEl(s.fold.chevron)
-          .text_color(t.muted)
-          .ml(LINE_GAP)
-          .when(toggle !== undefined && !isInert, e => e.hover(x => x.text_color(t.foreground))),
+        foldChevronEl(t, {
+          isOpen: !s.fold.isFolded,
+          isLive: toggle !== undefined && !isInert,
+          ...(s.fold.isFolded ? { count: s.fold.count } : {}),
+        }),
       ]
     : []
-  const word = s.word === undefined ? [] : [wordEl(s, s.word, t)]
 
   return v_flex()
     .pl(EDGE + s.depth * NEST)
@@ -348,17 +320,7 @@ function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         .items_start()
         .when(toggle !== undefined && !isInert, e => e.on_click((_e, cx) => (toggle ? p.press(toggle, cx) : undefined)))
         .child(markEl(s.mark, t))
-        .child(
-          h_flex()
-            .relative()
-            .flex_1()
-            .min_w(0)
-            .flex_wrap()
-            .child(name)
-            .children(stall)
-            .children(chevron)
-            .children(word),
-        ),
+        .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
     )
     .when(s.waitsOn !== undefined, e => e.child(lineEl(s.waitsOn ?? '', colorOf(t, 'needsYou'))))
     .children(s.under.map(l => lineEl(l, t.muted)))
@@ -510,7 +472,7 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolea
 
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
-  const fold: Button = {
+  const press: Button = {
     id: b.id,
     label: b.text,
     emphasis: 'quiet',
@@ -518,8 +480,8 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     hotkey: null,
     does: { is: 'view', change: b.change },
   }
-  const mark = b.kind === 'fold' ? b.mark : undefined
-  const chevron = b.kind === 'fold' ? foldGlyph(b.isOpen) : null
+  const fold = b.kind === 'fold' ? b : null
+  const mark = fold?.mark
 
   return h_flex()
     .id(`fold ${b.id}`)
@@ -529,17 +491,10 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .items_start()
     .text_color(t.muted)
     .accessibility_label(b.text)
-    .when(!isInert, e => e.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.press(fold, cx)))
+    .when(!isInert, e => e.on_click((_e, cx) => p.press(press, cx)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(div().min_w(0).whitespace_normal().child(b.text))
-    .when(chevron !== null, e =>
-      e.child(
-        div()
-          .flex_none()
-          .ml(LINE_GAP)
-          .child(chevron ?? ''),
-      ),
-    )
+    .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))
 }
 
 /**

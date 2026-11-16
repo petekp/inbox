@@ -37,23 +37,22 @@ function rowText(r: StatusRow): string[] {
     case 'done-fold':
       return [`${pad}› ${r.text}`]
     case 'part':
-      return [`── ${r.text}`]
+      return [`── ${r.text}`, ...(r.description ? [r.description] : [])]
     case 'counts':
       return [`${pad}${r.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP)}`]
   }
 }
 
 /**
- * A milestone in the goal's path: the Later label above the first one under Later, its word after an arrow, and › after
+ * A milestone in the goal's path: the Later label above the first one under Later, and › after
  * a done milestone folded to its name, whose rows stay folded.
  */
 function milestoneText(m: MilestoneRow): string[] {
-  const word = m.word ? `  ← ${m.word}` : ''
   const fold = m.foldId ? ' ›' : ''
 
   return [
     ...(m.startsLater ? [LATER_TEXT] : []),
-    `${m.mark} ${m.name}${fold}${word}`,
+    `${m.mark} ${m.name}${fold}`,
     ...(m.text ? [`  ${m.text}`] : []),
     ...milestoneRows(m, () => false).flatMap(rowText),
   ]
@@ -80,14 +79,10 @@ function goalText(page: StatusPage): string[] {
 export function pageText(page: StatusPage): string {
   if (page.isEmpty) return `${EMPTY_STATUS_TEXT.title}\n${EMPTY_STATUS_TEXT.hint}`
 
-  const head =
-    page.goal === null && page.head ? [page.head.title, ...(page.head.description ? [page.head.description] : [])] : []
   const goal = goalText(page)
 
   return [
     ...goal,
-    ...(goal.length > 0 && head.length > 0 ? [''] : []),
-    ...head,
     ...(page.rows.length > 0 ? ['', ...page.rows.flatMap(rowText)] : []),
     ...(page.error ? ['', page.error] : []),
   ].join('\n')

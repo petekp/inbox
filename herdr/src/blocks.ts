@@ -161,13 +161,11 @@ export type StatusLine = {
    * its mark, or nothing for the version line. Such a line has nothing under it.
    */
   does?: string
-  /** A milestone's "now" or "next", muted at the right of its name's line where the name and it fit on one line. */
-  word?: string
   /**
-   * A parent's fold: its chevron after its name and stall, and the press that folds its rows away or opens them, which
+   * A parent's fold: its chevron after its name and stall, and the count of rows it hides while folded, and the press that folds its rows away or opens them, which
    * the whole name line takes.
    */
-  fold?: { chevron: string; toggle: Button }
+  fold?: { isFolded: boolean; count: number; toggle: Button }
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */
   under: string[]
   buttons: Button[]
@@ -274,8 +272,8 @@ export type Block =
    * column under a met goal's label.
    */
   | { kind: 'field'; id: string; field: Field; isAtEdge: boolean }
-  /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. */
-  | { kind: 'rule'; id: string; text: string | null }
+  /** A rule between two groups or two PRs, or with `text`, the label of the Status part that follows, such as Other work. With `isTitle`, the label is the head's title, in the foreground color and semibold. */
+  | { kind: 'rule'; id: string; text: string | null; isTitle?: true }
   /** A section's space above the block after it, or with `isMilestoneStep` the smaller space between two milestones. */
   | { kind: 'gap'; id: string; isMilestoneStep?: true }
   /** A muted line at the edge that names the blocks under it, as Other PRs. */

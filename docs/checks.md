@@ -10,6 +10,8 @@ The script also checks the class names Codex builds from variables, with `script
 
 The script also fails on `cursor: pointer` in `codex/src/tab-css` and on `cursor_pointer()` in `herdr/src`, with `scripts/structure/cursors.mjs`. Every inbox control keeps the default cursor, and hover states show what is clickable. The check leaves out `hooks/compare-page`, which is a separate browser page and not one of the looks.
 
+The script also fails on a disclosure glyph other than the fold chevron (`▸ ▾ ▴ ▿ ▹ ⌄ ˅`) in a `.ts` or `.tsx` file under `hooks`, `herdr/src`, `omp/src` or `codex/src`, with `scripts/structure/chevrons.mjs`. Every fold draws the same chevron: `foldGlyph` in the text looks, and the chevron icon in the Codex tab and the Herdr look.
+
 `codex/tests/structure.spec.ts` checks the command against disposable fixtures. Mounted row-action tests check Codex controls and outcomes. The mod demo test checks terminal and desktop titles and actions, with settled rows and PRs outside that test. Full-page behavior, native painting, clipboard, focus and measured motion still need their own checks.
 
 `omp/tests/session.spec.ts` runs the shared session script from `tests/session-script.ts` against omp's `SessionHost`. `omp/tests/panel.spec.ts` checks that the panel draws buttons in the shared plan order, in place of the demo test in `tests/hooks.test.ts`.

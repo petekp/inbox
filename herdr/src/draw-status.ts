@@ -12,7 +12,7 @@ import { GOAL_HEADING, NO_GOAL_TEXT, SUGGESTED_GOAL_LABEL, shownMilestones } fro
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { isParentCollapsed, milestoneRows, parentChevron, unfoldedRows } from '../../hooks/status-folds'
+import { isParentCollapsed, milestoneRows, unfoldedRows } from '../../hooks/status-folds'
 import { LATER_TEXT, isSpacedAbove, workJoints } from '../../hooks/status-path'
 import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { cellWidth } from '../../hooks/text'
@@ -63,7 +63,7 @@ function foldOf(
     isCollapsed: !isFolded,
   })
 
-  return { fold: { chevron: parentChevron(isFolded, p.foldCount), toggle } }
+  return { fold: { isFolded, count: p.foldCount, toggle } }
 }
 
 function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollapsed: IsCollapsed): Block[] {
@@ -113,7 +113,8 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
-      { kind: 'rule', id: row.id, text: row.text },
+      { kind: 'rule', id: row.id, text: row.text, ...(row.isTitle ? { isTitle: true as const } : {}) },
+      ...(row.description ? [note(`${row.id} description`, row.description, 'muted')] : []),
     ]
   if (row.kind === 'counts')
     return [{ ...note(row.id, row.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP), 'muted'), depth: row.depth }]
@@ -181,7 +182,6 @@ function milestoneBlock(
     isBold: m.isChanged,
     isMuted: m.isMuted,
     stall: null,
-    ...(m.word === null ? {} : { word: m.word }),
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
     ...foldOf(m, isCollapsed),
@@ -339,15 +339,7 @@ export function statusBlocks(view: SessionView, ui: StatusUi): Block[] {
 
     return [emptyBlock('overview', empty, parts)]
   }
-  const description = page.head?.description
-  const head =
-    page.isHeadApart && page.head
-      ? [
-          headTitle('head title', page.head.title),
-          ...(description ? [headNote('head text', description, 'muted')] : []),
-        ]
-      : []
-  const top = [...goalBlocks(page, ui), ...(head.length > 0 ? [{ kind: 'gap', id: 'gap head' } as const, ...head] : [])]
+  const top = goalBlocks(page, ui)
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).flatMap(r => rowBlocks(r, isUnfolded, isCollapsed))
 
   const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== 'part'

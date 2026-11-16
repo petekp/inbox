@@ -158,7 +158,7 @@ test('in a short panel, switching to the Status page scrolls its first selected 
   expect(lines.some(l => l.includes('↵ View'))).toBe(true)
 })
 
-test('on the Status page, j reaches the done fold after the rows with buttons, Enter lists its finished rows in the label column under ⌄, and f folds them again', () => {
+test('on the Status page, j reaches the done fold after the rows with buttons, Enter lists its finished rows in the label column under v, and f folds them again', () => {
   const screen = goallessScreen()
   const fold = screen.view.statusPage.rows.find(r => r.kind === 'done-fold')!
   const finished = fold.kind === 'done-fold' ? fold.rows : []
@@ -170,7 +170,7 @@ test('on the Status page, j reaches the done fold after the rows with buttons, E
 
   const unfolded = keys(screen, onFold, 'enter')
   const lines = text(screen, unfolded).split('\n')
-  const foldAt = lines.findIndex(l => l.includes(`${labelOf(fold)} ⌄`))
+  const foldAt = lines.findIndex(l => l.includes(`${labelOf(fold)} v`))
   expect(foldAt).toBeGreaterThan(-1)
   expect(lines.slice(foldAt + 1, foldAt + 1 + finished.length).map(l => l.trim())).toEqual(
     finished.map(r => `✓ ${labelOf(r)}`),
@@ -195,7 +195,7 @@ test('on the Status page, j reaches a subject with rows under it, f folds them b
     after.findIndex(r => r.depth <= parent.depth),
   )
   expect(under.length).toBeGreaterThan(0)
-  expect(text(screen, onPage)).toContain(`${labelOf(parent)} ⌄`)
+  expect(text(screen, onPage)).toContain(`${labelOf(parent)} v`)
   expect(text(screen, onPage)).not.toContain('Fold')
   const onParent = { ...onPage, selectedId: parent.id }
   expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toContain(parent.id)
@@ -229,6 +229,5 @@ test('on the Status page, f folds a milestone’s rows behind its name, keeps it
   const folded = text(foldedScreen(screen, milestone.id), onMilestone).split('\n')
   const first = folded.find(l => l.includes(milestone.name))!
   expect(first).toContain(`› ${milestone.foldCount}`)
-  if (milestone.word) expect(first.trimEnd().endsWith(milestone.word)).toBe(true)
   expect(folded.length).toBeLessThan(before.length)
 })

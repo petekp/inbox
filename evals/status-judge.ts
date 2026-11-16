@@ -31,11 +31,11 @@ export const JUDGE_CHECKS = [
     property: 9,
     text: "No text repeats an open ask or a finding in any words, or says that its piece waits on the person's decision.",
   },
-  { id: 'was-lines', property: 12, text: 'A was line names the plan that was replaced, or the piece that merged in.' },
+  { id: 'was-lines', property: 12, text: 'A Prev line names the plan that was replaced, or the piece that merged in.' },
   {
     id: 'goal',
     property: 14,
-    text: 'The goal names the outcome the facts give, in any words, with a finish line, and its was line names the goal it replaced.',
+    text: 'The goal names the outcome the facts give, in any words, with a finish line, and its Prev line names the goal it replaced.',
   },
   {
     id: 'milestones',
@@ -51,7 +51,7 @@ export const JUDGE_CHECKS = [
 
 type JudgeCheckId = (typeof JUDGE_CHECKS)[number]['id']
 
-/** `n/a` when the page has nothing the check judges, such as no goal or no was line. */
+/** `n/a` when the page has nothing the check judges, such as no goal or no Prev line. */
 type Verdict = 'pass' | 'fail' | 'n/a'
 
 /** What the judge reads at one checkpoint. */
