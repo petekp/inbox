@@ -15,6 +15,7 @@ import {
   EDGE,
   GROUP_GAP,
   HELP_ICON,
+  HELP_ICON_TEXT,
   INSET,
   LINE_GAP,
   SMALL_TEXT,
@@ -45,7 +46,7 @@ const helpIconEl = (t: Theme): Element =>
     .border_1()
     .border_color(t.muted)
     .hover(s => s.border_color(t.foreground))
-    .text_size(SMALL_TEXT)
+    .text_size(HELP_ICON_TEXT)
     .font_semibold()
     .child(HELP_COPY.icon)
 

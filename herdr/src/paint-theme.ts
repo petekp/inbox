@@ -121,8 +121,10 @@ export const TAB_RADIUS = 6
  * key, about 30 px, and `INSET` after it, rounded up to two mark columns. A key does not fit the mark column.
  */
 export const HELP_COLUMN = MARK_W * 2
-/** The Help control's circle. */
-export const HELP_ICON = 20
+/** The Help control's circle, about the size of the Codex tab's and the desktop pane's. */
+export const HELP_ICON = 14
+/** The question mark inside the Help control's circle. */
+export const HELP_ICON_TEXT = 10
 
 /** The separator between a status and its reasons, and between a heading and its count. */
 export const SEP = ' · '

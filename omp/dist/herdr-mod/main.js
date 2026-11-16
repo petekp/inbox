@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T01:00:38.893Z. 250404 characters follow.
+// Built at 2026-11-16T01:12:02.355Z. 250433 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -5006,7 +5006,8 @@ var BUTTON_H = 28;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
 var HELP_COLUMN = MARK_W * 2;
-var HELP_ICON = 20;
+var HELP_ICON = 14;
+var HELP_ICON_TEXT = 10;
 var SEP = " · ";
 var onSize = (view, key, read) => (size, cx) => {
   const value = read(size);
@@ -5206,7 +5207,7 @@ var helpButton = (isHelpShown) => ({
   hotkey: null,
   does: { is: "view", change: { toggleHelp: true } }
 });
-var helpIconEl = (t) => h_flex().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(t.muted).hover((s) => s.border_color(t.foreground)).text_size(SMALL_TEXT).font_semibold().child(HELP_COPY.icon);
+var helpIconEl = (t) => h_flex().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(t.muted).hover((s) => s.border_color(t.foreground)).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
 function tabsEl(tabs, status, isHelpShown, p) {
   const { t } = p;
   const help = helpButton(isHelpShown);
