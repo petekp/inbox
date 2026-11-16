@@ -29,7 +29,7 @@ Each row the shown tab draws, keyed by its id, is in one state:
 | `undoing` | The settled line while an Undo press is out: Undo's label and arrow dim, the arrow turns and the countdown pauses | |
 | `leaving` | The row's last form, fading over 200 ms while its height collapses to 0 | Removed. A settled row counts in the Closed fold from the start of its exit |
 
-Every height moves on `HEIGHT_SPRING` in `hooks/springs.ts`, the spring the Herdr panel uses, which does not overshoot. A move from rest, or one turned back mid-way, comes to rest within `HEIGHT_SETTLE_MS`, 528 ms, so each moving state lasts that long, as `ROW_STATE_MS` in `hooks/row-motion.ts` says. Fades keep their own lengths, `ROW_FADE_MS`: 300 ms in, 200 ms out. The tab samples the spring once a frame and plays the positions as keyframes through `el.animate`.
+Every height moves on `HEIGHT_SPRING` in `hooks/springs.ts`, the spring the Herdr panel uses, which does not overshoot. A move from rest, or one turned back mid-way, comes to rest within `HEIGHT_SETTLE_MS`, 528 ms, so each moving state lasts that long, as `ROW_STATE_MS` in `hooks/row-motion.ts` says. Fades keep their own lengths, `ROW_FADE_MS`: 300 ms in, 200 ms out. A row, line or fold that enters or leaves also slides with its fade, `SLIDE_PX` (8 px) above its place when faded out: it slides up as it leaves and down as it enters, and nothing scales. The offset follows the opacity, so a move turned around mid-way slides back from where it is. With reduced motion there is no slide. The tab samples the spring once a frame and plays the positions as keyframes through `el.animate`.
 
 At each draw the tab works out the form each row should have now, its target:
 

@@ -1,6 +1,6 @@
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT, SECTION_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
-import { ENTER_FADE_MS, FADE_MS, isMoving, ROW_STATE_MS } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, FADE_MS, isMoving, ROW_STATE_MS, slideOffset } from '../../hooks/row-motion'
 import type { RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames, springStep } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
@@ -126,9 +126,18 @@ function opacityOf(el: HTMLElement): number {
 /** A fade under way, and the opacity it goes to. */
 const fades = new WeakMap<HTMLElement, { to: number; anim: Animation }>()
 
-function fade(el: HTMLElement, from: number, to: number, ms: number, hold = false) {
+/** Elements that enter, leave or fold: their fades also slide them, so a fade that restores one slides it back. */
+const slides = new WeakSet<HTMLElement>()
+
+const frameOf = (opacity: number, slides: boolean): Keyframe =>
+  slides ? { opacity, transform: `translateY(${slideOffset(opacity)}px)` } : { opacity }
+
+function fade(el: HTMLElement, from: number, to: number, ms: number, hold = false, slide = false) {
   fades.get(el)?.anim.cancel()
-  const anim = play(el, [{ opacity: from }, { opacity: to }], {
+  if (slide) slides.add(el)
+  const isSliding = slides.has(el)
+  if (isSliding) el.style.pointerEvents = to === 0 ? 'none' : ''
+  const anim = play(el, [frameOf(from, isSliding), frameOf(to, isSliding)], {
     duration: ms,
     easing: FADE_EASING,
     fill: hold ? 'forwards' : 'none',
@@ -144,7 +153,7 @@ const isFadingIn = (el: HTMLElement) => {
 
 function growIn(el: HTMLElement, from: SpringState, opacity: number) {
   glide(el, 'height', from, naturalHeight(el), false, true)
-  fade(el, opacity, 1, ENTER_FADE_MS)
+  fade(el, opacity, 1, ENTER_FADE_MS, false, true)
 }
 
 /**
@@ -207,11 +216,18 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
       return true
     case 'leaving':
       glide(el, 'height', from, 0, true, true)
-      fade(el, opacityOf(el), 0, FADE_MS, true)
+      fade(el, opacityOf(el), 0, FADE_MS, true, !isInsideLeaving(el))
       return true
     default:
       return false
   }
+}
+
+/** Whether an element that leaves sits in one that leaves too, as a PR group's last row does: the outer one slides. */
+function isInsideLeaving(el: HTMLElement): boolean {
+  const outer = el.parentElement?.closest<HTMLElement>('[data-motion]')
+
+  return outer !== null && outer !== undefined && drawnRows.get(outer.dataset.motion!)?.track.state === 'leaving'
 }
 
 /**
@@ -280,7 +296,7 @@ export function toggleFold(id: string, shown: Set<string>, motion = id) {
   tabState.draw()
   el.dataset.closing = '1'
   glide(el, 'height', springOf(el, el.getBoundingClientRect().height), 0, true, true)
-  fade(el, opacityOf(el), 0, FADE_MS, true)
+  fade(el, opacityOf(el), 0, FADE_MS, true, true)
   later(() => {
     if (shown.has(id) || !closingFolds.delete(motion)) return
     tabState.draw()
