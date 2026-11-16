@@ -92,6 +92,7 @@ var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
 var MILESTONES_MIN = 2;
+var MILESTONE_SUBJECTS = 6;
 var GOAL_LEFT_MS = 30 * 60000;
 var REMOVED_KEPT = 10;
 var IDLE_AFTER_MS = 24 * 60 * 60000;
@@ -440,6 +441,10 @@ var CLIENTS = {
       "status-idle-age": { kind: "full" },
       "question-back-stays-open": { kind: "full" },
       "collapse-rows": { kind: "full" },
+      "fold-all": {
+        kind: "different",
+        reason: "A terminal click carries no modifier key, and the engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, and no run has shown that its click reports Option, so the desktop has no known way in."
+      },
       "suggested-goal": { kind: "full" }
     }
   },
@@ -585,6 +590,7 @@ var CLIENTS = {
         reason: "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere."
       },
       "collapse-rows": { kind: "full" },
+      "fold-all": { kind: "full" },
       "suggested-goal": {
         kind: "different",
         reason: "Clicks only, as for the goal: the Codex Status has no row selection."
@@ -679,6 +685,10 @@ var CLIENTS = {
       "status-idle-age": { kind: "full" },
       "question-back-stays-open": { kind: "full" },
       "collapse-rows": { kind: "full" },
+      "fold-all": {
+        kind: "different",
+        reason: "The panel takes keys only, so the w key folds every fold or opens them all, and no click does."
+      },
       "suggested-goal": { kind: "full" }
     }
   }
@@ -3643,6 +3653,7 @@ function tabLegend() {
 }
 var UNDO_KEY = "u";
 var COLLAPSE_KEY = "z";
+var FOLD_ALL_KEY = "w";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "On PRs, rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "On PRs, clear the merged and closed PRs" }
@@ -3652,6 +3663,7 @@ function helpKeys(look) {
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
   const collapseKey = { keys: COLLAPSE_KEY, does: "Collapse or expand the selected row" };
+  const foldAllKey = { keys: FOLD_ALL_KEY, does: "Fold every fold on the tab, or open them all" };
   switch (look) {
     case "desktop":
       return [];
@@ -3660,6 +3672,7 @@ function helpKeys(look) {
         switchTabs,
         { keys: "j k", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
@@ -3669,6 +3682,7 @@ function helpKeys(look) {
         switchTabs,
         { keys: "j k \u2191 \u2193", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
@@ -3682,6 +3696,7 @@ function helpKeys(look) {
         { keys: "\u21B5", does: "Press the picked button" },
         { keys: "t", does: "Reply to the selected row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
@@ -3692,6 +3707,7 @@ function helpKeys(look) {
         { keys: "\u2190 \u2192", does: "Switch tabs" },
         { keys: "j k", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
@@ -7064,7 +7080,36 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
 }
+function drawnLists(v, isSettledDrawn, toRow) {
+  const entries = (rows) => rows.flatMap((r) => {
+    if (r.state.is === "settled")
+      return isSettledDrawn(r.id) ? [{ settled: r, state: r.state }] : [];
+    const row = toRow(r);
+    return row === null ? [] : [{ row }];
+  });
+  const questions = entries(v.needsYou.questions);
+  const tasks = entries(v.needsYou.tasks);
+  const findingGroups = Object.keys(FINDING_GROUPS).map((kind) => ({
+    kind,
+    title: FINDING_GROUPS[kind].title,
+    entries: entries(v.findings.rows.filter((r) => r.finding?.kind === kind))
+  }));
+  const findings = findingGroups.flatMap((g) => g.entries);
+  return {
+    questions,
+    tasks,
+    findings,
+    findingGroups,
+    byTab: { needsYou: [...rowsIn(questions), ...rowsIn(tasks)], findings: rowsIn(findings) }
+  };
+}
 var opensFor = (r) => r.isWaiting && !r.isCollapsed;
+function listWaits(v) {
+  const lists = drawnLists(v, () => true, (r) => r);
+  const collapsed = new Set(v.collapsed);
+  const waits = (entries) => entries.map((x) => ("row" in x) ? { id: x.row.id, isWaiting: isWaitingRow(x.row), isCollapsed: collapsed.has(x.row.id) } : { id: x.settled.id, isWaiting: false });
+  return { needsYou: waits([...lists.questions, ...lists.tasks]), findings: waits(lists.findings) };
+}
 function firstWaiting(rows) {
   return rows.find(opensFor)?.id ?? null;
 }
@@ -7092,6 +7137,9 @@ function rowAfterClose(rows, closedId) {
   if (at < 0)
     return null;
   return (rows.slice(at + 1).find(opensFor) ?? rows.slice(0, at).reverse().find(opensFor))?.id ?? null;
+}
+function rowsIn(entries) {
+  return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
 function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
@@ -8057,6 +8105,56 @@ function askTreeLines(line, pad, width, s, isAllShown = false) {
       out.push(...draw(rest, b.reason, rest));
   });
   return out;
+}
+
+// ../hooks/fold-all.ts
+var statusFoldsOf = (view) => {
+  const page = view.statusPage;
+  const milestones = page.goal?.milestones ?? [];
+  const rows = [...milestones.flatMap((m) => m.rows), ...page.rows];
+  const listed = rows.flatMap((r) => r.kind === "done-fold" ? [r, ...r.rows] : [r]);
+  const foldIds = [
+    ...page.goal?.milestonesFold ? [page.goal.milestonesFold.id] : [],
+    ...milestones.flatMap((m) => m.foldId === null ? [] : [m.foldId]),
+    ...listed.filter((r) => r.kind === "done-fold").map((r) => r.id)
+  ];
+  const parentIds = [
+    ...milestones.filter((m) => m.foldCount > 0).map((m) => m.id),
+    ...listed.filter((r) => r.kind === "subject" && r.foldCount > 0).map((r) => r.id)
+  ];
+  return { statusFolds: [...new Set(foldIds)], parents: [...new Set(parentIds)] };
+};
+function tabFolds(view, tab) {
+  const none = { closed: [], statusFolds: [], parents: [], rows: [] };
+  if (tab === "overview")
+    return { ...none, ...statusFoldsOf(view) };
+  if (tab === "prs")
+    return { ...none, rows: prRowWaits(openPrViews(view.prs.drawn), view.lastActions).map((r) => r.id) };
+  const live = new Set((tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows).filter((r) => r.state.is !== "settled").map((r) => r.id));
+  const closed = tab === "needsYou" ? NEEDS_YOU_GROUPS.filter((g) => view.needsYou.closed[g.list].length > 0).map((g) => g.kind) : Object.keys(FINDING_GROUPS).filter((kind) => view.findings.closed.some((f) => f.kind === kind));
+  return {
+    ...none,
+    closed,
+    rows: listWaits(view)[tab].flatMap((r) => live.has(r.id) ? [r.id] : [])
+  };
+}
+function isAnyFoldOpen(folds, state) {
+  const isOpen = (id) => !state.collapsed.includes(id);
+  return folds.closed.some((k) => state.unfolded.includes(k)) || folds.statusFolds.some((id) => state.statusUnfolded.includes(id)) || folds.parents.some(isOpen) || folds.rows.some(isOpen);
+}
+function foldAll(folds, state, isOpening) {
+  const set = (list, these) => isOpening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
+  const collapsible = [...folds.parents, ...folds.rows];
+  return {
+    unfolded: set(state.unfolded, folds.closed),
+    statusUnfolded: set(state.statusUnfolded, folds.statusFolds),
+    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === isOpening ? [{ id, isCollapsed: !isOpening }] : [])
+  };
+}
+function foldAllOn(view, tab, open, isOpening) {
+  const folds = tabFolds(view, tab);
+  const state = { ...open, collapsed: view.collapsed };
+  return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
 }
 
 // ../hooks/empty-tab.ts
@@ -9184,7 +9282,7 @@ function activate(screen, ui, line, button, now) {
       return { ui };
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: "sending" } }, press };
   }
-  if (press.action === "herdr-ask" || press.action === "collapse")
+  if (press.action === "herdr-ask" || press.action === "collapse" || press.action === "collapse-all")
     return { ui: { ...ui, focus: null }, press };
   if (!isPrPress(press) && press.action === "type") {
     const draft = ui.drafts[line.id] ?? { text: "", since: now };
@@ -9252,6 +9350,14 @@ function handleKey(screen, ui, key, now, text) {
   }
   if (pickedTab)
     return { ui: withTab(base, pickedTab.id, now) };
+  if (key === FOLD_ALL_KEY) {
+    const change = foldAllOn(screen.view, base.tab, base, null);
+    const closedAll = base.closedAll.filter((k) => change.unfolded.includes(k));
+    return {
+      ui: { ...base, unfolded: change.unfolded, statusUnfolded: change.statusUnfolded, closedAll },
+      press: { action: "collapse-all", changes: change.collapses }
+    };
+  }
   if (key === UNDO_KEY) {
     const undoable = latestUndo(lines.flatMap((l) => l.settled?.undo ? [{ id: l.id, press: l.settled.undo, at: l.settled.at }] : []));
     return undoable ? { ui: withSelection(base, undoable.id), press: undoable.press } : { ui: base };
@@ -9817,6 +9923,15 @@ function createPanel(deps) {
         screen = { ...screen, view: { ...screen.view, collapsed: collapsedAfter(screen.view.collapsed, p) } };
       deps.requestRender();
       return source.collapse(p.id, p.isCollapsed).then(() => refresh());
+    }
+    if (p.action === "collapse-all") {
+      const collapsed = p.changes.reduce(collapsedAfter, screen?.view.collapsed ?? []);
+      if (screen)
+        screen = { ...screen, view: { ...screen.view, collapsed } };
+      deps.requestRender();
+      for (const c of p.changes)
+        await source.collapse(c.id, c.isCollapsed);
+      return refresh();
     }
     const rowId = pressRowId(p);
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
@@ -11361,6 +11476,7 @@ async function askStatus(ask) {
 // ../hooks/status-prompt-goal.ts
 var NO_WORK_LINKED = "no work linked";
 var NEXT_MARK = "next";
+var tooBigMark = (count, room) => `too big, ${count} subjects, room for ${room}`;
 var GOAL_LINES = `GOAL: outcome | status name; status name
 RETIRE: why the goal no longer fits the work
 SUGGEST: outcome, or - for none
@@ -11369,7 +11485,7 @@ NEXT: milestone id or name
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
 GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
 var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it or took the suggested goal, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
-- <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
+- <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it, and with | ${tooBigMark(9, 2)} when more than ${MILESTONE_SUBJECTS} subjects serve it, open or done, two or more of them are open, and the goal has room for more milestones. Room for 2 means the goal can take 2 more.
 - <removed>: goals the person removed, as their key words, one per line
 - <suggested>: the goal offered to the person, while no goal is set or the goal is met
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
@@ -11384,6 +11500,7 @@ var GOAL_PARTS = {
   "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open, unless the person says its outcome changed, as when they cut part of it. Then write GOAL for the new outcome, and name again in the same words each milestone it keeps, so that milestone's work moves with it. Write SERVES to - for the work of each milestone it leaves out. When a milestone is cut and the goal's text still holds, write DROP for that milestone instead. New work or an added outcome is a MILESTONE line, never a new goal.`,
   "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
   "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next. Name a milestone this answer adds by its name, since it has no id yet. Leave it out when the milestone marked ${NEXT_MARK} in <milestones> is right.`,
+  "milestone-split": `A milestone marked too big holds more work than the person can read as one outcome: split it by theme. Write MILESTONE for each outcome its open subjects are for, named by theme, such as "Status page polish" or "Herdr drawing fixed", and never more than the room the mark gives: code drops a MILESTONE line past it. Then write SERVES to move each of its open subjects to the new milestone its work is part of, or to - when the goal does not need it. Its done subjects stay with it and get no SERVES line. When the split leaves none of its subjects open, write DONE for it in the same answer, with where it ended, or DROP with why when none of them is done. A split changes milestones only, so it applies to a goal marked (typed) too, and the goal's words stay.`,
   "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
   "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
   "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,
@@ -11417,6 +11534,20 @@ function refusedLine(o, now) {
   const text = texts[r.why]();
   return text === null ? null : `${line} refused: ${text}`;
 }
+function tooBigMilestones(o) {
+  const g = o?.goal;
+  if (!o || !g || g.isAwaitingMilestones)
+    return new Map;
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const serving = (id) => o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === id);
+  if (kept.length >= MILESTONES_MAX)
+    return new Map;
+  return new Map(kept.flatMap((m) => {
+    const work = serving(m.id);
+    const hasWorkToSplit = work.filter(isOpen).length >= 2;
+    return isOpen(m) && work.length > MILESTONE_SUBJECTS && hasWorkToSplit ? [[m.id, work.length]] : [];
+  }));
+}
 function goalBlocks(o, now) {
   if (o === null)
     return [];
@@ -11431,9 +11562,16 @@ function goalBlocks(o, now) {
   const state = marks.length > 0 ? ` (${marks.join(", ")})` : "";
   const served = new Set(Object.values(o.serves));
   const next = g?.isAwaitingMilestones ? undefined : o.milestones.find((m) => m.status === "queued");
+  const tooBig = tooBigMilestones(o);
+  const room = MILESTONES_MAX - o.milestones.filter((m) => m.status !== "dropped").length;
   const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => {
     const isUnserved = m.status !== "done" && !served.has(m.id);
-    const marks = [...m === next ? [NEXT_MARK] : [], ...isUnserved ? [NO_WORK_LINKED] : []];
+    const serving = tooBig.get(m.id);
+    const marks = [
+      ...m === next ? [NEXT_MARK] : [],
+      ...isUnserved ? [NO_WORK_LINKED] : [],
+      ...serving === undefined ? [] : [tooBigMark(serving, room)]
+    ];
     return [`${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}`, ...marks].join(" | ");
   });
   const block = (tag, body) => `<${tag}>${NL5}${body}${NL5}</${tag}>`;

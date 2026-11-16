@@ -30,7 +30,7 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
     if (e.type === 'down' && e.button === 'left') {
       // The target comes from the drawn props, so a second click before the redraw asks for the same state.
       set({ hover: true })
-      surface.post({ isUnfolded: !props.isUnfolded })
+      surface.post({ isUnfolded: !props.isUnfolded, isAll: e.alt === true })
     } else if (e.type === 'up' || e.type === 'move' || e.type === 'enter') set({ hover: inside })
   })
 

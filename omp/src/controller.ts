@@ -160,6 +160,13 @@ export function createPanel(deps: PanelDeps): Panel {
       deps.requestRender()
       return source.collapse(p.id, p.isCollapsed).then(() => refresh())
     }
+    if (p.action === 'collapse-all') {
+      const collapsed = p.changes.reduce(collapsedAfter, screen?.view.collapsed ?? [])
+      if (screen) screen = { ...screen, view: { ...screen.view, collapsed } }
+      deps.requestRender()
+      for (const c of p.changes) await source.collapse(c.id, c.isCollapsed)
+      return refresh()
+    }
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
     const sentDraft = !isPrPress(p) && p.action === 'type' ? ui.drafts[p.id] : undefined

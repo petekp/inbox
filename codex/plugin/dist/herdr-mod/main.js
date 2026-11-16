@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T05:15:20.265Z. 261630 characters follow.
+// Built at 2026-11-16T05:32:12.712Z. 266315 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -1254,6 +1254,7 @@ var HELP_COPY = {
 var helpVersionText = (version, isNextBuild) => `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`;
 var UNDO_KEY = "u";
 var COLLAPSE_KEY = "z";
+var FOLD_ALL_KEY = "w";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "On PRs, rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "On PRs, clear the merged and closed PRs" }
@@ -1263,6 +1264,7 @@ function helpKeys(look) {
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
   const collapseKey = { keys: COLLAPSE_KEY, does: "Collapse or expand the selected row" };
+  const foldAllKey = { keys: FOLD_ALL_KEY, does: "Fold every fold on the tab, or open them all" };
   switch (look) {
     case "desktop":
       return [];
@@ -1271,6 +1273,7 @@ function helpKeys(look) {
         switchTabs,
         { keys: "j k", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
@@ -1280,6 +1283,7 @@ function helpKeys(look) {
         switchTabs,
         { keys: "j k ↑ ↓", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
@@ -1293,6 +1297,7 @@ function helpKeys(look) {
         { keys: "↵", does: "Press the picked button" },
         { keys: "t", does: "Reply to the selected row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "?", does: "Open or close help" },
@@ -1303,6 +1308,7 @@ function helpKeys(look) {
         { keys: "← →", does: "Switch tabs" },
         { keys: "j k", does: "Select the next or previous row" },
         collapseKey,
+        foldAllKey,
         undoKey,
         ...PR_TAB_HELP_KEYS,
         { keys: "esc", does: "Move focus back to the agent's terminal" }
@@ -3133,6 +3139,12 @@ function drawnLists(v, isSettledDrawn, toRow) {
   };
 }
 var opensFor = (r) => r.isWaiting && !r.isCollapsed;
+function listWaits(v) {
+  const lists = drawnLists(v, () => true, (r) => r);
+  const collapsed = new Set(v.collapsed);
+  const waits = (entries) => entries.map((x) => ("row" in x) ? { id: x.row.id, isWaiting: isWaitingRow(x.row), isCollapsed: collapsed.has(x.row.id) } : { id: x.settled.id, isWaiting: false });
+  return { needsYou: waits([...lists.questions, ...lists.tasks]), findings: waits(lists.findings) };
+}
 function firstWaiting(rows) {
   return rows.find(opensFor)?.id ?? null;
 }
@@ -4723,6 +4735,8 @@ function keyMove(key, tabs, blocks, typing, undo = null) {
     const id = stepRow(blocks, key === "j" ? 1 : -1);
     return id ? { is: "select", id } : null;
   }
+  if (key === FOLD_ALL_KEY)
+    return { is: "fold-all" };
   if (key === UNDO_KEY) {
     const button = undo ? undoButton(blocks, undo) : null;
     return button ? { is: "press", button } : null;
@@ -4830,6 +4844,85 @@ async function writeCollapse(io, to, read, row, c) {
   const file = { format: HERDR_FORMAT, id, collapse: { row, ...c } };
   if (await io.write(pressPath(to.appHome, to.sessionId, id), JSON.stringify(file)) === null)
     await io.wake(read.envelope.terminal, id);
+}
+
+// ../hooks/fold-all.ts
+var statusFoldsOf = (view) => {
+  const page = view.statusPage;
+  const milestones = page.goal?.milestones ?? [];
+  const rows = [...milestones.flatMap((m) => m.rows), ...page.rows];
+  const listed = rows.flatMap((r) => r.kind === "done-fold" ? [r, ...r.rows] : [r]);
+  const foldIds = [
+    ...page.goal?.milestonesFold ? [page.goal.milestonesFold.id] : [],
+    ...milestones.flatMap((m) => m.foldId === null ? [] : [m.foldId]),
+    ...listed.filter((r) => r.kind === "done-fold").map((r) => r.id)
+  ];
+  const parentIds = [
+    ...milestones.filter((m) => m.foldCount > 0).map((m) => m.id),
+    ...listed.filter((r) => r.kind === "subject" && r.foldCount > 0).map((r) => r.id)
+  ];
+  return { statusFolds: [...new Set(foldIds)], parents: [...new Set(parentIds)] };
+};
+function tabFolds(view, tab) {
+  const none = { closed: [], statusFolds: [], parents: [], rows: [] };
+  if (tab === "overview")
+    return { ...none, ...statusFoldsOf(view) };
+  if (tab === "prs")
+    return { ...none, rows: prRowWaits(openPrViews(view.prs.drawn), view.lastActions).map((r) => r.id) };
+  const live = new Set((tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows).filter((r) => r.state.is !== "settled").map((r) => r.id));
+  const closed = tab === "needsYou" ? NEEDS_YOU_GROUPS.filter((g) => view.needsYou.closed[g.list].length > 0).map((g) => g.kind) : Object.keys(FINDING_GROUPS).filter((kind) => view.findings.closed.some((f) => f.kind === kind));
+  return {
+    ...none,
+    closed,
+    rows: listWaits(view)[tab].flatMap((r) => live.has(r.id) ? [r.id] : [])
+  };
+}
+function isAnyFoldOpen(folds, state) {
+  const isOpen = (id) => !state.collapsed.includes(id);
+  return folds.closed.some((k) => state.unfolded.includes(k)) || folds.statusFolds.some((id) => state.statusUnfolded.includes(id)) || folds.parents.some(isOpen) || folds.rows.some(isOpen);
+}
+function foldAll(folds, state, isOpening) {
+  const set = (list, these) => isOpening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
+  const collapsible = [...folds.parents, ...folds.rows];
+  return {
+    unfolded: set(state.unfolded, folds.closed),
+    statusUnfolded: set(state.statusUnfolded, folds.statusFolds),
+    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === isOpening ? [{ id, isCollapsed: !isOpening }] : [])
+  };
+}
+function foldAllOn(view, tab, open, isOpening) {
+  const folds = tabFolds(view, tab);
+  const state = { ...open, collapsed: view.collapsed };
+  return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
+}
+
+// src/fold-all.ts
+function foldClickOpens(does, ui) {
+  if (does.is === "collapse")
+    return !does.isCollapsed;
+  if (does.is !== "view")
+    return null;
+  if ("closedFold" in does.change)
+    return !ui.unfolded.includes(does.change.closedFold);
+  if ("toggleFold" in does.change)
+    return !ui.statusUnfolded.includes(does.change.toggleFold);
+  return null;
+}
+function foldAllIn(look, isOpening, cx) {
+  if (look.view === null)
+    return;
+  const change = foldAllOn(look.view, look.ui.tab, look.ui, isOpening);
+  const isTypingFolded = change.collapses.some((c) => c.isCollapsed && c.id === look.ui.typing);
+  look.ui = {
+    ...look.ui,
+    unfolded: change.unfolded,
+    statusUnfolded: change.statusUnfolded,
+    closedAll: look.ui.closedAll.filter((k) => change.unfolded.includes(k)),
+    ...isTypingFolded && { typing: null }
+  };
+  for (const c of change.collapses)
+    look.collapse(c.id, c.isCollapsed, cx, false);
+  cx.notify();
 }
 
 // src/held-line.ts
@@ -5607,9 +5700,9 @@ function buttonEl(b, p, isInert = false) {
   if (isInert)
     return styled;
   const live = b.emphasis === "primary" ? styled.hover((s) => s.opacity(0.85)).active((s) => s.opacity(0.7)) : b.emphasis === "normal" ? styled.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)) : styled.hover((s) => s.text_color(t.foreground)).active((s) => s.text_color(t.foreground).opacity(0.7));
-  return live.on_click((_e, cx) => {
+  return live.on_click((e, cx) => {
     cx.stop_propagation();
-    p.press(b, cx);
+    p.press(b, cx, e.modifiers.alt);
   });
 }
 var CLEAR = "#00000000";
@@ -5645,13 +5738,13 @@ function rowEl(r, p) {
   const isWrapped = isOpen || m?.isWrapHeld === true;
   const isPressable = r.isSelectable && !isLeaving;
   const hasTree = (m?.closing ?? r).body.some((l) => l.tree !== undefined);
-  const line = h_flex4().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((_e, cx) => p.collapse(r.id, true, cx))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t))).child(markEl(r.mark, t, markTintOf(r, p))).child(div6().flex_1().min_w(0).text_color(titleColorOf(r, p)).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div6().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex4().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t))).child(markEl(r.mark, t, markTintOf(r, p))).child(div6().flex_1().min_w(0).text_color(titleColorOf(r, p)).when(!isWrapped, (e) => e.truncate()).when(isOpen, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div6().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
     const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t);
     return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
   })).children(panelEl(r, m, p, isLeaving))));
@@ -5694,7 +5787,7 @@ function statusEl(s, p, isInert) {
       ...s.fold.isFolded ? { count: s.fold.count } : {}
     })
   ] : [];
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((_e, cx) => toggle ? p.press(toggle, cx) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 function prEl(b, p, isInert) {
   const { t } = p;
@@ -5734,7 +5827,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex4().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((_e, cx) => p.press(press, cx))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div6().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
+  return h_flex4().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div6().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -6410,11 +6503,14 @@ class Inbox extends View {
     });
     return true;
   }
-  press(b, cx) {
+  press(b, cx, isAll = false) {
     const now = Date.now();
     this.listInput = withListInput(this.listInput, now);
     const d = b.does;
-    if (d.is === "view")
+    const opening = isAll ? foldClickOpens(d, this.ui) : null;
+    if (opening !== null)
+      foldAllIn(this, opening, cx);
+    else if (d.is === "view")
       this.change(d.change);
     else if (d.is === "collapse")
       this.collapse(d.id, d.isCollapsed, cx);
@@ -6429,13 +6525,14 @@ class Inbox extends View {
       this.leave(d.rowId, d.isDiscard, cx);
     cx.notify();
   }
-  collapse(id, isCollapsed, cx) {
+  collapse(id, isCollapsed, cx, isSelecting = true) {
     const read = this.read?.is === "read" ? this.read : null;
     if (this.sessionId === null || read === null)
       return;
     const c = { isCollapsed, at: Date.now() };
     this.collapses = { ...this.collapses, [id]: c };
-    this.ui = withCollapsed(this.ui, id, isCollapsed);
+    if (isSelecting)
+      this.ui = withCollapsed(this.ui, id, isCollapsed);
     this.closeStaleField();
     const to = { appHome: appHome(), sessionId: this.sessionId };
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c));
@@ -6454,6 +6551,8 @@ class Inbox extends View {
       this.ui = withSelected(this.ui, move.id);
     else if (move.is === "collapse")
       this.collapse(move.id, move.isCollapsed, cx);
+    else if (move.is === "fold-all")
+      foldAllIn(this, null, cx);
     else if (move.is === "press")
       return this.press(move.button, cx);
     else if (this.followed.is !== "no-terminal")
@@ -6488,8 +6587,10 @@ class Inbox extends View {
     const paint = {
       t,
       mono: theme().typography?.mono ?? "Menlo",
-      press: (b, cx) => this.press(b, cx),
-      collapse: (id, isCollapsed, cx) => {
+      press: (b, cx, isAll) => this.press(b, cx, isAll),
+      collapse: (id, isCollapsed, cx, isAll) => {
+        if (isAll)
+          return foldAllIn(this, !isCollapsed, cx);
         if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now()))
           return;
         if (!isCollapsed)

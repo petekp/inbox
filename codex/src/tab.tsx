@@ -1,6 +1,6 @@
 import { render } from 'preact'
 import type { ComponentChildren } from 'preact'
-import { COLLAPSE_KEY, HELP_COPY, helpVersionText, UNDO_KEY } from '../../hooks/help'
+import { COLLAPSE_KEY, FOLD_ALL_KEY, HELP_COPY, helpVersionText, UNDO_KEY } from '../../hooks/help'
 import { DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { steppedIndex } from '../../hooks/action-plan'
@@ -15,6 +15,7 @@ import { measure, animateDraw, revealSelected, applyPageVariables, wakeForMoves 
 import { switchTab, drawnTab, selectedIndex, select, rowActions } from './tab-selection'
 import { restoreState } from './tab-swap'
 import { read, poll } from './tab-read'
+import { foldAllHere } from './tab-fold-all'
 import { pressCollapseKey, tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
 import { stepLists } from './tab-list'
@@ -181,6 +182,11 @@ document.addEventListener(
     if (switched) {
       switchTab(switched.id)
       draw()
+      return
+    }
+    if (e.key === FOLD_ALL_KEY && !tabState.isHelpShown) {
+      e.preventDefault()
+      foldAllHere(null)
       return
     }
     const t = drawnTab()

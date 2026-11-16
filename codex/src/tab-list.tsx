@@ -17,6 +17,7 @@ import type { Row, Entry, Lists } from './tab-state'
 import { reducedMotion, drawIn } from './tab-motion'
 import { drawnTab, shownSettled, openRowId, open, isOpenGuarded, rowActions } from './tab-selection'
 import { discardReply, outPending } from './tab-press'
+import { foldAllHere } from './tab-fold-all'
 import { act, listsOf, pressTitle } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
 import type { DrawnPrs } from './tab-pr-steps'
@@ -165,7 +166,7 @@ export function ListRow({
 }: {
   row: Row
   track: RowTrack
-  onSelect: () => void
+  onSelect: (isAll: boolean) => void
   now: number
 }) {
   const isClosing = track.hasPanel && (track.state === 'closing' || track.state === 'leaving')
@@ -227,11 +228,16 @@ export function ListRow({
   return (
     <div
       class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}${isJustClosed ? ' just-closed' : ''}`}
-      onClick={isSelected ? undefined : onSelect}
+      onClick={isSelected ? undefined : e => onSelect(e.altKey)}
     >
       {handle}
       <div class="content">
-        <button type="button" class="line" aria-expanded={isSelected} onClick={isSelected ? onSelect : undefined}>
+        <button
+          type="button"
+          class="line"
+          aria-expanded={isSelected}
+          onClick={isSelected ? e => onSelect(e.altKey) : undefined}
+        >
           <span class="text">
             {row.lead ? (
               <>
@@ -391,7 +397,7 @@ export function Entries({ entries, group, all, now }: { entries: Entry[]; group:
                 row={x.row}
                 track={drawn.track}
                 now={now}
-                onSelect={() => pressTitle(t, all, all.indexOf(x.row))}
+                onSelect={isAll => pressTitle(t, all, all.indexOf(x.row), isAll ? foldAllHere : undefined)}
               />
             ) : (
               <SettledView settled={x.settled} panel={drawn.openRow} />

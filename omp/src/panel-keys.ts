@@ -3,7 +3,8 @@ import { CLEAR_FINISHED_ID } from '../../hooks/pr-rows'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
-import { COLLAPSE_KEY, UNDO_KEY } from '../../hooks/help'
+import { foldAllOn } from '../../hooks/fold-all'
+import { COLLAPSE_KEY, FOLD_ALL_KEY, UNDO_KEY } from '../../hooks/help'
 import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { StatusKey, StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
@@ -83,7 +84,8 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
 
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: 'sending' } }, press }
   }
-  if (press.action === 'herdr-ask' || press.action === 'collapse') return { ui: { ...ui, focus: null }, press }
+  if (press.action === 'herdr-ask' || press.action === 'collapse' || press.action === 'collapse-all')
+    return { ui: { ...ui, focus: null }, press }
   if (!isPrPress(press) && press.action === 'type') {
     const draft = ui.drafts[line.id] ?? { text: '', since: now }
 
@@ -155,6 +157,15 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
     return { ui: withTab(base, tabs[steppedIndex(tabs.indexOf(base.tab), step, tabs.length)]!, now) }
   }
   if (pickedTab) return { ui: withTab(base, pickedTab.id, now) }
+  if (key === FOLD_ALL_KEY) {
+    const change = foldAllOn(screen.view, base.tab, base, null)
+    const closedAll = base.closedAll.filter(k => change.unfolded.includes(k))
+
+    return {
+      ui: { ...base, unfolded: change.unfolded, statusUnfolded: change.statusUnfolded, closedAll },
+      press: { action: 'collapse-all', changes: change.collapses },
+    }
+  }
   if (key === UNDO_KEY) {
     const undoable = latestUndo(
       lines.flatMap(l => (l.settled?.undo ? [{ id: l.id, press: l.settled.undo, at: l.settled.at }] : [])),
