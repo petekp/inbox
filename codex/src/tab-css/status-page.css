@@ -302,9 +302,7 @@
   padding-left: 0;
   padding-right: 0;
   padding-bottom: calc(var(--head-gap) - var(--row-below-pad, calc(var(--item-gap) / 2)));
-  margin-top: calc(
-    var(--section-gap) - var(--row-above-pad, calc(var(--item-gap) / 2)) - var(--status-row-pad)
-  );
+  margin-top: calc(var(--section-gap) - var(--row-above-pad, calc(var(--item-gap) / 2)) - var(--status-row-pad));
 }
 /* A part that starts its section sits under the section's own space, without its padding above. */
 .status-page .list > .row.part-line:first-child {

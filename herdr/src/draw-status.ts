@@ -316,7 +316,9 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
         : []),
       ...(m.startsLater ? [{ kind: 'rule', id: 'goal later', text: LATER_TEXT } as const] : []),
       milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded, isCollapsed),
-      ...listBlocks(rows, isUnfolded, isCollapsed).map((bs, k) => bs.map(b => besidePath(b, m.line, joints[k]))).flat(),
+      ...listBlocks(rows, isUnfolded, isCollapsed)
+        .map((bs, k) => bs.map(b => besidePath(b, m.line, joints[k])))
+        .flat(),
     ]
   })
 

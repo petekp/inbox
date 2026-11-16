@@ -171,11 +171,7 @@ export function StatusLine({
   }
   if (row.kind === 'child')
     return (
-      <div
-        class={row.branch ? `row child branch-${row.branch}` : 'row'}
-        style={rowStyle}
-        {...lineMotion(motion)}
-      >
+      <div class={row.branch ? `row child branch-${row.branch}` : 'row'} style={rowStyle} {...lineMotion(motion)}>
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
         </span>

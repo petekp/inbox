@@ -375,9 +375,7 @@ function GoalSection({
     )
   const mark = g?.mark ?? null
   const last = milestoneGroups(lines).at(-1)
-  const sectionStyle = last
-    ? { '--last-row-pad': `${milestoneGroupPadBelow(last.m, shownRows(last).shown)}px` }
-    : {}
+  const sectionStyle = last ? { '--last-row-pad': `${milestoneGroupPadBelow(last.m, shownRows(last).shown)}px` } : {}
 
   return (
     <section style={sectionStyle}>
