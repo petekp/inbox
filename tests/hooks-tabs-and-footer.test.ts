@@ -248,7 +248,7 @@ test('the desktop tabs and the Help tab fit one line at the narrowest dock, by t
   expect(narrowest.tabs.map(t => t.id)).toEqual(shownTabs().map(t => t.id))
   expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs().map(t => t.symbol))
   expect(tabLinesOf(narrowest)).toHaveLength(1)
-  await pane.redraw({ ...PANE.props, bodyColumns: 28 })
+  await pane.redraw({ ...PANE.props, bodyColumns: 32 })
   const wider = (await tabBar())?.props.props as TabsProps
   expect(wider.tabs.map(t => t.label)).toEqual(shownTabs().map(t => t.label))
   expect(tabLinesOf(wider)).toHaveLength(1)
@@ -257,10 +257,11 @@ test('the desktop tabs and the Help tab fit one line at the narrowest dock, by t
   const { gap, columns, help } = wrapped
   const lines = tabLinesOf(wrapped)
   expect(lines.length).toBeGreaterThan(1)
-  for (const line of lines)
-    expect(line.reduce((sum, t) => sum + t.width, gap * (line.length - 1)) + gap + help.width).toBeLessThanOrEqual(
-      columns,
-    )
+  lines.forEach((line, n) =>
+    expect(
+      line.reduce((sum, t) => sum + t.width, gap * (line.length - 1)) + (n === 0 ? gap + help.width : 0),
+    ).toBeLessThanOrEqual(columns),
+  )
   expect((await tabBar())?.props.height).toBe(TAB_HEIGHT * lines.length)
   const last = lines.at(-1)![0]!
   await pane.pointer({ type: 'down', x: 1, y: TAB_HEIGHT * (lines.length - 1) + 1, button: 'left', in: 'tabs' })

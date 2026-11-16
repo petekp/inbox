@@ -41,7 +41,7 @@ nav {
   display: none;
   color: var(--text);
 }
-@container tab-bar (width < 316px) {
+@container tab-bar (width < 348px) {
   .tab-symbol {
     display: inline;
   }

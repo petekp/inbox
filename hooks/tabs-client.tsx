@@ -51,8 +51,11 @@ function tabLines<T extends { width: number }>(tabs: T[], gap: number, columns: 
 const HELP_TAB_ID = 'help'
 
 /** The lines the tabs take, with the first line's right end kept for the Help tab. */
-export const tabLinesOf = (props: TabsProps): ClientTab[][] =>
-  tabLines(props.tabs, props.gap, props.columns - props.help.width - props.gap)
+export function tabLinesOf(props: TabsProps): ClientTab[][] {
+  const first = tabLines(props.tabs, props.gap, props.columns - props.help.width - props.gap)[0] ?? []
+
+  return [first, ...tabLines(props.tabs.slice(first.length), props.gap, props.columns)]
+}
 
 function tabAt(props: TabsProps, x: number, y: number): string | null {
   const line = tabLinesOf(props)[Math.floor(y / TAB_HEIGHT)]
@@ -83,7 +86,7 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
   const tabBox = (tab: ClientTab) => {
     const isShown = tab.id === HELP_TAB_ID ? props.isHelpShown : !props.isHelpShown && tab.id === props.shown
     const isHovered = !isShown && tab.id === hover
-    const isFramed = isShown || props.isEachFramed
+    const isFramed = isShown || props.isEachFramed || tab.id === HELP_TAB_ID
     const background = isShown ? colors.raised : isHovered && isFramed ? (colors.tab ?? colors.raised) : null
     const onRaised = background !== null && background === colors.raised ? colors.raisedText : null
     const labelColor = onRaised ?? (isShown || isHovered ? null : colors.muted)

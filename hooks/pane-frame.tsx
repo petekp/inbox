@@ -75,7 +75,13 @@ export function paneFrame(
 ) {
   const tabColumns = e.props.bodyColumns - 2
   const isTabSelected = (id: ShownTab) => !isHelpShown && id === shownTab
-  const helpTab = { label: HELP_COPY.icon, symbol: HELP_COPY.icon, badge: null, isShown: isHelpShown }
+  const helpTab = {
+    label: HELP_COPY.icon,
+    symbol: HELP_COPY.icon,
+    badge: null,
+    isShown: isHelpShown,
+    isAlwaysFramed: true,
+  }
   const tabSizes = desktopTabSizes(
     [...tabList.map(t => ({ ...t, badge: badgeOf(t.id), isShown: isTabSelected(t.id) })), helpTab],
     tabColumns,
@@ -431,6 +437,7 @@ export function paneFrame(
       {tabProps ? null : helpTabEl}
     </Box>
   )
+  const helpFill = ' '.repeat(railWidth - cellWidth(HELP_COPY.icon) - TAB_PAD.length)
   const rail = (
     <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
       {tabList.map(({ id, label }) => {
@@ -470,35 +477,21 @@ export function paneFrame(
         )
       })}
       <Box key="rail-help" flexDirection="row" marginTop={1}>
-        <Button
-          plain
-          key="tab-help-before"
-          label={TAB_PAD}
-          {...(isHelpShown ? {} : { hover: raise })}
-          onPress={toggleHelp}
-        />
-        <Button
-          plain
-          key="tab-help"
-          label={HELP_COPY.icon}
-          {...(isHelpShown ? {} : { hover: raise })}
-          onPress={toggleHelp}
-        >
-          {isHelpShown ? (
-            <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
-              {HELP_COPY.icon}
-            </Text>
-          ) : (
-            <Text color={pal.muted}>{HELP_COPY.icon}</Text>
-          )}
-        </Button>
-        <Button
-          plain
-          key="tab-help-after"
-          label={' '.repeat(railWidth - cellWidth(HELP_COPY.icon) - TAB_PAD.length)}
-          {...(isHelpShown ? {} : { hover: raise })}
-          onPress={toggleHelp}
-        />
+        {[
+          ['tab-help-before', TAB_PAD],
+          ['tab-help', HELP_COPY.icon],
+          ['tab-help-after', helpFill],
+        ].map(([key, label]) => (
+          <Button plain key={key} label={label} {...(isHelpShown ? {} : { hover: raise })} onPress={toggleHelp}>
+            {isHelpShown ? (
+              <Text bold={key === 'tab-help'} color={pal.raisedText} backgroundColor={pal.raised}>
+                {label}
+              </Text>
+            ) : key === 'tab-help' ? (
+              <Text color={pal.muted}>{label}</Text>
+            ) : null}
+          </Button>
+        ))}
       </Box>
     </Box>
   )
