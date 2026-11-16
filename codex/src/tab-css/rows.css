@@ -61,13 +61,13 @@
   content: attr(data-room);
   display: block;
   height: 0;
-  overflow: hidden;
+  overflow: clip;
   visibility: hidden;
 }
 .side-label {
   display: inline-block;
   max-width: 11em;
-  overflow: hidden;
+  overflow: clip;
   text-overflow: ellipsis;
   vertical-align: bottom;
   margin-right: var(--unit);
@@ -105,7 +105,7 @@
   font-variation-settings: 'wght' 400;
   transition: font-variation-settings var(--fade);
   min-width: 0;
-  overflow: hidden;
+  overflow: clip;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -116,7 +116,7 @@
 }
 /* A collapsed row's status takes one line, cut with an ellipsis, as its meta and Why lines do. */
 .row.collapsed .line .after {
-  overflow: hidden;
+  overflow: clip;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -154,7 +154,7 @@
 .line .meta {
   display: block;
   color: var(--muted);
-  overflow: hidden;
+  overflow: clip;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -165,7 +165,7 @@
   display: block;
   color: var(--muted);
   font-weight: 400;
-  overflow: hidden;
+  overflow: clip;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

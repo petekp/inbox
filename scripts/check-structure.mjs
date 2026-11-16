@@ -9,6 +9,7 @@ import { checkDocs, checkLookMap } from './structure/docs.mjs'
 import { checkEmptyTab } from './structure/empty-tab.mjs'
 import { checkHooksModules } from './structure/hooks-module.mjs'
 import { checkImports } from './structure/imports.mjs'
+import { checkOverflow } from './structure/overflow.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -23,6 +24,7 @@ for (const check of [
   checkClassNames,
   checkChevrons,
   checkCursors,
+  checkOverflow,
 ])
   check(ROOT, errors)
 
