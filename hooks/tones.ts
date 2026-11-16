@@ -3,7 +3,7 @@
  * mean something good, and neither shares a mark with the other.
  */
 export type ToneName =
-  'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'success' | 'opportunity' | 'working' | 'error'
+  'needsYou' | 'issue' | 'findings' | 'tasks' | 'prs' | 'done' | 'success' | 'opportunity' | 'working' | 'error'
 
 type ToneSet = Record<ToneName, string> & {
   /**
@@ -19,6 +19,7 @@ export const DARK_TONES: ToneSet = {
   needsYou: DARK_AMBER,
   issue: '#ff6b80',
   findings: '#cab0ff',
+  tasks: '#b48cff',
   prs: '#8cc8c0',
   done: '#82c1ff',
   success: '#7ecd8f',
@@ -34,6 +35,7 @@ export const LIGHT_TONES: ToneSet = {
   needsYou: LIGHT_AMBER,
   issue: '#a5293d',
   findings: '#7b00e8',
+  tasks: '#6a14d9',
   prs: '#006363',
   done: '#0a54a0',
   success: '#25652f',
@@ -49,6 +51,7 @@ export const DARK_DALTONIZED_TONES: ToneSet = {
   needsYou: DARK_DALTONIZED_AMBER,
   issue: '#ff6666',
   findings: '#cab0ff',
+  tasks: '#b48cff',
   prs: '#a3c2c2',
   done: '#82c1ff',
   success: '#5cf0aa',
@@ -64,6 +67,7 @@ export const LIGHT_DALTONIZED_TONES: ToneSet = {
   needsYou: LIGHT_DALTONIZED_AMBER,
   issue: '#ad0000',
   findings: '#7400db',
+  tasks: '#6400c8',
   prs: '#2d5a5a',
   done: '#005885',
   success: '#17602b',

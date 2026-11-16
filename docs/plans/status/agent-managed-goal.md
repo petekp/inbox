@@ -56,6 +56,8 @@ When any of these is in doubt, the call writes no GOAL. Signs it is not clear ye
 
 `<milestones>` lines gain a mark: `no work linked`, on a milestone that is not done and has no linked subject. The rule: link work that moves it forward, write DONE if the exchange shows it done, or DROP it if the goal no longer needs it.
 
+A second mark, `too big`, is in [milestone-split.md](milestone-split.md).
+
 ## How a milestone closes when its work closes
 
 Code closes it. After an answer applies, `settleGoal` marks a milestone done when all of these hold:

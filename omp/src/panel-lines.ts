@@ -109,7 +109,7 @@ export type Line = {
 
 export type Entry =
   /** A Finds group's heading leads with its kind's mark, since its rows draw none. */
-  | { kind: 'heading'; text: string; count?: number; mark?: Lead }
+  | { kind: 'heading'; text: string; count?: number; mark?: Lead; aside?: string }
   /** A note stops at 3 lines. One with `isWhole`, such as an empty page's hint, is the page's content and wraps in full. */
   | { kind: 'note'; text: string; isStrong?: boolean; isPlain?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }

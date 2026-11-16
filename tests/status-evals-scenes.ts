@@ -302,6 +302,24 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.after.milestones[1]!.name = 'Sync conflicts'
     },
   },
+  'milestone-size': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      const extra = Array.from({ length: 7 }, (_, n) =>
+        subject(`x${n}`, n < 5 ? 'done' : 'working', `Fix ${n}`, 'merged', 0),
+      )
+      s.after.subjects = [...s.after.subjects, ...extra]
+      s.after.serves = { ...s.after.serves, ...Object.fromEntries(extra.map(x => [x.id, 'm1'])) }
+      s.before = {
+        ...s.before,
+        goal: s.after.goal,
+        milestones: s.after.milestones,
+        serves: s.after.serves,
+        subjects: s.after.subjects,
+      }
+    },
+  },
   'milestone-next': {
     good: s => {
       withGoal(s)

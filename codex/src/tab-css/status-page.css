@@ -142,6 +142,23 @@
 .status-head .actions {
   margin-top: 6px;
 }
+.status-head .goal-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+}
+.status-head .goal-offer p {
+  margin: 0;
+}
+.status-head .goal-offer .offer-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.status-head .goal-offer .actions {
+  margin: 0;
+}
 /* Keeps the field's top margin inside, so clipping the box while it glides does not move the field. */
 .status-head .goal-text {
   display: flow-root;

@@ -8,6 +8,7 @@ import type { StatusRow } from '../hooks/status-page'
 import { milestoneRows } from '../hooks/status-folds'
 import { workJoints } from '../hooks/status-path'
 import { goalBlocks } from '../hooks/status-prompt-goal'
+import { MILESTONE_SUBJECTS } from '../hooks/status-limits'
 import type { SessionStatus } from '../types'
 import { after, opsOf, page, shape } from './status-helpers'
 
@@ -125,6 +126,53 @@ test('NEXT names a milestone by id or by name, and the call reads the queued mil
   expect(blocks).toMatch(/m3 \| queued \| Demo script \| - \| next \| no work linked\n/)
   expect(blocks).toMatch(/m4 \| queued \| Docs page \| -\n/)
   expect(goalBlocks(setTypedGoal(planned(), 'Demo on Friday', 40), 45).join('\n')).not.toMatch(/\| next/)
+})
+
+test('a milestone more than MILESTONE_SUBJECTS subjects serve, two or more open, reads too big while the goal has room, and MILESTONE, SERVES and DONE lines split it, moving its open work and keeping its done work', () => {
+  const names = [
+    'Help indent',
+    'Mark colors',
+    'Help icon',
+    'Row bar',
+    'Desktop margin',
+    'Goal row',
+    'Fold count',
+    'Sidebar line',
+  ]
+  const work = names.map(n => `NEW: working | ${n} | going`).join('\n')
+  const goal = 'GOAL: Inbox 2.0 shipped | working Fixes merged; queued Release built'
+  const linked = after(
+    after(null, work, 10),
+    `${goal}\n${names.map((_, n) => `SERVES: s${n + 1} | m1`).join('\n')}`,
+    20,
+  )
+  const busy = after(linked, ['s1', 's2', 's3', 's4', 's5'].map(id => `DONE: ${id} | merged`).join('\n'), 30)
+  const split = [
+    'MILESTONE: working | Status page polish | going',
+    'MILESTONE: queued | Herdr drawing fixed | not started',
+    'SERVES: s6 | Status page polish',
+    'SERVES: s7 | Status page polish',
+    'SERVES: s8 | Herdr drawing fixed',
+    'DONE: m1 | first fixes merged',
+  ].join('\n')
+  const done = after(busy, split, 40)
+
+  expect(names.length).toBeGreaterThan(MILESTONE_SUBJECTS)
+  const marks = (o: SessionStatus) => goalBlocks(o, 45).join('\n')
+  const oneOpen = after(busy, 'DONE: s6 | merged\nDONE: s7 | merged', 35)
+  const full = after(busy, ['A', 'B', 'C'].map(n => `MILESTONE: queued | Part ${n} | not started`).join('\n'), 35)
+  const waiting = { ...busy, goal: { ...busy.goal!, isAwaitingMilestones: true } }
+
+  expect(marks(busy)).toMatch(/m1 \| working \| Fixes merged \| - \| too big, 8 subjects, room for 3\n/)
+  expect([oneOpen, full, waiting].map(o => marks(o).includes('too big'))).toEqual([false, false, false])
+  expect(done.milestones.map(m => [m.name, m.status])).toEqual([
+    ['Fixes merged', 'done'],
+    ['Release built', 'queued'],
+    ['Status page polish', 'working'],
+    ['Herdr drawing fixed', 'working'],
+  ])
+  expect(done.serves).toEqual({ s1: 'm1', s2: 'm1', s3: 'm1', s4: 'm1', s5: 'm1', s6: 'm3', s7: 'm3', s8: 'm4' })
+  expect(goalBlocks(done, 45).join('\n')).not.toMatch(/too big/)
 })
 
 test('the answer that reads a typed goal orders its milestones as its MILESTONE lines name them, then as its NEXT line says', () => {

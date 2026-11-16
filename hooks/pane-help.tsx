@@ -55,7 +55,10 @@ export function paneHelp({
         </Box>
       </Box>
     ))
-  const helpKeysSection = () => section([groupTitle(HELP_COPY.keys, 0), ...keyRows(keyList, 'help-key')])
+  /** Which inbox build this is, in the muted words of the legend. A build with no version, as in a test, draws none. */
+  const versionText = mod.version ? helpVersionText(mod.version, mod.isNextBuild) : undefined
+  const helpKeysSection = () =>
+    section([groupTitle(HELP_COPY.keys, 0, undefined, false, versionText), ...keyRows(keyList, 'help-key')])
   const helpTabsSection = () => section([groupTitle(HELP_COPY.tabs, 0), ...keyRows(tabLegend(), 'help-tab')])
   const helpMarksSection = () =>
     section([
@@ -73,12 +76,12 @@ export function paneHelp({
         </Box>
       )),
     ])
-  /** Which inbox build this is, in the muted words of the legend. A build with no version, as in a test, draws none. */
+  /** With no keys to give a title to, the version closes Help under the legend. */
   const helpVersionSection = () =>
-    mod.version
+    versionText
       ? section(
           <Box key="help-version" flexDirection="row" paddingLeft={listIndent + helpColumn}>
-            <Text color={pal.muted}>{helpVersionText(mod.version, mod.isNextBuild)}</Text>
+            <Text color={pal.muted}>{versionText}</Text>
           </Box>,
         )
       : null
@@ -95,12 +98,11 @@ export function paneHelp({
           <Box flexDirection="column" width="50%" flexShrink={1}>
             {helpMarksSection()}
             {helpTabsSection()}
-            {version}
           </Box>
         </Box>
       )
 
-    return sections([helpKeysSection(), helpMarksSection(), helpTabsSection(), ...(version ? [version] : [])])
+    return sections([helpKeysSection(), helpMarksSection(), helpTabsSection()])
   }
 
   return { helpView }

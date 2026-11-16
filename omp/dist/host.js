@@ -92,6 +92,7 @@ var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
 var MILESTONES_MIN = 2;
+var MILESTONE_SUBJECTS = 6;
 var GOAL_LEFT_MS = 30 * 60000;
 var REMOVED_KEPT = 10;
 var IDLE_AFTER_MS = 24 * 60 * 60000;
@@ -442,7 +443,7 @@ var CLIENTS = {
       "collapse-rows": { kind: "full" },
       "fold-all": {
         kind: "different",
-        reason: "A terminal click carries no modifier key, and the engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. DESKTOP"
+        reason: "A terminal click carries no modifier key, and the engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, and no run has shown that its click reports Option, so the desktop has no known way in."
       },
       "suggested-goal": { kind: "full" }
     }
@@ -1495,7 +1496,7 @@ function pressText(p) {
     case "restore-goal":
       return "Undo";
     case "take-goal":
-      return "Set";
+      return "Set this goal";
     default:
       return capitalized(p.action);
   }
@@ -3560,6 +3561,10 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
+var NEEDS_YOU_MARKS = {
+  question: { mark: "?", tone: "needsYou" },
+  task: { mark: "\u2611", tone: "tasks" }
+};
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
@@ -3599,6 +3604,18 @@ var MARK_LEGEND = [
     words: "Waits on something other than you, such as a build or a review"
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  {
+    mark: NEEDS_YOU_MARKS.question.mark,
+    tone: NEEDS_YOU_MARKS.question.tone,
+    isRunning: false,
+    words: "A question the agent asked you"
+  },
+  {
+    mark: NEEDS_YOU_MARKS.task.mark,
+    tone: NEEDS_YOU_MARKS.task.tone,
+    isRunning: false,
+    words: "A step only you can do"
+  },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
@@ -3924,7 +3941,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var SUGGESTED_GOAL_LABEL = "Suggested";
+var suggestedGoalOffer = (text) => `Next goal: \u201C${text}\u201D?`;
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -4048,8 +4065,8 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
-var newGoal = (page, emphasis) => ({
-  press: page.suggestedGoal === null ? { action: "type-goal", text: "" } : { action: "show-suggestion" },
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
   label: "New",
   hotkey: "n",
   kind: "view",
@@ -4058,9 +4075,9 @@ var newGoal = (page, emphasis) => ({
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal(page, "quiet")];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
   if (g.isMet)
-    return [newGoal(page, "normal"), REMOVE_GOAL];
+    return [newGoal("normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
@@ -4068,14 +4085,18 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
-    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    { press: { action: "hide-suggestion" }, label: "Cancel", hotkey: "c", kind: "view", emphasis: "quiet" }
+    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
-var isSuggestionShown = (page, isSuggestionOpen) => isSuggestionOpen && page.suggestedGoal !== null;
-function goalKeys(page, isSuggestionOpen) {
-  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal) : goalKeyPlan(page);
+function goalKeyGroups(page) {
+  if (page.suggestedGoal === null)
+    return { heading: goalKeyPlan(page), offer: [] };
+  return { heading: page.canRestoreGoal ? [RESTORE_GOAL] : [], offer: suggestionKeyPlan(page.suggestedGoal) };
+}
+function goalKeys(page) {
+  const { heading, offer } = goalKeyGroups(page);
+  return [...heading, ...offer];
 }
 function parentFoldKeys(p, isCollapsed) {
   if (p.foldCount === 0)
@@ -4094,11 +4115,11 @@ var rowTarget = (isCollapsed) => (r) => ({
   id: r.id,
   keys: [...statusKeyPlan(r), ...r.kind === "subject" ? parentFoldKeys(r, isCollapsed) : []]
 });
-function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false, isSuggestionOpen = false) {
+function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false) {
   const fold = page.goal?.milestonesFold ?? null;
   const toTarget = rowTarget(isCollapsed);
   return [
-    { id: GOAL_KEYS_ID, keys: goalKeys(page, isSuggestionOpen) },
+    { id: GOAL_KEYS_ID, keys: goalKeys(page) },
     ...fold === null ? [] : [{ id: fold.id, keys: milestonesFoldKeyPlan(page.goal) }],
     ...shownMilestones(page.goal, isUnfolded).flatMap((m) => [
       { id: m.id, keys: [...milestoneKeyPlan(m), ...parentFoldKeys(m, isCollapsed)] },
@@ -4107,8 +4128,8 @@ function statusKeyRows(page, isUnfolded = () => false, isCollapsed = () => false
     ...unfoldedRows(page.rows, isUnfolded, isCollapsed).map(toTarget)
   ].filter((t) => t.keys.length > 0);
 }
-function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed = () => false, isSuggestionOpen = false) {
-  const targets = statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen);
+function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed = () => false) {
+  const targets = statusKeyRows(page, isUnfolded, isCollapsed);
   const opensAsk = (t) => t.keys.some((k) => k.press.action === "show-ask");
   const isFold = (t) => t.keys.every((k) => k.press.action === "toggle-fold" || k.press.action === "toggle-collapse");
   return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets.find((t) => !isFold(t)) ?? targets[0] ?? null;
@@ -4539,8 +4560,8 @@ var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var DOT = "\u2007\xB7\u2002";
 var NEEDS_YOU_GROUPS = [
-  { kind: "question", title: "Questions", list: "questions" },
-  { kind: "task", title: "Tasks", list: "tasks" }
+  { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
+  { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
 var CLOSED_SHOWN = 3;
 function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
@@ -8159,11 +8180,15 @@ function emptyTab(view, look) {
     const page = view.statusPage;
     if (!page.isEmpty)
       return null;
-    const isSuggestionOpen = look.isSuggestionOpen ?? false;
-    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion }
+      under: {
+        is: "set-goal",
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
+        isFieldOpen: look.isGoalFieldOpen,
+        suggestion: page.suggestedGoal
+      }
     };
   }
   if (look.tab === "prs") {
@@ -8241,7 +8266,7 @@ function partHeading(text, width, s, at = PAGE_TEXT_AT, isTitle = false) {
   const rule = "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)));
   return `${" ".repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`;
 }
-function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
+function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "", focusAmong = target) {
   const faces = target.keys.map((k) => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
@@ -8249,7 +8274,8 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between =
     isFollowUp: false,
     ...k.emphasis === "quiet" ? { isQuiet: true } : {}
   }));
-  const focused = isSelected ? pageFocus(target, d.ui) : -1;
+  const focus = isSelected ? pageFocus(focusAmong, d.ui) : -1;
+  const focused = focus < target.keys.length ? focus : -1;
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : [];
 }
 function foldChevron(p, d, isSelected) {
@@ -8338,12 +8364,15 @@ function goalPartId(part) {
     return part.fold.id;
   if (part.is === "heading")
     return part.page ? GOAL_KEYS_ID : null;
-  return part.is === "keys" ? GOAL_KEYS_ID : null;
+  if (part.is === "title")
+    return part.suggestion ? GOAL_KEYS_ID : null;
+  return part.is === "keys" || part.is === "suggestion" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
-function goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed) {
+function goalSection(page, typing, isUnfolded, isCollapsed) {
   const isTyping = typing === GOAL_KEYS_ID;
-  const suggestion = !isTyping && isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
+  const groups = goalKeyGroups(page);
+  const suggestion = isTyping || page.suggestedGoal === null ? null : { text: page.suggestedGoal, keys: groups.offer, before: groups.heading };
   const g = page.goal;
   const milestones = shownMilestones(g, isUnfolded);
   const fold = g?.milestonesFold ?? null;
@@ -8352,8 +8381,7 @@ function goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed) {
       is: "heading",
       text: g?.label ?? GOAL_HEADING,
       mark: g?.mark ?? null,
-      page: isTyping ? null : page,
-      isSuggestionOpen: suggestion !== null
+      page: isTyping ? null : page
     }),
     goalEntry({ is: "title", goal: g, isTyping, suggestion }),
     ...fold === null ? [] : [goalEntry({ is: "fold", fold })],
@@ -8389,13 +8417,37 @@ function setGoal(under) {
   if (under.isFieldOpen)
     return [goalEntry({ is: "field" })];
   return [
-    ...under.suggestion === null ? [] : [goalEntry({ is: "suggestion", text: under.suggestion })],
-    goalEntry({ is: "keys", keys: under.keys })
+    ...under.keys.length === 0 ? [] : [goalEntry({ is: "keys", keys: under.keys })],
+    ...under.suggestion === null ? [] : [
+      goalEntry({ is: "suggestion", offer: { text: under.suggestion, keys: under.offerKeys, before: under.keys } })
+    ]
   ];
 }
-function suggestionLines(text, d, at) {
+function offerFaces(offer, d, isSelected) {
+  const before = offer.before.length;
+  const target = { id: GOAL_KEYS_ID, keys: [...offer.before, ...offer.keys] };
+  const focus = isSelected ? pageFocus(target, d.ui) - before : -1;
+  const faces = offer.keys.map((k) => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false,
+    ...k.emphasis === "quiet" ? { isQuiet: true } : {}
+  }));
+  return { faces, focused: focus >= 0 && focus < faces.length ? focus : -1 };
+}
+function offerLines(offer, d, at, isSelected) {
   const { width, style: s } = d;
-  return [" ".repeat(at) + s.dim(SUGGESTED_GOAL_LABEL), ...indented(text, at, width, Infinity, s.bold)];
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim);
+  const { faces, focused } = offerFaces(offer, d, isSelected);
+  if (faces.length === 0)
+    return text;
+  const keys = faceLines(faces, focused, 0, width, s, s.dim("\xB7"));
+  const last = text[text.length - 1] ?? "";
+  const first = keys[0] ?? "";
+  if (keys.length === 1 && visibleLength(last) + visibleLength(first) + 1 <= width - 1)
+    return [...text.slice(0, -1), `${last} ${first}`];
+  return [...text, ...faceLines(faces, focused, at - 1, width, s, s.dim("\xB7"))];
 }
 function fieldLines(d, at) {
   const { ui, width, style: s } = d;
@@ -8431,7 +8483,10 @@ function milestoneLines(m, d, isSelected) {
 }
 function headingLines(part, d, isSelected) {
   const { width, now, style: s } = d;
-  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeys(part.page, part.isSuggestionOpen) }, d, isSelected, 1, s.dim("\xB7")) : [];
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyGroups(part.page).heading }, d, isSelected, 1, s.dim("\xB7"), {
+    id: GOAL_KEYS_ID,
+    keys: goalKeys(part.page)
+  }) : [];
   const right = width - 1;
   const { mark } = part;
   const at = mark === null ? PAGE_MARK_AT : PAGE_TEXT_AT;
@@ -8461,7 +8516,7 @@ function drawGoalPart(part, d, isSelected) {
     return [partHeading(LATER_TEXT, width, s)];
   if (part.is === "title") {
     const g = part.suggestion === null ? part.goal : null;
-    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? suggestionLines(part.suggestion, d, textAt) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
+    const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? offerLines(part.suggestion, d, textAt, isSelected) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
     return [
       ...text,
       ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
@@ -8472,7 +8527,7 @@ function drawGoalPart(part, d, isSelected) {
   if (part.is === "milestone")
     return milestoneLines(part.row, d, isSelected);
   if (part.is === "suggestion")
-    return suggestionLines(part.text, d, PAGE_MARK_AT);
+    return offerLines(part.offer, d, PAGE_MARK_AT, isSelected);
   if (part.is === "keys")
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: part.keys }, d, isSelected, PAGE_MARK_AT);
   return fieldLines(d, PAGE_MARK_AT);
@@ -8923,6 +8978,7 @@ function rowEntries(screen, ui, tab) {
   const groups = tab === "needsYou" ? NEEDS_YOU_GROUPS.map((g) => ({
     kind: g.kind,
     title: g.title,
+    mark: { text: g.mark.mark, tone: g.mark.tone },
     rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, ui.shownSince)),
     closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
   })) : Object.keys(FINDING_GROUPS).map((kind) => ({
@@ -9135,18 +9191,14 @@ function orderEntries(screen, order, now) {
 var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
-function pageEntries(view, typing, isSuggestionOpen, isUnfolded) {
+function pageEntries(view, typing, isUnfolded) {
   const isCollapsed = collapsedIn(view);
   const page = view.statusPage;
   const blank = { kind: "note", text: "" };
-  const empty = emptyTab(view, {
-    tab: "overview",
-    isGoalFieldOpen: typing === GOAL_KEYS_ID,
-    isSuggestionOpen
-  });
+  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: typing === GOAL_KEYS_ID });
   if (empty)
     return emptyEntries(empty, empty.under?.is === "set-goal" ? setGoal(empty.under) : []);
-  const top = goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed);
+  const top = goalSection(page, typing, isUnfolded, isCollapsed);
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row) => ({ kind: "page", row }));
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
@@ -9157,23 +9209,25 @@ function helpEntries(screen) {
   const at = PAGE_TEXT_AT;
   const textAt = at + column;
   return [
-    { kind: "heading", text: HELP_COPY.keys },
+    {
+      kind: "heading",
+      text: HELP_COPY.keys,
+      ...screen.version ? { aside: helpVersionText(screen.version, screen.isNextBuild === true) } : {}
+    },
     ...keys.map((key) => ({ kind: "key", key, at, column })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.marks },
     ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry, at, textAt })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.tabs },
-    ...tabLegend().map((key) => ({ kind: "key", key, at, column })),
-    { kind: "note", text: "" },
-    { kind: "note", text: helpVersionText(screen.version, screen.isNextBuild === true), indent: textAt }
+    ...tabLegend().map((key) => ({ kind: "key", key, at, column }))
   ];
 }
 function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
     return helpEntries(screen);
   if (!isRowTab(tab))
-    return pageEntries(screen.view, ui.typing, ui.isSuggestionOpen, (id) => ui.statusUnfolded.includes(id));
+    return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id));
   const collapsed = new Set(screen.view.collapsed);
   const entries = tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
   return entries.map((e) => e.kind === "row" && collapsed.has(e.line.id) ? { ...e, line: { ...e.line, isCollapsed: true } } : e);
@@ -9255,8 +9309,7 @@ function typingKey(ui, id, key, now, text) {
   if (key === "enter") {
     if (draft.text.trim() === "")
       return { ui };
-    const closed = id === GOAL_KEYS_ID ? { ...ui, typing: null, isSuggestionOpen: false } : { ...ui, typing: null };
-    return { ui: closed, press: { action: "type", id, text: draft.text } };
+    return { ui: { ...ui, typing: null }, press: { action: "type", id, text: draft.text } };
   }
   if (key === "backspace")
     return edit([...draft.text].slice(0, -1).join(""));
@@ -9343,8 +9396,8 @@ function pageKey(screen, ui, key, now) {
   const page = screen.view.statusPage;
   const isUnfolded = (id) => ui.statusUnfolded.includes(id);
   const isCollapsed = collapsedIn(screen.view);
-  const rows = statusKeyRows(page, isUnfolded, isCollapsed, ui.isSuggestionOpen);
-  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed, ui.isSuggestionOpen);
+  const rows = statusKeyRows(page, isUnfolded, isCollapsed);
+  const row = statusSelected(page, ui.selectedId, isUnfolded, isCollapsed);
   if (!row)
     return null;
   if (key === "j" || key === "k") {
@@ -9382,18 +9435,8 @@ function pageKey(screen, ui, key, now) {
     const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } };
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } };
   }
-  if (press.action === "show-suggestion")
-    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: true, focus: { rowId: GOAL_KEYS_ID, index: 0 } } };
-  if (press.action === "hide-suggestion") {
-    const index = Math.max(0, goalKeys(page, false).findIndex((k) => k.press.action === "show-suggestion"));
-    return { ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: { rowId: GOAL_KEYS_ID, index } } };
-  }
-  if (press.action === "take-goal")
-    return {
-      ui: { ...ui, selectedId: GOAL_KEYS_ID, isSuggestionOpen: false, focus: null, pageReveal: GOAL_KEYS_ID },
-      press: { action: "take-goal", id: GOAL_KEYS_ID }
-    };
-  if (press.action !== "remove-goal" && press.action !== "restore-goal")
+  const isGoalPress = press.action === "remove-goal" || press.action === "restore-goal" || press.action === "take-goal";
+  if (!isGoalPress)
     return null;
   return {
     ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
@@ -9612,7 +9655,7 @@ function footer(d, isPageScrolling) {
     `\u21B5 ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
     `esc ${ROW_COPY.cancel}`
   ] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
-    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view), ui.isSuggestionOpen),
+    ...statusHints(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view)),
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
     "? help"
@@ -9654,10 +9697,10 @@ function scrolled(body, selectedAt, room, s) {
     clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
   return clip;
 }
-function statusHints(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen) {
-  if (statusKeyRows(page, isUnfolded, isCollapsed, isSuggestionOpen).length === 0)
+function statusHints(page, selectedId, isUnfolded, isCollapsed) {
+  if (statusKeyRows(page, isUnfolded, isCollapsed).length === 0)
     return [];
-  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed, isSuggestionOpen);
+  const selected = statusSelected(page, selectedId, isUnfolded, isCollapsed);
   const fold = selected?.keys.find((k) => k.press.action === "toggle-collapse");
   const isPicking = (selected ? drawnKeys(selected).length : 0) > 1;
   return [
@@ -9681,7 +9724,6 @@ var INITIAL_UI = {
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
-  isSuggestionOpen: false,
   resuming: null,
   opened: null,
   pageTop: 0,
@@ -9733,13 +9775,14 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
-  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view), ui.isSuggestionOpen);
+  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId, (id) => ui.statusUnfolded.includes(id), collapsedIn(screen.view));
   let pageSelectedAt = null;
   const subjectAt = [];
   for (const e of entries) {
-    if (e.kind === "heading")
-      body.push(` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
-    else if (e.kind === "page" || e.kind === "goal") {
+    if (e.kind === "heading") {
+      const title = ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`;
+      body.push(e.aside ? spread(title, `${style.dim(e.aside)} `, width) : title);
+    } else if (e.kind === "page" || e.kind === "goal") {
       const start = body.length;
       if (e.kind === "page")
         subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));
@@ -9861,8 +9904,6 @@ function createPanel(deps) {
       return;
     }
     screen = next;
-    if (ui.isSuggestionOpen && next.view.statusPage.suggestedGoal === null)
-      ui = { ...ui, isSuggestionOpen: false };
     const followed = followRows(next, ui, seen, isOpening, deps.now());
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now());
     seen = followed.seen;
@@ -11442,6 +11483,7 @@ async function askStatus(ask) {
 // ../hooks/status-prompt-goal.ts
 var NO_WORK_LINKED = "no work linked";
 var NEXT_MARK = "next";
+var tooBigMark = (count, room) => `too big, ${count} subjects, room for ${room}`;
 var GOAL_LINES = `GOAL: outcome | status name; status name
 RETIRE: why the goal no longer fits the work
 SUGGEST: outcome, or - for none
@@ -11450,7 +11492,7 @@ NEXT: milestone id or name
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
 GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
 var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it or took the suggested goal, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
-- <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
+- <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it, and with | ${tooBigMark(9, 2)} when more than ${MILESTONE_SUBJECTS} subjects serve it, open or done, two or more of them are open, and the goal has room for more milestones. Room for 2 means the goal can take 2 more.
 - <removed>: goals the person removed, as their key words, one per line
 - <suggested>: the goal offered to the person, while no goal is set or the goal is met
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
@@ -11458,13 +11500,14 @@ var GOAL_PARTS = {
   "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
-  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it only when they ask for a new goal, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
+  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
   "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open, unless the person says its outcome changed, as when they cut part of it. Then write GOAL for the new outcome, and name again in the same words each milestone it keeps, so that milestone's work moves with it. Write SERVES to - for the work of each milestone it leaves out. When a milestone is cut and the goal's text still holds, write DROP for that milestone instead. New work or an added outcome is a MILESTONE line, never a new goal.`,
   "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
   "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next. Name a milestone this answer adds by its name, since it has no id yet. Leave it out when the milestone marked ${NEXT_MARK} in <milestones> is right.`,
+  "milestone-split": `A milestone marked too big holds more work than the person can read as one outcome: split it by theme. Write MILESTONE for each outcome its open subjects are for, named by theme, such as "Status page polish" or "Herdr drawing fixed", and never more than the room the mark gives: code drops a MILESTONE line past it. Then write SERVES to move each of its open subjects to the new milestone its work is part of, or to - when the goal does not need it. Its done subjects stay with it and get no SERVES line. When the split leaves none of its subjects open, write DONE for it in the same answer, with where it ended, or DROP with why when none of them is done. A split changes milestones only, so it applies to a goal marked (typed) too, and the goal's words stay.`,
   "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
   "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
   "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,
@@ -11498,6 +11541,20 @@ function refusedLine(o, now) {
   const text = texts[r.why]();
   return text === null ? null : `${line} refused: ${text}`;
 }
+function tooBigMilestones(o) {
+  const g = o?.goal;
+  if (!o || !g || g.isAwaitingMilestones)
+    return new Map;
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const serving = (id) => o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === id);
+  if (kept.length >= MILESTONES_MAX)
+    return new Map;
+  return new Map(kept.flatMap((m) => {
+    const work = serving(m.id);
+    const hasWorkToSplit = work.filter(isOpen).length >= 2;
+    return isOpen(m) && work.length > MILESTONE_SUBJECTS && hasWorkToSplit ? [[m.id, work.length]] : [];
+  }));
+}
 function goalBlocks(o, now) {
   if (o === null)
     return [];
@@ -11512,9 +11569,16 @@ function goalBlocks(o, now) {
   const state = marks.length > 0 ? ` (${marks.join(", ")})` : "";
   const served = new Set(Object.values(o.serves));
   const next = g?.isAwaitingMilestones ? undefined : o.milestones.find((m) => m.status === "queued");
+  const tooBig = tooBigMilestones(o);
+  const room = MILESTONES_MAX - o.milestones.filter((m) => m.status !== "dropped").length;
   const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => {
     const isUnserved = m.status !== "done" && !served.has(m.id);
-    const marks = [...m === next ? [NEXT_MARK] : [], ...isUnserved ? [NO_WORK_LINKED] : []];
+    const serving = tooBig.get(m.id);
+    const marks = [
+      ...m === next ? [NEXT_MARK] : [],
+      ...isUnserved ? [NO_WORK_LINKED] : [],
+      ...serving === undefined ? [] : [tooBigMark(serving, room)]
+    ];
     return [`${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}`, ...marks].join(" | ");
   });
   const block = (tag, body) => `<${tag}>${NL5}${body}${NL5}</${tag}>`;
@@ -12118,6 +12182,7 @@ var DARK_TONES = {
   needsYou: DARK_AMBER,
   issue: "#ff6b80",
   findings: "#cab0ff",
+  tasks: "#b48cff",
   prs: "#8cc8c0",
   done: "#82c1ff",
   success: "#7ecd8f",
@@ -12132,6 +12197,7 @@ var LIGHT_TONES = {
   needsYou: LIGHT_AMBER,
   issue: "#a5293d",
   findings: "#7b00e8",
+  tasks: "#6a14d9",
   prs: "#006363",
   done: "#0a54a0",
   success: "#25652f",

@@ -16,7 +16,7 @@ import type { DrawnStatus } from './tab-status-steps'
 import type { BannerLine } from './tab-line-steps'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 
-export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'opportunity' | 'error'
+export type Tone = 'needsYou' | 'issue' | 'findings' | 'tasks' | 'done' | 'opportunity' | 'error'
 
 type Emphasis = ActionEmphasis
 
@@ -162,8 +162,6 @@ class TabState {
   isHelpShown = false
   typing: string | null = null
   focusTyping = false
-  /** Whether the person opened the suggested goal. It shows only while the Status page still has one. */
-  isSuggestionOpen = false
   discarded: Record<string, number> = {}
   lineNote: { text: string; at: number; isError?: boolean } | null = null
   seen = new Map<string, number>()

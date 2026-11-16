@@ -135,7 +135,6 @@ export function createPanel(deps: PanelDeps): Panel {
       return
     }
     screen = next
-    if (ui.isSuggestionOpen && next.view.statusPage.suggestedGoal === null) ui = { ...ui, isSuggestionOpen: false }
     const followed = followRows(next, ui, seen, isOpening, deps.now())
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now())
     seen = followed.seen

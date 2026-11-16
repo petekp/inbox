@@ -140,6 +140,7 @@ export function pageButtonLines(
   isSelected: boolean,
   textAt = PAGE_TEXT_AT,
   between = '',
+  focusAmong: StatusKeyTarget = target,
 ): string[] {
   const faces = target.keys.map((k): ButtonFace => ({
     label: k.label,
@@ -148,7 +149,8 @@ export function pageButtonLines(
     isFollowUp: false,
     ...(k.emphasis === 'quiet' ? { isQuiet: true } : {}),
   }))
-  const focused = isSelected ? pageFocus(target, d.ui) : -1
+  const focus = isSelected ? pageFocus(focusAmong, d.ui) : -1
+  const focused = focus < target.keys.length ? focus : -1
 
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : []
 }

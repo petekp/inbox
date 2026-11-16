@@ -135,6 +135,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
       ? NEEDS_YOU_GROUPS.map(g => ({
           kind: g.kind,
           title: g.title,
+          mark: { text: g.mark.mark, tone: g.mark.tone },
           rows: view.needsYou[g.list].filter(r => isDrawnInPlace(r, ui.shownSince)),
           closed: view.needsYou.closed[g.list].map(d => ({ ...d, title: d.ask })),
         }))
@@ -352,29 +353,20 @@ export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 export const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
-function pageEntries(
-  view: SessionView,
-  typing: string | null,
-  isSuggestionOpen: boolean,
-  isUnfolded: (id: string) => boolean,
-): Entry[] {
+function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isCollapsed = collapsedIn(view)
   const page = view.statusPage
   const blank: Entry = { kind: 'note', text: '' }
-  const empty = emptyTab(view, {
-    tab: 'overview',
-    isGoalFieldOpen: typing === GOAL_KEYS_ID,
-    isSuggestionOpen,
-  })
+  const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: typing === GOAL_KEYS_ID })
   if (empty) return emptyEntries(empty, empty.under?.is === 'set-goal' ? setGoal(empty.under) : [])
-  const top = goalSection(page, typing, isSuggestionOpen, isUnfolded, isCollapsed)
+  const top = goalSection(page, typing, isUnfolded, isCollapsed)
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row): Entry => ({ kind: 'page', row }))
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== 'part'
 
   return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows]
 }
 
-/** Help in place of the tab's lines: the keys the panel takes, what each mark means, each tab's symbol, then which inbox build this is. */
+/** Help in place of the tab's lines: the keys the panel takes, what each mark means, then each tab's symbol. Which inbox build this is sits at the right end of the Keys title. */
 function helpEntries(screen: PanelScreen): Entry[] {
   const keys = helpKeys('omp')
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
@@ -382,7 +374,11 @@ function helpEntries(screen: PanelScreen): Entry[] {
   const textAt = at + column
 
   return [
-    { kind: 'heading', text: HELP_COPY.keys },
+    {
+      kind: 'heading',
+      text: HELP_COPY.keys,
+      ...(screen.version ? { aside: helpVersionText(screen.version, screen.isNextBuild === true) } : {}),
+    },
     ...keys.map((key): Entry => ({ kind: 'key', key, at, column })),
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.marks },
@@ -390,15 +386,12 @@ function helpEntries(screen: PanelScreen): Entry[] {
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.tabs },
     ...tabLegend().map((key): Entry => ({ kind: 'key', key, at, column })),
-    { kind: 'note', text: '' },
-    { kind: 'note', text: helpVersionText(screen.version, screen.isNextBuild === true), indent: textAt },
   ]
 }
 
 export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen)
-  if (!isRowTab(tab))
-    return pageEntries(screen.view, ui.typing, ui.isSuggestionOpen, id => ui.statusUnfolded.includes(id))
+  if (!isRowTab(tab)) return pageEntries(screen.view, ui.typing, id => ui.statusUnfolded.includes(id))
 
   const collapsed = new Set(screen.view.collapsed)
   const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)

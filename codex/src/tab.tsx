@@ -104,7 +104,6 @@ function App({
 }
 
 function draw() {
-  if (tabState.view?.statusPage?.suggestedGoal === null) tabState.isSuggestionOpen = false
   if (tabState.isDisposed || !tabState.isActive) return
   const before = measure()
   const step = tabState.view ? stepLists(tabState.view) : null

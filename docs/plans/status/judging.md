@@ -93,6 +93,7 @@ The goal adds these:
 - Each milestone in the fact list has a milestone with a mark its state allows.
 - Where the fact list says which queued milestone the plan takes up next, that milestone is the next one on the path.
 - A goal has 2 to 5 milestones, none named after a subject.
+- A milestone the call read marked too big still has more than 6 subjects after the step only when none of them is open.
 - A subject the goal needs is not under Other work, and one it does not need is not linked to a milestone.
 - A goal the fact list marks as left by the work is retired or met, not still open. One whose outcome the person dropped is retired, not shown met.
 - A goal the fact list keeps, met or not, stays on the page. One the work has paused on may stay or end.

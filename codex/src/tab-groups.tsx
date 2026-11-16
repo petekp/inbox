@@ -12,7 +12,7 @@ import {
 import { groupEmptyText } from '../../hooks/banners'
 import { emptyTab } from '../../hooks/empty-tab'
 import { entryId, settledIn } from '../../hooks/action-plan'
-import { FINDING_GROUPS } from '../../hooks/help'
+import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../hooks/help'
 import type { ResultMark } from '../../hooks/rows'
 import type { Finding } from '../../types'
 import type { FoldGroup } from './arrivals'
@@ -53,13 +53,14 @@ function ItemGroup({
   now: number
 }) {
   const title = kind === 'question' ? 'Questions' : 'Tasks'
+  const mark = NEEDS_YOU_MARKS[kind]
   const rest = staying(entries)
   const closed = itemsClosed(v, kind, entries)
   const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
 
   return (
     <section>
-      <GroupTitle title={title} count={waitingCount(rows.map(r => r.view))} />
+      <GroupTitle title={title} count={waitingCount(rows.map(r => r.view))} mark={mark} />
       <Entries entries={entries} group={kind} all={all} now={now} />
       <GroupEnd
         group={kind}

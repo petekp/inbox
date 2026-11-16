@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T04:56:01.887Z. 265737 characters follow.
+// Built at 2026-11-16T05:09:00.209Z. 266970 characters follow.
 
 // src/main.ts
 import { View, div as div7 } from "gpui-kit";
@@ -1165,6 +1165,10 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "▲", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "✦", tone: "opportunity" }
 };
+var NEEDS_YOU_MARKS = {
+  question: { mark: "?", tone: "needsYou" },
+  task: { mark: "☑", tone: "tasks" }
+};
 var SUBJECT_MARKS = {
   working: { mark: "●", tone: "working" },
   queued: { mark: "○", tone: null },
@@ -1204,6 +1208,18 @@ var MARK_LEGEND = [
     words: "Waits on something other than you, such as a build or a review"
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  {
+    mark: NEEDS_YOU_MARKS.question.mark,
+    tone: NEEDS_YOU_MARKS.question.tone,
+    isRunning: false,
+    words: "A question the agent asked you"
+  },
+  {
+    mark: NEEDS_YOU_MARKS.task.mark,
+    tone: NEEDS_YOU_MARKS.task.tone,
+    isRunning: false,
+    words: "A step only you can do"
+  },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
@@ -1520,7 +1536,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
-var SUGGESTED_GOAL_LABEL = "Suggested";
+var suggestedGoalOffer = (text) => `Next goal: “${text}”?`;
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
 function shownMilestones(g, isUnfolded) {
@@ -1640,8 +1656,8 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
-var newGoal = (page, emphasis) => ({
-  press: page.suggestedGoal === null ? { action: "type-goal", text: "" } : { action: "show-suggestion" },
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
   label: "New",
   hotkey: "n",
   kind: "view",
@@ -1650,9 +1666,9 @@ var newGoal = (page, emphasis) => ({
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal(page, "quiet")];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
   if (g.isMet)
-    return [newGoal(page, "normal"), REMOVE_GOAL];
+    return [newGoal("normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
@@ -1660,14 +1676,14 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set", hotkey: "s", kind: "mark", emphasis: "normal" },
-    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    { press: { action: "hide-suggestion" }, label: "Cancel", hotkey: "c", kind: "view", emphasis: "quiet" }
+    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
-var isSuggestionShown = (page, isSuggestionOpen) => isSuggestionOpen && page.suggestedGoal !== null;
-function goalKeys(page, isSuggestionOpen) {
-  return isSuggestionShown(page, isSuggestionOpen) ? suggestionKeyPlan(page.suggestedGoal) : goalKeyPlan(page);
+function goalKeyGroups(page) {
+  if (page.suggestedGoal === null)
+    return { heading: goalKeyPlan(page), offer: [] };
+  return { heading: page.canRestoreGoal ? [RESTORE_GOAL] : [], offer: suggestionKeyPlan(page.suggestedGoal) };
 }
 var GOAL_FIELD = { placeholder: "An outcome to work toward" };
 var goalSubmitLabel = (page) => page.goal === null || page.goal.isMet ? "Set" : "Save";
@@ -1823,8 +1839,8 @@ var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var DOT = " · ";
 var NEEDS_YOU_GROUPS = [
-  { kind: "question", title: "Questions", list: "questions" },
-  { kind: "task", title: "Tasks", list: "tasks" }
+  { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
+  { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
 var CLOSED_SHOWN = 3;
 function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
@@ -3749,11 +3765,15 @@ function emptyTab(view, look) {
     const page = view.statusPage;
     if (!page.isEmpty)
       return null;
-    const isSuggestionOpen = look.isSuggestionOpen ?? false;
-    const suggestion = isSuggestionShown(page, isSuggestionOpen) ? page.suggestedGoal : null;
     return {
       ...EMPTY_STATUS_TEXT,
-      under: { is: "set-goal", keys: goalKeys(page, isSuggestionOpen), isFieldOpen: look.isGoalFieldOpen, suggestion }
+      under: {
+        is: "set-goal",
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
+        isFieldOpen: look.isGoalFieldOpen,
+        suggestion: page.suggestedGoal
+      }
     };
   }
   if (look.tab === "prs") {
@@ -4046,16 +4066,12 @@ function doesOf(k) {
     return { is: "view", change: { toggleFold: p.foldId } };
   if (p.action === "toggle-collapse")
     return { is: "nothing" };
-  if (p.action === "show-suggestion")
-    return { is: "view", change: { isSuggestionOpen: true } };
-  if (p.action === "hide-suggestion")
-    return { is: "view", change: { isSuggestionOpen: false } };
   if (p.action === "type-goal")
     return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
   return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
 }
-function keyButtons(id, keys) {
-  return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)));
+function keyButtons(id, keys, from = 0) {
+  return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)));
 }
 function foldOf(p, isCollapsed) {
   if (p.foldCount === 0)
@@ -4215,22 +4231,25 @@ var headTitle = (id, text) => ({
   isAtEdge: true,
   isStrong: true
 });
-function goalBlocks(page, { isUnfolded, isCollapsed, isSuggestionOpen, goalField }) {
+function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
   const g = page.goal;
-  const isSuggested = goalField === null && isSuggestionShown(page, isSuggestionOpen);
+  const groups = goalKeyGroups(page);
+  const isSuggested = goalField === null && page.suggestedGoal !== null;
   const heading = {
     kind: "heading",
     id: "goal heading",
     text: g?.label ?? GOAL_HEADING,
     count: null,
     mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, goalKeys(page, isSuggested)),
+    buttons: keyButtons(GOAL_KEYS_ID, groups.heading),
     isLabel: true
   };
   const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
   const suggestion = [
-    headNote("goal suggested", SUGGESTED_GOAL_LABEL, "muted"),
-    headTitle("goal text", page.suggestedGoal ?? "")
+    {
+      ...headNote("goal text", suggestedGoalOffer(page.suggestedGoal ?? ""), "muted"),
+      buttons: keyButtons(GOAL_KEYS_ID, groups.offer, groups.heading.length)
+    }
   ];
   if (g === null) {
     const empty = isSuggested ? suggestion : [headNote("goal text", NO_GOAL_TEXT, "muted")];
@@ -4270,17 +4289,16 @@ function goalBlocks(page, { isUnfolded, isCollapsed, isSuggestionOpen, goalField
 function statusBlocks(view, ui) {
   const page = view.statusPage;
   const { isUnfolded, isCollapsed } = ui;
-  const empty = emptyTab(view, {
-    tab: "overview",
-    isGoalFieldOpen: ui.goalField !== null,
-    isSuggestionOpen: ui.isSuggestionOpen
-  });
+  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: ui.goalField !== null });
   if (empty) {
     const setGoal = empty.under?.is === "set-goal" ? empty.under : null;
     const parts = setGoal && {
       id: GOAL_KEYS_ID,
-      text: setGoal.suggestion === null ? null : `${SUGGESTED_GOAL_LABEL}: ${setGoal.suggestion}`,
-      buttons: setGoal.isFieldOpen ? [] : keyButtons(GOAL_KEYS_ID, setGoal.keys),
+      text: setGoal.suggestion === null ? null : suggestedGoalOffer(setGoal.suggestion),
+      buttons: setGoal.isFieldOpen ? [] : [
+        ...keyButtons(GOAL_KEYS_ID, setGoal.keys),
+        ...keyButtons(GOAL_KEYS_ID, setGoal.offerKeys, setGoal.keys.length)
+      ],
       feedback: null,
       field: setGoal.isFieldOpen ? ui.goalField : null
     };
@@ -4301,7 +4319,6 @@ var freshUi = (tab) => ({
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
-  isSuggestionOpen: false,
   typing: null,
   newRows: new Map,
   closedSeen: new Map
@@ -4491,7 +4508,7 @@ function groupsOf(view, tab, shownSince) {
     return NEEDS_YOU_GROUPS.map((g) => ({
       kind: g.kind,
       title: g.title,
-      mark: null,
+      mark: { text: g.mark.mark, tone: g.mark.tone, isRunning: false },
       rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, shownSince)),
       closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
     }));
@@ -4555,7 +4572,6 @@ function tabBlocks(screen, ui) {
     return statusBlocks(screen.view, {
       isUnfolded: (id) => ui.statusUnfolded.includes(id),
       isCollapsed: (id) => screen.view.collapsed.includes(id),
-      isSuggestionOpen: ui.isSuggestionOpen,
       goalField
     });
   }
@@ -4644,17 +4660,18 @@ function follow(where, tab, last) {
 // src/draw-help.ts
 function helpBlocks(version) {
   const keys = helpKeys("herdr");
-  const heading = (id, text) => ({
+  const heading = (id, text, aside) => ({
     kind: "heading",
     id,
     text,
     count: null,
     mark: null,
     buttons: [],
-    isLabel: false
+    isLabel: false,
+    ...aside === undefined ? {} : { aside }
   });
   return [
-    heading("help keys", HELP_COPY.keys),
+    heading("help keys", HELP_COPY.keys, version ?? undefined),
     ...keys.map((k) => ({
       kind: "status",
       id: `key ${k.keys}`,
@@ -4681,22 +4698,7 @@ function helpBlocks(version) {
       does: m.words,
       under: [],
       buttons: []
-    })),
-    ...version === null ? [] : [
-      {
-        kind: "status",
-        id: "help version",
-        depth: 0,
-        mark: null,
-        name: "",
-        isBold: false,
-        isMuted: true,
-        stall: null,
-        does: version,
-        under: [],
-        buttons: []
-      }
-    ]
+    }))
   ];
 }
 
@@ -4779,21 +4781,17 @@ function withShownNewRows(ui, at) {
   const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
   return isSame ? ui : { ...ui, newRows };
 }
-function withDrawnRows(ui, last, rows, at, isTabShown, page) {
+function withDrawnRows(ui, last, rows, at, isTabShown) {
   const lastRows = last.tab === ui.tab ? last.rows : null;
   const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
-  const shown = isTabShown ? withShownNewRows(arrived, at) : arrived;
-  return page ? withoutStaleSuggestion(shown, page) : shown;
+  return isTabShown ? withShownNewRows(arrived, at) : arrived;
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
 function afterPress(ui, press) {
-  if (press.action === "take-goal")
-    return { ...ui, isSuggestionOpen: false };
   return "id" in press && press.action === "undo" ? withSelected(ui, press.id) : ui;
 }
-var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null, ...rowId === GOAL_KEYS_ID && { isSuggestionOpen: false } } : ui;
-var withoutStaleSuggestion = (ui, page) => ui.isSuggestionOpen && page.suggestedGoal === null ? { ...ui, isSuggestionOpen: false } : ui;
+var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null } : ui;
 function withoutConfirmed(drafts, confirmed, typing, pending) {
   const current = confirmed.filter((c) => !pending.some((p) => p.rowId === c.rowId && p.pressId > c.pressId));
   const done = current.filter((c) => c.rowId !== typing);
@@ -4813,8 +4811,6 @@ function withChange(ui, c) {
     return { ...ui, closedAll: [...ui.closedAll, c.earlier] };
   if ("toggleFold" in c)
     return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) };
-  if ("isSuggestionOpen" in c)
-    return { ...ui, isSuggestionOpen: c.isSuggestionOpen };
   return withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
 }
 
@@ -5186,6 +5182,38 @@ function placeAfter(shown, above) {
   return 0;
 }
 
+// ../hooks/tones.ts
+var DARK_AMBER = "#ffc107";
+var DARK_TONES = {
+  needsYou: DARK_AMBER,
+  issue: "#ff6b80",
+  findings: "#cab0ff",
+  tasks: "#b48cff",
+  prs: "#8cc8c0",
+  done: "#82c1ff",
+  success: "#7ecd8f",
+  opportunity: "#7ecd8f",
+  working: "#ffffff",
+  error: "#ffa3b0",
+  errorMark: "#ff6b80",
+  key: "#b1b9f9"
+};
+var LIGHT_AMBER = "#745417";
+var LIGHT_TONES = {
+  needsYou: LIGHT_AMBER,
+  issue: "#a5293d",
+  findings: "#7b00e8",
+  tasks: "#6a14d9",
+  prs: "#006363",
+  done: "#0a54a0",
+  success: "#25652f",
+  opportunity: "#25652f",
+  working: "#1a1a1a",
+  error: "#a5293d",
+  errorMark: "#a5293d",
+  key: "#243bf5"
+};
+
 // src/paint-theme.ts
 var TONE_COLORS = {
   needsYou: "ansi3",
@@ -5201,7 +5229,11 @@ var TONE_COLORS = {
   error: "ansi1",
   muted: "muted"
 };
-var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
+var isLightTheme = (t) => {
+  const [r, g, b] = [1, 3, 5].map((at) => parseInt(t.background.slice(at, at + 2), 16));
+  return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+};
+var colorOf = (t, tone) => tone === "tasks" ? (isLightTheme(t) ? LIGHT_TONES : DARK_TONES).tasks : t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 function mixInto(c, under, share) {
   const channel = (at) => Math.round(parseInt(c.slice(at, at + 2), 16) * share + parseInt(under.slice(at, at + 2), 16) * (1 - share));
@@ -5364,7 +5396,7 @@ class Heights {
 }
 
 // src/paint-blocks.ts
-import { div as div6 } from "gpui-kit";
+import { PathBuilder as PathBuilder3, div as div6 } from "gpui-kit";
 import { Input, h_flex as h_flex4, v_flex as v_flex3 } from "gpui-base";
 
 // ../hooks/layout.ts
@@ -5652,9 +5684,9 @@ function ruleEl(b, t) {
     return h_flex3().pl(EDGE).pr(EDGE).child(ruleLine(t));
   return h_flex3().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div5().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
 }
-function noteEl(b, t) {
+function noteEl(b, t, buttons = []) {
   const text = div5().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  return h_flex3().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text);
+  return h_flex3().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex3().flex_none().items_center().gap(CONTROL_GAP).pl(CONTROL_GAP).children(buttons)));
 }
 
 // src/paint-blocks.ts
@@ -5680,7 +5712,10 @@ function buttonEl(b, p, isInert = false) {
 }
 var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex4().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t, tint = null) => div6().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
+var CHECKBOX_PX = 11;
+var CHECK_PATH = PathBuilder3.stroke(1.5).move_to("27%", "53%").line_to("43%", "69%").line_to("74%", "31%").build();
+var checkboxEl = (color) => div6().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
+var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div6().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div6().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div6().pl(indent).pt(LINE_GAP).whitespace_normal().text_color(color).child(text);
 var trunkEl = (top, height, t) => {
   const el = div6().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t));
@@ -5777,7 +5812,7 @@ function headingEl(b, p, isInert) {
   const buttons = h_flex4().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
     return h_flex4().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex4().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(GROUP_GAP)).child(buttons);
-  return h_flex4().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div6().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div6().text_color(t.muted).child(`${SEP}${b.count}`))).child(div6().flex_1()).child(buttons);
+  return h_flex4().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div6().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div6().text_color(t.muted).child(`${SEP}${b.count}`))).child(div6().flex_1()).when(b.aside !== undefined, (e) => e.child(div6().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
 function emptyEl(b, p, isInert) {
   const { t } = p;
@@ -5821,7 +5856,7 @@ function blockEl(b, p) {
   if (b.kind === "field")
     return div6().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
-    return noteEl(b, t);
+    return noteEl(b, t, (b.buttons ?? []).map((x) => buttonEl(x, p, isLeaving)));
   if (b.kind === "caption")
     return div6().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
@@ -6544,7 +6579,7 @@ class Inbox extends View {
     });
     let screen = screenFor(this.ui);
     const inbox = screen.is === "inbox" ? screen : null;
-    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, inbox?.view.statusPage);
+    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown);
     if (ui !== this.ui)
       screen = screenFor(this.ui = ui);
     this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null };
@@ -6556,6 +6591,7 @@ class Inbox extends View {
     const resized = this.heights.takeResized();
     const paint = {
       t,
+      mono: theme().typography?.mono ?? "Menlo",
       press: (b, cx, isAll) => this.press(b, cx, isAll),
       collapse: (id, isCollapsed, cx, isAll) => {
         if (isAll)

@@ -5,8 +5,6 @@ import { COLLAPSE_KEY, FOLD_ALL_KEY, UNDO_KEY } from '../../hooks/help'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session-view'
-import { GOAL_KEYS_ID } from '../../hooks/status-keys'
-import type { StatusPage } from '../../hooks/status-page'
 import { isDrawnInPlace } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft } from '../../types'
@@ -179,15 +177,12 @@ export function withDrawnRows(
   rows: RowWait[] | null,
   at: number,
   isTabShown: boolean,
-  page?: StatusPage,
 ): LookUi {
   const lastRows = last.tab === ui.tab ? last.rows : null
   const arrived =
     rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui
 
-  const shown = isTabShown ? withShownNewRows(arrived, at) : arrived
-
-  return page ? withoutStaleSuggestion(shown, page) : shown
+  return isTabShown ? withShownNewRows(arrived, at) : arrived
 }
 
 /**
@@ -200,25 +195,14 @@ export const isFieldDrawn = (ui: LookUi, isHelpShown: boolean): boolean => ui.ty
 /** Switching tabs closes the open text field. Its draft is kept. */
 export const withTab = (ui: LookUi, tab: ShownTab): LookUi => ({ ...ui, tab, selected: null, typing: null })
 
-/** The look's state after a press goes: an Undo selects its row, and Set closes the suggested goal. */
+/** The look's state after a press goes: an Undo selects its row. */
 export function afterPress(ui: LookUi, press: Extract<Does, { is: 'press' }>['press']): LookUi {
-  if (press.action === 'take-goal') return { ...ui, isSuggestionOpen: false }
-
   return 'id' in press && press.action === 'undo' ? withSelected(ui, press.id) : ui
 }
 
-/**
- * A field's text that went as a press closes the field, and closes the suggested goal when it was the goal's. A refused
- * one keeps both open. Either keeps the draft.
- */
+/** A field's text that went as a press closes the field. A refused one keeps it open. Either keeps the draft. */
 export const afterSend = (ui: LookUi, rowId: string, isSent: boolean): LookUi =>
-  isSent && ui.typing === rowId
-    ? { ...ui, typing: null, ...(rowId === GOAL_KEYS_ID && { isSuggestionOpen: false }) }
-    : ui
-
-/** The suggested goal closes once the page offers none, so a later one never opens without a press. */
-export const withoutStaleSuggestion = (ui: LookUi, page: StatusPage): LookUi =>
-  ui.isSuggestionOpen && page.suggestedGoal === null ? { ...ui, isSuggestionOpen: false } : ui
+  isSent && ui.typing === rowId ? { ...ui, typing: null } : ui
 
 /**
  * The drafts without those whose sent text the host confirmed, as the other looks delete a sent reply's draft, and
@@ -249,7 +233,6 @@ export function withChange(ui: LookUi, c: Exclude<ViewChange, { toggleHelp: true
   if ('closedFold' in c) return { ...ui, unfolded: toggled(ui.unfolded, c.closedFold) }
   if ('earlier' in c) return { ...ui, closedAll: [...ui.closedAll, c.earlier] }
   if ('toggleFold' in c) return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) }
-  if ('isSuggestionOpen' in c) return { ...ui, isSuggestionOpen: c.isSuggestionOpen }
 
   return withSelected({ ...ui, tab: 'needsYou' }, c.showAsk)
 }
