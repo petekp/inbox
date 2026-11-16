@@ -2805,7 +2805,9 @@ function missingAsNull(err) {
 function savedToolFields(saved) {
   const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
   const fields2 = saved;
-  return fields2 && isNames(fields2.record) && isNames(fields2.close) && isNames(fields2.order_prs) ? fields2 : null;
+  if (!fields2 || !isNames(fields2.record) || !isNames(fields2.close) || !isNames(fields2.order_prs)) return null;
+  if (fields2.tasks !== void 0 && !isNames(fields2.tasks)) return null;
+  return { record: fields2.record, close: fields2.close, order_prs: fields2.order_prs, tasks: fields2.tasks ?? [] };
 }
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
@@ -3239,10 +3241,36 @@ var ORDER_SCHEMA = {
   },
   required: ["numbers"]
 };
+var TASKS_SCHEMA = {
+  type: "object",
+  properties: {
+    operation: {
+      type: "string",
+      enum: ["add", "update", "move", "complete", "note"],
+      description: "Add a task, update its facts, move it, complete it, or add a note."
+    },
+    task_id: { type: "string", description: "A stable id for add, or the existing task id for other operations." },
+    parent_id: {
+      type: ["string", "null"],
+      description: "For add or move: the parent task id. Use null to put the task at the root."
+    },
+    title: { type: "string", description: "For add or update: a short title, at most 100 characters." },
+    detail: { type: "string", description: "For add or update: task detail, at most 2000 characters." },
+    status: {
+      type: "string",
+      enum: ["working", "queued", "waits-on-other", "done", "dropped"],
+      description: "For add or update: the task status."
+    },
+    weight: { type: "number", description: "For add or update: a sibling-relative weight from 0.1 to 100." },
+    note: { type: "string", description: "For note: a note to append, at most 2000 characters." }
+  },
+  required: ["operation"]
+};
 var TOOL_FIELDS = {
   record: Object.keys(RECORD_SCHEMA.properties),
   close: Object.keys(CLOSE_SCHEMA.properties),
-  order_prs: Object.keys(ORDER_SCHEMA.properties)
+  order_prs: Object.keys(ORDER_SCHEMA.properties),
+  tasks: Object.keys(TASKS_SCHEMA.properties)
 };
 
 // ../hooks/record-links.ts
@@ -4251,6 +4279,7 @@ var CODEX = {
   prsIn: "the PRs section of the Inbox tab",
   recordTool: "mcp__inbox__record",
   closeTool: "mcp__inbox__close",
+  taskTool: "tasks",
   splitsPlanIntoSubjects: true,
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
 };

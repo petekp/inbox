@@ -98,6 +98,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'item-document': { kind: 'full' },
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
+      timeline: { kind: 'full' },
     },
   },
   codex: {
@@ -274,6 +275,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'item-document': { kind: 'full' },
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
+      timeline: { kind: 'full' },
     },
   },
   omp: {
@@ -395,6 +397,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'item-document': { kind: 'full' },
       'document-preview': { kind: 'full' },
       'record-link-guard': { kind: 'full' },
+      timeline: { kind: 'full' },
     },
   },
 }

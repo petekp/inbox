@@ -15,7 +15,27 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   expect(close.description).toContain('# Inbox')
   expect(record.description).toBe('Record an item.')
   const order = await $.tool.describe({ tool: 'mcp__inbox__order_prs', description: 'Order PRs.', provider })
-  expect([close, record, order].map(d => d.isDeferred)).toEqual([false, false, false])
+  const tasks = await $.tool.describe({ tool: 'mcp__inbox__tasks', description: 'Maintain tasks.', provider })
+  expect([close, record, order, tasks].map(d => d.isDeferred)).toEqual([false, false, false, false])
+  expect(tasks.description).toContain('when you make a plan')
+})
+
+test('Claude saves the task-tree tool change through its session store and returns the normalized node', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+
+  const result = await $.tool.call({
+    tool: 'mcp__inbox__tasks',
+    operation: 'add',
+    task_id: 't1',
+    title: 'Implement task tool',
+  } as never)
+  const saved = JSON.parse(w.stored.get('s:session-1') ?? '{}')
+
+  expect(result.result).toContain('Task saved: {"id":"t1"')
+  expect(saved.taskTree[0]).toMatchObject({ id: 't1', status: 'queued', title: 'Implement task tool' })
+  expect(saved.taskTree[0].history[0]).toMatchObject({ source: 'agent', kind: 'created' })
 })
 
 test("Claude is asked for a question's context, notes and reason in a new conversation and after it resumes, and not in a conversation an earlier build saved", async ($, on) => {

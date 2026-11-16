@@ -84,11 +84,29 @@ test('a prompt with nothing to tell the agent returns no message', async () => {
   expect(first.message).toBeUndefined()
 })
 
-test('record, close and order_prs are registered with the shared schemas and stay in the tool list', () => {
+test('record, close, order_prs and tasks are registered with the shared schemas and stay in the tool list', () => {
   createInbox(pi(), deps())
-  expect([...w.tools.keys()]).toEqual(['record', 'close', 'order_prs'])
+  expect([...w.tools.keys()]).toEqual(['record', 'close', 'order_prs', 'tasks'])
   expect(w.tools.get('record')).toMatchObject({ loadMode: 'essential', approval: 'read' })
   expect(w.tools.get('record').parameters.properties.kind.enum).toEqual(['question', 'task', 'finding'])
+  expect(w.tools.get('tasks').parameters.properties.operation.enum).toEqual([
+    'add',
+    'update',
+    'move',
+    'complete',
+    'note',
+  ])
+})
+
+test('the tasks tool saves its change through omp session storage', async () => {
+  createInbox(pi(), deps())
+  const result = await w.tools
+    .get('tasks')
+    .execute('call', { operation: 'add', task_id: 't1', title: 'Wire omp task tool' }, undefined, undefined, makeCtx())
+
+  expect(result.content[0].text).toContain('Task saved: {"id":"t1"')
+  expect(state().taskTree[0]).toMatchObject({ id: 't1', status: 'queued', title: 'Wire omp task tool' })
+  expect(state().taskTree[0].history[0]).toMatchObject({ source: 'agent', kind: 'created' })
 })
 
 test('a close call closes the recorded item', async () => {

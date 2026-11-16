@@ -21,6 +21,33 @@ test('Codex’s own tool calls reach their session through the turn metadata', a
   assert.equal((await readState(dir, 's1')).ledger.findings[0]?.title, 'No lint script')
 })
 
+test('Codex registers tasks and saves task-tree edits through the session store', async () => {
+  const { dir, handle, call } = await setup(0)
+  const listed = (await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })) as {
+    result: { tools: { name: string }[] }
+  }
+  assert.ok(listed.result.tools.some(tool => tool.name === 'tasks'))
+
+  const result = await call(
+    'tasks',
+    { operation: 'add', task_id: 't1', title: 'Wire Codex task tool' },
+    { 'x-codex-turn-metadata': { session_id: 's1', thread_id: 's1' } },
+  )
+  assert.match(result.result.content[0]?.text ?? '', /Task saved: \{"id":"t1"/)
+  assert.deepEqual((await readState(dir, 's1')).taskTree[0], {
+    id: 't1',
+    parentId: null,
+    status: 'queued',
+    weight: 1,
+    title: 'Wire Codex task tool',
+    detail: '',
+    notes: [],
+    createdAt: 100,
+    updatedAt: 100,
+    history: [{ at: 100, source: 'agent', kind: 'created' }],
+  })
+})
+
 test("a question Codex records before this build lists the tools is asked only for what 0.3.0's record takes, and after the list for its context, notes and reason", async () => {
   delete (globalThis as Record<symbol, unknown>)[Symbol.for('inbox.listedToolFields')]
   const { handle, call } = await setup(0)

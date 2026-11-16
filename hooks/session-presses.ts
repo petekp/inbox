@@ -132,9 +132,9 @@ export function recorded<S extends Session>(
   fields: ToolFields,
 ): { state: S } & Omit<ToolAnswer, 'ledger'> {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt }
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields)
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields, s.taskTree)
   const ledger = withOrderStatuses(r.ledger, s.prViews.views)
-  const state = linkDialogs({ ...s, ledger }, now)
+  const state = linkDialogs({ ...s, ledger, taskTree: r.taskTree ?? s.taskTree }, now)
   const answered = ledger.items.find(i => !state.ledger.items.some(o => o.id === i.id))
   if (!answered) return { state, result: r.result, personLine: r.personLine }
   const outcome = state.ledger.closed.findLast(c => c.id === answered.id)?.outcome ?? ''

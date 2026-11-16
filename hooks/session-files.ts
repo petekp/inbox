@@ -96,9 +96,9 @@ function savedToolFields(saved: unknown): ToolFields | null {
   const isNames = (v: unknown) => Array.isArray(v) && v.every(f => typeof f === 'string')
   const fields = saved as Partial<ToolFields> | null | undefined
 
-  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs)
-    ? (fields as ToolFields)
-    : null
+  if (!fields || !isNames(fields.record) || !isNames(fields.close) || !isNames(fields.order_prs)) return null
+  if (fields.tasks !== undefined && !isNames(fields.tasks)) return null
+  return { record: fields.record, close: fields.close, order_prs: fields.order_prs, tasks: fields.tasks ?? [] }
 }
 
 /** A saved presence without `statedStep`, which a build of the Progress tab saved and nothing reads. */

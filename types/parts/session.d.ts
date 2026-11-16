@@ -309,4 +309,4 @@ export type Session = {
 }
 
 /** The input fields of each inbox tool, by the tool's name. */
-export type ToolFields = { record: string[]; close: string[]; order_prs: string[] }
+export type ToolFields = { record: string[]; close: string[]; order_prs: string[]; tasks: string[] }

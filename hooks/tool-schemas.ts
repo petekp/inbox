@@ -117,11 +117,38 @@ export const ORDER_SCHEMA = {
   required: ['numbers'],
 }
 
+export const TASKS_SCHEMA = {
+  type: 'object',
+  properties: {
+    operation: {
+      type: 'string',
+      enum: ['add', 'update', 'move', 'complete', 'note'],
+      description: 'Add a task, update its facts, move it, complete it, or add a note.',
+    },
+    task_id: { type: 'string', description: 'A stable id for add, or the existing task id for other operations.' },
+    parent_id: {
+      type: ['string', 'null'],
+      description: 'For add or move: the parent task id. Use null to put the task at the root.',
+    },
+    title: { type: 'string', description: 'For add or update: a short title, at most 100 characters.' },
+    detail: { type: 'string', description: 'For add or update: task detail, at most 2000 characters.' },
+    status: {
+      type: 'string',
+      enum: ['working', 'queued', 'waits-on-other', 'done', 'dropped'],
+      description: 'For add or update: the task status.',
+    },
+    weight: { type: 'number', description: 'For add or update: a sibling-relative weight from 0.1 to 100.' },
+    note: { type: 'string', description: 'For note: a note to append, at most 2000 characters.' },
+  },
+  required: ['operation'],
+}
+
 /** The input fields of each inbox tool in this build. */
 export const TOOL_FIELDS: ToolFields = {
   record: Object.keys(RECORD_SCHEMA.properties),
   close: Object.keys(CLOSE_SCHEMA.properties),
   order_prs: Object.keys(ORDER_SCHEMA.properties),
+  tasks: Object.keys(TASKS_SCHEMA.properties),
 }
 
 /** The input fields of each inbox tool in 0.3.0. A session saved before sessions kept their fields gets these. */
@@ -129,9 +156,10 @@ export const V0_3_TOOL_FIELDS: ToolFields = {
   record: ['kind', 'ask', 'options', 'rec', 'steps', 'design_choice', 'finding_kind', 'title', 'detail', 'path'],
   close: ['id', 'answer', 'reason'],
   order_prs: ['repo', 'numbers', 'label', 'why'],
+  tasks: [],
 }
 
 /** The fields of the inbox tools the session's agent has: those it saved, or 0.3.0's when it saved none. */
 export function sessionToolFields(s: Pick<Session, 'toolFields'>): ToolFields {
-  return s.toolFields ?? V0_3_TOOL_FIELDS
+  return s.toolFields ? { ...s.toolFields, tasks: s.toolFields.tasks ?? [] } : V0_3_TOOL_FIELDS
 }

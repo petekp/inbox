@@ -2141,7 +2141,9 @@ function missingAsNull(err) {
 function savedToolFields(saved) {
   const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
   const fields = saved;
-  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs) ? fields : null;
+  if (!fields || !isNames(fields.record) || !isNames(fields.close) || !isNames(fields.order_prs)) return null;
+  if (fields.tasks !== void 0 && !isNames(fields.tasks)) return null;
+  return { record: fields.record, close: fields.close, order_prs: fields.order_prs, tasks: fields.tasks ?? [] };
 }
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
@@ -2577,10 +2579,36 @@ var ORDER_SCHEMA = {
   },
   required: ["numbers"]
 };
+var TASKS_SCHEMA = {
+  type: "object",
+  properties: {
+    operation: {
+      type: "string",
+      enum: ["add", "update", "move", "complete", "note"],
+      description: "Add a task, update its facts, move it, complete it, or add a note."
+    },
+    task_id: { type: "string", description: "A stable id for add, or the existing task id for other operations." },
+    parent_id: {
+      type: ["string", "null"],
+      description: "For add or move: the parent task id. Use null to put the task at the root."
+    },
+    title: { type: "string", description: "For add or update: a short title, at most 100 characters." },
+    detail: { type: "string", description: "For add or update: task detail, at most 2000 characters." },
+    status: {
+      type: "string",
+      enum: ["working", "queued", "waits-on-other", "done", "dropped"],
+      description: "For add or update: the task status."
+    },
+    weight: { type: "number", description: "For add or update: a sibling-relative weight from 0.1 to 100." },
+    note: { type: "string", description: "For note: a note to append, at most 2000 characters." }
+  },
+  required: ["operation"]
+};
 var TOOL_FIELDS = {
   record: Object.keys(RECORD_SCHEMA.properties),
   close: Object.keys(CLOSE_SCHEMA.properties),
-  order_prs: Object.keys(ORDER_SCHEMA.properties)
+  order_prs: Object.keys(ORDER_SCHEMA.properties),
+  tasks: Object.keys(TASKS_SCHEMA.properties)
 };
 
 // ../hooks/record-links.ts
@@ -3310,7 +3338,7 @@ When a choice can be inferred from the work or is easy to undo, make it and say 
 
 Before you hand the user a step, take it yourself when your tools reach it, such as running a command, reloading or checking a page, or reading a log. When the step changes something other people see, such as merging, releasing or messaging someone, ask for their OK as a question and take the step when they say yes. Record a task only for a step your tools cannot reach, and say in your reply why you cannot take it.
 
-When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
+When asking the user to act, give them the link, path or command, what to do, and how to return the result in your reply. If you cannot read it, such as in their browser, say how to send it.
 
 Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
 
@@ -3321,6 +3349,8 @@ These are not findings. Handle them in the task and your reply instead:
 - A check you could run yourself: run it, or say in your reply that you have not.
 - Progress, status, or an approach you tried and dropped: say it.
 - Something only the user can do or decide, such as an approval, a sign-in or a choice: ask it, and record it as a question or task.
+
+Use ${host.taskTool} for your plan as you plan, start, finish or drop work. Use ${host.recordTool} for questions and user-owned steps.
 
 The latest "inbox:" text beside the user's prompt is the current state. It lists every open item and finding with its id, such as (close id: i35), and anything it does not list is closed. Check it before telling the user that something is open or waits on them. The user never sees the ids, so never write one to the user, not even in parentheses: name an item or finding by what it says, as "the deploy task" or "the migration finding".
 
@@ -3506,6 +3536,7 @@ var CODEX = {
   prsIn: "the PRs section of the Inbox tab",
   recordTool: "mcp__inbox__record",
   closeTool: "mcp__inbox__close",
+  taskTool: "tasks",
   splitsPlanIntoSubjects: true,
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
 };

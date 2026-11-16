@@ -3114,10 +3114,133 @@ function tasksText(tasks) {
 }
 
 // ../hooks/task-tree.ts
+var TASK_HISTORY_LIMIT = 100;
 var TASK_NOTES_LIMIT = 40;
 var TASK_NOTE_LENGTH = 2000;
+var TASK_HISTORY_DETAIL_LENGTH = 2000;
+var TASK_NODE_LIMIT = 200;
+var TASK_DEPTH_LIMIT = 8;
+var TASK_TITLE_LENGTH = 100;
+var TASK_WEIGHT_MIN = 0.1;
+var TASK_WEIGHT_MAX = 100;
+var TASK_HISTORY_SOURCE_LENGTH = 100;
+var failed = (reason) => ({ ok: false, reason });
+var succeeded = (tree) => ({ ok: true, tree });
+function hasTask(tree, id) {
+  return tree.some((task) => task.id === id);
+}
+function boundedHistory(history, event) {
+  return [...history, event].slice(-TASK_HISTORY_LIMIT);
+}
+function eventIsValid(event) {
+  return Number.isFinite(event.at) && event.source.length > 0 && event.source.length <= TASK_HISTORY_SOURCE_LENGTH && (event.detail === undefined || event.detail.length <= TASK_HISTORY_DETAIL_LENGTH);
+}
+function notesAreValid(notes) {
+  return notes.length <= TASK_NOTES_LIMIT && notes.every((note) => note.length <= TASK_NOTE_LENGTH);
+}
 function notesOf(notes) {
   return notes.slice(0, TASK_NOTES_LIMIT).map((note) => note.slice(0, TASK_NOTE_LENGTH));
+}
+function hasValidWeight(weight) {
+  return Number.isFinite(weight) && weight >= TASK_WEIGHT_MIN && weight <= TASK_WEIGHT_MAX;
+}
+function depthUnder(tree, parentId) {
+  let depth = 1;
+  let ancestor = parentId;
+  const seen = new Set;
+  while (ancestor !== null) {
+    if (seen.has(ancestor))
+      return Infinity;
+    seen.add(ancestor);
+    depth++;
+    ancestor = tree.find((node) => node.id === ancestor)?.parentId ?? null;
+  }
+  return depth;
+}
+function subtreeHeight(tree, id, seen = new Set) {
+  if (seen.has(id))
+    return Infinity;
+  const path = new Set(seen).add(id);
+  const children = tree.filter((node) => node.parentId === id);
+  return children.length === 0 ? 1 : 1 + Math.max(...children.map((child) => subtreeHeight(tree, child.id, path)));
+}
+function validTitle(title) {
+  return title.trim().length > 0 && title.length <= TASK_TITLE_LENGTH;
+}
+function createTask(tree, node, source) {
+  if (hasTask(tree, node.id))
+    return failed("duplicate-id");
+  if (node.parentId !== null && !hasTask(tree, node.parentId))
+    return failed("unknown-parent");
+  if (tree.length >= TASK_NODE_LIMIT || depthUnder(tree, node.parentId) > TASK_DEPTH_LIMIT)
+    return failed("limit");
+  if (!validTitle(node.title) || node.detail.length > TASK_HISTORY_DETAIL_LENGTH)
+    return failed("limit");
+  if (!hasValidWeight(node.weight))
+    return failed("invalid-weight");
+  if (!notesAreValid(node.notes) || node.history.length > TASK_HISTORY_LIMIT || !node.history.every(eventIsValid)) {
+    return failed("limit");
+  }
+  const event = { at: node.createdAt, source, kind: "created" };
+  if (!eventIsValid(event))
+    return failed("limit");
+  return succeeded([...tree, { ...node, notes: [...node.notes], history: boundedHistory(node.history, event) }]);
+}
+function updateTask(tree, id, changes, at, source) {
+  const task = tree.find((node) => node.id === id);
+  if (!task)
+    return failed("unknown-task");
+  if (changes.title !== undefined && !validTitle(changes.title) || (changes.detail?.length ?? 0) > TASK_HISTORY_DETAIL_LENGTH)
+    return failed("limit");
+  if (changes.weight !== undefined && !hasValidWeight(changes.weight))
+    return failed("invalid-weight");
+  const event = { at, source, kind: "updated" };
+  if (!eventIsValid(event))
+    return failed("limit");
+  return succeeded(tree.map((node) => node.id === id ? { ...node, ...changes, updatedAt: at, history: boundedHistory(node.history, event) } : node));
+}
+function moveTask(tree, id, parentId, at, source) {
+  const task = tree.find((node) => node.id === id);
+  if (!task)
+    return failed("unknown-task");
+  if (parentId !== null && !hasTask(tree, parentId))
+    return failed("unknown-parent");
+  if (parentId === id)
+    return failed("cycle");
+  let ancestor = parentId;
+  const visited = new Set;
+  while (ancestor !== null) {
+    if (ancestor === id || visited.has(ancestor))
+      return failed("cycle");
+    visited.add(ancestor);
+    ancestor = tree.find((node) => node.id === ancestor)?.parentId ?? null;
+  }
+  if (depthUnder(tree, parentId) - 1 + subtreeHeight(tree, id) > TASK_DEPTH_LIMIT)
+    return failed("limit");
+  const event = { at, source, kind: "moved" };
+  if (!eventIsValid(event))
+    return failed("limit");
+  return succeeded(tree.map((node) => node.id === id ? { ...node, parentId, updatedAt: at, history: boundedHistory(node.history, event) } : node));
+}
+function completeTask(tree, id, at, source) {
+  const task = tree.find((node) => node.id === id);
+  if (!task)
+    return failed("unknown-task");
+  const event = { at, source, kind: "completed" };
+  if (!eventIsValid(event))
+    return failed("limit");
+  return succeeded(tree.map((node) => node.id === id ? { ...node, status: "done", updatedAt: at, history: boundedHistory(node.history, event) } : node));
+}
+function addTaskNote(tree, id, note, at, source) {
+  const task = tree.find((node) => node.id === id);
+  if (!task)
+    return failed("unknown-task");
+  if (task.notes.length >= TASK_NOTES_LIMIT || note.length > TASK_NOTE_LENGTH)
+    return failed("limit");
+  const event = { at, source, kind: "note", detail: note };
+  if (!eventIsValid(event))
+    return failed("limit");
+  return succeeded(tree.map((node) => node.id === id ? { ...node, notes: [...node.notes, note], updatedAt: at, history: boundedHistory(node.history, event) } : node));
 }
 function taskTreeFromStatus(status) {
   if (!status)
@@ -5209,7 +5332,11 @@ function staleSessionFiles(files, keep) {
 function savedToolFields(saved) {
   const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
   const fields = saved;
-  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs) ? fields : null;
+  if (!fields || !isNames(fields.record) || !isNames(fields.close) || !isNames(fields.order_prs))
+    return null;
+  if (fields.tasks !== undefined && !isNames(fields.tasks))
+    return null;
+  return { record: fields.record, close: fields.close, order_prs: fields.order_prs, tasks: fields.tasks ?? [] };
 }
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
@@ -6487,16 +6614,181 @@ var ORDER_SCHEMA = {
   },
   required: ["numbers"]
 };
+var TASKS_SCHEMA = {
+  type: "object",
+  properties: {
+    operation: {
+      type: "string",
+      enum: ["add", "update", "move", "complete", "note"],
+      description: "Add a task, update its facts, move it, complete it, or add a note."
+    },
+    task_id: { type: "string", description: "A stable id for add, or the existing task id for other operations." },
+    parent_id: {
+      type: ["string", "null"],
+      description: "For add or move: the parent task id. Use null to put the task at the root."
+    },
+    title: { type: "string", description: "For add or update: a short title, at most 100 characters." },
+    detail: { type: "string", description: "For add or update: task detail, at most 2000 characters." },
+    status: {
+      type: "string",
+      enum: ["working", "queued", "waits-on-other", "done", "dropped"],
+      description: "For add or update: the task status."
+    },
+    weight: { type: "number", description: "For add or update: a sibling-relative weight from 0.1 to 100." },
+    note: { type: "string", description: "For note: a note to append, at most 2000 characters." }
+  },
+  required: ["operation"]
+};
 var TOOL_FIELDS = {
   record: Object.keys(RECORD_SCHEMA.properties),
   close: Object.keys(CLOSE_SCHEMA.properties),
-  order_prs: Object.keys(ORDER_SCHEMA.properties)
+  order_prs: Object.keys(ORDER_SCHEMA.properties),
+  tasks: Object.keys(TASKS_SCHEMA.properties)
 };
 var V0_3_TOOL_FIELDS = {
   record: ["kind", "ask", "options", "rec", "steps", "design_choice", "finding_kind", "title", "detail", "path"],
   close: ["id", "answer", "reason"],
-  order_prs: ["repo", "numbers", "label", "why"]
+  order_prs: ["repo", "numbers", "label", "why"],
+  tasks: []
 };
+
+// ../hooks/tool-descriptions.ts
+var LINK_DESCRIPTION = "Write links as [label](https://\u2026); the inbox shows the label, and links are clickable where the look allows. Only https links open.";
+function orderDescription(host) {
+  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
+}
+function recordDescription(host) {
+  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing. ${LINK_DESCRIPTION}
+- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
+- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps, and fill detail with what holds the task up and what the step leads to. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
+- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, PR checks, conflicts, review threads or readiness, which ${host.prsIn} shows; anything the user already decided; todos or ideas the user mentioned; problems in your own change; progress; and anything only the user can do or decide. Handle those in your reply, or record them as a question or task.
+For any kind with a Markdown report the user should read, give its absolute local path in document. The inbox checks the file and shows a short excerpt; do not use this field for a file they should edit.
+Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`;
+}
+var CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`;
+function tasksDescription(host) {
+  return `Keep your task tree current when you make a plan, start work, finish work or drop work. Add, update, move, complete or note tasks. A task is your own work plan, never a question or a step for the user; use ${host.recordTool} for those.`;
+}
+
+// ../hooks/task-tool.ts
+var TASK_ID_LENGTH = 100;
+var TASK_STATUSES = ["working", "queued", "waits-on-other", "done", "dropped"];
+function taskId(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function taskText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function failure2(tree, result, id) {
+  if (result.ok)
+    return { taskTree: result.tree, result: `Task saved: ${JSON.stringify(result.tree.find((task) => task.id === id))}` };
+  const detail = {
+    "duplicate-id": `task_id "${id}" already exists; choose a new id.`,
+    "unknown-task": `task_id "${id}" is not in this session's task tree; use an existing id or add it first.`,
+    "unknown-parent": "parent_id is not in this session's task tree; use an existing task id or null for the root.",
+    cycle: "this move would create a cycle; choose a parent outside the task's descendants or null for the root.",
+    limit: `this change exceeds a task-tree limit (${TASK_NODE_LIMIT} tasks, ${TASK_DEPTH_LIMIT} levels, or a field/history limit); reduce it or choose another parent.`,
+    "invalid-weight": `weight must be a finite number from ${TASK_WEIGHT_MIN} to ${TASK_WEIGHT_MAX}.`
+  };
+  return { taskTree: tree, result: `Not saved: ${detail[result.reason]}` };
+}
+function taskTreeAnswer(tree, input, now) {
+  const operation = input.operation;
+  if (!["add", "update", "move", "complete", "note"].includes(String(operation)))
+    return { taskTree: tree, result: "Not saved: operation must be add, update, move, complete or note." };
+  const id = taskId(input.task_id);
+  if (!id || id.length > TASK_ID_LENGTH)
+    return { taskTree: tree, result: `Not saved: task_id must be 1\u2013${TASK_ID_LENGTH} characters.` };
+  let result;
+  if (operation === "add") {
+    const title = taskText(input.title);
+    if (!title)
+      return { taskTree: tree, result: "Not saved: add needs a non-empty title." };
+    if (title.length > TASK_TITLE_LENGTH)
+      return { taskTree: tree, result: `Not saved: title must be at most ${TASK_TITLE_LENGTH} characters.` };
+    const detail = taskText(input.detail);
+    if (detail.length > TASK_HISTORY_DETAIL_LENGTH)
+      return { taskTree: tree, result: `Not saved: detail must be at most ${TASK_HISTORY_DETAIL_LENGTH} characters.` };
+    const status = input.status === undefined ? "queued" : input.status;
+    if (typeof status !== "string" || !TASK_STATUSES.includes(status))
+      return { taskTree: tree, result: `Not saved: status must be ${TASK_STATUSES.join(", ")}.` };
+    const weight = input.weight === undefined ? 1 : input.weight;
+    if (typeof weight !== "number" || !Number.isFinite(weight) || weight < TASK_WEIGHT_MIN || weight > TASK_WEIGHT_MAX)
+      return {
+        taskTree: tree,
+        result: `Not saved: weight must be a finite number from ${TASK_WEIGHT_MIN} to ${TASK_WEIGHT_MAX}.`
+      };
+    const parent = input.parent_id === undefined ? null : input.parent_id;
+    if (parent !== null && (typeof parent !== "string" || !parent.trim() || parent.length > TASK_ID_LENGTH))
+      return {
+        taskTree: tree,
+        result: `Not saved: parent_id must be an existing task id up to ${TASK_ID_LENGTH} characters, or null.`
+      };
+    const node = {
+      id,
+      parentId: typeof parent === "string" ? parent.trim() : null,
+      status,
+      weight,
+      title,
+      detail,
+      notes: [],
+      createdAt: now,
+      updatedAt: now,
+      history: []
+    };
+    result = createTask(tree, node, "agent");
+  } else if (operation === "update") {
+    const changes = {};
+    if (input.title !== undefined) {
+      const title = taskText(input.title);
+      if (!title)
+        return { taskTree: tree, result: "Not saved: title must not be empty." };
+      if (title.length > TASK_TITLE_LENGTH)
+        return { taskTree: tree, result: `Not saved: title must be at most ${TASK_TITLE_LENGTH} characters.` };
+      changes.title = title;
+    }
+    if (input.detail !== undefined) {
+      const detail = taskText(input.detail);
+      if (detail.length > TASK_HISTORY_DETAIL_LENGTH)
+        return { taskTree: tree, result: `Not saved: detail must be at most ${TASK_HISTORY_DETAIL_LENGTH} characters.` };
+      changes.detail = detail;
+    }
+    if (input.status !== undefined) {
+      if (typeof input.status !== "string" || !TASK_STATUSES.includes(input.status))
+        return { taskTree: tree, result: `Not saved: status must be ${TASK_STATUSES.join(", ")}.` };
+      changes.status = input.status;
+    }
+    if (input.weight !== undefined) {
+      if (typeof input.weight !== "number" || !Number.isFinite(input.weight) || input.weight < TASK_WEIGHT_MIN || input.weight > TASK_WEIGHT_MAX)
+        return {
+          taskTree: tree,
+          result: `Not saved: weight must be a finite number from ${TASK_WEIGHT_MIN} to ${TASK_WEIGHT_MAX}.`
+        };
+      changes.weight = input.weight;
+    }
+    if (Object.keys(changes).length === 0)
+      return { taskTree: tree, result: "Not saved: update needs title, detail, status or weight to change." };
+    result = updateTask(tree, id, changes, now, "agent");
+  } else if (operation === "move") {
+    const parent = input.parent_id;
+    if (parent !== null && (typeof parent !== "string" || !parent.trim() || parent.length > TASK_ID_LENGTH))
+      return {
+        taskTree: tree,
+        result: `Not saved: move needs an existing parent_id up to ${TASK_ID_LENGTH} characters, or null for the root.`
+      };
+    result = moveTask(tree, id, typeof parent === "string" ? parent.trim() : null, now, "agent");
+  } else if (operation === "complete") {
+    result = completeTask(tree, id, now, "agent");
+  } else {
+    const note = taskText(input.note);
+    if (!note)
+      return { taskTree: tree, result: "Not saved: note needs non-empty text." };
+    if (note.length > TASK_NOTE_LENGTH)
+      return { taskTree: tree, result: `Not saved: note must be at most ${TASK_NOTE_LENGTH} characters.` };
+    result = addTaskNote(tree, id, note, now, "agent");
+  }
+  return failure2(tree, result, id);
+}
 
 // ../hooks/record-links.ts
 var FENCE2 = /```[\s\S]*?```/g;
@@ -6562,27 +6854,15 @@ function unlinkedRefsAnswer(found) {
 // ../hooks/tools.ts
 var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
 var MAX_ITEM_DETAIL = 1200;
-var LINK_DESCRIPTION = "Write links as [label](https://\u2026); the inbox shows the label, and links are clickable where the look allows. Only https links open.";
-function orderDescription(host) {
-  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
-}
-function recordDescription(host) {
-  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing. ${LINK_DESCRIPTION}
-- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
-- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps, and fill detail with what holds the task up and what the step leads to. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
-- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, PR checks, conflicts, review threads or readiness, which ${host.prsIn} shows; anything the user already decided; todos or ideas the user mentioned; problems in your own change; progress; and anything only the user can do or decide. Handle those in your reply, or record them as a question or task.
-For any kind with a Markdown report the user should read, give its absolute local path in document. The inbox checks the file and shows a short excerpt; do not use this field for a file they should edit.
-Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`;
-}
-var CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`;
 function agentTools(host) {
   return [
     { name: "record", description: recordDescription(host), inputSchema: RECORD_SCHEMA },
     { name: "close", description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
-    { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA }
+    { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA },
+    { name: "tasks", description: tasksDescription(host), inputSchema: TASKS_SCHEMA }
   ];
 }
-function toolAnswer(host, ledger, tool, input, now, presses, fields) {
+function toolAnswer(host, ledger, tool, input, now, presses, fields, taskTree = []) {
   switch (tool) {
     case "record":
       return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields);
@@ -6590,6 +6870,8 @@ function toolAnswer(host, ledger, tool, input, now, presses, fields) {
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
       return orderPrs(host, ledger, input, now, presses.lastActions);
+    case "tasks":
+      return { ledger, ...taskTreeAnswer(taskTree, input, now), personLine: null };
   }
 }
 function cut(value, max) {
@@ -7439,9 +7721,9 @@ function completedAttempt(state, deliveryId, outcome) {
 }
 function recorded(host, s, tool, args, now, fields) {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt };
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields);
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields, s.taskTree);
   const ledger = withOrderStatuses(r.ledger, s.prViews.views);
-  const state = linkDialogs({ ...s, ledger }, now);
+  const state = linkDialogs({ ...s, ledger, taskTree: r.taskTree ?? s.taskTree }, now);
   const answered = ledger.items.find((i) => !state.ledger.items.some((o) => o.id === i.id));
   if (!answered)
     return { state, result: r.result, personLine: r.personLine };
@@ -10098,7 +10380,8 @@ var CLIENTS = {
       "option-links": { kind: "full" },
       "item-document": { kind: "full" },
       "document-preview": { kind: "full" },
-      "record-link-guard": { kind: "full" }
+      "record-link-guard": { kind: "full" },
+      timeline: { kind: "full" }
     }
   },
   codex: {
@@ -10253,7 +10536,8 @@ var CLIENTS = {
       "option-links": { kind: "full" },
       "item-document": { kind: "full" },
       "document-preview": { kind: "full" },
-      "record-link-guard": { kind: "full" }
+      "record-link-guard": { kind: "full" },
+      timeline: { kind: "full" }
     }
   },
   omp: {
@@ -10369,7 +10653,8 @@ var CLIENTS = {
       },
       "item-document": { kind: "full" },
       "document-preview": { kind: "full" },
-      "record-link-guard": { kind: "full" }
+      "record-link-guard": { kind: "full" },
+      timeline: { kind: "full" }
     }
   }
 };
@@ -10471,7 +10756,7 @@ When a choice can be inferred from the work or is easy to undo, make it and say 
 
 Before you hand the user a step, take it yourself when your tools reach it, such as running a command, reloading or checking a page, or reading a log. When the step changes something other people see, such as merging, releasing or messaging someone, ask for their OK as a question and take the step when they say yes. Record a task only for a step your tools cannot reach, and say in your reply why you cannot take it.
 
-When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
+When asking the user to act, give them the link, path or command, what to do, and how to return the result in your reply. If you cannot read it, such as in their browser, say how to send it.
 
 Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
 
@@ -10482,6 +10767,8 @@ These are not findings. Handle them in the task and your reply instead:
 - A check you could run yourself: run it, or say in your reply that you have not.
 - Progress, status, or an approach you tried and dropped: say it.
 - Something only the user can do or decide, such as an approval, a sign-in or a choice: ask it, and record it as a question or task.
+
+Use ${host.taskTool} for your plan as you plan, start, finish or drop work. Use ${host.recordTool} for questions and user-owned steps.
 
 The latest "inbox:" text beside the user's prompt is the current state. It lists every open item and finding with its id, such as (close id: i35), and anything it does not list is closed. Check it before telling the user that something is open or waits on them. The user never sees the ids, so never write one to the user, not even in parentheses: name an item or finding by what it says, as "the deploy task" or "the migration finding".
 
@@ -11592,13 +11879,15 @@ var OMP = {
   prsIn: "the PRs tab of the /inbox panel",
   recordTool: "record",
   closeTool: "close",
+  taskTool: "tasks",
   splitsPlanIntoSubjects: false,
   intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only counts: one for your questions and their tasks together, one for your findings, and one for their PRs that wait on them."
 };
 var TOOL_LABELS = {
   record: "Inbox record",
   close: "Inbox close",
-  order_prs: "Inbox PR order"
+  order_prs: "Inbox PR order",
+  tasks: "Inbox tasks"
 };
 
 // src/demo.ts
@@ -13825,7 +14114,7 @@ function createInbox(pi, deps = defaultDeps) {
   }
   const dropTools = async () => {
     const active = pi.getActiveTools();
-    const kept = active.filter((name) => name !== "record" && name !== "close");
+    const kept = active.filter((name) => !["record", "close", "tasks"].includes(name));
     if (kept.length !== active.length)
       await pi.setActiveTools(kept);
   };

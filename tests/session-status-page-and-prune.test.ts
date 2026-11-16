@@ -116,9 +116,11 @@ test('a session saved before sessions kept their tool fields, or with fields tha
   const saved = (toolFields: unknown) => upgradeSession({ ...emptySession(), toolFields } as never).toolFields
 
   expect(upgradeSession({}).toolFields).toBeNull()
-  expect(saved({ record: 'kind,ask', close: [], order_prs: [] })).toBeNull()
-  expect(saved({ record: [1], close: [], order_prs: [] })).toBeNull()
+  expect(saved({ record: 'kind,ask', close: [], order_prs: [], tasks: [] })).toBeNull()
+  expect(saved({ record: [1], close: [], order_prs: [], tasks: [] })).toBeNull()
   expect(saved({ record: ['kind'], close: [] })).toBeNull()
+  expect(saved({ record: [], close: [], order_prs: [], tasks: 'operation' })).toBeNull()
+  expect(saved({ record: ['kind'], close: [], order_prs: [] })).toMatchObject({ tasks: [] })
   expect(saved(TOOL_FIELDS)).toEqual(TOOL_FIELDS)
 })
 

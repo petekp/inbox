@@ -808,7 +808,7 @@ export type Session = {
 }
 
 /** The input fields of each inbox tool, by the tool's name. */
-export type ToolFields = { record: string[]; close: string[]; order_prs: string[] }
+export type ToolFields = { record: string[]; close: string[]; order_prs: string[]; tasks: string[] }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -906,6 +906,16 @@ declare module 'claude-code' {
       numbers: number[]
       label?: string
       why?: string
+    }
+    mcp__inbox__tasks: {
+      operation: 'add' | 'update' | 'move' | 'complete' | 'note'
+      task_id?: string
+      parent_id?: string | null
+      title?: string
+      detail?: string
+      status?: 'working' | 'queued' | 'waits-on-other' | 'done' | 'dropped'
+      weight?: number
+      note?: string
     }
   }
 }

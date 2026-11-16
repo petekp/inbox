@@ -47,7 +47,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-upgrade.ts` | Shared module. `upgradeStatus`, which reads a saved Status from this build or an earlier one and leaves out anything wrongly shaped. |
 | `hooks/status-upgrade-goal.ts` | Shared module. The goal's fields of a saved Status, for `upgradeStatus`. Only an object loads as a goal. |
 | `hooks/children.ts` | Shared module. How each host's events become the Status tab's children: the task notice parser, the Herdr delegate steps, a delegate's name (its Herdr name in words, then the focus its session publishes), the end of a delegate Herdr no longer shows working, the cut-off at a reload, and the gate that limits how often a child's activity is saved. |
-| `hooks/model-text.ts` | Shared module. The guidance `guidanceText` builds, the `close` tool's description that carries it, and the `Host` and `Told` types. Each host's `Host` names its agent, surface and the `record` and `close` tools. |
+| `hooks/model-text.ts` | Shared module. Agent guidance, the `close` description that carries it, and host names for the agent and inbox tools. |
 | `hooks/ledger-prompt.ts` | Shared module. What the ledger call reads: `systemText`, and the prompt `buildPrompt` builds from the ledger and the new exchange. |
 | `hooks/catch-up-text.ts` | Shared module. The ledger call's catch-up prompts, and the activity lines that a turn's tool calls and dialogs add. |
 | `hooks/call-record.ts` | Shared module. Sends one model call and notes what the host reported, and saves a call with no usable answer, or the first usable answer after one, in its call's record in `callFailures`. |
@@ -60,7 +60,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/saved-check-keys.ts` | Shared module. `withCheckKeys`, which `upgradeSession` runs to rename the checks an earlier build saved by name alone, in last actions, sent rows and a PR order's recorded statuses, to each check's `checkKey`. |
 | `hooks/session-turns.ts` | Shared module. A turn's start and end, each prompt and the press that sent it, turn activity, and what a shell command's output shows. `endTurn` queues the turn's exchange, and `applied` applies the ledger call's answer to it. |
 | `hooks/session-status.ts` | Shared module. Saving the Status call's answer or why it failed, and when a running turn's Status call is due. Whether an update or a catch-up is due, and `appliedCatchUp`, which applies a catch-up's answer. A forked conversation's ledger, and when a look at the Status starts and ends. |
-| `hooks/session-presses.ts` | Shared module. `pressOn` applies a press to a session, and `completedAttempt` records the outcome of sending a press's message. `recorded` applies the agent's `record` and `close` calls. Also the rows a look holds in place, `pruned`, which drops PR views no look needs, and `withFetchedPrs`, which merges fetched PRs into the session. |
+| `hooks/session-presses.ts` | Shared module. Applies presses and tool calls to a session, holds rows in place, prunes PR views and merges fetched PRs. |
 | `hooks/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including the PRs tab. `showsRunningMark` says whether a text look draws a running mark. |
 | `hooks/conversation.ts` | Shared module. `flattenConversation` turns a conversation's `Turn`s into the text a catch-up reads, and clips it. Each host maps its own conversation to turns. |
 | `hooks/clients.ts` | Shared module. The `FeatureId` list and host identity types. |
@@ -87,8 +87,10 @@ Part of [the look map](../looks.md#files).
 | `hooks/pr-views.ts` | Shared module. The PR blocks a look draws and their order, which PR views a session keeps, and whether the person dismissed a PR. |
 | `hooks/pr-order.ts` | Shared module. The agent's PR order: the rank before a PR's number, the order's lines above the PR blocks, the statuses it records, and its Rank again button. |
 | `hooks/pr-press.ts` | Shared module. The PR press types, the open or refresh each press runs, the row each press records on, and the helpers the PR button plans share, which add "again" to a label, add Try again, and mark the button whose press is out. |
-| `hooks/tools.ts` | Shared module. The record and close tools, and `agentTools`, the one list of their names, descriptions and schemas that every host and eval probe registers. Each call's answer holds the text the agent reads and the line the person sees under the call. |
-| `hooks/tool-schemas.ts` | Shared module. The input schemas of the record, close and order_prs tools, with the description of each argument the agent reads. Their tool fields: this build's in `TOOL_FIELDS`, 0.3.0's in `V0_3_TOOL_FIELDS`, and a session's in `sessionToolFields`. |
+| `hooks/tools.ts` | Shared tool list, schemas and answers registered by every host. |
+| `hooks/tool-descriptions.ts` | Shared descriptions for every agent tool. |
+| `hooks/task-tool.ts` | `taskTreeAnswer` validates calls and applies T1 task-tree operations. |
+| `hooks/tool-schemas.ts` | Shared tool schemas and the tool fields saved by each session. |
 | `hooks/question-checks.ts` | Shared module. A recorded question's body, its context and a note on each option, and how a record of the open question replaces them. What a recorded question or task lacks, which the record tool's answer names so the agent can record it again, including an approval with nothing to look at. It names only fields the agent's record tool has. |
 | `hooks/record-links.ts` | Shared module. The PR and issue references a `record` call names without a link, and the answer that refuses the call and names them. |
 | `hooks/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |

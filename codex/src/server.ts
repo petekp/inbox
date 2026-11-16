@@ -161,7 +161,8 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
     switch (name) {
       case 'record':
       case 'close':
-      case 'order_prs': {
+      case 'order_prs':
+      case 'tasks': {
         let result = ''
         const toolInput = name === 'record' ? await withDocumentPreview(args, documentFile) : args
         await codexStore(dir, id, now, deps.onWrite).update(s => {

@@ -33,5 +33,15 @@ declare module 'claude-code' {
       label?: string
       why?: string
     }
+    mcp__inbox__tasks: {
+      operation: 'add' | 'update' | 'move' | 'complete' | 'note'
+      task_id?: string
+      parent_id?: string | null
+      title?: string
+      detail?: string
+      status?: 'working' | 'queued' | 'waits-on-other' | 'done' | 'dropped'
+      weight?: number
+      note?: string
+    }
   }
 }

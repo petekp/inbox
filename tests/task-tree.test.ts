@@ -5,6 +5,9 @@ import {
   TASK_HISTORY_LIMIT,
   TASK_NOTE_LENGTH,
   TASK_NOTES_LIMIT,
+  TASK_DEPTH_LIMIT,
+  TASK_NODE_LIMIT,
+  TASK_TITLE_LENGTH,
   addTaskNote,
   appendTaskHistory,
   completeTask,
@@ -105,6 +108,34 @@ test('tree operations refuse duplicate ids, unknown ids and parents, cycles, inv
     ok: false,
     reason: 'limit',
   })
+  expect(createTask(tree, node('long-title', { title: 'x'.repeat(TASK_TITLE_LENGTH + 1) }), 'agent')).toEqual({
+    ok: false,
+    reason: 'limit',
+  })
+  expect(updateTask(tree, 'parent', { title: 'x'.repeat(TASK_TITLE_LENGTH + 1) }, 2, 'agent')).toEqual({
+    ok: false,
+    reason: 'limit',
+  })
+  expect(
+    createTask(
+      Array.from({ length: TASK_NODE_LIMIT }, (_, i) => node(`n${i}`)),
+      node('overflow'),
+      'agent',
+    ),
+  ).toEqual({
+    ok: false,
+    reason: 'limit',
+  })
+  const tooDeep = Array.from({ length: TASK_DEPTH_LIMIT }, (_, i) =>
+    node(`d${i}`, { parentId: i === 0 ? null : `d${i - 1}` }),
+  )
+  expect(createTask(tooDeep, node('too-deep', { parentId: `d${TASK_DEPTH_LIMIT - 1}` }), 'agent')).toEqual({
+    ok: false,
+    reason: 'limit',
+  })
+  expect(moveTask(tooDeep, 'd0', `d${TASK_DEPTH_LIMIT - 1}`, 2, 'agent')).toEqual({ ok: false, reason: 'cycle' })
+  const deepTarget = [...tooDeep, node('target', { parentId: 'd7' }), node('other')]
+  expect(moveTask(deepTarget, 'other', 'target', 2, 'agent')).toEqual({ ok: false, reason: 'limit' })
 })
 
 test('notes refuse their count limit and history keeps only the newest bounded events', () => {

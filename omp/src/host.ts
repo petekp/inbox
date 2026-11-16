@@ -252,10 +252,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
-  /** Takes record and close out of a session nobody watches, so its agent does not spend calls on them. */
+  /** Takes inbox-only tools out of a session nobody watches, so its agent does not spend calls on them. */
   const dropTools = async () => {
     const active = pi.getActiveTools()
-    const kept = active.filter(name => name !== 'record' && name !== 'close')
+    const kept = active.filter(name => !['record', 'close', 'tasks'].includes(name))
     if (kept.length !== active.length) await pi.setActiveTools(kept)
   }
 

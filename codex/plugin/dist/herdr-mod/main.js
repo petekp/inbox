@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T01:54:07.361Z. 210483 characters follow.
+// Built at 2026-11-16T02:24:06.684Z. 210675 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2649,7 +2649,11 @@ var isSessionFile = (name) => SESSION_FILE.test(name);
 function savedToolFields(saved) {
   const isNames = (v) => Array.isArray(v) && v.every((f) => typeof f === "string");
   const fields = saved;
-  return fields && isNames(fields.record) && isNames(fields.close) && isNames(fields.order_prs) ? fields : null;
+  if (!fields || !isNames(fields.record) || !isNames(fields.close) || !isNames(fields.order_prs))
+    return null;
+  if (fields.tasks !== undefined && !isNames(fields.tasks))
+    return null;
+  return { record: fields.record, close: fields.close, order_prs: fields.order_prs, tasks: fields.tasks ?? [] };
 }
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};

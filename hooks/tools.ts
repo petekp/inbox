@@ -7,35 +7,19 @@ import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
 import { isDismissed } from './pr-views'
 import { bodyChanges, missingText, questionBody, withBody } from './question-checks'
-import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA, V0_3_TOOL_FIELDS } from './tool-schemas'
-import type { Closed, Help, Item, LastAction, Ledger, ToolFields } from '../types'
+import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA, TASKS_SCHEMA, V0_3_TOOL_FIELDS } from './tool-schemas'
+import { CLOSE_DESCRIPTION, orderDescription, recordDescription, tasksDescription } from './tool-descriptions'
+import { taskTreeAnswer } from './task-tool'
+import type { Closed, Help, Item, LastAction, Ledger, TaskTree, ToolFields } from '../types'
 import { recordLinksAnswer } from './record-links'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 const MAX_ITEM_DETAIL = 1200
-const LINK_DESCRIPTION =
-  'Write links as [label](https://…); the inbox shows the label, and links are clickable where the look allows. Only https links open.'
-
-function orderDescription(host: Host): string {
-  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`
-}
-
-function recordDescription(host: Host): string {
-  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing. ${LINK_DESCRIPTION}
-- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
-- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps, and fill detail with what holds the task up and what the step leads to. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
-- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, PR checks, conflicts, review threads or readiness, which ${host.prsIn} shows; anything the user already decided; todos or ideas the user mentioned; problems in your own change; progress; and anything only the user can do or decide. Handle those in your reply, or record them as a question or task.
-For any kind with a Markdown report the user should read, give its absolute local path in document. The inbox checks the file and shows a short excerpt; do not use this field for a file they should edit.
-Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`
-}
-
-const CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`
-
-const AGENT_TOOLS = ['record', 'close', 'order_prs'] as const
+const AGENT_TOOLS = ['record', 'close', 'order_prs', 'tasks'] as const
 
 export type AgentTool = (typeof AGENT_TOOLS)[number]
 
-/** The tools the agent calls. A host registers these through its own API and answers each call with `toolAnswer`. */
+/** Shared tool definitions registered and answered by every host. */
 export function agentTools(
   host: Host,
 ): { name: AgentTool; description: string; inputSchema: Record<string, unknown> }[] {
@@ -43,6 +27,7 @@ export function agentTools(
     { name: 'record', description: recordDescription(host), inputSchema: RECORD_SCHEMA },
     { name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
     { name: 'order_prs', description: orderDescription(host), inputSchema: ORDER_SCHEMA },
+    { name: 'tasks', description: tasksDescription(host), inputSchema: TASKS_SCHEMA },
   ]
 }
 
@@ -50,13 +35,10 @@ export function isAgentTool(name: string): name is AgentTool {
   return (AGENT_TOOLS as readonly string[]).includes(name)
 }
 
-/** The person's latest press on each row, and when the running turn started, or null when the host did not say. */
+/** Latest row actions and the main turn's start, if known. */
 type Presses = { lastActions: Record<string, LastAction>; turnStartedAt: number | null }
 
-/**
- * The answer to a call of one of `agentTools`. `fields` are the input fields of the tools the agent has, which can be
- * an older build's, so the answer never asks for a field the agent cannot send.
- */
+/** Answers a tool call using the fields that agent has. */
 export function toolAnswer(
   host: Host,
   ledger: Ledger,
@@ -65,6 +47,7 @@ export function toolAnswer(
   now: number,
   presses: Presses,
   fields: ToolFields,
+  taskTree: TaskTree = [],
 ): ToolAnswer {
   switch (tool) {
     case 'record':
@@ -75,6 +58,8 @@ export function toolAnswer(
       return recordClose(host, ledger, input, now, presses)
     case 'order_prs':
       return orderPrs(host, ledger, input, now, presses.lastActions)
+    case 'tasks':
+      return { ledger, ...taskTreeAnswer(taskTree, input, now), personLine: null }
   }
 }
 
@@ -108,11 +93,8 @@ function list(value: unknown, max: number, each: number, inline = false): string
     : []
 }
 
-/**
- * A `record` or `close` call's answer. `result` is the text the agent reads back. `personLine` is the line the person
- * sees under the call in the conversation, or null when the call changed nothing in the inbox.
- */
-export type ToolAnswer = { ledger: Ledger; result: string; personLine: string | null }
+/** The agent's result and the optional line shown to the person under the call. */
+export type ToolAnswer = { ledger: Ledger; taskTree?: TaskTree; result: string; personLine: string | null }
 
 /** What follows an answer whose change the user sees now, when the store refused to save the session as full. */
 export const NOT_SAVED = "Not saved: the inbox's store is full, so this change is lost if this session restarts."

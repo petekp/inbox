@@ -9,6 +9,7 @@ export const OMP: Host = {
   prsIn: 'the PRs tab of the /inbox panel',
   recordTool: 'record',
   closeTool: 'close',
+  taskTool: 'tasks',
   splitsPlanIntoSubjects: false,
   intro:
     "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only counts: one for your questions and their tasks together, one for your findings, and one for their PRs that wait on them.",
@@ -19,4 +20,5 @@ export const TOOL_LABELS: Record<AgentTool, string> = {
   record: 'Inbox record',
   close: 'Inbox close',
   order_prs: 'Inbox PR order',
+  tasks: 'Inbox tasks',
 }

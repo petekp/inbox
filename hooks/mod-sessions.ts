@@ -33,6 +33,11 @@ export function isCurrent(owner: Owner): boolean {
 
 export const MAX_TRIES = 20
 
+/** Whether a session change touches saved fields; turn activity alone stays in memory. */
+export function hasSavedChange(before: Session, after: Session): boolean {
+  return (Object.keys(after) as (keyof Session)[]).some(key => key !== 'turn' && before[key] !== after[key])
+}
+
 /** A session change that landed: the session it read and the one it wrote, and whether that session is the drawn one. */
 export type Changed = { before: Session; after: Session; isDrawn: boolean }
 
@@ -74,7 +79,9 @@ export function withoutRowActions(lastActions: Record<string, LastAction>): Reco
 
 /** The mod's answer to an inbox tool call in `s`, which asks only for fields the conversation's agent has. */
 export function answerToolCall(s: Session, tool: AgentTool, input: Record<string, unknown>, now: number) {
-  return recorded(CLAUDE_CODE, s, tool, input, now, sessionToolFields(s))
+  const answer = recorded(CLAUDE_CODE, s, tool, input, now, sessionToolFields(s))
+
+  return { ...answer, changedSavedState: hasSavedChange(s, answer.state) }
 }
 
 /** How the mod came to load a conversation: as the mod started, or after /clear, /resume or a fork in the session. */

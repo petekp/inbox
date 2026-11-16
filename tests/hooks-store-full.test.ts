@@ -33,6 +33,25 @@ test('while the store is full, a finding Claude records shows to the person, its
   expect(w.stored.get('s:session-1')).toContain('Retry loop never backs off')
 })
 
+test('while the store is full, a task change Claude makes says it is not saved', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  w.storeLimit = storedLength()
+
+  const result = await $.tool.call({
+    tool: 'mcp__inbox__tasks',
+    operation: 'add',
+    task_id: 't1',
+    title: 'Implement task tool',
+  } as never)
+
+  expect(result.result).toContain('Task saved:')
+  expect(result.result).toContain(NOT_SAVED)
+  expect(JSON.parse(w.stored.get('s:session-1') ?? '{}').taskTree).toEqual([])
+})
+
 test('while the store is full, a typed reply and an answer button still reach Claude', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

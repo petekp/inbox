@@ -85,6 +85,7 @@ export type FeatureId =
   | 'item-document'
   | 'document-preview'
   | 'record-link-guard'
+  | 'timeline'
 
 export { CLIENTS } from './client-support'
 

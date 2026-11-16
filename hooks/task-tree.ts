@@ -4,6 +4,11 @@ export const TASK_HISTORY_LIMIT = 100
 export const TASK_NOTES_LIMIT = 40
 export const TASK_NOTE_LENGTH = 2000
 export const TASK_HISTORY_DETAIL_LENGTH = 2000
+export const TASK_NODE_LIMIT = 200
+export const TASK_DEPTH_LIMIT = 8
+export const TASK_TITLE_LENGTH = 100
+export const TASK_WEIGHT_MIN = 0.1
+export const TASK_WEIGHT_MAX = 100
 const TASK_HISTORY_SOURCE_LENGTH = 100
 
 type TaskTreeError = 'duplicate-id' | 'unknown-task' | 'unknown-parent' | 'cycle' | 'limit' | 'invalid-weight'
@@ -39,13 +44,40 @@ function notesOf(notes: string[]): string[] {
 }
 
 function hasValidWeight(weight: number): boolean {
-  return Number.isFinite(weight) && weight > 0
+  return Number.isFinite(weight) && weight >= TASK_WEIGHT_MIN && weight <= TASK_WEIGHT_MAX
+}
+
+/** Depth of a new node under `parentId`, counting roots as level one. */
+function depthUnder(tree: TaskTree, parentId: string | null): number {
+  let depth = 1
+  let ancestor = parentId
+  const seen = new Set<string>()
+  while (ancestor !== null) {
+    if (seen.has(ancestor)) return Infinity
+    seen.add(ancestor)
+    depth++
+    ancestor = tree.find(node => node.id === ancestor)?.parentId ?? null
+  }
+  return depth
+}
+
+function subtreeHeight(tree: TaskTree, id: string, seen = new Set<string>()): number {
+  if (seen.has(id)) return Infinity
+  const path = new Set(seen).add(id)
+  const children = tree.filter(node => node.parentId === id)
+  return children.length === 0 ? 1 : 1 + Math.max(...children.map(child => subtreeHeight(tree, child.id, path)))
+}
+
+function validTitle(title: string): boolean {
+  return title.trim().length > 0 && title.length <= TASK_TITLE_LENGTH
 }
 
 /** Adds a node without changing the input tree. The node id, parent and source are supplied by the caller. */
 export function createTask(tree: TaskTree, node: TaskNode, source: string): TaskTreeResult {
   if (hasTask(tree, node.id)) return failed('duplicate-id')
   if (node.parentId !== null && !hasTask(tree, node.parentId)) return failed('unknown-parent')
+  if (tree.length >= TASK_NODE_LIMIT || depthUnder(tree, node.parentId) > TASK_DEPTH_LIMIT) return failed('limit')
+  if (!validTitle(node.title) || node.detail.length > TASK_HISTORY_DETAIL_LENGTH) return failed('limit')
   if (!hasValidWeight(node.weight)) return failed('invalid-weight')
   if (!notesAreValid(node.notes) || node.history.length > TASK_HISTORY_LIMIT || !node.history.every(eventIsValid)) {
     return failed('limit')
@@ -66,6 +98,11 @@ export function updateTask(
 ): TaskTreeResult {
   const task = tree.find(node => node.id === id)
   if (!task) return failed('unknown-task')
+  if (
+    (changes.title !== undefined && !validTitle(changes.title)) ||
+    (changes.detail?.length ?? 0) > TASK_HISTORY_DETAIL_LENGTH
+  )
+    return failed('limit')
   if (changes.weight !== undefined && !hasValidWeight(changes.weight)) return failed('invalid-weight')
   const event: TaskHistoryEvent = { at, source, kind: 'updated' }
   if (!eventIsValid(event)) return failed('limit')
@@ -97,6 +134,7 @@ export function moveTask(
     visited.add(ancestor)
     ancestor = tree.find(node => node.id === ancestor)?.parentId ?? null
   }
+  if (depthUnder(tree, parentId) - 1 + subtreeHeight(tree, id) > TASK_DEPTH_LIMIT) return failed('limit')
 
   const event: TaskHistoryEvent = { at, source, kind: 'moved' }
   if (!eventIsValid(event)) return failed('limit')

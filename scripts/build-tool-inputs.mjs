@@ -34,9 +34,12 @@ const { agentTools, CLAUDE_CODE } = await import(
 
 function typeOf(schema, at) {
   if (schema.enum) return schema.enum.map(value => `'${value}'`).join(' | ')
+  if (Array.isArray(schema.type))
+    return schema.type.map(type => (type === 'null' ? 'null' : typeOf({ type }, at))).join(' | ')
   if (schema.type === 'string') return 'string'
   if (schema.type === 'integer' || schema.type === 'number') return 'number'
   if (schema.type === 'boolean') return 'boolean'
+  if (schema.type === 'null') return 'null'
   if (schema.type === 'array') return `${typeOf(schema.items, `${at}[]`)}[]`
   throw new Error(`${at}: the build turns no schema of type ${JSON.stringify(schema.type)} into a type.`)
 }
