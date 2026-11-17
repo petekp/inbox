@@ -14,7 +14,7 @@ export const SPACE_FADE_MS = HEIGHT_SETTLE_MS
  * and `SPACE_FADE_PX`, raised to one third. Content stays visible until its space is nearly gone, since opacity under
  * 20% reads as blank, and shows in full only as its space has grown.
  */
-export const SPACE_FADE_PX = 200
+const SPACE_FADE_PX = 200
 export const spaceOpacity = (height: number, full: number): number =>
   full <= 0 ? 1 : Math.min(1, (Math.max(0, height) / Math.min(full, SPACE_FADE_PX)) ** (1 / 3))
 
