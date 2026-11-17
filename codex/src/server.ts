@@ -1,5 +1,5 @@
 import { delegatesSettled } from '../../hooks/children'
-import type { Run } from '../../hooks/gh'
+import type { RunWithInput } from './run'
 import { delegatesInHerdr, herdrCheckGate } from '../../hooks/herdr'
 import type { PrPress } from '../../hooks/pr-press'
 import { noteText } from '../../hooks/press-reducer'
@@ -41,7 +41,7 @@ import type { SteerResult, SteerTarget } from './app-steer'
 export type ServerDeps = {
   dir: string
   now: () => number
-  exec: Run
+  exec: RunWithInput
   tabHtml: string
   /** The codex binary to run `queue` with when no hook has named one yet. */
   fallbackCli: () => Promise<string>
