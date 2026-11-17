@@ -24,7 +24,7 @@ import { ROW_COPY } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
-import { SETTLED_MS, heldReplies, isGuarded, keptDiscards, withListInput } from '../../hooks/timing'
+import { SETTLED_MS, heldReplies, keptDiscards, withListInput } from '../../hooks/timing'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft } from '../../types'
@@ -51,11 +51,11 @@ import {
 } from './keys'
 import type { LastWaits } from './keys'
 import { withCollapses, writeCollapse } from './collapse'
-import { foldAllIn, foldClickOpens } from './fold-all'
+import { foldAllIn, foldClick, foldClickOpens } from './fold-all'
 import type { Collapses } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
 import type { LinesAbove } from './held-line'
-import { NO_TRACKS, moveRows } from './motion'
+import { NO_TRACKS, heldTabs, moveRows } from './motion'
 import { nextDrawAt } from './wake'
 import type { Tracks } from './motion'
 import { Heights, zoomOf } from './heights'
@@ -106,6 +106,7 @@ export default class Inbox extends View {
   /** When a click opened a row, so a double click does not collapse it. */
   clickedOpenAt = 0
   tracks: Tracks = NO_TRACKS
+  drawnTabs: TabCell[] = []
   heights = new Heights()
   tracksOf = ''
   /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
@@ -403,12 +404,7 @@ export default class Inbox extends View {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
       press: (b, cx, isAll) => this.press(b, cx, isAll),
-      collapse: (id, isCollapsed, cx, isAll) => {
-        if (isAll) return foldAllIn(this, !isCollapsed, cx)
-        if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now())) return
-        if (!isCollapsed) this.clickedOpenAt = Date.now()
-        this.collapse(id, isCollapsed, cx)
-      },
+      collapse: (id, isCollapsed, cx, isAll) => foldClick(this, id, isCollapsed, cx, isAll),
       select: (id, cx) => {
         this.clickedOpenAt = Date.now()
         this.ui = withSelected(this.ui, id)
@@ -456,6 +452,7 @@ export default class Inbox extends View {
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
+    this.drawnTabs = heldTabs(screen.tabs, this.drawnTabs, moved.motion)
     const read = drawn.read?.is === 'read' && this.ui.tab === 'overview' && !this.isHelpShown ? drawn.read : null
     const room = moved.nextAt === null ? paint.listRoom : null
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
@@ -468,7 +465,7 @@ export default class Inbox extends View {
     return root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(fitEl('tabs', paint, tabsEl(screen.tabs, this.isHelpShown, paint)))
+      .child(fitEl('tabs', paint, tabsEl(this.drawnTabs, this.isHelpShown, paint)))
       .child(
         fitEl(
           'chrome',

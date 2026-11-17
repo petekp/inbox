@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T23:49:47.293Z. 280661 characters follow.
+// Built at 2026-11-17T23:50:30.322Z. 281026 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5029,6 +5029,15 @@ function foldAllIn(look, isOpening, cx) {
     look.collapse(c.id, c.isCollapsed, cx, false);
   cx.notify();
 }
+function foldClick(look, id, isCollapsed, cx, isAll = false) {
+  if (isAll)
+    return foldAllIn(look, !isCollapsed, cx);
+  if (isCollapsed && isGuarded(look.clickedOpenAt, Date.now()))
+    return;
+  if (!isCollapsed)
+    look.clickedOpenAt = Date.now();
+  look.collapse(id, isCollapsed, cx, true);
+}
 
 // src/held-line.ts
 var NO_LINES_ABOVE = new Map;
@@ -5399,6 +5408,11 @@ function heldForm(b, was, motion) {
   const state = motion.get(b.id)?.state;
   const isHeld = last !== undefined && b.kind !== "row" && b.kind !== "empty" && state !== undefined && !isMoving(state);
   return isHeld && JSON.stringify(last) !== JSON.stringify(b) ? last : b;
+}
+function heldTabs(tabs, last, motion) {
+  if (![...motion.values()].some((m) => m.isStart))
+    return tabs;
+  return tabs.map((t) => ({ ...t, badge: last.find((l) => l.id === t.id)?.badge ?? t.badge }));
 }
 function placeAfter(shown, above) {
   for (let i = above.length - 1;i >= 0; i--) {
@@ -6605,6 +6619,7 @@ class Inbox extends View {
   collapses = {};
   clickedOpenAt = 0;
   tracks = NO_TRACKS;
+  drawnTabs = [];
   heights = new Heights;
   tracksOf = "";
   lastWaits = { tab: "needsYou", rows: null };
@@ -6881,15 +6896,7 @@ class Inbox extends View {
       t,
       mono: theme().typography?.mono ?? "Menlo",
       press: (b, cx, isAll) => this.press(b, cx, isAll),
-      collapse: (id, isCollapsed, cx, isAll) => {
-        if (isAll)
-          return foldAllIn(this, !isCollapsed, cx);
-        if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now()))
-          return;
-        if (!isCollapsed)
-          this.clickedOpenAt = Date.now();
-        this.collapse(id, isCollapsed, cx);
-      },
+      collapse: (id, isCollapsed, cx, isAll) => foldClick(this, id, isCollapsed, cx, isAll),
       select: (id, cx) => {
         this.clickedOpenAt = Date.now();
         this.ui = withSelected(this.ui, id);
@@ -6930,6 +6937,7 @@ class Inbox extends View {
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
+    this.drawnTabs = heldTabs(screen.tabs, this.drawnTabs, moved.motion);
     const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
     const room = moved.nextAt === null ? paint.listRoom : null;
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
@@ -6939,7 +6947,7 @@ class Inbox extends View {
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div9().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div9().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

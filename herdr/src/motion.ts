@@ -2,6 +2,7 @@ import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, isMoving, stepRow } from '.
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
+import type { TabCell } from './draw'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import { MOVED_TO, copyIdOf } from './heights'
 
@@ -313,6 +314,16 @@ function heldForm(b: Block, was: Tracks, motion: ReadonlyMap<string, RowMotion>)
   const isHeld = last !== undefined && b.kind !== 'row' && b.kind !== 'empty' && state !== undefined && !isMoving(state)
 
   return isHeld && JSON.stringify(last) !== JSON.stringify(b) ? last : b
+}
+
+/**
+ * The tab bar a draw shows. In a draw that starts a move, each tab keeps the count it last drew, so the count changes
+ * with the group titles, in the draw that sets the rows moving.
+ */
+export function heldTabs(tabs: TabCell[], last: readonly TabCell[], motion: ReadonlyMap<string, RowMotion>): TabCell[] {
+  if (![...motion.values()].some(m => m.isStart)) return tabs
+
+  return tabs.map(t => ({ ...t, badge: last.find(l => l.id === t.id)?.badge ?? t.badge }))
 }
 
 /** Where a leaving block goes: just after the last of the blocks that were above it that is still shown, else first. */

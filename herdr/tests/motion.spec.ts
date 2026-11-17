@@ -4,9 +4,9 @@ import { prMarkId } from '../../hooks/pr-rows'
 import { ENTER_FADE_MS, LEAVE_FADE_MS } from '../../hooks/row-motion'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
-import { rowWaits, tabBlocks } from '../src/draw'
+import { rowWaits, tabBlocks, tabCells } from '../src/draw'
 import { withClosedSelection, withSelected } from '../src/keys'
-import { NEXT_FRAME_MS, NO_TRACKS, moveRows } from '../src/motion'
+import { NEXT_FRAME_MS, NO_TRACKS, heldTabs, moveRows } from '../src/motion'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import { NOW, demoScreen, dismissedPr, uiOn, withDismissedAsk } from './fixtures'
 import { allOf, openPanel } from './gpui-stand-in'
@@ -223,4 +223,22 @@ test('the row the selection moves to opens in the draw that moves it, while anot
   expect(moved.motion.get('d15')?.state).toBe('leaving')
   expect(d12?.isSelected).toBe(true)
   expect(moved.motion.get('d12')?.state).toBe('opening')
+})
+
+test('the Asks tab takes its new count in the draw that sets the rows moving, with the group title', () => {
+  const screen = demoScreen()
+  const gone = screen.view.needsYou.questions.find(r => r.state.is !== 'settled')!
+  const questions = screen.view.needsYou.questions.filter(r => r.id !== gone.id)
+  const needsYou = { ...screen.view.needsYou, questions, count: screen.view.needsYou.count - 1 }
+  const fewer = { ...screen, view: { ...screen.view, needsYou } }
+  const badge = (tabs: { id: string; badge: string | null }[]) => tabs.find(t => t.id === 'needsYou')?.badge
+  const before = tabCells(screen, 'needsYou')
+  const after = tabCells(fewer, 'needsYou')
+  const blocks = tabBlocks(fewer, uiOn('needsYou'))
+  const starts = moveRows(blocks, moveRows(tabBlocks(screen, uiOn('needsYou')), NO_TRACKS, NOW, true).tracks, NOW, false)
+  const moving = moveRows(blocks, starts.tracks, NOW + NEXT_FRAME_MS, false)
+  const startTabs = heldTabs(after, before, starts.motion)
+  expect(badge(after)).not.toBe(badge(before))
+  expect(badge(startTabs)).toBe(badge(before))
+  expect(badge(heldTabs(after, startTabs, moving.motion))).toBe(badge(after))
 })
