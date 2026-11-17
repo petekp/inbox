@@ -230,7 +230,11 @@ function delegatesEnded(
     const agent = byRef.get(running.ref)
     const status = agent?.status
     const focus = agent?.focus ? childName(agent.focus) : null
-    const c = focus && focus !== running.name ? { ...running, name: focus } : running
+    const note = agent?.note ? childName(agent.note) : null
+    const isRenamed = focus !== null && focus !== running.name
+    const isNoted = note !== null && note !== running.summary
+    const c =
+      isRenamed || isNoted ? { ...running, name: focus ?? running.name, summary: note ?? running.summary } : running
     const isShownWorking = status === 'working' || status === 'blocked'
     if (isShownWorking) return c.delegateState === status ? c : { ...c, delegateState: status }
     const isSettling = at - (c.lastActivityAt ?? c.startedAt) < HERDR_PROMPT_SETTLE_MS

@@ -172,9 +172,11 @@ test('on the Status page, j reaches the done fold after the rows with buttons, E
   const lines = text(screen, unfolded).split('\n')
   const foldAt = lines.findIndex(l => l.includes(`${labelOf(fold)} v`))
   expect(foldAt).toBeGreaterThan(-1)
-  expect(lines.slice(foldAt + 1, foldAt + 1 + finished.length).map(l => l.trim())).toEqual(
-    finished.map(r => `✓ ${labelOf(r)}`),
-  )
+  const names = lines
+    .slice(foldAt + 1)
+    .map(l => l.trim())
+    .filter(l => l.startsWith('✓'))
+  expect(names.slice(0, finished.length)).toEqual(finished.map(r => `✓ ${labelOf(r)}`))
   expect(lines[foldAt + 1]!.indexOf('✓')).toBe(lines[foldAt]!.indexOf(labelOf(fold)))
   expect(text(screen, keys(screen, unfolded, 'f'))).toBe(text(screen, onFold))
 })

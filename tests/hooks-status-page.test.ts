@@ -214,7 +214,7 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply =
-    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node chosen\nNEW: working | Plan | being written\nDONE: s2 | written'
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node chosen\nNEW: working | Plan | being written\nNEW: working | Build | tested\nDONE: s2 | written\nDONE: s3 | passes'
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -229,12 +229,12 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   await clock.settle()
 
   const foldLabel = async () => (await pane.find({ key: 'fold-status-done' }))?.props.label
-  expect(await foldLabel()).toBe('1 done ›')
+  expect(await foldLabel()).toBe('2 done ›')
   expect((await pane.find({ key: 'status-done' }))?.text).not.toContain('✓')
   expect(await pane.find({ key: 'status-s2' })).toBeUndefined()
   await pane.press({ key: 'fold-status-done' })
   await clock.settle()
-  expect(await foldLabel()).toBe('1 done v')
+  expect(await foldLabel()).toBe('2 done v')
   expect((await pane.find({ key: 'status-s2' }))?.text).toBe('✓Plan')
   await pane.press({ key: 'fold-status-done' })
   await clock.settle()
@@ -244,7 +244,7 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   await clock.settle()
   await pane.press({ key: 'toggle-fold-done-key' })
   await clock.settle()
-  expect(await foldLabel()).toBe('1 done v')
+  expect(await foldLabel()).toBe('2 done v')
   expect(await pane.find({ key: 'status-s2' })).toBeDefined()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
@@ -252,10 +252,10 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   await clock.settle()
   const desktopFold = async () => (await desktop.find({ key: 'fold-status-done' }))?.props.props as FoldProps
   expect(await desktop.find({ key: 'fold-status-done' })).toMatchObject({ type: 'Client' })
-  expect(await desktopFold()).toMatchObject({ label: '1 done', isUnfolded: true })
+  expect(await desktopFold()).toMatchObject({ label: '2 done', isUnfolded: true })
   await desktop.post({ isUnfolded: false }, { in: 'fold-status-done' })
   await clock.settle()
   expect((await desktopFold()).isUnfolded).toBe(false)
   expect(await desktop.find({ key: 'status-s2' })).toBeUndefined()
-  expect(await foldLabel()).toBe('1 done ›')
+  expect(await foldLabel()).toBe('2 done ›')
 })

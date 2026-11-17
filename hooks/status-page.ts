@@ -6,7 +6,7 @@ import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
-import { childRow, countsByMark, namedFolds, partRows } from './status-page-parts'
+import { childRow, countsByMark, finishedLine, namedFolds, partRows, unplacedChildren } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
@@ -59,6 +59,8 @@ export type StatusRow = {
       /** Whether its work shows under way, as `isChildWorking` says. A look animates the mark while it is set. */
       isRunning: boolean
       name: string
+      /** The line under its name: how long a finished delegate in a done fold ran and when it finished. Null for every other child. */
+      text: string | null
       /**
        * Its place under its subject. Null when it is linked to no subject the list shows. It then sits first in the rows
        * of the milestone its subject serves, or else first in the list after the goal, under Other work while the goal
@@ -265,16 +267,18 @@ export function statusPage(
   const openFold = (prefix: string, foldedOpen: Subject[], depth: number): StatusRow[] =>
     foldedOpen.length === 0
       ? []
-      : [
-          {
-            kind: 'fold',
-            id: `${prefix}open`,
-            depth,
-            ...SUBJECT_MARKS.queued,
-            text: `${foldedOpen.length} more`,
-            subjectIds: [],
-          },
-        ]
+      : foldedOpen.length === 1
+        ? partRows(foldedOpen, ctx, depth)
+        : [
+            {
+              kind: 'fold',
+              id: `${prefix}open`,
+              depth,
+              ...SUBJECT_MARKS.queued,
+              text: `${foldedOpen.length} more`,
+              subjectIds: [],
+            },
+          ]
   /**
    * A part's seen finished work as one done fold `depth` steps in, which holds their rows one step further in: its
    * subjects, then the finished delegates the person has seen that no subject holds. It reads "N more done" while
@@ -289,34 +293,32 @@ export function statusPage(
   ): StatusRow[] =>
     done.length + settled.length === 0
       ? []
-      : [
-          {
-            kind: 'done-fold',
-            id: `${prefix}done`,
-            depth,
-            text: `${done.length + settled.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
-            rows: [
-              ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
-              ...settled.map(c => childRow(c, null, depth + 1)),
-            ],
-          },
-        ]
+      : done.length + settled.length === 1
+        ? [...partRows(done, foldCtx, depth), ...settled.map(c => childRow(c, null, depth, finishedLine(c, now)))]
+        : [
+            {
+              kind: 'done-fold',
+              id: `${prefix}done`,
+              depth,
+              text: `${done.length + settled.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
+              rows: [
+                ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
+                ...settled.map(c => childRow(c, null, depth + 1, finishedLine(c, now))),
+              ],
+            },
+          ]
   /** A part's rows `depth` steps in: its work in the page's order with its folds, as the list after the goal folds. */
   const foldedPart = (prefix: string, p: PartSplit, depth: number, settled: Child[] = []): StatusRow[] => [
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled),
   ]
-  /** Finished delegates the person has seen that no subject holds, which a subject's own row would otherwise stand for. */
-  const settled = (o?.children ?? [])
-    .filter(c => isChildSettled(c, now, look) && !o?.subjects.some(x => x.id === c.subjectId))
-    .sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0))
-  /** Running work linked to no subject the page shows, with the shown milestone its subject serves, if any. */
-  const loose = running
-    .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
-    .map(c => {
-      const x = subjects.find(y => y.id === c.subjectId)
-      return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) }
-    })
+  const { loose, settled } = unplacedChildren(o?.children ?? [], {
+    subjects,
+    shownIds,
+    milestoneOf,
+    isSettled: c => isChildSettled(c, now, look),
+    running,
+  })
   /** Loose running work drawn first in a milestone's rows, or with `null` first in the list after the goal. */
   const looseRows = (milestoneId: string | null, depth: number): StatusRow[] =>
     loose.filter(l => l.milestoneId === milestoneId).map(l => childRow(l.child, null, depth))
