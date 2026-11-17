@@ -105,15 +105,6 @@
 .line .after {
   color: var(--muted);
 }
-/* A collapsed row's status follows its title, or takes a line of its own when it does not fit beside it, cut with an ellipsis. */
-.row.collapsed .line .after {
-  display: inline-block;
-  max-width: 100%;
-  vertical-align: bottom;
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .row.collapsed .line .after:not(.tone-error) {
   color: var(--age);
 }
