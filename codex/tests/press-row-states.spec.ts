@@ -10,8 +10,9 @@ import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { NO_HOLDS } from '../../hooks/timing'
-import { ROW_STATE_MS, SLIDE_PX, stepRow } from '../../hooks/row-motion'
-import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
+import { ENTER_FADE_MS, ROW_STATE_MS, SLIDE_PX, enterDelayMs, stepRow } from '../../hooks/row-motion'
+import { FRAME_MS, HEIGHT_SETTLE_MS, springStep } from '../../hooks/springs'
+import { LINE_PT } from '../../hooks/layout'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 
 const ROW_STATES: RowState[] = [
@@ -74,6 +75,22 @@ test('a row turned around mid-move starts the new move at once, and with reduced
   assert.equal(stepRow(undefined, 'closed', 0, true)?.hasPanel, false)
   assert.equal(stepRow(undefined, 'closed', 0, true, true)?.state, 'closed')
   assert.equal(stepRow(undefined, 'open', 0)?.state, 'open')
+  const settledIn = stepRow(undefined, 'settled', 0, true)
+  assert.equal(settledIn?.state, 'entering')
+  assert.equal(stepRow(settledIn!, 'settled', ROW_STATE_MS.entering)?.state, 'settled')
+})
+
+test('an entering space’s content waits until the space is within half the slide of open, and its fade ends as the space rests', () => {
+  assert.equal(enterDelayMs(0), 0)
+  for (const height of [LINE_PT, 2 * LINE_PT, 100, 400, 2000]) {
+    const wait = enterDelayMs(height)
+    const isCapped = wait === HEIGHT_SETTLE_MS - ENTER_FADE_MS
+    const opened = springStep({ x: 0, v: 0 }, height, wait).x
+    const frameBefore = springStep({ x: 0, v: 0 }, height, wait - FRAME_MS).x
+    assert.ok(isCapped || height - opened <= SLIDE_PX / 2, `${height} px is ${height - opened} px from open`)
+    assert.ok(isCapped || height - frameBefore > SLIDE_PX / 2, `${height} px waits a frame longer than it needs`)
+    assert.ok(wait + ENTER_FADE_MS <= HEIGHT_SETTLE_MS, `${height} px fades past its rest`)
+  }
 })
 
 test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR row closes with its panel, leaves from its place with its group and title, a block’s press line grows in, a dismissed block settles under its settled line and grows back on Undo, a merged block’s Dismiss settles it and it leaves with its view, Clear merged and closed above the blocks settles the last merged block and leaves with it, and with reduced motion each move ends as it starts', async context => {
