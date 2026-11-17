@@ -241,3 +241,39 @@ test('the Inbox view reports the Status rows it measured and drew when the perso
   await panel.close()
   expect(looks()).toHaveLength(2)
 })
+
+test('the Inbox view tells the host its PRs tab is shown on opening it and every half minute, and stops when another tab shows', async () => {
+  let at = NOW + 1_000
+  setSystemTime(at)
+  const { panel, paint, click, settle } = await openPanel()
+  const tab = (label: string) => allOf(paint()).find(n => n.label?.startsWith(label))!
+  const reports = () =>
+    writtenFiles.filter(
+      ({ path, text }) => path.startsWith(`${pressFolder('/app', 's1')}/`) && 'prsShown' in JSON.parse(text),
+    )
+  const check = async (ms: number) => {
+    at += ms
+    setSystemTime(at)
+    paint()
+    await panel.checkLook()
+  }
+  writtenFiles.length = 0
+  await check(1_000)
+  expect(reports()).toHaveLength(0)
+
+  click(tab('PRs'))
+  await check(1_000)
+  expect(reports()).toHaveLength(1)
+  await check(29_000)
+  expect(reports()).toHaveLength(1)
+  await check(1_000)
+  expect(reports()).toHaveLength(2)
+
+  click(tab('Asks'))
+  await check(40_000)
+  expect(reports()).toHaveLength(2)
+  click(tab('PRs'))
+  await check(1_000)
+  expect(reports()).toHaveLength(3)
+  await settle()
+})

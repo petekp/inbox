@@ -2,7 +2,7 @@ import type { Session } from '../types'
 import type { ClientId } from './clients'
 import { herdrEnvelope, pressFolder, publishedSessionPath } from './herdr'
 import type { EnvelopeSource } from './herdr'
-import { fileTime, isLookFile, isPressFile, pressFile } from './herdr-press-file'
+import { fileTime, isLookFile, isPressFile, isPrsShownFile, pressFile } from './herdr-press-file'
 import { withCollapse } from './collapse'
 import type { HerdrFile } from './herdr-press-file'
 import { press } from './host-press'
@@ -299,8 +299,9 @@ const LOOK_OUTCOME: PressOutcome = {
 }
 
 /**
- * Applies a file the Herdr look wrote. A look at the Status counts as `lookReportedOn` counts it, and a collapse is
- * saved as `withCollapse` saves it. A press is applied,
+ * Applies a file the Herdr look wrote. A look at the Status counts as `lookReportedOn` counts it, a collapse is
+ * saved as `withCollapse` saves it, and a report that the look shows the PRs tab makes the host read the session's PRs
+ * if they are due. A press is applied,
  * then saved as the session's `lastHerdrPress`, so the next publish tells the look the outcome even when the press
  * changed nothing. When the look ran the press's opens and copies, `perform` answers with their result instead of
  * running them again.
@@ -346,6 +347,10 @@ export async function applyHerdrFile<S extends Session>(
   }
   if (isLookFile(file)) {
     await host.update(s => lookReportedOn(s, file.look))
+    return LOOK_OUTCOME
+  }
+  if (isPrsShownFile(file)) {
+    await host.refreshPrsIfDue?.()
     return LOOK_OUTCOME
   }
   if (!isPressFile(file)) {

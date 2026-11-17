@@ -5,8 +5,10 @@ import type { Run } from '../hooks/gh'
 import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrReporter, herdrTarget } from '../hooks/herdr'
 import { pressFile } from '../hooks/herdr-press-file'
 import type { EnvelopeSource } from '../hooks/herdr'
-import { publishSession } from '../hooks/herdr-app'
+import { applyHerdrFile, publishSession } from '../hooks/herdr-app'
 import type { PublishFiles } from '../hooks/herdr-app'
+import type { PressHost } from '../hooks/host-press'
+import type { Session } from '../types'
 import { emptySession } from '../hooks/session-files'
 
 const SOURCE: EnvelopeSource = { host: 'codex', agent: 'Codex', sessionId: 's1', terminal: 't1', writtenAt: 5 }
@@ -193,5 +195,32 @@ describe('pressFile', () => {
     ]
     for (const [file, reason] of refused) expect(pressFile(JSON.stringify(file))).toEqual({ ok: false, reason })
     expect(pressFile('{"format":1,')).toEqual({ ok: false, reason: 'not JSON' })
+  })
+})
+
+describe('a report that the Herdr look shows the PRs tab', () => {
+  const REPORT = { format: 1, id: 'r1', prsShown: { at: 10 } }
+
+  test('is read, and refused without a time', () => {
+    expect(pressFile(JSON.stringify(REPORT))).toEqual({ ok: true, file: REPORT })
+    expect(pressFile(JSON.stringify({ ...REPORT, prsShown: {} }))).toEqual({
+      ok: false,
+      reason: 'prsShown without a time',
+    })
+  })
+
+  test('makes the host read the session’s PRs if they are due, and changes nothing else', async () => {
+    let refreshes = 0
+    let updates = 0
+    const host = {
+      update: async () => void (updates += 1),
+      refreshPrsIfDue: async () => void (refreshes += 1),
+    } as unknown as PressHost<Session>
+    const file = pressFile(JSON.stringify(REPORT))
+    if (!file.ok) throw new Error(file.reason)
+
+    await applyHerdrFile(host, file.file, 's1')
+
+    expect([refreshes, updates]).toEqual([1, 0])
   })
 })
