@@ -36,10 +36,11 @@ test('a goal draws its milestones as one path: done, the one under way, the firs
     ['Docs page', 'later', null, true],
     ['Release notes', 'later', null, false],
   ])
-  expect(page(planned(), 40).goal?.milestones.map(m => m.isMuted)).toEqual([false, false, false, true, true])
+  expect(page(planned(), 40).goal?.milestones.map(m => m.isMuted)).toEqual([true, false, false, true, true])
+  expect(page(planned(), 40).goal?.milestones.map(m => m.isBold)).toEqual([false, true, true, true, true])
 })
 
-test('NEXT moves a queued milestone ahead of the other queued ones, so it reads next and the one it passed sits under Later, and its name draws bold until the person looks', () => {
+test('NEXT moves a queued milestone ahead of the other queued ones, so it reads next and the one it passed sits under Later, and every milestone not done draws bold', () => {
   const replanned = after({ ...planned(), lastLookAt: 35 }, 'NEXT: m5', 40)
   const p = page(replanned, 45)
 
@@ -48,7 +49,13 @@ test('NEXT moves a queued milestone ahead of the other queued ones, so it reads 
     ['Demo script', 'later', null, true],
     ['Docs page', 'later', null, false],
   ])
-  expect(p.goal?.milestones.filter(m => m.isChanged).map(m => m.name)).toEqual(['Release notes'])
+  expect(p.goal?.milestones.map(m => [m.name, m.isBold])).toEqual([
+    ['Parsing works', false],
+    ['Errors explained', true],
+    ['Release notes', true],
+    ['Demo script', true],
+    ['Docs page', true],
+  ])
   expect(after(replanned, 'NEXT: m2', 50).milestones).toEqual(replanned.milestones)
 })
 
@@ -58,7 +65,7 @@ test('NEXT marks the milestone it moves changed, but counts as no progress on th
 
   expect(page(moved, 55).goal?.milestones.find(m => m.name === 'Release notes')).toMatchObject({
     place: 'next',
-    isChanged: true,
+    isBold: true,
     was: null,
   })
   expect(lastProgressAt(moved, moved.goal!)).toBe(lastProgressAt(seen, seen.goal!))
@@ -88,7 +95,7 @@ test('a done milestone the person has seen, with its work seen and finished, fol
   const seen = page({ ...finished, lastLookAt: 70 }, 80)
   const m1 = seen.goal?.milestones[0]
 
-  expect(fresh).toMatchObject({ foldId: null, isMuted: false })
+  expect(fresh).toMatchObject({ foldId: null, isMuted: true, isBold: false })
   expect(m1).toMatchObject({ name: 'Parsing works', foldId: 'm1-done', text: null, isMuted: true })
   expect(milestoneRows(m1!, () => false)).toEqual([])
   expect(shape(milestoneRows(m1!, () => true))).toEqual(['✓ Logo refresh'])

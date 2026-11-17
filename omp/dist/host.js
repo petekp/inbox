@@ -3978,8 +3978,8 @@ function milestoneRow(step, o, items) {
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isChanged,
-    isMuted: step.place === "later" || step.place === "dropped",
+    isBold: isOpen,
+    isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
     text: m.text || null,
@@ -8475,7 +8475,7 @@ function milestoneLines(m, d, isSelected) {
     return [name, ...withPathLine(wrapped, column, s)];
   }
   const chevron = foldChevron(m, d, isSelected);
-  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged || chevron && isSelected ? s.bold(t) : t);
+  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isBold || chevron && isSelected ? s.bold(t) : t);
   const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron });
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
@@ -10935,7 +10935,8 @@ function notePrompt(host, s, text, isOpen) {
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
 }
 function matchSent(s, text) {
-  const matchingAt = s.sent.findIndex((x) => x.text === text);
+  const sameText = (a) => a.trim() === text.trim();
+  const matchingAt = s.sent.findIndex((x) => sameText(x.text));
   const matching = matchingAt >= 0 ? s.sent[matchingAt] : undefined;
   const isMatchable = matching !== undefined && (matching.phase === undefined || matching.phase === "accepted" || matching.phase === "attempting" && matching.deliveryId !== null);
   const sentAt = isMatchable ? matchingAt : -1;
@@ -10943,9 +10944,9 @@ function matchSent(s, text) {
   const eligible = sent?.deliveryId === null ? Object.fromEntries(Object.entries(s.lastActions).filter(([_id, last]) => (last.delivery?.state === "queued" || last.delivery?.state === "unconfirmed") && last.delivery.id === undefined)) : s.lastActions;
   const arrived = sent && sent.row !== null ? {
     ...s.lastActions,
-    ...sent.deliveryId === null ? withUnconfirmed(eligible, text) : withArrival(eligible, text, sent.pressedAt ?? undefined, sent.deliveryId)
+    ...sent.deliveryId === null ? withUnconfirmed(eligible, sent.text) : withArrival(eligible, sent.text, sent.pressedAt ?? undefined, sent.deliveryId)
   } : s.lastActions;
-  const lastActions = s.sent.slice(matchingAt + 1).reduce((actions, later) => later.text === text && later.row !== null ? withUnconfirmed(actions, text, later.pressedAt ?? undefined, later.deliveryId) : actions, arrived);
+  const lastActions = s.sent.slice(matchingAt + 1).reduce((actions, later) => sameText(later.text) && later.row !== null ? withUnconfirmed(actions, later.text, later.pressedAt ?? undefined, later.deliveryId) : actions, arrived);
   return {
     state: { ...s, lastActions, sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent },
     sentBy: sent ? { press: sent.press } : null
@@ -14456,7 +14457,7 @@ function turnHandlers(context, sessions) {
       return;
     const finished = agentTexts?.id === id && agentTexts.isFinished ? agentTexts : null;
     try {
-      const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text === text);
+      const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text.trim() === text.trim());
       if (!isSentByPress)
         return;
       if (agentTexts === finished)

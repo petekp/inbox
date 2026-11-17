@@ -1403,8 +1403,8 @@ function milestoneRow(step, o, items) {
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isChanged,
-    isMuted: step.place === "later" || step.place === "dropped",
+    isBold: isOpen2,
+    isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
     text: m.text || null,
@@ -3777,7 +3777,8 @@ function notePrompt(host, s, text2, isOpen2) {
   return { ...recordPrompt(host, startTurn(matched.state), text2, isOpen2, matched.sentBy), sentBy: matched.sentBy };
 }
 function matchSent(s, text2) {
-  const matchingAt = s.sent.findIndex((x) => x.text === text2);
+  const sameText = (a) => a.trim() === text2.trim();
+  const matchingAt = s.sent.findIndex((x) => sameText(x.text));
   const matching = matchingAt >= 0 ? s.sent[matchingAt] : void 0;
   const isMatchable = matching !== void 0 && (matching.phase === void 0 || matching.phase === "accepted" || matching.phase === "attempting" && matching.deliveryId !== null);
   const sentAt = isMatchable ? matchingAt : -1;
@@ -3789,10 +3790,10 @@ function matchSent(s, text2) {
   ) : s.lastActions;
   const arrived = sent && sent.row !== null ? {
     ...s.lastActions,
-    ...sent.deliveryId === null ? withUnconfirmed(eligible, text2) : withArrival(eligible, text2, sent.pressedAt ?? void 0, sent.deliveryId)
+    ...sent.deliveryId === null ? withUnconfirmed(eligible, sent.text) : withArrival(eligible, sent.text, sent.pressedAt ?? void 0, sent.deliveryId)
   } : s.lastActions;
   const lastActions = s.sent.slice(matchingAt + 1).reduce(
-    (actions, later) => later.text === text2 && later.row !== null ? withUnconfirmed(actions, text2, later.pressedAt ?? void 0, later.deliveryId) : actions,
+    (actions, later) => sameText(later.text) && later.row !== null ? withUnconfirmed(actions, later.text, later.pressedAt ?? void 0, later.deliveryId) : actions,
     arrived
   );
   return {

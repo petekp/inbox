@@ -283,9 +283,11 @@
 }
 .status-page .milestone-name > * {
   font-variation-settings: 'wght' 400;
-  transition: font-variation-settings var(--fade);
+  transition:
+    font-variation-settings var(--fade),
+    color var(--fade);
 }
-.status-page .milestone-name .changed {
+.status-page .milestone-name .bold {
   font-weight: 600;
   font-variation-settings: 'wght' 600;
 }
