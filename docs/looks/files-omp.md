@@ -11,6 +11,7 @@ Part of [the look map](../looks.md#files).
 | `omp/src/host-herdr-ask.ts` | omp host. `ompHerdrAsk` keeps the question before omp installs the inbox's Herdr mod: it asks after a start that found no answer, checks every `PRESS_POLL_MS` whether another session answered, runs an Install or Don't install press, and shows the question again for `/inbox herdr`. |
 | `omp/src/host-turns.ts` | omp host. The handlers for omp's session and turn events: a session's start and shutdown, a prompt's arrival, the reply, and the turn's end. |
 | `omp/src/host-activity.ts` | omp host. The handlers for the main agent's activity: subagent frames, tool calls, and bash calls that wait on Herdr delegates. |
+| `omp/src/host-send.ts` | omp host. `agentSender`: sends a message to the agent through omp's `sendUserMessage`, returns why omp refused it, and clears the editor of the text omp hands back. It imports no omp package. |
 | `omp/src/host-panel.ts` | omp host. The `Inbox` calls the panel makes on the host, and the live source the panel draws from. |
 | `omp/src/omp-messages.ts` | omp host. Reads omp's messages and session branch: a message's text, why a turn stopped, the conversation as turns, and the line under a `record` or `close` call. |
 | `omp/src/tool-calls.ts` | omp host. What an omp tool call and its result say: the call's activity line, an `ask` call's questions from either input shape, and how an `ask` dialog ended. It imports no omp package. |

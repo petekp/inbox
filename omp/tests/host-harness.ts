@@ -52,6 +52,7 @@ type World = {
   branch: unknown[]
   activeTools: string[]
   sendAnswer: (() => Promise<void>) | null
+  editorText: string
 }
 
 export let w: World
@@ -85,6 +86,7 @@ export function startWorld() {
     branch: [],
     activeTools: ['read', 'bash', 'record', 'close'],
     sendAnswer: null,
+    editorText: '',
   }
 }
 
@@ -131,7 +133,13 @@ export const makeCtx = (id = 's1') =>
       resolve: (spec: string) => (spec === '@smol' ? w.smolModel : spec === '@inbox' ? w.inboxRoleModel : undefined),
     },
     modelRegistry: { getApiKey: async () => 'key' },
-    ui: { notify: (message: string) => w.notices.push(message) },
+    ui: {
+      notify: (message: string) => w.notices.push(message),
+      getEditorText: () => w.editorText,
+      setEditorText: (text: string) => {
+        w.editorText = text
+      },
+    },
     ...(w.agentKind ? { agent: { kind: w.agentKind } } : {}),
   }) as never
 

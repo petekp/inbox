@@ -209,6 +209,27 @@ test("a press omp drops before a run starts is not counted as sent, and its row 
   expect(JSON.stringify(state().lastActions)).toContain('Session cost cap of $5.00 reached')
 })
 
+test('a press omp refuses and hands back to the editor leaves the editor as it was', async () => {
+  const { inbox, id } = await withQuestion()
+  w.sendAnswer = () => {
+    w.editorText = w.sent[0]!.text
+    return Promise.reject(new Error('No model selected.'))
+  }
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
+  expect(w.editorText).toBe('')
+  expect(JSON.stringify(state().lastActions)).toContain('No model selected.')
+})
+
+test("a refused press leaves the person's own editor text alone", async () => {
+  const { inbox, id } = await withQuestion()
+  w.editorText = 'my own draft'
+  w.sendAnswer = () => Promise.reject(new Error('No model selected.'))
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
+  expect(w.editorText).toBe('my own draft')
+})
+
 test('a press sent while the agent is idle counts as sent once its run starts, before the run ends', async () => {
   const { inbox, id } = await withQuestion()
   w.isIdle = true

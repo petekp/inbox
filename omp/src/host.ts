@@ -42,6 +42,7 @@ import { activityHandlers } from './host-activity'
 import { isUnattended, sessionIdOf } from './host-context'
 import type { HostContext } from './host-context'
 import { herdrLog, ompPresses, startOmpInHerdrApp } from './host-presses'
+import { agentSender, messageOf } from './host-send'
 import { ompHerdrAsk } from './host-herdr-ask'
 import { panelCalls } from './host-panel'
 import type { Inbox } from './host-panel'
@@ -134,8 +135,6 @@ const defaultDeps: HostDeps = {
   questionHistory: dir => questionHistoryPlace(process.env, dir),
 }
 
-const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
-
 /** Orders models newest first by the `major.minor.patch` revision omp classifies from each id. */
 function byNewestRevision(a: Model, b: Model): number {
   const parts = (m: Model) => (m.identity.revision ?? '0.0.0').split('.').map(Number)
@@ -178,42 +177,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
-  /** The sends of each session that wait for its next run to start. */
-  const runStartWaiters = new Map<string, Set<() => void>>()
-
-  /**
-   * Sends text to the agent as if the person typed it. Returns why it could not, or null. From omp 18.18.2,
-   * `sendUserMessage` rejects when omp drops the message before a run starts, as for the cost cap. Sent while the
-   * agent is idle, it settles only when the whole run ends, so this also returns null once the session's next run
-   * starts. omp 18.18.1 and older return nothing, and a send that does not throw has gone.
-   */
-  const sendToAgent = async (ctx: ExtensionContext, text: string): Promise<string | null> => {
-    const id = sessionIdOf(ctx)
-    const waiters = runStartWaiters.get(id) ?? new Set<() => void>()
-    runStartWaiters.set(id, waiters)
-    let started = () => {}
-    const runStarted = new Promise<null>(resolve => {
-      started = () => resolve(null)
-    })
-    waiters.add(started)
-    try {
-      const options = ctx.isIdle() ? undefined : { deliverAs: 'followUp' as const }
-      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(
-        () => null,
-        (err: unknown) => messageOf(err),
-      )
-
-      return await Promise.race([sent, runStarted])
-    } catch (err) {
-      return messageOf(err)
-    } finally {
-      waiters.delete(started)
-    }
-  }
-
-  const onRunStart = (ctx: ExtensionContext) => {
-    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? []) started()
-  }
+  const { sendToAgent, onRunStart } = agentSender(pi)
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
     return async (prompt, system, _kind, report) => {
@@ -281,6 +245,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     deps,
     dir,
     openPanels: new Map(),
+    drafts: new Map(),
     prepared: new Set(),
     prFetches: prFetchTracker(deps.now, id => sessions.notifyChanged(id)),
     listeners: new Map(),
