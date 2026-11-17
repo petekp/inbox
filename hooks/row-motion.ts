@@ -9,6 +9,15 @@ export const FADE_MS = 200
  */
 export const SPACE_FADE_MS = HEIGHT_SETTLE_MS
 
+/**
+ * The opacity of content whose space is `height` px tall out of `full`: the height's share of the shorter of `full`
+ * and `SPACE_FADE_PX`, raised to one third. Content stays visible until its space is nearly gone, since opacity under
+ * 20% reads as blank, and shows in full only as its space has grown.
+ */
+export const SPACE_FADE_PX = 200
+export const spaceOpacity = (height: number, full: number): number =>
+  full <= 0 ? 1 : Math.min(1, (Math.max(0, height) / Math.min(full, SPACE_FADE_PX)) ** (1 / 3))
+
 /** How long a closed row's line fades back in as its close ends, in ms. */
 export const LINE_RETURN_FADE_MS = 300
 
