@@ -10,7 +10,7 @@ import { childRow, countsByMark, finishedLine, namedFolds, partRows, unplacedChi
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
-  "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply."
+  "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try."
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'

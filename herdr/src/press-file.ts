@@ -3,9 +3,6 @@ import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import type { Holds } from '../../hooks/timing'
 
-/** The label the look sets on the session's terminal after it writes a press, so a host following `hc events` reads it. */
-export const PRESS_LABEL = 'inbox.press'
-
 /** Where the look writes a press for the host that publishes the session. A host reads only names ending in `.json`. */
 export const pressPath = (appHome: string, sessionId: string, pressId: string) =>
   `${pressFolder(appHome, sessionId)}/${pressId}.json`

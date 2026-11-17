@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { SESSION_LABEL } from '../../hooks/herdr'
+import { SESSION_LABEL } from '../../hooks/herdr-labels'
 import { follow } from '../src/follow'
 import type { Where } from '../src/follow'
 

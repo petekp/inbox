@@ -20,6 +20,7 @@ export const SHARED = [
   'remote-viewers',
   'herdr-ask',
   'herdr-install',
+  'herdr-labels',
   'herdr-open',
   'herdr-press-file',
   'herdr-start',
