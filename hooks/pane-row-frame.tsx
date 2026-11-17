@@ -16,6 +16,7 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
     gapY = 0,
     tree = null,
     hasSide = true,
+    isBordered = true,
     children,
   }: {
     key?: string
@@ -26,6 +27,8 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
     /** An absolute Box in the mark column, which the frame stretches to the row's height. */
     tree?: JSX.Element | null
     fill?: string | undefined
+    /** False inside a Box that draws the border and fill around several frames, so the app rounds that Box once. */
+    isBordered?: boolean
     padY?: number
     /** The padding under its text, where it differs from `padY` above. */
     padBelow?: number
@@ -59,8 +62,7 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
         flexDirection="row"
         alignItems={isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
         marginY={gapY}
-        borderStyle="single"
-        borderColor="#0000"
+        {...(isBordered ? { borderStyle: 'single', borderColor: '#0000' } : {})}
         paddingTop={padY}
         paddingBottom={padBelow}
         {...(fill ? { backgroundColor: fill } : {})}
