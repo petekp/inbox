@@ -137,7 +137,14 @@ function glideOf(
     const opensAt = !isPressed && holdsUntil > now ? holdsUntil : now + NEXT_FRAME_MS
     const glide = { box: 'shut' as const, isShown: isPressed, fadeMs: isPressed ? 0 : ENTER_FADE_MS }
 
-    return { ...glide, waitsForSpace: !isPressed, shutForMs: null, opensAt, shutAt: null, endsAt: restAt(opensAt, glide.fadeMs) }
+    return {
+      ...glide,
+      waitsForSpace: !isPressed,
+      shutForMs: null,
+      opensAt,
+      shutAt: null,
+      endsAt: restAt(opensAt, glide.fadeMs),
+    }
   }
   if (!isLive || (last.box !== 'open' && last.opensAt === null)) return null
   const glide = openedAt(last, now)

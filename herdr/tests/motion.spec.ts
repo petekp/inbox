@@ -235,7 +235,12 @@ test('the Asks tab takes its new count in the draw that sets the rows moving, wi
   const before = tabCells(screen, 'needsYou')
   const after = tabCells(fewer, 'needsYou')
   const blocks = tabBlocks(fewer, uiOn('needsYou'))
-  const starts = moveRows(blocks, moveRows(tabBlocks(screen, uiOn('needsYou')), NO_TRACKS, NOW, true).tracks, NOW, false)
+  const starts = moveRows(
+    blocks,
+    moveRows(tabBlocks(screen, uiOn('needsYou')), NO_TRACKS, NOW, true).tracks,
+    NOW,
+    false,
+  )
   const moving = moveRows(blocks, starts.tracks, NOW + NEXT_FRAME_MS, false)
   const startTabs = heldTabs(after, before, starts.motion)
   expect(badge(after)).not.toBe(badge(before))
