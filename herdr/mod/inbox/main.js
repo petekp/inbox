@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T20:18:29.499Z. 276440 characters follow.
+// Built at 2026-11-17T20:41:26.283Z. 276805 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -4101,6 +4101,7 @@ var LIST_GAP_PT = SPACE_UNIT;
 var ITEM_GAP_PT = 3 * SPACE_UNIT;
 var CHILD_GAP_PT = 2 * SPACE_UNIT;
 var HEAD_GAP_PT = 2 * SPACE_UNIT;
+var LIST_MARGIN_PT = SPACE_UNIT;
 var CONTROL_GAP_PT = 2 * SPACE_UNIT;
 var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
 var BUTTON_BORDER_PT = 1;
@@ -5428,6 +5429,7 @@ var LIST_GAP = LIST_GAP_PT;
 var CHILD_GAP = CHILD_GAP_PT;
 var ITEM_GAP = ITEM_GAP_PT;
 var HEAD_GAP = HEAD_GAP_PT;
+var LIST_MARGIN = LIST_MARGIN_PT;
 var CONTROL_GAP = CONTROL_GAP_PT;
 var SECTION_GAP = SECTION_GAP_PT;
 var EDGE = EDGE_PT;
@@ -5635,9 +5637,14 @@ function foldChevronEl(t, fold) {
 // src/paint-space.ts
 import { div as div5 } from "gpui-kit";
 import { v_flex } from "gpui-base";
+var isClosedFold = (b) => b.kind === "fold" && ("closedFold" in b.change);
 function padOf(b) {
+  if (isClosedFold(b))
+    return LIST_MARGIN;
   return b.kind === "row" || b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
 }
+var LIST_MARGIN_TO_TEXT = LIST_MARGIN + ROW_PAD_PT;
+var isTitle = (b) => b.kind === "heading" && !b.isLabel || b.kind === "caption";
 var isOneLineRow = (r) => !r.isSelected && r.body.length === 0 && r.settled === null && r.feedback === null && r.heldLine === undefined;
 function isOneLine(b) {
   if (b.kind === "status")
@@ -5658,7 +5665,9 @@ function gapBetween(prev, b) {
     return b.gapAbove;
   if (isMilestone(prev))
     return isMilestone(b) ? LIST_GAP : HEAD_GAP;
-  const isLabelled = prev.kind === "heading" || prev.kind === "caption" || prev.kind === "rule" && prev.text !== null;
+  if (isTitle(prev) || isClosedFold(b))
+    return LIST_MARGIN_TO_TEXT;
+  const isLabelled = prev.kind === "heading" || prev.kind === "rule" && prev.text !== null;
   if (isLabelled)
     return HEAD_GAP;
   if (prev.kind === "rule" || b.kind === "rule")
@@ -6003,7 +6012,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex5().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(ROW_PAD_PT).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div8().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
+  return h_flex5().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div8().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
 }
 function blockEl(b, p) {
   const { t } = p;

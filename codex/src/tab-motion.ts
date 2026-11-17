@@ -412,6 +412,7 @@ const SPACING_VARIABLES: [string, number][] = [
   ['--child-gap', layout.CHILD_GAP_PT],
   ['--item-gap', layout.ITEM_GAP_PT],
   ['--head-gap', layout.HEAD_GAP_PT],
+  ['--list-margin', layout.LIST_MARGIN_PT],
   ['--control-gap', layout.CONTROL_GAP_PT],
   ['--section-gap', layout.SECTION_GAP_PT],
   ['--edge', layout.EDGE_PT],

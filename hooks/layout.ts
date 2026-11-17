@@ -27,6 +27,15 @@ export const CHILD_GAP_PT = 2 * SPACE_UNIT
 /** A heading to its first item. Less than `ITEM_GAP_PT`, so the heading reads as part of what it heads. */
 export const HEAD_GAP_PT = 2 * SPACE_UNIT
 
+/**
+ * A list's rows to its section's title above them and its Closed fold below them: from the title's line to the first
+ * row's box, and from the last row's box to the fold's label. A selected row's highlight then never meets either. With
+ * the row's `ROW_PAD_PT`, the title and the fold sit 10 pt from the nearest row's text, closer than two rows' text sit
+ * (`ITEM_GAP_PT`), so both read as part of the list. Content under a title that has no box, such as an empty group's
+ * line, sits where a row's text would.
+ */
+export const LIST_MARGIN_PT = SPACE_UNIT
+
 /** Text to the buttons under it, and one button to the next. */
 export const CONTROL_GAP_PT = 2 * SPACE_UNIT
 

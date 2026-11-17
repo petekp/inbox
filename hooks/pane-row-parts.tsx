@@ -6,7 +6,7 @@ import { closedTitleTint } from './pane-title-tint'
 import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
 import { foldGlyph } from './fold-chevron'
 import type { FoldProps } from './fold-client'
-import { HEAD_GAP_PT, ROW_PAD_PT } from './layout'
+import { LIST_MARGIN_PT, ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
 import type { Entry, PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import { followUpPresses } from './pane-keys'
@@ -20,6 +20,7 @@ import {
   DESKTOP_LINE_PT,
   DESKTOP_ROW_PT,
   DESKTOP_MARK_CELLS,
+  DESKTOP_LIST_MARGIN,
   DESKTOP_ROW_PAD,
   DESKTOP_SECTION_SPACE,
   desktopPad,
@@ -151,7 +152,13 @@ export function paneRowParts(
     )
 
     return look === 'desktop' ? (
-      desktopFrame({ padY: 0, mark: lead, ...(lead || isUnderPr ? {} : { markCells: 0 }), children: words })
+      desktopFrame({
+        padY: 0,
+        padBelow: desktopPad(LIST_MARGIN_PT),
+        mark: lead,
+        ...(lead || isUnderPr ? {} : { markCells: 0 }),
+        children: words,
+      })
     ) : (
       <Box paddingLeft={TREE_LINE_AT}>{line}</Box>
     )
@@ -194,15 +201,13 @@ export function paneRowParts(
     </Box>
   )
   const titleGap = (hasChildren = true) =>
-    isInline
+    isInline || look === 'desktop'
       ? []
-      : look === 'desktop'
-        ? [<Box paddingTop={desktopPad(HEAD_GAP_PT - ROW_PAD_PT)} />]
-        : [
-            <Box paddingLeft={TREE_LINE_AT}>
-              <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
-            </Box>,
-          ]
+      : [
+          <Box paddingLeft={TREE_LINE_AT}>
+            <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
+          </Box>,
+        ]
   /** A result mark and the space after it, before its label. A blank mark keeps its place, so the label stays put. */
   const resultLead = (mark: ResultMark, key: string, color: string) => (
     <Box key={`${key}-lead`} width={RESULT_MARK_CELLS} flexShrink={0}>
@@ -283,7 +288,7 @@ export function paneRowParts(
   )
   // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
   /** A fold's line: `label`, then the chevron. Desktop posts its click under `fold-` and `key`. */
-  const foldRow = (key: string, label: string, isUnfolded: boolean, toggle: () => void) =>
+  const foldRow = (key: string, label: string, isUnfolded: boolean, toggle: () => void, padY = DESKTOP_ROW_PAD) =>
     hasClient ? (
       <Box key={`fold-row-${key}`} position="relative" width="100%">
         <elements.Client
@@ -296,7 +301,7 @@ export function paneRowParts(
               label,
               isUnfolded,
               chevron: foldGlyph(isUnfolded),
-              padY: DESKTOP_ROW_PAD,
+              padY,
               colors: {
                 rest: isInline ? null : (pal.card ?? null),
                 text: pal.age,
@@ -344,6 +349,7 @@ export function paneRowParts(
                 updateUnfolded(u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind])),
                 updateClosedAll(a => a.filter(k => k !== kind)),
               ]),
+            DESKTOP_LIST_MARGIN,
           ),
           ...(isUnfolded && look !== 'desktop' && !isInline
             ? [

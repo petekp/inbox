@@ -15,6 +15,7 @@ import {
   ITEM_GAP,
   LINE_HEIGHT,
   LIST_GAP,
+  LIST_MARGIN,
   NEST,
   SECTION_GAP,
   SMALL_GAP,
@@ -25,10 +26,24 @@ import type { Paint, Theme } from './paint-theme'
 import { SLIDE_PX } from '../../hooks/row-motion'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
-/** The padding a block keeps inside its own box, above and below. It counts toward the space. */
+/** A group's Closed fold, which ends its list. */
+const isClosedFold = (b: Block): boolean => b.kind === 'fold' && 'closedFold' in b.change
+
+/**
+ * The padding a block keeps inside its own box, above and below. It counts toward the space. A Closed fold pads
+ * `LIST_MARGIN`, so its label sits that far under the last row's box while the two boxes meet.
+ */
 export function padOf(b: Block): number {
+  if (isClosedFold(b)) return LIST_MARGIN
+
   return b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0
 }
+
+/** From a group's title, or the last line of its list, to the text of the next block: a row's padding past its box. */
+const LIST_MARGIN_TO_TEXT = LIST_MARGIN + ROW_PAD_PT
+
+/** A group's title, or a caption over a list, as "Other PRs". A label over a part, as the goal's, is not one. */
+const isTitle = (b: Block): boolean => (b.kind === 'heading' && !b.isLabel) || b.kind === 'caption'
 
 /** A row that draws only its title line, with no box showing. */
 const isOneLineRow = (r: RowBlock): boolean =>
@@ -60,7 +75,8 @@ const isMilestone = (b: Block): boolean => 'path' in b && b.path?.is === 'milest
 function gapBetween(prev: Block, b: Block): number {
   if ('gapAbove' in b && b.gapAbove !== undefined) return b.gapAbove
   if (isMilestone(prev)) return isMilestone(b) ? LIST_GAP : HEAD_GAP
-  const isLabelled = prev.kind === 'heading' || prev.kind === 'caption' || (prev.kind === 'rule' && prev.text !== null)
+  if (isTitle(prev) || isClosedFold(b)) return LIST_MARGIN_TO_TEXT
+  const isLabelled = prev.kind === 'heading' || (prev.kind === 'rule' && prev.text !== null)
   if (isLabelled) return HEAD_GAP
   if (prev.kind === 'rule' || b.kind === 'rule') return SECTION_GAP / 2
   if (prev.kind === 'note' && prev.isHead && b.kind === 'note' && b.isHead) return INSIDE_GAP

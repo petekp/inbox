@@ -25,7 +25,7 @@
 }
 .fold {
   display: block;
-  margin: var(--control-gap) 0 0 calc(var(--text-x) - var(--unit));
+  margin: var(--list-margin) 0 0 calc(var(--text-x) - var(--unit));
   padding: 0 var(--unit);
   border-radius: 5px;
   color: var(--muted);
