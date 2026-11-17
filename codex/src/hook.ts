@@ -25,7 +25,7 @@ import {
   turnStarted,
 } from '../../hooks/session-turns'
 import { claimedStatusRefresh, needsUpdate, statusChanged } from '../../hooks/session-status'
-import { namedCli } from './cli'
+import { ancestorCli, namedCli } from './cli'
 import { endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
 import { noteDialogs } from './dialogs'
 import { withEarlierHistory, withMissedTurns } from './history'
@@ -66,6 +66,8 @@ export type HookDeps = {
   env: NodeJS.ProcessEnv
   now: () => number
   run: Run
+  /** The hook's parent process, where the search for the running codex starts. */
+  parentPid: number
   startUpdate: (sessionId: string) => void
   /** Starts the Status call a hook claimed for the running turn, in a process of its own. */
   startStatusRefresh: (sessionId: string) => void
@@ -80,7 +82,8 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   // INBOX_IN_EXEC lets a test drive a whole session through `codex exec`.
   if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null
   const { update: write, read } = codexStore(dir, id, now, deps.onWrite)
-  const cliPath = namedCli(env)
+  const named = namedCli(env)
+  const cliPath = named ?? ((await read()).cliPath === null ? await ancestorCli(deps.run, deps.parentPid) : null)
   const withCli = (s: SessionState): SessionState => (cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s)
   // A subagent's hook names its own rollout, not the session's.
   const rolloutPath = input.agent_id ? null : input.transcript_path

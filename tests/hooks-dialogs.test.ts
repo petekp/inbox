@@ -90,8 +90,8 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
   await selectRow(pane, `${deployItem?.id}`)
   await clock.settle()
   const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
-  expect(texts).toContain('Deploy: Runs the staging pipeline')
-  expect(texts).toContain('Hold: Waits for the review')
+  expect(texts).toContain('Runs the staging pipeline')
+  expect(texts).toContain('Waits for the review')
 
   w.ledgerReply = 'NEW: decide | - | Clear stored data? | Yes / No | -'
   const yesNo = (yes: string, no: string) => [

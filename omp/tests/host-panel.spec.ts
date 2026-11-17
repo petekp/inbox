@@ -27,7 +27,9 @@ test('opening the panel finds gh missing when no gh starts', async () => {
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await inbox.openPanel(makeCtx(), w.clock)
   await settle()
-  expect((await inbox.screen(makeCtx())).isGhMissing).toBe(true)
+  const screen = await inbox.screen(makeCtx())
+  expect(screen.isGhMissing).toBe(true)
+  expect(screen.view.prs.refresh?.actions.map(a => a.label)).toEqual(['Refresh PRs'])
 })
 
 test('opening the panel does not find gh missing when every gh run times out', async () => {
@@ -176,7 +178,7 @@ test('the band shows above the editor and redraws with the counts after a change
   expect(band.render(80).join('')).toContain('Nothing needed')
   const before = renders.count
   await record({ kind: 'task', ask: 'Try the CLI by hand' }, ctx)
-  await until(() => renders.count > before)
+  await until(() => band.render(80).join('').includes('Asks'))
   expect(renders.count).toBeGreaterThan(before)
   expect(band.render(80).join('')).toContain('Asks')
   expect(band.render(80).join('')).toContain('/inbox to open')
@@ -365,4 +367,41 @@ test('a Status saved while the panel already shows the Status page starts a look
   await settle()
 
   expect(state().ledger.overview.lastLookAt).not.toBeNull()
+})
+
+async function openInboxPanel(ctx: any, components: any[]) {
+  const before = components.length
+  const opened = w.commands.get('inbox').handler('', ctx)
+  await until(() => components.length > before)
+  const panel = components[before]
+  await until(() => panel.render(80).join('\n').includes('Ship it?'))
+
+  return { opened, panel }
+}
+
+const closePanel = async (opened: Promise<unknown>, panel: any) => {
+  panel.handleInput('\x1b')
+  await opened
+  panel.dispose()
+}
+
+test('a reply draft survives closing and reopening /inbox, and its row stays held while the panel is closed', async () => {
+  createInbox(pi(), deps())
+  const { ctx, components } = tuiCtx()
+  await record({ kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] }, ctx)
+  const first = await openInboxPanel(ctx, components)
+  first.panel.handleInput('t')
+  for (const ch of 'draft kept') first.panel.handleInput(ch)
+  first.panel.handleInput('\x1b')
+  await closePanel(first.opened, first.panel)
+  await settle()
+  expect(state().heldRows).toEqual(state().ledger.items.map((i: { id: string }) => i.id))
+
+  const second = await openInboxPanel(ctx, components)
+  second.panel.handleInput('t')
+  await tick()
+  const lines = second.panel.render(80).join('\n')
+  expect(lines).toContain('draft kept')
+  second.panel.handleInput('\x1b')
+  await closePanel(second.opened, second.panel)
 })

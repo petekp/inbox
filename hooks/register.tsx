@@ -106,6 +106,7 @@ import {
   startInHerdr,
   askHerdrModAgain,
   openInHerdr,
+  isExitReason,
   publishToHerdr,
   type HerdrCalls,
 } from './mod-herdr'
@@ -116,20 +117,12 @@ import { openTarget } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerError } from './view'
-import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
+import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf } from './banners'
+import { rowKeyActions } from './row-key-actions'
 import { comparePagePath, nextBuildMarkPath } from './mod-plugin-files'
 import { bandCounts, isMaybeStale, noCountsText } from './band'
-import {
-  drawnLists,
-  rowKeyPlan,
-  rowsIn,
-  firstWaiting,
-  steppedIndex,
-  tabUndos,
-  latestUndo,
-  type PlannedKey,
-} from './action-plan'
+import { drawnLists, rowsIn, firstWaiting, steppedIndex, tabUndos, latestUndo } from './action-plan'
 import { isRowTab, isShownTab, screenTabOf, shownTabs, tabBadge, INBOX_COMMAND_TEXT, type ShownTab } from './tabs'
 import {
   heldReplies,
@@ -192,7 +185,6 @@ import {
 } from './pane-selection'
 import {
   type Action,
-  ACTION_GLYPHS,
   COPY_FAILURES,
   fieldKey,
   focusHintFor,
@@ -255,6 +247,7 @@ import {
   type LoadedBy,
   withoutRowActions,
 } from './mod-sessions'
+import { isPrFetchBusy, queuePrFetch } from './mod-pr-queue'
 import { cancelUndoScroll, mod, paneState, resetTurn, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import {
@@ -395,21 +388,30 @@ function herdrCalls($: EngineInterface): HerdrCalls {
   }
 }
 
-function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
-  return publishToHerdr(herdrCalls($), isEnding ? conversation.id : null, async () => {
-    const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
+function publishStatus($: EngineInterface, isEnding = false, isExit = false): Promise<boolean> {
+  return publishToHerdr(
+    herdrCalls($),
+    isEnding ? conversation.id : null,
+    async () => {
+      const [session, dialogs, unreadable] = await Promise.all([
+        read($, SESSION),
+        read($, DIALOGS),
+        read($, UNREADABLE),
+      ])
 
-    const root = (await sessionFolder(commandCalls($))) ?? ''
+      const root = (await sessionFolder(commandCalls($))) ?? ''
 
-    return {
-      id: conversation.id,
-      root,
-      session,
-      dialogs,
-      ...(await readRemoteState(saveEngine($), conversation.id, session)),
-      isUnread: unreadable === conversation.id,
-    }
-  })
+      return {
+        id: conversation.id,
+        root,
+        session,
+        dialogs,
+        ...(await readRemoteState(saveEngine($), conversation.id, session)),
+        isUnread: unreadable === conversation.id,
+      }
+    },
+    isExit,
+  )
 }
 
 /** Applies a Herdr look's press. False when it is for another conversation. */
@@ -979,7 +981,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   // The Status call reads the transcript.
   const statusCall = transcript ? catchUpStatus($, owner, transcript) : null
   const forkedAt = await $.clock.now()
-  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
+  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown), effort: 'low' })
   if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
@@ -1667,33 +1669,14 @@ function markFetching($: EngineInterface, isFetching: boolean) {
   )
 }
 
-/**
- * Fetches the session's PRs, one fetch at a time. A fetch asked for while one runs follows it, and finds the
- * branch's PR when any of the asks wanted it.
- */
 function fetchPrs($: EngineInterface, findsBranchPr: boolean, isPress = false): Promise<void> {
-  const waiting = mod.nextFetch
-  if (waiting) {
-    waiting.findsBranchPr ||= findsBranchPr
-    waiting.isPress ||= isPress
-    return mod.fetchingPrs
-  }
-  mod.nextFetch = { findsBranchPr, isPress }
-  mod.fetchingPrs = mod.fetchingPrs
-    .then(() => {
-      const ask = mod.nextFetch ?? { findsBranchPr: false, isPress: false }
-      mod.nextFetch = null
-      return fetchPrsNow($, ask)
-    })
-    .catch(() => undefined)
-
-  return mod.fetchingPrs
+  return queuePrFetch(findsBranchPr, isPress, ask => fetchPrsNow($, ask))
 }
 
 async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   const owner = currentOwner()
-  await markFetching($, true)
   try {
+    await markFetching($, true)
     await fetchSessionPrs(hostOf($, owner), ask.findsBranchPr, ask.isPress)
   } finally {
     mod.prFetchEndedAt = await $.clock.now()
@@ -1716,7 +1699,8 @@ async function pollPrs($: EngineInterface, remote = false) {
     isTabShown: isTabShown || remote,
     isAway: away.isAway && !remote,
   }
-  if (isPrPollDue(session, poll)) await fetchPrs($, poll.isTabShown)
+  const isFetching = isPrFetchBusy()
+  if (isPrPollDue({ ...session, prViews: { ...session.prViews, isFetching } }, poll)) await fetchPrs($, poll.isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
@@ -1900,85 +1884,6 @@ async function runDemoPress(
   }
   if ('stale' in pressed || pressed.effects.length > 0)
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
-}
-
-function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { keys: KeyAction[]; more: KeyAction[] } {
-  const { id, item, finding } = r
-  const keyAction = (k: PlannedKey): KeyAction => {
-    switch (k.slot) {
-      case 'retry':
-        return {
-          key: `retry-${id}`,
-          label: k.label,
-          icon: ACTION_GLYPHS[k.icon],
-          emphasis: k.emphasis,
-          kind: k.kind,
-          onPress: press => runPress($, k.press, press.surface),
-        }
-      case 'allOptions':
-        return {
-          key: `all-options-${id}`,
-          label: k.label,
-          emphasis: k.emphasis,
-          kind: 'view',
-          onPress: () => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
-        }
-      case 'choice': {
-        const { action: a, hotkey } = k
-        const p = a.press
-        const base = {
-          label: a.label,
-          kind: a.kind,
-          emphasis: a.emphasis,
-          isOut: a.isOut,
-          ...(hotkey ? { hotkey } : {}),
-          onPress: (press: UiPressArgument) => runPress($, p, press.surface),
-        }
-        if (p.action === 'answer')
-          return {
-            ...base,
-            key: `answer-${id}-${(item?.options ?? []).indexOf(p.option)}`,
-            ...(a.isPrimary ? { variant: 'primary' as const } : {}),
-          }
-        const icon = a.icon && ACTION_GLYPHS[a.icon]
-        return { ...base, ...(icon ? { icon } : {}), key: `help-${id}-${p.step}` }
-      }
-      case 'action': {
-        const { action: a, hotkey } = k
-        const p = a.press
-        const presentation = { emphasis: a.emphasis, isOut: a.isOut }
-        if (p.action === 'type')
-          return {
-            label: a.label,
-            kind: 'view',
-            key: `typekey-${id}`,
-            hotkey,
-            ...presentation,
-            onPress: () => void startTyping($, id),
-          }
-        if (p.action === 'discard')
-          return {
-            label: a.label,
-            kind: a.kind,
-            key: `discard-${id}`,
-            hotkey,
-            ...presentation,
-            onPress: () => void discardReply($, id),
-          }
-        return {
-          label: a.label,
-          kind: a.kind,
-          key: p.action === 'dismiss' && finding ? `drop-${id}` : `${p.action}-${id}`,
-          hotkey,
-          ...presentation,
-          onPress: press => runPress($, p, press.surface),
-        }
-      }
-    }
-  }
-  const { keys, more } = rowKeyPlan(r, isAllShown)
-
-  return { keys: keys.map(keyAction), more: more.map(keyAction) }
 }
 
 async function drawnState(
@@ -2383,7 +2288,7 @@ export const register: Register = on => {
         update($, DIALOGS, () => []),
         update($, DEMO, () => null),
         update($, DEMO_RECORDING, () => false),
-        publishStatus($, true),
+        publishStatus($, true, isExitReason(e.reason)),
       ])
     }
     // /clear, /resume and /branch (which reports resume) go on in this process with another conversation.
@@ -3063,7 +2968,17 @@ export const register: Register = on => {
 
     const client: PaneClient = hasClient ? { hasClient: true, elements } : { hasClient: false, elements }
     const handlers: PaneHandlers = {
-      rowKeyActions: (r, isAllShown) => rowKeyActions($, r, isAllShown),
+      rowKeyActions: (r, isAllShown) =>
+        rowKeyActions(
+          {
+            runPress: (p, surface) => runPress($, p, surface),
+            startTyping: id => startTyping($, id),
+            discardReply: id => discardReply($, id),
+            showAllOptions: id => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
+          },
+          r,
+          isAllShown,
+        ),
       unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
       sendDraft: (id, surface) => sendDraft($, id, surface),
       discardReply: id => discardReply($, id),
@@ -3156,6 +3071,7 @@ export const register: Register = on => {
       actionRows,
       rowActions,
       fieldActions,
+      keyedButton,
     } = paneRowKeys(
       { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
       handlers,
@@ -3241,6 +3157,7 @@ export const register: Register = on => {
         keyRow,
         fieldActions,
         actionRows,
+        keyedButton,
         desktopFrame,
       },
       handlers,
@@ -3502,7 +3419,9 @@ export const register: Register = on => {
     const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
     const rowKeys = [
       ...statusRowKeys,
-      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
+      ...(selectedActions
+        ? [...selectedActions.options, ...selectedActions.keys, ...selectedActions.more]
+        : closeKeysWithoutRow(statusRowKeys)),
       ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prClearKeys] : []),
       // The goal's Undo takes the undo key on the Status, where no list row closes.
       ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)

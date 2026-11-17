@@ -58,6 +58,7 @@ class World {
   files: string[] = []
   written: Record<string, string> = {}
   isMoveFailing = false
+  holdMove: (() => Promise<void>) | undefined
 
   sessionFiles: { pid: number; sessionId: string }[] | undefined
   endedPids: number[] = []
@@ -280,6 +281,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.files = []
   w.written = {}
   w.isMoveFailing = false
+  w.holdMove = undefined
   w.sessionFiles = undefined
   w.endedPids = []
   w.isPsMissing = false
@@ -428,6 +430,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
       return {
         value: { exitCode: 0, stdout: `${branch}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
       }
+    if (e.argv[0] === 'mv') await w.holdMove?.()
     if (e.argv[0] === 'mv' || e.argv[0] === 'rm') return { value: fileCommand(e.argv) }
     if (w.isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
     if (w.slowGhClock && e.argv[0] === 'gh') {

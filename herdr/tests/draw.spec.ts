@@ -22,8 +22,11 @@ import type { Followed } from '../src/follow'
 import { AGENT, NOW, demoEnvelopeText, demoScreen, finishedScreen, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
-  const { keys, more } = rowKeyPlan(row, isAllShown)
-  return [...keys, ...more].map(k => (k.slot === 'allOptions' || k.slot === 'retry' ? k.label : actionLabel(k.action)))
+  const { options, keys, more } = rowKeyPlan(row, isAllShown)
+  return [
+    ...options.map(o => actionLabel(o.action)),
+    ...[...keys, ...more].map(k => (k.slot === 'allOptions' || k.slot === 'retry' ? k.label : actionLabel(k.action))),
+  ]
 }
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
@@ -72,15 +75,17 @@ test('a selected question with described answers draws its Holds up line, contex
   const selected = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: question.id }))).find(
     b => b.id === question.id,
   )!
-  const texts = selected.body.map(l => l.lead ?? l.text)
+  const texts = selected.body.map(l => l.optionId ?? l.text)
+  const pinch = selected.buttons.find(b => b.label.startsWith('Pinch'))!
   expect(texts[0]).toBe(question.holdsUpLine ?? question.contextLine ?? undefined)
   const earlier = texts.indexOf(
     'You answered Flick 3 days ago, in glasses-app, to “Which gesture should clear a glance?”',
   )
-  expect([earlier > 0, earlier < texts.indexOf('Pinch:')]).toEqual([true, true])
-  const recommended = selected.body.find(l => l.lead === 'Pinch:')!
-  expect(recommended.tone).toBe('muted')
-  expect(recommended.text).toContain('Recommended: a flick fires by accident while walking')
+  expect([earlier > 0, earlier < texts.indexOf(pinch.id)]).toEqual([true, true])
+  expect(pinch.isOption).toBe(true)
+  const note = selected.body[texts.indexOf(pinch.id) + 1]!
+  expect(note.tone).toBe('muted')
+  expect(note.text).toContain('Recommended: a flick fires by accident while walking')
   const trees = selected.body.filter(l => l.tree !== undefined).map(l => l.tree)
   expect(trees.at(-1)).toBe('last')
   expect(trees.slice(0, -1).every(t => t === 'tee' || t === 'trunk')).toBe(true)

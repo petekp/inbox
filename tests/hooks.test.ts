@@ -45,11 +45,11 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
     now: 1_000_000,
   })
   const itemRows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows].map(row => {
-    const { keys, more } = rowKeyPlan(row, true)
+    const { options, keys, more } = rowKeyPlan(row, true)
     return {
       id: row.id,
       type: row.type,
-      hotkeys: [...keys, ...more].flatMap(k => ('hotkey' in k && k.hotkey !== undefined ? [k.hotkey] : [])),
+      hotkeys: [...options, ...keys, ...more].flatMap(k => ('hotkey' in k && k.hotkey !== undefined ? [k.hotkey] : [])),
     }
   })
   const isSent = threadSentIn(lastActions)
@@ -92,12 +92,15 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
   })
   const TITLE_START = 20
   const expectedLabels = (row: (typeof view.findings.rows)[number]) => {
-    const { keys, more } = rowKeyPlan(row, true)
-    return [...keys, ...more].flatMap(k => {
-      if (k.slot === 'retry') return ['Try again']
-      if (k.slot === 'allOptions') return []
-      return [k.action.label]
-    })
+    const { options, keys, more } = rowKeyPlan(row, true)
+    return [
+      ...options.map(o => o.action.label),
+      ...[...keys, ...more].flatMap(k => {
+        if (k.slot === 'retry') return ['Try again']
+        if (k.slot === 'allOptions') return []
+        return [k.action.label]
+      }),
+    ]
   }
   const tabs = [
     {
