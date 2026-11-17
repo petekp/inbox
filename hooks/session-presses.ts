@@ -1,4 +1,6 @@
 import { settledCollapses } from './collapse'
+import { remoteHeldRows } from './remote-viewers'
+import { remoteCommandState, remoteDeliveryOutcome } from './remote-command-state'
 import { linkDialogs } from './dialogs'
 import { closedAt, pruneClosed } from './ledger-close'
 import type { Host } from './model-text'
@@ -89,7 +91,11 @@ export type SendOutcome =
   | { state: 'unconfirmed'; reason: string }
 
 export function completedAttempt<S extends Session>(state: S, deliveryId: string, outcome: SendOutcome): S {
-  if (outcome.state === 'rejected') return { ...state, sent: state.sent.filter(s => s.deliveryId !== deliveryId) }
+  if (outcome.state === 'rejected')
+    return {
+      ...remoteDeliveryOutcome(state, deliveryId, outcome),
+      sent: state.sent.filter(s => s.deliveryId !== deliveryId),
+    }
   const index = state.sent.findIndex(s => s.deliveryId === deliveryId)
   const attempt = state.sent[index]
   if (!attempt) return state
@@ -107,6 +113,12 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
   const earlierUnknown = state.sent
     .slice(0, index)
     .some(s => s.text === text && (s.phase === 'attempting' || s.phase === 'uncertain'))
+  state = remoteDeliveryOutcome(
+    state,
+    deliveryId,
+    outcome,
+    outcome.state === 'accepted' && outcome.isInTurn === true && !earlierUnknown,
+  )
   if (outcome.state === 'accepted' && !earlierUnknown) {
     lastActions = outcome.isInTurn
       ? withArrival(lastActions, text, undefined, deliveryId)
@@ -167,20 +179,24 @@ export function withHolds<S extends Session>(s: S, holds: Holds): S {
 }
 
 /** The rows a look still draws in place: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. */
-export function rowsInPlace(s: Session): Set<string> {
+export function rowsInPlace(s: Session, now = Date.now()): Set<string> {
   const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
   ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
 
-  return new Set([...s.heldRows, ...since])
+  const pending = Object.values(s.remoteCommands)
+    .filter(c => c.pendingDelivery && !c.deliveryId)
+    .map(c => c.row)
+  return new Set([...s.heldRows, ...remoteHeldRows(s, now), ...pending, ...since])
 }
 
 /**
  * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of `rowsInPlace`.
  * A PR's view goes once `isViewKept` no longer keeps it, and the collapses settle as `settledCollapses` says.
  */
-export function pruned<S extends Session>(s: S): S {
+export function pruned<S extends Session>(s: S, now = Date.now()): S {
+  s = remoteCommandState(s)
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) =>
       isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince),
@@ -190,7 +206,7 @@ export function pruned<S extends Session>(s: S): S {
 
   return settledCollapses({
     ...s,
-    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s, now)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews,
   })
 }

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T06:02:22.938Z. 270856 characters follow.
+// Built at 2026-11-17T06:16:56.396Z. 271239 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -2623,6 +2623,9 @@ function emptySession() {
     pending: [],
     sent: [],
     lastActions: {},
+    remoteCommands: {},
+    remoteCommandFloor: 0,
+    remoteViewers: {},
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -2676,6 +2679,9 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    remoteCommands: saved.remoteCommands ?? {},
+    remoteCommandFloor: saved.remoteCommandFloor ?? 0,
+    remoteViewers: saved.remoteViewers ?? {},
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     collapsed: saved.collapsed ?? {},
@@ -2722,7 +2728,7 @@ var COUNT_TOKENS = {
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var SESSION_LABEL = "inbox.session";
 var HERDR_FORMAT = 1;
-var SESSION_FIELDS = Object.keys(emptySession());
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor");
 function publishedSessionsFolder(appHome) {
   return `${appHome}/inbox/sessions`;
 }
@@ -3087,7 +3093,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press,
       label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
       ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -5801,12 +5807,14 @@ var trunkEl = (top, height, t, isSelected) => {
   const el = div8().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   return height === null ? el.bottom(0) : el.h(height);
 };
+var NO_BREAK_SPACE = " ";
+var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
 var bodyLineEl = (l, t, isSelected) => {
   const above = l.isApart ? CHILD_GAP : INSIDE_GAP;
   const armAt = above + LINE_HEIGHT / 2;
   const arm = div8().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = l.lead ? h_flex5().items_start().pl(MARK_W).pt(above).child(div8().flex_none().text_color(t.foreground).pr(SMALL_GAP).child(l.lead)).child(div8().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone)).pt(above);
+  const line = l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone)).pt(above);
   return line.relative().children(strokes);
 };
 function fieldEl(f, p, indent, isInert = false) {

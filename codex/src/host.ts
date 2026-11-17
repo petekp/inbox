@@ -1,3 +1,5 @@
+import { remoteViewerReceipts } from '../../hooks/remote-viewers'
+import { remoteReceipts } from '../../hooks/remote-command-state'
 import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -27,10 +29,11 @@ export function codexStore(
   sessionId: string,
   now: () => number,
   onWrite?: OnWrite,
-): Pick<SessionHost<SessionState>, 'now' | 'read' | 'update' | 'exclusive'> {
+): Pick<SessionHost<SessionState>, 'now' | 'read' | 'readDurable' | 'update' | 'exclusive'> {
   return {
     now,
     read: () => readState(dir, sessionId),
+    readDurable: () => readState(dir, sessionId),
     update: async change => {
       const s = await updateState(
         dir,
@@ -38,6 +41,7 @@ export function codexStore(
         onWrite
           ? async current => ({ ...(await change(current)), writtenAt: Math.max(now(), (current.writtenAt ?? 0) + 1) })
           : change,
+        now,
       )
       await onWrite?.(s)
 
@@ -115,6 +119,10 @@ export function herdrOnWrite(
           publishFiles,
           target.appHome,
           {
+            receipts: remoteReceipts(s),
+            viewers: remoteViewerReceipts(s),
+            remoteProtocol: 2,
+            remoteHistoryAfter: s.remoteCommandFloor ?? 0,
             host: 'codex',
             agent: CODEX.agent,
             sessionId: id,
@@ -133,7 +141,7 @@ export function herdrOnWrite(
       const key = herdrReportKey(r)
       if (key === s.herdrReport?.key) return
       if (!(await report(run, async () => r))) return
-      await updateState(dir, id, saved => ({ ...saved, herdrReport: { key, seq } }))
+      await updateState(dir, id, saved => ({ ...saved, herdrReport: { key, seq } }), now)
     }).catch(() => undefined)
   }
 }

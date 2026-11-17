@@ -282,6 +282,7 @@ export type Closed = {
   /** A Done notification that may have reached the agent, so Undo cannot retract it. */
   isSentToAgent?: true
   doneNotification?: { id: string; error?: string }
+  commandId?: string
 }
 
 /**
@@ -293,6 +294,7 @@ export type Closed = {
 export type PressKind = 'talk' | 'handoff' | 'local' | 'mark' | 'view'
 
 export type LastAction = {
+  commandId?: string
   kind: Exclude<PressKind, 'view'>
   /** The action's id, as `actionId` makes it, so that action reads "… again". */
   action: string
@@ -678,6 +680,33 @@ export type CallFailure = {
 export type CallRecord = { lastFailure: CallFailure | null; recoveredAt: number | null }
 
 /** A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed. */
+export type RemoteViewerRecord = {
+  generation: number
+  sequence: number
+  expiresAt: number
+  released: boolean
+  replies: Record<string, number>
+  shownSince: number | null
+  tab: string
+  shownRows: Record<string, number>
+  listActiveAt: number | null
+  listInput?: { since: number; last: number } | null
+}
+
+export type RemoteCommandRecord = {
+  timeWasValid?: boolean
+  issuedAt?: number
+  pendingDelivery?: boolean
+  payload: string
+  acceptedAt: number
+  revision: string
+  state: 'accepted' | 'attempting' | 'applied' | 'stale' | 'failed' | 'uncertain' | 'cancelled' | 'refused' | 'expired'
+  error: string | null
+  row: string
+  deliveryId: string | null
+  delivered: boolean
+}
+
 export type HerdrPressOutcome = { id: string; outcome: 'applied' | 'stale' }
 
 /** One conversation's inbox: what every host saves and the shared session functions change. */
@@ -743,6 +772,7 @@ export type Session = {
     /** The local press identity; null for older records or messages without a row. */
     deliveryId: string | null
     phase?: 'attempting' | 'accepted' | 'uncertain'
+    commandIds?: string[]
   }[]
   lastActions: Record<string, LastAction>
   /**
@@ -750,6 +780,9 @@ export type Session = {
    * `lastPress`, so the look can tell a press whose row had already changed from one no host applied.
    */
   lastHerdrPress?: HerdrPressOutcome
+  remoteCommands: Record<string, RemoteCommandRecord>
+  remoteCommandFloor?: number
+  remoteViewers: Record<string, RemoteViewerRecord>
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**

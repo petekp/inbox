@@ -57,7 +57,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     buttons(root).map(b => b.textContent),
     ['Try again', 'Run tests', 'Done', 'Reply', 'Explain', 'Dismiss'],
   )
-  assert.equal(named(root, 'Done').classList.contains('primary'), true)
+  assert.equal(named(root, 'Done').classList.contains('primary'), false)
   assert.equal(named(root, 'Run tests').classList.contains('primary'), false)
   await act(() => named(root, 'Done').click())
   assert.equal(state.closed.length, 0)

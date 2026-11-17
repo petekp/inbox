@@ -13,7 +13,18 @@ export const ROLLOUT_ARRIVAL_AFTER_MS = 10_000
  * A message `codex queue` puts into a running turn can reach the rollout with changed whitespace or without a prompt hook.
  */
 export async function withRolloutArrivals(s: SessionState, now: number): Promise<SessionState> {
-  const waiting = s.sent.filter(x => x.row !== null && x.pressedAt !== null && x.phase === 'accepted')
+  const remoteDeliveries = new Set(Object.values(s.remoteCommands).map(command => command.deliveryId))
+  const remoteTexts = new Set(
+    s.sent
+      .filter(
+        send =>
+          (send.commandIds?.length ?? 0) > 0 || (send.deliveryId !== null && remoteDeliveries.has(send.deliveryId)),
+      )
+      .map(send => send.text.trim()),
+  )
+  const waiting = s.sent.filter(
+    x => x.row !== null && x.pressedAt !== null && x.phase === 'accepted' && !remoteTexts.has(x.text.trim()),
+  )
   if (waiting.length === 0) return s
   const since = Math.min(...waiting.map(x => x.pressedAt ?? now))
   const saved = (await userMessagesSince(s.transcriptPath, since)).filter(m => now - m.at >= ROLLOUT_ARRIVAL_AFTER_MS)

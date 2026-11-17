@@ -21,6 +21,8 @@ const ENTRY_POINTS = {
   'hooks/client-features.ts': { names: ['FeatureId'], why: 'scripts/structure/clients.mjs reads it.' },
   'hooks/tones.ts': { names: ['DARK_TONES', 'LIGHT_TONES'], why: 'codex/build.mjs reads them for the tab colors.' },
   'omp/src/host.ts': { names: ['default'], why: 'omp loads the built bundle and calls its default export.' },
+  'prototypes/exact-inbox/app.ts': { names: ['answer', 'grants'], why: 'Exact loads the client data module.' },
+  'prototypes/exact-inbox/app.contract.d.ts': { names: '*', why: 'Exact generates client data-source declarations.' },
   'types/index.d.ts': { names: '*', why: 'scripts/build-types.mjs builds it from types/parts for the mod.' },
   'videos/remotion.config.ts': { names: '*', why: 'Remotion loads it by name.' },
   'videos/src/videos.ts': { names: ['TIMELINES'], why: 'videos/record/drive.py imports it from the built bundle.' },

@@ -3,9 +3,6 @@ import type { FeatureId } from './client-features'
 /**
  * The parity record: how each host supports each feature. `full` means the host does what the shared flow
  * describes. `different` means the person gets the feature another way. `unsupported` means the person gets none of it.
- * `docs/looks.md` explains each feature that is not `full` in "Differences on purpose", in a row whose first column
- * names the feature id in backticks. `hooks/client-features.ts` lists the feature ids. `scripts/check-structure.mjs`
- * fails when such a row is missing, and reads this file with the TypeScript AST, so write each entry as an object literal.
  */
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */
@@ -112,6 +109,8 @@ export const CLIENTS: Record<ClientId, Client> = {
           'The engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, so it reads an Option-click on a fold: the Claude app reports `alt` on a click, which a VM run showed. The engine types say the pointer event of a Client carries the modifier keys the terminal reported held, and no terminal run has shown an Option-click folding all there.',
       },
       'suggested-goal': { kind: 'full' },
+      'remote-typed-reply-admission': { kind: 'full' },
+      'remote-draft-retention': { kind: 'full' },
     },
   },
   codex: {
@@ -284,6 +283,8 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: 'Clicks only, as for the goal: the Codex Status has no row selection.',
       },
+      'remote-typed-reply-admission': { kind: 'full' },
+      'remote-draft-retention': { kind: 'full' },
     },
   },
   omp: {
@@ -385,6 +386,8 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'The panel takes keys only, so the w key folds every fold or opens them all, and no click does.',
       },
       'suggested-goal': { kind: 'full' },
+      'remote-typed-reply-admission': { kind: 'full' },
+      'remote-draft-retention': { kind: 'full' },
     },
   },
 }

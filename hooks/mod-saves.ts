@@ -1,3 +1,5 @@
+import { remoteReceipts } from './remote-command-state'
+import { remoteViewerReceipts } from './remote-viewers'
 import type { Session } from '../types'
 import { KEPT_SESSIONS } from './ledger'
 import { dropUnreadSharedViews } from './mod-pr-shared'
@@ -87,7 +89,7 @@ type Held = { session: Session; savedAt: number; since: number; timer: Timer }
 const held = new Map<string, Held>()
 
 /** For saving: the pane draws another conversation, so this one holds no rows and has no showing. */
-const forSaving = (s: Session): Session => pruned({ ...s, heldRows: [], shownSince: null })
+const forSaving = (s: Session, now: number): Session => pruned({ ...s, heldRows: [], shownSince: null }, now)
 
 /**
  * Whether the store holds a newer save of `kept`'s conversation than the one it was changed from. Only a save of the
@@ -236,7 +238,14 @@ export function changeSaved(e: SaveEngine, id: string, change: Change): Promise<
         const read = await sessionToChange(e, id)
         if (!read) return
         const after = await change(read.session)
-        result = { before: read.session, after: after === read.session ? after : forSaving(after), isDrawn: false }
+        result = {
+          before: read.session,
+          after:
+            after === read.session
+              ? after
+              : forSaving(after, Object.keys(after.remoteViewers).length > 0 ? await e.now() : 0),
+          isDrawn: false,
+        }
         if (result.after === read.session) return
         unwritten = { session: result.after, savedAt: read.savedAt }
         await writeSaved(e, id, read.savedAt, result.after)
@@ -363,4 +372,27 @@ export async function readSettled(e: SaveEngine, id: string): Promise<{ session:
   const kept = held.get(id)
 
   return kept && (!saved || !isOvertaken(kept, saved)) ? { session: { savedAt: kept.savedAt, ...kept.session } } : saved
+}
+
+export async function readRemoteState(e: SaveEngine, id: string, live: Session) {
+  if (!Object.keys(live.remoteCommands).length && !Object.keys(live.remoteViewers).length) return {}
+  const saved = await readSaved(e, id)
+  if (!saved?.session) return {}
+  const durable = upgradeSession(saved.session)
+  return {
+    receipts: remoteReceipts(durable),
+    viewers: remoteViewerReceipts(durable),
+    remoteHistoryAfter: durable.remoteCommandFloor ?? 0,
+  }
+}
+
+export async function readDurableSession(e: SaveEngine, id: string): Promise<Session> {
+  const saved = await readSaved(e, id)
+  if (!saved?.session) throw new Error('The Inbox state could not be confirmed saved.')
+  return upgradeSession(saved.session)
+}
+
+export async function readSettledSession(e: SaveEngine, id: string): Promise<Session> {
+  const saved = await readSettled(e, id)
+  return saved?.session ? upgradeSession(saved.session) : emptySession()
 }

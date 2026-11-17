@@ -1,0 +1,152 @@
+shape Button
+  key: string
+  label: string
+  primary: bool
+  disabled: bool
+  input: bool
+  reason: string
+
+shape Row
+  id: string
+  kind: string
+  title: string
+  detail: string
+  context: string
+  recommendation: string
+  feedback: string
+  state: string
+  mark: string
+  actions: Button[]
+
+shape StatusLine
+  id: string
+  title: string
+  detail: string
+  depth: number
+  mark: string
+
+shape Inbox
+  connectionState: string
+  key: string
+  readOnly: bool
+  session: string
+  name: string
+  connected: bool
+  updatedAt: number
+  serverNow: number
+  running: bool
+  failure: string
+  fresh: bool
+  statusError: string
+  asks: Row[]
+  findings: Row[]
+  statusTitle: string
+  statusDetail: string
+  statusRows: StatusLine[]
+  questionCount: number
+  taskCount: number
+
+shape Receipt
+  ok: bool
+  id: string
+  state: string
+  error: string
+
+shape Draft
+  id: string
+  row: string
+  session: string
+  title: string
+  key: string
+  text: string
+
+fn firstId(rows: Row[]): string = match first(rows) { case some(r) => r.id, case none => "" }
+fn draftFor(drafts: Draft[], id: string): Draft = match first(drafts.filter(d => d.id == id)) { case some(d) => d, case none => Draft(id="", row="", session="", title="", key="", text="") }
+fn replyAction(rows: Row[], id: string): string = match first(rows.filter(r => r.id == id)) { case some(r) => match first(r.actions.filter(a => a.input)) { case some(a) => a.key, case none => "" }, case none => "" }
+
+shape SessionEntry
+  duplicate: bool
+  id: string
+  session: string
+  name: string
+  project: string
+  location: string
+  host: string
+  agent: string
+  state: string
+  reason: string
+  asks: number
+  attention: string
+  fresh: bool
+  readOnly: bool
+
+shape Directory
+  entries: SessionEntry[]
+  defaultId: string
+  error: string
+
+shape Place
+  id: string
+  name: string
+  tab: string
+  asksExpanded: string
+  findsExpanded: string
+  asksTop: number
+  findsTop: number
+  statusTop: number
+  reply: string
+
+shape Navigation
+  listTop: number
+  tab: string
+  selected: string
+  search: string
+  places: Place[]
+
+shape Viewport
+  width: number
+
+shape Page
+  navigationType: string
+  visibilityState: string
+  onLine: bool
+
+fn placeFor(places: Place[], id: string): Place = match first(places.filter(p => p.id == id)) { case some(p) => p, case none => Place(id=id, name="Agent session", tab="asks", asksExpanded="", findsExpanded="", asksTop=0, findsTop=0, statusTop=0, reply="") }
+fn sessionName(rows: SessionEntry[], id: string): string = match first(rows.filter(r => r.id == id)) { case some(r) => r.name, case none => "Agent session" }
+fn sessionLabel(s: SessionEntry): string = (s.state == "active" or s.state == "working" or s.state == "waiting") ? (not s.fresh ? "May be out of date" : s.attention != "" ? `${s.attention}${s.state == "working" ? " · Working…" : ""}` : s.state == "working" ? "Working…" : s.state == "waiting" ? "Waiting for input" : "Nothing needed") : s.state == "ended" ? "Ended" : s.state == "disconnected" ? "Disconnected" : s.state == "unsupported" ? "Unsupported" : "Unavailable"
+
+fn savedReply(drafts: Draft[], session: string): string = match first(drafts.filter(d => d.session == session and d.text.trim() != "")) { case some(d) => d.id, case none => "" }
+
+fn connectionText(inbox: Inbox, disconnected: bool): string = disconnected ? (inbox.connectionState == "ended" ? "Ended" : inbox.connectionState == "unsupported" ? "Unsupported" : "Disconnected") : inbox.connectionState == "waiting" ? "Waiting for input" : inbox.running ? "Working…" : "Connected"
+
+fn containsAction(inbox: Inbox, row: string, key: string): bool = inbox.asks.concat(inbox.findings).filter(r => r.id == row).map(r => r.actions.map(a => a.key).includes(key)).includes(true)
+
+fn matchingSessions(entries: SessionEntry[], selected: string, drafts: string[], query: string): SessionEntry[] = entries.filter(s => (s.state != "ended" or s.id == selected or drafts.includes(s.id)) and `${s.name} ${s.project} ${s.host}`.toLowerCase().includes(query.toLowerCase()))
+
+fn urlTab(url: string): string = url.startsWith("/sessions") ? "sessions" : url.startsWith("/status") ? "status" : url.startsWith("/findings") ? "findings" : url.startsWith("/prs") ? "prs" : "asks"
+
+fn readProblem(draftFailed: bool, inboxFailed: bool, failure: string): string = draftFailed ? "Can’t read your saved replies. Try refreshing." : inboxFailed ? "Can’t reach your agent. Check the connection and try again." : failure
+
+shape Recovery
+  id: string
+  session: string
+  key: string
+  row: string
+  draft: string
+  text: string
+
+shape ViewerAck
+  enabled: bool
+  generation: number
+  sequence: number
+  expiresAt: number
+  hostNow: number
+  released: bool
+
+fn sessionPath(tab: string, id: string): string = (tab == "status" ? "/status" : tab == "findings" ? "/findings" : tab == "prs" ? "/prs" : "/") + "?session=" + encodeURIComponent(id)
+
+fn visible(row: Geometry, clip: Geometry): bool = not row.unavailable and not row.provisional and not clip.unavailable and not clip.provisional and row.height > 0 and row.y < clip.y + clip.height and row.y + row.height > clip.y
+
+fn statusSampleVersion(inbox: Inbox, session: string, route: number): string = `${session}:${route}:${inbox.statusTitle.length}:${inbox.statusTitle}${inbox.statusDetail.length}:${inbox.statusDetail}:${inbox.statusRows.map(s => `${s.id.length}:${s.id}${s.title.length}:${s.title}${s.detail.length}:${s.detail}${s.mark.length}:${s.mark}:${s.depth}`).join("|")}`
+
+fn terminalReceipt(state: string): bool = state == "stale" or state == "failed" or state == "refused" or state == "cancelled" or state == "expired"
