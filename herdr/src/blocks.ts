@@ -67,6 +67,8 @@ export type Button = {
   does: Does
   /** A follow-up, which a row draws in one group after its other buttons, so the group wraps to the next line as a unit. */
   isFollowUp?: true
+  /** An answer, which the question's tree draws in its place, so the row's button line leaves it out. */
+  isOption?: true
   /** When the time this button offers runs out, as Undo's does. It draws the time left as a fill that empties. */
   runsOutAt?: number
   /** A spent Undo, which keeps its place so the row does not change shape, but draws nothing and takes no press. */
@@ -111,9 +113,17 @@ export type RowBlock = {
    * The row's lines under its title. `tree` places a line on the tree that hangs from the title's mark: `trunk` passes
    * it, `tee` joins a branch to the trunk, and `last` ends the trunk at the last branch. `isApart` starts a line a
    * `CHILD_GAP_PT` below the line above, as an option's note starts below the note before it. `lead` is an option's
-   * label, drawn in the foreground color before `text`, which takes `tone`.
+   * label, drawn in the foreground color before `text`, which takes `tone`. `optionId` draws the row's option button
+   * of that id in place of text.
    */
-  body: { lead?: string; text: string; tone: Tone; tree?: 'trunk' | 'tee' | 'last'; isApart?: true }[]
+  body: {
+    lead?: string
+    text: string
+    tone: Tone
+    tree?: 'trunk' | 'tee' | 'last'
+    isApart?: true
+    optionId?: string
+  }[]
   buttons: Button[]
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null

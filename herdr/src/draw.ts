@@ -20,9 +20,6 @@ import {
   closedTitleTone,
   settledTone,
   shortAgo,
-  optionBody,
-  optionReasonLine,
-  shownOptionDescriptions,
   waitingCount,
 } from '../../hooks/rows'
 import { firstWaiting, rowAfterClose, rowKeyPlan } from '../../hooks/action-plan'
@@ -109,23 +106,38 @@ function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string):
   return { is: 'press', press, effects }
 }
 
-/** The row's buttons in the plan's order: its keys, then its follow-ups. */
+/** The row's buttons in the plan's order: its options, which the tree draws, then its keys, then its follow-ups. */
 function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] {
-  const { keys, more } = rowKeyPlan(row, isAllShown)
+  const { options, keys, more } = rowKeyPlan(row, isAllShown)
+  const answers = options.map((o, n): Button => ({
+    ...button(
+      `${row.id} ${n}`,
+      actionLabel(o.action),
+      o.action.emphasis,
+      rowDoes(row, o.action.press, o.action.kind, agent),
+      o.hotkey ?? null,
+    ),
+    isOut: o.action.isOut,
+    isOption: true,
+  }))
 
-  return [...keys, ...more].map((k, n): Button => {
-    const id = `${row.id} ${n}`
-    if (k.slot === 'allOptions') return button(id, k.label, k.emphasis, { is: 'view', change: { showOptions: row.id } })
-    if (k.slot === 'retry') return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent))
-    const { action } = k
-    const does = rowDoes(row, action.press, action.kind, agent)
+  return [
+    ...answers,
+    ...[...keys, ...more].map((k, n): Button => {
+      const id = `${row.id} ${options.length + n}`
+      if (k.slot === 'allOptions')
+        return button(id, k.label, k.emphasis, { is: 'view', change: { showOptions: row.id } })
+      if (k.slot === 'retry') return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent))
+      const { action } = k
+      const does = rowDoes(row, action.press, action.kind, agent)
 
-    return {
-      ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null),
-      isOut: action.isOut,
-      ...(action.isFollowUp ? { isFollowUp: true as const } : {}),
-    }
-  })
+      return {
+        ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null),
+        isOut: action.isOut,
+        ...(action.isFollowUp ? { isFollowUp: true as const } : {}),
+      }
+    }),
+  ]
 }
 
 /**
@@ -175,15 +187,10 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
 }
 
 function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
-  const options = shownOptionDescriptions(row, isAllShown).map(o => {
-    const body = optionBody(o)
-    const reason = optionReasonLine(o)
-
-    return [
-      { lead: body === null ? o.label : `${o.label}:`, text: body ?? '', tone: 'muted' as const },
-      ...(reason ? [{ text: reason, tone: 'muted' as const }] : []),
-    ]
-  })
+  const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
+    { optionId: `${row.id} ${n}`, text: '', tone: 'muted' as const },
+    ...(o.note ? [{ text: o.note, tone: 'muted' as const }] : []),
+  ])
   const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: 'muted' as const }]] : []
   const branches = [...holdsUp, ...options]
   const lastBranch = branches.length - 1
@@ -210,7 +217,7 @@ function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : '', tone: 'muted' },
     ...options.flatMap((_, n) => branchLines(holdsUp.length + n)),
   ]
-  const shown = lines.filter(l => l.text || l.lead)
+  const shown = lines.filter(l => l.text || l.lead || l.optionId)
 
   return shown.map(({ isApart, ...l }, n) => (isApart && n > 0 ? { ...l, isApart } : l))
 }
@@ -248,8 +255,8 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     body: isOpen ? rowBody(row, isAllShown) : [],
     buttons: isSettled
       ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)]
-      : isOpen && !isTyping
-        ? rowButtons(row, isAllShown, screen.agent)
+      : isOpen
+        ? rowButtons(row, isAllShown, screen.agent).filter(b => !isTyping || b.isOption)
         : [],
     field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
   }

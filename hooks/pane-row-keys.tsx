@@ -56,7 +56,7 @@ export function paneRowKeys(
   }
   const keyedButton =
     (rowId: string, isFollowUp = false) =>
-    ({ hotkey, kind: _kind, emphasis, icon, isOut = false, ...action }: KeyAction) => {
+    ({ hotkey, kind: _kind, emphasis, icon, isOut = false, note: _note, ...action }: KeyAction) => {
       const { label: _label, ...unlabeled } = action
       const isDim = isOpenGuarded || isOut
 
@@ -144,7 +144,7 @@ export function paneRowKeys(
     )
   }
   const keyBindings = (keys: KeyAction[], suffix = '') =>
-    keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
+    keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, note: _note, ...k }) =>
       hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
     )
   const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
@@ -168,10 +168,11 @@ export function paneRowKeys(
       keyRow(rowId, keys, more)
     )
   const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
-  const rowActions = (row: Row): { keys: KeyAction[]; more: KeyAction[] } => {
-    if (Input && row.typeHint && typing === row.id) return { keys: [], more: [] }
+  const rowActions = (row: Row): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] } => {
+    if (Input && row.typeHint && typing === row.id) return { options: [], keys: [], more: [] }
 
     return {
+      options: row.optionKeys?.() ?? [],
       keys: pressable(row.keys()),
       more: pressable(row.moreKeys?.() ?? []),
     }
@@ -209,6 +210,7 @@ export function paneRowKeys(
     actionRows,
     rowActions,
     fieldActions,
+    keyedButton,
   }
 }
 

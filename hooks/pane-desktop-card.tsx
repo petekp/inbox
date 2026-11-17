@@ -2,6 +2,7 @@ import type { AskEntry } from './pane-ask-tree'
 import type { PaneBase, Row } from './pane-context'
 import type { paneDesktopTree } from './pane-desktop-tree'
 import type { PaneRowFrame } from './pane-row-frame'
+import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { CHILD_GAP_PT } from './layout'
 import { DESKTOP_ARM_GAP, DESKTOP_MARK_CELLS, DESKTOP_TREE_AT, desktopPad } from './pane-sizes'
@@ -21,18 +22,25 @@ export function paneDesktopCard({
   desktopTreeLine,
   gutterMark,
   sideAge,
+  keyedButton,
 }: Pick<PaneBase, 'Box' | 'Text' | 'pal' | 'space' | 'blankLine'> &
+  Pick<PaneRowKeys, 'keyedButton'> &
   Pick<PaneRowFrame, 'desktopFrame'> &
   Pick<ReturnType<typeof paneDesktopTree>, 'desktopTreeLine'> &
   Pick<PaneRowLines, 'gutterMark' | 'sideAge'>) {
   const hungMarkCenter = DESKTOP_TREE_AT - 1
-  const line = (en: AskEntry) => (
-    <Text key={en.key} wrap="wrap">
-      {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
-      {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
-      <Text color={pal.muted}>{en.rest}</Text>
-    </Text>
-  )
+  const line = (rowId: string, en: AskEntry) =>
+    en.option ? (
+      <Box key={en.key} flexDirection="row">
+        {keyedButton(rowId)(en.option)}
+      </Box>
+    ) : (
+      <Text key={en.key} wrap="wrap">
+        {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
+        {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
+        <Text color={pal.muted}>{en.rest}</Text>
+      </Text>
+    )
   /** The frames inside the card draw no border, so nothing lies between one frame's line and the next. */
   const treeBox = (key: string, shape: 'down' | 'pass' | 'mid' | 'last', edge: number, edgeBelow = edge) =>
     desktopTreeLine(key, shape, {
@@ -102,7 +110,7 @@ export function paneDesktopCard({
               padY,
               padBelow,
               tree: shape ? treeBox(`row-${row.id}-${group[0]!.key}-tree`, shape, padY, padBelow) : null,
-              children: group.map(line),
+              children: group.map(en => line(row.id, en)),
             })
           })}
           {desktopFrame({

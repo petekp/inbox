@@ -2330,7 +2330,15 @@ function optionDescriptionsOf(item, actions) {
     const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
     if (description === null && reason === null) return [];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
+    return [
+      {
+        option: a.press.option,
+        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
+        description,
+        reason,
+        isFolded: a.isFolded
+      }
+    ];
   });
 }
 function isWaitingRow(row) {

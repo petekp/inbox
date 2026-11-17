@@ -43,11 +43,14 @@ export const firstQuestion = (screen: PanelScreen) =>
 export const onRow = (row: RowView): PanelUi => ({ ...INITIAL_UI, selectedId: row.id })
 
 export function plannedLabels(row: RowView): string[] {
-  const { keys: planned, more } = rowKeyPlan(row, true)
+  const { options, keys: planned, more } = rowKeyPlan(row, true)
 
-  return [...planned, ...more].flatMap(k =>
-    k.slot === 'allOptions' ? [] : [k.slot === 'retry' ? k.label : k.action.label],
-  )
+  return [
+    ...options.map(o => o.action.label),
+    ...[...planned, ...more].flatMap(k =>
+      k.slot === 'allOptions' ? [] : [k.slot === 'retry' ? k.label : k.action.label],
+    ),
+  ]
 }
 
 export const buttonLines = (screen: PanelScreen, ui: PanelUi) =>

@@ -123,6 +123,7 @@ import { bandCounts, isMaybeStale, noCountsText } from './band'
 import {
   drawnLists,
   rowKeyPlan,
+  type PlannedOption,
   rowsIn,
   firstWaiting,
   steppedIndex,
@@ -1872,7 +1873,11 @@ async function runDemoPress(
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
 }
 
-function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { keys: KeyAction[]; more: KeyAction[] } {
+function rowKeyActions(
+  $: EngineInterface,
+  r: RowView,
+  isAllShown: boolean,
+): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] } {
   const { id, item, finding } = r
   const keyAction = (k: PlannedKey): KeyAction => {
     switch (k.slot) {
@@ -1896,22 +1901,17 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
       case 'choice': {
         const { action: a, hotkey } = k
         const p = a.press
-        const base = {
+        const icon = a.icon && ACTION_GLYPHS[a.icon]
+        return {
           label: a.label,
           kind: a.kind,
           emphasis: a.emphasis,
           isOut: a.isOut,
           ...(hotkey ? { hotkey } : {}),
           onPress: (press: UiPressArgument) => runPress($, p, press.surface),
+          ...(icon ? { icon } : {}),
+          key: `help-${id}-${p.step}`,
         }
-        if (p.action === 'answer')
-          return {
-            ...base,
-            key: `answer-${id}-${(item?.options ?? []).indexOf(p.option)}`,
-            ...(a.isPrimary ? { variant: 'primary' as const } : {}),
-          }
-        const icon = a.icon && ACTION_GLYPHS[a.icon]
-        return { ...base, ...(icon ? { icon } : {}), key: `help-${id}-${p.step}` }
       }
       case 'action': {
         const { action: a, hotkey } = k
@@ -1946,9 +1946,25 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
       }
     }
   }
-  const { keys, more } = rowKeyPlan(r, isAllShown)
+  const { options, keys, more } = rowKeyPlan(r, isAllShown)
 
-  return { keys: keys.map(keyAction), more: more.map(keyAction) }
+  const answerAction = ({ action: a, note, hotkey }: PlannedOption): KeyAction => ({
+    label: a.label,
+    kind: a.kind,
+    emphasis: a.emphasis,
+    isOut: a.isOut,
+    ...(hotkey ? { hotkey } : {}),
+    ...(note ? { note } : {}),
+    ...(a.isPrimary ? { variant: 'primary' as const } : {}),
+    key: `answer-${id}-${(item?.options ?? []).indexOf(a.press.option)}`,
+    onPress: press => runPress($, a.press, press.surface),
+  })
+
+  return {
+    options: options.map(answerAction),
+    keys: keys.map(keyAction),
+    more: more.map(keyAction),
+  }
 }
 
 async function drawnState(
@@ -3126,6 +3142,7 @@ export const register: Register = on => {
       actionRows,
       rowActions,
       fieldActions,
+      keyedButton,
     } = paneRowKeys(
       { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
       handlers,
@@ -3211,6 +3228,7 @@ export const register: Register = on => {
         keyRow,
         fieldActions,
         actionRows,
+        keyedButton,
         desktopFrame,
       },
       handlers,
@@ -3472,7 +3490,9 @@ export const register: Register = on => {
     const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
     const rowKeys = [
       ...statusRowKeys,
-      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
+      ...(selectedActions
+        ? [...selectedActions.options, ...selectedActions.keys, ...selectedActions.more]
+        : closeKeysWithoutRow(statusRowKeys)),
       ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prClearKeys] : []),
       // The goal's Undo takes the undo key on the Status, where no list row closes.
       ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)

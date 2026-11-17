@@ -23,6 +23,7 @@ type Emphasis = ActionEmphasis
 export type Key = {
   hotkey?: string
   label: string
+  note?: string
   emphasis: Emphasis
   isDismiss?: boolean
   icon?: IconName
@@ -49,6 +50,8 @@ export type Row = {
   hasTree?: boolean
   age?: string
   body?: JSX.Element | null
+  /** An open question's answers, which its tree draws as buttons. Their hotkeys press them. */
+  options: Key[]
   keys: Key[]
   more: Key[]
   fold?: { note?: string }

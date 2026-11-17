@@ -51,6 +51,8 @@ export type Row = {
   hasSecondLine?: boolean
   body?: JSX.Element | null
   clippedBody?: (lines: number, width: number) => JSX.Element | null
+  /** The answers, which the question's tree draws. */
+  optionKeys?: () => KeyAction[]
   keys: () => KeyAction[]
   moreKeys?: () => KeyAction[]
   typeHint?: string
@@ -131,7 +133,7 @@ export type PaneBase = {
 
 /** The render's calls that need `$`, each a function the hooks module builds around it. */
 export type PaneHandlers = {
-  rowKeyActions: (r: RowView, isAllShown: boolean) => { keys: KeyAction[]; more: KeyAction[] }
+  rowKeyActions: (r: RowView, isAllShown: boolean) => { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] }
   unlessGuarded: (rowId: string, press: UiPressArgument, onPress: Action['onPress']) => Promise<void>
   sendDraft: (id: string, surface: UiPressArgument['surface']) => Promise<void>
   discardReply: (id: string) => Promise<void>

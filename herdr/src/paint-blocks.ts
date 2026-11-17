@@ -63,9 +63,16 @@ const wordEls = (text: string, color: Color): Element[] =>
     .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
 
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
-const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean): Element => {
+const bodyLineEl = (
+  l: RowBlock['body'][number],
+  t: Theme,
+  isSelected: boolean,
+  option: Button | undefined = undefined,
+  p: Paint | null = null,
+  isInert = false,
+): Element => {
   const above = l.isApart ? CHILD_GAP : INSIDE_GAP
-  const armAt = above + LINE_HEIGHT / 2
+  const armAt = above + (option ? BUTTON_H : LINE_HEIGHT) / 2
   const arm = div()
     .absolute()
     .left(PATH_X - EDGE + 1)
@@ -83,13 +90,19 @@ const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean):
           ? [trunkEl(0, armAt + 1, t, isSelected), arm]
           : []
 
-  const line = l.lead
-    ? h_flex()
-        .flex_wrap()
-        .pl(MARK_W)
-        .pt(above)
-        .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
-    : lineEl(l.text, colorOf(t, l.tone)).pt(above)
+  const line =
+    option && p
+      ? h_flex()
+          .pl(MARK_W)
+          .pt(above)
+          .child(buttonEl(option, p, isInert))
+      : l.lead
+        ? h_flex()
+            .flex_wrap()
+            .pl(MARK_W)
+            .pt(above)
+            .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
+        : lineEl(l.text, colorOf(t, l.tone)).pt(above)
 
   return line.relative().children(strokes)
 }
@@ -194,8 +207,26 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   const isInert = isLeaving || from !== r
   const under = from === r && isStatusUnder(r) ? r.feedback : null
   const parts = [
-    ...from.body.map(l => bodyLineEl(l, t, r.isSelected)),
-    ...(from.buttons.length > 0 ? [buttonsEl(from.buttons, p, MARK_W, isInert)] : []),
+    ...from.body.map(l =>
+      bodyLineEl(
+        l,
+        t,
+        r.isSelected,
+        from.buttons.find(b => b.id === l.optionId),
+        p,
+        isInert,
+      ),
+    ),
+    ...(from.buttons.some(b => !b.isOption)
+      ? [
+          buttonsEl(
+            from.buttons.filter(b => !b.isOption),
+            p,
+            MARK_W,
+            isInert,
+          ),
+        ]
+      : []),
     ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : []),
     ...(under ? [bodyLineEl(under, t, r.isSelected).pt(CONTROL_GAP)] : []),
   ]

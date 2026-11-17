@@ -7,7 +7,7 @@ import type { RowPress } from './presses'
 import type { PrPress } from './pr-press'
 import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
-import { ROW_COPY, OPTIONS_FOLD_AT, OPTION_LABEL_CHARS, isWaitingRow } from './rows'
+import { ROW_COPY, OPTIONS_FOLD_AT, OPTION_LABEL_CHARS, isWaitingRow, optionNote } from './rows'
 import type { RowState, ActionView, RowView, SettledState } from './rows'
 import { pressOutAction, outAction, isAgain, fixLabel } from './feedback'
 import type { Feedback } from './feedback'
@@ -286,16 +286,31 @@ export type PlannedKey =
   | { slot: 'retry'; press: RowPress; kind: PressKind; label: string; emphasis: 'normal'; icon: 'retry' }
   | {
       slot: 'choice'
-      action: ActionView & { press: Extract<RowPress, { action: 'answer' | 'step' }> }
+      action: ActionView & { press: Extract<RowPress, { action: 'step' }> }
       hotkey?: string
     }
   | { slot: 'allOptions'; count: number; label: string; emphasis: 'quiet' }
   | ActionKey
 
-export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[]; more: ActionKey[] } {
+/** An answer option: its button, drawn where the option sits in a question's tree, and the note drawn under it. */
+export type PlannedOption = {
+  action: ActionView & { press: Extract<RowPress, { action: 'answer' }> }
+  note: string | null
+  hotkey?: string
+}
+
+/**
+ * A row's options, then its keys, then its follow-ups. A look draws each option as its button in the question's tree
+ * with its note under it, in this order. Then it draws the keys, and the follow-ups in one group after them.
+ */
+export function rowKeyPlan(
+  r: RowView,
+  isAllShown: boolean,
+): { options: PlannedOption[]; keys: PlannedKey[]; more: ActionKey[] } {
   const shown = r.actions.filter(a => isAllShown || !a.isFolded)
   const folded = r.actions.length - shown.length
   const lastOption = shown.map(a => a.press.action).lastIndexOf('answer')
+  const options: PlannedOption[] = []
   const keys: PlannedKey[] = []
   const more: ActionKey[] = []
   const retry = r.feedback?.is === 'notSent' ? r.feedback.retry : null
@@ -308,7 +323,10 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
     const { press } = a
     if (press.action === 'answer' || press.action === 'step') {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++]! } : {}
-      keys.push({ slot: 'choice', action: { ...a, press }, ...hotkey })
+      if (press.action === 'answer') {
+        const note = optionNote(r.optionDescriptions.find(d => d.option === press.option))
+        options.push({ action: { ...a, press }, note, ...hotkey })
+      } else keys.push({ slot: 'choice', action: { ...a, press }, ...hotkey })
       if (n === lastOption && folded > 0)
         keys.push({
           slot: 'allOptions',
@@ -324,7 +342,7 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
       })
   }
 
-  return { keys, more }
+  return { options, keys, more }
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */
