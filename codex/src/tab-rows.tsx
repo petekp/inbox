@@ -60,7 +60,7 @@ import {
   select,
 } from './tab-selection'
 import { applyView, replies, holds } from './tab-read'
-import { isNotSent, copy, startTyping, discardReply, lastPressKey } from './tab-press'
+import { isNotSent, showCopyFallback, startTyping, discardReply, lastPressKey } from './tab-press'
 import { askTree } from './tab-ask-tree'
 import { resultHandle, inlineHtml } from './tab-parts'
 
@@ -105,7 +105,7 @@ export async function act(
       PRESS_TIMEOUT_MS,
     )
     if (tabState.isDisposed || generation !== tabState.viewGeneration) return
-    if (r.copy) await copy(rowId, r.copy, isLatest)
+    if (r.copy) showCopyFallback(rowId, r.copy, isLatest)
     if (tabState.isDisposed || generation !== tabState.viewGeneration || !isLatest()) return
     // A new request number, so this view replaces any view a poll read while the press was out.
     if (r.view) applyView(r.view, ++tabState.requested)

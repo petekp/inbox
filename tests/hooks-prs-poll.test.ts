@@ -146,3 +146,35 @@ test('the poll starts no fetch while one runs, so a fetch that takes 20 seconds 
   expect(runs.length).toBeGreaterThanOrEqual(4)
   for (const wait of waits) expect(wait).toBeGreaterThanOrEqual(120_000)
 })
+
+test('when the save that ends a fetch fails, the poll still fetches the PRs again', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let fetches = 0
+  w.ghAnswers.push({ match: isPr12View, stdout: PR_12_VIEW, hold: async () => void fetches++ }, NO_THREADS)
+  let isFetching = false
+  let isRefusing = false
+  let refused = 0
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+    const written = e.value as { prViews: { isFetching: boolean } }
+    if (isRefusing && isFetching && !written.prViews.isFetching) {
+      refused++
+      return { deny: 'store refused' }
+    }
+    isFetching = written.prViews.isFetching
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  w.paneState = { isShown: true, isFocused: true }
+  await pane.press({ key: 'tab-prs' })
+  await linkPr12($)
+  await clock.settle()
+  const before = fetches
+  isRefusing = true
+  await minutes(clock, 6)
+
+  expect(before).toBeGreaterThan(0)
+  expect(refused).toBeGreaterThan(0)
+  expect(fetches).toBeGreaterThanOrEqual(before + 2)
+})

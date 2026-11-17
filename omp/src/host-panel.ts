@@ -76,7 +76,12 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       const s = await readState(dir, id)
 
       return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
+        view: sessionView(
+          { ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } },
+          deps.now(),
+          deps.settleWindowMs,
+          holds,
+        ),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         herdrModFailure: memory.herdrModFailure,

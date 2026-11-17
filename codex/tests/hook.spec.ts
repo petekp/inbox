@@ -9,6 +9,7 @@ import { parseStatus } from '../../hooks/status'
 import { applyStatus } from '../../hooks/status-ops'
 import { viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
+import type { HookDeps } from '../src/hook'
 import { readState, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { hookDeps, input, tempDir } from './helpers'
@@ -257,4 +258,25 @@ test('the inbox line Codex reads names the Inbox tab, never the mod’s /inbox p
     assert.match(text, /Inbox tab/)
     assert.doesNotMatch(text, /\/inbox|pane/)
   }
+})
+
+test('a hook whose environment names no CLI saves the codex among its ancestors, and keeps the one a session saved', async () => {
+  const dir = tempDir()
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const table: Record<string, string> = { '7': '8 /bin/zsh', '8': '1 /apps/ChatGPT.app/codex-cli/bin/codex' }
+  const run: HookDeps['run'] = async args => ({ code: 0, stdout: `${table[args.at(-1) ?? ''] ?? ''}\n`, stderr: '' })
+  const start = (id: string) =>
+    handleHook(input('SessionStart', { session_id: id, cwd: tempDir(), transcript_path: transcript }), {
+      ...hookDeps(dir),
+      env: {},
+      run,
+      parentPid: 7,
+    })
+
+  await start('first')
+  await updateState(dir, 'second', s => ({ ...s, cliPath: '/saved/codex' }))
+  await start('second')
+
+  assert.equal((await readState(dir, 'first')).cliPath, '/apps/ChatGPT.app/codex-cli/bin/codex')
+  assert.equal((await readState(dir, 'second')).cliPath, '/saved/codex')
 })

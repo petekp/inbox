@@ -11,6 +11,7 @@ import { version } from '../package.json'
 import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
+import { clipboardCommands, noClipboardCommand } from '../../hooks/clipboard-commands'
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { herdrReporter, herdrTarget } from '../../hooks/herdr'
 import type { HerdrTarget } from '../../hooks/herdr'
@@ -104,13 +105,8 @@ async function isUsageLimitOutcome(status: number | undefined, message: string):
 }
 
 async function copyToClipboard(text: string): Promise<string | null> {
-  const candidates =
-    process.platform === 'darwin'
-      ? [['pbcopy']]
-      : process.platform === 'win32'
-        ? [['clip']]
-        : [['wl-copy'], ['xclip', '-selection', 'clipboard']]
-  for (const argv of candidates) {
+  const commands = clipboardCommands(process.platform)
+  for (const argv of commands) {
     try {
       const child = Bun.spawn(argv, { stdin: Buffer.from(text), stdout: 'ignore', stderr: 'ignore' })
       if ((await child.exited) === 0) return null
@@ -119,7 +115,7 @@ async function copyToClipboard(text: string): Promise<string | null> {
     }
   }
 
-  return `no clipboard command started (${candidates.map(c => c[0]).join(', ')})`
+  return noClipboardCommand(commands)
 }
 
 const defaultDeps: HostDeps = {
@@ -366,19 +362,24 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       (tui, theme) => {
         const style = styleOf(theme)
         let screen: PanelScreen | null = null
-        const refresh = () =>
-          inbox
+        let newestRefresh = 0
+        const refresh = () => {
+          const mine = ++newestRefresh
+
+          return inbox
             .screen(ctx)
             .then(next => {
+              if (mine !== newestRefresh) return
               screen = next
               tui.requestRender()
             })
             .catch(() => {
-              if (screen && !screen.isReadFailed) {
+              if (mine === newestRefresh && screen && !screen.isReadFailed) {
                 screen = { ...screen, isReadFailed: true }
                 tui.requestRender()
               }
             })
+        }
         void refresh()
         const stop = inbox.onChange(ctx, () => void refresh())
 
