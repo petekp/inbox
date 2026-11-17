@@ -3,14 +3,16 @@ import type { PaneRowLines } from './pane-row-lines'
 import { DESKTOP_HAIR_CELLS, DESKTOP_HAIR_LINES } from './pane-sizes'
 
 type TreeLineShape = 'down' | 'pass' | 'mid' | 'last'
+const FIRST_LINE_MIDDLE = 0.5
 
 /**
  * Where a desktop tree line sits in its frame's mark column, as cells from that column's left edge. `at` is the
  * line's center. `arm` is the length of the arm that reaches across to a child. `edge` and `edgeBelow` are the padding
  * the frame has above and below its content, in half lines, which the line reaches across to meet the next frame's line.
  * `seam` is what lies between two frames besides that padding: the two borders of frames that draw their own.
+ * `armAt` is how far below the content's top the arm sits, in lines: the first line's middle unless given.
  */
-type TreeLineBox = { at: number; arm: number; edge: number; edgeBelow?: number; seam?: number }
+type TreeLineBox = { at: number; arm: number; edge: number; edgeBelow?: number; seam?: number; armAt?: number }
 
 export function paneDesktopTree({
   Box,
@@ -26,19 +28,18 @@ export function paneDesktopTree({
   const desktopTreeLine = (
     key: string,
     shape: TreeLineShape,
-    { at, arm, edge, edgeBelow = edge, seam = 2 * DESKTOP_HAIR_LINES }: TreeLineBox,
+    { at, arm, edge, edgeBelow = edge, seam = 2 * DESKTOP_HAIR_LINES, armAt = FIRST_LINE_MIDDLE }: TreeLineBox,
   ) => {
     const reach = -(edge + seam)
     const reachBelow = -(edgeBelow + seam)
-    const firstLineMiddle = 0.5
     const hair = (hairKey: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
-      <Box key={hairKey} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
+      <Box key={hairKey} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: armAt })}>
         {desktopHairline('line', 'down', ends, pal.line)}
       </Box>
     )
     const parts =
       shape === 'down'
-        ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reachBelow })]
+        ? [<Box key="under-mark" height={FIRST_LINE_MIDDLE + 0.4} />, hair('down', true, { marginBottom: reachBelow })]
         : shape === 'pass'
           ? [hair('pass', true, { marginTop: reach, marginBottom: reachBelow })]
           : [
