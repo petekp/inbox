@@ -1272,7 +1272,12 @@ function carriedByChild(c, isHeld) {
   if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
 }
-function childRow(c, branch, depth) {
+function finishedLine(c, now) {
+  if (c.endedAt === null) return null;
+  const finished = ago(now - c.endedAt);
+  return `Ran ${duration(c.endedAt - c.startedAt)}, finished ${finished}`;
+}
+function childRow(c, branch, depth, text2 = null) {
   const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
     kind: "child",
@@ -1281,8 +1286,21 @@ function childRow(c, branch, depth) {
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
+    text: text2,
     branch
   };
+}
+function unplacedChildren(children, c) {
+  const unshown = c.running.filter((x) => x.subjectId === null || !c.shownIds.has(x.subjectId)).map((child) => {
+    const subject = c.subjects.find((y) => y.id === child.subjectId);
+    return { child, milestoneId: subject === void 0 ? null : c.milestoneOf(subject) };
+  });
+  const isFoldedFinished = (l) => l.child.delegateState === "finished" && l.milestoneId === null;
+  const settled = [
+    ...children.filter((x) => c.isSettled(x) && !c.subjects.some((y) => y.id === x.subjectId)),
+    ...unshown.filter(isFoldedFinished).map((l) => l.child)
+  ].sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
+  return { loose: unshown.filter((l) => !isFoldedFinished(l)), settled };
 }
 function askWords(items, ask) {
   const words3 = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
@@ -3038,7 +3056,7 @@ function statusPage(s, now) {
       text: `${done.length + settled2.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
       rows: [
         ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
-        ...settled2.map((c) => childRow(c, null, depth + 1))
+        ...settled2.map((c) => childRow(c, null, depth + 1, finishedLine(c, now)))
       ]
     }
   ];
@@ -3046,10 +3064,12 @@ function statusPage(s, now) {
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled2)
   ];
-  const settled = (o?.children ?? []).filter((c) => isChildSettled(c, now, look) && !o?.subjects.some((x) => x.id === c.subjectId)).sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
-    const x = subjects.find((y) => y.id === c.subjectId);
-    return { child: c, milestoneId: x === void 0 ? null : milestoneOf2(x) };
+  const { loose, settled } = unplacedChildren(o?.children ?? [], {
+    subjects,
+    shownIds,
+    milestoneOf: milestoneOf2,
+    isSettled: (c) => isChildSettled(c, now, look),
+    running
   });
   const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
   const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));

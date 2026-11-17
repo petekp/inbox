@@ -70,7 +70,7 @@ test('inside a Herdr app terminal, nothing asks herdr, and hc is asked while the
   expect(asked).toEqual(['hc ls --json'])
 })
 
-test('a finished delegate no subject holds draws a row until a look ends, then folds into "1 done", which unfolds to its row one step in', () => {
+test('a finished delegate no subject holds folds into "1 done" at once, seen or not, and unfolds to its row one step in with a line under its name', () => {
   const now = 100 * MIN
   const base = after(null, 'NEW: working | Export | layout next', 10 * MIN)
   const started = withChild(
@@ -87,17 +87,17 @@ test('a finished delegate no subject holds draws a row until a look ends, then f
     30 * MIN,
   )
   const finished = childEnded(started, 'd1', 40 * MIN)!
+  const doneChildren = (rows: ReturnType<typeof page>['rows']) =>
+    rows.flatMap(r => (r.kind === 'done-fold' ? r.rows : []))
 
-  expect(shape(page({ ...finished, lastLookAt: 30 * MIN }, now).rows)).toEqual([
-    '✓ pdf layout',
-    '◐ Export: layout next',
+  const unseen = page({ ...finished, lastLookAt: 30 * MIN }, now).rows
+  expect(shape(unseen)).toEqual(['◐ Export: layout next', '› 1 done'])
+  expect(doneChildren(unseen).map(r => [r.kind, r.depth, r.kind === 'child' ? r.text : null])).toEqual([
+    ['child', 1, 'Ran 20m, finished 1h ago'],
   ])
 
   const looked = lookEnded(lookStarted(finished, 50 * MIN), 50 * MIN + LOOK_MIN_MS, 'all')
-  const rows = page(looked, now).rows
-
-  expect(shape(rows)).toEqual(['◐ Export: layout next', '› 1 done'])
-  expect(rows.flatMap(r => (r.kind === 'done-fold' ? r.rows : [])).map(r => [r.kind, r.depth])).toEqual([['child', 1]])
+  expect(shape(page(looked, now).rows)).toEqual(['◐ Export: layout next', '› 1 done'])
 })
 
 test('a look file the Herdr look wrote sets the last look on the saved Status', async () => {

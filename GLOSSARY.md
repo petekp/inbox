@@ -187,8 +187,7 @@ _Avoid_: step, phase
 Work that runs apart from the session's turn: a subagent, a workflow run or a
 Herdr delegate. A background command or Monitor task is not one: it is how the
 agent watches work, and the work it watches has its own row. A child shows under
-its subject while it runs, and leaves when it ends. A delegate that finished stays, marked ✓,
-until the person has seen the Status. Code follows it from the
+its subject while it runs, and leaves when it ends. A delegate that finished stays, marked ✓, until seen; under no milestone it folds at once. Code follows it from the
 host's events and from Herdr. The inbox model only links it to a subject. While
 an open subject's only child has the same name, ignoring case, spaces, hyphens and
 underscores, the Status draws no row for the child, and the subject's row shows
@@ -211,7 +210,7 @@ The last time the person left the Status after it showed for at least five
 seconds. A shorter pass through the tab counts nothing. A row counts as seen
 when the last look that showed it came after its last change. A seen row leaves
 out its merged and Prev lines. A seen done row folds into its part's done fold,
-and so does a seen finished delegate no subject holds,
+and so does any finished delegate no subject holds,
 a seen dropped row leaves the page, and a seen open row may fold into "○ N
 more". Under Other work, a seen open row the goal does not need folds into the
 count of its mark, or leaves the page when it is queued. The code keeps its
