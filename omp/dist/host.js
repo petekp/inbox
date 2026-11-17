@@ -5555,6 +5555,7 @@ function herdrReportKey(r) {
 var HERDR_RETRY_MS = [5000, 30000, 120000];
 function herdrReporter(log) {
   let sent = null;
+  let isFinished = false;
   let retries = 0;
   let isRetryWaiting = false;
   let sending = Promise.resolve();
@@ -5582,12 +5583,14 @@ function herdrReporter(log) {
     retries++;
     after(wait, () => {
       isRetryWaiting = false;
-      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false);
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after, newest.isFinal) : Promise.resolve(false);
     });
   };
-  const send = async (run, report, after) => {
+  const send = async (run, report, after, isFinal) => {
+    if (isFinished && !isFinal)
+      return false;
     const r = await report();
-    if (!r)
+    if (!r || isFinished && !isFinal)
       return false;
     const key = herdrReportKey(r);
     if (key === sent)
@@ -5606,9 +5609,11 @@ function herdrReporter(log) {
       retryLater(after);
     return isTaken;
   };
-  const reportToHerdr = (run, report, after) => {
-    newest = { run, report, after };
-    const result = sending.then(() => send(run, report, after)).catch(() => false);
+  const reportToHerdr = (run, report, after, isFinal = false) => {
+    newest = { run, report, after, isFinal };
+    if (isFinal)
+      isFinished = true;
+    const result = (isFinal ? send(run, report, after, true) : sending.then(() => send(run, report, after, false))).catch(() => false);
     sending = result;
     return result;
   };
