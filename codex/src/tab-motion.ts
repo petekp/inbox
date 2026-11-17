@@ -1,7 +1,15 @@
 import { atEndWeight } from './weight-ease'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import * as layout from '../../hooks/layout'
-import { ENTER_FADE_MS, FADE_MS, isMoving, ROW_STATE_MS, slideOffset } from '../../hooks/row-motion'
+import {
+  FADE_MS,
+  isMoving,
+  LINE_RETURN_FADE_MS,
+  ROW_STATE_MS,
+  SPACE_FADE_MS,
+  slideOffset,
+  spaceOpacity,
+} from '../../hooks/row-motion'
 import type { RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames, springStep } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
@@ -47,7 +55,7 @@ type Size = 'height' | 'width'
  * comes or goes also scales its vertical padding and top margin with its height, so it truly grows from and shrinks
  * to no height.
  */
-type Glide = { size: Size; from: SpringState; to: number; anim: Animation; scalesEdges: boolean }
+type Glide = { size: Size; from: SpringState; to: number; anim: Animation; scalesEdges: boolean; xs: number[] }
 const glides = new WeakMap<HTMLElement, Glide>()
 
 function play(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions): Animation {
@@ -107,7 +115,7 @@ function glide(el: HTMLElement, size: Size, from: SpringState, to: number, hold 
     easing: 'linear',
     fill: hold ? 'forwards' : 'none',
   })
-  glides.set(el, { size, from, to, anim, scalesEdges })
+  glides.set(el, { size, from, to, anim, scalesEdges, xs })
 }
 
 /** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. Measured at the end weights. */
@@ -146,6 +154,32 @@ function fade(el: HTMLElement, from: number, to: number, ms: number, hold = fals
   fades.set(el, { to, anim })
 }
 
+/**
+ * Fades an element that enters or leaves along its own height glide, so its content shows for as long as its space
+ * does: each frame's opacity is `spaceOpacity` of that frame's height. A fade that starts part way, as a move turned
+ * back does, never jumps: leaving stays at or under the opacity it had, entering at or over it.
+ */
+function fadeWithSpace(el: HTMLElement, from: number, to: 0 | 1) {
+  const g = glides.get(el)
+  if (!g) return fade(el, from, to, SPACE_FADE_MS, to === 0, true)
+  fades.get(el)?.anim.cancel()
+  slides.add(el)
+  el.style.pointerEvents = to === 0 ? 'none' : ''
+  const full = Math.max(g.from.x, g.to)
+  const opacities = g.xs.map((x, i) => {
+    if (i === g.xs.length - 1) return to
+    const share = spaceOpacity(x, full)
+
+    return to === 0 ? Math.min(from, share) : Math.max(from, share)
+  })
+  const anim = play(
+    el,
+    opacities.map(o => frameOf(o, true)),
+    { duration: (g.xs.length - 1) * FRAME_MS, easing: 'linear', fill: to === 0 ? 'forwards' : 'none' },
+  )
+  fades.set(el, { to, anim })
+}
+
 const isFadingIn = (el: HTMLElement) => {
   const f = fades.get(el)
 
@@ -154,7 +188,7 @@ const isFadingIn = (el: HTMLElement) => {
 
 function growIn(el: HTMLElement, from: SpringState, opacity: number) {
   glide(el, 'height', from, naturalHeight(el), false, true)
-  fade(el, opacity, 1, ENTER_FADE_MS, false, true)
+  fadeWithSpace(el, opacity, 1)
 }
 
 /**
@@ -225,7 +259,8 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
       return true
     case 'leaving':
       glide(el, 'height', from, 0, true, true)
-      fade(el, opacityOf(el), 0, FADE_MS, true, !isInsideLeaving(el))
+      if (isInsideLeaving(el)) fade(el, opacityOf(el), 0, SPACE_FADE_MS, true)
+      else fadeWithSpace(el, opacityOf(el), 0)
       return true
     default:
       return false
@@ -352,7 +387,7 @@ export function toggleFold(id: string, shown: Set<string>, motion = id) {
   tabState.draw()
   el.dataset.closing = '1'
   glide(el, 'height', springOf(el, el.getBoundingClientRect().height), 0, true, true)
-  fade(el, opacityOf(el), 0, FADE_MS, true, true)
+  fadeWithSpace(el, opacityOf(el), 0)
   later(() => {
     if (shown.has(id) || !closingFolds.delete(motion)) return
     tabState.draw()
@@ -394,7 +429,8 @@ export function applyPageVariables() {
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--fade', `${FADE_MS}ms ${FADE_EASING}`)
   document.documentElement.style.setProperty('--settle', `${HEIGHT_SETTLE_MS}ms ease-out`)
-  document.documentElement.style.setProperty('--enter-fade', `${ENTER_FADE_MS}ms ${FADE_EASING}`)
+  document.documentElement.style.setProperty('--space-fade', `${SPACE_FADE_MS}ms ${FADE_EASING}`)
+  document.documentElement.style.setProperty('--line-return-fade', `${LINE_RETURN_FADE_MS}ms ${FADE_EASING}`)
 }
 
 const TIMER_SLACK_MS = 50

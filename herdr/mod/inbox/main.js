@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T19:14:36.954Z. 276409 characters follow.
+// Built at 2026-11-17T20:18:29.499Z. 276440 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5120,15 +5120,15 @@ function settleMs(spring) {
 var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
 
 // ../hooks/row-motion.ts
-var ENTER_FADE_MS = 300;
 var FADE_MS = 200;
+var SPACE_FADE_MS = HEIGHT_SETTLE_MS;
 var SLIDE_PX = 8;
 var ROW_FADE_MS = {
-  entering: ENTER_FADE_MS,
-  opening: FADE_MS,
-  closing: FADE_MS,
+  entering: SPACE_FADE_MS,
+  opening: SPACE_FADE_MS,
+  closing: SPACE_FADE_MS,
   settling: FADE_MS,
-  leaving: FADE_MS,
+  leaving: SPACE_FADE_MS,
   closed: 0,
   open: 0,
   settled: 0,

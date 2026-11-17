@@ -16,7 +16,7 @@
   position: absolute;
   inset: auto 0 100% 0;
   pointer-events: none;
-  animation: fade-out var(--enter-fade) forwards;
+  animation: fade-out var(--space-fade) forwards;
 }
 @keyframes fade-out {
   to {

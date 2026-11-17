@@ -354,3 +354,20 @@ test('a block that leaves slides its content up by the slide offset as it fades,
   ).toEqual(new Set([0, -SLIDE_PX]))
   expect(offsets([[0, some]])).toEqual(new Set())
 })
+
+test('a block that enters or leaves is never blank while its box holds space', () => {
+  const some = asks(['d11', 'd12'])
+  const fewer = asks(['d11'])
+  const moves: Record<string, [number, Block[]][]> = {
+    leaves: [
+      [0, some],
+      [0, fewer],
+    ],
+    enters: [
+      [0, fewer],
+      [0, some],
+    ],
+  }
+  for (const [name, steps] of Object.entries(moves))
+    expect({ name, blanks: framesOf(steps, 800).blanks }).toEqual({ name, blanks: [] })
+})

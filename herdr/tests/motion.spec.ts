@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { prMarkId } from '../../hooks/pr-rows'
-import { ENTER_FADE_MS, FADE_MS } from '../../hooks/row-motion'
+import { SPACE_FADE_MS } from '../../hooks/row-motion'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { rowWaits, tabBlocks } from '../src/draw'
@@ -21,21 +21,21 @@ test('a row the publish dropped stays drawn until its fade and its height spring
   const leaving = moveRows(without, first.tracks, NOW + 1, false)
   expect(leaving.blocks.some(b => b.id === gone.id)).toBe(true)
   expect(leaving.motion.get(gone.id)?.state).toBe('leaving')
-  const restsAt = NOW + 1 + Math.max(FADE_MS, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS
+  const restsAt = NOW + 1 + Math.max(SPACE_FADE_MS, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS
   const settling = moveRows(without, leaving.tracks, restsAt - 1, false)
   expect(settling.blocks.some(b => b.id === gone.id)).toBe(true)
   expect(moveRows(without, settling.tracks, restsAt, false).blocks.some(b => b.id === gone.id)).toBe(false)
 })
 
-test('a row fades in over the enter fade and out over the shorter fade, while its height takes longer to rest', () => {
+test('a row fades in and out over as long as its height takes to rest', () => {
   const blocks = tabBlocks(demoScreen(), uiOn('needsYou'))
   const row = rowsOf(blocks).find(r => !r.settled && !r.isSelected)!
   const without = blocks.filter(b => b.id !== row.id)
   const entering = moveRows(blocks, moveRows(without, NO_TRACKS, NOW, true).tracks, NOW + 1, false)
   const leaving = moveRows(without, moveRows(blocks, NO_TRACKS, NOW, true).tracks, NOW + 1, false)
-  expect(entering.motion.get(row.id)).toMatchObject({ state: 'entering', fadeMs: ENTER_FADE_MS })
-  expect(leaving.motion.get(row.id)).toMatchObject({ state: 'leaving', fadeMs: FADE_MS })
-  expect(Math.max(ENTER_FADE_MS, FADE_MS)).toBeLessThan(HEIGHT_SETTLE_MS)
+  expect(entering.motion.get(row.id)).toMatchObject({ state: 'entering', fadeMs: SPACE_FADE_MS })
+  expect(leaving.motion.get(row.id)).toMatchObject({ state: 'leaving', fadeMs: SPACE_FADE_MS })
+  expect(SPACE_FADE_MS).toBe(HEIGHT_SETTLE_MS)
 })
 
 test('a first draw forgets the last draw’s rows and draws its own at rest', () => {
