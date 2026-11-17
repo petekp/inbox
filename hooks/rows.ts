@@ -1,7 +1,7 @@
 import type { Item, Closed, PressKind, Finding } from '../types'
 import { closedState } from './ledger-close'
 import type { ClosedState } from './ledger-close'
-import { clipLabel, ago } from './text'
+import { ago } from './text'
 import { capitalized } from './press-labels'
 import type { HelpStep } from './help-steps'
 import type { EarlierLine } from './earlier-answers'
@@ -13,7 +13,6 @@ import type { Feedback } from './feedback'
 import type { InboxView } from './view'
 
 export const OPTIONS_FOLD_AT = 5
-export const OPTION_LABEL_CHARS = 32
 /**
  * The dot between parts of a drawn line, as "title · 3m ago", set apart by spaces wider than a space. The one before
  * it is a figure space, which never breaks, so a wrapped line ends with the dot instead of starting with it.
@@ -168,7 +167,6 @@ export type RowView = {
 type OptionDescription = {
   /** The answer as the agent wrote it, which the answer's press carries. */
   option: string
-  label: string
   description: string | null
   reason: string | null
   isFolded: boolean
@@ -187,7 +185,6 @@ export function optionDescriptionsOf(item: Item | null, actions: ActionView[]): 
     return [
       {
         option: a.press.option,
-        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
         description,
         reason,
         isFolded: a.isFolded,

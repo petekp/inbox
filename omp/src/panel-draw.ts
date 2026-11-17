@@ -1,5 +1,5 @@
 import type { BannerTone } from '../../hooks/tones'
-import { ago } from '../../hooks/text'
+import { ago, cellWidth } from '../../hooks/text'
 import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
@@ -58,12 +58,30 @@ export function bannerLines(b: BannerView, width: number, s: Style): string[] {
 const buttonLabelCells = (b: ButtonFace) => (b.key ? b.key.length + 2 : 1)
 
 function buttonCell(b: ButtonFace, isFocused: boolean, s: Style, mark = ''): string {
-  if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `))
-  if (b.isOut && !b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `)
-  if (b.isFollowUp || b.isQuiet) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
-  const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark
+  return buttonCellLines(b, isFocused, s, mark, Infinity)[0]!
+}
 
-  return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `
+/** A button's cell as lines no wider than `room`. A label too long for one line wraps, each line after the first starting under the first. */
+function buttonCellLines(b: ButtonFace, isFocused: boolean, s: Style, mark: string, room: number): string[] {
+  const head = isFocused ? ' ↵ ' : b.key ? ` ${b.key} ` : ' '
+  const isQuiet = !isFocused && (b.isFollowUp || b.isQuiet)
+  const text = isQuiet ? b.label : `${b.label}${mark}`
+  const labelRoom = room - head.length - 1
+  const lines = cellWidth(text) <= labelRoom ? [text] : wrapText(text, Math.max(1, labelRoom))
+  const widest = Math.max(...lines.map(cellWidth))
+
+  return lines.map((l, n) => {
+    const lead = n === 0 ? head : ' '.repeat(head.length)
+    const padded = `${l}${' '.repeat(widest - cellWidth(l))} `
+    if (isFocused) return s.inverse(b.isOut ? s.dim(lead + padded) : s.bold(lead + padded))
+    if (isQuiet || b.isOut) return s.dim(lead + padded)
+    const markPart = n === lines.length - 1 && mark && l.endsWith(mark.trim()) ? mark.trim() : ''
+    const labelPart = l.slice(0, l.length - markPart.length).trimEnd()
+    const label = (b.isRecommended ? s.underline(labelPart) : labelPart) + l.slice(labelPart.length)
+    const key = n === 0 && b.key ? ` ${s.bold(b.key)} ` : lead
+
+    return `${key}${label}${' '.repeat(widest - cellWidth(l))} `
+  })
 }
 
 /** What `actionLabel` adds to the label, measured on the focused cell, the widest form, alone on a line. */
@@ -90,17 +108,22 @@ export function faceLines(
   s: Style,
   between = '',
 ): string[] {
-  const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)))
-  const sizes = cells.map(visibleLength)
+  const room = width - indent
+  const cells = buttons.map((b, i) => buttonCellLines(b, i === focused, s, labelMark(b, Infinity, s), room))
+  const sizes = cells.map(c => (c.length > 1 ? room : visibleLength(c[0]!)))
   const firstFollowUp = buttons.findIndex(b => b.isFollowUp)
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
-    width: width - indent,
+    width: room,
     gap: visibleLength(between),
     separator: 0,
   })
 
-  return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(between))
+  return lines.flatMap(at =>
+    at.length === 1 && cells[at[0]!]!.length > 1
+      ? cells[at[0]!]!.map(l => ' '.repeat(indent) + l)
+      : [' '.repeat(indent) + at.map(i => cells[i]![0]).join(between)],
+  )
 }
 
 /** `text` in a lead's tone. */
@@ -194,7 +217,8 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   const holdsUp = line.row?.holdsUpLine
   const focused = ui.typing === line.id ? -1 : focusOf(line, ui)
-  const answerCell = (b: ButtonFace, n: number, room: number) => buttonCell(b, n === focused, s, labelMark(b, room, s))
+  const answerCell = (b: ButtonFace, n: number, room: number) =>
+    buttonCellLines(b, n === focused, s, labelMark(b, Infinity, s), room)
   const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell, buttonLabelCells) : []
   if (tree.length > 0) out.push(...tree)
   else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))

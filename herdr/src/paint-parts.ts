@@ -4,7 +4,7 @@ import { h_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS } from '../../hooks/help'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import type { Button, Mark } from './blocks'
-import { BUTTON_H, BUTTON_PAD_X, CONTROL_GAP, INSIDE_GAP, MARK_W, colorOf } from './paint-theme'
+import { BUTTON_H, BUTTON_PAD_X, BUTTON_PAD_Y, CONTROL_GAP, INSIDE_GAP, MARK_W, colorOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { checkboxEl } from './paint-checkbox'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -15,18 +15,19 @@ import { TIMED_W, timeLeftEl } from './paint-timer'
  * its fill and border, and is the quietest thing in its row. A timed button's time left stays drawn and pauses while
  * its press is out. A hidden button keeps its place and draws nothing. A button of a block that is leaving draws but
  * takes no clicks, so the block keeps its height as it fades. A button that takes no clicks shows no hover or pressed
- * change.
+ * change. A button that `canWrap` narrows to its line and wraps its label onto more lines, growing a line's height for
+ * each. A timed button keeps one line, since its time left fills it.
  */
-export function buttonEl(b: Button, p: Paint, isInert = false, isShrinkable = false): Element {
+export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false): Element {
   const { t } = p
   const isPill = b.emphasis !== 'quiet'
   const runsOutAt = b.runsOutAt
   const left = p.timeLeft.get(b.id)
+  const isWrapping = canWrap && runsOutAt === undefined
   const base = h_flex()
     .id(`button ${b.id}`)
-    .when(!isShrinkable, e => e.flex_none())
-    .when(isShrinkable, e => e.flex_shrink_1().min_w(0))
-    .h(BUTTON_H)
+    .when(!isWrapping, e => e.flex_none().h(BUTTON_H))
+    .when(isWrapping, e => e.flex_shrink_1().min_w(0).min_h(BUTTON_H).py(BUTTON_PAD_Y))
     .items_center()
     .justify_center()
     .accessibility_label(b.label)
@@ -37,7 +38,7 @@ export function buttonEl(b: Button, p: Paint, isInert = false, isShrinkable = fa
         .rounded(BUTTON_H / 2),
     )
     .when(left !== undefined, e => (left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e))
-    .child(isShrinkable ? div().min_w(0).truncate().child(b.label) : b.label)
+    .child(isWrapping ? div().min_w(0).whitespace_normal().child(b.label) : b.label)
   const shaped =
     isPill && runsOutAt === undefined
       ? base
@@ -69,7 +70,10 @@ export function buttonEl(b: Button, p: Paint, isInert = false, isShrinkable = fa
 
 const CLEAR = '#00000000'
 
-/** The buttons wrap by line. The follow-ups, which come last, share one group, so they wrap to the next line together. */
+/**
+ * The buttons wrap by line, and a button wider than its line wraps its label. The follow-ups, which come last, share
+ * one group, so they wrap to the next line together.
+ */
 export const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false): Element => {
   const followUps = buttons.filter(b => b.isFollowUp)
   const others = buttons.filter(b => !b.isFollowUp)
@@ -80,7 +84,7 @@ export const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert =
     .gap(CONTROL_GAP)
     .pt(CONTROL_GAP)
     .pl(indent)
-    .children(others.map(b => buttonEl(b, p, isInert)))
+    .children(others.map(b => buttonEl(b, p, isInert, true)))
     .when(followUps.length > 0, e =>
       e.child(
         h_flex()

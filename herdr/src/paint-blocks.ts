@@ -64,6 +64,46 @@ const wordEls = (text: string, color: Color): Element[] =>
     .filter(word => word)
     .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
 
+/** A tree's arm, from `from` to `to` across its box and with its top edge at `top`. */
+const armEl = (from: number, to: number, top: number | `${number}%`, color: Color): Element =>
+  div()
+    .absolute()
+    .left(from)
+    .top(top)
+    .w(to - from)
+    .h(1)
+    .border_t_1()
+    .border_color(color)
+
+/** Where an arm ends, `SMALL_GAP` before the text column, across a line under a row's title. */
+const ARM_END = NEST - SMALL_GAP
+
+/**
+ * An answer's button with its arm at the button's middle, however many lines its label wraps to. The arm starts on the
+ * trunk, so on the last answer, where the trunk runs from the line's top, `above` over the button, down to the arm's
+ * top edge, the arm fills the elbow's corner.
+ */
+const optionEl = (
+  option: Button,
+  p: Paint,
+  isInert: boolean,
+  above: number,
+  isLast: boolean,
+  color: Color,
+): Element => {
+  const trunkX = PATH_X - EDGE - MARK_W
+  const arm = armEl(trunkX, ARM_END - MARK_W, '50%', color)
+  const strokes = isLast
+    ? [arm, div().absolute().left(trunkX).top(-above).bottom('50%').w(1).border_l_1().border_color(color)]
+    : [arm]
+
+  return h_flex()
+    .relative()
+    .min_w(0)
+    .child(buttonEl(option, p, isInert, true))
+    .children(strokes)
+}
+
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (
   l: RowBlock['body'][number],
@@ -74,15 +114,20 @@ const bodyLineEl = (
   isInert = false,
 ): Element => {
   const above = l.gapAbove === 'item' ? ITEM_GAP : l.gapAbove === 'child' ? CHILD_GAP : INSIDE_GAP
-  const armAt = above + (option ? BUTTON_H : LINE_HEIGHT) / 2
-  const arm = div()
-    .absolute()
-    .left(PATH_X - EDGE + 1)
-    .top(armAt)
-    .w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP)
-    .h(1)
-    .border_t_1()
-    .border_color(lineColor(t, isSelected ? t.selected : t.background))
+  const color = lineColor(t, isSelected ? t.selected : t.background)
+  if (option && p) {
+    const trunk = l.tree === 'tee' ? [trunkEl(0, null, t, isSelected)] : []
+
+    return h_flex()
+      .relative()
+      .min_w(0)
+      .pl(MARK_W)
+      .pt(above)
+      .child(optionEl(option, p, isInert, above, l.tree === 'last', color))
+      .children(trunk)
+  }
+  const armAt = above + LINE_HEIGHT / 2
+  const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color)
   const strokes =
     l.tree === 'trunk'
       ? [trunkEl(0, null, t, isSelected)]
@@ -91,21 +136,13 @@ const bodyLineEl = (
         : l.tree === 'last'
           ? [trunkEl(0, armAt + 1, t, isSelected), arm]
           : []
-
-  const line =
-    option && p
-      ? h_flex()
-          .min_w(0)
-          .pl(MARK_W)
-          .pt(above)
-          .child(buttonEl(option, p, isInert, true))
-      : l.lead
-        ? h_flex()
-            .flex_wrap()
-            .pl(MARK_W)
-            .pt(above)
-            .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
-        : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above)
+  const line = l.lead
+    ? h_flex()
+        .flex_wrap()
+        .pl(MARK_W)
+        .pt(above)
+        .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
+    : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above)
 
   return line.relative().children(strokes)
 }

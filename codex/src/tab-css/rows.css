@@ -356,7 +356,8 @@ code {
   border-radius: calc(3.5 * var(--unit));
   background: transparent;
   font-weight: 400;
-  text-align: center;
+  /* A label that wraps starts each line where its first line starts, as the option's note under it does. */
+  text-align: start;
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;

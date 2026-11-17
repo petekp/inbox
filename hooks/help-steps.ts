@@ -5,19 +5,24 @@ import type { Effect } from './press-reducer'
 import { namedPrs, parseRef } from './prs'
 import { clipLabel } from './text'
 
-function helpLabel(help: Help): string {
-  const label =
-    help.kind === 'open'
-      ? `Open ${baseName(help.path)}`
-      : help.kind === 'copy'
-        ? `Copy ${help.name ?? 'snippet'}`
-        : help.kind === 'run'
-          ? `Run ${help.name ?? help.command}`
-          : help.kind === 'terminal'
-            ? `Copy ${help.name ?? help.command}`
-            : `Open ${help.name ?? new URL(help.url).host}`
+/**
+ * A command can be any length, and its button copies or runs all of it, so a step with no name shows the command's start:
+ * three lines of a button in a 300 px Codex tab.
+ */
+const COMMAND_LABEL_CHARS = 64
 
-  return clipLabel(label, 32)
+const commandLabel = (command: string) => clipLabel(command, COMMAND_LABEL_CHARS)
+
+function helpLabel(help: Help): string {
+  return help.kind === 'open'
+    ? `Open ${baseName(help.path)}`
+    : help.kind === 'copy'
+      ? `Copy ${help.name ?? 'snippet'}`
+      : help.kind === 'run'
+        ? `Run ${help.name ?? commandLabel(help.command)}`
+        : help.kind === 'terminal'
+          ? `Copy ${help.name ?? commandLabel(help.command)}`
+          : `Open ${help.name ?? new URL(help.url).host}`
 }
 
 export type HelpStep = { label: string; step: Help[] }
@@ -32,7 +37,7 @@ function steps(helps: Help[]): HelpStep[] {
     .filter(h => h !== copy)
     .map(h =>
       h === open
-        ? { label: clipLabel(`Copy ${copy.name ?? 'snippet'} and open ${baseName(open.path)}`, 48), step: [copy, open] }
+        ? { label: `Copy ${copy.name ?? 'snippet'} and open ${baseName(open.path)}`, step: [copy, open] }
         : { label: helpLabel(h), step: [h] },
     )
 }

@@ -157,6 +157,8 @@ const NARROW_PANE = 280
 
 /** A button's and a tab's height, and the corner of a box such as a banner or the goal's input. */
 export const BUTTON_H = 7 * SPACE_UNIT
+/** A pill's label, down from its border, so one line of it fills `BUTTON_H` and each wrapped line adds a line's height. */
+export const BUTTON_PAD_Y = (BUTTON_H - LINE_HEIGHT) / 2 - BUTTON_BORDER_PT
 export const BOX_RADIUS = 10
 export const TAB_RADIUS = 6
 /** Help's keys and marks sit one nesting step under their section titles, as a nested Status item's marks do. */

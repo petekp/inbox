@@ -19,8 +19,8 @@ export function askTreeLines(
   pad: number,
   width: number,
   s: Style,
-  /** An answer's button as a cell, given its index among the line's buttons and the room it has. */
-  cell: (b: Button, index: number, room: number) => string,
+  /** An answer's button as the lines of its cell, given its index among the line's buttons and the room it has. */
+  cell: (b: Button, index: number, room: number) => string[],
   /** Cells an answer's label starts in from its button's edge, where the answer's note starts. */
   labelCells: (b: Button) => number,
 ): string[] {
@@ -43,8 +43,11 @@ export function askTreeLines(
     const isLast = n === lastBranch
     const rest = isLast ? NONE : TRUNK
 
+    const [first, ...more] = cell(a.b, a.index, room)
+
     return [
-      s.dim(margin + (isLast ? LAST : TEE)) + cell(a.b, a.index, room),
+      s.dim(margin + (isLast ? LAST : TEE)) + first,
+      ...more.map(l => s.dim(margin + rest) + l),
       ...(a.note ? draw(rest, a.note, rest, labelCells(a.b)) : []),
     ]
   }
