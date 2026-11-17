@@ -88,6 +88,7 @@ export type Ask = (
 export type SessionHost<S extends Session> = {
   now(): number | Promise<number>
   read(): Promise<S>
+  readDurable?(): Promise<S>
   /** Changes the session under its lock. An external effect, such as a delivery, runs outside a change. */
   update(change: (s: S) => S | Promise<S>): Promise<S>
   /** Runs `fn` unless another run holds the session's per-reply update. */
@@ -107,6 +108,7 @@ export type SessionHost<S extends Session> = {
    * session's `prViews` then says why, which the press's result reads.
    */
   refreshPrs(): Promise<void>
+  refreshPrsIfDue?(): Promise<void>
   gh: {
     /**
      * What every session of the host shares about GitHub, so a view one session read lately serves the others, and

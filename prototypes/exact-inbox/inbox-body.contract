@@ -1,0 +1,58 @@
+use Inbox, Draft from "./model.contract"
+use InboxHeader from "./inbox-header.contract"
+use StatusPane from "./status-pane.contract"
+use InboxRows from "./inbox-rows.contract"
+use SavedReplies from "./saved-replies.contract"
+use ReplyPane from "./reply-pane.contract"
+
+component InboxBody
+  props
+    inbox: Inbox
+    tab: string
+    contentId: string
+    top: number
+    matching: bool
+    draftsLoaded: bool
+    name: string
+    connection: string
+    readError: string
+    actionError: string
+    receiptError: string
+    selected: string
+    submittedRow: string
+    submittedKey: string
+    isSendingRow: bool
+    disconnected: bool
+    busy: bool
+    saved: Draft[]
+    replyOpen: bool
+    replyTitle: string
+    replyText: string
+    canSend: bool
+    replyMessage: string
+    onScroll: action
+    onToggle: action
+    onChoose: action
+    onOpen: action
+    onEdit: action
+    onDiscard: action
+    onSend: action
+  view
+    list id=contentId appearance="auto" listStyle="plain" flex=1 min-height=0 scroll=onScroll scrollTop=top
+      InboxHeader(name=name, connection=connection, readOnly=matching and inbox.readOnly, readError=readError, mutationError=actionError, receiptError=receiptError, tab=tab)
+      if not matching or not draftsLoaded
+        section
+          row
+            progress aria-label="Loading Inbox"
+            text "Reading your Inbox…" color="-exact-secondary-label"
+      else if tab == "prs"
+        section
+          row
+            text "PRs are not available in this preview." color="-exact-secondary-label"
+      else if tab == "status"
+        StatusPane(inbox=inbox, prefix=contentId)
+      else
+        InboxRows(rows=(tab == "findings" ? inbox.findings : inbox.asks), findings=tab == "findings", fresh=inbox.fresh, waiting=inbox.connectionState == "waiting", selected=selected, submittedRow=submittedRow, submittedKey=submittedKey, isSendingRow=isSendingRow, disconnected=disconnected, pending=busy, onToggle=onToggle, onChoose=onChoose)
+      SavedReplies(drafts=saved, onOpen=onOpen)
+      if replyOpen
+        ReplyPane(title=replyTitle, draft=replyText, canSend=canSend, canDiscard=not busy, message=replyMessage, tab=tab, onEdit=onEdit, onDiscard=onDiscard, onSend=onSend)

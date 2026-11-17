@@ -449,7 +449,9 @@ var CLIENTS = {
         kind: "different",
         reason: "The engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, so it reads an Option-click on a fold: the Claude app reports `alt` on a click, which a VM run showed. The engine types say the pointer event of a Client carries the modifier keys the terminal reported held, and no terminal run has shown an Option-click folding all there."
       },
-      "suggested-goal": { kind: "full" }
+      "suggested-goal": { kind: "full" },
+      "remote-typed-reply-admission": { kind: "full" },
+      "remote-draft-retention": { kind: "full" }
     }
   },
   codex: {
@@ -599,7 +601,9 @@ var CLIENTS = {
       "suggested-goal": {
         kind: "different",
         reason: "Clicks only, as for the goal: the Codex Status has no row selection."
-      }
+      },
+      "remote-typed-reply-admission": { kind: "full" },
+      "remote-draft-retention": { kind: "full" }
     }
   },
   omp: {
@@ -695,7 +699,9 @@ var CLIENTS = {
         kind: "different",
         reason: "The panel takes keys only, so the w key folds every fold or opens them all, and no click does."
       },
-      "suggested-goal": { kind: "full" }
+      "suggested-goal": { kind: "full" },
+      "remote-typed-reply-admission": { kind: "full" },
+      "remote-draft-retention": { kind: "full" }
     }
   }
 };
@@ -5273,6 +5279,9 @@ function emptySession() {
     pending: [],
     sent: [],
     lastActions: {},
+    remoteCommands: {},
+    remoteCommandFloor: 0,
+    remoteViewers: {},
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -5335,6 +5344,9 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    remoteCommands: saved.remoteCommands ?? {},
+    remoteCommandFloor: saved.remoteCommandFloor ?? 0,
+    remoteViewers: saved.remoteViewers ?? {},
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     collapsed: saved.collapsed ?? {},
@@ -5584,7 +5596,7 @@ function herdrLabels(tokens) {
   ]));
 }
 var HERDR_FORMAT = 1;
-var SESSION_FIELDS = Object.keys(emptySession());
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor");
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
@@ -5782,6 +5794,197 @@ function withCollapse(s, row, isCollapsed, at) {
     ...waiting.length > 0 && { waiting }
   };
   return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
+}
+
+// ../hooks/remote-viewers.ts
+var VIEWER_LEASE_MS = 60000;
+var MAX_VIEWERS = 32;
+function updateRemoteViewer(s, update, now) {
+  if (update.issuedAt > now + 30000 || now - update.issuedAt > 120000)
+    return s;
+  const viewers = Object.fromEntries(Object.entries(s.remoteViewers).filter(([, viewer]) => viewer.expiresAt + 120000 > now));
+  const previous = viewers[update.id];
+  const generation = previous?.generation ?? -1;
+  const sameGeneration = update.generation === generation;
+  const isOld = update.generation < generation || sameGeneration && update.sequence <= previous.sequence;
+  const expiredGeneration = sameGeneration && (previous.released || previous.expiresAt <= now);
+  if (isOld)
+    return s;
+  if (expiredGeneration)
+    return previous.released ? s : {
+      ...s,
+      remoteViewers: { ...viewers, [update.id]: { ...previous, released: true } }
+    };
+  if (!previous && Object.keys(viewers).length >= MAX_VIEWERS)
+    throw new Error("Too many Inbox viewers are registered.");
+  const sameView = sameGeneration && previous?.tab === update.tab;
+  const active = update.active;
+  const replies = Object.fromEntries(active ? update.replies.map((id) => [id, sameGeneration ? previous?.replies[id] ?? now : now]) : []);
+  const seenAt = Math.min(now, update.seenAt ?? 0);
+  const seen = active ? { ...sameView ? previous?.shownRows : {}, ...Object.fromEntries(update.shownRows.map((id) => [id, seenAt])) } : {};
+  const shownRows = Object.fromEntries(Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 256));
+  const listInput = active && update.listActive ? withListInput(sameGeneration ? previous?.listInput ?? null : null, now) : sameGeneration ? previous?.listInput ?? null : null;
+  return {
+    ...s,
+    remoteViewers: {
+      ...viewers,
+      [update.id]: {
+        generation: update.generation,
+        sequence: update.sequence,
+        expiresAt: active ? now + VIEWER_LEASE_MS : now,
+        released: !active,
+        replies,
+        shownRows,
+        shownSince: active ? sameView ? previous?.shownSince ?? now : now : null,
+        tab: update.tab,
+        listActiveAt: active && update.listActive ? now : null,
+        listInput
+      }
+    }
+  };
+}
+function remoteHeldRows(s, now) {
+  return Object.values(s.remoteViewers).flatMap((viewer) => {
+    if (viewer.released || viewer.expiresAt <= now)
+      return [];
+    const closed = viewer.tab === "needsYou" ? s.ledger.closed : viewer.tab === "findings" ? s.ledger.closedFindings : [];
+    const viewed = closed.filter((row) => isShownSince(closedAt(row), viewer.shownSince)).map((row) => row.id);
+    return [...Object.keys(viewer.replies), ...viewed];
+  });
+}
+function remoteViewerReceipts(s) {
+  return Object.fromEntries(Object.entries(s.remoteViewers).map(([id, viewer]) => [
+    id,
+    {
+      replies: viewer.replies,
+      listInput: viewer.listInput ?? null,
+      shownSince: viewer.shownSince,
+      tab: viewer.tab,
+      generation: viewer.generation,
+      sequence: viewer.sequence,
+      expiresAt: viewer.expiresAt,
+      released: viewer.released
+    }
+  ]));
+}
+
+// ../hooks/remote-command-state.ts
+function remoteCommandArrival(s, deliveryId) {
+  if (!deliveryId)
+    return s;
+  const matches = Object.entries(s.remoteCommands).filter(([, c]) => c.deliveryId === deliveryId);
+  if (matches.length === 0)
+    return s;
+  return {
+    ...s,
+    remoteCommands: {
+      ...s.remoteCommands,
+      ...Object.fromEntries(matches.map(([id, c]) => [id, { ...c, delivered: true, pendingDelivery: false }]))
+    }
+  };
+}
+function remoteCommandState(s) {
+  let commands = s.remoteCommands;
+  for (const [row, last] of Object.entries(s.lastActions)) {
+    const id = last.commandId;
+    const command = id && commands[id];
+    if (!id || !command || command.row !== row || command.state === "expired" || command.state === "refused")
+      continue;
+    const delivery = last.delivery;
+    const deliveryId = delivery && "id" in delivery ? delivery.id ?? command.deliveryId : command.deliveryId;
+    const delivered = command.delivered || delivery?.state === "arrived";
+    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery);
+    const error = delivery?.state === "failed" ? delivery.reason.slice(0, 256) : command.error;
+    const state = delivery?.state === "failed" ? "failed" : command.state;
+    if (deliveryId === command.deliveryId && delivered === command.delivered && pendingDelivery === command.pendingDelivery && error === command.error && state === command.state)
+      continue;
+    commands = { ...commands, [id]: { ...command, deliveryId, delivered, pendingDelivery, error, state } };
+  }
+  for (const closed of s.ledger.closed) {
+    const id = closed.commandId;
+    const command = id && commands[id];
+    if (!id || !command || command.state === "cancelled" || command.state === "expired" || command.state === "refused")
+      continue;
+    const deliveryId = closed.doneNotification?.id ?? command.deliveryId;
+    const pendingDelivery = !command.delivered && !closed.doneNotification?.error;
+    if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
+      commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
+  }
+  return commands === s.remoteCommands ? s : { ...s, remoteCommands: commands };
+}
+async function confirmRemoteDelivery(host, state, deliveryId) {
+  const attempt = state.sent.find((send) => send.deliveryId === deliveryId);
+  const commandIds = attempt?.commandIds ?? [];
+  if (commandIds.length === 0)
+    return;
+  if (!host.readDurable)
+    throw new Error("This host cannot confirm saved delivery attempts.");
+  const saved = await host.readDurable();
+  const durable = saved.sent.find((send) => send.deliveryId === deliveryId);
+  const isSaved = attempt && durable && JSON.stringify(attempt) === JSON.stringify(durable);
+  const commandsSaved = commandIds.every((id) => saved.remoteCommands[id]?.deliveryId === deliveryId);
+  if (!isSaved || !commandsSaved)
+    throw new Error("The delivery attempt could not be confirmed saved. Nothing was sent.");
+}
+function cancelRemoteCommand(s, row) {
+  const id = s.ledger.closed.find((c) => c.id === row && c.how === "done")?.commandId ?? s.lastActions[row]?.commandId;
+  const command = id && s.remoteCommands[id];
+  if (!id || !command || command.deliveryId || command.delivered)
+    return s;
+  return {
+    ...s,
+    remoteCommands: { ...s.remoteCommands, [id]: { ...command, state: "cancelled", pendingDelivery: false } }
+  };
+}
+function remoteReceipts(s) {
+  return Object.fromEntries(Object.entries(remoteCommandState(s).remoteCommands).map(([id, c]) => [
+    id,
+    {
+      state: c.state,
+      error: c.state === "expired" ? "This request is outside saved history. Delivery cannot be confirmed." : c.state === "refused" ? c.error ?? "The host did not accept this action. Your reply is kept." : c.error ? c.state === "stale" ? "This item changed before the action." : "The host could not confirm this action." : null,
+      row: c.row,
+      deliveryId: c.deliveryId,
+      delivered: c.delivered,
+      pendingDelivery: c.pendingDelivery ?? false
+    }
+  ]));
+}
+function remoteDeliveryOutcome(s, deliveryId, outcome, arrived = false) {
+  const ids = s.sent.find((send) => send.deliveryId === deliveryId)?.commandIds ?? [];
+  let commands = s.remoteCommands;
+  for (const id of ids) {
+    const c = commands[id];
+    if (!c)
+      continue;
+    commands = {
+      ...commands,
+      [id]: {
+        ...c,
+        deliveryId,
+        state: outcome.state === "rejected" ? "failed" : c.state,
+        delivered: c.delivered || arrived,
+        pendingDelivery: outcome.state !== "rejected" && !c.delivered && !arrived,
+        error: outcome.reason?.slice(0, 256) ?? c.error
+      }
+    };
+  }
+  return commands === s.remoteCommands ? s : { ...s, remoteCommands: commands };
+}
+function blockRemoteDeferred(s, id, reason) {
+  const command = s.remoteCommands[id];
+  if (!command)
+    return s;
+  const last = s.lastActions[command.row];
+  const held = last?.commandId === id && last.delivery?.state === "held";
+  const ledger = held && last.kind === "mark" ? reopenOnFailure(s.ledger, command.row, last.at) : s.ledger;
+  return {
+    ...s,
+    lastActions: held ? { ...s.lastActions, [command.row]: { ...last, delivery: { state: "failed", reason } } } : s.lastActions,
+    ledger: {
+      ...ledger,
+      closed: ledger.closed.map((c) => c.commandId === id && !c.doneNotification ? { ...c, doneNotification: { id: `${id}:blocked`, error: reason } } : c)
+    }
+  };
 }
 
 // ../hooks/catch-up-text.ts
@@ -7831,7 +8034,10 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
 }
 function completedAttempt(state, deliveryId, outcome) {
   if (outcome.state === "rejected")
-    return { ...state, sent: state.sent.filter((s) => s.deliveryId !== deliveryId) };
+    return {
+      ...remoteDeliveryOutcome(state, deliveryId, outcome),
+      sent: state.sent.filter((s) => s.deliveryId !== deliveryId)
+    };
   const index = state.sent.findIndex((s) => s.deliveryId === deliveryId);
   const attempt = state.sent[index];
   if (!attempt)
@@ -7840,6 +8046,7 @@ function completedAttempt(state, deliveryId, outcome) {
   const delivered = Object.entries(state.lastActions).filter(([_id, action]) => action.delivery && ("id" in action.delivery) && action.delivery.id === deliveryId);
   let lastActions = text === attempt.text ? state.lastActions : delivered.reduce((actions, [id, action]) => withRewrite(actions, [id], action.at, attempt.text, text, deliveryId), state.lastActions);
   const earlierUnknown = state.sent.slice(0, index).some((s) => s.text === text && (s.phase === "attempting" || s.phase === "uncertain"));
+  state = remoteDeliveryOutcome(state, deliveryId, outcome, outcome.state === "accepted" && outcome.isInTurn === true && !earlierUnknown);
   if (outcome.state === "accepted" && !earlierUnknown) {
     lastActions = outcome.isInTurn ? withArrival(lastActions, text, undefined, deliveryId) : delivered.reduce((actions, [id, action]) => withAcceptedSend(actions, [id], action.at, text, deliveryId), lastActions);
   }
@@ -7874,19 +8081,21 @@ function recorded(host, s, tool, args, now, fields) {
 function withHolds(s, holds) {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
 }
-function rowsInPlace(s) {
+function rowsInPlace(s, now = Date.now()) {
   const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  return new Set([...s.heldRows, ...since]);
+  const pending = Object.values(s.remoteCommands).filter((c) => c.pendingDelivery && !c.deliveryId).map((c) => c.row);
+  return new Set([...s.heldRows, ...remoteHeldRows(s, now), ...pending, ...since]);
 }
-function pruned(s) {
+function pruned(s, now = Date.now()) {
+  s = remoteCommandState(s);
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return settledCollapses({
     ...s,
-    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s, now)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   });
 }
@@ -10977,7 +11186,11 @@ function matchSent(s, text) {
   } : s.lastActions;
   const lastActions = s.sent.slice(matchingAt + 1).reduce((actions, later) => sameText(later.text) && later.row !== null ? withUnconfirmed(actions, later.text, later.pressedAt ?? undefined, later.deliveryId) : actions, arrived);
   return {
-    state: { ...s, lastActions, sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent },
+    state: {
+      ...remoteCommandArrival(s, sent?.deliveryId ?? null),
+      lastActions,
+      sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent
+    },
     sentBy: sent ? { press: sent.press } : null
   };
 }
@@ -12073,14 +12286,14 @@ var questionHistory2 = null;
 function useQuestionHistory(place) {
   questionHistory2 = place;
 }
-async function updateState(dir, sessionId, change) {
+async function updateState(dir, sessionId, change, now = Date.now) {
   const path = statePath(dir, sessionId);
   return inTurn(path, async () => {
     const { state: current, isSaved } = await readSaved(dir, sessionId);
     const changed = await historyStep(questionHistory2, sessionId, current, await change(current), Date.now());
     if (isSaved && changed === current)
       return current;
-    const next = pruned(changed);
+    const next = pruned(changed, now());
     const folder = join(dir, "sessions");
     if (!madeFolders.has(folder)) {
       await mkdir(folder, { recursive: true });
@@ -13102,8 +13315,8 @@ import { fileURLToPath } from "url";
 
 // ../hooks/herdr-press-file.ts
 var isLookFile = (file) => ("look" in file);
-var isPressFile = (file) => ("press" in file);
-var fileTime = (file) => isLookFile(file) ? file.look.endedAt : isPressFile(file) ? file.pressedAt : file.collapse.at;
+var isPressFile = (file) => file.format === HERDR_FORMAT && ("press" in file);
+var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPressFile(file) ? file.pressedAt : file.collapse.at;
 var PRESS_TARGETS = {
   answer: "id",
   type: "id",
@@ -13178,6 +13391,16 @@ function pressFile(text) {
   }
   if (!isRecord(file))
     return { ok: false, reason: "not an object" };
+  if (file.format === 2 && file.kind === "viewer") {
+    const ids = (value) => Array.isArray(value) && value.length <= 256 && value.every((id) => typeof id === "string" && /^[\w-]{1,100}$/.test(id));
+    const integer = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    const valid = typeof file.id === "string" && /^[\w-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && integer(file.generation) && integer(file.sequence) && typeof file.active === "boolean" && typeof file.listActive === "boolean" && (file.seenAt === undefined || isTime(file.seenAt)) && (file.visibleForMs === undefined || isTime(file.visibleForMs) && file.visibleForMs >= 0) && ["overview", "needsYou", "findings", "prs"].includes(String(file.tab)) && ids(file.replies) && ids(file.shownRows);
+    return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
+  }
+  if (file.format === 2 && file.kind === "command") {
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && /^[if]\d{1,16}$/.test(file.press.id) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8000 : file.press.action === "answer" ? typeof file.press.option === "string" && file.press.option.length <= 8000 && file.press.option.trim() !== "" : ["done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"].includes(String(file.press.action)));
+    return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
+  }
   if (file.format !== HERDR_FORMAT)
     return { ok: false, reason: `unknown format ${String(file.format)}` };
   if (typeof file.id !== "string" || file.id === "")
@@ -13202,7 +13425,7 @@ function pressFile(text) {
 
 // ../hooks/held-sends.ts
 function dueRows(s, now) {
-  return Object.entries(s.lastActions).filter(([, a]) => a.delivery?.state === "held" && a.delivery.until <= now).map(([id]) => id);
+  return Object.entries(s.lastActions).filter(([, a]) => a.delivery?.state === "held" && a.delivery.until <= now && (!a.commandId || s.remoteCommands[a.commandId]?.state === "applied")).map(([id]) => id);
 }
 async function releaseHeldSends(host, current) {
   const due = dueRows(current ?? await host.read(), await host.now());
@@ -13224,6 +13447,8 @@ function refusedHeld(s, id, reason) {
 }
 async function releaseOne(host, id, isEarly) {
   let attempt = null;
+  const attemptId = host.newId();
+  let startedState;
   const started = host.update(async (s) => {
     attempt = null;
     const last = s.lastActions[id];
@@ -13231,8 +13456,10 @@ async function releaseOne(host, id, isEarly) {
     const now = await host.now();
     if (!last || held?.state !== "held" || held.until > now && !isEarly)
       return s;
+    if (last.commandId && s.remoteCommands[last.commandId]?.state !== "applied")
+      return s;
     await host.prepare?.(s);
-    const deliveryId = host.newId();
+    const deliveryId = last.commandId ? `${last.commandId}:send` : attemptId;
     attempt = { deliveryId, text: held.message, at: last.at };
     const state = host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed";
     return {
@@ -13248,12 +13475,16 @@ async function releaseOne(host, id, isEarly) {
           queuedId: null,
           pressedAt: last.at,
           deliveryId,
-          phase: "attempting"
+          phase: "attempting",
+          commandIds: last.commandId ? [last.commandId] : []
         }
       ]
     };
   });
-  const why = await started.then(() => null, (err) => err instanceof Error ? err.message : String(err));
+  const why = await started.then((state) => {
+    startedState = state;
+    return null;
+  }, (err) => err instanceof Error ? err.message : String(err));
   if (why !== null) {
     await host.update((s) => refusedHeld(s, id, why));
     return;
@@ -13261,6 +13492,7 @@ async function releaseOne(host, id, isEarly) {
   const sending = attempt;
   if (!sending)
     return;
+  await confirmRemoteDelivery(host, startedState, sending.deliveryId);
   const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId).catch((err) => ({ state: "unconfirmed", reason: err instanceof Error ? err.message : String(err) }));
   await host.update((s) => {
     const after = completedAttempt(s, sending.deliveryId, outcome);
@@ -13285,7 +13517,10 @@ async function wakeAfterSettle(host, current) {
   await wakeForDone(host);
 }
 async function wakeForDone(host, current) {
-  const check = async (s) => doneWake(s.ledger, {
+  const check = async (s) => doneWake({
+    ...s.ledger,
+    closed: s.ledger.closed.filter((c) => !c.commandId || s.remoteCommands[c.commandId]?.state === "applied")
+  }, {
     now: await host.now(),
     windowMs: host.settleWindowMs,
     isTurnRunning: s.presence.isTurnRunning
@@ -13293,13 +13528,14 @@ async function wakeForDone(host, current) {
   if (!await check(current ?? await host.read()))
     return;
   let attempt = null;
-  await host.update(async (s) => {
+  const attemptId = host.newId();
+  const startedState = await host.update(async (s) => {
     attempt = null;
     const wake = await check(s);
     if (!wake)
       return s;
     await host.prepare?.(s);
-    const deliveryId = host.newId();
+    const deliveryId = attemptId;
     attempt = { deliveryId, text: wake.text };
     const lastActions = { ...s.lastActions };
     for (const closed of s.ledger.closed) {
@@ -13309,6 +13545,7 @@ async function wakeForDone(host, current) {
       const last = previous?.kind === "mark" && previous.action === "done" && previous.at === closed.at ? previous : recordPress("mark", "done", "Done", { now: closed.at, turnsStarted: s.presence.turnsStarted });
       lastActions[closed.id] = {
         ...last,
+        ...closed.commandId && { commandId: closed.commandId },
         delivery: { state: host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed", message: wake.text, id: deliveryId }
       };
     }
@@ -13326,7 +13563,8 @@ async function wakeForDone(host, current) {
           queuedId: null,
           pressedAt: null,
           deliveryId,
-          phase: "attempting"
+          phase: "attempting",
+          commandIds: wake.ids.flatMap((id) => lastActions[id]?.commandId ? [lastActions[id].commandId] : [])
         }
       ]
     };
@@ -13335,6 +13573,7 @@ async function wakeForDone(host, current) {
   const sending = attempt;
   if (!sending)
     return;
+  await confirmRemoteDelivery(host, startedState, sending.deliveryId);
   const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId).catch((err) => ({ state: "unconfirmed", reason: err instanceof Error ? err.message : String(err) }));
   await host.update((s) => {
     const after = completedAttempt(s, sending.deliveryId, outcome);
@@ -13390,12 +13629,12 @@ async function checkPrFirst(host, p, rowId, pressId, holds) {
   });
   return isRead ? check : "unread";
 }
-async function startPress(host, p, isStale, holds) {
+async function startPress(host, p, isStale, holds, commandId) {
   const rowId = pressRowId(p);
   const isSecondPressOnHeld = !isPrPress(p) && p.action !== "undo" && isHeldSend((await host.read()).lastActions[rowId]);
   if (isSecondPressOnHeld && !isStale)
     await releaseHeldSendEarly(host, rowId);
-  const localPressId = host.newId();
+  const localPressId = commandId ?? host.newId();
   let isUnconfirmed = false;
   let isRowFailed = false;
   let copy = null;
@@ -13478,12 +13717,16 @@ async function startPress(host, p, isStale, holds) {
       return s;
     }
     const firstSend = r.effects.find((e) => e.kind === "send");
-    const deliveryId = firstSend ? host.newId() : undefined;
+    const deliveryId = firstSend ? commandId ? `${commandId}:send` : host.newId() : undefined;
     const pressLasts = firstSend && deliveryId ? withDeliveryId(r.lasts, Object.keys(r.lasts), at, firstSend.text, deliveryId) : r.lasts;
+    const undone = !isPrPress(p) && p.action === "undo" ? cancelRemoteCommand(s, rowId) : s;
     const next = {
-      ...s,
-      ledger: r.ledger,
-      lastActions: withLasts(s.lastActions, pressLasts, r.drop),
+      ...undone,
+      ledger: commandId && p.action === "done" ? {
+        ...r.ledger,
+        closed: r.ledger.closed.map((c) => c.id === rowId && c.at === at ? { ...c, commandId } : c)
+      } : r.ledger,
+      lastActions: withLasts(s.lastActions, commandId ? Object.fromEntries(Object.entries(pressLasts).map(([id, last]) => [id, { ...last, commandId }])) : pressLasts, r.drop),
       told: r.reopenedId ? { ...s.told, closed: s.told.closed.filter((id) => id !== r.reopenedId) } : s.told
     };
     Object.assign(pressed, { r, at, deliveryId });
@@ -13502,7 +13745,8 @@ async function startPress(host, p, isStale, holds) {
           queuedId: null,
           pressedAt: at,
           deliveryId,
-          phase: "attempting"
+          phase: "attempting",
+          commandIds: commandId ? [commandId] : []
         }
       ]
     };
@@ -13538,8 +13782,236 @@ async function startPress(host, p, isStale, holds) {
     }
   };
 }
-async function press(host, p, isStale, holds) {
-  return (await startPress(host, p, isStale, holds)).finish();
+async function press(host, p, isStale, holds, commandId) {
+  return (await startPress(host, p, isStale, holds, commandId)).finish();
+}
+
+// ../hooks/remote-commands.ts
+var LIFETIME_MS = 24 * 60 * 60000;
+var MAX_COMMANDS = 128;
+var MAX_COMMAND_BYTES = 128000;
+var OUTCOME_RESERVE_BYTES = 4096;
+function newRevision(host) {
+  const id = host.newId();
+  if (!/^[\w-]{1,128}$/.test(id))
+    throw new Error("The command revision is invalid.");
+  return id;
+}
+function remoteRowVersion(s, id) {
+  const item = s.ledger.items.find((row) => row.id === id);
+  const normalized = item && Object.fromEntries(Object.entries(item).filter(([key]) => key !== "dialog"));
+  return JSON.stringify([
+    normalized ?? null,
+    s.ledger.findings.find((row) => row.id === id) ?? null,
+    s.ledger.closed.find((row) => row.id === id) ?? null,
+    s.ledger.closedFindings.find((row) => row.id === id) ?? null,
+    s.lastActions[id] ?? null
+  ]);
+}
+async function digestText(text) {
+  const subtle = crypto.subtle;
+  if (!("digest" in subtle) || typeof subtle.digest !== "function")
+    throw new Error("This host cannot hash remote commands.");
+  const bytes = await subtle.digest("SHA-256", new TextEncoder().encode(text));
+  if (!(bytes instanceof ArrayBuffer))
+    throw new Error("The host returned an invalid command hash.");
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+async function remoteRowDigest(s, id) {
+  const row = JSON.parse(remoteRowVersion(s, id));
+  const canonical = JSON.stringify(row, (_key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
+  return `row-sha256-v1:${await digestText(canonical)}`;
+}
+async function matchesRow(s, command) {
+  return command.expected === remoteRowVersion(s, command.press.id) || command.expected === await remoteRowDigest(s, command.press.id);
+}
+async function requireDurableCommand(host, id, expected, floor) {
+  if (!host.readDurable)
+    throw new Error("This host cannot confirm saved commands.");
+  const durable = await host.readDurable();
+  const saved = durable.remoteCommands[id];
+  if (!saved || JSON.stringify(saved) !== JSON.stringify(expected) || (durable.remoteCommandFloor ?? 0) < floor)
+    throw new Error("The command could not be confirmed saved. Nothing was sent.");
+}
+var rejected = (error) => ({
+  copy: null,
+  error,
+  note: null,
+  isUnconfirmed: true,
+  isRowFailed: false,
+  wakesAfterSettle: false
+});
+function supportsRemotePress(p) {
+  return ["type", "answer", "done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"].includes(p.action);
+}
+function isUnresolved(c) {
+  return c.state === "accepted" || c.state === "attempting" || c.state === "uncertain" && !c.delivered || c.state === "applied" && !c.delivered && (c.pendingDelivery === true || c.deliveryId !== null);
+}
+function issuedAt(id, c) {
+  const at = c.issuedAt ?? Number.parseInt(id.split("-")[0], 36);
+  if (!Number.isSafeInteger(at) || at < 0)
+    throw new Error("The saved command time is invalid.");
+  return at;
+}
+function fits(commands) {
+  const count = Object.keys(commands).length;
+  return count <= MAX_COMMANDS && new TextEncoder().encode(JSON.stringify(commands)).byteLength + count * OUTCOME_RESERVE_BYTES <= MAX_COMMAND_BYTES;
+}
+async function applyRemoteCommand(host, command, sessionId) {
+  if (!Number.isSafeInteger(command.issuedAt) || command.issuedAt < 0 || !/^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(command.id))
+    return rejected("The command identity or time is invalid.");
+  if (!host.readDurable || command.session !== sessionId)
+    return rejected("This command belongs to another session or cannot be saved.");
+  const now = await host.now();
+  const time = Number.parseInt(command.id.split("-")[0], 36);
+  const validTime = time === command.issuedAt && command.issuedAt <= now + 30000 && now - command.issuedAt < LIFETIME_MS;
+  const rawPayload = JSON.stringify([command.session, command.issuedAt, command.expected, command.press]);
+  const fields = Object.fromEntries(Object.entries(command.press).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+  const canonical = JSON.stringify([command.session, command.issuedAt, command.expected, fields]);
+  const payload = `sha256-v1:${await digestText(canonical)}`;
+  const revision = newRevision(host);
+  let admitted = false;
+  let conflict = null;
+  const claimed = await host.update(async (s) => {
+    admitted = false;
+    conflict = null;
+    const existing = s.remoteCommands[command.id];
+    if (existing) {
+      const same = existing.payload === payload || existing.payload === rawPayload;
+      if (!same)
+        conflict = "This command identity already names a different action.";
+      if (same && existing.state === "accepted" && !validTime)
+        return {
+          ...s,
+          remoteCommands: {
+            ...s.remoteCommands,
+            [command.id]: { ...existing, state: "expired", error: "This request expired before execution.", revision }
+          }
+        };
+      admitted = same && existing.state === "accepted";
+      return s;
+    }
+    let floor = s.remoteCommandFloor ?? 0;
+    if (!Number.isSafeInteger(floor) || floor < 0)
+      throw new Error("The saved command cutoff is invalid.");
+    const kept = { ...s.remoteCommands };
+    const drop = (id) => {
+      const record = kept[id];
+      const at = issuedAt(id, record);
+      const retiredAt = record.timeWasValid === false ? Math.min(Math.floor(record.acceptedAt), at) : at;
+      floor = Math.max(floor, retiredAt);
+      delete kept[id];
+    };
+    for (const [id, c] of Object.entries(kept)) {
+      const isRefusal = c.state === "refused" || c.state === "expired";
+      if (isRefusal || !isUnresolved(c) && now - c.acceptedAt >= LIFETIME_MS)
+        drop(id);
+    }
+    const expired = !validTime || command.issuedAt <= floor;
+    const supported = supportsRemotePress(command.press);
+    const stale = !expired && supported && !await matchesRow(s, command);
+    const record = {
+      payload,
+      timeWasValid: validTime,
+      issuedAt: command.issuedAt,
+      acceptedAt: now,
+      revision,
+      state: expired ? "expired" : !supported ? "refused" : stale ? "stale" : "accepted",
+      error: expired ? "This request is outside retained history. Delivery cannot be confirmed." : !supported ? "This remote action is not supported." : stale ? "This item changed before the action." : null,
+      row: command.press.id,
+      deliveryId: null,
+      delivered: false
+    };
+    const evictable = Object.entries(kept).filter(([, c]) => !isUnresolved(c)).sort((a, b) => issuedAt(a[0], a[1]) - issuedAt(b[0], b[1]));
+    while (!fits({ ...kept, [command.id]: record }) && evictable.length)
+      drop(evictable.shift()[0]);
+    if (command.issuedAt <= floor) {
+      record.state = "expired";
+      record.error = "This request is outside retained history. Delivery cannot be confirmed.";
+    } else if (!fits({ ...kept, [command.id]: record }) && record.state !== "expired") {
+      record.state = "refused";
+      record.error = "Too many actions are awaiting confirmation. Your reply is kept.";
+    }
+    if (record.state === "refused" || record.state === "expired") {
+      if (new TextEncoder().encode(JSON.stringify(record)).byteLength > OUTCOME_RESERVE_BYTES)
+        throw new Error("The refusal cannot fit the reserved receipt slot.");
+    }
+    admitted = record.state === "accepted";
+    return { ...s, remoteCommandFloor: floor, remoteCommands: { ...kept, [command.id]: record } };
+  });
+  if (conflict)
+    return rejected(conflict);
+  const record = claimed.remoteCommands[command.id];
+  if (!record)
+    return rejected("The command was not accepted.");
+  await requireDurableCommand(host, command.id, record, claimed.remoteCommandFloor ?? 0);
+  if (!admitted)
+    return {
+      ...rejected(record.error ?? "This command was already accepted; its outcome is retained."),
+      note: record.state === "stale" ? "stale" : null
+    };
+  const executionRevision = newRevision(host);
+  let executing = false;
+  const execution = await host.update((s) => {
+    executing = s.remoteCommands[command.id]?.state === "accepted";
+    if (!executing)
+      return s;
+    return {
+      ...s,
+      remoteCommands: {
+        ...s.remoteCommands,
+        [command.id]: { ...s.remoteCommands[command.id], revision: executionRevision, state: "attempting" }
+      }
+    };
+  });
+  if (!executing)
+    return rejected("This command is already running or has an uncertain outcome.");
+  await requireDurableCommand(host, command.id, execution.remoteCommands[command.id], execution.remoteCommandFloor ?? 0);
+  let started = false;
+  const durableHost = {
+    ...host,
+    update: async (change) => {
+      const nextRevision = newRevision(host);
+      const changed = await host.update(async (s) => {
+        if (!started && !await matchesRow(s, command))
+          throw new Error("This item changed before the action.");
+        const next = await change(s);
+        return {
+          ...next,
+          heldRows: s.heldRows,
+          shownSince: s.shownSince,
+          remoteCommands: {
+            ...next.remoteCommands,
+            [command.id]: { ...next.remoteCommands[command.id], revision: nextRevision, state: "attempting" }
+          }
+        };
+      });
+      await requireDurableCommand(host, command.id, changed.remoteCommands[command.id], changed.remoteCommandFloor ?? 0);
+      started = true;
+      return changed;
+    }
+  };
+  let outcome;
+  try {
+    outcome = await press(durableHost, command.press, false, { ...NO_HOLDS, shownSince: now }, command.id);
+  } catch (error) {
+    outcome = rejected(error instanceof Error ? error.message : "Command outcome is uncertain.");
+  }
+  const finalRevision = newRevision(host);
+  const result = await host.update((s) => ({
+    ...outcome.error || outcome.isUnconfirmed ? blockRemoteDeferred(s, command.id, "This action could not be confirmed saved.") : s,
+    remoteCommands: {
+      ...s.remoteCommands,
+      [command.id]: {
+        ...s.remoteCommands[command.id],
+        revision: finalRevision,
+        state: outcome.isUnconfirmed ? "uncertain" : outcome.error ? "failed" : outcome.note === "stale" ? "stale" : "applied",
+        error: outcome.error?.slice(0, 256) ?? null
+      }
+    }
+  }));
+  await requireDurableCommand(host, command.id, result.remoteCommands[command.id], result.remoteCommandFloor ?? 0);
+  return outcome;
 }
 
 // ../hooks/herdr-app.ts
@@ -13567,8 +14039,8 @@ function utf8Bytes(text) {
   return bytes;
 }
 var isOverLimit = (text) => text.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text) > PUBLISH_LIMIT_BYTES;
-function withoutFoldedClosed(s) {
-  const inPlace = rowsInPlace(s);
+function withoutFoldedClosed(s, now) {
+  const inPlace = rowsInPlace(s, now);
   const { closed, closedFindings } = s.ledger;
   return {
     ...s,
@@ -13583,7 +14055,7 @@ function publishedText(source, session, log) {
   const text = JSON.stringify(herdrEnvelope(source, session));
   if (!isOverLimit(text))
     return text;
-  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true));
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session, source.writtenAt), true));
   if (isOverLimit(trimmed))
     log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
   return trimmed;
@@ -13629,6 +14101,11 @@ function pressDrainer(files, owns, apply, log) {
     for (const name of names) {
       const path = `${folder}/${name}`;
       const taken = `${path}${takenMark}`;
+      const candidate = await files.read(path).then(pressFile, () => null);
+      if (candidate?.ok && candidate.file.format === 2) {
+        waiting.push({ path, taken: path, file: candidate.file });
+        continue;
+      }
       if (!await files.move(path, taken).then(() => true, () => false))
         continue;
       const read = await files.read(taken).then(pressFile, (err) => ({
@@ -13647,11 +14124,11 @@ function pressDrainer(files, owns, apply, log) {
     for (const { path, taken, file } of waiting.sort((a, b) => fileTime(a.file) - fileTime(b.file))) {
       const isTaken = await apply(sessionId, file).catch((err) => {
         log(`Herdr press ${logged(file.id)} failed: ${message2(err)}`);
-        return true;
+        return file.format !== 2;
       });
       if (isTaken) {
         await files.remove(taken).catch((err) => log(`Herdr press ${logged(file.id)} not removed: ${message2(err)}`));
-      } else {
+      } else if (taken !== path) {
         await files.move(taken, path).catch((err) => log(`Herdr press ${logged(file.id)} not put back: ${message2(err)}`));
       }
     }
@@ -13697,7 +14174,38 @@ var LOOK_OUTCOME = {
   isRowFailed: false,
   wakesAfterSettle: false
 };
-async function applyHerdrFile(host, file) {
+async function applyHerdrFile(host, file, sessionId = "") {
+  if (file.format === 2) {
+    if (file.kind === "command")
+      return applyRemoteCommand(host, file, sessionId);
+    if (file.session !== sessionId)
+      return LOOK_OUTCOME;
+    const now = await host.now();
+    let refresh = false;
+    await host.update((s) => {
+      refresh = false;
+      const previous = s.remoteViewers[file.id];
+      let next = updateRemoteViewer(s, file, now);
+      if (next === s)
+        return s;
+      const viewer = next.remoteViewers[file.id];
+      const sameLook = previous && !previous.released && previous.expiresAt > now && previous.generation === file.generation && previous.tab === "overview" && file.tab === "overview";
+      if (sameLook && !file.active && previous.shownSince !== null) {
+        const duration = Math.min(file.visibleForMs ?? 0, now - previous.shownSince);
+        next = lookReportedOn(next, {
+          startedAt: now - duration,
+          endedAt: now,
+          drawnWrittenAt: Math.min(now, file.seenAt ?? 0),
+          shown: viewer.released ? previous.shownRows : viewer.shownRows
+        });
+      }
+      refresh = !viewer.released && viewer.tab === "prs";
+      return next;
+    });
+    if (refresh)
+      await host.refreshPrsIfDue?.();
+    return LOOK_OUTCOME;
+  }
   if (isLookFile(file)) {
     await host.update((s) => lookReportedOn(s, file.look));
     return LOOK_OUTCOME;
@@ -14045,7 +14553,7 @@ function panelCalls(context, sessions, herdrAsk) {
       return outcome;
     },
     herdrFile: async (ctx, file) => {
-      if ((await applyHerdrFile(hostFor(ctx), file)).wakesAfterSettle)
+      if ((await applyHerdrFile(hostFor(ctx), file, sessionIdOf(ctx))).wakesAfterSettle)
         wakeLater(ctx);
     },
     resume: (ctx) => sendToAgent(ctx, RESUME_TEXT),
@@ -14170,7 +14678,7 @@ function sessionCalls(context) {
       const changed = await fn(current);
       isChanged = changed !== current;
       return changed;
-    });
+    }, deps.now);
     if (isChanged)
       notifyChanged(id);
     return saved;
@@ -14189,6 +14697,10 @@ function sessionCalls(context) {
       const s = await readState(dir, id);
       const now = deps.now();
       const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, {
+        receipts: remoteReceipts(s),
+        viewers: remoteViewerReceipts(s),
+        remoteProtocol: 2,
+        remoteHistoryAfter: s.remoteCommandFloor ?? 0,
         host: "omp",
         agent: OMP.agent,
         sessionId: id,
@@ -14222,6 +14734,7 @@ function sessionCalls(context) {
     return {
       now: deps.now,
       read: () => readState(dir, id),
+      readDurable: () => readState(dir, id),
       update: (fn) => change(id, fn),
       exclusive: (fn) => exclusiveRun(dir, id, fn),
       ask: askFor(ctx, id),
@@ -14230,6 +14743,7 @@ function sessionCalls(context) {
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
       },
       perform: async (_s, effect) => effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
+      refreshPrsIfDue: async () => fetchPrsWhenDue(ctx, true),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true)),
       gh: {
         shared: {

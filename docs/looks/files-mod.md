@@ -18,6 +18,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/title-client.tsx` | Mod only. The desktop pane's open row title, as a Client, so a click anywhere on the title collapses the row. It draws its own hover and pressed colors. |
 | `hooks/pane-row-lines.tsx` | Mod only. The parts a row's lines are drawn from: marks, tree lines, ages, feedback labels, an unselected row's line, and the props of the desktop row Client. |
 | `hooks/pane-row-keys.tsx` | Mod only. A row's buttons: keyed buttons, the desktop follow-up links, the terminal's action lines and a reply field's actions. |
+| `hooks/row-key-actions.ts` | Mod only. Turns a row's planned options, keys and more-options into keyed actions that run its presses. |
 | `hooks/pane-row-parts.tsx` | Mod only. Group titles and sections, and closed rows: the result line, the fold line, the closed fold, Undo and the settled row. |
 | `hooks/pane-prs.tsx` | Mod only. The PRs tab: thread and check rows, PR blocks and their settled form, the PR order lines, the tab's buttons, and its empty state and gh notice. |
 | `hooks/pane-status-lines.tsx` | Mod only. The lines a Status row is drawn from: the head, a subject's name line and its text width, and the tree beside a subject's children. |

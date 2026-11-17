@@ -9,6 +9,8 @@ import { press } from './host-press'
 import type { PressHost, PressOutcome } from './host-press'
 import { lookReportedOn } from './session-status'
 import { rowsInPlace } from './session-presses'
+import { updateRemoteViewer } from './remote-viewers'
+import { applyRemoteCommand } from './remote-commands'
 import { clipLabel } from './text'
 
 /**
@@ -77,8 +79,8 @@ function utf8Bytes(text: string): number {
 const isOverLimit = (text: string) => text.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text) > PUBLISH_LIMIT_BYTES
 
 /** `s` without the closed items and findings that no row draws in place, which the look folds under its closed count. */
-function withoutFoldedClosed(s: Session): Session {
-  const inPlace = rowsInPlace(s)
+function withoutFoldedClosed(s: Session, now: number): Session {
+  const inPlace = rowsInPlace(s, now)
   const { closed, closedFindings } = s.ledger
 
   return {
@@ -98,7 +100,7 @@ function withoutFoldedClosed(s: Session): Session {
 export function publishedText(source: EnvelopeSource, session: Session, log: (text: string) => void): string {
   const text = JSON.stringify(herdrEnvelope(source, session))
   if (!isOverLimit(text)) return text
-  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true))
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session, source.writtenAt), true))
   if (isOverLimit(trimmed))
     log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`)
 
@@ -178,8 +180,8 @@ const logged = (text: string) => clipLabel(text, LOGGED_CHARS)
 
 /**
  * Returns a drain: it applies each press file waiting for a session, oldest first by `fileTime`, and removes the file. It
- * reads a folder only when `owns` says this process runs the session there. It takes each file first by moving it to a
- * name only this process uses and no list keeps, so of two processes draining one folder only one applies a press. A
+ * reads a folder only when `owns` says this process runs the session there. Legacy files use a process-specific rename.
+ * Version-2 files stay in place until application returns; their saved command admission prevents repeated effects. A
  * file `pressFile` refuses or that cannot be read is logged and removed. One drain of a folder runs at a time, and a
  * drain asked for while one runs runs once more after it, so a press that lands mid-drain is not missed.
  */
@@ -199,6 +201,11 @@ export function pressDrainer(
     for (const name of names) {
       const path = `${folder}/${name}`
       const taken = `${path}${takenMark}`
+      const candidate = await files.read(path).then(pressFile, () => null)
+      if (candidate?.ok && candidate.file.format === 2) {
+        waiting.push({ path, taken: path, file: candidate.file })
+        continue
+      }
       if (
         !(await files.move(path, taken).then(
           () => true,
@@ -219,13 +226,13 @@ export function pressDrainer(
     for (const { path, taken, file } of waiting.sort((a, b) => fileTime(a.file) - fileTime(b.file))) {
       const isTaken = await apply(sessionId, file).catch((err: unknown) => {
         log(`Herdr press ${logged(file.id)} failed: ${message(err)}`)
-        return true
+        return file.format !== 2
       })
       if (isTaken) {
         await files
           .remove(taken)
           .catch((err: unknown) => log(`Herdr press ${logged(file.id)} not removed: ${message(err)}`))
-      } else {
+      } else if (taken !== path) {
         await files
           .move(taken, path)
           .catch((err: unknown) => log(`Herdr press ${logged(file.id)} not put back: ${message(err)}`))
@@ -298,7 +305,45 @@ const LOOK_OUTCOME: PressOutcome = {
  * changed nothing. When the look ran the press's opens and copies, `perform` answers with their result instead of
  * running them again.
  */
-export async function applyHerdrFile<S extends Session>(host: PressHost<S>, file: HerdrFile): Promise<PressOutcome> {
+export async function applyHerdrFile<S extends Session>(
+  host: PressHost<S>,
+  file: HerdrFile,
+  sessionId = '',
+): Promise<PressOutcome> {
+  if (file.format === 2) {
+    if (file.kind === 'command') return applyRemoteCommand(host, file, sessionId)
+    if (file.session !== sessionId) return LOOK_OUTCOME
+    const now = await host.now()
+    let refresh = false
+    await host.update(s => {
+      refresh = false
+      const previous = s.remoteViewers[file.id]
+      let next = updateRemoteViewer(s, file, now)
+      if (next === s) return s
+      const viewer = next.remoteViewers[file.id]!
+      const sameLook =
+        previous &&
+        !previous.released &&
+        previous.expiresAt > now &&
+        previous.generation === file.generation &&
+        previous.tab === 'overview' &&
+        file.tab === 'overview'
+      if (sameLook && !file.active && previous.shownSince !== null) {
+        const duration = Math.min(file.visibleForMs ?? 0, now - previous.shownSince)
+        next = lookReportedOn(next, {
+          startedAt: now - duration,
+          endedAt: now,
+          drawnWrittenAt: Math.min(now, file.seenAt ?? 0),
+          shown: viewer.released ? previous.shownRows : viewer.shownRows,
+        })
+      }
+      refresh = !viewer.released && viewer.tab === 'prs'
+
+      return next
+    })
+    if (refresh) await host.refreshPrsIfDue?.()
+    return LOOK_OUTCOME
+  }
   if (isLookFile(file)) {
     await host.update(s => lookReportedOn(s, file.look))
     return LOOK_OUTCOME

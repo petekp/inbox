@@ -1,3 +1,5 @@
+import type { remoteViewerReceipts } from './remote-viewers'
+import type { remoteReceipts } from './remote-command-state'
 import type { Dialog, HerdrPressOutcome, Ledger, Session, SessionStatus, StatusHead, Stop, Tab } from '../types'
 import { bandCounts, isMaybeStale } from './band'
 import { MAYBE_STALE_TEXT } from './banners'
@@ -389,6 +391,10 @@ export const HERDR_FORMAT = 1
  * `projectFolder` is the folder the host opens a relative path against, so the look can open one itself.
  */
 export type EnvelopeSource = {
+  receipts?: ReturnType<typeof remoteReceipts>
+  viewers?: ReturnType<typeof remoteViewerReceipts>
+  remoteProtocol?: 2
+  remoteHistoryAfter?: number
   host: ClientId
   agent: string
   sessionId: string
@@ -415,12 +421,15 @@ export type HerdrEnvelope = Omit<EnvelopeSource, 'isFetchingPrs' | 'isNextBuild'
   isFetchingPrs?: true
   isNextBuild?: true
   lastPress?: HerdrPressOutcome
+  receipts?: ReturnType<typeof remoteReceipts>
   session: Session
 }
 
-const SESSION_FIELDS = Object.keys(emptySession())
+const SESSION_FIELDS = Object.keys(emptySession()).filter(
+  field => field !== 'remoteCommands' && field !== 'remoteViewers' && field !== 'remoteCommandFloor',
+)
 
-/** The envelope for `session`, which keeps only the shared `Session` fields, without a host's own. */
+/** Publishes shared presentation state, excluding private command history, viewer leases and host-owned fields. */
 export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimmed = false): HerdrEnvelope {
   const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
 

@@ -87,6 +87,7 @@ export async function updateState(
   dir: string,
   sessionId: string,
   change: (s: OmpState) => OmpState | Promise<OmpState>,
+  now: () => number = Date.now,
 ): Promise<OmpState> {
   const path = statePath(dir, sessionId)
 
@@ -94,7 +95,7 @@ export async function updateState(
     const { state: current, isSaved } = await readSaved(dir, sessionId)
     const changed = await historyStep(questionHistory, sessionId, current, await change(current), Date.now())
     if (isSaved && changed === current) return current
-    const next = pruned(changed)
+    const next = pruned(changed, now())
     const folder = join(dir, 'sessions')
     if (!madeFolders.has(folder)) {
       await mkdir(folder, { recursive: true })

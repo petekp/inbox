@@ -451,6 +451,7 @@ export async function updateState(
   dir: string,
   sessionId: string,
   change: (s: SessionState) => SessionState | Promise<SessionState>,
+  now: () => number = Date.now,
 ): Promise<SessionState> {
   const path = statePath(dir, sessionId)
 
@@ -458,7 +459,7 @@ export async function updateState(
     const { state: current, isSaved } = await readSaved(dir, sessionId)
     const changed = await historyStep(questionHistory, sessionId, current, await change(current), Date.now())
     if (isSaved && changed === current) return current
-    const next = pruned(changed)
+    const next = pruned(changed, now())
     const tmp = `${path}.${process.pid}.tmp`
     await writeFile(tmp, JSON.stringify(next))
     await rename(tmp, path)

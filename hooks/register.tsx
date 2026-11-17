@@ -116,21 +116,12 @@ import { openTarget } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerError } from './view'
-import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
+import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf } from './banners'
+import { rowKeyActions } from './row-key-actions'
 import { comparePagePath, nextBuildMarkPath } from './mod-plugin-files'
 import { bandCounts, isMaybeStale, noCountsText } from './band'
-import {
-  drawnLists,
-  rowKeyPlan,
-  type PlannedOption,
-  rowsIn,
-  firstWaiting,
-  steppedIndex,
-  tabUndos,
-  latestUndo,
-  type PlannedKey,
-} from './action-plan'
+import { drawnLists, rowsIn, firstWaiting, steppedIndex, tabUndos, latestUndo } from './action-plan'
 import { isRowTab, isShownTab, screenTabOf, shownTabs, tabBadge, INBOX_COMMAND_TEXT, type ShownTab } from './tabs'
 import {
   heldReplies,
@@ -193,7 +184,6 @@ import {
 } from './pane-selection'
 import {
   type Action,
-  ACTION_GLYPHS,
   COPY_FAILURES,
   fieldKey,
   focusHintFor,
@@ -270,7 +260,17 @@ import {
 import { withCollapse } from './collapse'
 import { foldAllOn } from './fold-all'
 import { desktopSpaceLines } from './pane-status-tops'
-import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import {
+  changeSaved,
+  isLastSaveRefused,
+  readRemoteState,
+  readDurableSession,
+  readSaved,
+  readSettled,
+  readSettledSession,
+  save,
+  type SaveEngine,
+} from './mod-saves'
 import { type HistoryEngine, withHistory } from './mod-history'
 import { runningSessions } from './running-sessions'
 import { paneAskRows, paneAskTabs } from './pane-asks'
@@ -392,14 +392,24 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
 
     const root = (await sessionFolder(commandCalls($))) ?? ''
 
-    return { id: conversation.id, root, session, dialogs, isUnread: unreadable === conversation.id }
+    return {
+      id: conversation.id,
+      root,
+      session,
+      dialogs,
+      ...(await readRemoteState(saveEngine($), conversation.id, session)),
+      isUnread: unreadable === conversation.id,
+    }
   })
 }
 
 /** Applies a Herdr look's press. False when it is for another conversation. */
 async function herdrPress($: EngineInterface, id: string, f: HerdrFile): Promise<boolean> {
   if (id !== conversation.id) return false
-  if ((await applyHerdrFile(hostOf($, currentOwner(), 'terminal'), f)).wakesAfterSettle)
+  if (
+    (await applyHerdrFile({ ...hostOf($, currentOwner(), 'terminal'), refreshPrsIfDue: () => pollPrs($, true) }, f, id))
+      .wakesAfterSettle
+  )
     later($, SETTLED_MS, () => wakeAfterSettle($))
 
   return true
@@ -579,7 +589,10 @@ async function changeSession(
     // leaves the saved copy alone.
     const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
     const shown = await read($, SHOWN)
-    const kept = pruned({ ...changed, heldRows: [...held], shownSince: shown && !shown.isDemo ? shown.since : null })
+    const kept = pruned(
+      { ...changed, heldRows: [...held], shownSince: shown && !shown.isDemo ? shown.since : null },
+      Object.keys(changed.remoteViewers).length > 0 ? await $.clock.now() : 0,
+    )
     let landed: ModSession | null = null
     await update($, SESSION, cur => {
       if (!isCurrent(owner) || cur.revision !== drawn.revision) {
@@ -722,9 +735,9 @@ function sessionHost(
     now: () => $.clock.now(),
     read: async () => {
       if (isCurrent(owner)) return upgradeSession(await read($, SESSION))
-      const saved = await readSettled(saveEngine($), owner.id)
-      return saved?.session ? upgradeSession(saved.session) : emptySession()
+      return readSettledSession(saveEngine($), owner.id)
     },
+    readDurable: () => readDurableSession(saveEngine($), owner.id),
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
     ask: (prompt, system, _kind, report) => askInboxModel($, prompt, system, 45_000, report),
@@ -1681,15 +1694,20 @@ async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   void followNewRows($).catch(() => undefined)
 }
 
-async function pollPrs($: EngineInterface) {
+async function pollPrs($: EngineInterface, remote = false) {
   const [away, session, isTabShown, now] = await Promise.all([
     read($, AWAY),
     read($, SESSION),
     isPrsTabShown($),
     $.clock.now(),
   ])
-  const poll = { lastFetchedAt: mod.prFetchEndedAt, now, isTabShown, isAway: away.isAway }
-  if (isPrPollDue(session, poll)) await fetchPrs($, isTabShown)
+  const poll = {
+    lastFetchedAt: mod.prFetchEndedAt,
+    now,
+    isTabShown: isTabShown || remote,
+    isAway: away.isAway && !remote,
+  }
+  if (isPrPollDue(session, poll)) await fetchPrs($, poll.isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
@@ -1871,100 +1889,6 @@ async function runDemoPress(
   }
   if ('stale' in pressed || pressed.effects.length > 0)
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
-}
-
-function rowKeyActions(
-  $: EngineInterface,
-  r: RowView,
-  isAllShown: boolean,
-): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] } {
-  const { id, item, finding } = r
-  const keyAction = (k: PlannedKey): KeyAction => {
-    switch (k.slot) {
-      case 'retry':
-        return {
-          key: `retry-${id}`,
-          label: k.label,
-          icon: ACTION_GLYPHS[k.icon],
-          emphasis: k.emphasis,
-          kind: k.kind,
-          onPress: press => runPress($, k.press, press.surface),
-        }
-      case 'allOptions':
-        return {
-          key: `all-options-${id}`,
-          label: k.label,
-          emphasis: k.emphasis,
-          kind: 'view',
-          onPress: () => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
-        }
-      case 'choice': {
-        const { action: a, hotkey } = k
-        const p = a.press
-        const icon = a.icon && ACTION_GLYPHS[a.icon]
-        return {
-          label: a.label,
-          kind: a.kind,
-          emphasis: a.emphasis,
-          isOut: a.isOut,
-          ...(hotkey ? { hotkey } : {}),
-          onPress: (press: UiPressArgument) => runPress($, p, press.surface),
-          ...(icon ? { icon } : {}),
-          key: `help-${id}-${p.step}`,
-        }
-      }
-      case 'action': {
-        const { action: a, hotkey } = k
-        const p = a.press
-        const presentation = { emphasis: a.emphasis, isOut: a.isOut }
-        if (p.action === 'type')
-          return {
-            label: a.label,
-            kind: 'view',
-            key: `typekey-${id}`,
-            hotkey,
-            ...presentation,
-            onPress: () => void startTyping($, id),
-          }
-        if (p.action === 'discard')
-          return {
-            label: a.label,
-            kind: a.kind,
-            key: `discard-${id}`,
-            hotkey,
-            ...presentation,
-            onPress: () => void discardReply($, id),
-          }
-        return {
-          label: a.label,
-          kind: a.kind,
-          key: p.action === 'dismiss' && finding ? `drop-${id}` : `${p.action}-${id}`,
-          hotkey,
-          ...presentation,
-          onPress: press => runPress($, p, press.surface),
-        }
-      }
-    }
-  }
-  const { options, keys, more } = rowKeyPlan(r, isAllShown)
-
-  const answerAction = ({ action: a, note, hotkey }: PlannedOption): KeyAction => ({
-    label: a.label,
-    kind: a.kind,
-    emphasis: a.emphasis,
-    isOut: a.isOut,
-    ...(hotkey ? { hotkey } : {}),
-    ...(note ? { note } : {}),
-    ...(a.isPrimary ? { variant: 'primary' as const } : {}),
-    key: `answer-${id}-${(item?.options ?? []).indexOf(a.press.option)}`,
-    onPress: press => runPress($, a.press, press.surface),
-  })
-
-  return {
-    options: options.map(answerAction),
-    keys: keys.map(keyAction),
-    more: more.map(keyAction),
-  }
 }
 
 async function drawnState(
@@ -3049,7 +2973,17 @@ export const register: Register = on => {
 
     const client: PaneClient = hasClient ? { hasClient: true, elements } : { hasClient: false, elements }
     const handlers: PaneHandlers = {
-      rowKeyActions: (r, isAllShown) => rowKeyActions($, r, isAllShown),
+      rowKeyActions: (r, isAllShown) =>
+        rowKeyActions(
+          {
+            runPress: (p, surface) => runPress($, p, surface),
+            startTyping: id => startTyping($, id),
+            discardReply: id => discardReply($, id),
+            showAllOptions: id => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
+          },
+          r,
+          isAllShown,
+        ),
       unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
       sendDraft: (id, surface) => sendDraft($, id, surface),
       discardReply: id => discardReply($, id),

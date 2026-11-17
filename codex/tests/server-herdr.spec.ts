@@ -10,6 +10,8 @@ import { makeServer } from '../src/server'
 import { codexHerdrAsk, followCodexPresses } from '../src/server-herdr'
 import { builtAtLine } from '../../hooks/herdr-install'
 import { readState, updateState } from '../src/state'
+import { remoteRowVersion } from '../../hooks/remote-commands'
+import type { RemoteCommand } from '../../hooks/remote-commands'
 import { NO_HOLDS } from '../../hooks/timing'
 import { tempDir } from './helpers'
 
@@ -250,4 +252,66 @@ test('an Install press on the tab installs the Herdr mod, says so, and a later p
   })
   assert.equal(readFileSync(join(appHome, 'mods/inbox/main.js'), 'utf8'), mainJs)
   assert.deepEqual(await press(), { ask: null, failure: null })
+})
+
+test('a remote typed reply retains its outcome and does not queue twice after the server restarts', async () => {
+  const dir = tempDir()
+  await updateState(dir, 'remote-session', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: [
+        {
+          id: 'i1',
+          kind: 'task',
+          ask: 'Review the preview',
+          label: null,
+          from: 'record',
+          options: [],
+          rec: null,
+          turn: 1,
+          at: 1,
+          helps: [],
+        },
+      ],
+    },
+  }))
+  const calls: string[][] = []
+  const server = () => {
+    let apply: ((sessionId: string, file: HerdrFile) => Promise<void>) | null = null
+    makeServer({
+      comparePage: '/plugin/dist/compare-page.html',
+      dir,
+      now: () => 1_000_000,
+      exec: async args => {
+        calls.push(args)
+        return { code: 0, stdout: 'Queued message fixture', stderr: '' }
+      },
+      tabHtml: '<html></html>',
+      fallbackCli: async () => 'codex',
+      followHerdrPresses: given => {
+        apply = given
+      },
+    })
+    return (file: HerdrFile) => apply!('remote-session', file)
+  }
+  const initial = await readState(dir, 'remote-session')
+  const command: RemoteCommand = {
+    format: 2,
+    kind: 'command',
+    id: `${(1_000_000).toString(36)}-remote-command-fixture`,
+    session: 'remote-session',
+    issuedAt: 1_000_000,
+    expected: remoteRowVersion(initial, 'i1'),
+    press: { action: 'type', id: 'i1', text: 'The preview looks good.' },
+  }
+  await server()(command)
+  const first = await readState(dir, 'remote-session')
+  assert.equal(first.remoteCommands[command.id]!.state, 'applied')
+  assert.equal(calls.filter(args => args.includes('queue')).length, 1)
+  await server()(command)
+  const after = await readState(dir, 'remote-session')
+  assert.equal(calls.filter(args => args.includes('queue')).length, 1)
+  assert.deepEqual(after.remoteCommands[command.id], first.remoteCommands[command.id])
+  assert.equal(after.ledger.items[0]?.id, 'i1')
 })

@@ -1,3 +1,4 @@
+import { confirmRemoteDelivery } from './remote-command-state'
 import type { Session } from '../types'
 import { reopenOnFailure, withFailure, withUnconfirmed } from './press-reducer'
 import { completedAttempt } from './session-presses'
@@ -6,13 +7,18 @@ import type { SessionHost } from './session-host'
 
 type ReleaseHost<S extends Session> = Pick<
   SessionHost<S>,
-  'now' | 'read' | 'update' | 'deliver' | 'prepare' | 'newId' | 'isDeliveryHeldUntilRun'
+  'now' | 'read' | 'readDurable' | 'update' | 'deliver' | 'prepare' | 'newId' | 'isDeliveryHeldUntilRun'
 >
 
 /** The rows whose held message is due: Undo can no longer take its press back. */
 function dueRows(s: Session, now: number): string[] {
   return Object.entries(s.lastActions)
-    .filter(([, a]) => a.delivery?.state === 'held' && a.delivery.until <= now)
+    .filter(
+      ([, a]) =>
+        a.delivery?.state === 'held' &&
+        a.delivery.until <= now &&
+        (!a.commandId || s.remoteCommands[a.commandId]?.state === 'applied'),
+    )
     .map(([id]) => id)
 }
 
@@ -47,6 +53,8 @@ function refusedHeld<S extends Session>(s: S, id: string, reason: string): S {
 
 async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, isEarly: boolean): Promise<void> {
   let attempt: { deliveryId: string; text: string; at: number } | null = null
+  const attemptId = host.newId()
+  let startedState: S | undefined
   const started = host.update(async s => {
     // A host may run the change again on a newer session, where Undo or another release already took the row.
     attempt = null
@@ -54,8 +62,9 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, i
     const held = last?.delivery
     const now = await host.now()
     if (!last || held?.state !== 'held' || (held.until > now && !isEarly)) return s
+    if (last.commandId && s.remoteCommands[last.commandId]?.state !== 'applied') return s
     await host.prepare?.(s)
-    const deliveryId = host.newId()
+    const deliveryId = last.commandId ? `${last.commandId}:send` : attemptId
     attempt = { deliveryId, text: held.message, at: last.at }
     const state = host.isDeliveryHeldUntilRun ? ('queued' as const) : ('unconfirmed' as const)
 
@@ -73,13 +82,17 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, i
           pressedAt: last.at,
           deliveryId,
           phase: 'attempting' as const,
+          commandIds: last.commandId ? [last.commandId] : [],
         },
       ],
     }
   })
   // A host that cannot prepare the send, as a Codex with no CLI to run, refuses it before anything leaves.
   const why = await started.then(
-    () => null,
+    state => {
+      startedState = state
+      return null
+    },
     (err: unknown) => (err instanceof Error ? err.message : String(err)),
   )
   if (why !== null) {
@@ -88,6 +101,7 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, i
   }
   const sending = attempt as { deliveryId: string; text: string; at: number } | null
   if (!sending) return
+  await confirmRemoteDelivery(host, startedState!, sending.deliveryId)
   const outcome: SendOutcome = await host
     .deliver(await host.read(), sending.text, sending.deliveryId)
     .catch((err: unknown) => ({ state: 'unconfirmed', reason: err instanceof Error ? err.message : String(err) }))

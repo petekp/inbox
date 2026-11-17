@@ -37,3 +37,5 @@ videos/public/*/stills
 videos/public/music
 # App icons copied from the installed apps, which are their makers' trademarks
 videos/public/icons
+
+.derived-data/
