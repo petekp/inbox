@@ -182,7 +182,7 @@ function milestoneBlock(
     depth: 0,
     mark,
     name: m.name,
-    isBold: m.isChanged,
+    isBold: m.isBold,
     isMuted: m.isMuted,
     stall: null,
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T20:37:53.099Z. 268787 characters follow.
+// Built at 2026-11-17T00:17:51.294Z. 268814 characters follow.
 
 // src/main.ts
 import { View, div as div8 } from "gpui-kit";
@@ -1570,8 +1570,8 @@ function milestoneRow(step, o, items) {
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isChanged,
-    isMuted: step.place === "later" || step.place === "dropped",
+    isBold: isOpen,
+    isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
     text: m.text || null,
@@ -4218,7 +4218,7 @@ function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
     depth: 0,
     mark,
     name: m.name,
-    isBold: m.isChanged,
+    isBold: m.isBold,
     isMuted: m.isMuted,
     stall: null,
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
