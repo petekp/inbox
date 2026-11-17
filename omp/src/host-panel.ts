@@ -10,9 +10,10 @@ import { withHolds } from '../../hooks/session-presses'
 import { sessionView } from '../../hooks/session-view'
 import { press, wakeAfterSettle } from '../../hooks/host-press'
 import type { PressOutcome } from '../../hooks/host-press'
-import { NO_HOLDS } from '../../hooks/timing'
+import { heldReplies, NO_HOLDS } from '../../hooks/timing'
 import { RESUME_TEXT } from '../../hooks/banners'
 import type { Holds } from '../../hooks/timing'
+import type { Draft } from '../../types'
 import type { ShownTab } from '../../hooks/tabs'
 import type { PanelSource } from './controller'
 import type { PanelScreen } from './panel'
@@ -33,7 +34,10 @@ export type Inbox = {
   openPanel(ctx: OmpContext, openedAt: number): Promise<void>
   /** Records the tab an open panel shows. A new tab saves `holds`, with the showing the panel started. */
   showTab(ctx: OmpContext, tab: ShownTab, holds: Holds): void
+  /** Closes the panel. The rows the kept drafts hold stay in place. */
   closePanel(ctx: OmpContext): void
+  /** Keeps the panel's reply drafts for the next panel, and saves the rows `holds` names as held. */
+  keepDrafts(ctx: OmpContext, drafts: Record<string, Draft>, holds: Holds): void
   /** Notes that the panel has the Status subject rows `ids` on screen now, for the look under way. */
   showRows(ctx: OmpContext, ids: string[]): void
   fetchPrsWhenDue(ctx: OmpContext, isTabShown: boolean): void
@@ -55,7 +59,7 @@ export type Inbox = {
 }
 
 export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAsk: OmpHerdrAsk) {
-  const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context
+  const { deps, dir, openPanels, drafts, prFetches, listeners, memory, sendToAgent, modelNameOf } = context
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions
   /** When each Status subject row was last on screen in each session's look under way, by session id. */
   const shownRows = new Map<string, Map<string, number>>()
@@ -72,7 +76,12 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       const s = await readState(dir, id)
 
       return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
+        view: sessionView(
+          { ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } },
+          deps.now(),
+          deps.settleWindowMs,
+          holds,
+        ),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         herdrModFailure: memory.herdrModFailure,
@@ -107,7 +116,13 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       const id = sessionIdOf(ctx)
       openPanels.delete(id)
       const shown = takeShownRows(id)
-      deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now(), shown), shownSince: null })))
+      const heldRows = Object.keys(heldReplies(null, drafts.get(id) ?? {}))
+      deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now(), shown), heldRows, shownSince: null })))
+    },
+    keepDrafts: (ctx, kept, holds) => {
+      const id = sessionIdOf(ctx)
+      drafts.set(id, kept)
+      deps.background(change(id, s => withHolds(s, holds)))
     },
     showRows: (ctx, ids) => {
       const id = sessionIdOf(ctx)
@@ -152,6 +167,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
     resume: async () => inbox.resume(ctx),
     answerHerdr: herdrAsk.answer,
     collapse: (id, isCollapsed) => inbox.collapse(ctx, id, isCollapsed),
+    drafts: () => drafts.get(sessionIdOf(ctx)) ?? {},
+    keepDrafts: (kept, holds) => inbox.keepDrafts(ctx, kept, holds),
     fetchPrsWhenDue: isTabShown => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),

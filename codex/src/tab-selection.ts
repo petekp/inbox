@@ -96,8 +96,8 @@ export function isOpenGuarded(): boolean {
   return isRowTab(t) && isGuarded(selection[t]?.openedAt ?? 0, Date.now())
 }
 
-export function rowActions(row: Row): { keys: Key[]; more: Key[] } {
-  if (row.typing && tabState.typing === row.id) return { keys: [], more: [] }
+export function rowActions(row: Row): { options: Key[]; keys: Key[]; more: Key[] } {
+  if (row.typing && tabState.typing === row.id) return { options: [], keys: [], more: [] }
 
-  return { keys: row.keys, more: row.more }
+  return { options: row.options, keys: row.keys, more: row.more }
 }

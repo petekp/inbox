@@ -36,6 +36,10 @@ test('a view says gh was not found when no gh can start', async () => {
   const next = await call('inbox_view', { tab: 'prs' })
   assert.equal(next.result.structuredContent.isGhMissing, true)
   assert.deepEqual(next.result.structuredContent.prs.drawn, [])
+  assert.deepEqual(
+    next.result.structuredContent.prs.refresh?.actions.map(a => a.label),
+    ['Refresh PRs'],
+  )
 })
 
 test('gh is found in the Homebrew folder when it is not on the PATH', async () => {
@@ -66,6 +70,10 @@ test('a view says gh was not found when gh worked once and then stops starting',
   assert.equal(next.result.structuredContent.isGhMissing, true)
   assert.equal(next.result.structuredContent.prs.drawn.length, 1)
   assert.equal(next.result.structuredContent.prs.drawn[0]?.pr.error ?? null, null)
+  assert.deepEqual(
+    next.result.structuredContent.prs.refresh?.actions.map(a => a.label),
+    ['Refresh PRs'],
+  )
 })
 
 test('a view keeps the PR, says once at the top that gh timed out, and does not say gh was not found, when gh worked once and then times out', async () => {

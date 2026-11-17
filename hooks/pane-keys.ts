@@ -58,7 +58,8 @@ export type Action = {
   onPress: (press: UiPressArgument) => void | Promise<void>
 }
 
-export type KeyAction = Action & { hotkey?: string; isOut?: boolean }
+/** `note` is an answer's note, which the question's tree draws under its button. */
+export type KeyAction = Action & { hotkey?: string; isOut?: boolean; note?: string }
 
 /** d and x with no row selected, so the keys stay bound when there is nothing to close. */
 export function closeKeysWithoutRow(statusRowKeys: KeyAction[]): KeyAction[] {

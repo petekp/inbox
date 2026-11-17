@@ -207,8 +207,8 @@ document.addEventListener(
     }
     const row = rows[at]
     if (!row || tabState.view.collapsed.includes(row.id)) return
-    const { keys, more } = rowActions(row)
-    const k = [...keys, ...more].find(x => x.hotkey === e.key)
+    const { options, keys, more } = rowActions(row)
+    const k = [...options, ...keys, ...more].find(x => x.hotkey === e.key)
     if (k) {
       e.preventDefault()
       if (!k.isOut) k.run()

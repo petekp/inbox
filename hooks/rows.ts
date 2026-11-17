@@ -166,6 +166,8 @@ export type RowView = {
  * reason for it. An answer with neither has no line.
  */
 type OptionDescription = {
+  /** The answer as the agent wrote it, which the answer's press carries. */
+  option: string
   label: string
   description: string | null
   reason: string | null
@@ -182,12 +184,20 @@ export function optionDescriptionsOf(item: Item | null, actions: ActionView[]): 
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null
     if (description === null && reason === null) return []
 
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }]
+    return [
+      {
+        option: a.press.option,
+        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
+        description,
+        reason,
+        isFolded: a.isFolded,
+      },
+    ]
   })
 }
 
 /** What follows an option's label and a colon: its description, then the recommendation's reason. Null with no description. */
-export function optionBody(o: OptionDescription): string | null {
+function optionBody(o: OptionDescription): string | null {
   if (o.description === null) return null
   if (o.reason === null) return o.description
 
@@ -195,15 +205,15 @@ export function optionBody(o: OptionDescription): string | null {
 }
 
 /** The recommendation's reason on a line of its own, for a recommended option that has no description. */
-export function optionReasonLine(o: OptionDescription): string | null {
+function optionReasonLine(o: OptionDescription): string | null {
   return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null
 }
 
 const recommendedLine = (reason: string) => `Recommended: ${reason}`
 
-/** The option descriptions a row shows: all of them once its folded options show, else the unfolded ones. */
-export function shownOptionDescriptions(row: RowView, isShowingAll: boolean): OptionDescription[] {
-  return row.optionDescriptions.filter(o => isShowingAll || !o.isFolded)
+/** The line under an answer's button: what it does, then the recommendation's reason, or the reason alone. Null with neither. */
+export function optionNote(o: OptionDescription | undefined): string | null {
+  return o ? (optionBody(o) ?? optionReasonLine(o)) : null
 }
 
 /** A row's handle in text the agent reads: its number, as "1)", or "•". */

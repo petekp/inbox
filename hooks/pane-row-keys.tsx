@@ -5,6 +5,7 @@ import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { followUpPresses, type KeyAction } from './pane-keys'
 import {
   DESKTOP_CELL_PT,
+  DESKTOP_BUTTON_PAD_CELLS,
   DESKTOP_LINK_GAP_CELLS,
   DESKTOP_LINK_SLACK_CELLS,
   DESKTOP_MARK_CELLS,
@@ -56,7 +57,7 @@ export function paneRowKeys(
   }
   const keyedButton =
     (rowId: string, isFollowUp = false) =>
-    ({ hotkey, kind: _kind, emphasis, icon, isOut = false, ...action }: KeyAction) => {
+    ({ hotkey, kind: _kind, emphasis, icon, isOut = false, note: _note, ...action }: KeyAction) => {
       const { label: _label, ...unlabeled } = action
       const isDim = isOpenGuarded || isOut
 
@@ -65,7 +66,7 @@ export function paneRowKeys(
           {...action}
           {...(isFollowUp ? { plain: true } : emphasis === 'primary' ? { variant: 'primary' as const } : {})}
           label={fittedDesktopLabel({ ...action, ...(icon ? { icon } : {}) })}
-          {...(isDim ? { dimColor: true } : {})}
+          {...(isDim || isFollowUp ? { dimColor: true } : {})}
           onPress={press => unlessGuarded(rowId, press, action.onPress)}
         />
       ) : (
@@ -134,13 +135,21 @@ export function paneRowKeys(
       >
         {keys.map(keyedButton(rowId))}
         {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
-        {reply ? keyedButton(rowId, true)(reply) : null}
-        {links.length > 0 ? (followUpLinks(rowId, links) ?? links.map(keyedButton(rowId, true))) : null}
+        {reply || links.length > 0 ? (
+          <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
+            {reply ? (
+              <Box marginLeft={-DESKTOP_BUTTON_PAD_CELLS} marginRight={-DESKTOP_BUTTON_PAD_CELLS}>
+                {keyedButton(rowId, true)(reply)}
+              </Box>
+            ) : null}
+            {links.length > 0 ? (followUpLinks(rowId, links) ?? links.map(keyedButton(rowId, true))) : null}
+          </Box>
+        ) : null}
       </Box>
     )
   }
   const keyBindings = (keys: KeyAction[], suffix = '') =>
-    keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
+    keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, note: _note, ...k }) =>
       hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
     )
   const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
@@ -164,10 +173,11 @@ export function paneRowKeys(
       keyRow(rowId, keys, more)
     )
   const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
-  const rowActions = (row: Row): { keys: KeyAction[]; more: KeyAction[] } => {
-    if (Input && row.typeHint && typing === row.id) return { keys: [], more: [] }
+  const rowActions = (row: Row): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] } => {
+    if (Input && row.typeHint && typing === row.id) return { options: [], keys: [], more: [] }
 
     return {
+      options: row.optionKeys?.() ?? [],
       keys: pressable(row.keys()),
       more: pressable(row.moreKeys?.() ?? []),
     }
@@ -205,6 +215,7 @@ export function paneRowKeys(
     actionRows,
     rowActions,
     fieldActions,
+    keyedButton,
   }
 }
 

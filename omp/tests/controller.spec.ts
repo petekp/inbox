@@ -108,6 +108,49 @@ test('a type press whose send cannot be confirmed keeps the draft in the field',
   expect(await replyThenReopen(panel, 'oh')).toBe('oh')
 })
 
+function sharingDrafts() {
+  const kept: { drafts: Record<string, { text: string; since: number }>; saves: string[][] } = { drafts: {}, saves: [] }
+
+  return {
+    kept,
+    overrides: {
+      drafts: () => kept.drafts,
+      keepDrafts: (drafts: typeof kept.drafts) => {
+        kept.drafts = drafts
+        kept.saves.push(Object.values(drafts).map(d => d.text))
+      },
+    },
+  }
+}
+
+test('a reply draft is in the field of a panel opened after the one that began it', async () => {
+  const { kept, overrides } = sharingDrafts()
+  const first = open(overrides)
+  await first.panel.start()
+  for (const [key, text] of [['t'], ['h', 'h'], ['i', 'i'], ['escape']] as [string, string?][]) {
+    first.panel.handleInput(key, text)
+    await flush()
+  }
+  first.panel.dispose()
+  expect(Object.values(kept.drafts).map(d => d.text)).toEqual(['hi'])
+
+  const second = open(overrides)
+  await second.panel.start()
+  second.panel.handleInput('t')
+  await flush()
+  const lines = second.panel.render(80)
+  expect(lines[lines.findIndex(l => l.includes('Your answer:')) + 1]!.trim()).toBe('hi')
+})
+
+test('a reply that was sent leaves no draft for the next panel', async () => {
+  const { kept, overrides } = sharingDrafts()
+  const { panel } = open(overrides)
+  await panel.start()
+  await replyThenReopen(panel, 'hi')
+  expect(kept.saves).toContainEqual(['hi'])
+  expect(Object.values(kept.drafts).map(d => d.text)).toEqual([''])
+})
+
 test('a failed send shows its reason below the rows', async () => {
   const { panel } = open({ press: async () => ({ error: 'Not sent: omp is busy', note: null, isUnconfirmed: false }) })
   await panel.start()

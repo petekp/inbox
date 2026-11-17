@@ -8,7 +8,6 @@ import { demoSource, demoState } from '../src/demo'
 import { INITIAL_UI, holdsOf } from '../src/panel'
 import { afterHandOff, handleKey } from '../src/panel-keys'
 import {
-  buttonLine,
   drawn,
   ESC,
   firstQuestion,
@@ -176,7 +175,7 @@ test('an opened handed-off row whose reply is on its way starts the status under
   const lines = text(screen, { ...onRow(row), opened: row.id }).split('\n')
   const status = lines.findIndex(l => l.includes('Queued reply: go with B'))
   expect(lines[status]).toMatch(/[●◉◎] Queued reply: go with B/)
-  expect(status).toBeGreaterThan(lines.findIndex(l => l.includes('↵ ')))
+  expect(status).toBeGreaterThan(lines.findLastIndex(l => /Reply|Explain|Dismiss/.test(l)))
 })
 
 async function afterReply() {
@@ -232,5 +231,5 @@ test('a failed send shows why and offers Try again first', () => {
   const screen = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS) }
   const row = waiting(screen, 'i11')
   expect(text(screen, onRow(row))).toContain('Not sent: omp is busy')
-  expect(buttonLine(screen, onRow(row))).toContain('Try again')
+  expect(text(screen, onRow(row))).toContain('Try again')
 })

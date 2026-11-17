@@ -189,6 +189,7 @@ export function codexAsk(exec: RunWithInput, cli: string, dir: string, personHom
 function endOf(f: ProcessFailure): string {
   if (f.timeoutMs !== null) return `timed out after ${f.timeoutMs / 1000} s`
   if (f.signal) return `was ended by ${f.signal}`
+  if (f.errorCode === 'ENOENT') return `failed with ENOENT: no codex program at ${f.cli}`
   if (f.errorCode) return `failed with ${f.errorCode}`
   if (f.code === UNSTARTABLE_CODE) return 'could not start'
   if (f.code === 0) return 'exited 0 and wrote no reply'

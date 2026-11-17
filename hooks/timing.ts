@@ -37,13 +37,19 @@ export function timedChangeAt(lastActions: Record<string, LastAction>, now: numb
   return ends.length > 0 ? Math.min(...ends) : null
 }
 
+/** When a queued message left: the host's send for one held for Undo, else the press that sent it. */
+export function queuedSentAt(last: LastAction): number {
+  return last.delivery?.state === 'queued' ? (last.delivery.sentAt ?? last.at) : last.at
+}
+
 function isQueuedAt(last: LastAction | undefined, now: number): boolean {
-  return last?.delivery?.state === 'queued' && now - last.at >= QUEUED_AFTER_MS
+  return last?.delivery?.state === 'queued' && now - queuedSentAt(last) >= QUEUED_AFTER_MS
 }
 
 /**
- * A send still on its way, or held for Undo before it leaves. For its first QUEUED_AFTER_MS a queued send reads as
- * sending, so a send that the agent takes at once never reads Queued. None reads as delivered, so none draws a ✓.
+ * A send still on its way, or held for Undo before it leaves. For its first QUEUED_AFTER_MS after it was sent, a queued
+ * send reads as sending, so a send that the agent takes at once never reads Queued. None reads as delivered, so none
+ * draws a ✓.
  */
 export function pendingDeliveryAt(
   last: LastAction | undefined,

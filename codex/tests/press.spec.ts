@@ -359,3 +359,28 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
     [['f3', 'open']],
   )
 })
+
+test('a Fix held for Undo reads Fix until QUEUED_AFTER_MS after it was sent, then Queued: Fix', () => {
+  const w = withItems()
+  const s = {
+    ...w,
+    ledger: recordItem(
+      CODEX,
+      w.ledger,
+      { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
+      10,
+      TOOL_FIELDS,
+    ).ledger,
+  }
+  const sentAt = 50 + 1000
+  const sent = released(after(s, { action: 'address', id: 'f3' }), 'f3', sentAt)
+  const label = (at: number) => {
+    const row = viewOf(sent, at, SHOWN).findings.rows[0]
+    assert.ok(row?.state.is === 'settled')
+
+    return settledLabel(row.state.label, row.state.delivery)
+  }
+  assert.equal(label(sentAt), 'Fix')
+  assert.equal(label(sentAt + QUEUED_AFTER_MS - 1), 'Fix')
+  assert.equal(label(sentAt + QUEUED_AFTER_MS), 'Queued: Fix')
+})

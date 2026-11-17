@@ -60,7 +60,7 @@ import {
   select,
 } from './tab-selection'
 import { applyView, replies, holds } from './tab-read'
-import { isNotSent, copy, startTyping, discardReply, lastPressKey } from './tab-press'
+import { isNotSent, showCopyFallback, startTyping, discardReply, lastPressKey } from './tab-press'
 import { askTree } from './tab-ask-tree'
 import { resultHandle, inlineHtml } from './tab-parts'
 
@@ -105,7 +105,7 @@ export async function act(
       PRESS_TIMEOUT_MS,
     )
     if (tabState.isDisposed || generation !== tabState.viewGeneration) return
-    if (r.copy) await copy(rowId, r.copy, isLatest)
+    if (r.copy) showCopyFallback(rowId, r.copy, isLatest)
     if (tabState.isDisposed || generation !== tabState.viewGeneration || !isLatest()) return
     // A new request number, so this view replaces any view a poll read while the press was out.
     if (r.view) applyView(r.view, ++tabState.requested)
@@ -224,7 +224,7 @@ function sendReply(id: string, text: string) {
   })
 }
 
-function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
+function rowKeys(r: RowView): { options: Key[]; keys: Key[]; more: Key[] } {
   const actions = ledgerActions(r, optionsShown.has(r.id), sending.get(r.id)?.action ?? null, {
     press: p => {
       const step = p.action === 'step' ? r.steps[p.step] : undefined
@@ -248,6 +248,7 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
 function itemRow(v: View, r: RowView): Row {
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
+  const actions = rowKeys(r)
 
   return {
     id,
@@ -257,8 +258,8 @@ function itemRow(v: View, r: RowView): Row {
     title: r.title,
     ...(r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
-    ...askTree(r, optionsShown.has(id)),
-    ...rowKeys(r),
+    ...askTree(r, actions.options, isOpenGuarded),
+    ...actions,
     typing: {
       hint: replyHint(r, 'Codex'),
       send: text => sendReply(id, text),
@@ -358,6 +359,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
         ) : null}
       </div>
     ),
+    options: [],
     keys: actions.keys.map(a => prKey(id, pr, a)),
     more: actions.more.map(a => prKey(id, pr, a)),
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
@@ -380,6 +382,7 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
     meta: ran,
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
     body: <div class="muted">{ran}</div>,
+    options: [],
     keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, pr, a)),
     more: [],
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),

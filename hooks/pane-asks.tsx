@@ -60,6 +60,7 @@ export function paneAskRows(
       ...(r.at === null ? {} : { at: r.at }),
       hasSecondLine: r.replyKind === 'answer',
       body: null,
+      optionKeys: () => rowKeyActions(r, optionsShown.includes(r.id)).options,
       keys: () => rowKeyActions(r, optionsShown.includes(r.id)).keys,
       moreKeys: () => rowKeyActions(r, optionsShown.includes(r.id)).more,
       typeHint: replyHint(r, 'Claude'),

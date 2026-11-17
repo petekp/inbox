@@ -9,6 +9,7 @@ import { showNewRows, titleTintEndsAt } from '../../hooks/arrivals'
 import { READING_TEXT } from '../../hooks/banners'
 import { timedChangeAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
+import type { Draft } from '../../types'
 import type { ShownTab } from '../../hooks/tabs'
 import { INITIAL_UI, drawPanel, holdsOf, isAnimating, noticeFor, tallestTabHeight } from './panel'
 import type { PanelPress, PanelScreen, PanelUi, Style } from './panel'
@@ -34,6 +35,10 @@ export type PanelSource = {
   answerHerdr?(isYes: boolean): Promise<void>
   /** Saves the row `id` as collapsed or expanded. */
   collapse(id: string, isCollapsed: boolean): Promise<void>
+  /** The replies begun and not sent, which an earlier panel of this session kept. */
+  drafts(): Record<string, Draft>
+  /** Keeps `drafts` for the next panel, and holds the rows `holds` names in place while no panel is open. */
+  keepDrafts(drafts: Record<string, Draft>, holds: Holds): void
   fetchPrsWhenDue(isTabShown: boolean): void
   /** Asks Herdr about the running delegates, when a check is due. */
   checkDelegatesWhenDue(): void
@@ -76,7 +81,7 @@ type Panel = {
  */
 export function createPanel(deps: PanelDeps): Panel {
   const { source, style, timers } = deps
-  let ui: PanelUi = { ...INITIAL_UI, closedSeen: new Map(), shownSince: deps.openedAt }
+  let ui: PanelUi = { ...INITIAL_UI, drafts: source.drafts(), closedSeen: new Map(), shownSince: deps.openedAt }
   let screen: PanelScreen | null = null
   let animation: unknown = null
   /** Redraws without reading the session again, since a running mark's frame needs only the clock. */
@@ -120,6 +125,11 @@ export function createPanel(deps: PanelDeps): Panel {
     }
     if (at !== null && timedChange === null)
       timedChange = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) }
+  }
+
+  /** Hands the session the drafts when they changed since `before`. */
+  const keepDraftsChangedFrom = (before: PanelUi) => {
+    if (ui.drafts !== before.drafts) source.keepDrafts(ui.drafts, holdsOf(ui))
   }
 
   /** Draws the session's latest screen. `pressedId` names a row that waited before its press, so the selection may move on from it. */
@@ -178,8 +188,10 @@ export function createPanel(deps: PanelDeps): Panel {
     const now = deps.now()
     const isDraftUnedited = sentDraft !== undefined && ui.drafts[rowId] === sentDraft
     if (isPressConfirmed(outcome) && isDraftUnedited) {
+      const before = ui
       const { [rowId]: _sent, ...drafts } = ui.drafts
       ui = { ...ui, drafts }
+      keepDraftsChangedFrom(before)
     }
     const notice = noticeFor(outcome, now)
     if (notice) ui = { ...ui, notice }
@@ -206,7 +218,9 @@ export function createPanel(deps: PanelDeps): Panel {
       if (screen === null) return
       const now = deps.now()
       const result = handleKey(screen, ui, key, now, text)
+      const before = ui
       ui = { ...result.ui, listInput: withListInput(ui.listInput, now) }
+      keepDraftsChangedFrom(before)
       source.shown(ui.tab, holdsOf(ui))
       if (result.close) deps.close()
       if (result.press) void press(result.press)

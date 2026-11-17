@@ -40,6 +40,8 @@ export const DESKTOP_BUTTON_PT = 23
  * Remeasure it with the steps in docs/reference/claude-desktop-app/what-desktop-draws-layout.md.
  */
 export const DESKTOP_CELL_PT = 8.8
+/** The side padding of a native Button on desktop, about 6 pt in the pane's captures, as cells. */
+export const DESKTOP_BUTTON_PAD_CELLS = 0.7
 export const DESKTOP_LINK_GAP_CELLS = 1.5
 /** Room a link takes past its label's estimated width. At the estimate alone, app 3.6556.2 cut a link's label, as "Re…". */
 export const DESKTOP_LINK_SLACK_CELLS = 0.5

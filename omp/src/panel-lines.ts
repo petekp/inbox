@@ -45,6 +45,8 @@ export type Button = {
   isOut?: boolean
   /** It holds up nothing, so it draws dim until focused. */
   isQuiet?: boolean
+  /** An answer, which the question's tree draws with its note under it. Options come first in a line's buttons. */
+  option?: { note: string | null }
 }
 
 /** What a button draws. A Status button presses nothing the host runs, so it has a face and no `press`. */
@@ -156,37 +158,49 @@ function feedbackTone(f: Feedback): Tone | null {
 }
 
 function rowButtons(row: RowView, isAllShown: boolean): Button[] {
-  const { keys, more } = rowKeyPlan(row, isAllShown)
+  const { options, keys, more } = rowKeyPlan(row, isAllShown)
   const recommended = row.item?.rec
+  const answers = options.map((o): Button => ({
+    label: o.action.label,
+    key: o.hotkey ?? null,
+    press: o.action.press,
+    isRecommended: o.action.press.option === recommended,
+    isFollowUp: false,
+    isOut: o.action.isOut,
+    option: { note: o.note },
+  }))
 
-  return [...keys, ...more].flatMap((k): Button[] => {
-    if (k.slot === 'allOptions')
+  return [
+    ...answers,
+    ...[...keys, ...more].flatMap((k): Button[] => {
+      if (k.slot === 'allOptions')
+        return [
+          {
+            label: k.label,
+            key: null,
+            press: { action: 'all-options', id: row.id },
+            isRecommended: false,
+            isFollowUp: false,
+            isQuiet: true,
+          },
+        ]
+      if (k.slot === 'retry')
+        return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }]
+      const { press } = k.action
+      const key = k.hotkey ?? null
+
       return [
         {
-          label: k.label,
-          key: null,
-          press: { action: 'all-options', id: row.id },
+          label: k.action.label,
+          key,
+          press,
           isRecommended: false,
-          isFollowUp: false,
-          isQuiet: true,
+          isFollowUp: k.slot === 'action' && k.action.isFollowUp,
+          isOut: k.action.isOut,
         },
       ]
-    if (k.slot === 'retry')
-      return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }]
-    const { press } = k.action
-    const key = k.hotkey ?? null
-
-    return [
-      {
-        label: k.action.label,
-        key,
-        press,
-        isRecommended: k.slot === 'choice' && press.action === 'answer' && press.option === recommended,
-        isFollowUp: k.slot === 'action' && k.action.isFollowUp,
-        isOut: k.action.isOut,
-      },
-    ]
-  })
+    }),
+  ]
 }
 
 export function prButtons(actions: PrAction[]): Button[] {
