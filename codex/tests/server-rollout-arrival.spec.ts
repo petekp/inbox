@@ -22,7 +22,7 @@ function userMessageRow(text: string, at: number) {
   }
 }
 
-async function queuedPress() {
+async function queuedPress(press: Record<string, unknown> = ANSWER) {
   const { dir } = await setup(0)
   const transcript = join(tempDir(), 'rollout.jsonl')
   const meta = { type: 'session_meta', payload: { id: 's1', originator: 'codex_cli', cwd: '/repo' } }
@@ -45,7 +45,7 @@ async function queuedPress() {
       method: 'tools/call',
       params: { name, arguments: args, _meta: { thread_id: 's1' } },
     })
-  await call('inbox_press', ANSWER)
+  await call('inbox_press', press)
   at += SETTLE_WINDOW_MS
   await call('inbox_view', {})
   const view = async (later: number) => {
@@ -55,7 +55,7 @@ async function queuedPress() {
     return readState(dir, 's1')
   }
 
-  return { dir, transcript, view }
+  return { dir, transcript, view, call, setNow: (to: number) => void (at = to) }
 }
 
 test('a queued answer the rollout saved mid-turn with a trailing newline reads arrived once no hook matched it', async () => {
@@ -136,4 +136,23 @@ test('transcript polling cannot confirm remote commands from matching text, even
   assert.equal(s.remoteCommands['remote-first']!.delivered, true)
   assert.equal(s.remoteCommands['remote-second']!.delivered, false)
   assert.equal(s.sent.length, 1)
+})
+
+test('a queued Explain the rollout saved mid-turn stops reading Queued in the next tab read, with no tab switch', async () => {
+  const { dir, transcript, call, setNow } = await queuedPress({ press: { action: 'explain', id: 'i1' }, thread: 's1' })
+  const message = (await readState(dir, 's1')).sent[0]!.text
+  const feedbackAt = async (at: number) => {
+    setNow(at)
+    const r = (await call('inbox_view', {})) as unknown as {
+      result: { structuredContent: { needsYou: { questions: { feedback: { is: string } | null }[] } } }
+    }
+
+    return r.result.structuredContent.needsYou.questions[0]?.feedback?.is
+  }
+  assert.equal(await feedbackAt(PRESSED_AT + 5_000), 'queued')
+
+  appendFileSync(transcript, JSON.stringify(userMessageRow(message + '\n', PRESSED_AT + 5_000)) + '\n')
+
+  assert.notEqual(await feedbackAt(PRESSED_AT + 5_000 + ROLLOUT_ARRIVAL_AFTER_MS), 'queued')
+  assert.equal((await readState(dir, 's1')).lastActions.i1?.delivery?.state, 'arrived')
 })

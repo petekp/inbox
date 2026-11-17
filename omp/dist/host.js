@@ -4478,17 +4478,22 @@ function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
   ]));
 }
 function withAcceptedSend(lastActions, rows, at, message, deliveryId) {
-  return withQueuedDelivery(lastActions, rows, at, (text) => text === message, { state: "queued", message, id: deliveryId }, deliveryId);
+  return withQueuedDelivery(lastActions, rows, at, (text) => text === message, (previous) => ({
+    state: "queued",
+    message,
+    id: deliveryId,
+    ...previous.sentAt !== undefined && { sentAt: previous.sentAt }
+  }), deliveryId);
 }
 function withQueuedDelivery(lastActions, rows, at, matches, delivery, deliveryId) {
   const changed = rows.flatMap((id) => {
     const a = lastActions[id];
-    return a?.at === at && (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && (deliveryId ? a.delivery.id === deliveryId : a.delivery.id === undefined) && matches(a.delivery.message) ? [[id, { ...a, delivery }]] : [];
+    return a?.at === at && (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && (deliveryId ? a.delivery.id === deliveryId : a.delivery.id === undefined) && matches(a.delivery.message) ? [[id, { ...a, delivery: delivery(a.delivery) }]] : [];
   });
   return changed.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(changed) };
 }
 function withFailure(lastActions, rows, at, reason, deliveryId) {
-  return withQueuedDelivery(lastActions, rows, at, () => true, { state: "failed", reason, ...deliveryId ? { id: deliveryId } : {} }, deliveryId);
+  return withQueuedDelivery(lastActions, rows, at, () => true, () => ({ state: "failed", reason, ...deliveryId ? { id: deliveryId } : {} }), deliveryId);
 }
 function withRewrite(lastActions, rows, at, message, entered, deliveryId) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, action]) => [
@@ -4522,8 +4527,11 @@ function timedChangeAt(lastActions, now) {
   }).filter((at) => at > now);
   return ends.length > 0 ? Math.min(...ends) : null;
 }
+function queuedSentAt(last) {
+  return last.delivery?.state === "queued" ? last.delivery.sentAt ?? last.at : last.at;
+}
 function isQueuedAt(last, now) {
-  return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
+  return last?.delivery?.state === "queued" && now - queuedSentAt(last) >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "held")
@@ -10043,7 +10051,7 @@ function holdsOf(ui) {
 function isAnimating(screen, ui, now) {
   const { view } = screen;
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
-  const isPressMoving = Object.values(view.lastActions).some((l) => l.result !== undefined && (l.result.state === "pending" || now - l.result.at < SETTLED_MS) || l.delivery?.state === "queued" && now - l.at < QUEUED_AFTER_MS);
+  const isPressMoving = Object.values(view.lastActions).some((l) => l.result !== undefined && (l.result.state === "pending" || now - l.result.at < SETTLED_MS) || l.delivery?.state === "queued" && now - queuedSentAt(l) < QUEUED_AFTER_MS);
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
   const settled = [...rows, ...view.prs.drawn].flatMap((r) => r.state.is === "settled" ? [r.state] : []);
   const placing = { lastTypedMessageAt: null, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS };
@@ -13559,10 +13567,15 @@ async function releaseOne(host, id, isEarly) {
     await host.prepare?.(s);
     const deliveryId = last.commandId ? `${last.commandId}:send` : attemptId;
     attempt = { deliveryId, text: held.message, at: last.at };
-    const state = host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed";
+    const delivery = {
+      state: host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed",
+      message: held.message,
+      id: deliveryId,
+      sentAt: now
+    };
     return {
       ...s,
-      lastActions: { ...s.lastActions, [id]: { ...last, delivery: { state, message: held.message, id: deliveryId } } },
+      lastActions: { ...s.lastActions, [id]: { ...last, delivery } },
       sent: [
         ...s.sent,
         {
@@ -13636,6 +13649,7 @@ async function wakeForDone(host, current) {
     const deliveryId = attemptId;
     attempt = { deliveryId, text: wake.text };
     const lastActions = { ...s.lastActions };
+    const sentAt = await host.now();
     for (const closed of s.ledger.closed) {
       if (!wake.ids.includes(closed.id))
         continue;
@@ -13644,7 +13658,12 @@ async function wakeForDone(host, current) {
       lastActions[closed.id] = {
         ...last,
         ...closed.commandId && { commandId: closed.commandId },
-        delivery: { state: host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed", message: wake.text, id: deliveryId }
+        delivery: {
+          state: host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed",
+          message: wake.text,
+          id: deliveryId,
+          sentAt
+        }
       };
     }
     const next = {
@@ -13656,7 +13675,7 @@ async function wakeForDone(host, current) {
         {
           text: wake.text,
           press: { id: wake.ids[0], action: "done" },
-          at: await host.now(),
+          at: sentAt,
           row: wake.ids[0],
           queuedId: null,
           pressedAt: null,
