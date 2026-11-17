@@ -97,7 +97,7 @@ export function actionsOf(
       label: press.action !== 'type' && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
       emphasis:
-        flags.isPrimary || press.action === 'done' || press.action === 'address'
+        flags.isPrimary || press.action === 'address'
           ? 'primary'
           : press.action === 'discuss' ||
               press.action === 'explain' ||
