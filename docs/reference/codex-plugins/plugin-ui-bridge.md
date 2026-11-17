@@ -54,6 +54,21 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   of these variables that they use" (APPSPEC:L791-955, L899). The tab reads
   `styles.variables` (codex/src/tab-host.ts:applyHost).
 
+
+## Host colors
+
+The tab reads three host variables, and each has an opaque fallback in `codex/src/tab-css/base.css`, so off the Codex app it draws opaque colors. In the Codex app `--color-text-secondary` is translucent, so a stroke mixed from it over its row's background stays translucent, and two strokes that overlap paint twice.
+
+| Variable | Light | Dark |
+| --- | --- | --- |
+| `--color-background-primary` | `rgb(255 255 255)` | `rgb(24 24 24)` |
+| `--color-text-primary` | `rgb(26 28 31)` | `rgb(255 255 255)` |
+| `--color-text-secondary` | `rgb(26 28 31 / 49.4%)` | `rgb(255 255 255 / 65%)` |
+
+- These values were measured in the Codex app. Codex documents no values, and the app's version was not recorded with the measurement. [live]
+- How the app delivers them, in `ui/initialize`'s `hostContext.styles.variables` or in the page's own CSS, is [unknown]. The tab applies whatever `hostContext` carries (`codex/src/tab-host.ts:applyHost`), and `codex/scripts/tab-page.mjs` sends these values the same way.
+- `codex/scripts/tab-page.sh` serves the built tab with these values. Its `&colors=fallback` option sends none.
+
 ## What the model sees in a tool result
 
 | Source | `structuredContent` | `_meta` |
