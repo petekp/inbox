@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T07:23:36.104Z. 272827 characters follow.
+// Built at 2026-11-17T07:27:08.527Z. 274224 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -6416,6 +6416,48 @@ async function writeLook(io, appHome, ended) {
     await io.wake(ended.terminal, id);
 }
 
+// src/look-reports.ts
+var PRS_REPORT_MS = 30000;
+function prsShownTarget(isPaneShown, tab, sessionId, read) {
+  if (!isPaneShown || tab !== "prs" || sessionId === null || read?.is !== "read")
+    return null;
+  return { sessionId, terminal: read.envelope.terminal };
+}
+
+class PrsShownReport {
+  last = null;
+  check(target, now) {
+    if (target === null) {
+      this.last = null;
+      return null;
+    }
+    const last = this.last;
+    if (last?.sessionId === target.sessionId && now - last.at < PRS_REPORT_MS)
+      return null;
+    this.last = { sessionId: target.sessionId, at: now };
+    return target;
+  }
+}
+async function writePrsShown(io, appHome, target, now) {
+  const id = newPressId(now, io.random());
+  const file = { format: HERDR_FORMAT, id, prsShown: { at: now } };
+  if (await io.write(pressPath(appHome, target.sessionId, id), JSON.stringify(file)) === null)
+    await io.wake(target.terminal, id);
+}
+
+class LookReports {
+  status = new StatusLook;
+  prs = new PrsShownReport;
+  async check(io, appHome, isPaneShown, page, now) {
+    const ended = this.status.check(isPaneShown, now);
+    if (ended)
+      await writeLook(io, appHome, ended);
+    const target = this.prs.check(prsShownTarget(isPaneShown, page.tab, page.sessionId, page.read), now);
+    if (target)
+      await writePrsShown(io, appHome, target, now);
+  }
+}
+
 // src/main.ts
 var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
 
@@ -6449,7 +6491,7 @@ class Inbox extends View {
   focus = null;
   outTimer = null;
   drawTimer = null;
-  look = new StatusLook;
+  look = new LookReports;
   init(_props, cx) {
     this.focus = cx.focus_handle();
     cx.spawn(async (cx) => {
@@ -6487,9 +6529,8 @@ class Inbox extends View {
   }
   async checkLook(isClosing = false) {
     const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow());
-    const ended = this.look.check(isShown, Date.now());
-    if (ended)
-      await writeLook(queueIo, appHome(), ended);
+    const page = { tab: this.ui.tab, sessionId: this.sessionId, read: this.read };
+    await this.look.check(queueIo, appHome(), isShown, page, Date.now());
   }
   close() {
     return this.checkLook(true);
@@ -6757,7 +6798,7 @@ class Inbox extends View {
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
-      this.look.drew(null, now);
+      this.look.status.drew(null, now);
       return root.child(messageEl(screen.message, t));
     }
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
@@ -6769,7 +6810,7 @@ class Inbox extends View {
     paint.motion = moved.motion;
     const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
     const room = moved.nextAt === null ? paint.listRoom : null;
-    this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
+    this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
     const wakeAt = nextDrawAt(now, this.ui, screen, moved);

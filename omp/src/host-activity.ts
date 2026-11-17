@@ -139,7 +139,7 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
       const noted = noteActivity(s, line)
       if (outcome.kind === 'dismissed') return noteDialog(noted, null, questions)
 
-      return outcome.kind === 'answered' ? noteAnsweredDialog(noted, questions, outcome.answer, endedAt) : noted
+      return outcome.kind === 'answered' ? noteAnsweredDialog(noted, questions, outcome, endedAt) : noted
     }).catch(() => undefined)
   }
 

@@ -116,7 +116,8 @@ test('a next build keeps a record of each Status call beside the saved sessions,
   await endAgent('Plan written. Which runtime?', {}, next)
   await settle()
   const folder = join(w.dir, 'overview-calls', 's2')
-  for (let n = 0; n < 100 && !existsSync(folder); n += 1) await Bun.sleep(5)
+  const hasRecord = () => existsSync(folder) && readdirSync(folder).some(n => n.endsWith('.jsonl'))
+  for (let n = 0; n < 2000 && !hasRecord(); n += 1) await Bun.sleep(5)
   const names = readdirSync(folder)
   const record = JSON.parse(readFileSync(join(folder, names[0]!), 'utf8'))
 

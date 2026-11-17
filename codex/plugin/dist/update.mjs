@@ -6566,7 +6566,9 @@ var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
 var recordFiles = {
   write: async (path, text2) => {
     await mkdir4(dirname5(path), { recursive: true });
-    await writeFile4(path, text2);
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile4(tmp, text2);
+    await rename4(tmp, path);
   },
   list: (folder) => readdir4(folder).catch(() => []),
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),

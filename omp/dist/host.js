@@ -330,6 +330,11 @@ function sameAsk(a, b) {
 function matchOpen(items, a, sameBatch = new Set) {
   return items.findIndex((i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask));
 }
+function rewordedQuestion(items, turn, record) {
+  const optionsOf = (options) => options.map((o) => words2(o).join(" ")).toSorted().join("|");
+  const same = items.filter((i) => i.kind === "question" && i.turn === turn && i.from === "record" && !i.context && optionsOf(i.options) === optionsOf(record.options) && raisesOnly(record.ask, i.ask));
+  return same.length === 1 ? same[0] : undefined;
+}
 function repeatsClosed(closed, a, since, closedFindings = []) {
   const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
   const settled = closed.filter((c) => c.at < since && c.how !== "expired");
@@ -6226,6 +6231,7 @@ var PAIR_FORMS = [
 ];
 var AFTER_ANSWER = /^ (?:selected preview:\n|notes: |user notes: )/;
 var SINGLE_FORMS = [
+  /^User provided custom input:\n((?:  .*(?:\n|$))+)/,
   /^The user responded: ([\s\S]+)$/,
   /^User (?:has )?(?:answered|selected)(?: your questions?)?: ([^"\n].*)/i,
   /^User provided custom input: (.+)/
@@ -6257,6 +6263,7 @@ function pairedAnswers(questions, pairs) {
     return quotedAnswer(pairs.slice(lead.answerAt, next).replace(/, $/, ""));
   });
 }
+var NOTES_ONLY_ANSWER = "(notes only)";
 function answersOf(questions, text) {
   const trimmed = text.trim();
   for (const { head, tail } of PAIR_FORMS) {
@@ -6266,15 +6273,22 @@ function answersOf(questions, text) {
     if (closed)
       return pairedAnswers(questions, rest.slice(0, closed.index));
   }
-  const single = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  const found = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  const single = found?.replace(/^ {2}/gm, "").trimEnd();
   return questions.map(() => single ?? null);
+}
+function structuredAnswers(questions, answers) {
+  return questions.map((q) => {
+    const answer = answers[q.question];
+    return answer === undefined || answer === NOTES_ONLY_ANSWER ? null : answer;
+  });
 }
 function chosenOf(q, answer) {
   const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
   return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
 }
-function noteAnsweredDialog(s, questions, text, now) {
-  const answers = answersOf(questions, text);
+function noteAnsweredDialog(s, questions, outcome, now) {
+  const answers = outcome.answers ? structuredAnswers(questions, outcome.answers) : answersOf(questions, outcome.answer);
   const added = questions.map((q, index) => {
     const answer = answers[index]?.trim() ? chosenOf(q, answers[index]) : undefined;
     return {
@@ -6995,13 +7009,18 @@ function recordItem(host, ledger, input, now, fields) {
   const isDesignChoice = input.kind === "question" && input.design_choice === true;
   const kind = input.kind;
   const entry = { kind, ask, options, rec, helps, isDesignChoice, ...recReason ? { recReason } : {} };
-  const r = addAgentItem(ledger, entry, now);
+  const body = input.kind === "question" ? questionBody(input, options) : {};
+  const reworded = body.context && input.kind === "question" ? rewordedQuestion(ledger.items, ledger.turn, entry) : undefined;
+  const r = addAgentItem(ledger, reworded ? { ...entry, ask: reworded.ask } : entry, now);
   if (r.is === "closed")
     return unchanged(ledger, "title" in r.record ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.` : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
-  const body = input.kind === "question" ? questionBody(input, options) : {};
   const before = r.ledger.items.find((i) => i.id === r.id);
   const after = before && withBody(before, body);
-  const recorded = { ...r.ledger, items: r.ledger.items.map((i) => i === before && after ? after : i) };
+  const rewordedAsk = reworded && r.is === "open" && r.id === reworded.id ? { ask } : {};
+  const recorded = {
+    ...r.ledger,
+    items: r.ledger.items.map((i) => i === before && after ? { ...after, ...rewordedAsk } : i)
+  };
   if (r.is === "open") {
     const changes = [
       ...r.addedSteps > 0 ? ["added its new steps"] : [],
@@ -13407,7 +13426,7 @@ function activityHandlers(context, sessions) {
       const noted = noteActivity(s, line);
       if (outcome.kind === "dismissed")
         return noteDialog(noted, null, questions);
-      return outcome.kind === "answered" ? noteAnsweredDialog(noted, questions, outcome.answer, endedAt) : noted;
+      return outcome.kind === "answered" ? noteAnsweredDialog(noted, questions, outcome, endedAt) : noted;
     }).catch(() => {
       return;
     });
@@ -13423,8 +13442,9 @@ import { fileURLToPath } from "url";
 
 // ../hooks/herdr-press-file.ts
 var isLookFile = (file) => ("look" in file);
+var isPrsShownFile = (file) => ("prsShown" in file);
 var isPressFile = (file) => file.format === HERDR_FORMAT && ("press" in file);
-var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPressFile(file) ? file.pressedAt : file.collapse.at;
+var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPrsShownFile(file) ? file.prsShown.at : isPressFile(file) ? file.pressedAt : file.collapse.at;
 var PRESS_TARGETS = {
   answer: "id",
   type: "id",
@@ -13516,6 +13536,9 @@ function pressFile(text) {
   if ("look" in file) {
     const reason = lookProblem(file.look);
     return reason ? { ok: false, reason } : { ok: true, file };
+  }
+  if ("prsShown" in file) {
+    return isRecord(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
   }
   if ("collapse" in file) {
     const c = file.collapse;
@@ -14330,6 +14353,10 @@ async function applyHerdrFile(host, file, sessionId = "") {
     await host.update((s) => lookReportedOn(s, file.look));
     return LOOK_OUTCOME;
   }
+  if (isPrsShownFile(file)) {
+    await host.refreshPrsIfDue?.();
+    return LOOK_OUTCOME;
+  }
   if (!isPressFile(file)) {
     const { row, isCollapsed, at } = file.collapse;
     await host.update((s) => withCollapse(s, row, isCollapsed, at));
@@ -14808,7 +14835,9 @@ var publishFiles = {
 var recordFiles = {
   write: async (path, text) => {
     await mkdir4(dirname3(path), { recursive: true });
-    await writeFile4(path, text);
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile4(tmp, text);
+    await rename4(tmp, path);
   },
   list: (folder) => readdir4(folder).catch(() => []),
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),
