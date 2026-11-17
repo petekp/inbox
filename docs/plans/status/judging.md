@@ -88,7 +88,7 @@ The goal adds these:
 
 - The answer the host would apply, after its one re-ask, parses.
 - No goal is set at a step that makes no next goal clear.
-- A step that makes the next goal clear, from the person's words or the work, shows that goal.
+- A step that makes the next goal clear, from the person's words or the work, shows that goal. At a step whose work names the outcome but not as the person's direction, the facts can also accept that outcome as the suggested goal while no goal runs.
 - While no goal runs, a step whose fact list names the outcome the work most likely leads to suggests that outcome as the goal.
 - Each milestone in the fact list has a milestone with a mark its state allows.
 - Where the fact list says which queued milestone the plan takes up next, that milestone is the next one on the path.

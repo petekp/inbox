@@ -77,7 +77,15 @@ type GoalFact = {
 }
 
 /** An outcome with a finish line that a step makes clear, from the person's words or the work, which a goal set there should match. */
-type GoalClear = { text: string; match: string }
+type GoalClear = {
+  text: string
+  match: string
+  /**
+   * The step also passes while no goal runs and the suggested goal matches: the work names the outcome it leads to,
+   * but not as the person's direction.
+   */
+  alsoSuggested?: boolean
+}
 
 /** An open ask, and the pieces it holds up. */
 type AskFact = { match: string; text: string; holdsUp: string[] }
@@ -274,7 +282,11 @@ export function factsText(f: Facts): string {
         ),
       ]
     : ['Goal: none set']
-  const stated = f.goalClear ? [`This step makes the next goal clear: ${f.goalClear.text}`] : []
+  const stated = !f.goalClear
+    ? []
+    : f.goalClear.alsoSuggested
+      ? [`This step makes the next goal likely: ${f.goalClear.text}. A goal or a suggested goal for it are both right.`]
+      : [`This step makes the next goal clear: ${f.goalClear.text}`]
 
   return [
     ...goal,
