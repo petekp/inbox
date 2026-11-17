@@ -96,6 +96,8 @@ export type Line = {
   earlierOf: FoldKind | null
   /** Text the selected line shows under its title, as a review comment past its first line. */
   body: string | null
+  /** Shared prefix for Timeline detail lines. */
+  timelineDetailLead?: string
   /** A line the selection skips: a closed row with nothing to press, or a stop with no Resume. */
   isStatic: boolean
   /** Whether the line waits on the person, so a default selection may land on it. */

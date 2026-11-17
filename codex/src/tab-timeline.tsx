@@ -1,17 +1,16 @@
 import type { JSX } from 'preact'
 import { SUBJECT_MARKS } from '../../hooks/help'
 import { prMarkId } from '../../hooks/pr-rows'
+import { timelinePage } from '../../hooks/timeline-page'
 import type { TabView } from './core'
 import { pendingLocal, act } from './tab-rows'
 import { closingFolds, drawnRows, timelineFolded } from './tab-state'
 import { outPending } from './tab-press'
-import { selectTimelineRow, timelinePageOf, toggleTimelineFold } from './rows'
-
-const TREE_BRANCH = { mid: '├─ ', last: '└─ ' } as const
+import { selectTimelineRow, timelinePageOf, timelineRowForm, toggleTimelineFold } from './rows'
 
 export function TimelineTab({ view }: { view: TabView }) {
   const page = timelinePageOf(view)
-  const all = view.timeline.rows
+  const all = timelinePage(view.timeline, null, [], view.lastActions).rows
   const visible = new Map(page.rows.map(row => [row.task.id, row]))
   const hidden = new Set([...timelineFolded].filter(id => !closingFolds.has(`timeline-${id}`)))
   const barParts = (id: string, parts: (typeof page.bars)[number]['parts']) =>
@@ -33,22 +32,37 @@ export function TimelineTab({ view }: { view: TabView }) {
     const selection = selected ? page.selected : track?.hasPanel ? (drawnRows.get(id)?.openTimeline ?? null) : null
     const selectAction = visible.get(row.task.id)?.actions.find(action => action.action === 'select')
     const branchAction = selection?.row.actions.find(action => action.action === 'toggle-branch')
+    const form = timelineRowForm(row, visible.get(row.task.id))
     const isClosing = track?.state === 'closing' || track?.state === 'leaving'
     const mark = row.status === 'stalled' ? '!' : (SUBJECT_MARKS[row.status as keyof typeof SUBJECT_MARKS]?.mark ?? '·')
 
     return (
       <section class="timeline-tree-item" key={row.task.id}>
-        <div
-          class={`row timeline-node${selected ? ' selected' : ''}${isClosing ? ' closing' : ''}`}
-          data-motion={id}
-          style={{ '--depth': row.depth }}
-        >
-          <span class={`mark tone-${row.status === 'done' ? 'done' : row.status === 'stalled' ? 'error' : 'needsYou'}`}>
-            {mark}
-          </span>
+        {form.ancestorGuides.map(depth => (
+          <span
+            key={`ancestor-${depth}`}
+            class="timeline-tree-guide"
+            style={{ '--timeline-guide-depth': depth } as JSX.CSSProperties}
+            aria-hidden="true"
+          />
+        ))}
+        {form.childGuide !== null ? (
+          <span
+            key="children"
+            class="timeline-tree-guide timeline-child-guide"
+            style={{ '--timeline-guide-depth': form.childGuide } as JSX.CSSProperties}
+            aria-hidden="true"
+          />
+        ) : null}
+        <div class={`row timeline-node${selected ? ' selected' : ''}${isClosing ? ' closing' : ''}`} data-motion={id}>
           <div class="content tight">
             <div>
-              {row.branch ? <span class="muted">{TREE_BRANCH[row.branch]}</span> : null}
+              <span class="muted timeline-tree-prefix">{`  ${form.prefix}`}</span>
+              <span
+                class={`timeline-task-mark tone-${row.status === 'done' ? 'done' : row.status === 'stalled' ? 'error' : 'needsYou'}`}
+              >
+                {mark}{' '}
+              </span>
               {selectAction && !isClosing ? (
                 <button
                   type="button"
@@ -65,7 +79,8 @@ export function TimelineTab({ view }: { view: TabView }) {
             </div>
             {row.warnings.map((warning, index) => (
               <div class="warning" key={`${row.task.id}-warning-${index}`}>
-                ⚠ {warning}
+                <span class="muted timeline-tree-prefix">{`${form.detailLead}⚠ `}</span>
+                {warning}
               </div>
             ))}
           </div>
@@ -78,7 +93,7 @@ export function TimelineTab({ view }: { view: TabView }) {
               ) : null}
               {selection.details.map((line, index) => (
                 <div key={`${row.task.id}-detail-${index}`}>
-                  <span class="muted">{TREE_BRANCH.last}</span>
+                  <span class="muted timeline-tree-prefix">{form.detailLead}</span>
                   <strong class="timeline-detail-label">{line.label} · </strong>
                   {line.label === 'Links'
                     ? line.actions.map(link => {

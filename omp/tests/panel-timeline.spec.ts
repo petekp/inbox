@@ -47,22 +47,22 @@ test('Timeline draws the shared empty state, task details and planned buttons, a
   expect(detailPositions).toEqual([...detailPositions].sort((left, right) => left - right))
   expect(detailed).not.toContain('Updated 1m')
   const drawnRows = strip(detailed)
-  const detailRows = drawnRows.split('\n').filter(line => /└─ (Detail|Updated|Note|History|Links) ·/.test(line))
+  const detailRows = drawnRows.split('\n').filter(line => /│  (Detail|Updated|Note|History|Links) ·/.test(line))
   expect(detailRows.slice(0, 4).map(line => line.trimStart())).toEqual([
-    '└─ Detail · Keep the task-tree view compact.',
-    '└─ Updated · 1m',
-    '└─ Note · Preserve the title.',
-    '└─ History · 1m · agent · Added the panel view.',
+    '│  Detail · Keep the task-tree view compact.',
+    '│  Updated · 1m',
+    '│  Note · Preserve the title.',
+    '│  History · 1m · agent · Added the panel view.',
   ])
   const linksLine = detailRows.at(-1)!
-  expect(linksLine.trimStart()).toContain('└─ Links ·')
+  expect(linksLine.trimStart()).toContain('│  Links ·')
   expect(linksLine.indexOf('Open PR')).toBeLessThan(linksLine.indexOf('Open issue'))
   expect(drawnRows.split('\n').filter(line => line.includes('Open PR'))).toHaveLength(1)
   expect(drawnRows.split('\n').filter(line => line.includes('Open issue'))).toHaveLength(1)
   expect(drawnRows).toContain('> ● Build the view · working ·')
   expect(drawnRows).toContain('├─ ✓ Read the design · done · w1')
   expect(drawnRows).toContain('└─ · Draw the panel · queued · w1')
-  expect(drawnRows).toContain('└─ ⚠ PR merged, task still open')
+  expect(drawnRows).toContain('  │  ⚠ PR merged, task still open')
   expect(drawnRows).not.toContain('! PR merged, task still open')
   const selectedChild = strip(text(screen, { ...ui, timelineSelection: 'first', selectedId: 'first' }, 100))
   expect(selectedChild).toContain('> ├─ ✓ Read the design · done · w1')
@@ -73,7 +73,7 @@ test('Timeline draws the shared empty state, task details and planned buttons, a
   expect(shown).toContain('├─ ✓ Read the design')
   expect(shown).toContain('└─ · Draw the panel')
   const narrowRows = strip(shown).split('\n')
-  const narrowLinks = narrowRows.find(line => line.includes('└─ Links ·'))!
+  const narrowLinks = narrowRows.find(line => line.includes('Links ·'))!
   expect(narrowLinks.indexOf('Open PR')).toBeLessThan(narrowLinks.indexOf('Open issue'))
   expect(narrowRows.every(line => line.length <= 42)).toBe(true)
 
@@ -88,6 +88,21 @@ test('Timeline draws the shared empty state, task details and planned buttons, a
     action: 'pr-open',
     ref: 'https://git.example.org/example/project/pull/4',
   })
+})
+
+test('a selected child detail guide shares the connector column', () => {
+  const root = taskNode('root', 'Root', 'working')
+  const child = taskNode('child', 'Child', 'queued', NOW, { parentId: 'root', detail: 'Child detail.' })
+  const sibling = taskNode('sibling', 'Sibling', 'queued', NOW, { parentId: 'root' })
+  const screen = taskScreen([root, child, sibling])
+  const ui: PanelUi = { ...INITIAL_UI, tab: 'timeline', timelineSelection: 'child', selectedId: 'child' }
+  const lines = strip(text(screen, ui, 120)).split('\n')
+  const childLine = lines.find(line => line.includes('> ├─ · Child · queued'))!
+  const detailLine = lines.find(line => line.includes('Detail · Child detail.'))!
+  const connectorColumn = childLine.indexOf('├')
+
+  expect(connectorColumn).toBe(3)
+  expect(detailLine.indexOf('│')).toBe(connectorColumn)
 })
 
 test('Timeline j and k run the planned Select action for the task they land on', () => {

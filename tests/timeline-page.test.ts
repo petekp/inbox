@@ -154,7 +154,58 @@ test('folding a selected parent hides its children and keeps the parent selected
   const page = timelinePage(data, 'leaf', ['root'])
 
   expect(page.rows.map(row => row.task.id)).toEqual(['root'])
+  expect(page.rows[0]).toMatchObject({ hasChildren: true, hasVisibleChildren: false })
   expect(page.selected?.row.task.id).toBe('root')
+})
+
+test('top-level Timeline tasks do not add guide columns to each other or their children', () => {
+  const tree = [
+    task('first-root'),
+    task('first-child', { parentId: 'first-root' }),
+    task('last-child', { parentId: 'first-root' }),
+    task('second-root'),
+  ]
+  const rows = timelineData(tree, segments, {}, [], now).rows
+
+  expect(rows.map(row => [row.task.id, row.depth, row.guides, row.prefix])).toEqual([
+    ['first-root', 0, [], ''],
+    ['first-child', 1, [], '├─ '],
+    ['last-child', 1, [], '└─ '],
+    ['second-root', 0, [], ''],
+  ])
+})
+
+test('Timeline plans joined guides through deep branches and aligns both detail examples', () => {
+  const tree = [
+    task('root', { detail: 'Coordinate the review.' }),
+    task('first', { parentId: 'root', status: 'done', detail: 'Draw the task plan header.' }),
+    task('middle', { parentId: 'root', status: 'working', detail: '選択した項目を復元する。' }),
+    task('leaf-one', { parentId: 'middle', status: 'done' }),
+    task('leaf-two', { parentId: 'middle', status: 'queued' }),
+    task('last', { parentId: 'root', status: 'queued' }),
+  ]
+  const data = timelineData(tree, segments, {}, [], now)
+  const root = timelinePage(data, 'root', [])
+  const child = timelinePage(data, 'first', [])
+
+  expect(root.rows.map(row => [row.task.id, row.guides, row.prefix])).toEqual([
+    ['root', [], ''],
+    ['first', [], '├─ '],
+    ['middle', [], '├─ '],
+    ['leaf-one', ['│  '], '│  ├─ '],
+    ['leaf-two', ['│  '], '│  └─ '],
+    ['last', [], '└─ '],
+  ])
+  expect(child.rows.map(row => [row.task.id, row.prefix])).toEqual(root.rows.map(row => [row.task.id, row.prefix]))
+  expect(root.selected?.row.detailLead).toBe('  │  ')
+  expect(child.selected?.row.detailLead).toBe('  │     ')
+  expect(timelinePage(data, 'middle', []).selected?.row.detailLead).toBe('  │  │  ')
+  expect(timelinePage(data, 'root', ['middle']).rows.map(row => [row.task.id, row.detailLead])).toEqual([
+    ['root', '  │  '],
+    ['first', '  │     '],
+    ['middle', '  │     '],
+    ['last', '        '],
+  ])
 })
 
 test('Timeline offers Select only for unselected rows and keeps planned action order', () => {

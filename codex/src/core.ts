@@ -4,6 +4,7 @@ import { lookEndedOn, withLook } from '../../hooks/session-status'
 import { sessionView } from '../../hooks/session-view'
 import type { SentBy } from '../../hooks/session-turns'
 import type { SessionView } from '../../hooks/session-view'
+import type { TaskTree } from '../../types'
 import { NO_HOLDS } from '../../hooks/timing'
 import { screenTabOf } from '../../hooks/tabs'
 import type { Holds } from '../../hooks/timing'
@@ -147,6 +148,6 @@ export type TabView = View & {
   isGhMissing: boolean
 }
 
-export function viewOf(s: SessionState, now: number, holds: Holds = NO_HOLDS): View {
-  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now }
+export function viewOf(s: SessionState, now: number, holds: Holds = NO_HOLDS, timelineTaskTree?: TaskTree): View {
+  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds, {}, timelineTaskTree), heard: heardState(s.heard), at: now }
 }

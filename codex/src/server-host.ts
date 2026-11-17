@@ -3,6 +3,7 @@ import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
+import { demoTaskTree } from '../../hooks/demo-timeline'
 import { isCompareInBackground } from '../../hooks/clients'
 import { isPrPress } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
@@ -139,7 +140,8 @@ export function makeSessionHost(
   const served = async (s: SessionState, id: string, isDemo = false, holds: Holds = NO_HOLDS): Promise<TabView> => {
     const loadError = deps.loadError?.()
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
-    const view = viewOf(current, now(), holds)
+    const at = now()
+    const view = viewOf(current, at, holds, isDemo ? demoTaskTree(at) : undefined)
     const trust = isDemo ? null : hooksTrustNow(current, id)
     const herdrAsk = isDemo ? null : await deps.herdrAsk?.view().catch(() => null)
 

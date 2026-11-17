@@ -22,8 +22,12 @@ type TimelineDetailLine =
 type TimelineNode = {
   task: TimelineTask
   depth: number
-  branch: 'mid' | 'last' | null
+  guides: string[]
+  prefix: string
+  detailLead: string
+  hasLaterSibling: boolean
   hasChildren: boolean
+  hasVisibleChildren: boolean
   progress: number
   measure: string
   status: string
@@ -33,7 +37,8 @@ type TimelineNode = {
   actions: TimelineRowAction[]
 }
 type TimelineBase = { isEmpty: boolean; empty: { title: string; hint: string }; summary: string; bars: TimelineBar[] }
-export type TimelineData = TimelineBase & { rows: Omit<TimelineNode, 'actions'>[] }
+type TimelineDataRow = Omit<TimelineNode, 'actions' | 'detailLead' | 'hasVisibleChildren'>
+export type TimelineData = TimelineBase & { rows: TimelineDataRow[] }
 export type TimelinePage = TimelineBase & {
   rows: TimelineNode[]
   selected: { row: TimelineNode; details: TimelineDetailLine[]; links: TimelineLinkAction[] } | null
@@ -89,17 +94,21 @@ export function timelineData(
   const children = new Map<string | null, TaskNode[]>()
   for (const task of tree) children.set(task.parentId, [...(children.get(task.parentId) ?? []), task])
   const stalled = new Set(Object.keys(stalledSince))
-  const rows: Omit<TimelineNode, 'actions'>[] = []
-  const visit = (siblings: TaskNode[], depth: number) => {
+  const rows: TimelineDataRow[] = []
+  const visit = (siblings: TaskNode[], depth: number, guides: string[]) => {
     siblings.forEach((task, index) => {
       const childrenOfTask = children.get(task.id) ?? []
+      const hasLaterSibling = index < siblings.length - 1
+      const connector = depth === 0 ? '' : hasLaterSibling ? '├─ ' : '└─ '
       const stalledAt = stalledSince[task.id]
       const status = stalledAt === undefined ? task.status : 'stalled'
       const progress = Math.round(weightedTaskProgress(tree, task.id) * 100)
       rows.push({
         task: timelineTask(task, now),
         depth,
-        branch: depth === 0 ? null : index === siblings.length - 1 ? 'last' : 'mid',
+        guides,
+        prefix: `${guides.join('')}${connector}`,
+        hasLaterSibling,
         hasChildren: childrenOfTask.length > 0,
         progress,
         measure: childrenOfTask.length ? `${progress}%` : `w${task.weight}`,
@@ -113,10 +122,10 @@ export function timelineData(
         stalledAge: stalledAt === undefined ? null : shortAgo(now - stalledAt),
         warnings: warnings.filter(warning => warning.taskId === task.id).map(warning => warning.message),
       })
-      visit(childrenOfTask, depth + 1)
+      visit(childrenOfTask, depth + 1, depth === 0 ? guides : [...guides, hasLaterSibling ? '│  ' : '   '])
     })
   }
-  visit(children.get(null) ?? [], 0)
+  visit(children.get(null) ?? [], 0, [])
 
   const roots = children.get(null) ?? []
   const streams = new Set(roots.flatMap(task => (task.streamId ? [task.streamId] : [])))
@@ -170,13 +179,20 @@ export function timelinePage(
 ): TimelinePage {
   const nodes = new Map(data.rows.map(row => [row.task.id, row]))
   const foldedIds = new Set(folded)
-  const rows = data.rows.filter(row => {
+  const visibleRows = data.rows.filter(row => {
     let parent = row.task.parentId
     while (parent !== null) {
       if (foldedIds.has(parent)) return false
       parent = nodes.get(parent)?.task.parentId ?? null
     }
     return true
+  })
+  const visibleParents = new Set(visibleRows.flatMap(row => (row.task.parentId ? [row.task.parentId] : [])))
+  const rows = visibleRows.map(row => {
+    const siblingGuide = row.hasLaterSibling || row.depth > 0 ? (row.hasLaterSibling ? '│  ' : '   ') : ''
+    const hasVisibleChildren = visibleParents.has(row.task.id)
+    const childGuide = hasVisibleChildren ? '│  ' : '   '
+    return { ...row, hasVisibleChildren, detailLead: `  ${row.guides.join('')}${siblingGuide}${childGuide}` }
   })
   let selected = rows.find(row => row.task.id === selectedId)
   if (!selected && selectedId) {

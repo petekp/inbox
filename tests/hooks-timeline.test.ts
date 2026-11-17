@@ -190,6 +190,8 @@ test('Timeline puts the selected row actions in the footer without offering Sele
   const text = (await pane.findAll({ type: 'Text' })).map(node => node.text)
   expect(text).toContain('A flow 21%')
   expect(text.some(line => line.includes('Detail · Build the review flow'))).toBe(true)
+  expect(text).toContain('  │  Detail · Build the review flow')
+  expect(text).toContain('  └─ · ')
   expect(text.some(line => line.includes('Updated · '))).toBe(true)
   expect(text.some(line => line.includes('Note · Keep the row short'))).toBe(true)
   expect(text.some(line => line.includes('History · '))).toBe(true)
@@ -242,6 +244,8 @@ test('the desktop Timeline draws every planned row action as one button per acti
     ['timeline-select-leaf', 'leaf', true],
     ['toggle-branch', 'Close branch', true],
   ])
+  const text = (await pane.findAll({ type: 'Text' })).map(node => node.text)
+  expect(text).toContain('  │  Updated · now')
 })
 
 test('the terminal Timeline shows Opening and Opened for GitHub Enterprise PR and issue links', async ($, on) => {

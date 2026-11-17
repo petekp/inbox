@@ -44,14 +44,13 @@ export function paneTimeline(context: TimelinePaneBase, handlers: TimelinePaneHa
         const selected = row.task.id === page.selected?.row.task.id
         const selection = selected ? page.selected : null
         const selectAction = row.actions.find(action => action.action === 'select')
-        const branch = row.branch === 'mid' ? '├─ ' : row.branch === 'last' ? '└─ ' : ''
-        const detail = `${'  '.repeat(row.depth + 1)}└─ `
+        const detail = row.detailLead
         return (
           <Box key={`timeline-${row.task.id}`} flexDirection="column">
             <Box flexDirection="row">
               <Text color={tone(row.status)}>
-                {'  '.repeat(row.depth)}
-                {selected ? '>' : ' '} {branch}
+                {selected ? '> ' : '  '}
+                {row.prefix}
                 {marks[row.status] ?? '·'}{' '}
               </Text>
               {selectAction ? (

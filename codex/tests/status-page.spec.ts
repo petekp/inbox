@@ -247,13 +247,17 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(root.querySelectorAll('.timeline-bars > div').length, 1)
     assert.match(root.querySelector('.timeline-bars > div')?.textContent ?? '', /^Task plan · .* weight · .+/)
     assert.equal(root.querySelectorAll('.timeline-bars').length, 1)
-    assert.match(root.querySelector('.timeline-node .content > div')?.textContent ?? '', /^omp panel · working · /)
-    assert.equal([...root.querySelectorAll('.timeline-node .content > div')][1]?.textContent, '├─ Label · working · w1')
-    assert.equal([...root.querySelectorAll('.timeline-node .content > div')][2]?.textContent, '└─ Page · done · w1')
+    assert.match(root.querySelector('.timeline-node .content > div')?.textContent ?? '', /^  ● omp panel · working · /)
     assert.equal(
-      [...root.querySelectorAll('.timeline-detail > div')].every(line => line.textContent?.startsWith('└─ ')),
+      [...root.querySelectorAll('.timeline-node .content > div')][1]?.textContent,
+      '  ├─ ● Label · working · w1',
+    )
+    assert.equal([...root.querySelectorAll('.timeline-node .content > div')][2]?.textContent, '  └─ ✓ Page · done · w1')
+    assert.equal(
+      [...root.querySelectorAll('.timeline-detail > div')].every(line => line.textContent?.startsWith('     ')),
       true,
     )
+    assert.equal(root.querySelectorAll('.timeline-child-guide').length, 1)
     assert.deepEqual(
       [...root.querySelectorAll('.timeline-detail-label')].map(label => label.textContent?.replace(' · ', '')),
       ['Detail', 'Updated', 'Note', 'History', 'Links'],

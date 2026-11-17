@@ -23,6 +23,14 @@ test('the selected tab draws inverse and the others draw their counts', () => {
   expect(strip(bar)).toContain('esc to close')
 })
 
+test('the Timeline tab is highlighted while the Timeline page shows', () => {
+  const screen = screenOf({ isNextBuild: true })
+  const bar = drawn(screen, { ...INITIAL_UI, tab: 'timeline' })[1]!
+
+  expect(bar).toContain(`${ESC}7m${ESC}1m [4] Timeline`)
+  expect(bar).not.toContain(`${ESC}7m${ESC}1m [3] Finds`)
+})
+
 test('an empty Asks tab explains itself', () => {
   const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS) }
   expect(text(empty, INITIAL_UI)).toContain('Nothing needed')

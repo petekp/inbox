@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T04:12:20.908Z. 218424 characters follow.
+// Built at 2026-11-17T06:09:51.603Z. 218646 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -3498,16 +3498,20 @@ function timelineData(tree, segments, stalledSince, warnings, now) {
     children.set(task.parentId, [...children.get(task.parentId) ?? [], task]);
   const stalled = new Set(Object.keys(stalledSince));
   const rows = [];
-  const visit = (siblings, depth) => {
+  const visit = (siblings, depth, guides) => {
     siblings.forEach((task, index) => {
       const childrenOfTask = children.get(task.id) ?? [];
+      const hasLaterSibling = index < siblings.length - 1;
+      const connector = depth === 0 ? "" : hasLaterSibling ? "├─ " : "└─ ";
       const stalledAt = stalledSince[task.id];
       const status = stalledAt === undefined ? task.status : "stalled";
       const progress = Math.round(weightedTaskProgress(tree, task.id) * 100);
       rows.push({
         task: timelineTask(task, now),
         depth,
-        branch: depth === 0 ? null : index === siblings.length - 1 ? "last" : "mid",
+        guides,
+        prefix: `${guides.join("")}${connector}`,
+        hasLaterSibling,
         hasChildren: childrenOfTask.length > 0,
         progress,
         measure: childrenOfTask.length ? `${progress}%` : `w${task.weight}`,
@@ -3516,10 +3520,10 @@ function timelineData(tree, segments, stalledSince, warnings, now) {
         stalledAge: stalledAt === undefined ? null : shortAgo(now - stalledAt),
         warnings: warnings.filter((warning) => warning.taskId === task.id).map((warning) => warning.message)
       });
-      visit(childrenOfTask, depth + 1);
+      visit(childrenOfTask, depth + 1, depth === 0 ? guides : [...guides, hasLaterSibling ? "│  " : "   "]);
     });
   };
-  visit(children.get(null) ?? [], 0);
+  visit(children.get(null) ?? [], 0, []);
   const roots = children.get(null) ?? [];
   const streams = new Set(roots.flatMap((task) => task.streamId ? [task.streamId] : []));
   const summary = streams.size > 1 ? `${streams.size} streams` : segments.total > 0 ? `${Math.round(segments.done / segments.total * 100)}% complete · ${Number(segments.done.toFixed(1))}/${Number(segments.total.toFixed(1))} weight` : "no tasks yet";

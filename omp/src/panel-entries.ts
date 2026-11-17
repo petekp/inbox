@@ -456,19 +456,20 @@ function timelineEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
             result: link.result,
           })),
         )
-    const branch = row.depth === 0 ? '' : `${row.branch === 'last' ? '└─' : '├─'} `
     const marker = TIMELINE_MARKS[row.status] ?? '·'
     out.push({
       kind: 'row',
       line: {
         ...blankLine(row.task.id),
-        depth: row.depth,
+        depth: 0,
         selectionMark: '>',
         lead: {
-          text: `${branch}${marker}`,
+          text: `${row.prefix}${marker}`,
           tone: row.status === 'stalled' ? 'error' : row.status === 'done' ? 'done' : 'needsYou',
           padMark: false,
         },
+        // omp's row title starts one cell after the shared detail prefix: panel cursor and spacing occupy three cells.
+        timelineDetailLead: ` ${row.detailLead}`,
         title: row.task.title,
         status: { text: `${row.statusLabel} · ${row.measure}`, tone: null, rest: '', separator: ' · ' },
         body: body || null,
@@ -481,8 +482,8 @@ function timelineEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
         kind: 'row',
         line: {
           ...blankLine(`${row.task.id}:warning:${index}`),
-          depth: row.depth,
-          lead: { text: '└─ ⚠', tone: 'error', padMark: false },
+          depth: 0,
+          lead: { text: `${row.detailLead}⚠`, tone: 'error', padMark: false },
           title: warning,
           isStatic: true,
         },

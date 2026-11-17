@@ -3089,16 +3089,20 @@ function timelineData(tree, segments, stalledSince, warnings, now) {
   for (const task of tree) children.set(task.parentId, [...children.get(task.parentId) ?? [], task]);
   const stalled = new Set(Object.keys(stalledSince));
   const rows = [];
-  const visit = (siblings, depth) => {
+  const visit = (siblings, depth, guides) => {
     siblings.forEach((task, index) => {
       const childrenOfTask = children.get(task.id) ?? [];
+      const hasLaterSibling = index < siblings.length - 1;
+      const connector = depth === 0 ? "" : hasLaterSibling ? "\u251C\u2500 " : "\u2514\u2500 ";
       const stalledAt = stalledSince[task.id];
       const status = stalledAt === void 0 ? task.status : "stalled";
       const progress = Math.round(weightedTaskProgress(tree, task.id) * 100);
       rows.push({
         task: timelineTask(task, now),
         depth,
-        branch: depth === 0 ? null : index === siblings.length - 1 ? "last" : "mid",
+        guides,
+        prefix: `${guides.join("")}${connector}`,
+        hasLaterSibling,
         hasChildren: childrenOfTask.length > 0,
         progress,
         measure: childrenOfTask.length ? `${progress}%` : `w${task.weight}`,
@@ -3107,10 +3111,10 @@ function timelineData(tree, segments, stalledSince, warnings, now) {
         stalledAge: stalledAt === void 0 ? null : shortAgo(now - stalledAt),
         warnings: warnings.filter((warning) => warning.taskId === task.id).map((warning) => warning.message)
       });
-      visit(childrenOfTask, depth + 1);
+      visit(childrenOfTask, depth + 1, depth === 0 ? guides : [...guides, hasLaterSibling ? "\u2502  " : "   "]);
     });
   };
-  visit(children.get(null) ?? [], 0);
+  visit(children.get(null) ?? [], 0, []);
   const roots = children.get(null) ?? [];
   const streams = new Set(roots.flatMap((task) => task.streamId ? [task.streamId] : []));
   const summary = streams.size > 1 ? `${streams.size} streams` : segments.total > 0 ? `${Math.round(segments.done / segments.total * 100)}% complete \xB7 ${Number(segments.done.toFixed(1))}/${Number(segments.total.toFixed(1))} weight` : "no tasks yet";
@@ -3782,8 +3786,8 @@ function heardState(h) {
   const turns = h.promptTurns.length > 0 ? h.promptTurns.length : h.prompts;
   return h.startAt === null || isMissed || turns >= 2 && h.stops === 0 ? "partial" : "heard";
 }
-function viewOf(s, now, holds = NO_HOLDS) {
-  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
+function viewOf(s, now, holds = NO_HOLDS, timelineTaskTree) {
+  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds, {}, timelineTaskTree), heard: heardState(s.heard), at: now };
 }
 
 // ../hooks/banners.ts

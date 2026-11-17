@@ -8,9 +8,35 @@
   padding-bottom: var(--status-row-pad);
 }
 .timeline-page .timeline-detail {
-  grid-column: 2 / -1;
-  padding: 4px 14px 8px var(--text-x);
+  grid-column: 1 / -1;
+  padding: 4px 14px 8px 0;
   overflow-wrap: anywhere;
+}
+.timeline-page .timeline-node {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.timeline-page .timeline-node > .content {
+  grid-column: 1 / -1;
+}
+.timeline-page .timeline-tree-prefix {
+  white-space: pre;
+}
+.timeline-page .timeline-tree-item {
+  position: relative;
+}
+.timeline-page .timeline-tree-guide {
+  /* The branch glyph begins after two prefix spaces; center the rail on its stem. */
+  --timeline-guide-stem-offset: 0.59em;
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--tree-x) + var(--timeline-guide-stem-offset) + var(--timeline-guide-depth, 0) * var(--step));
+  border-left: 1px solid var(--tree-line);
+  pointer-events: none;
+}
+.timeline-page .timeline-child-guide {
+  top: calc(var(--status-row-pad) + 0.5lh);
 }
 .status-page .mark {
   text-align: left;

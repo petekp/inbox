@@ -1,8 +1,28 @@
 import { timelinePage } from '../../hooks/timeline-page'
 import { stepRow } from '../../hooks/row-motion'
+import type { TimelinePage } from '../../hooks/timeline-page'
 import type { TabView } from './core'
 import { closingFolds, drawnRows, tabState, timelineFolded } from './tab-state'
 import { reducedMotion, toggleFold } from './tab-motion'
+
+type TimelineRow = TimelinePage['rows'][number]
+
+type TimelineRowForm = {
+  prefix: string
+  detailLead: string
+  ancestorGuides: number[]
+  childGuide: number | null
+}
+
+/** The text keeps tree spacing and branch arms; CSS draws the vertical guides across the whole row form. */
+export function timelineRowForm(row: TimelineRow, visibleRow: TimelineRow = row): TimelineRowForm {
+  return {
+    prefix: row.prefix.replaceAll('│', ' '),
+    detailLead: row.detailLead.replaceAll('│', ' '),
+    ancestorGuides: row.guides.flatMap((guide, depth) => (guide.includes('│') ? [depth] : [])),
+    childGuide: visibleRow.hasVisibleChildren ? row.depth : null,
+  }
+}
 
 export function timelinePageOf(view: TabView) {
   return timelinePage(view.timeline, tabState.timelineSelection, [...timelineFolded], view.lastActions)

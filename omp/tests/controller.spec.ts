@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { sessionView } from '../../hooks/session-view'
+import { demoTaskTree } from '../../hooks/demo-timeline'
 import { COMPARE_LIMIT_MS, NO_HOLDS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/timing'
 import { createPanel } from '../src/controller'
 import type { PanelSource } from '../src/controller'
@@ -73,6 +74,21 @@ test('the panel shows a loading line until the first screen arrives', async () =
   expect(panel.render(80).join('\n')).toContain('Reading the inbox…')
   await panel.start()
   expect(panel.render(80).join('\n')).toContain('Asks')
+})
+
+test('the OMP demo Timeline uses the shared Timeline sample tree', async () => {
+  const now = 1_700_000_000_000
+  const source = demoSource({
+    modelName: null,
+    now: () => now,
+    after: () => {},
+    settleWindowMs: SETTLED_MS,
+    version: '1.2.3',
+    comparePage: '/omp/dist/compare-page.html',
+  })
+
+  const screen = await source.screen(NO_HOLDS)
+  expect(screen.view.timeline.rows.map(row => row.task.id)).toEqual(demoTaskTree(now).map(task => task.id))
 })
 
 test('the panel restores Timeline navigation and saves selection and branch folds when they change', async () => {

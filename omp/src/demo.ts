@@ -1,4 +1,5 @@
 import { demoSession } from '../../hooks/demo'
+import { demoTaskTree } from '../../hooks/demo-timeline'
 import { isCompareInBackground } from '../../hooks/clients'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/press-effects'
 import { pressOn } from '../../hooks/session-presses'
@@ -29,7 +30,7 @@ export function demoSource(deps: {
 
   return {
     screen: async holds => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, holds),
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds, {}, demoTaskTree(deps.now())),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,

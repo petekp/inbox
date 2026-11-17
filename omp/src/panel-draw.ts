@@ -78,7 +78,7 @@ function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: 
 function timelineDetailLines(line: Line, ui: PanelUi, indent: number, width: number, s: Style): string[] {
   const linkStart = line.buttons.findIndex(button => button.press.action === 'pr-open')
   return (line.body ?? '').split('\n').flatMap(detail => {
-    const head = `${' '.repeat(indent)}└─ `
+    const head = line.timelineDetailLead ?? `${' '.repeat(indent)}└─ `
     if (detail === 'Links ·' && linkStart >= 0) {
       const label = `${head}${detail} `
       const buttons = faceLines(
@@ -93,8 +93,9 @@ function timelineDetailLines(line: Line, ui: PanelUi, indent: number, width: num
         ...buttons.slice(1).map(row => `${' '.repeat(visibleLength(label))}${row}`),
       ]
     }
-    const lines = indentedLinks(detail, indent + visibleLength('└─ '), width, Infinity, s.dim, s.link)
-    return lines.map((text, index) => (index === 0 ? `${head}${text.slice(indent + visibleLength('└─ '))}` : text))
+    const headLength = visibleLength(head)
+    const lines = indentedLinks(detail, headLength, width, Infinity, s.dim, s.link)
+    return lines.map((text, index) => (index === 0 ? `${head}${text.slice(headLength)}` : text))
   })
 }
 

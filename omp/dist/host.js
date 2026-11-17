@@ -7771,16 +7771,20 @@ function timelineData(tree, segments, stalledSince, warnings, now) {
     children.set(task.parentId, [...children.get(task.parentId) ?? [], task]);
   const stalled = new Set(Object.keys(stalledSince));
   const rows = [];
-  const visit = (siblings, depth) => {
+  const visit = (siblings, depth, guides) => {
     siblings.forEach((task, index) => {
       const childrenOfTask = children.get(task.id) ?? [];
+      const hasLaterSibling = index < siblings.length - 1;
+      const connector = depth === 0 ? "" : hasLaterSibling ? "\u251C\u2500 " : "\u2514\u2500 ";
       const stalledAt = stalledSince[task.id];
       const status = stalledAt === undefined ? task.status : "stalled";
       const progress = Math.round(weightedTaskProgress(tree, task.id) * 100);
       rows.push({
         task: timelineTask(task, now),
         depth,
-        branch: depth === 0 ? null : index === siblings.length - 1 ? "last" : "mid",
+        guides,
+        prefix: `${guides.join("")}${connector}`,
+        hasLaterSibling,
         hasChildren: childrenOfTask.length > 0,
         progress,
         measure: childrenOfTask.length ? `${progress}%` : `w${task.weight}`,
@@ -7789,10 +7793,10 @@ function timelineData(tree, segments, stalledSince, warnings, now) {
         stalledAge: stalledAt === undefined ? null : shortAgo(now - stalledAt),
         warnings: warnings.filter((warning) => warning.taskId === task.id).map((warning) => warning.message)
       });
-      visit(childrenOfTask, depth + 1);
+      visit(childrenOfTask, depth + 1, depth === 0 ? guides : [...guides, hasLaterSibling ? "\u2502  " : "   "]);
     });
   };
-  visit(children.get(null) ?? [], 0);
+  visit(children.get(null) ?? [], 0, []);
   const roots = children.get(null) ?? [];
   const streams = new Set(roots.flatMap((task) => task.streamId ? [task.streamId] : []));
   const summary = streams.size > 1 ? `${streams.size} streams` : segments.total > 0 ? `${Math.round(segments.done / segments.total * 100)}% complete \xB7 ${Number(segments.done.toFixed(1))}/${Number(segments.total.toFixed(1))} weight` : "no tasks yet";
@@ -7830,7 +7834,7 @@ function timelineLinkPlan(task, lastActions) {
 function timelinePage(data, selectedId, folded, lastActions = {}) {
   const nodes = new Map(data.rows.map((row) => [row.task.id, row]));
   const foldedIds = new Set(folded);
-  const rows = data.rows.filter((row) => {
+  const visibleRows = data.rows.filter((row) => {
     let parent = row.task.parentId;
     while (parent !== null) {
       if (foldedIds.has(parent))
@@ -7838,6 +7842,13 @@ function timelinePage(data, selectedId, folded, lastActions = {}) {
       parent = nodes.get(parent)?.task.parentId ?? null;
     }
     return true;
+  });
+  const visibleParents = new Set(visibleRows.flatMap((row) => row.task.parentId ? [row.task.parentId] : []));
+  const rows = visibleRows.map((row) => {
+    const siblingGuide = row.hasLaterSibling || row.depth > 0 ? row.hasLaterSibling ? "\u2502  " : "   " : "";
+    const hasVisibleChildren = visibleParents.has(row.task.id);
+    const childGuide = hasVisibleChildren ? "\u2502  " : "   ";
+    return { ...row, hasVisibleChildren, detailLead: `  ${row.guides.join("")}${siblingGuide}${childGuide}` };
   });
   let selected = rows.find((row) => row.task.id === selectedId);
   if (!selected && selectedId) {
@@ -9475,19 +9486,19 @@ function timelineEntries(screen, ui) {
           isOut: link.isOut,
           result: link.result
         })));
-    const branch = row.depth === 0 ? "" : `${row.branch === "last" ? "\u2514\u2500" : "\u251C\u2500"} `;
     const marker = TIMELINE_MARKS[row.status] ?? "\xB7";
     out.push({
       kind: "row",
       line: {
         ...blankLine(row.task.id),
-        depth: row.depth,
+        depth: 0,
         selectionMark: ">",
         lead: {
-          text: `${branch}${marker}`,
+          text: `${row.prefix}${marker}`,
           tone: row.status === "stalled" ? "error" : row.status === "done" ? "done" : "needsYou",
           padMark: false
         },
+        timelineDetailLead: ` ${row.detailLead}`,
         title: row.task.title,
         status: { text: `${row.statusLabel} \xB7 ${row.measure}`, tone: null, rest: "", separator: " \xB7 " },
         body: body || null,
@@ -9499,8 +9510,8 @@ function timelineEntries(screen, ui) {
       kind: "row",
       line: {
         ...blankLine(`${row.task.id}:warning:${index}`),
-        depth: row.depth,
-        lead: { text: "\u2514\u2500 \u26A0", tone: "error", padMark: false },
+        depth: 0,
+        lead: { text: `${row.detailLead}\u26A0`, tone: "error", padMark: false },
         title: warning,
         isStatic: true
       }
@@ -9813,7 +9824,7 @@ function timelineDetailLines(line, ui, indent, width, s) {
   const linkStart = line.buttons.findIndex((button) => button.press.action === "pr-open");
   return (line.body ?? "").split(`
 `).flatMap((detail) => {
-    const head = `${" ".repeat(indent)}\u2514\u2500 `;
+    const head = line.timelineDetailLead ?? `${" ".repeat(indent)}\u2514\u2500 `;
     if (detail === "Links \xB7" && linkStart >= 0) {
       const label = `${head}${detail} `;
       const buttons = faceLines(line.buttons.slice(linkStart), focusOf2(line, ui) - linkStart, 0, width - visibleLength(label), s);
@@ -9822,8 +9833,9 @@ function timelineDetailLines(line, ui, indent, width, s) {
         ...buttons.slice(1).map((row) => `${" ".repeat(visibleLength(label))}${row}`)
       ];
     }
-    const lines = indentedLinks(detail, indent + visibleLength("\u2514\u2500 "), width, Infinity, s.dim, s.link);
-    return lines.map((text, index) => index === 0 ? `${head}${text.slice(indent + visibleLength("\u2514\u2500 "))}` : text);
+    const headLength = visibleLength(head);
+    const lines = indentedLinks(detail, headLength, width, Infinity, s.dim, s.link);
+    return lines.map((text, index) => index === 0 ? `${head}${text.slice(headLength)}` : text);
   });
 }
 function faceLines(buttons, focused, indent, width, s, between = "") {
@@ -12447,7 +12459,7 @@ function demoSource(deps) {
   const changed = () => listeners.forEach((l) => l());
   return {
     screen: async (holds) => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, holds),
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds, {}, demoTaskTree(deps.now())),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
