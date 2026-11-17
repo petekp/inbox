@@ -1,4 +1,5 @@
 import type { DemoCopy, Session, Subject } from '../types'
+import { finishedDelegate } from './demo-delegates'
 import { emptySession } from './session-files'
 
 const MIN = 60_000
@@ -138,10 +139,13 @@ export function demoView(now: number, agent: string): DemoCopy {
             lastActivityAt: now - 20 * MIN,
             delegateState: null,
           },
+          finishedDelegate(now, 'c6', 'Calibrate the eye tracker', 2, 'PR #31 open'),
+          finishedDelegate(now, 'c7', 'Write the lens notes', 4, 'Notes are in docs/lenses.md'),
+          finishedDelegate(now, 'c8', 'Measure battery drain', 7),
         ],
         askSubjects: { d11: ['s3'], d14: ['s2'], d17: ['s2'] },
         nextId: 8,
-        nextChildId: 6,
+        nextChildId: 9,
         lastLookAt: now - 30 * MIN,
         missedInLastLook: {},
         look: null,
