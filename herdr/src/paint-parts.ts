@@ -86,7 +86,8 @@ export const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert =
         h_flex()
           .flex_wrap()
           .items_center()
-          .gap(CONTROL_GAP)
+          .gap_x(CONTROL_GAP)
+          .gap_y(INSIDE_GAP)
           .children(followUps.map(b => buttonEl(b, p, isInert))),
       ),
     )

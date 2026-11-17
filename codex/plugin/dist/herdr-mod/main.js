@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T06:46:50.461Z. 272579 characters follow.
+// Built at 2026-11-17T06:49:49.449Z. 272599 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5541,7 +5541,7 @@ var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => {
   const followUps = buttons.filter((b) => b.isFollowUp);
   const others = buttons.filter((b) => !b.isFollowUp);
-  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(others.map((b) => buttonEl(b, p, isInert))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().gap(CONTROL_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
+  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(others.map((b) => buttonEl(b, p, isInert))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
 };
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);

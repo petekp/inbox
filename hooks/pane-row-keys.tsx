@@ -5,6 +5,7 @@ import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { followUpPresses, type KeyAction } from './pane-keys'
 import {
   DESKTOP_CELL_PT,
+  DESKTOP_BUTTON_PAD_CELLS,
   DESKTOP_LINK_GAP_CELLS,
   DESKTOP_LINK_SLACK_CELLS,
   DESKTOP_MARK_CELLS,
@@ -136,7 +137,11 @@ export function paneRowKeys(
         {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
         {reply || links.length > 0 ? (
           <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
-            {reply ? keyedButton(rowId, true)(reply) : null}
+            {reply ? (
+              <Box marginLeft={-DESKTOP_BUTTON_PAD_CELLS} marginRight={-DESKTOP_BUTTON_PAD_CELLS}>
+                {keyedButton(rowId, true)(reply)}
+              </Box>
+            ) : null}
             {links.length > 0 ? (followUpLinks(rowId, links) ?? links.map(keyedButton(rowId, true))) : null}
           </Box>
         ) : null}
