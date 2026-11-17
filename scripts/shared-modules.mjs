@@ -84,6 +84,7 @@ export const SHARED = [
   'session-host',
   'status-records',
   'host-press',
+  'clipboard-commands',
   'held-sends',
   'host-prs',
   'session-version',

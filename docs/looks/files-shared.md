@@ -56,6 +56,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/clients.ts` | Shared module. The parity record: how each host supports each feature, and why where it does not. |
 | `hooks/client-features.ts` | Shared module. `FeatureId`, every feature the parity record in `hooks/clients.ts` covers. |
 | `hooks/session-host.ts` | Shared module. The `SessionHost` and `UpdateHost` types a host supplies, and the update flows that run on a host's store: `runUpdates`, `askOverConversation` and `reconcileUpdateStatus`. It also holds `exclusiveKeys` and `orderedKeys`, which keep runs of one key apart in a process. |
+| `hooks/clipboard-commands.ts` | Shared module. The commands that put text on the clipboard on each platform, and the words for when none starts. The Codex server and omp run them. |
 | `hooks/host-press.ts` | Shared module. `press` and `startPress`, which run a press on a host's store, and `wakeAfterSettle`, which sends what waited for the settle window: held answers and Fixes, then the Done message. |
 | `hooks/held-sends.ts` | Shared module. `releaseHeldSends`, which sends each answer and Fix whose Undo window has passed, and marks one the host refused Not sent. |
 | `hooks/host-prs.ts` | Shared module. `fetchPrs`, which fetches a session's PRs through the host's gh, reads the views and the limit the host's sessions share, and stops under a limit until it resets, and `isPrFetchDue`, `isPrPollDue` and `prFetchTracker`, which say when to fetch again. `isPrPollDue` also waits while the mod's fetch runs. |

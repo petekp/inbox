@@ -16,7 +16,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-selection.ts` | Codex adapter. The shown tab and its open row: switching tabs, following arrivals, and opening and selecting rows. |
 | `codex/src/tab-swap.ts` | Codex adapter. The swap to the server's newer page, and the state the old page hands to it. |
 | `codex/src/tab-read.ts` | Codex adapter. Reads the view and applies it, and sends the replies and discards the server holds with each request. |
-| `codex/src/tab-press.ts` | Codex adapter. The parts of a press that need no rows: copying its text, checking whether it was sent, and starting or dropping a reply. |
+| `codex/src/tab-press.ts` | Codex adapter. The parts of a press that need no rows: showing the text a failed copy leaves for copying by hand, checking whether it was sent, and starting or dropping a reply. |
 | `codex/src/tab-rows.tsx` | Codex adapter. Each tab's rows, built from the view, and `act`, which sends a press. `act` and the row builders call each other, so they share a file. |
 | `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's Holds up line, context and option lines as the `.tree` its ◆ starts. |
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
@@ -49,6 +49,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/background.ts` | Codex host. `makeBackground`, which tracks the work the server starts and does not wait for, such as a PR fetch's state update, so `settled` can wait for it. |
 | `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, the tool fields of the last list it gave, and the readers of a call's session, turn and arguments. |
 | `codex/src/server-herdr.ts` | Codex host. `followCodexPresses`: in a Herdr app terminal, the MCP server watches the presses folder and applies the presses for the Codex sessions this terminal publishes. |
+| `codex/src/clipboard.ts` | Codex host. Puts a copy press's text on the clipboard of the machine the server runs on, through `hooks/clipboard-commands.ts`, since the tab's frame gets no clipboard permission. |
 | `codex/src/server-host.ts` | Codex host. The bindings `hooks/session-host.ts` runs on for presses, opening, sending a press's message and the session's background PR fetch. Also the tab view each answer carries. |
 | `codex/src/app-steer.ts` | Codex host. Puts a press's message into a turn the ChatGPT app runs, through the app's IPC socket. The only code that speaks that socket. |
 | `codex/src/server-trust.ts` | Codex host. Whether Codex runs the inbox's hooks in a chat's folder. The server asks Codex in the background and caches the answer. |

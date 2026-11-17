@@ -243,11 +243,11 @@ async function withSteps(given = deps()) {
   return { inbox, stepPress }
 }
 
-test('a copy step hands the command to the clipboard and reports the copy', async () => {
+test('a copy step hands the command to the clipboard and leaves no text to copy by hand', async () => {
   const { inbox, stepPress } = await withSteps()
   const outcome = await inbox.press(makeCtx(), stepPress(0), NO_HOLDS)
   expect(w.copied).toEqual(['npm start'])
-  expect(outcome.copy).toMatchObject({ text: 'npm start' })
+  expect(outcome.copy).toBeNull()
   expect(outcome.error).toBeNull()
 })
 

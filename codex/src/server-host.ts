@@ -22,6 +22,7 @@ import { applyHerdrFile } from '../../hooks/herdr-app'
 import { isPressFile } from '../../hooks/herdr-press-file'
 import type { HerdrFile, PressFile } from '../../hooks/herdr-press-file'
 import type { Holds } from '../../hooks/timing'
+import { copyToClipboard } from './clipboard'
 import { viewOf } from './core'
 import type { TabView } from './core'
 import { answerMessage, noteDialogs } from './dialogs'
@@ -104,7 +105,7 @@ export function makeSessionHost(
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },
       deliver: (s, message) => sendMessage(s, message, preparedCli),
-      perform: async (s, e) => (e.kind === 'copy' ? null : open(s, e.target)),
+      perform: async (s, e) => (e.kind === 'copy' ? copyToClipboard(deps.exec, e.text) : open(s, e.target)),
       refreshPrsIfDue: async () => fetchPrsWhenDue(id, await readState(dir, id), true),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true)),
       gh: {
@@ -173,7 +174,11 @@ export function makeSessionHost(
   const served = async (s: SessionState, id: string, isDemo = false, holds: Holds = NO_HOLDS): Promise<TabView> => {
     const loadError = deps.loadError?.()
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
-    const view = viewOf(current, now(), holds)
+    const view = viewOf(
+      { ...current, prViews: { ...current.prViews, isGhMissing: !isDemo && isGhMissing } },
+      now(),
+      holds,
+    )
     const trust = isDemo ? null : hooksTrustNow(current, id)
     const herdrAsk = isDemo ? null : await deps.herdrAsk?.view().catch(() => null)
 
