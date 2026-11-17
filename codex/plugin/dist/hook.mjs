@@ -4466,7 +4466,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           writtenAt: seq,
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
-          version: "0.4.0",
+          version: "0.5.0",
           isNextBuild: existsSync(join2(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
