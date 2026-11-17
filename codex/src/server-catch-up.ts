@@ -35,10 +35,15 @@ export function makeCatchUpOnOpen(deps: ServerDeps) {
     if (before.transcriptPath !== null) {
       if (!needsRetry(before)) return
       let isStarted = false
-      await updateState(dir, id, s => {
-        isStarted = needsRetry(s)
-        return isStarted ? { ...s, openCatchUpKey: openCatchUpKey(s) } : s
-      })
+      await updateState(
+        dir,
+        id,
+        s => {
+          isStarted = needsRetry(s)
+          return isStarted ? { ...s, openCatchUpKey: openCatchUpKey(s) } : s
+        },
+        deps.now,
+      )
       if (isStarted) openCatchUp.startUpdate(id)
       return
     }
@@ -50,18 +55,23 @@ export function makeCatchUpOnOpen(deps: ServerDeps) {
     // Reads the rollout before the state lock. The check under the lock reuses what it read.
     await withEarlierHistory(before, history)
     let isBehind = false
-    await updateState(dir, id, async s => {
-      const r = await withEarlierHistory(s, history)
-      isBehind = r.isBehind
-      if (r.state === s) return s
+    await updateState(
+      dir,
+      id,
+      async s => {
+        const r = await withEarlierHistory(s, history)
+        isBehind = r.isBehind
+        if (r.state === s) return s
 
-      return {
-        ...r.state,
-        root: s.root || rollout.cwd,
-        transcriptPath: rollout.path,
-        cliPath: s.cliPath ?? (cli !== null && isAbsolute(cli) ? cli : null),
-      }
-    })
+        return {
+          ...r.state,
+          root: s.root || rollout.cwd,
+          transcriptPath: rollout.path,
+          cliPath: s.cliPath ?? (cli !== null && isAbsolute(cli) ? cli : null),
+        }
+      },
+      deps.now,
+    )
     if (isBehind) openCatchUp.startUpdate(id)
   }
 

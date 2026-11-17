@@ -1,0 +1,26 @@
+{
+  "host": {
+    "web": {},
+    "ios": {
+      "minimumOS": "17.0",
+      "deviceFamily": ["iphone", "ipad"]
+    }
+  },
+  "deploy": {
+    "store": {
+      "web": "0",
+      "ios": "0"
+    }
+  },
+  "$schema": "../../.derived-data/exact-framework/scripts/app.schema.json",
+  "name": "Inbox",
+  "short_name": "Inbox",
+  "id": "dev.inbox.prototype",
+  "start_url": "/sessions",
+  "display": "standalone",
+  "env": ["API_BASE_URL"],
+  "app": {
+    "id": "dev.inbox.prototype",
+    "name": "Inbox"
+  }
+}

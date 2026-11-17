@@ -1,3 +1,5 @@
+import { remoteViewerReceipts } from '../../hooks/remote-viewers'
+import { remoteReceipts } from '../../hooks/remote-command-state'
 import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -99,12 +101,17 @@ export function sessionCalls(context: HostContext) {
 
   const change = async (id: string, fn: Parameters<typeof updateState>[2]) => {
     let isChanged = false
-    const saved = await updateState(dir, id, async current => {
-      const changed = await fn(current)
-      isChanged = changed !== current
+    const saved = await updateState(
+      dir,
+      id,
+      async current => {
+        const changed = await fn(current)
+        isChanged = changed !== current
 
-      return changed
-    })
+        return changed
+      },
+      deps.now,
+    )
     if (isChanged) notifyChanged(id)
 
     return saved
@@ -134,6 +141,10 @@ export function sessionCalls(context: HostContext) {
               publishFiles,
               appHome,
               {
+                receipts: remoteReceipts(s),
+                viewers: remoteViewerReceipts(s),
+                remoteProtocol: 2,
+                remoteHistoryAfter: s.remoteCommandFloor ?? 0,
                 host: 'omp',
                 agent: OMP.agent,
                 sessionId: id,
@@ -182,6 +193,7 @@ export function sessionCalls(context: HostContext) {
     return {
       now: deps.now,
       read: () => readState(dir, id),
+      readDurable: () => readState(dir, id),
       update: fn => change(id, fn),
       exclusive: fn => exclusiveRun(dir, id, fn),
       ask: askFor(ctx, id),
@@ -192,6 +204,7 @@ export function sessionCalls(context: HostContext) {
       },
       perform: async (_s, effect) =>
         effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home),
+      refreshPrsIfDue: async () => fetchPrsWhenDue(ctx, true),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true)),
       gh: {
         shared: {

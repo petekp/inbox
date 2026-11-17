@@ -1,3 +1,5 @@
+import type { RemoteViewerUpdate } from './remote-viewers'
+import type { RemoteCommand } from './remote-commands'
 import { HERDR_FORMAT } from './herdr'
 import type { PrPress } from './pr-press'
 import type { RowPress } from './presses'
@@ -30,15 +32,21 @@ export type CollapseFile = {
 }
 
 /** A file the Herdr look writes to a session's press folder. */
-export type HerdrFile = PressFile | LookFile | CollapseFile
+export type HerdrFile = PressFile | LookFile | CollapseFile | RemoteCommand | RemoteViewerUpdate
 
 export const isLookFile = (file: HerdrFile): file is LookFile => 'look' in file
 
-export const isPressFile = (file: HerdrFile): file is PressFile => 'press' in file
+export const isPressFile = (file: HerdrFile): file is PressFile => file.format === HERDR_FORMAT && 'press' in file
 
 /** When a file's press or collapse was made, or its look ended, so a host applies a folder's files in that order. */
 export const fileTime = (file: HerdrFile) =>
-  isLookFile(file) ? file.look.endedAt : isPressFile(file) ? file.pressedAt : file.collapse.at
+  file.format === 2
+    ? file.issuedAt
+    : isLookFile(file)
+      ? file.look.endedAt
+      : isPressFile(file)
+        ? file.pressedAt
+        : file.collapse.at
 
 /** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
 const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref' | null> = {
@@ -127,6 +135,53 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
     return { ok: false, reason: 'not JSON' }
   }
   if (!isRecord(file)) return { ok: false, reason: 'not an object' }
+  if (file.format === 2 && file.kind === 'viewer') {
+    const ids = (value: unknown) =>
+      Array.isArray(value) &&
+      value.length <= 256 &&
+      value.every(id => typeof id === 'string' && /^[\w-]{1,100}$/.test(id))
+    const integer = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    const valid =
+      typeof file.id === 'string' &&
+      /^[\w-]{16,100}$/.test(file.id) &&
+      typeof file.session === 'string' &&
+      /^[\w-]{1,100}$/.test(file.session) &&
+      isTime(file.issuedAt) &&
+      integer(file.generation) &&
+      integer(file.sequence) &&
+      typeof file.active === 'boolean' &&
+      typeof file.listActive === 'boolean' &&
+      (file.seenAt === undefined || isTime(file.seenAt)) &&
+      (file.visibleForMs === undefined || (isTime(file.visibleForMs) && file.visibleForMs >= 0)) &&
+      ['overview', 'needsYou', 'findings', 'prs'].includes(String(file.tab)) &&
+      ids(file.replies) &&
+      ids(file.shownRows)
+    return valid ? { ok: true, file: file as RemoteViewerUpdate } : { ok: false, reason: 'invalid remote viewer' }
+  }
+  if (file.format === 2 && file.kind === 'command') {
+    const valid =
+      typeof file.id === 'string' &&
+      /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) &&
+      typeof file.session === 'string' &&
+      /^[\w-]{1,100}$/.test(file.session) &&
+      isTime(file.issuedAt) &&
+      Number.isSafeInteger(file.issuedAt) &&
+      file.issuedAt >= 0 &&
+      typeof file.expected === 'string' &&
+      file.expected.length <= 16000 &&
+      pressProblem(file.press) === null &&
+      isRecord(file.press) &&
+      typeof file.press.id === 'string' &&
+      /^[if]\d{1,16}$/.test(file.press.id) &&
+      (file.press.action === 'type'
+        ? typeof file.press.text === 'string' && file.press.text.trim() !== '' && file.press.text.length <= 8000
+        : file.press.action === 'answer'
+          ? typeof file.press.option === 'string' && file.press.option.length <= 8000 && file.press.option.trim() !== ''
+          : ['done', 'address', 'undo', 'dismiss', 'discuss', 'explain', 'issue', 'discard'].includes(
+              String(file.press.action),
+            ))
+    return valid ? { ok: true, file: file as RemoteCommand } : { ok: false, reason: 'invalid remote command' }
+  }
   if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` }
   if (typeof file.id !== 'string' || file.id === '') return { ok: false, reason: 'no id' }
   if ('look' in file) {

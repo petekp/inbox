@@ -1,0 +1,22 @@
+component TabBar
+  props
+    tab: string
+    wideWeb: bool
+    onPick: action
+  view
+    row role="tablist" testId="tabs" margin-left=(wideWeb ? 260 : 0)
+      button role="tab" aria-controls="panel-sessions" aria-selected=(tab == "sessions") press=onPick("sessions") testId="tab-sessions" flex=1 display=(wideWeb ? "none" : "flex")
+        image "symbol:list"
+        text "Sessions"
+      button role="tab" aria-controls="panel-status" aria-selected=(tab == "status") press=onPick("status") testId="tab-status" flex=1
+        image "symbol:chart"
+        text "Status"
+      button role="tab" aria-controls="panel-asks" aria-selected=(tab == "asks") press=onPick("asks") testId="tab-asks" flex=1
+        image "symbol:messages"
+        text "Asks"
+      button role="tab" aria-controls="panel-findings" aria-selected=(tab == "findings") press=onPick("findings") testId="tab-findings" flex=1
+        image "symbol:info"
+        text "Finds"
+      button role="tab" aria-controls="panel-prs" aria-selected=(tab == "prs") press=onPick("prs") testId="tab-prs" flex=1
+        image "symbol:repeat"
+        text "PRs"

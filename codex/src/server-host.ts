@@ -105,6 +105,7 @@ export function makeSessionHost(
       },
       deliver: (s, message) => sendMessage(s, message, preparedCli),
       perform: async (s, e) => (e.kind === 'copy' ? null : open(s, e.target)),
+      refreshPrsIfDue: async () => fetchPrsWhenDue(id, await readState(dir, id), true),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true)),
       gh: {
         shared: {
@@ -143,24 +144,29 @@ export function makeSessionHost(
    * It first finds a rollout Codex moved again, so the reads after it use the path it saves.
    */
   async function syncTurn(id: string): Promise<SessionState> {
-    return updateState(dir, id, async saved => {
-      const s = await withRolloutArrivals(await currentRollout(saved), now())
-      const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
-      if (newest !== null) newestTurns.set(id, newest.id)
-      const isRunning = newest === null ? null : newest.kind === 'started'
-      if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
+    return updateState(
+      dir,
+      id,
+      async saved => {
+        const s = await withRolloutArrivals(await currentRollout(saved), now())
+        const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
+        if (newest !== null) newestTurns.set(id, newest.id)
+        const isRunning = newest === null ? null : newest.kind === 'started'
+        if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
 
-      return isRunning ? turnStarted(s, null) : turnEnded(s, null, now())
-    })
+        return isRunning ? turnStarted(s, null) : turnEnded(s, null, now())
+      },
+      now,
+    )
   }
 
   const wakeAfterSettle = async (id: string) => {
     await wakeSessionAfterSettle(hostFor(id), await syncTurn(id))
   }
 
-  function fetchPrsWhenDue(id: string, s: SessionState) {
+  function fetchPrsWhenDue(id: string, s: SessionState, shown = s.shownTab === 'prs') {
     const seen = { ...s, prViews: { ...s.prViews, isGhMissing } }
-    const run = prFetches.fetchWhenDue(id, seen, s.shownTab === 'prs', () => fetchPrs(hostFor(id), true))
+    const run = prFetches.fetchWhenDue(id, seen, shown, () => fetchPrs(hostFor(id), true))
     if (run) background.track(run)
   }
 
@@ -196,7 +202,7 @@ export function makeSessionHost(
     const canLink = item?.kind === 'question' && !item.dialog && item.turn === s.ledger.turn && s.presence.isTurnRunning
     if (!canLink) return
     const { dialogs } = await turnIn(s.transcriptPath, undefined)
-    if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs))
+    if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs), now)
   }
 
   /** Applies a press from the tab, or with `look` one the Herdr look wrote, whose opens and copies it may have run. */
@@ -205,12 +211,12 @@ export function makeSessionHost(
     p: RowPress | PrPress,
     thread: unknown,
     holds: Holds,
-    look: PressFile | null = null,
+    look: PressFile | Extract<HerdrFile, { kind: 'command' }> | null = null,
   ): Promise<PressReply> {
     await syncTurn(id).catch(() => undefined)
     if (!isPrPress(p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
-    const outcome = await (look ? applyHerdrFile(hostFor(id), look) : press(hostFor(id), p, thread !== id, holds))
+    const outcome = await (look ? applyHerdrFile(hostFor(id), look, id) : press(hostFor(id), p, thread !== id, holds))
     if (outcome.wakesAfterSettle)
       setTimeout(() => void wakeAfterSettle(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
     const { isUnconfirmed, wakesAfterSettle: _wakes, ...rest } = outcome
@@ -224,8 +230,9 @@ export function makeSessionHost(
 
   /** Applies a file the Herdr look wrote: a press, a look at the Status, or a collapse. */
   async function onHerdrFile(id: string, file: HerdrFile): Promise<void> {
-    if (isPressFile(file)) await onPress(id, file.press, id, file.holds, file)
-    else await applyHerdrFile(hostFor(id), file)
+    if (file.format === 2 && file.kind === 'command') await onPress(id, file.press, id, NO_HOLDS, file)
+    else if (isPressFile(file)) await onPress(id, file.press, id, file.holds, file)
+    else await applyHerdrFile(hostFor(id), file, id)
   }
 
   const files: PathProbe = {

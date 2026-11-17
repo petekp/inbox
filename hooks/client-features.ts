@@ -3,6 +3,8 @@
  * with the TypeScript AST, so write each member as a string literal.
  */
 export type FeatureId =
+  | 'remote-typed-reply-admission'
+  | 'remote-draft-retention'
   | 'catch-up'
   | 'failed-update-recovery'
   | 'ledger-behind-state'

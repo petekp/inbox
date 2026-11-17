@@ -10,7 +10,7 @@ import {
   herdrTarget,
   herdrTokens,
 } from './herdr'
-import type { HerdrAgent, HerdrTarget } from './herdr'
+import type { EnvelopeSource, HerdrAgent, HerdrTarget } from './herdr'
 import {
   followPresses,
   isPublishedHere,
@@ -33,7 +33,16 @@ import { sessionView } from './session-view'
 import { SETTLED_MS } from './timing'
 
 /** The drawn conversation, as a report reads it when its turn comes. `root` is the folder its opens resolve against. */
-type DrawnForHerdr = { id: string; root: string; session: Session; dialogs: readonly Dialog[]; isUnread: boolean }
+type DrawnForHerdr = {
+  remoteHistoryAfter?: number
+  receipts?: EnvelopeSource['receipts']
+  viewers?: EnvelopeSource['viewers']
+  id: string
+  root: string
+  session: Session
+  dialogs: readonly Dialog[]
+  isUnread: boolean
+}
 
 /**
  * The engine calls the mod's Herdr code needs. `env` reads `HERDR_PANE_ID`, `HC_TERMINAL_ID`, `HERDR_APP_HOME` and
@@ -238,13 +247,20 @@ export function publishToHerdr(
 
         return { target, tokens: CLEARED_TOKENS, session: null }
       }
-      const [{ id, root, session, dialogs, isUnread }, now] = await Promise.all([drawn(), calls.now()])
+      const [{ id, root, session, dialogs, isUnread, receipts, viewers, remoteHistoryAfter }, now] = await Promise.all([
+        drawn(),
+        calls.now(),
+      ])
       const isPublished =
         target.kind === 'terminal' &&
         (await publishedSession(
           files,
           appHome,
           {
+            receipts,
+            viewers,
+            remoteProtocol: 2,
+            remoteHistoryAfter,
             host: 'claude-code',
             agent: CLAUDE_CODE.agent,
             sessionId: id,

@@ -125,7 +125,7 @@ export function makeServer(given: ServerDeps): Server {
     if (s.shownTab !== 'overview' || !isHerdrCheckDue(id, now())) return
     background.track(
       delegatesInHerdr(s.ledger.overview, deps.exec).then(states => {
-        if (states) return updateState(dir, id, x => statusChanged(x, o => delegatesSettled(o, states, now())))
+        if (states) return updateState(dir, id, x => statusChanged(x, o => delegatesSettled(o, states, now())), now)
       }),
     )
   }
@@ -151,7 +151,7 @@ export function makeServer(given: ServerDeps): Server {
         return text(result)
       }
       case 'inbox': {
-        const s = turn === undefined ? await readState(dir, id) : await updateState(dir, id, heard)
+        const s = turn === undefined ? await readState(dir, id) : await updateState(dir, id, heard, now)
         return text(inboxToolText(viewOf(s, now())))
       }
       case 'inbox_view': {
@@ -161,12 +161,17 @@ export function makeServer(given: ServerDeps): Server {
         await wakeAfterSettle(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
         const sentTab = shownTabOf(args.tab)
-        const s = await updateState(dir, id, s => {
-          const shownTab = sentTab ?? s.shownTab
+        const s = await updateState(
+          dir,
+          id,
+          s => {
+            const shownTab = sentTab ?? s.shownTab
 
-          const looked = lookOnView(s, shownTab, now(), shownRowsOf(args))
-          return { ...withHolds(looked, holds), tabSeenAt: now(), shownTab }
-        })
+            const looked = lookOnView(s, shownTab, now(), shownRowsOf(args))
+            return { ...withHolds(looked, holds), tabSeenAt: now(), shownTab }
+          },
+          now,
+        )
         fetchPrsWhenDue(id, s)
         checkDelegatesWhenDue(id, s)
         return { ...text('Inbox view'), structuredContent: await served(s, id, false, holds) }
