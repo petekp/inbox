@@ -107,9 +107,11 @@ export type RowBlock = {
   /** What the selected row shows under its line, in order, each line with the mark that leads it, if any. */
   /**
    * The row's lines under its title. `tree` places a line on the tree that hangs from the title's mark: `trunk` passes
-   * it, `tee` joins a branch to the trunk, and `last` ends the trunk at the last branch.
+   * it, `tee` joins a branch to the trunk, and `last` ends the trunk at the last branch. `isApart` starts a line a
+   * `CHILD_GAP_PT` below the line above, as an option's note starts below the note before it. `lead` is an option's
+   * label, drawn in the foreground color before `text`, which takes `tone`.
    */
-  body: { text: string; tone: Tone; tree?: 'trunk' | 'tee' | 'last' }[]
+  body: { lead?: string; text: string; tone: Tone; tree?: 'trunk' | 'tee' | 'last'; isApart?: true }[]
   buttons: Button[]
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null

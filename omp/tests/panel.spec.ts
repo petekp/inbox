@@ -151,7 +151,7 @@ test('Tab and Shift+Tab cycle through the tabs in order, and each digit picks it
   expect(keys(screen, INITIAL_UI, String(tabs.length + 1)).tab).toBe(INITIAL_UI.tab)
 })
 
-test('a question’s context draws whole and dim, first under its title, on its selected row only', () => {
+test('a question’s context draws whole and dim, under its title, on its selected row only', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
   const other = screen.view.needsYou.questions.find(r => r.state.is === 'open' && r.id !== row.id)!
@@ -166,7 +166,7 @@ test('a question’s context draws whole and dim, first under its title, on its 
   expect(at).toBeGreaterThan(shown.indexOf('Dismiss a glance'))
   const firstWords = context.split(' ').slice(0, 3).join(' ')
   const raw = text(screen, onRow(row), 50)
-  expect(raw.indexOf(firstWords)).toBeLessThan(raw.indexOf('├─'))
+  expect(raw.indexOf(firstWords)).toBeLessThan(raw.indexOf(row.optionDescriptions[0]!.label))
   expect(
     drawn(screen, onRow(row), 50).find(l =>
       strip(l)

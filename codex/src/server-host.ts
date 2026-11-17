@@ -32,6 +32,7 @@ import { pageName } from './server-tools'
 import { SETTLE_WINDOW_MS } from './settle'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
+import { withRolloutArrivals } from './rollout-arrivals'
 import { hasUserMessageSince, newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
 import { isAppSession } from './rollout-rows'
 import { reconcileUpdateStatus } from './update'
@@ -147,7 +148,7 @@ export function makeSessionHost(
       dir,
       id,
       async saved => {
-        const s = await currentRollout(saved)
+        const s = await withRolloutArrivals(await currentRollout(saved), now())
         const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
         if (newest !== null) newestTurns.set(id, newest.id)
         const isRunning = newest === null ? null : newest.kind === 'started'

@@ -163,13 +163,10 @@
   align-items: center;
   column-gap: var(--control-gap);
 }
-.status-head .goal-offer p {
-  margin: 0;
-}
 .status-head .goal-offer .offer-actions {
   display: flex;
   align-items: center;
-  gap: var(--control-gap);
+  white-space: pre;
 }
 .status-head .goal-offer .actions {
   margin: 0;
@@ -283,9 +280,11 @@
 }
 .status-page .milestone-name > * {
   font-variation-settings: 'wght' 400;
-  transition: font-variation-settings var(--fade);
+  transition:
+    font-variation-settings var(--fade),
+    color var(--fade);
 }
-.status-page .milestone-name .changed {
+.status-page .milestone-name .bold {
   font-weight: 600;
   font-variation-settings: 'wght' 600;
 }

@@ -18,7 +18,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-read.ts` | Codex adapter. Reads the view and applies it, and sends the replies and discards the server holds with each request. |
 | `codex/src/tab-press.ts` | Codex adapter. The parts of a press that need no rows: copying its text, checking whether it was sent, and starting or dropping a reply. |
 | `codex/src/tab-rows.tsx` | Codex adapter. Each tab's rows, built from the view, and `act`, which sends a press. `act` and the row builders call each other, so they share a file. |
-| `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's context, option lines and Holds up line as the `.tree` its ◆ starts. |
+| `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's Holds up line, context and option lines as the `.tree` its ◆ starts. |
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
@@ -68,6 +68,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/rollout-turns.ts` | Codex host. Finds the turns in the rollout's lines: a turn's dialogs, commands and plan, the conversation, and where each turn starts and ends. |
 | `codex/src/rollout-commands.ts` | Codex host. Reads the shell commands, patches and tool calls in rollout rows, and words them as activity lines. |
 | `codex/src/rollout-unran.ts` | Codex host. Finds the tool calls of a turn that did not run, because the person declined them or a hook blocked them, and gives their activity lines and the delegates their herdr commands name. |
+| `codex/src/rollout-arrivals.ts` | Codex host. Marks a press arrived when the rollout holds its message as a user message and no prompt hook matched it. A message `codex queue` puts into a running turn can arrive that way. |
 | `codex/src/delegate-calls.ts` | Codex host. Keeps each `herdr agent` command's delegate rows as they were before the command, and puts them back when the command did not run. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
 | `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs. The hooks, the server and the update process share it. |

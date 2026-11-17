@@ -176,34 +176,39 @@ function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
     const reason = optionReasonLine(o)
 
     return [
-      { text: body === null ? o.label : `${o.label}: ${body}`, tone: null },
+      { lead: body === null ? o.label : `${o.label}:`, text: body ?? '', tone: 'muted' as const },
       ...(reason ? [{ text: reason, tone: 'muted' as const }] : []),
     ]
   })
-  const branches = [...options, ...(row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: 'muted' as const }]] : [])]
+  const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: 'muted' as const }]] : []
+  const branches = [...holdsUp, ...options]
   const lastBranch = branches.length - 1
-  const hasTree = branches.length > 0
+  const isTrunkAfterHoldsUp = options.length > 0
   const tree = (branch: number, line: number): RowBlock['body'][number]['tree'] =>
     line > 0 ? (branch === lastBranch ? undefined : 'trunk') : branch === lastBranch ? 'last' : 'tee'
+  const branchLines = (branch: number): RowBlock['body'] =>
+    (branches[branch] ?? []).map((l, line) => {
+      const placed = tree(branch, line)
+
+      return { ...l, ...(placed ? { tree: placed } : {}), ...(line === 0 ? { isApart: true as const } : {}) }
+    })
+  const contextTree = isTrunkAfterHoldsUp ? { tree: 'trunk' as const } : {}
   const lines: RowBlock['body'] = [
-    { text: row.contextLine ?? '', tone: 'muted', ...(hasTree ? { tree: 'trunk' as const } : {}) },
+    ...holdsUp.flatMap((_, branch) => branchLines(branch)),
+    { text: row.contextLine ?? '', tone: 'muted', isApart: true, ...contextTree },
     {
       text: row.earlierLine ? earlierLineText(row.earlierLine) : '',
       tone: 'muted',
-      ...(hasTree ? { tree: 'trunk' as const } : {}),
+      isApart: true,
+      ...contextTree,
     },
     { text: row.detail ?? '', tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : '', tone: 'muted' },
-    ...branches.flatMap((lines, branch) =>
-      lines.map((l, line) => {
-        const placed = tree(branch, line)
-
-        return { ...l, ...(placed ? { tree: placed } : {}) }
-      }),
-    ),
+    ...options.flatMap((_, n) => branchLines(holdsUp.length + n)),
   ]
+  const shown = lines.filter(l => l.text || l.lead)
 
-  return lines.filter(l => l.text)
+  return shown.map(({ isApart, ...l }, n) => (isApart && n > 0 ? { ...l, isApart } : l))
 }
 
 function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: LookScreen): RowBlock {

@@ -1487,7 +1487,7 @@ import { homedir } from "os";
 import { dirname as dirname4, join as join5 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
-var version = "0.4.0";
+var version = "0.5.0";
 
 // ../hooks/press-labels.ts
 function actionId(p) {
@@ -1508,7 +1508,7 @@ function pressText(p) {
     case "restore-goal":
       return "Undo";
     case "take-goal":
-      return "Set this goal";
+      return "Set goal";
     default:
       return capitalized(p.action);
   }
@@ -3984,8 +3984,8 @@ function milestoneRow(step, o, items) {
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isChanged,
-    isMuted: step.place === "later" || step.place === "dropped",
+    isBold: isOpen,
+    isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
     text: m.text || null,
@@ -4092,7 +4092,7 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "take-goal" }, label: "Set goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
     { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
@@ -7240,7 +7240,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press,
       label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
       ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -8291,32 +8291,32 @@ function askTreeLines(line, pad, width, s, isAllShown = false) {
     return { label: o.label, text: body === null ? o.label : `${o.label}: ${body}`, reason: optionReasonLine(o) };
   });
   const holdsUp = row.holdsUpLine;
-  const hasTree = branches.length > 0 || holdsUp !== null;
   const draw = (arm, text, rest, label = "") => wrapText(text, room).map((l, i) => {
     const arms = s.dim(margin + (i === 0 ? arm : rest));
     return i === 0 && label && l.startsWith(label) ? arms + label + s.dim(l.slice(label.length)) : arms + s.dim(l);
   });
-  const out = [];
+  const heads = holdsUp ? [{ label: "", text: holdsUp, reason: null }] : [];
+  const all = [...heads, ...branches];
+  const lastBranch = all.length - 1;
+  const drawBranch = (b, n) => {
+    const isLast = n === lastBranch;
+    const rest = isLast ? NONE : TRUNK;
+    return [...draw(isLast ? LAST : TEE, b.text, rest, b.label), ...b.reason ? draw(rest, b.reason, rest) : []];
+  };
+  const contextArm = branches.length > 0 ? TRUNK : NONE;
+  const out = heads.flatMap((b, n) => drawBranch(b, n));
   if (row.contextLine)
-    out.push(...draw(hasTree ? TRUNK : NONE, row.contextLine, hasTree ? TRUNK : NONE));
+    out.push(...draw(contextArm, row.contextLine, contextArm));
   const earlier = row.earlierLine;
   if (earlier) {
-    const arm = hasTree ? TRUNK : NONE;
     const head = earlier.lead + earlier.answer;
     wrapText(earlierLineText(earlier), room).forEach((l, i) => {
-      const arms = s.dim(margin + arm);
+      const arms = s.dim(margin + contextArm);
       const isAnswerWhole = i === 0 && l.startsWith(head);
       out.push(isAnswerWhole ? arms + s.dim(earlier.lead) + s.bold(earlier.answer) + s.dim(l.slice(head.length)) : arms + s.dim(l));
     });
   }
-  const all = [...branches, ...holdsUp ? [{ label: "", text: holdsUp, reason: null }] : []];
-  all.forEach((b, n) => {
-    const isLast = n === all.length - 1;
-    const rest = isLast ? NONE : TRUNK;
-    out.push(...draw(isLast ? LAST : TEE, b.text, rest, b.label));
-    if (b.reason)
-      out.push(...draw(rest, b.reason, rest));
-  });
+  branches.forEach((b, n) => out.push(...drawBranch(b, heads.length + n)));
   return out;
 }
 
@@ -8647,7 +8647,7 @@ function offerFaces(offer, d, isSelected) {
 }
 function offerLines(offer, d, at, isSelected) {
   const { width, style: s } = d;
-  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim);
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.bold);
   const { faces, focused } = offerFaces(offer, d, isSelected);
   if (faces.length === 0)
     return text;
@@ -8684,7 +8684,7 @@ function milestoneLines(m, d, isSelected) {
     return [name, ...withPathLine(wrapped, column, s)];
   }
   const chevron = foldChevron(m, d, isSelected);
-  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged || chevron && isSelected ? s.bold(t) : t);
+  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isBold || chevron && isSelected ? s.bold(t) : t);
   const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron });
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
@@ -11144,7 +11144,8 @@ function notePrompt(host, s, text, isOpen) {
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
 }
 function matchSent(s, text) {
-  const matchingAt = s.sent.findIndex((x) => x.text === text);
+  const sameText = (a) => a.trim() === text.trim();
+  const matchingAt = s.sent.findIndex((x) => sameText(x.text));
   const matching = matchingAt >= 0 ? s.sent[matchingAt] : undefined;
   const isMatchable = matching !== undefined && (matching.phase === undefined || matching.phase === "accepted" || matching.phase === "attempting" && matching.deliveryId !== null);
   const sentAt = isMatchable ? matchingAt : -1;
@@ -11152,9 +11153,9 @@ function matchSent(s, text) {
   const eligible = sent?.deliveryId === null ? Object.fromEntries(Object.entries(s.lastActions).filter(([_id, last]) => (last.delivery?.state === "queued" || last.delivery?.state === "unconfirmed") && last.delivery.id === undefined)) : s.lastActions;
   const arrived = sent && sent.row !== null ? {
     ...s.lastActions,
-    ...sent.deliveryId === null ? withUnconfirmed(eligible, text) : withArrival(eligible, text, sent.pressedAt ?? undefined, sent.deliveryId)
+    ...sent.deliveryId === null ? withUnconfirmed(eligible, sent.text) : withArrival(eligible, sent.text, sent.pressedAt ?? undefined, sent.deliveryId)
   } : s.lastActions;
-  const lastActions = s.sent.slice(matchingAt + 1).reduce((actions, later) => later.text === text && later.row !== null ? withUnconfirmed(actions, text, later.pressedAt ?? undefined, later.deliveryId) : actions, arrived);
+  const lastActions = s.sent.slice(matchingAt + 1).reduce((actions, later) => sameText(later.text) && later.row !== null ? withUnconfirmed(actions, later.text, later.pressedAt ?? undefined, later.deliveryId) : actions, arrived);
   return {
     state: {
       ...remoteCommandArrival(s, sent?.deliveryId ?? null),
@@ -14970,7 +14971,7 @@ function turnHandlers(context, sessions) {
       return;
     const finished = agentTexts?.id === id && agentTexts.isFinished ? agentTexts : null;
     try {
-      const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text === text);
+      const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text.trim() === text.trim());
       if (!isSentByPress)
         return;
       if (agentTexts === finished)

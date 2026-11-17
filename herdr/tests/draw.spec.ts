@@ -53,35 +53,37 @@ test('only the selected row shows buttons, and with no selection the first waiti
   expect(rows.filter(r => !r.isSelected && r.depth === 0).every(r => r.buttons.length === 0)).toBe(true)
 })
 
-test('a selected question draws why it came up first under its title, and a collapsed one draws none', () => {
+test('a selected question draws why it came up under its title, and a collapsed one draws none', () => {
   const screen = demoScreen()
   const question = screen.view.needsYou.questions.find(r => r.contextLine)!
   const selected = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: question.id }))).find(
     b => b.id === question.id,
   )!
-  expect(selected.body[0]).toMatchObject({ text: question.contextLine!, tone: 'muted' })
+  const first = question.holdsUpLine ? 1 : 0
+  expect(selected.body[first]).toMatchObject({ text: question.contextLine!, tone: 'muted' })
   const other = screen.view.needsYou.questions.find(r => r.id !== question.id && r.state.is === 'open')!
   const collapsed = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: other.id }))).find(b => b.id === question.id)!
   expect(collapsed.body.some(l => l.text === question.contextLine)).toBe(false)
 })
 
-test('a selected question with described answers draws its context, earlier answer, answers and Holds up line on one tree, with the last line ending it', () => {
+test('a selected question with described answers draws its Holds up line, context, earlier answer and answers on one tree, with the last answer ending it', () => {
   const screen = demoScreen()
   const question = screen.view.needsYou.questions.find(r => r.id === 'd11')!
   const selected = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: question.id }))).find(
     b => b.id === question.id,
   )!
-  const texts = selected.body.map(l => l.text)
+  const texts = selected.body.map(l => l.lead ?? l.text)
+  expect(texts[0]).toBe(question.holdsUpLine ?? question.contextLine ?? undefined)
   const earlier = texts.indexOf(
     'You answered Flick 3 days ago, in glasses-app, to “Which gesture should clear a glance?”',
   )
-  expect([earlier > 0, earlier < texts.findIndex(t => t.startsWith('Pinch: '))]).toEqual([true, true])
-  const recommended = selected.body.find(l => l.text.startsWith('Pinch: '))!
+  expect([earlier > 0, earlier < texts.indexOf('Pinch:')]).toEqual([true, true])
+  const recommended = selected.body.find(l => l.lead === 'Pinch:')!
+  expect(recommended.tone).toBe('muted')
   expect(recommended.text).toContain('Recommended: a flick fires by accident while walking')
   const trees = selected.body.filter(l => l.tree !== undefined).map(l => l.tree)
-  expect(trees[0]).toBe('trunk')
   expect(trees.at(-1)).toBe('last')
-  expect(trees.slice(1, -1).every(t => t === 'tee' || t === 'trunk')).toBe(true)
+  expect(trees.slice(0, -1).every(t => t === 'tee' || t === 'trunk')).toBe(true)
 })
 
 test('the tabs follow the shared tab plan, with their counts', () => {

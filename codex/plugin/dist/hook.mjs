@@ -768,8 +768,8 @@ function milestoneRow(step, o, items) {
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isChanged,
-    isMuted: step.place === "later" || step.place === "dropped",
+    isBold: isOpen2,
+    isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
     text: m.text || null,
@@ -2612,7 +2612,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press: press2,
       label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
       ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -3869,7 +3869,8 @@ function notePrompt(host, s, text2, isOpen2) {
   return { ...recordPrompt(host, startTurn(matched.state), text2, isOpen2, matched.sentBy), sentBy: matched.sentBy };
 }
 function matchSent(s, text2) {
-  const matchingAt = s.sent.findIndex((x) => x.text === text2);
+  const sameText = (a) => a.trim() === text2.trim();
+  const matchingAt = s.sent.findIndex((x) => sameText(x.text));
   const matching = matchingAt >= 0 ? s.sent[matchingAt] : void 0;
   const isMatchable = matching !== void 0 && (matching.phase === void 0 || matching.phase === "accepted" || matching.phase === "attempting" && matching.deliveryId !== null);
   const sentAt = isMatchable ? matchingAt : -1;
@@ -3881,10 +3882,10 @@ function matchSent(s, text2) {
   ) : s.lastActions;
   const arrived = sent && sent.row !== null ? {
     ...s.lastActions,
-    ...sent.deliveryId === null ? withUnconfirmed(eligible, text2) : withArrival(eligible, text2, sent.pressedAt ?? void 0, sent.deliveryId)
+    ...sent.deliveryId === null ? withUnconfirmed(eligible, sent.text) : withArrival(eligible, sent.text, sent.pressedAt ?? void 0, sent.deliveryId)
   } : s.lastActions;
   const lastActions = s.sent.slice(matchingAt + 1).reduce(
-    (actions, later) => later.text === text2 && later.row !== null ? withUnconfirmed(actions, text2, later.pressedAt ?? void 0, later.deliveryId) : actions,
+    (actions, later) => sameText(later.text) && later.row !== null ? withUnconfirmed(actions, later.text, later.pressedAt ?? void 0, later.deliveryId) : actions,
     arrived
   );
   return {
@@ -4572,7 +4573,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           writtenAt: seq,
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
-          version: "0.4.0",
+          version: "0.5.0",
           isNextBuild: existsSync(join2(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,

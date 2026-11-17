@@ -70,13 +70,19 @@ export function notePrompt<S extends Session>(
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy }
 }
 
+/** `s` with the press message `text` marked arrived, as when its prompt reaches a hook. */
+export function withSentArrived<S extends Session>(s: S, text: string): S {
+  return matchSent(s, text).state
+}
+
 /**
  * Matches an arrived prompt to the message a press sent, by its text, since a
  * prompt's arrival carries only that. An uncertain earlier attempt blocks a
  * same-text match with a later send.
  */
 function matchSent<S extends Session>(s: S, text: string): { state: S; sentBy: SentBy | null } {
-  const matchingAt = s.sent.findIndex(x => x.text === text)
+  const sameText = (a: string) => a.trim() === text.trim()
+  const matchingAt = s.sent.findIndex(x => sameText(x.text))
   const matching = matchingAt >= 0 ? s.sent[matchingAt] : undefined
   // A host's own send can arrive before its delivery returns, while its record still reads attempting.
   const isMatchable =
@@ -101,16 +107,16 @@ function matchSent<S extends Session>(s: S, text: string): { state: S; sentBy: S
       ? {
           ...s.lastActions,
           ...(sent.deliveryId === null
-            ? withUnconfirmed(eligible, text)
-            : withArrival(eligible, text, sent.pressedAt ?? undefined, sent.deliveryId)),
+            ? withUnconfirmed(eligible, sent.text)
+            : withArrival(eligible, sent.text, sent.pressedAt ?? undefined, sent.deliveryId)),
         }
       : s.lastActions
   const lastActions = s.sent
     .slice(matchingAt + 1)
     .reduce(
       (actions, later) =>
-        later.text === text && later.row !== null
-          ? withUnconfirmed(actions, text, later.pressedAt ?? undefined, later.deliveryId)
+        sameText(later.text) && later.row !== null
+          ? withUnconfirmed(actions, later.text, later.pressedAt ?? undefined, later.deliveryId)
           : actions,
       arrived,
     )

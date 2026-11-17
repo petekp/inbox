@@ -27,7 +27,7 @@ Part of [the look map](../looks.md#files).
 | `omp/src/panel-entries.ts` | omp adapter. Each tab's entries: the Asks and Finds groups, the stop line, the PRs tab, the Status page and Help. |
 | `omp/src/panel-keys.ts` | omp adapter. Selection, button focus and `handleKey`, which maps each key to a ui change or a press. |
 | `omp/src/panel-text.ts` | omp adapter. Measures, cuts and wraps text that holds ANSI styles. |
-| `omp/src/panel-ask-tree.ts` | omp adapter. An open row's context, option lines and Holds up line as ├─, └─ and │ lines. |
+| `omp/src/panel-ask-tree.ts` | omp adapter. An open row's Holds up line, context and option lines as ├─, └─ and │ lines. |
 | `omp/src/panel-draw.ts` | omp adapter. Draws a line with its marks and buttons, and a banner in its box. |
 | `omp/src/panel-page.ts` | omp adapter. Draws the Status page's rows: the tree, stall words, rules and buttons. |
 | `omp/src/panel-goal.ts` | omp adapter. Draws the Status page's goal section: its heading, the goal or the line that says none is set, its buttons, its text field, the Now line and the milestones. |

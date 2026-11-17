@@ -7,7 +7,7 @@ import { milestonePath, namesOnlyMilestoneUnderWay } from './status-path'
 import { hasRunningGoal } from './status-suggest'
 import type { PathLine, PathPlace, PathStep } from './status-path'
 
-/** A milestone under the goal, in the goal's path. A change draws its name in bold until the person looks. */
+/** A milestone under the goal, in the goal's path. Its name draws bold until the milestone is done or dropped. */
 export type MilestoneRow = {
   id: string
   mark: string
@@ -17,9 +17,9 @@ export type MilestoneRow = {
   line: PathLine
   /** Whether the "Later" label and its rule draw above it. */
   startsLater: boolean
-  /** Whether it changed since the person last looked, so its name draws bold. */
-  isChanged: boolean
-  /** Whether its name draws muted: it waits under Later, was dropped, or is done and folded to its name. */
+  /** Whether its name draws bold: it is under way or still to come, and not done or dropped. */
+  isBold: boolean
+  /** Whether its name draws muted: it waits under Later, or is done or dropped. */
   isMuted: boolean
   /** The fold a done milestone holds its work in once the person has seen it, so a look draws its rows only unfolded. */
   foldId: string | null
@@ -68,7 +68,7 @@ export type GoalParts = {
   goal: GoalBlock | null
   /** Whether Undo can bring back the goal the person removed. */
   canRestoreGoal: boolean
-  /** The goal the Status call offers while no goal is set or the goal is met, which the goal's place shows with Set this goal and Edit. Null when none is. */
+  /** The goal the Status call offers while no goal is set or the goal is met, which the goal's place shows with Set goal and Edit. Null when none is. */
   suggestedGoal: string | null
 }
 
@@ -77,7 +77,7 @@ const AWAITING_TEXT = 'Milestones after the next reply'
 export const GOAL_HEADING = 'Goal'
 /** The dim line under the goal's heading while no goal is set. */
 export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
-/** The suggested goal as a dim offer in the line where "No goal yet" would draw, with its buttons after it. */
+/** The suggested goal as an offer in the goal text's style, in the line where "No goal yet" would draw, with its buttons after it. */
 export const suggestedGoalOffer = (text: string): string => `Next goal: “${text}”?`
 /** What starts the id of the fold a met goal's milestones start in, apart from row and milestone ids. */
 const MILESTONES_FOLD_PREFIX = 'goal-milestones'
@@ -145,8 +145,8 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isChanged,
-    isMuted: step.place === 'later' || step.place === 'dropped',
+    isBold: isOpen,
+    isMuted: step.place === 'later' || step.place === 'dropped' || step.place === 'done',
     foldId: null,
     foldCount: 0,
     text: m.text || null,

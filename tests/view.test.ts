@@ -178,3 +178,18 @@ test('the Undo the u key presses is the plan’s, so it follows a kept Undo', ()
   )
   expect(tabUndos('needsYou', lists, [])).toEqual([{ press: { action: 'undo', id: 'd8' }, at: AT }])
 })
+
+test('in every kind of open row, a primary action is the first action, and a task has none since its steps are shortcuts in no order', async () => {
+  const view = sessionView(demoSession(AT, 'Claude'), AT, SETTLED_MS)
+  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows]
+  const kinds = new Set(rows.map(r => r.type))
+  expect([...kinds].sort()).toEqual(['finding', 'question', 'task'])
+  for (const row of rows) {
+    const primaries = row.actions.filter(a => a.emphasis === 'primary')
+    expect(primaries.length <= 1).toBe(true)
+    if (primaries.length === 1) expect(row.actions[0]).toBe(primaries[0])
+    if (row.type === 'task') expect(primaries).toEqual([])
+  }
+  expect(rows.some(r => r.actions.some(a => a.emphasis === 'primary'))).toBe(true)
+  expect(view.needsYou.tasks.some(r => r.actions.some(a => a.press.action === 'step'))).toBe(true)
+})

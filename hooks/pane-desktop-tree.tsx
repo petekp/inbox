@@ -2,7 +2,7 @@ import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
 import { DESKTOP_HAIR_CELLS, DESKTOP_HAIR_LINES } from './pane-sizes'
 
-type TreeLineShape = 'down' | 'mid' | 'last'
+type TreeLineShape = 'down' | 'pass' | 'mid' | 'last'
 
 /**
  * Where a desktop tree line sits in its frame's mark column, as cells from that column's left edge. `at` is the
@@ -19,8 +19,9 @@ export function paneDesktopTree({
 }: Pick<PaneBase, 'Box' | 'pal'> & Pick<PaneRowLines, 'desktopHairline'>) {
   /**
    * The line that ties child frames to their parent on desktop, drawn from 1 pt hairlines in the mark column.
-   * `down` runs from under the parent's mark to the end of its frame. `mid` and `last` reach across to a child,
-   * and `mid` runs on to the next frame.
+   * `down` runs from under the parent's mark to the end of its frame. `pass` runs the frame's whole height, for a
+   * line between children that has no arm. `mid` and `last` reach across to a child, and `mid` runs on to the next
+   * frame.
    */
   const desktopTreeLine = (
     key: string,
@@ -38,11 +39,13 @@ export function paneDesktopTree({
     const parts =
       shape === 'down'
         ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reachBelow })]
-        : [
-            hair('to-arm', false, { marginTop: reach }),
-            desktopHairline('arm', 'across', { width: arm }, pal.line),
-            ...(shape === 'mid' ? [hair('on', true, { marginBottom: reachBelow })] : []),
-          ]
+        : shape === 'pass'
+          ? [hair('pass', true, { marginTop: reach, marginBottom: reachBelow })]
+          : [
+              hair('to-arm', false, { marginTop: reach }),
+              desktopHairline('arm', 'across', { width: arm }, pal.line),
+              ...(shape === 'mid' ? [hair('on', true, { marginBottom: reachBelow })] : []),
+            ]
 
     return (
       <Box key={key} position="absolute" top={0} bottom={0} left={0} flexDirection="row">

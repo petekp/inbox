@@ -184,7 +184,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     // Taken before the state read, since the press's own reply can finish during it.
     const finished = agentTexts?.id === id && agentTexts.isFinished ? agentTexts : null
     try {
-      const isSentByPress = (await readState(dir, id)).sent.some(x => x.text === text)
+      const isSentByPress = (await readState(dir, id)).sent.some(x => x.text.trim() === text.trim())
       if (!isSentByPress) return
       // Texts the agent wrote during the read answer this message, so they start the turn it starts.
       if (agentTexts === finished) agentTexts = null
