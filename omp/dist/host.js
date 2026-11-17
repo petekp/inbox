@@ -6224,6 +6224,7 @@ var PAIR_FORMS = [
 ];
 var AFTER_ANSWER = /^ (?:selected preview:\n|notes: |user notes: )/;
 var SINGLE_FORMS = [
+  /^User provided custom input:\n((?:  .*(?:\n|$))+)/,
   /^The user responded: ([\s\S]+)$/,
   /^User (?:has )?(?:answered|selected)(?: your questions?)?: ([^"\n].*)/i,
   /^User provided custom input: (.+)/
@@ -6255,6 +6256,7 @@ function pairedAnswers(questions, pairs) {
     return quotedAnswer(pairs.slice(lead.answerAt, next).replace(/, $/, ""));
   });
 }
+var NOTES_ONLY_ANSWER = "(notes only)";
 function answersOf(questions, text) {
   const trimmed = text.trim();
   for (const { head, tail } of PAIR_FORMS) {
@@ -6264,15 +6266,22 @@ function answersOf(questions, text) {
     if (closed)
       return pairedAnswers(questions, rest.slice(0, closed.index));
   }
-  const single = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  const found = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  const single = found?.replace(/^ {2}/gm, "").trimEnd();
   return questions.map(() => single ?? null);
+}
+function structuredAnswers(questions, answers) {
+  return questions.map((q) => {
+    const answer = answers[q.question];
+    return answer === undefined || answer === NOTES_ONLY_ANSWER ? null : answer;
+  });
 }
 function chosenOf(q, answer) {
   const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
   return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
 }
-function noteAnsweredDialog(s, questions, text, now) {
-  const answers = answersOf(questions, text);
+function noteAnsweredDialog(s, questions, outcome, now) {
+  const answers = outcome.answers ? structuredAnswers(questions, outcome.answers) : answersOf(questions, outcome.answer);
   const added = questions.map((q, index) => {
     const answer = answers[index]?.trim() ? chosenOf(q, answers[index]) : undefined;
     return {
@@ -13405,7 +13414,7 @@ function activityHandlers(context, sessions) {
       const noted = noteActivity(s, line);
       if (outcome.kind === "dismissed")
         return noteDialog(noted, null, questions);
-      return outcome.kind === "answered" ? noteAnsweredDialog(noted, questions, outcome.answer, endedAt) : noted;
+      return outcome.kind === "answered" ? noteAnsweredDialog(noted, questions, outcome, endedAt) : noted;
     }).catch(() => {
       return;
     });
