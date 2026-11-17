@@ -177,6 +177,11 @@ export function StatusLine({
         </span>
         <div class="content tight muted">
           <NameLine name={row.name} stall={null} />
+          {row.text ? (
+            <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
+              {row.text}
+            </div>
+          ) : null}
         </div>
       </div>
     )

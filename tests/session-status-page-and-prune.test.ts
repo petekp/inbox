@@ -136,7 +136,7 @@ test('a sample saved without a Status is replaced, and the sample session carrie
     ['subject'],
     ['subject', 'child', 'child', 'child'],
     ['subject'],
-    ['fold'],
+    ['subject'],
   ])
   expect(page.goal?.milestones.map(m => [m.place, m.foldId])).toEqual([
     ['done', 'm4-done'],

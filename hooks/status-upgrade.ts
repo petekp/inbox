@@ -72,6 +72,7 @@ function childOf(saved: unknown): Child | null {
     endedAt: time(c.endedAt),
     lastActivityAt: time(c.lastActivityAt),
     delegateState: DELEGATE_STATES.find(state => state === c.delegateState) ?? null,
+    ...(typeof c.summary === 'string' && c.summary.trim() ? { summary: c.summary } : {}),
   }
 }
 

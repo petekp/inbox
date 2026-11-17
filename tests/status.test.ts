@@ -84,7 +84,7 @@ test('the list shows held, working, waiting, queued, then finished rows, newest 
     '◐ Export: step one',
     '◌ Review: sent for review',
     '○ Help menu: outline ready',
-    '○ 1 more',
+    '◐ Seen work: old step',
     '✓ Banner: shipped',
   ])
 })
@@ -242,7 +242,7 @@ test('work closed since the last look shows as two rows, the rest is named in a 
     '✓ Three: done c',
     '✓ Also done: Five, Two',
     '✗ Also dropped: Six',
-    '› 1 more done',
+    '✓ One',
   ])
 })
 

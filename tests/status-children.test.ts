@@ -217,7 +217,7 @@ test('the page lists running work linked to no subject first, then each subject 
     '├ ● Review r1',
     '└ ● Review r2',
     '○ Docs: outline ready',
-    '› 1 done',
+    '✓ Fade-out',
   ])
 })
 
@@ -258,7 +258,7 @@ test('past six open subjects, the page folds the ones it draws last into one "N 
     '◌ Part 5: step 5',
     '○ 3 more',
   ])
-  expect(page(seenAt10(openSubjects(7)), 20 * MIN).rows.at(-1)).toMatchObject({ kind: 'fold', text: '1 more' })
+  expect(page(seenAt10(openSubjects(7)), 20 * MIN).rows.map(r => r.kind)).toEqual(Array(7).fill('subject'))
   expect(page(seenAt10(openSubjects(6)), 20 * MIN).rows.map(r => r.kind)).toEqual(Array(6).fill('subject'))
 })
 
@@ -322,7 +322,7 @@ test('a running child of a done subject in the done fold shows once, at the top 
   const now = 100 * MIN
   const done = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | drafted', 10 * MIN)
   const seen = lookEnded(
-    lookStarted(after(done, 'DONE: s1 | works offline', 20 * MIN), 30 * MIN),
+    lookStarted(after(done, 'DONE: s1 | works offline\nDONE: s2 | retries', 20 * MIN), 30 * MIN),
     30 * MIN + LOOK_MIN_MS,
     'all',
   )

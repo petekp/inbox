@@ -70,7 +70,7 @@ test('inside a Herdr app terminal, nothing asks herdr, and hc is asked while the
   expect(asked).toEqual(['hc ls --json'])
 })
 
-test('a finished delegate no subject holds draws a row until a look ends, then folds into "1 done", which unfolds to its row one step in', () => {
+test('a lone finished delegate no subject holds draws as its own row at once, seen or not, with a line under its name', () => {
   const now = 100 * MIN
   const base = after(null, 'NEW: working | Export | layout next', 10 * MIN)
   const started = withChild(
@@ -87,17 +87,47 @@ test('a finished delegate no subject holds draws a row until a look ends, then f
     30 * MIN,
   )
   const finished = childEnded(started, 'd1', 40 * MIN)!
-
-  expect(shape(page({ ...finished, lastLookAt: 30 * MIN }, now).rows)).toEqual([
-    '✓ pdf layout',
-    '◐ Export: layout next',
+  const unseen = page({ ...finished, lastLookAt: 30 * MIN }, now).rows
+  expect(shape(unseen)).toEqual(['◐ Export: layout next', '✓ pdf layout'])
+  expect(unseen.flatMap(r => (r.kind === 'child' ? [[r.depth, r.text]] : []))).toEqual([
+    [0, 'Ran 20m, finished 1h ago'],
   ])
 
   const looked = lookEnded(lookStarted(finished, 50 * MIN), 50 * MIN + LOOK_MIN_MS, 'all')
-  const rows = page(looked, now).rows
+  expect(shape(page(looked, now).rows)).toEqual(['◐ Export: layout next', '✓ pdf layout'])
+})
 
-  expect(shape(rows)).toEqual(['◐ Export: layout next', '› 1 done'])
-  expect(rows.flatMap(r => (r.kind === 'done-fold' ? r.rows : [])).map(r => [r.kind, r.depth])).toEqual([['child', 1]])
+test("a running hc delegate takes its terminal's focus as its name and last note as its line, which stay once it finishes, and a finished one costs no hc get", async () => {
+  const o: SessionStatus | null = after(null, 'NEW: working | Export | layout next', 10 * MIN)
+  const asked: string[] = []
+  const at = async (x: SessionStatus | null, status: string) => {
+    const run: Run = async argv => {
+      asked.push(argv.join(' '))
+      if (argv[1] === 'ls') {
+        const terminals = [{ address: 't1', name: 'pdf', parent: 't9', status }]
+
+        return { code: 0, stdout: JSON.stringify({ terminals }), stderr: '' }
+      }
+      const detail = { labels: { 'inbox.focus': 'Fixing PDF page breaks' }, status: { msg: 'PR #12 open' } }
+
+      return { code: 0, stdout: JSON.stringify(detail), stderr: '' }
+    }
+
+    return delegatesSettled(x, (await delegatesInHerdr(x, run, HC_TARGET))!, status === 'working' ? 30 * MIN : 40 * MIN)
+  }
+
+  const working = await at(o, 'working')
+  const started = await at(working, 'working')
+  const done = await at(started, 'done')
+  const later = await at(done, 'done')
+
+  expect(done!.children.map(c => [c.name, c.summary, c.delegateState])).toEqual([
+    ['Fixing PDF page breaks', 'PR #12 open', 'finished'],
+  ])
+  expect(asked.filter(a => a.startsWith('hc get'))).toHaveLength(2)
+  expect(later).toBe(done)
+  const row = page({ ...done!, lastLookAt: 35 * MIN }, 100 * MIN).rows.find(r => r.kind === 'child')
+  expect(row?.kind === 'child' && row.text).toBe('PR #12 open')
 })
 
 test('a look file the Herdr look wrote sets the last look on the saved Status', async () => {
