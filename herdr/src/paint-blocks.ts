@@ -71,11 +71,11 @@ const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean):
 
   const line = l.lead
     ? h_flex()
+        .items_start()
         .pl(MARK_W)
         .pt(above)
-        .flex_wrap()
-        .child(statusPartEl(l.lead).text_color(t.foreground).pr(SMALL_GAP))
-        .children(l.text ? [statusPartEl(l.text).text_color(colorOf(t, l.tone))] : [])
+        .child(div().flex_none().text_color(t.foreground).pr(SMALL_GAP).child(l.lead))
+        .child(div().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text))
     : lineEl(l.text, colorOf(t, l.tone)).pt(above)
 
   return line.relative().children(strokes)
