@@ -106,6 +106,7 @@ import {
   startInHerdr,
   askHerdrModAgain,
   openInHerdr,
+  isExitReason,
   publishToHerdr,
   type HerdrCalls,
 } from './mod-herdr'
@@ -255,6 +256,7 @@ import {
   type LoadedBy,
   withoutRowActions,
 } from './mod-sessions'
+import { isPrFetchBusy, queuePrFetch } from './mod-pr-queue'
 import { cancelUndoScroll, mod, paneState, resetTurn, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import {
@@ -395,21 +397,30 @@ function herdrCalls($: EngineInterface): HerdrCalls {
   }
 }
 
-function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
-  return publishToHerdr(herdrCalls($), isEnding ? conversation.id : null, async () => {
-    const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
+function publishStatus($: EngineInterface, isEnding = false, isExit = false): Promise<boolean> {
+  return publishToHerdr(
+    herdrCalls($),
+    isEnding ? conversation.id : null,
+    async () => {
+      const [session, dialogs, unreadable] = await Promise.all([
+        read($, SESSION),
+        read($, DIALOGS),
+        read($, UNREADABLE),
+      ])
 
-    const root = (await sessionFolder(commandCalls($))) ?? ''
+      const root = (await sessionFolder(commandCalls($))) ?? ''
 
-    return {
-      id: conversation.id,
-      root,
-      session,
-      dialogs,
-      ...(await readRemoteState(saveEngine($), conversation.id, session)),
-      isUnread: unreadable === conversation.id,
-    }
-  })
+      return {
+        id: conversation.id,
+        root,
+        session,
+        dialogs,
+        ...(await readRemoteState(saveEngine($), conversation.id, session)),
+        isUnread: unreadable === conversation.id,
+      }
+    },
+    isExit,
+  )
 }
 
 /** Applies a Herdr look's press. False when it is for another conversation. */
@@ -1667,37 +1678,16 @@ function markFetching($: EngineInterface, isFetching: boolean) {
   )
 }
 
-/**
- * Fetches the session's PRs, one fetch at a time. A fetch asked for while one runs follows it, and finds the
- * branch's PR when any of the asks wanted it.
- */
 function fetchPrs($: EngineInterface, findsBranchPr: boolean, isPress = false): Promise<void> {
-  const waiting = mod.nextFetch
-  if (waiting) {
-    waiting.findsBranchPr ||= findsBranchPr
-    waiting.isPress ||= isPress
-    return mod.fetchingPrs
-  }
-  mod.nextFetch = { findsBranchPr, isPress }
-  mod.fetchingPrs = mod.fetchingPrs
-    .then(() => {
-      const ask = mod.nextFetch ?? { findsBranchPr: false, isPress: false }
-      mod.nextFetch = null
-      return fetchPrsNow($, ask)
-    })
-    .catch(() => undefined)
-
-  return mod.fetchingPrs
+  return queuePrFetch(findsBranchPr, isPress, ask => fetchPrsNow($, ask))
 }
 
 async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   const owner = currentOwner()
-  mod.isFetchingPrsNow = true
   try {
     await markFetching($, true)
     await fetchSessionPrs(hostOf($, owner), ask.findsBranchPr, ask.isPress)
   } finally {
-    mod.isFetchingPrsNow = false
     mod.prFetchEndedAt = await $.clock.now()
     // Fetches run one at a time across conversations, so the drawn session reads whether one still runs.
     await markFetching($, mod.nextFetch !== null)
@@ -1718,7 +1708,7 @@ async function pollPrs($: EngineInterface, remote = false) {
     isTabShown: isTabShown || remote,
     isAway: away.isAway && !remote,
   }
-  const isFetching = mod.isFetchingPrsNow || mod.nextFetch !== null
+  const isFetching = isPrFetchBusy()
   if (isPrPollDue({ ...session, prViews: { ...session.prViews, isFetching } }, poll)) await fetchPrs($, poll.isTabShown)
 }
 
@@ -2384,7 +2374,7 @@ export const register: Register = on => {
         update($, DIALOGS, () => []),
         update($, DEMO, () => null),
         update($, DEMO_RECORDING, () => false),
-        publishStatus($, true),
+        publishStatus($, true, isExitReason(e.reason)),
       ])
     }
     // /clear, /resume and /branch (which reports resume) go on in this process with another conversation.

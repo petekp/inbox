@@ -2,7 +2,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { detachedUpdate, STATUS_REFRESH } from './detached-update'
-import { herdrOnWrite } from './host'
+import { herdrLog, herdrOnWrite } from './host'
+import { withoutSharedTerminal } from './shared-daemon'
 import { handleHook } from './hook'
 import type { HookInput } from './hook'
 import { dataDir } from './data-dir'
@@ -15,6 +16,7 @@ async function main() {
   for await (const chunk of process.stdin) raw += chunk
   const dist = dirname(fileURLToPath(import.meta.url))
   const dir = dataDir(process.env, dirname(dist))
+  await withoutSharedTerminal(process.env, run, process.ppid, herdrLog(dir))
   useQuestionHistory(questionHistoryPlace(process.env, dir))
   const startUpdate = detachedUpdate(dir, process.env, join(dist, 'update.mjs'))
   const out = await handleHook(JSON.parse(raw) as HookInput, {

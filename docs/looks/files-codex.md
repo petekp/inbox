@@ -71,6 +71,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/rollout-arrivals.ts` | Codex host. Marks a press arrived when the rollout holds its message as a user message and no prompt hook matched it. A message `codex queue` puts into a running turn can arrive that way. |
 | `codex/src/delegate-calls.ts` | Codex host. Keeps each `herdr agent` command's delegate rows as they were before the command, and puts them back when the command did not run. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
+| `codex/src/shared-daemon.ts` | Codex host. `withoutSharedTerminal` removes `HC_TERMINAL_ID` from a hook's or server's environment when it runs under the Codex app server that no terminal owns, which every Codex CLI started without `--no-daemon` shares. The terminal the environment names is then the one that started the daemon, so the process reports to no terminal and logs why. |
 | `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs. The hooks, the server and the update process share it. |
 | `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |
 | `codex/src/history.ts` | Codex host. On the first sight of a session, takes a forked chat's ledger from its parent, or marks a session with earlier turns `behind`. At each later hook, marks it `behind` when the rollout holds turns that ended after `coveredTurn`, the newest turn the inbox covered. |
