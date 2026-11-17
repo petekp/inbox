@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T06:16:56.396Z. 271239 characters follow.
+// Built at 2026-11-17T07:17:43.808Z. 272973 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5157,6 +5157,45 @@ function rest(track, form, target, now) {
   return track?.state === state ? track : { state, since: now, hasPanel: state === "open" };
 }
 
+// src/heights.ts
+var MOVED_FROM = "~from ";
+var MOVED_TO = "~to ";
+var copyIdOf = (id, at) => `${id}${MOVED_FROM}${at}`;
+var originalKey = (key) => key.replace(new RegExp(`${MOVED_FROM}\\d+$`), "");
+function zoomOf(settings) {
+  const zoom = settings.zoom;
+  return typeof zoom === "number" && zoom > 0 ? zoom : 1;
+}
+
+class Heights {
+  sizes = new Map;
+  resized = new Set;
+  zoom = null;
+  get(key) {
+    return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.height;
+  }
+  measure(key, reported, zoom) {
+    const size = { width: reported.width / zoom, height: reported.height / zoom };
+    const isZoomChanged = this.zoom !== null && this.zoom !== zoom;
+    this.zoom = zoom;
+    const was = this.sizes.get(key);
+    this.sizes.set(key, { width: size.width, height: size.height });
+    const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
+    if (isRewrapped)
+      this.resized.add(key);
+    return was?.height !== size.height || isZoomChanged;
+  }
+  takeResized() {
+    const resized = this.resized;
+    this.resized = new Set;
+    return resized;
+  }
+  clear() {
+    this.sizes.clear();
+    this.resized.clear();
+  }
+}
+
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [] };
 var NEXT_FRAME_MS = 16;
@@ -5187,20 +5226,51 @@ function panelOf(state, isStart, was, closing) {
     return isFrom ? 1 : 0;
   return null;
 }
+function longestRun(at) {
+  const tails = [];
+  const before = [];
+  at.forEach((value, i) => {
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = lo + hi >> 1;
+      if ((at[tails[mid]] ?? 0) < value)
+        lo = mid + 1;
+      else
+        hi = mid;
+    }
+    before[i] = lo > 0 ? tails[lo - 1] ?? -1 : -1;
+    tails[lo] = i;
+  });
+  const run = new Set;
+  for (let i = tails.at(-1) ?? -1;i >= 0; i = before[i] ?? -1)
+    run.add(i);
+  return run;
+}
+function movedOf(blocks, was) {
+  const drawnAt = new Map(was.order.map((id, i) => [id, i]));
+  const kept = blocks.filter((b) => was.rows.get(b.id) !== undefined && was.rows.get(b.id)?.track.state !== "leaving");
+  const at = kept.map((b) => drawnAt.get(b.id) ?? 0);
+  if (at.every((x, i) => i === 0 || (at[i - 1] ?? 0) < x))
+    return new Set;
+  const stays = longestRun(at);
+  return new Set(kept.filter((_, i) => !stays.has(i)).map((b) => b.id));
+}
 function moveRows(blocks, last, now, isFirst) {
   const was = isFirst ? NO_TRACKS : last;
   const wasDrawn = new Set(was.order);
+  const moved = movedOf(blocks, was);
+  const copies = new Map([...moved].map((id) => [id, copyIdOf(id, now)]));
   const rows = new Map;
   const motion = new Map;
-  const add = (block, track) => {
-    const last = was.rows.get(block.id);
+  const add = (block, track, last, springId = null) => {
     const isOpen = block.kind === "row" && isOpenRow(block);
     const wasOpen = last?.block.kind === "row" && isOpenRow(last.block);
     const wrapEndsAt = isOpen ? null : wasOpen ? restAt(now, 0) : last?.wrapEndsAt ?? null;
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const glide = glideOf(track, isStart, last?.glide ?? null, now);
-    rows.set(block.id, { track, block, opened, glide, wrapEndsAt });
+    rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId });
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
     motion.set(block.id, {
@@ -5211,26 +5281,31 @@ function moveRows(blocks, last, now, isFirst) {
       panel: panelOf(track.state, isStart, last?.track.state, closing),
       closing,
       isPanelLeftOut: closing !== null && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
-      isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt
+      isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt,
+      springId
     });
   };
   for (const b of blocks) {
-    const track = stepRow2(was.rows.get(b.id)?.track, targetOf(b), now, !isFirst && !wasDrawn.has(b.id));
+    const isMoved = moved.has(b.id);
+    const old = isMoved ? undefined : was.rows.get(b.id);
+    const track = stepRow2(old?.track, targetOf(b), now, isMoved || !isFirst && !wasDrawn.has(b.id));
     if (track)
-      add(b, track);
+      add(b, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : old?.springId ?? null);
   }
   const shown = [...blocks];
   const isDrawn = new Set(blocks.map((b) => b.id));
   was.order.forEach((id, i) => {
     const old = was.rows.get(id);
-    if (!old || isDrawn.has(id) || rows.has(id))
+    const copyId = copies.get(id);
+    if (!old || copyId === undefined && (isDrawn.has(id) || rows.has(id)))
       return;
     const isGliding = old.glide !== null && now < old.glide.endsAt;
     const track = stepRow2(old.track, "gone", now) ?? (isGliding ? old.track : null);
     if (!track)
       return;
-    add(old.block, track);
-    shown.splice(placeAfter(shown, was.order.slice(0, i)), 0, old.block);
+    const block = copyId === undefined ? old.block : { ...old.block, id: copyId };
+    add(block, track, old, copyId === undefined ? old.springId : null);
+    shown.splice(placeAfter(shown, was.order.slice(0, i).map((above) => copies.get(above) ?? above)), 0, block);
   });
   const ends = [...rows.values()].flatMap((t) => [
     ...isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : [],
@@ -5435,41 +5510,6 @@ function nextDrawAt(now, ui, screen, moved) {
   return wakeAt.length === 0 ? null : Math.min(...wakeAt);
 }
 
-// src/heights.ts
-function zoomOf(settings) {
-  const zoom = settings.zoom;
-  return typeof zoom === "number" && zoom > 0 ? zoom : 1;
-}
-
-class Heights {
-  sizes = new Map;
-  resized = new Set;
-  zoom = null;
-  get(key) {
-    return this.sizes.get(key)?.height;
-  }
-  measure(key, reported, zoom) {
-    const size = { width: reported.width / zoom, height: reported.height / zoom };
-    const isZoomChanged = this.zoom !== null && this.zoom !== zoom;
-    this.zoom = zoom;
-    const was = this.sizes.get(key);
-    this.sizes.set(key, { width: size.width, height: size.height });
-    const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
-    if (isRewrapped)
-      this.resized.add(key);
-    return was?.height !== size.height || isZoomChanged;
-  }
-  takeResized() {
-    const resized = this.resized;
-    this.resized = new Set;
-    return resized;
-  }
-  clear() {
-    this.sizes.clear();
-    this.resized.clear();
-  }
-}
-
 // src/paint-blocks.ts
 import { div as div8 } from "gpui-kit";
 import { Input, h_flex as h_flex5, v_flex as v_flex3 } from "gpui-base";
@@ -5657,10 +5697,10 @@ function contentEl(b, m, p, el, strokes) {
   const atRest = isAtOnce || b.kind === "empty" ? undefined : measured;
   const open = isAtOnce ? undefined : measured ?? 0;
   const height = m?.box === "shut" ? 0 : m?.box === "open" ? open : atRest;
-  return springBox(`fit ${id}`, height).when(strokes.length > 0, (e) => e.relative()).child(isRow ? el : sizeEl(id, p, el)).children(strokes);
+  return springBox(`fit ${m?.springId ?? id}`, height).when(strokes.length > 0, (e) => e.relative()).child(isRow ? el : sizeEl(id, p, el)).children(strokes);
 }
 function spaceEl(s, p, columns) {
-  const id = `space ${s.block.id}`;
+  const id = `space ${p.motion.get(s.block.id)?.springId ?? s.block.id}`;
   const box = springHeight(div5().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
@@ -5739,7 +5779,7 @@ function spacedEls(blocks, p, el) {
     const isOpen = m?.box === "open" && fitHeight(b, m, p) !== undefined;
     const fade = (e) => m?.box ? e.opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" }) : e;
     const slide = (e) => m?.box ? e.relative().top(isOpen ? 0 : -SLIDE_PX).transition("top", { duration: m.fadeMs, easing: "ease-out" }) : e;
-    return v_flex().id(`box ${b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
+    return v_flex().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
       ...contentStrokeEls(b, p.t, fade),
       ...passes.map((c) => wholeColumnEl(c, p.t))
     ]));

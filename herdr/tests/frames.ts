@@ -7,7 +7,7 @@ import type { Painted } from './gpui-stand-in'
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
 const { moveRows, NO_TRACKS } = await import('../src/motion')
-const { Heights } = await import('../src/heights')
+const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE } = await import('../src/paint-theme')
 
@@ -80,7 +80,11 @@ function segmentsOf(root: Painted, placed: Map<Painted, Box>): Segment[] {
       const runsOn = k.style.h === undefined
       const y1 = runsOn ? box.top + box.height - (k.style.bottom ?? 0) : y0 + (k.style.h ?? 0)
       const shown = { y0: Math.max(y0, own[0]), y1: Math.min(y1, own[1]) }
-      if (shown.y1 < shown.y0) continue
+      if (shown.y1 < shown.y0) {
+        const isBelowClip = y0 > own[1] && Number.isFinite(own[1])
+        if (isBelowClip) out.push({ id, x: k.style.left ?? 0, y0: own[1], y1: own[1], runsIn: false, runsOn })
+        continue
+      }
       out.push({ id, x: k.style.left ?? 0, ...shown, runsIn: (k.style.top ?? 0) === 0, runsOn })
     }
   }
@@ -192,12 +196,14 @@ class Frames {
     this.listHeights.push(end)
     this.slides.push(sized.flatMap(({ node }) => (node.transitions.has('top') ? [node.style.top ?? 0] : [])))
     for (const gap of gapsOf(segmentsOf(tree, placed), end)) this.gaps.push({ at: now, ...gap })
+    const startsHere = [...moved.motion].filter(([, m]) => m.springId?.endsWith(`${MOVED_TO}${now}`)).map(([id]) => id)
+    const isInMovedBlock = (id: string) => startsHere.some(b => id.endsWith(` ${b}`))
     if (this.last) {
       const stillAt = (id: string) => (was.has(id) && shown.has(id) ? this.lastShown.get(id) : shown.get(id))
       for (const [id, box] of layout(tree, stillAt).boxes) {
         const before = this.last.get(id)
         const isSprung = /^(box|fit) /.test(id)
-        if (!before || !(isSprung || /^(size|panel) /.test(id))) continue
+        if (!before || !(isSprung || /^(size|panel) /.test(id)) || isInMovedBlock(id)) continue
         const by = Math.max(Math.abs(box.top - before.top), isSprung ? Math.abs(box.height - before.height) : 0)
         if (by >= 0.5) this.jumps.push({ at: now, id, by })
       }

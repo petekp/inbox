@@ -114,7 +114,7 @@ function glide(el: HTMLElement, size: Size, from: SpringState, to: number, hold 
 function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
 
-  return atEndWeight(el, () => el.getBoundingClientRect().height)
+  return atEndWeight(el, () => atEndLines(el, () => el.getBoundingClientRect().height))
 }
 
 /** An element's opacity: full unless an animation fades it. */
@@ -182,6 +182,14 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
 function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<string>, carried: Set<Element>) {
   const key = el.dataset.motion!
   const state = drawnRows.get(key)?.track.state
+  const resumeLine = state === 'closing' ? null : releaseLine(el, state === 'opening')
+  moveRow(el, was, changed, carried)
+  resumeLine?.()
+}
+
+function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<string>, carried: Set<Element>) {
+  const key = el.dataset.motion!
+  const state = drawnRows.get(key)?.track.state
   const isFresh = !was || was.el !== el
   const part = drawnRows.has(key) ? el.querySelector<HTMLElement>(OPEN_PART) : null
   if (part && !part.classList.contains('closing')) part.style.marginTop = ''
@@ -240,15 +248,62 @@ function collapse(el: HTMLElement, from: SpringState, openTop: number | null) {
   const part = el.querySelector<HTMLElement>('.closing[inert]')
   // A closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
   const row = el.querySelector<HTMLElement>('.row.closing')
+  const line = row?.querySelector<HTMLElement>(LINE) ?? null
+  const lineFrom = line ? springOf(line, line.getBoundingClientRect().height) : null
+  if (line) glides.get(line)?.anim.cancel()
   row?.classList.remove('closing')
   if (part) part.style.display = 'none'
   const target = naturalHeight(el)
+  const title = line?.querySelector<HTMLElement>('.text')
+  const lineTo = title ? atEndWeight(title, () => title.getBoundingClientRect().height) : null
   if (part) part.style.display = ''
   row?.classList.add('closing')
   if (part && openTop !== null) keepTop(el, part, openTop)
   const opacity = opacityOf(el)
   glide(el, 'height', from, target, true)
+  if (line && lineFrom && lineTo !== null) glide(line, 'height', lineFrom, lineTo, true)
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)
+}
+
+/**
+ * A row's line. While the row closes it is a block that draws the title, wrapped as the open row's is, with its
+ * after-label inline, so its height can glide to the closed title's.
+ */
+const LINE = '.line'
+
+/**
+ * Lets go of a line held at the closed title's height, once its row's state is no longer `closing`, so the row
+ * measures its natural height. When the row turns back to `opening`, the function it returns glides the line from the
+ * height it was drawn at to the open form's. A row whose close has ended takes the closed form's, with its meta, at
+ * once, since its own height already holds that space. Null when the row holds no line, or needs no glide.
+ */
+function releaseLine(el: HTMLElement, isOpening: boolean): (() => void) | null {
+  const line = el.querySelector<HTMLElement>(LINE)
+  const was = line && glides.get(line)
+  if (!line || !was || was.anim.playState === 'idle') return null
+  const from = springOf(line, line.getBoundingClientRect().height)
+  was.anim.cancel()
+  if (!isOpening) return null
+
+  return () => {
+    const to = atEndWeight(line, () => line.getBoundingClientRect().height)
+    if (Math.abs(from.x - to) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5) glide(line, 'height', from, to)
+  }
+}
+
+/** Runs `measure` with every line glide inside `el` at its end, then puts each back, so `el` measures its natural height. */
+function atEndLines<T>(el: HTMLElement, measure: () => T): T {
+  const running = [...el.querySelectorAll<HTMLElement>(LINE)].flatMap(line => {
+    const g = glides.get(line)
+
+    return g && isRunning(g.anim) ? [g.anim] : []
+  })
+  const times = running.map(a => a.currentTime)
+  running.forEach(a => (a.currentTime = a.effect?.getComputedTiming().endTime ?? 0))
+  const result = measure()
+  running.forEach((a, i) => (a.currentTime = times[i] ?? 0))
+
+  return result
 }
 
 function keepTop(el: HTMLElement, part: HTMLElement, top: number) {

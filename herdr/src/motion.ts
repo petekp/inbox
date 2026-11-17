@@ -3,11 +3,13 @@ import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
+import { MOVED_TO, copyIdOf } from './heights'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
  * its last enter or leave set, which runs on until `endsAt` even if the block's state moves on. `wrapEndsAt` is when
- * the title of a row that last closed stops keeping its wrap.
+ * the title of a row that last closed stops keeping its wrap. `springId` names the boxes of a block that moved to another
+ * place, which are new so that they start from no height, and is null for a block that never moved.
  */
 type Tracked = {
   track: RowTrack
@@ -15,6 +17,7 @@ type Tracked = {
   opened: RowBlock | null
   glide: Glide | null
   wrapEndsAt: number | null
+  springId: string | null
 }
 
 /** Each block's track and the block as last drawn, and the ids of every block the last draw showed, in order. */
@@ -37,6 +40,8 @@ type Glide = { box: 'open' | 'shut'; fadeMs: number; endsAt: number }
  * panel's height, so the row the selection moves to measures its new height in that draw and both start together.
  * `isWrapHeld` says a row that is not open keeps its title wrapped, from the draw it stops being open until its title's
  * box has glided to one line and come to rest, so only the end of the first line changes as the title is cut.
+ * `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
+ * still drawn, and a new box starts from the height it is drawn at.
  */
 export type RowMotion = {
   state: RowState
@@ -47,6 +52,7 @@ export type RowMotion = {
   closing: RowBlock | null
   isPanelLeftOut: boolean
   isWrapHeld: boolean
+  springId: string | null
 }
 
 /** The draw after a move's first frame, which starts its transition or spring. */
@@ -94,10 +100,51 @@ function panelOf(state: RowState, isStart: boolean, was: RowState | undefined, c
 }
 
 /**
+ * The positions in `at` of a longest run of values that increase, not necessarily next to each other: the blocks that
+ * keep their order among those drawn before.
+ */
+function longestRun(at: number[]): Set<number> {
+  const tails: number[] = []
+  const before: number[] = []
+  at.forEach((value, i) => {
+    let lo = 0
+    let hi = tails.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if ((at[tails[mid]!] ?? 0) < value) lo = mid + 1
+      else hi = mid
+    }
+    before[i] = lo > 0 ? (tails[lo - 1] ?? -1) : -1
+    tails[lo] = i
+  })
+  const run = new Set<number>()
+  for (let i = tails.at(-1) ?? -1; i >= 0; i = before[i] ?? -1) run.add(i)
+
+  return run
+}
+
+/**
+ * The ids of the blocks that stay on the page and change place: of the blocks drawn before and still listed, the fewest
+ * whose removal leaves the rest in the order they were drawn in. A block that only moves because a block above it came
+ * or went keeps its order, so it is not one of them.
+ */
+function movedOf(blocks: Block[], was: Tracks): Set<string> {
+  const drawnAt = new Map(was.order.map((id, i) => [id, i]))
+  const kept = blocks.filter(b => was.rows.get(b.id) !== undefined && was.rows.get(b.id)?.track.state !== 'leaving')
+  const at = kept.map(b => drawnAt.get(b.id) ?? 0)
+  if (at.every((x, i) => i === 0 || (at[i - 1] ?? 0) < x)) return new Set()
+  const stays = longestRun(at)
+
+  return new Set(kept.filter((_, i) => !stays.has(i)).map(b => b.id))
+}
+
+/**
  * Steps every block through the shared row states. A block the publish dropped stays drawn while it leaves, after the
  * nearest block that was above it and is still drawn. A block that takes a leaving block's id is that block in another
- * form, so it does not leave and the new one does not enter. `isFirst` forgets the tracks and draws every block at
- * rest, as a newly shown tab does. `nextAt` is when a move ends or a box's glide comes to rest, so the look draws again then.
+ * form, so it does not leave and the new one does not enter. A block that changes place leaves its old place as a copy
+ * under its own id, which is drawn as it was and leaves, and enters at its new place, so both glide on the height
+ * spring. `isFirst` forgets the tracks and draws every block at rest, as a newly shown tab does. `nextAt` is when a move
+ * ends or a box's glide comes to rest, so the look draws again then.
  */
 export function moveRows(
   blocks: Block[],
@@ -107,17 +154,18 @@ export function moveRows(
 ): { blocks: Block[]; tracks: Tracks; motion: ReadonlyMap<string, RowMotion>; nextAt: number | null } {
   const was = isFirst ? NO_TRACKS : last
   const wasDrawn = new Set(was.order)
+  const moved = movedOf(blocks, was)
+  const copies = new Map([...moved].map(id => [id, copyIdOf(id, now)]))
   const rows = new Map<string, Tracked>()
   const motion = new Map<string, RowMotion>()
-  const add = (block: Block, track: RowTrack) => {
-    const last = was.rows.get(block.id)
+  const add = (block: Block, track: RowTrack, last: Tracked | undefined, springId: string | null = null) => {
     const isOpen = block.kind === 'row' && isOpenRow(block)
     const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
     const wrapEndsAt = isOpen ? null : wasOpen ? restAt(now, 0) : (last?.wrapEndsAt ?? null)
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const glide = glideOf(track, isStart, last?.glide ?? null, now)
-    rows.set(block.id, { track, block, opened, glide, wrapEndsAt })
+    rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId })
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
     motion.set(block.id, {
@@ -130,22 +178,34 @@ export function moveRows(
       isPanelLeftOut:
         (closing !== null && (!isStart || isFolding(last?.track.state))) || (wasClosing && block.kind === 'row'),
       isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt,
+      springId,
     })
   }
   for (const b of blocks) {
-    const track = stepRow(was.rows.get(b.id)?.track, targetOf(b), now, !isFirst && !wasDrawn.has(b.id))
-    if (track) add(b, track)
+    const isMoved = moved.has(b.id)
+    const old = isMoved ? undefined : was.rows.get(b.id)
+    const track = stepRow(old?.track, targetOf(b), now, isMoved || (!isFirst && !wasDrawn.has(b.id)))
+    if (track) add(b, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : (old?.springId ?? null))
   }
   const shown = [...blocks]
   const isDrawn = new Set(blocks.map(b => b.id))
   was.order.forEach((id, i) => {
     const old = was.rows.get(id)
-    if (!old || isDrawn.has(id) || rows.has(id)) return
+    const copyId = copies.get(id)
+    if (!old || (copyId === undefined && (isDrawn.has(id) || rows.has(id)))) return
     const isGliding = old.glide !== null && now < old.glide.endsAt
     const track = stepRow(old.track, 'gone', now) ?? (isGliding ? old.track : null)
     if (!track) return
-    add(old.block, track)
-    shown.splice(placeAfter(shown, was.order.slice(0, i)), 0, old.block)
+    const block = copyId === undefined ? old.block : { ...old.block, id: copyId }
+    add(block, track, old, copyId === undefined ? old.springId : null)
+    shown.splice(
+      placeAfter(
+        shown,
+        was.order.slice(0, i).map(above => copies.get(above) ?? above),
+      ),
+      0,
+      block,
+    )
   })
   const ends = [...rows.values()]
     .flatMap(t => [
