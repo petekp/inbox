@@ -95,9 +95,15 @@ export const GOAL_RULES: Rule[] = [
     text: 'A step that makes the next goal clear shows that goal.',
     failures: ({ result }) => {
       const clear = result.facts.goalClear
-      const g = result.session.ledger.overview?.goal
+      const o = result.session.ledger.overview
+      const g = o?.goal
       if (!clear) return []
-      return g && new RegExp(clear.match, 'i').test(g.text) ? [] : [`no goal like /${clear.match}/`]
+      const matches = (text: string | null | undefined) => !!text && new RegExp(clear.match, 'i').test(text)
+      if (matches(g?.text)) return []
+      const isGoalRunning = g != null && g.metAt === null
+      const isSuggestedRight = clear.alsoSuggested === true && !isGoalRunning && matches(o?.suggestedGoal)
+      if (isSuggestedRight) return []
+      return [`no goal${clear.alsoSuggested ? ' or suggested goal' : ''} like /${clear.match}/`]
     },
   },
   {
