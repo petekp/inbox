@@ -1,8 +1,16 @@
 import { HEIGHT_SETTLE_MS } from './springs'
 
-/** How long a row's content fades in as it enters, and how long a fade lasts as it opens, closes or leaves, in ms. */
-export const ENTER_FADE_MS = 300
+/** How long a fade lasts when it does not move space, such as a hover or a row's fill, in ms. */
 export const FADE_MS = 200
+
+/**
+ * How long content fades as its space enters, leaves, opens or closes, in ms: as long as the height spring takes to
+ * come to rest. Content then stays shown until its space has closed, and shows in full only as its space has grown.
+ */
+export const SPACE_FADE_MS = HEIGHT_SETTLE_MS
+
+/** How long a closed row's line fades back in as its close ends, in ms. */
+export const LINE_RETURN_FADE_MS = 300
 
 /**
  * How far a row's content sits above its place when it is fully faded out, in px. A row that leaves slides up to this
@@ -33,11 +41,11 @@ export type RowTrack = { state: RowState; since: number; hasPanel: boolean }
 
 /** How long each state's fade lasts, in ms. Resting states are 0. */
 export const ROW_FADE_MS: Record<RowState, number> = {
-  entering: ENTER_FADE_MS,
-  opening: FADE_MS,
-  closing: FADE_MS,
+  entering: SPACE_FADE_MS,
+  opening: SPACE_FADE_MS,
+  closing: SPACE_FADE_MS,
   settling: FADE_MS,
-  leaving: FADE_MS,
+  leaving: SPACE_FADE_MS,
   closed: 0,
   open: 0,
   settled: 0,

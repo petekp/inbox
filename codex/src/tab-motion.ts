@@ -1,7 +1,14 @@
 import { atEndWeight } from './weight-ease'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import * as layout from '../../hooks/layout'
-import { ENTER_FADE_MS, FADE_MS, isMoving, ROW_STATE_MS, slideOffset } from '../../hooks/row-motion'
+import {
+  FADE_MS,
+  isMoving,
+  LINE_RETURN_FADE_MS,
+  ROW_STATE_MS,
+  SPACE_FADE_MS,
+  slideOffset,
+} from '../../hooks/row-motion'
 import type { RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames, springStep } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
@@ -154,7 +161,7 @@ const isFadingIn = (el: HTMLElement) => {
 
 function growIn(el: HTMLElement, from: SpringState, opacity: number) {
   glide(el, 'height', from, naturalHeight(el), false, true)
-  fade(el, opacity, 1, ENTER_FADE_MS, false, true)
+  fade(el, opacity, 1, SPACE_FADE_MS, false, true)
 }
 
 /**
@@ -225,7 +232,7 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
       return true
     case 'leaving':
       glide(el, 'height', from, 0, true, true)
-      fade(el, opacityOf(el), 0, FADE_MS, true, !isInsideLeaving(el))
+      fade(el, opacityOf(el), 0, SPACE_FADE_MS, true, !isInsideLeaving(el))
       return true
     default:
       return false
@@ -352,7 +359,7 @@ export function toggleFold(id: string, shown: Set<string>, motion = id) {
   tabState.draw()
   el.dataset.closing = '1'
   glide(el, 'height', springOf(el, el.getBoundingClientRect().height), 0, true, true)
-  fade(el, opacityOf(el), 0, FADE_MS, true, true)
+  fade(el, opacityOf(el), 0, SPACE_FADE_MS, true, true)
   later(() => {
     if (shown.has(id) || !closingFolds.delete(motion)) return
     tabState.draw()
@@ -392,7 +399,8 @@ export function applyPageVariables() {
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--fade', `${FADE_MS}ms ${FADE_EASING}`)
   document.documentElement.style.setProperty('--settle', `${HEIGHT_SETTLE_MS}ms ease-out`)
-  document.documentElement.style.setProperty('--enter-fade', `${ENTER_FADE_MS}ms ${FADE_EASING}`)
+  document.documentElement.style.setProperty('--space-fade', `${SPACE_FADE_MS}ms ${FADE_EASING}`)
+  document.documentElement.style.setProperty('--line-return-fade', `${LINE_RETURN_FADE_MS}ms ${FADE_EASING}`)
 }
 
 const TIMER_SLACK_MS = 50

@@ -163,7 +163,7 @@
 }
 /* The line returns with the end of the close, fading in so it does not pop in over the settled height. */
 .row.just-closed .line .holds-up {
-  animation: holds-up-in var(--enter-fade);
+  animation: holds-up-in var(--line-return-fade);
 }
 @keyframes holds-up-in {
   from {

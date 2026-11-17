@@ -14,12 +14,15 @@ const { LINE } = await import('../src/paint-theme')
 const FRAME_MS = 16
 const PANE_WIDTH = 300
 const WRAP_AT = 40
+const BLANK_MIN_HEIGHT = 2
+const BLANK_MAX_OPACITY = 0.05
 
 type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
 type Jump = { at: number; id: string; by: number }
 type TitleForm = { at: number; id: string; isCut: boolean; box: number; isBoxResting: boolean }
 type ColumnGap = { at: number; id: string; x: number; y: number }
+type Blank = { at: number; id: string; height: number; opacity: number }
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
 
 const linesOf = (n: Painted): number =>
@@ -144,11 +147,60 @@ class Springs {
   }
 }
 
+/** The progress of a CSS `ease-out` curve, cubic-bezier(0, 0, .58, 1), after the share `x` of its time. */
+function easeOut(x: number): number {
+  const at = (t: number, control: number) => 3 * (1 - t) * t * t * control + t ** 3
+  let lo = 0
+  let hi = 1
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2
+    if (at(mid, 0.58) < x) lo = mid
+    else hi = mid
+  }
+
+  return at((lo + hi) / 2, 1)
+}
+
+type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
+
+/** The opacity of the content of each block's box that fades. A change of the declared opacity starts an eased fade. */
+class Fades {
+  states = new Map<string, Fade>()
+
+  declare(root: Painted) {
+    const seen = new Set<string>()
+    const walk = (n: Painted, box: string | null) => {
+      const inBox = n.id?.startsWith('box ') ? n.id : box
+      const duration = n.transitions.get('opacity')
+      if (inBox !== null && duration !== undefined && n.style.opacity !== undefined && !n.style.isAbsolute) {
+        seen.add(inBox)
+        const state = this.states.get(inBox)
+        const to = n.style.opacity
+        if (!state) this.states.set(inBox, { shown: to, from: to, target: to, elapsed: duration, duration })
+        else if (to !== state.target)
+          this.states.set(inBox, { ...state, from: state.shown, target: to, elapsed: 0, duration })
+        return n.kids.forEach(k => walk(k, null))
+      }
+      n.kids.forEach(k => walk(k, inBox))
+    }
+    walk(root, null)
+    for (const id of [...this.states.keys()]) if (!seen.has(id)) this.states.delete(id)
+  }
+
+  step(ms: number) {
+    for (const s of this.states.values()) {
+      s.elapsed = Math.min(s.duration, s.elapsed + ms)
+      s.shown = s.from + (s.target - s.from) * easeOut(s.elapsed / s.duration)
+    }
+  }
+}
+
 class Frames {
   private tracks = NO_TRACKS
   private heights = new Heights()
   private linesAbove = NO_LINES_ABOVE
   private springs = new Springs()
+  private fades = new Fades()
   private lastShown = new Map<string, number>()
   private last: Map<string, Box> | null = null
   jumps: Jump[] = []
@@ -156,6 +208,7 @@ class Frames {
   gaps: ColumnGap[] = []
   listHeights: number[] = []
   slides: number[][] = []
+  blanks: Blank[] = []
 
   draw(blocks: Block[], now: number) {
     const isFirst = this.last === null
@@ -191,7 +244,13 @@ class Frames {
     const was = this.springs.shown()
     this.springs.declare(tree)
     const shown = this.springs.shown()
+    this.fades.declare(tree)
     const { boxes, sized, placed } = layout(tree, id => shown.get(id))
+    for (const [id, fade] of this.fades.states) {
+      const height = boxes.get(id)?.height ?? 0
+      if (height >= BLANK_MIN_HEIGHT && fade.shown < BLANK_MAX_OPACITY)
+        this.blanks.push({ at: now, id, height, opacity: fade.shown })
+    }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
     this.slides.push(sized.flatMap(({ node }) => (node.transitions.has('top') ? [node.style.top ?? 0] : [])))
@@ -219,6 +278,7 @@ class Frames {
     for (const { node, height } of sized) node.onSize?.({ width: PANE_WIDTH, height }, null)
     this.lastShown = shown
     this.springs.step(FRAME_MS)
+    this.fades.step(FRAME_MS)
     this.last = boxes
   }
 }
@@ -226,10 +286,10 @@ class Frames {
 export function framesOf(
   steps: [number, Block[]][],
   ms = 1500,
-): { jumps: Jump[]; titles: TitleForm[]; gaps: ColumnGap[]; heights: number[]; slides: number[][] } {
+): { jumps: Jump[]; titles: TitleForm[]; gaps: ColumnGap[]; heights: number[]; slides: number[][]; blanks: Blank[] } {
   const frames = new Frames()
   const [first] = steps
-  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [] }
+  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], blanks: [] }
   const start = 1_000_000
   for (let at = -500; at < ms; at += FRAME_MS) {
     const step = steps.findLast(([from]) => at >= from) ?? first
@@ -242,6 +302,7 @@ export function framesOf(
     gaps: frames.gaps.map(g => ({ ...g, at: g.at - start })),
     heights: frames.listHeights,
     slides: frames.slides,
+    blanks: frames.blanks.map(b => ({ ...b, at: b.at - start })),
   }
 }
 
