@@ -201,3 +201,26 @@ test('in the panel, opening each row of a tab and pressing z leaves no row open 
   expect(collapsed.length).toBeGreaterThan(1)
   expect(panel.ui.selected).toBe(collapsed.at(-1)!)
 })
+
+test('a field a press brings in opens and shows in the draw after the press, while the lines it takes the place of fade', () => {
+  const before = tabBlocks(demoScreen(), uiOn('overview'))
+  const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
+  const press = moveRows(typing, moveRows(before, NO_TRACKS, NOW, true).tracks, NOW, false)
+  const next = moveRows(typing, press.tracks, NOW + NEXT_FRAME_MS, false)
+  const leaving = [...next.motion].filter(([, m]) => m.state === 'leaving').map(([id]) => id)
+  expect(leaving.length).toBeGreaterThan(0)
+  expect(next.motion.get('goal field')).toMatchObject({ box: 'open', isShown: true, fadeMs: 0 })
+})
+
+test('the row the selection moves to opens in the draw that moves it, while another block leaves', () => {
+  const screen = demoScreen()
+  const questions = screen.view.needsYou.questions.filter(r => r.id !== 'd15')
+  const fewer = { ...screen, view: { ...screen.view, needsYou: { ...screen.view.needsYou, questions } } }
+  const before = tabBlocks(screen, uiOn('needsYou', { selected: 'd11' }))
+  const after = tabBlocks(fewer, uiOn('needsYou', { selected: 'd12' }))
+  const moved = moveRows(after, moveRows(before, NO_TRACKS, NOW, true).tracks, NOW, false)
+  const d12 = rowsOf(moved.blocks).find(r => r.id === 'd12')
+  expect(moved.motion.get('d15')?.state).toBe('leaving')
+  expect(d12?.isSelected).toBe(true)
+  expect(moved.motion.get('d12')?.state).toBe('opening')
+})

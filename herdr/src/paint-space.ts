@@ -24,7 +24,7 @@ import {
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { SLIDE_PX, enterDelayMs } from '../../hooks/row-motion'
-import { HEIGHT_SPRING } from '../../hooks/springs'
+import { HEIGHT_SPRING, springStep } from '../../hooks/springs'
 
 /** A group's Closed fold, which ends its list. */
 const isClosedFold = (b: Block): boolean => b.kind === 'fold' && 'closedFold' in b.change
@@ -359,6 +359,10 @@ function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): E
   return [...(path ? pathEls(path) : []), ...treeEls]
 }
 
+/** Where a box `height` tall has sprung to after shutting for `ms`, or no height when it opens from shut. */
+const shutTo = (height: number, ms: number | null): number =>
+  ms === null ? 0 : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING).x
+
 /**
  * Each block in a box that never shrinks, with its space above it. Every distance that can change is the height of a
  * box whose spring is declared in every draw: the space, and the content. So a move that starts while another glides
@@ -384,7 +388,7 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const m = p.motion.get(b.id)
     const height = fitHeight(b, m, p)
     const isShown = m?.box === 'open' && m.isShown && height !== undefined
-    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height) : 0
+    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height - shutTo(height, m.shutForMs)) : 0
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: 'ease-out' as const }
     const fade = (e: Element): Element => (m?.box ? e.opacity(isShown ? 1 : 0).transition('opacity', glide) : e)
     const slide = (e: Element): Element =>

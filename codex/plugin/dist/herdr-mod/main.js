@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T23:14:10.533Z. 280539 characters follow.
+// Built at 2026-11-17T23:49:47.293Z. 280661 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5241,10 +5241,11 @@ class Heights {
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0 };
 var NEXT_FRAME_MS = 16;
+var HOLD_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
 var restAt = (now, fadeMs) => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS;
-function glideOf(track, isStart, last, now, holdsUntil) {
+function glideOf(track, isStart, last, now, holdsUntil, isPressed) {
   const { state } = track;
   const isLive = last !== null && now < last.endsAt;
   if (state === "leaving") {
@@ -5254,18 +5255,21 @@ function glideOf(track, isStart, last, now, holdsUntil) {
     }
     const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + LEAVE_FADE_MS;
     const from = isLive ? { box: last.box, isShown: false } : { box: "open", isShown: true };
-    return { ...from, fadeMs: LEAVE_FADE_MS, waitsForSpace: false, opensAt: null, shutAt, endsAt: restAt(shutAt, 0) };
+    const glide = { ...from, fadeMs: LEAVE_FADE_MS, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt };
+    return { ...glide, endsAt: restAt(shutAt, 0) };
   }
-  const waitsUntil = holdsUntil > now ? holdsUntil : null;
   if (state === "entering") {
     if (!isStart && last !== null)
       return openedAt(last, now);
-    const waitsForSpace = !isLive || last.box !== "open";
-    const opensAt = waitsUntil ?? (isLive ? now : now + NEXT_FRAME_MS);
-    const from = isLive ? { box: last.box, isShown: false } : { box: "shut", isShown: false };
-    const glide = { ...from, fadeMs: ENTER_FADE_MS, waitsForSpace, opensAt, shutAt: null };
-    const endsAt = restAt(opensAt, ENTER_FADE_MS);
-    return isLive && waitsUntil === null ? openedAt({ ...glide, endsAt }, now) : { ...glide, endsAt };
+    if (isLive) {
+      const isShutting = last.shutAt !== null && now > last.shutAt;
+      const shutForMs = isShutting && last.shutAt !== null ? now - last.shutAt : null;
+      const glide = { box: "open", isShown: true, fadeMs: ENTER_FADE_MS, waitsForSpace: isShutting, shutForMs };
+      return { ...glide, opensAt: null, shutAt: null, endsAt: restAt(now, ENTER_FADE_MS) };
+    }
+    const opensAt = !isPressed && holdsUntil > now ? holdsUntil : now + NEXT_FRAME_MS;
+    const glide = { box: "shut", isShown: isPressed, fadeMs: isPressed ? 0 : ENTER_FADE_MS };
+    return { ...glide, waitsForSpace: !isPressed, shutForMs: null, opensAt, shutAt: null, endsAt: restAt(opensAt, glide.fadeMs) };
   }
   if (!isLive || last.box !== "open" && last.opensAt === null)
     return null;
@@ -5274,7 +5278,7 @@ function glideOf(track, isStart, last, now, holdsUntil) {
 }
 function openedAt(g, now) {
   const isOpen = g.opensAt === null || now >= g.opensAt;
-  return { ...g, box: isOpen ? "open" : "shut", isShown: isOpen };
+  return { ...g, box: isOpen ? "open" : "shut", isShown: isOpen || g.fadeMs === 0 };
 }
 function panelOf(state, isStart, was, closing) {
   const isFrom = isStart && !isFolding(was);
@@ -5324,9 +5328,7 @@ function moveRows(blocks, last, now, isFirst) {
     const state = was.rows.get(id)?.track.state;
     return state !== undefined && state !== "leaving" && (copies.has(id) || !isDrawn.has(id));
   });
-  const holdsUntil = startsLeave ? now + NEXT_FRAME_MS + LEAVE_FADE_MS : was.holdsUntil;
-  const isHolding = holdsUntil > now;
-  const waiting = new Map;
+  const holdsUntil = startsLeave ? now + HOLD_MS : was.holdsUntil;
   const rows = new Map;
   const motion = new Map;
   const add = (block, track, last, springId = null) => {
@@ -5335,10 +5337,11 @@ function moveRows(blocks, last, now, isFirst) {
     const wrapEndsAt = isOpen ? null : wasOpen ? restAt(now, 0) : last?.wrapEndsAt ?? null;
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
-    const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil);
+    const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, block.kind === "field");
     rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId });
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
+    const isHeld = closing !== null && holdsUntil > now && track.since >= holdsUntil - HOLD_MS;
     motion.set(block.id, {
       state: track.state,
       isStart,
@@ -5346,26 +5349,23 @@ function moveRows(blocks, last, now, isFirst) {
       isShown: glide?.isShown ?? true,
       fadeMs: glide?.fadeMs ?? 0,
       waitsForSpace: glide?.waitsForSpace ?? false,
+      shutForMs: glide?.shutForMs ?? null,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
       closing,
-      isPanelLeftOut: closing !== null && !isHolding && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
+      isPanelLeftOut: closing !== null && !isHeld && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
       isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt,
-      isHeightHeld: closing !== null && isHolding,
+      isHeightHeld: isHeld,
       springId
     });
   };
   for (const b of blocks) {
     const isMoved = moved.has(b.id);
     const old = isMoved ? undefined : was.rows.get(b.id);
-    const waits = isHolding && old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
-    if (waits)
-      waiting.set(b.id, old.block);
-    const drawn = waits ? old.block : b;
-    const track = stepRow2(old?.track, targetOf(drawn), now, isMoved || !isFirst && !wasDrawn.has(b.id));
+    const track = stepRow2(old?.track, targetOf(b), now, isMoved || !isFirst && !wasDrawn.has(b.id));
     if (track)
-      add(drawn, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : old?.springId ?? null);
+      add(b, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : old?.springId ?? null);
   }
-  const shown = blocks.map((b) => waiting.get(b.id) ?? b);
+  const shown = [...blocks];
   was.order.forEach((id, i) => {
     const old = was.rows.get(id);
     const copyId = copies.get(id);
@@ -5863,6 +5863,7 @@ function contentStrokeEls(b, t, fade) {
   });
   return [...path ? pathEls(path) : [], ...treeEls];
 }
+var shutTo = (height, ms) => ms === null ? 0 : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING).x;
 function spacedEls(blocks, p, el) {
   const isShut = (b) => p.motion.get(b.id)?.box === "shut";
   const spaces = spacesOf(blocks, isShut);
@@ -5875,7 +5876,7 @@ function spacedEls(blocks, p, el) {
     const m = p.motion.get(b.id);
     const height = fitHeight(b, m, p);
     const isShown = m?.box === "open" && m.isShown && height !== undefined;
-    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height) : 0;
+    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height - shutTo(height, m.shutForMs)) : 0;
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
     const fade = (e) => m?.box ? e.opacity(isShown ? 1 : 0).transition("opacity", glide) : e;
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
@@ -6012,9 +6013,7 @@ function panelEl(r, m, p, isLeaving) {
     return [];
   const key = panelId(r.id);
   const opacity = m?.panel ?? null;
-  const state = m?.state ?? "open";
-  const delay = state === "opening" ? enterDelayMs(p.heights.get(key) ?? 0) : 0;
-  const glide = { duration: ROW_FADE_MS[state], delay, easing: "ease-out" };
+  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], easing: "ease-out" };
   return [
     v_flex3().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];

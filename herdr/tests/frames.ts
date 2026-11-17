@@ -169,17 +169,14 @@ function easeOut(x: number): number {
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
 
-/** The id of the nearest box that holds `n`, or null. */
 function boxOf(n: Painted): string | null {
   for (let up: Painted | null = n; up; up = up.parent) if (up.id?.startsWith('box ')) return up.id
   return null
 }
 
-/** Whether a clipping edge `hidden` px into lines `line` px tall cuts through a line's letters, not only its leading. */
 const isThroughLetters = (hidden: number, line: number): boolean =>
   hidden % line > LEADING_PX && hidden % line < line - LEADING_PX
 
-/** Each text that a clipping box around it cuts through its letters, with the share of it the box shows. */
 function cutTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[] {
   return [...placed].flatMap(([n, b]) => {
     if (n.text === null || n.kids.some(k => !k.style.isAbsolute) || b.height <= 0) return []

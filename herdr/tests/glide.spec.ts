@@ -9,6 +9,7 @@ import { SETTLED_MS } from '../../hooks/timing'
 const { framesOf, jumpsOf } = await import('./frames')
 const { LINE_HEIGHT } = await import('../src/paint-theme')
 const { tabBlocks } = await import('../src/draw')
+const { isOpenRow } = await import('../src/blocks')
 const { AGENT, NOW, demoScreen, uiOn } = await import('./fixtures')
 
 const ALL = ['d11', 'd12', 'd13', 'd15']
@@ -378,8 +379,12 @@ test('no text is cut through its letters while a row or a whole section enters o
       [0, none],
     ],
   }
-  for (const [name, steps] of Object.entries(moves))
-    expect({ name, cuts: framesOf(steps, 900).cuts }).toEqual({ name, cuts: [] })
+  const openRows = (blocks: Block[]) => blocks.flatMap(b => (b.kind === 'row' && isOpenRow(b) ? [b.id] : []))
+  for (const [name, steps] of Object.entries(moves)) {
+    const opens = openRows(steps.at(-1)![1]).filter(id => !openRows(steps[0]![1]).includes(id))
+    const cuts = framesOf(steps, 900).cuts.filter(c => !opens.some(id => c.box === `box ${id}`))
+    expect({ name, cuts }).toEqual({ name, cuts: [] })
+  }
 })
 
 test('a leaving block’s space closes as soon as its content has faded, and not before', () => {
@@ -408,4 +413,67 @@ test('a settled row the view brings in opens from no height, so the rows below i
   expect(jumpsOf(steps)).toEqual([])
   expect(frames.fading.find(f => f.id === 'box d10')?.height).toBe(0)
   expect(frames.cuts).toEqual([])
+})
+
+test('a row the selection leaves keeps closing when another block starts to leave', () => {
+  const titleBoxes = framesOf(
+    [
+      [0, asks(ALL, 'd11')],
+      [0, asks(ALL, 'd12')],
+      [100, asks(['d11', 'd12', 'd13'], 'd12')],
+    ],
+    900,
+  )
+    .titles.filter(t => t.id === 'd11')
+    .map(t => t.box)
+  const rises = titleBoxes.filter((box, i) => i > 0 && box > (titleBoxes[i - 1] ?? box) + 0.5)
+  expect(titleBoxes.length).toBeGreaterThan(10)
+  expect(rises).toEqual([])
+})
+
+test('the row the selection moves to shows its panel from the next frame', () => {
+  const fading = framesOf(
+    [
+      [0, asks(ALL, 'd11')],
+      [0, asks(ALL, 'd12')],
+    ],
+    300,
+  ).fading.filter(f => f.id === 'box d12')
+  const start = fading[0]?.at ?? 0
+  expect(fading.find(f => f.opacity > 0.01)?.at ?? Infinity).toBeLessThanOrEqual(start + 2 * 16)
+})
+
+test('a block listed again while it fades out fades back in where it is, and nothing below it dips', () => {
+  const all = asks(['d11', 'd12', 'd13'])
+  const frames = framesOf(
+    [
+      [0, all],
+      [0, asks(['d11', 'd13'])],
+      [50, all],
+    ],
+    900,
+  )
+  const box = frames.fading.filter(f => f.id === 'box d12')
+  const full = box[0]?.height ?? 0
+  expect(full).toBeGreaterThan(0)
+  expect(Math.min(...box.map(f => f.height))).toBeGreaterThan(full - 0.5)
+  expect(box.at(-1)?.opacity).toBeCloseTo(1)
+  expect(Math.min(...frames.heights)).toBeGreaterThan((frames.heights[0] ?? 0) - 0.5)
+})
+
+test('a block listed again after its space began to close fades in once its space is nearly open again', () => {
+  const all = asks(['d11', 'd12', 'd13'])
+  const box = framesOf(
+    [
+      [0, all],
+      [0, asks(['d11', 'd13'])],
+      [200, all],
+    ],
+    1200,
+  ).fading.filter(f => f.id === 'box d12' && f.at >= 200)
+  const full = Math.max(...box.map(f => f.height))
+  const nearlyOpenAt = box.find(f => f.height >= full - SLIDE_PX / 2)?.at ?? Infinity
+  const showsAt = box.find(f => f.opacity > 0.02)?.at ?? Infinity
+  expect(showsAt).toBeGreaterThanOrEqual(nearlyOpenAt - 16)
+  expect(showsAt - nearlyOpenAt).toBeLessThanOrEqual(2 * 16)
 })
