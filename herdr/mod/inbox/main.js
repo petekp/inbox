@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T06:27:46.789Z. 271322 characters follow.
+// Built at 2026-11-17T06:45:17.884Z. 271502 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5493,12 +5493,12 @@ function timeLeftEl(id, left, runsOutAt, now, t) {
 }
 
 // src/paint-parts.ts
-function buttonEl(b, p, isInert = false) {
+function buttonEl(b, p, isInert = false, isShrinkable = false) {
   const { t } = p;
   const isPill = b.emphasis !== "quiet";
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
-  const base = h_flex().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(b.label);
+  const base = h_flex().id(`button ${b.id}`).when(!isShrinkable, (e) => e.flex_none()).when(isShrinkable, (e) => e.flex_shrink_1().min_w(0)).h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isShrinkable ? div3().min_w(0).truncate().child(b.label) : b.label);
   const shaped = isPill && runsOutAt === undefined ? base.px(INSET).rounded(BUTTON_H / 2).border_1() : base;
   if (b.isHidden)
     return shaped.invisible().disabled(true);
@@ -5815,7 +5815,7 @@ var bodyLineEl = (l, t, isSelected, option = undefined, p = null, isInert = fals
   const armAt = above + (option ? BUTTON_H : LINE_HEIGHT) / 2;
   const arm = div8().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = option && p ? h_flex5().pl(MARK_W).pt(above).child(buttonEl(option, p, isInert)) : l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone)).pt(above);
+  const line = option && p ? h_flex5().min_w(0).pl(MARK_W).pt(above).child(buttonEl(option, p, isInert, true)) : l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone)).pt(above);
   return line.relative().children(strokes);
 };
 function fieldEl(f, p, indent, isInert = false) {

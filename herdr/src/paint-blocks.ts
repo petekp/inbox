@@ -93,9 +93,10 @@ const bodyLineEl = (
   const line =
     option && p
       ? h_flex()
+          .min_w(0)
           .pl(MARK_W)
           .pt(above)
-          .child(buttonEl(option, p, isInert))
+          .child(buttonEl(option, p, isInert, true))
       : l.lead
         ? h_flex()
             .flex_wrap()

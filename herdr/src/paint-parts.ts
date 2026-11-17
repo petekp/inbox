@@ -17,14 +17,15 @@ import { TIMED_W, timeLeftEl } from './paint-timer'
  * takes no clicks, so the block keeps its height as it fades. A button that takes no clicks shows no hover or pressed
  * change.
  */
-export function buttonEl(b: Button, p: Paint, isInert = false): Element {
+export function buttonEl(b: Button, p: Paint, isInert = false, isShrinkable = false): Element {
   const { t } = p
   const isPill = b.emphasis !== 'quiet'
   const runsOutAt = b.runsOutAt
   const left = p.timeLeft.get(b.id)
   const base = h_flex()
     .id(`button ${b.id}`)
-    .flex_none()
+    .when(!isShrinkable, e => e.flex_none())
+    .when(isShrinkable, e => e.flex_shrink_1().min_w(0))
     .h(BUTTON_H)
     .items_center()
     .justify_center()
@@ -36,7 +37,7 @@ export function buttonEl(b: Button, p: Paint, isInert = false): Element {
         .rounded(BUTTON_H / 2),
     )
     .when(left !== undefined, e => (left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e))
-    .child(b.label)
+    .child(isShrinkable ? div().min_w(0).truncate().child(b.label) : b.label)
   const shaped =
     isPill && runsOutAt === undefined
       ? base
