@@ -1,21 +1,37 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
 // src/update-main.ts
-import { existsSync as existsSync2 } from "node:fs";
+import { existsSync as existsSync3 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { dirname as dirname6, join as join7 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/cli.ts
+import { existsSync } from "node:fs";
 function namedCli(env) {
   return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
 }
-async function findCli(env, exec, parentPid) {
+var BUNDLED_CLI = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex";
+var MAX_ANCESTORS = 8;
+async function ancestorCli(exec, startPid) {
+  let pid = startPid;
+  for (let level = 0; level < MAX_ANCESTORS && pid > 1; level++) {
+    const r = await exec(["ps", "-o", "ppid=,comm=", "-p", String(pid)], { cwd: "/", timeoutMs: 5e3 }).catch(
+      () => null
+    );
+    const match = r && r.code === 0 ? /^\s*(\d+)\s+(.+?)\s*$/.exec(r.stdout) : null;
+    if (!match) return null;
+    if (/^\/(.*\/)?codex$/.test(match[2])) return match[2];
+    pid = Number(match[1]);
+  }
+  return null;
+}
+async function findCli(env, exec, parentPid, hasBundled = () => existsSync(BUNDLED_CLI)) {
   const named = namedCli(env);
   if (named) return named;
-  const r = await exec(["ps", "-o", "comm=", "-p", String(parentPid)], { cwd: "/", timeoutMs: 5e3 });
-  const parent = r.stdout.trim();
-  return r.code === 0 && /(^|\/)codex$/.test(parent) ? parent : "codex";
+  const running = await ancestorCli(exec, parentPid);
+  if (running) return running;
+  return hasBundled() ? BUNDLED_CLI : "codex";
 }
 
 // src/data-dir.ts
@@ -1502,7 +1518,7 @@ function remoteReceipts(s) {
 
 // src/host.ts
 import { appendFile, mkdir as mkdir2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync as existsSync2 } from "node:fs";
 import { dirname as dirname2, join as join3 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -5217,7 +5233,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
           version: "0.5.0",
-          isNextBuild: existsSync(join3(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
+          isNextBuild: existsSync2(join3(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
         log
@@ -6524,6 +6540,7 @@ function codexAsk(exec, cli, dir, personHome) {
 function endOf(f) {
   if (f.timeoutMs !== null) return `timed out after ${f.timeoutMs / 1e3} s`;
   if (f.signal) return `was ended by ${f.signal}`;
+  if (f.errorCode === "ENOENT") return `failed with ENOENT: no codex program at ${f.cli}`;
   if (f.errorCode) return `failed with ${f.errorCode}`;
   if (f.code === UNSTARTABLE_CODE) return "could not start";
   if (f.code === 0) return "exited 0 and wrote no reply";
@@ -6592,7 +6609,7 @@ async function main() {
   const personHome = process.env.CODEX_HOME || join7(homedir3(), ".codex");
   const ask = codexAsk(run, cli, dir, personHome);
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
-  const records = existsSync2(join7(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
+  const records = existsSync3(join7(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
   else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records);
 }

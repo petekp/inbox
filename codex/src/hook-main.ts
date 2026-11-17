@@ -27,6 +27,7 @@ async function main() {
     startStatusRefresh: id => startUpdate(id, STATUS_REFRESH),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now),
     run,
+    parentPid: process.ppid,
   })
   if (out) process.stdout.write(JSON.stringify(out))
 }

@@ -256,6 +256,7 @@ import {
   type LoadedBy,
   withoutRowActions,
 } from './mod-sessions'
+import { isPrFetchBusy, queuePrFetch } from './mod-pr-queue'
 import { cancelUndoScroll, mod, paneState, resetTurn, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import {
@@ -989,7 +990,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   // The Status call reads the transcript.
   const statusCall = transcript ? catchUpStatus($, owner, transcript) : null
   const forkedAt = await $.clock.now()
-  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
+  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown), effort: 'low' })
   if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
@@ -1677,33 +1678,14 @@ function markFetching($: EngineInterface, isFetching: boolean) {
   )
 }
 
-/**
- * Fetches the session's PRs, one fetch at a time. A fetch asked for while one runs follows it, and finds the
- * branch's PR when any of the asks wanted it.
- */
 function fetchPrs($: EngineInterface, findsBranchPr: boolean, isPress = false): Promise<void> {
-  const waiting = mod.nextFetch
-  if (waiting) {
-    waiting.findsBranchPr ||= findsBranchPr
-    waiting.isPress ||= isPress
-    return mod.fetchingPrs
-  }
-  mod.nextFetch = { findsBranchPr, isPress }
-  mod.fetchingPrs = mod.fetchingPrs
-    .then(() => {
-      const ask = mod.nextFetch ?? { findsBranchPr: false, isPress: false }
-      mod.nextFetch = null
-      return fetchPrsNow($, ask)
-    })
-    .catch(() => undefined)
-
-  return mod.fetchingPrs
+  return queuePrFetch(findsBranchPr, isPress, ask => fetchPrsNow($, ask))
 }
 
 async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   const owner = currentOwner()
-  await markFetching($, true)
   try {
+    await markFetching($, true)
     await fetchSessionPrs(hostOf($, owner), ask.findsBranchPr, ask.isPress)
   } finally {
     mod.prFetchEndedAt = await $.clock.now()
@@ -1726,7 +1708,8 @@ async function pollPrs($: EngineInterface, remote = false) {
     isTabShown: isTabShown || remote,
     isAway: away.isAway && !remote,
   }
-  if (isPrPollDue(session, poll)) await fetchPrs($, poll.isTabShown)
+  const isFetching = isPrFetchBusy()
+  if (isPrPollDue({ ...session, prViews: { ...session.prViews, isFetching } }, poll)) await fetchPrs($, poll.isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */

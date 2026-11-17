@@ -252,11 +252,11 @@ test('a queue command failure leaves the released answer unconfirmed without ret
 })
 
 test('a server whose environment names no CLI runs its parent when that is a codex, else the codex on PATH', async () => {
-  const parents: Record<string, string> = { '42': '/apps/CodexCLI.app/Contents/MacOS/codex', '43': '/bin/zsh' }
+  const parents: Record<string, string> = { '42': '1 /apps/CodexCLI.app/Contents/MacOS/codex', '43': '1 /bin/zsh' }
   const { exec } = fakeRunner(args => ({ code: 0, stdout: `${parents[args.at(-1) ?? ''] ?? ''}\n`, stderr: '' }))
 
   assert.equal(await findCli({}, exec, 42), '/apps/CodexCLI.app/Contents/MacOS/codex')
-  assert.equal(await findCli({}, exec, 43), 'codex')
+  assert.equal(await findCli({}, exec, 43, () => false), 'codex')
   assert.equal(await findCli({ CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 43), '/app/codex')
 })
 
