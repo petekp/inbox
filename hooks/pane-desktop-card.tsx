@@ -8,7 +8,7 @@ import { DESKTOP_ARM_GAP, DESKTOP_MARK_CELLS, DESKTOP_TREE_AT } from './pane-siz
 /**
  * A selected row's card on desktop when its lines hang from the row's ◆ on a tree: the title, each branch, and the
  * answer buttons. The card's border, fill and top and bottom padding sit on one Box around the frames, so the app
- * rounds the whole card once. Frames inside it that drew their own fill showed a notch at each join.
+ * rounds the whole card once. The app rounds each filled Box, so the frames inside draw no fill or border.
  */
 export function paneDesktopCard({
   Box,
