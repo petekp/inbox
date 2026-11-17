@@ -166,7 +166,7 @@ It stays until it is met.
 **Suggested goal**:
 The goal the inbox model offers while no goal is set or the goal is met, and
 the next goal is not clear enough to set. It shows at once in the goal's place,
-as a dim line, "Next goal: …?", with Set this goal and Edit after it. Set this
+as a line in the goal text's style, "Next goal: …?", with Set goal and Edit after it. Set
 goal makes it an inferred goal. Edit opens the goal's field holding its words,
 and that field's Cancel shows the suggestion again.
 

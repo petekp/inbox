@@ -67,10 +67,10 @@ test('the Status call reads the suggestion only while no goal runs', () => {
   expect(goalBlocks(withGoal, 22 * MIN).join('\n')).not.toContain('<suggested>')
 })
 
-test('the suggestion shows at once with Set this goal and Edit with its words, and the field sets a new goal and saves an edit', () => {
+test('the suggestion shows at once with Set goal and Edit with its words, and the field sets a new goal and saves an edit', () => {
   const p = page(suggested(), 22 * MIN)
   expect(goalKeys(p).map(k => [k.label, k.press])).toEqual([
-    ['Set this goal', { action: 'take-goal' }],
+    ['Set goal', { action: 'take-goal' }],
     ['Edit', { action: 'type-goal', text: 'Import ready to demo' }],
   ])
   expect(goalSubmitLabel(p)).toBe('Set')
@@ -86,12 +86,12 @@ test('the empty Status page carries the suggestion', () => {
     is: 'set-goal',
     suggestion: 'Import ready to demo',
     keys: [],
-    offerKeys: [{ label: 'Set this goal' }, { label: 'Edit' }],
+    offerKeys: [{ label: 'Set goal' }, { label: 'Edit' }],
   })
 })
 
 test('Undo of a removed goal stays before the suggestion’s buttons', () => {
   const removed = removeGoal(after(null, `${WORK}\n${GOAL}`, 20 * MIN))
   const withSuggestion = after(removed, SUGGEST.replace('Import ready', 'Import almost ready'), 21 * MIN)
-  expect(goalKeys(page(withSuggestion, 22 * MIN)).map(k => k.label)).toEqual(['Undo', 'Set this goal', 'Edit'])
+  expect(goalKeys(page(withSuggestion, 22 * MIN)).map(k => k.label)).toEqual(['Undo', 'Set goal', 'Edit'])
 })

@@ -62,7 +62,7 @@ const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
  * only while the person has it unfolded. A blank line comes before each milestone unless the one above draws
  * only its name, and before the Later label above the first that waits under it. The path's line runs in the mark
  * column from each milestone to the next. While the person types a goal, the field takes the text's place, and the
- * buttons leave. While the page has a suggested goal, its offer takes the text's place with Set this goal and Edit
+ * buttons leave. While the page has a suggested goal, its offer takes the text's place with Set goal and Edit
  * after it, and the heading keeps only Undo.
  */
 export function goalSection(
@@ -175,12 +175,12 @@ function offerFaces(offer: Offer, d: Draw, isSelected: boolean): { faces: Button
 }
 
 /**
- * The suggested goal's offer at column `at`, dim like the line that says no goal is set, with its buttons after it. When
+ * The suggested goal's offer at column `at`, bold like the goal's text, with its buttons after it. When
  * they do not fit on the offer's last line, they sit on a line under it.
  */
 function offerLines(offer: Offer, d: Draw, at: number, isSelected: boolean): string[] {
   const { width, style: s } = d
-  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim)
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.bold)
   const { faces, focused } = offerFaces(offer, d, isSelected)
   if (faces.length === 0) return text
   const keys = faceLines(faces, focused, 0, width, s, s.dim('·'))

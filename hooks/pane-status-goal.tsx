@@ -154,12 +154,18 @@ export function paneStatusGoal(
     muted,
   )
   /**
-   * The suggested goal's offer in the goal text's place, dim like the line that says no goal is set, with its buttons
+   * The suggested goal's offer in the goal text's place, drawn as the goal's text is, with its buttons
    * inline after it. When they do not fit on the offer's line, they sit on a line under it.
    */
   const offerLines = (text: string, offerKeys: StatusKey[], width: number): Drawn[] => {
     const offer = suggestedGoalOffer(text)
-    if (offerKeys.length === 0) return [muted('goal-offer', offer, width)]
+    const offerText = (
+      <Text wrap="wrap" bold>
+        {offer}
+      </Text>
+    )
+    const offerBlock = () => wrapped(<Box key="goal-offer">{offerText}</Box>, offer, width)
+    if (offerKeys.length === 0) return [offerBlock()]
     const inlineKeys = statusKeys({ id: GOAL_KEYS_ID, keys: offerKeys })
     const offerWidth = look === 'desktop' ? desktopTextPt(offer) : cellWidth(offer)
     const gap = look === 'desktop' ? desktopTextPt(STALL_GAP) : cellWidth(STALL_GAP)
@@ -168,7 +174,7 @@ export function paneStatusGoal(
         {
           el: (
             <Box key="goal-offer" flexDirection="row" alignItems="center">
-              <Text color={pal.muted}>{offer}</Text>
+              {offerText}
               <Box flexShrink={0} marginLeft={1}>
                 {headingKeys(inlineKeys)}
               </Box>
@@ -178,7 +184,7 @@ export function paneStatusGoal(
         },
       ]
 
-    return [muted('goal-offer', offer, width), ...keysRow({ id: GOAL_KEYS_ID, keys: offerKeys }, width)]
+    return [offerBlock(), ...keysRow({ id: GOAL_KEYS_ID, keys: offerKeys }, width)]
   }
   /** Marks in their tones, each with its text, on lines that wrap between them, as the Other work counts draw. */
   const markRun = (

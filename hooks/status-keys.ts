@@ -121,12 +121,12 @@ export function goalKeyPlan(page: StatusPage): StatusKey[] {
 }
 
 /**
- * The suggested goal's buttons, drawn inline after its offer: Set this goal makes it the goal, and Edit opens the goal's
+ * The suggested goal's buttons, drawn inline after its offer: Set goal makes it the goal, and Edit opens the goal's
  * field with its words. The field's own Cancel shows the suggestion again.
  */
 function suggestionKeyPlan(suggested: string): StatusKey[] {
   return [
-    { press: { action: 'take-goal' }, label: 'Set this goal', hotkey: 's', kind: 'mark', emphasis: 'quiet' },
+    { press: { action: 'take-goal' }, label: 'Set goal', hotkey: 's', kind: 'mark', emphasis: 'quiet' },
     { press: { action: 'type-goal', text: suggested }, label: 'Edit', hotkey: 'e', kind: 'view', emphasis: 'quiet' },
   ]
 }
