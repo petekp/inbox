@@ -1,13 +1,11 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
-import { NEEDS_YOU_MARKS } from '../../hooks/help'
 import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
-import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
 import { isOpenRow } from './blocks'
-import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
+import type { Block, Button, Field, LineBlock, PrBlock, RowBlock, StatusLine } from './blocks'
 import {
   BOX_RADIUS,
   BUTTON_H,
@@ -27,102 +25,15 @@ import {
   TEXT_X,
   colorOf,
 } from './paint-theme'
-import { checkboxEl } from './paint-checkbox'
+import { buttonEl, buttonsEl, lineEl, markEl, resultLineEl } from './paint-parts'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
 import { PATH_X, lineColor, panelId, restId, sizeEl, titleEl } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
-import { TIMED_W, timeLeftEl } from './paint-timer'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
-
-/**
- * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
- * so a quiet button that starts a line puts its label where the text above it starts. A button whose press is out keeps its size, loses
- * its fill and border, and is the quietest thing in its row. A timed button's time left stays drawn and pauses while
- * its press is out. A hidden button keeps its place and draws nothing. A button of a block that is leaving draws but
- * takes no clicks, so the block keeps its height as it fades. A button that takes no clicks shows no hover or pressed
- * change.
- */
-function buttonEl(b: Button, p: Paint, isInert = false): Element {
-  const { t } = p
-  const isPill = b.emphasis !== 'quiet'
-  const runsOutAt = b.runsOutAt
-  const left = p.timeLeft.get(b.id)
-  const base = h_flex()
-    .id(`button ${b.id}`)
-    .flex_none()
-    .h(BUTTON_H)
-    .items_center()
-    .justify_center()
-    .accessibility_label(b.label)
-    .when(runsOutAt !== undefined, e =>
-      e
-        .relative()
-        .w(TIMED_W)
-        .rounded(BUTTON_H / 2),
-    )
-    .when(left !== undefined, e => (left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e))
-    .child(b.label)
-  const shaped =
-    isPill && runsOutAt === undefined
-      ? base
-          .px(INSET)
-          .rounded(BUTTON_H / 2)
-          .border_1()
-      : base
-  if (b.isHidden) return shaped.invisible().disabled(true)
-  if (b.isOut) return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true)
-  const styled =
-    b.emphasis === 'primary'
-      ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground)
-      : b.emphasis === 'normal'
-        ? shaped.border_color(t.input).text_color(t.foreground)
-        : shaped.text_color(t.muted)
-  if (isInert) return styled
-  const live =
-    b.emphasis === 'primary'
-      ? styled.hover(s => s.opacity(0.85)).active(s => s.opacity(0.7))
-      : b.emphasis === 'normal'
-        ? styled.hover(s => s.bg(t.hover)).active(s => s.bg(t.selected))
-        : styled.hover(s => s.text_color(t.foreground)).active(s => s.text_color(t.foreground).opacity(0.7))
-
-  return live.on_click((e, cx) => {
-    cx.stop_propagation()
-    p.press(b, cx, e.modifiers.alt)
-  })
-}
-
-const CLEAR = '#00000000'
-
-const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false): Element =>
-  h_flex()
-    .flex_wrap()
-    .items_center()
-    .gap(CONTROL_GAP)
-    .pt(CONTROL_GAP)
-    .pl(indent)
-    .children(buttons.map(b => buttonEl(b, p, isInert)))
-
-/** A mark, at the start of the column that hangs before the text, so a tab's first marks sit on the panel's edge. */
-const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null = null): Element =>
-  m?.text === NEEDS_YOU_MARKS.task.mark
-    ? div()
-        .w(MARK_W)
-        .flex_none()
-        .child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone))))
-    : div()
-        .w(MARK_W)
-        .flex_none()
-        .text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone)))
-        .when(m?.isRunning === true, e => e.loop('opacity', { from: 1, to: 0.3, period: RUNNING_PULSE_MS }))
-        .child(m?.text ?? '')
-
-const lineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W) =>
-  div().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text)
-
 /** The trunk of a row's tree under the middle of the row's mark, from `top` to the end of its box or down to `height`. */
 const trunkEl = (top: number, height: number | null, t: Theme, isSelected: boolean): Element => {
   const el = div()
@@ -262,7 +173,7 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
     ...from.body.map(l => bodyLineEl(l, t, r.isSelected)),
     ...(from.buttons.length > 0 ? [buttonsEl(from.buttons, p, MARK_W, isInert)] : []),
     ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : []),
-    ...(under ? [bodyLineEl(under, t, r.isSelected)] : []),
+    ...(under ? [bodyLineEl(under, t, r.isSelected).pt(CONTROL_GAP)] : []),
   ]
   if (parts.length === 0) return []
   const key = panelId(r.id)
@@ -372,7 +283,9 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     .child(status)
     .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
     .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
-    .when(b.feedback !== null, e => e.child(lineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)))
+    .when(b.feedback !== null, e =>
+      e.child(resultLineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)),
+    )
 }
 
 function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
@@ -402,7 +315,9 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
         ),
     )
     .when(b.under !== null, e => e.child(lineEl(b.under ?? '', t.muted, 0)))
-    .when(b.feedback !== null, e => e.child(lineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)))
+    .when(b.feedback !== null, e =>
+      e.child(resultLineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)),
+    )
 }
 
 /** A group's heading. A marked one hangs its mark in the mark column, with its text where its rows' text starts. One with no mark starts at the edge, where its rows' marks do. A label heading starts at the edge and rules the goal's text to its buttons. */
@@ -493,7 +408,7 @@ function emptyContentEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert:
       ),
     )
     .when(under?.feedback != null, e =>
-      e.child(centred(under?.feedback?.text ?? '', colorOf(t, under?.feedback?.tone ?? null))),
+      e.child(centred(under?.feedback?.text ?? '', colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)),
     )
 }
 
@@ -556,7 +471,7 @@ export function blockEl(b: Block, p: Paint): Element {
       b.banner,
       t,
       b.buttons.map(x => buttonEl(x, p, isLeaving)),
-      b.feedback ? lineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null,
+      b.feedback ? resultLineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null,
     )
 
   return div()
