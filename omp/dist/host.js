@@ -10057,7 +10057,7 @@ var ANIMATION_MS = 200;
 var collapsedAfter = (collapsed, p) => p.isCollapsed ? [...collapsed.filter((id) => id !== p.id), p.id] : collapsed.filter((id) => id !== p.id);
 function createPanel(deps) {
   const { source, style, timers } = deps;
-  let ui = { ...INITIAL_UI, closedSeen: new Map, shownSince: deps.openedAt };
+  let ui = { ...INITIAL_UI, drafts: source.drafts(), closedSeen: new Map, shownSince: deps.openedAt };
   let screen = null;
   let animation = null;
   let frames = null;
@@ -10093,6 +10093,10 @@ function createPanel(deps) {
     }
     if (at !== null && timedChange === null)
       timedChange = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) };
+  };
+  const keepDraftsChangedFrom = (before) => {
+    if (ui.drafts !== before.drafts)
+      source.keepDrafts(ui.drafts, holdsOf(ui));
   };
   async function refresh(pressedId) {
     const mine = ++version;
@@ -10154,8 +10158,10 @@ function createPanel(deps) {
     const now = deps.now();
     const isDraftUnedited = sentDraft !== undefined && ui.drafts[rowId] === sentDraft;
     if (isPressConfirmed(outcome) && isDraftUnedited) {
+      const before = ui;
       const { [rowId]: _sent, ...drafts } = ui.drafts;
       ui = { ...ui, drafts };
+      keepDraftsChangedFrom(before);
     }
     const notice = noticeFor(outcome, now);
     if (notice)
@@ -10184,7 +10190,9 @@ function createPanel(deps) {
         return;
       const now = deps.now();
       const result = handleKey(screen, ui, key, now, text);
+      const before = ui;
       ui = { ...result.ui, listInput: withListInput(ui.listInput, now) };
+      keepDraftsChangedFrom(before);
       source.shown(ui.tab, holdsOf(ui));
       if (result.close)
         deps.close();
@@ -12375,6 +12383,8 @@ function demoSource(deps) {
     resume: async () => null,
     fetchPrsWhenDue: () => {},
     checkDelegatesWhenDue: () => {},
+    drafts: () => ({}),
+    keepDrafts: () => {},
     shown: () => {},
     showedRows: () => {},
     onChange: (listener) => {
@@ -14394,6 +14404,43 @@ function ompPresses(target, apply, log) {
   };
 }
 
+// src/host-send.ts
+var messageOf = (err) => err instanceof Error ? err.message : String(err);
+function takeBackFromEditor(ctx, text) {
+  if (ctx.hasUI && ctx.ui.getEditorText() === text)
+    ctx.ui.setEditorText("");
+}
+function agentSender(pi) {
+  const runStartWaiters = new Map;
+  const sendToAgent = async (ctx, text) => {
+    const id = sessionIdOf(ctx);
+    const waiters = runStartWaiters.get(id) ?? new Set;
+    runStartWaiters.set(id, waiters);
+    let started = () => {};
+    const runStarted = new Promise((resolve) => {
+      started = () => resolve(null);
+    });
+    waiters.add(started);
+    try {
+      const options = ctx.isIdle() ? undefined : { deliverAs: "followUp" };
+      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(() => null, (err) => {
+        takeBackFromEditor(ctx, text);
+        return messageOf(err);
+      });
+      return await Promise.race([sent, runStarted]);
+    } catch (err) {
+      return messageOf(err);
+    } finally {
+      waiters.delete(started);
+    }
+  };
+  const onRunStart = (ctx) => {
+    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? [])
+      started();
+  };
+  return { sendToAgent, onRunStart };
+}
+
 // src/host-herdr-ask.ts
 function ompHerdrAsk(target, memory, changed) {
   const appHome = target?.kind === "terminal" ? target.appHome ?? null : null;
@@ -14443,7 +14490,7 @@ function ompHerdrAsk(target, memory, changed) {
 
 // src/host-panel.ts
 function panelCalls(context, sessions, herdrAsk) {
-  const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
+  const { deps, dir, openPanels, drafts, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions;
   const shownRows = new Map;
   const takeShownRows = (id) => {
@@ -14496,7 +14543,13 @@ function panelCalls(context, sessions, herdrAsk) {
       const id = sessionIdOf(ctx);
       openPanels.delete(id);
       const shown = takeShownRows(id);
-      deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now(), shown), shownSince: null })));
+      const heldRows = Object.keys(heldReplies(null, drafts.get(id) ?? {}));
+      deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now(), shown), heldRows, shownSince: null })));
+    },
+    keepDrafts: (ctx, kept, holds) => {
+      const id = sessionIdOf(ctx);
+      drafts.set(id, kept);
+      deps.background(change(id, (s) => withHolds(s, holds)));
     },
     showRows: (ctx, ids) => {
       const id = sessionIdOf(ctx);
@@ -14541,6 +14594,8 @@ function panelCalls(context, sessions, herdrAsk) {
     resume: async () => inbox.resume(ctx),
     answerHerdr: herdrAsk.answer,
     collapse: (id, isCollapsed) => inbox.collapse(ctx, id, isCollapsed),
+    drafts: () => drafts.get(sessionIdOf(ctx)) ?? {},
+    keepDrafts: (kept, holds) => inbox.keepDrafts(ctx, kept, holds),
     fetchPrsWhenDue: (isTabShown) => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
@@ -14886,6 +14941,7 @@ function turnHandlers(context, sessions) {
   const onSessionShutdown = async (_event, ctx) => {
     const id = sessionIdOf(ctx);
     openPanels.delete(id);
+    context.drafts.delete(id);
     prepared.delete(id);
     if (noted?.id === id)
       noted = null;
@@ -15072,7 +15128,6 @@ var defaultDeps = {
   herdrTarget: herdrTarget(process.env),
   questionHistory: (dir) => questionHistoryPlace(process.env, dir)
 };
-var messageOf = (err) => err instanceof Error ? err.message : String(err);
 function byNewestRevision(a, b) {
   const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
   const [x, y] = [parts(a), parts(b)];
@@ -15096,30 +15151,7 @@ function createInbox(pi, deps = defaultDeps) {
       return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
-  const runStartWaiters = new Map;
-  const sendToAgent = async (ctx, text) => {
-    const id = sessionIdOf(ctx);
-    const waiters = runStartWaiters.get(id) ?? new Set;
-    runStartWaiters.set(id, waiters);
-    let started = () => {};
-    const runStarted = new Promise((resolve) => {
-      started = () => resolve(null);
-    });
-    waiters.add(started);
-    try {
-      const options = ctx.isIdle() ? undefined : { deliverAs: "followUp" };
-      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(() => null, (err) => messageOf(err));
-      return await Promise.race([sent, runStarted]);
-    } catch (err) {
-      return messageOf(err);
-    } finally {
-      waiters.delete(started);
-    }
-  };
-  const onRunStart = (ctx) => {
-    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? [])
-      started();
-  };
+  const { sendToAgent, onRunStart } = agentSender(pi);
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
       const model = inboxModel(ctx);
@@ -15176,6 +15208,7 @@ function createInbox(pi, deps = defaultDeps) {
     deps,
     dir,
     openPanels: new Map,
+    drafts: new Map,
     prepared: new Set,
     prFetches: prFetchTracker(deps.now, (id) => sessions.notifyChanged(id)),
     listeners: new Map,
