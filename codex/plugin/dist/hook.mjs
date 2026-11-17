@@ -4392,6 +4392,7 @@ function herdrReportKey(r) {
 var HERDR_RETRY_MS = [5e3, 3e4, 12e4];
 function herdrReporter(log) {
   let sent = null;
+  let isFinished = false;
   let retries = 0;
   let isRetryWaiting = false;
   let sending = Promise.resolve();
@@ -4416,12 +4417,13 @@ function herdrReporter(log) {
     retries++;
     after(wait, () => {
       isRetryWaiting = false;
-      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false);
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after, newest.isFinal) : Promise.resolve(false);
     });
   };
-  const send = async (run2, report, after) => {
+  const send = async (run2, report, after, isFinal) => {
+    if (isFinished && !isFinal) return false;
     const r = await report();
-    if (!r) return false;
+    if (!r || isFinished && !isFinal) return false;
     const key = herdrReportKey(r);
     if (key === sent) return true;
     sent = null;
@@ -4436,9 +4438,10 @@ function herdrReporter(log) {
     } else retryLater(after);
     return isTaken;
   };
-  const reportToHerdr = (run2, report, after) => {
-    newest = { run: run2, report, after };
-    const result = sending.then(() => send(run2, report, after)).catch(() => false);
+  const reportToHerdr = (run2, report, after, isFinal = false) => {
+    newest = { run: run2, report, after, isFinal };
+    if (isFinal) isFinished = true;
+    const result = (isFinal ? send(run2, report, after, true) : sending.then(() => send(run2, report, after, false))).catch(() => false);
     sending = result;
     return result;
   };
@@ -4641,6 +4644,34 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
       await updateState(dir, id, (saved) => ({ ...saved, herdrReport: { key, seq } }), now);
     }).catch(() => void 0);
   };
+}
+
+// src/shared-daemon.ts
+var PS_TIMEOUT_MS = 5e3;
+var INIT_PID = 1;
+var MAX_ANCESTORS = 6;
+var isSharedDaemon = (command) => /(^|\/)codex\s.*\bapp-server\b/.test(command) && /--managed-daemon\b|--listen[ =]unix:\/\//.test(command);
+async function isUnderSharedDaemon(pid, run2) {
+  let current = pid;
+  for (let level = 0; level < MAX_ANCESTORS && current > INIT_PID; level++) {
+    const r = await run2(["ps", "-o", "ppid=,command=", "-p", String(current)], { cwd: "/", timeoutMs: PS_TIMEOUT_MS });
+    const match = r.code === 0 ? /^\s*(\d+)\s+(.*)$/.exec(r.stdout.trim()) : null;
+    if (!match) return false;
+    const [, parent, command] = match;
+    if (isSharedDaemon(command ?? "")) return true;
+    current = Number(parent);
+  }
+  return false;
+}
+async function withoutSharedTerminal(env, run2, pid, log) {
+  const where = env.HERDR_PANE_ID ?? env.HC_TERMINAL_ID;
+  if (!where) return;
+  if (!await isUnderSharedDaemon(pid, run2).catch(() => false)) return;
+  log(
+    `Herdr ${where} ignored: Codex runs this thread in a daemon shared by every Codex CLI, so ${where} is where the daemon started, not necessarily where this thread runs. The inbox reports to no terminal.`
+  );
+  delete env.HERDR_PANE_ID;
+  delete env.HC_TERMINAL_ID;
 }
 
 // src/hook.ts
@@ -5624,6 +5655,7 @@ async function main() {
   for await (const chunk of process.stdin) raw += chunk;
   const dist = dirname5(fileURLToPath2(import.meta.url));
   const dir = dataDir(process.env, dirname5(dist));
+  await withoutSharedTerminal(process.env, run, process.ppid, herdrLog(dir));
   useQuestionHistory(questionHistoryPlace(process.env, dir));
   const startUpdate = detachedUpdate(dir, process.env, join6(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {
