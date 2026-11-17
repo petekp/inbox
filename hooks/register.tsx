@@ -669,7 +669,7 @@ async function askInboxModel(
     effort: 'low',
     timeoutMs,
   })
-  report?.(callReport(r))
+  report?.(callReport(r, MODEL))
   return r.isAnswered ? r.text : null
 }
 
@@ -988,7 +988,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   if (!forked.isAnswered && forked.reason === 'nothing-to-fork')
     return transcriptReply($, owner, ledger, shown, transcript)
   const text = forked.isAnswered ? forked.text : null
-  const heard = { text, report: callReport(forked), thrown: null, ms: (await $.clock.now()) - forkedAt }
+  const heard = { text, report: callReport(forked, null), thrown: null, ms: (await $.clock.now()) - forkedAt }
 
   return text === null ? { kind: 'failed', heard } : { kind: 'reply', text, source: null, statusCall, heard }
 }

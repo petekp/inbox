@@ -1969,6 +1969,9 @@ function childAgents(stdout, parent) {
   }
 }
 
+// ../hooks/herdr-labels.ts
+var SESSION_LABEL = "inbox.session";
+
 // ../hooks/ledger-close.ts
 var MAX_CLOSED = 12;
 function closedRecord(item, closing, now) {
@@ -5557,7 +5560,6 @@ function paneReport(pane, tokens, seq) {
     ...seq === undefined ? [] : ["--seq", String(seq)]
   ];
 }
-var SESSION_LABEL = "inbox.session";
 function reportCommand(r, hc = "hc") {
   if (r.target.kind === "pane")
     return paneReport(r.target.pane, r.tokens, r.seq);
@@ -7828,7 +7830,7 @@ function perTurnStatus(recovery) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";

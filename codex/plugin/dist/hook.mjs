@@ -3070,7 +3070,7 @@ function isSubjectSeen(o, s) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
@@ -4282,6 +4282,9 @@ function childAgents(stdout, parent) {
   }
 }
 
+// ../hooks/herdr-labels.ts
+var SESSION_LABEL = "inbox.session";
+
 // ../hooks/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -4386,7 +4389,6 @@ function paneReport(pane, tokens, seq) {
     ...seq === void 0 ? [] : ["--seq", String(seq)]
   ];
 }
-var SESSION_LABEL = "inbox.session";
 function reportCommand(r, hc = "hc") {
   if (r.target.kind === "pane") return paneReport(r.target.pane, r.tokens, r.seq);
   const labels = { [SESSION_LABEL]: r.session ?? "", ...herdrLabels(r.tokens) };

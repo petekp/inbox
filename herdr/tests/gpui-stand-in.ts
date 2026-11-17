@@ -1,6 +1,6 @@
 import { mock } from 'bun:test'
 
-import { SESSION_LABEL } from '../../hooks/herdr'
+import { SESSION_LABEL } from '../../hooks/herdr-labels'
 import { demoEnvelopeText } from './fixtures'
 
 type Handler = (event: unknown, cx: StandInContext) => void

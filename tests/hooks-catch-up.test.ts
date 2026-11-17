@@ -188,6 +188,39 @@ test('after a failed update, the next reply catches up over the whole conversati
   expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed ›')
 })
 
+test('a failed forked catch-up is saved with no model, since the fork runs on the conversation’s model', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Pick<Session, 'callFailures'> | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  on('model.fork', () => ({
+    value: {
+      isAnswered: false as const,
+      reason: 'api-error' as const,
+      status: 529,
+      error: 'overloaded' as const,
+      usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    },
+  }))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  w.ledgerReply = 'not a ledger'
+  await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Using Node.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  await $.prompt.submit({ text: 'and then', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Named it greet.', durationMs: 5, isAborted: false, turnId: 't3', reason: 'answer' })
+  await clock.settle()
+
+  expect(session!.callFailures.ledger.lastFailure).toMatchObject({ reads: 'catch-up', model: null })
+})
+
 test('a reload that cuts off the end-of-turn hook catches up on load, and a subagent’s turn leaves nothing to catch up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

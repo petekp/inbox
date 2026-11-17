@@ -125,7 +125,7 @@ export const HELP_COPY = {
   version: 'Inbox',
 } as const
 
-/** The line at the end of Help that says which inbox build this is, as the footer's version label did. */
+/** The words at the right end of Help's Keys title that say which inbox build this is. */
 export const helpVersionText = (version: string, isNextBuild: boolean): string =>
   `${HELP_COPY.version} ${versionLabel(version, isNextBuild)}`
 

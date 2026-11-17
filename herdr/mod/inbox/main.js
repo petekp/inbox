@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T07:19:38.683Z. 274127 characters follow.
+// Built at 2026-11-17T07:27:08.527Z. 274224 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -278,6 +278,10 @@ var GH_TIMEOUT_MS = 20000;
 
 // ../hooks/hc-terminals.ts
 var HC_BLOCKED = new Set(["blocked", "error"]);
+
+// ../hooks/herdr-labels.ts
+var SESSION_LABEL = "inbox.session";
+var PRESS_LABEL = "inbox.press";
 
 // ../hooks/ask-match.ts
 function words2(text) {
@@ -2737,7 +2741,6 @@ var COUNT_TOKENS = {
   prs: "inbox-prs"
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
-var SESSION_LABEL = "inbox.session";
 var HERDR_FORMAT = 1;
 var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor");
 function publishedSessionsFolder(appHome) {
@@ -3545,7 +3548,7 @@ function withCollapse(s, row, isCollapsed, at) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";
@@ -4910,7 +4913,6 @@ function withChange(ui, c) {
 }
 
 // src/press-file.ts
-var PRESS_LABEL = "inbox.press";
 var pressPath = (appHome, sessionId, pressId) => `${pressFolder(appHome, sessionId)}/${pressId}.json`;
 var newPressId = (now, random) => `${now.toString(36)}-${Math.floor(random * 36 ** 6).toString(36)}`;
 function pressFileText(id, pressedAt, press, holds, result = null) {
