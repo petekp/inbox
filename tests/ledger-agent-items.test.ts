@@ -132,7 +132,7 @@ describe('items the agent recorded', () => {
     )
     const enriched = recordItem(CLAUDE_CODE, bare.ledger, { ...input, ...body }, 1100, TOOL_FIELDS)
     expect(enriched.result).toBe(
-      'Already open, so this record updated it and gave it your context and gave its options your notes.',
+      'Already open as i1, so this record updated it and gave it your context and gave its options your notes. i1 is the only copy and stays open; do not close it to replace it.',
     )
     expect(enriched.ledger.items[0]).toMatchObject({
       context: 'The price lookups are slow',
@@ -255,11 +255,48 @@ describe('items the agent recorded', () => {
     expect(
       [first, second, unstated, elsewhere].map(r => [r.ledger.items.map(i => i.rec), r.result, r.personLine]),
     ).toEqual([
-      [['Redis'], 'Already open, so this record updated it and changed its recommendation to Redis.', null],
-      [['Memcached'], 'Already open, so this record updated it and changed its recommendation to Memcached.', null],
-      [['Memcached'], 'Already open, so this record updated it.', null],
-      [['Memcached'], 'Already open, so this record updated it.', null],
+      [
+        ['Redis'],
+        'Already open as i1, so this record updated it and changed its recommendation to Redis. i1 is the only copy and stays open; do not close it to replace it.',
+        null,
+      ],
+      [
+        ['Memcached'],
+        'Already open as i1, so this record updated it and changed its recommendation to Memcached. i1 is the only copy and stays open; do not close it to replace it.',
+        null,
+      ],
+      [
+        ['Memcached'],
+        'Already open as i1, so this record updated it. i1 is the only copy and stays open; do not close it to replace it.',
+        null,
+      ],
+      [
+        ['Memcached'],
+        'Already open as i1, so this record updated it. i1 is the only copy and stays open; do not close it to replace it.',
+        null,
+      ],
     ])
+  })
+
+  test('a reworded duplicate names the kept question and says to leave it open', () => {
+    const first = recordItem(
+      CLAUDE_CODE,
+      EMPTY,
+      { kind: 'question', ask: 'Which cache should the product API use?', options: ['Redis', 'Memcached'] },
+      2000,
+      TOOL_FIELDS,
+    )
+    const second = recordItem(
+      CLAUDE_CODE,
+      { ...first.ledger, turn: first.ledger.turn + 1 },
+      { kind: 'question', ask: 'Which cache should we use for the product API?', options: ['Redis', 'Memcached'] },
+      2100,
+      TOOL_FIELDS,
+    )
+
+    expect(second.result).toContain('Already open as i1')
+    expect(second.result).toContain('i1 is the only copy and stays open; do not close it to replace it.')
+    expect(second.ledger.items.map(item => item.id)).toEqual(['i1'])
   })
 
   test('option caps use the visible label while the press keeps the full link', () => {

@@ -3102,11 +3102,11 @@ var TASKS_SCHEMA = {
     weight: { type: "number", description: "For add or update: a sibling-relative weight from 0.1 to 100." },
     pr: {
       type: ["string", "null"],
-      description: "For add or update: a GitHub pull request URL, https://github.com/owner/repo/pull/123. Use null to clear."
+      description: "For add or update: a GitHub or GitHub Enterprise pull request URL, https://<host>/owner/repo/pull/123. Use null to clear."
     },
     issue: {
       type: ["string", "null"],
-      description: "For add or update: a GitHub issue URL, https://github.com/owner/repo/issues/123. Use null to clear."
+      description: "For add or update: a GitHub or GitHub Enterprise issue URL, https://<host>/owner/repo/issues/123. Use null to clear."
     },
     owner_agent: {
       type: ["string", "null"],

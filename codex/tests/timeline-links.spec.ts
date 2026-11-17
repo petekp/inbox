@@ -14,7 +14,7 @@ after(() => window.happyDOM.close())
 test('a Timeline Local open stays disabled while pending and draws its done or failed result', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
-  const ref = 'https://github.com/acme/inbox/pull/12'
+  const ref = 'https://git.example.org/acme/inbox/pull/12'
   const state = emptyState('timeline-links')
   state.heard.startAt = 1
   state.taskTree = [

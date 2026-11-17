@@ -13,6 +13,9 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   const record = await $.tool.describe({ tool: 'mcp__inbox__record', description: 'Record an item.', provider })
   expect(close.description).toContain('Close an item.')
   expect(close.description).toContain('# Inbox')
+  expect(close.description).toContain(
+    'Write the text of questions, tasks and findings in the language the person writes to you in.',
+  )
   expect(record.description).toBe('Record an item.')
   const order = await $.tool.describe({ tool: 'mcp__inbox__order_prs', description: 'Order PRs.', provider })
   const tasks = await $.tool.describe({ tool: 'mcp__inbox__tasks', description: 'Maintain tasks.', provider })
@@ -233,7 +236,7 @@ test('a question Claude records waits in the pane with its recommendation, a rep
   await clock.settle()
   expect(await pane.find({ text: /Which cache should the API use\?/ })).toBeDefined()
   expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe(
-    'Already open, so this record updated it.',
+    'Already open as i1, so this record updated it. i1 is the only copy and stays open; do not close it to replace it.',
   )
   expect((await $.tool.call({ ...question, ask: 'Which cache should it use?', rec: 'Memcached' })).result).toBe(
     'Not recorded: rec must be one of the options.',

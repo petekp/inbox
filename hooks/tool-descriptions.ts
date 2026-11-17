@@ -16,7 +16,7 @@ For any kind with a Markdown report the user should read, give its absolute loca
 Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`
 }
 
-export const CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`
+export const CLOSE_DESCRIPTION = `Close an open item or finding by an id from the latest "inbox:" text.`
 
 export function tasksDescription(host: Host): string {
   return `Keep your task tree current when you make a plan, start work, finish work or drop work. Add, update, move, complete or note tasks. A task is your own work plan, never a question or a step for the user; use ${host.recordTool} for those.\n\nWhen one exists, link the PR, issue or owner agent so finished or stalled work can be noticed.`

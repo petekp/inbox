@@ -21,14 +21,16 @@ type Answer = { exitCode: number; stdout: string; stderr: string }
 
 function ghStandIn(answerOf: (number: string, repo: string) => PrAnswer) {
   const queried: string[][] = []
+  const commands: string[][] = []
   const run = async (args: string[]): Promise<Answer> => {
-    if (args[1] !== 'graphql') return { exitCode: 1, stdout: '', stderr: 'no pull requests found' }
-    const query = args[3]!.slice('query='.length)
+    commands.push(args)
+    if (!args.includes('graphql')) return { exitCode: 1, stdout: '', stderr: 'no pull requests found' }
+    const query = args.find(arg => arg.startsWith('query='))!.slice('query='.length)
     queried.push(queriedPrs(query).map(pr => `${pr.repo}#${pr.number}`))
     return { exitCode: 0, stdout: prsAnswerOf(query, answerOf, 'me'), stderr: '' }
   }
 
-  return { run, queried }
+  return { run, queried, commands }
 }
 
 function hostOf(run: (args: string[]) => Promise<Answer>, start: Session, ownerRun?: Run) {
@@ -108,6 +110,45 @@ test('untracked closed PRs warn, and a failed GitHub fetch changes no task fact 
   await fetchPrs(failed.host, false)
   expect(failed.state().taskTree).toEqual(start.taskTree)
   expect(failed.state().taskFactWarnings).toEqual([])
+})
+
+test('a GitHub Enterprise task PR is queried on its own host and a merge completes its task', async () => {
+  const url = 'https://git.example.org/acme/app/pull/17'
+  const start = { ...emptySession(), taskTree: [taskWithPr('t1', url)] }
+  const ghe = ghStandIn((number, repo) => ({
+    node: prNodeOf({
+      number: Number(number),
+      title: 'Work',
+      url: `https://git.example.org/${repo}/pull/${number}`,
+      state: 'MERGED',
+    }),
+  }))
+  const { host, state } = hostOf(ghe.run, start)
+
+  await fetchPrs(host, false)
+
+  const hostQueries = ghe.commands.filter(args => args.includes('graphql') && args.includes('--hostname'))
+  expect(hostQueries).toHaveLength(1)
+  expect(hostQueries[0]).toContain('git.example.org')
+  expect(ghe.commands.filter(args => args.includes('graphql') && !args.includes('--hostname'))).toEqual([])
+  expect(ghe.queried).toEqual([['acme/app#17']])
+  expect(state().taskTree[0]).toMatchObject({
+    status: 'done',
+    history: [{ source: 'pr', kind: 'completed', detail: url }],
+  })
+})
+
+test('a task PR URL with a port is not sent to gh and does not show a fetch error', async () => {
+  const url = 'https://git.example.org:8443/acme/app/pull/18'
+  const start = { ...emptySession(), taskTree: [taskWithPr('t1', url)] }
+  const gh = ghStandIn(() => null)
+  const { host, state } = hostOf(gh.run, start)
+
+  await fetchPrs(host, false)
+
+  expect(gh.commands.filter(args => args.includes('graphql'))).toEqual([])
+  expect(state().taskTree[0]?.status).toBe('working')
+  expect(state().taskFactWarnings).toEqual([])
 })
 
 test('untracked task PR checks are capped at eight per poll and continue after the saved cursor', async () => {

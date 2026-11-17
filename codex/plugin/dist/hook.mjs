@@ -2658,11 +2658,11 @@ var TASKS_SCHEMA = {
     weight: { type: "number", description: "For add or update: a sibling-relative weight from 0.1 to 100." },
     pr: {
       type: ["string", "null"],
-      description: "For add or update: a GitHub pull request URL, https://github.com/owner/repo/pull/123. Use null to clear."
+      description: "For add or update: a GitHub or GitHub Enterprise pull request URL, https://<host>/owner/repo/pull/123. Use null to clear."
     },
     issue: {
       type: ["string", "null"],
-      description: "For add or update: a GitHub issue URL, https://github.com/owner/repo/issues/123. Use null to clear."
+      description: "For add or update: a GitHub or GitHub Enterprise issue URL, https://<host>/owner/repo/issues/123. Use null to clear."
     },
     owner_agent: {
       type: ["string", "null"],
@@ -3530,6 +3530,8 @@ async function updateState(dir, sessionId, change) {
 function guidanceText(host) {
   return `# Inbox
 ${host.intro}
+
+Write the text of questions, tasks and findings in the language the person writes to you in.
 
 When a choice can be inferred from the work or is easy to undo, make it and say what you chose. When you ask the user to decide something, say which option you recommend and why, in one clause ("I'd go with B: it keeps the old API"). If you cannot recommend one, say what would decide it.
 

@@ -54,12 +54,40 @@ function hasValidWeight(weight: number): boolean {
   return Number.isFinite(weight) && weight >= TASK_WEIGHT_MIN && weight <= TASK_WEIGHT_MAX
 }
 
-function validGitHubLink(value: string, kind: 'pull' | 'issue'): boolean {
+type TaskGitHubLink = { host: string; ref: string; kind: 'pull' | 'issues'; number: string }
+
+/** Parses the URL shape accepted for a task's GitHub or GitHub Enterprise PR and issue links. */
+export function taskGitHubLink(value: string): TaskGitHubLink | undefined {
   const match =
-    /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})?\/([A-Za-z0-9_.-]{1,100})\/(pull|issues)\/[1-9]\d*$/.exec(
+    /^https:\/\/[^/?#]+\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})?)\/([A-Za-z0-9_.-]{1,100})\/(pull|issues)\/([1-9]\d*)$/.exec(
       value,
     )
-  return Boolean(match && match[1] !== '.' && match[1] !== '..' && match[2] === (kind === 'pull' ? 'pull' : 'issues'))
+  if (!match || match[2] === '.' || match[2] === '..') return undefined
+
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return undefined
+    return {
+      host: url.host.toLowerCase(),
+      ref: `${match[1]}/${match[2]}#${match[4]}`,
+      kind: match[3] as 'pull' | 'issues',
+      number: match[4]!,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/** The host and owner/repo/number reference from a task's validated PR link. */
+export function taskPrLink(value: string): { host: string; ref: string; queryable: boolean } | undefined {
+  const link = taskGitHubLink(value)
+  if (link?.kind !== 'pull') return undefined
+  const url = new URL(value)
+  return { host: link.host, ref: link.ref, queryable: url.port === '' }
+}
+
+function validGitHubLink(value: string, kind: 'pull' | 'issue'): boolean {
+  return taskGitHubLink(value)?.kind === (kind === 'pull' ? 'pull' : 'issues')
 }
 
 function validAgentName(value: unknown): value is string {
@@ -132,9 +160,9 @@ export function taskLinksFromInput(input: Record<string, unknown>, previous?: Ta
 
 export function taskLinkProblemText(problem: TaskLinkProblem): string {
   if (problem === 'invalid-pr')
-    return 'pr must be a GitHub pull request URL like https://github.com/owner/repo/pull/123.'
+    return 'pr must be a GitHub or GitHub Enterprise pull request URL like https://<host>/owner/repo/pull/123.'
   if (problem === 'invalid-issue')
-    return 'issue must be a GitHub issue URL like https://github.com/owner/repo/issues/123.'
+    return 'issue must be a GitHub or GitHub Enterprise issue URL like https://<host>/owner/repo/issues/123.'
   return `owner_agent must match the Herdr agent-name pattern [a-z][a-z0-9_-]{0,31}; owner_machine must be a non-empty alias up to ${TASK_MACHINE_ALIAS_LENGTH} characters. Provide both when adding an owner; on update, one can change an existing owner. Pass null alone to clear the owner.`
 }
 

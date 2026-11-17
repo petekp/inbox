@@ -14,6 +14,7 @@ import {
   createTask,
   moveTask,
   taskTreeFromStatus,
+  taskPrLink,
   updateTask,
   weightedTaskProgress,
   weightedTaskProgressSegments,
@@ -152,6 +153,28 @@ test('tree operations reject malformed task links when applied directly', () => 
     ok: false,
     reason: 'invalid-issue',
   })
+})
+
+test('task links accept GitHub Enterprise pull and issue URLs with the same exact path shapes', () => {
+  const pr = 'https://git.example.org/acme/app/pull/12'
+  const issue = 'https://git.example.org/acme/app/issues/34'
+  expect(createTask([], node('ghe', { links: { pr, issue } }), 'agent').ok).toBe(true)
+  expect(taskPrLink(pr)).toEqual({ host: 'git.example.org', ref: 'acme/app#12', queryable: true })
+  const portPr = 'https://git.example.org:8443/acme/app/pull/13'
+  expect(createTask([], node('ghe-port', { links: { pr: portPr } }), 'agent').ok).toBe(true)
+  expect(taskPrLink(portPr)).toEqual({ host: 'git.example.org:8443', ref: 'acme/app#13', queryable: false })
+  for (const invalid of [
+    'http://git.example.org/acme/app/pull/12',
+    'https://git.example.org/acme/app/pull/12/extra',
+    'https://git.example.org/acme/app/pull/0',
+    'https://user@git.example.org/acme/app/pull/12',
+    'https://git.example.org/acme/app/pull/12?tab=files',
+  ]) {
+    expect(createTask([], node('invalid', { links: { pr: invalid } }), 'agent')).toMatchObject({
+      ok: false,
+      reason: 'invalid-pr',
+    })
+  }
 })
 
 test('notes refuse their count limit and history keeps only the newest bounded events', () => {

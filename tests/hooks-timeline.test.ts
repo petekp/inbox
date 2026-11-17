@@ -1,7 +1,96 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
+import type { On } from 'claude-code'
 import type { TabsProps } from '../hooks/tabs-client'
+import { prMarkId } from '../hooks/pr-rows'
+import { applyPrPress } from '../hooks/pr-tab'
+import type { Session } from '../types'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
+
+async function showsGheTimelineLink($: Engine, on: On, surface: 'terminal' | 'desktop') {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.files = ['/.next-build']
+  if (surface === 'desktop') w.surfaces = ['desktop']
+  let resultState: 'pending' | 'done' = 'pending'
+  const refs = [
+    ['https://git.example.org/acme/app/pull/12', 'PR #12'],
+    ['https://git.example.org/acme/app/issues/34', 'issue #34'],
+  ] as const
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, event, next) => {
+    const session = event.value as Session & { revision: number }
+    const lastActions = { ...session.lastActions }
+    for (const [ref, name] of refs) {
+      const applied = applyPrPress(
+        session.ledger,
+        session.prViews,
+        lastActions,
+        { action: 'pr-open', ref },
+        { now: 1_000_000, turnsStarted: 0 },
+      )
+      if ('stale' in applied) continue
+      const last = applied.lasts[prMarkId(ref)]
+      if (!last) continue
+      lastActions[prMarkId(ref)] =
+        resultState === 'done'
+          ? {
+              ...last,
+              result: {
+                state: 'done',
+                at: 1_000_000,
+                parts: [{ kind: 'open', name, error: null, isCommand: false }],
+              },
+            }
+          : last
+    }
+    return next({ ...event, value: { ...session, lastActions } })
+  })
+  await $.session.start({
+    cwd: '/tmp/project',
+    surface: surface === 'desktop' ? null : surface,
+    isInteractive: surface === 'terminal',
+  })
+  await $.tool.call({
+    tool: 'mcp__inbox__tasks',
+    operation: 'add',
+    task_id: 'ghe',
+    title: 'Review enterprise PR',
+    pr: 'https://git.example.org/acme/app/pull/12',
+    issue: 'https://git.example.org/acme/app/issues/34',
+  } as never)
+  const pane = await $.ui.mount({ ...PANE, surface })
+  if (surface === 'desktop') {
+    const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+    const timelineAt = tabs
+      .slice(
+        0,
+        tabs.findIndex(tab => tab.id === 'timeline'),
+      )
+      .reduce((x, tab) => x + tab.width + gap, 0)
+    await pane.pointer({ type: 'down', x: timelineAt, y: 1, button: 'left', in: 'tabs' })
+  } else {
+    await pane.press({ key: 'tab-key-timeline' })
+  }
+  await clock.settle()
+
+  const buttons = await pane.findAll({ type: 'Button' })
+  expect((await pane.findAll({ type: 'Text' })).some(line => line.text.includes('Links ·'))).toBe(true)
+  expect(buttons.filter(button => button.props.label === 'Opening…')).toHaveLength(2)
+  expect((await pane.findAll({ type: 'Text' })).filter(line => line.text === '✓ Opened')).toHaveLength(0)
+
+  resultState = 'done'
+  await $.tool.call({
+    tool: 'mcp__inbox__tasks',
+    operation: 'note',
+    task_id: 'ghe',
+    note: 'Opened the linked items.',
+  } as never)
+  await clock.settle()
+  expect((await pane.findAll({ type: 'Button' })).map(button => button.props.label)).toContain('Open PR')
+  expect((await pane.findAll({ type: 'Button' })).map(button => button.props.label)).toContain('Open issue')
+  expect((await pane.findAll({ type: 'Text' })).filter(line => line.text === '✓ Opened')).toHaveLength(2)
+}
 
 test('the Timeline selection and folds upgrade to defaults in an older save', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
@@ -153,4 +242,12 @@ test('the desktop Timeline draws every planned row action as one button per acti
     ['timeline-select-leaf', 'leaf', true],
     ['toggle-branch', 'Close branch', true],
   ])
+})
+
+test('the terminal Timeline shows Opening and Opened for GitHub Enterprise PR and issue links', async ($, on) => {
+  await showsGheTimelineLink($, on, 'terminal')
+})
+
+test('the desktop Timeline shows Opening and Opened for GitHub Enterprise PR and issue links', async ($, on) => {
+  await showsGheTimelineLink($, on, 'desktop')
 })

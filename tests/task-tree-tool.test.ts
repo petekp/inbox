@@ -134,12 +134,15 @@ test('tasks refuses invalid links without changing the tree and explains how to 
     expect(state().taskTree).toEqual(before)
   }
 
-  refused({ operation: 'update', task_id: 'linked', pr: 'not a URL' }, 'GitHub pull request URL')
+  refused({ operation: 'update', task_id: 'linked', pr: 'not a URL' }, 'GitHub or GitHub Enterprise pull request URL')
   refused(
-    { operation: 'update', task_id: 'linked', pr: 'https://github.com.evil/acme/app/pull/12' },
-    'GitHub pull request URL',
+    { operation: 'update', task_id: 'linked', pr: 'https://github.com/acme/app/pull/12/extra' },
+    'GitHub or GitHub Enterprise pull request URL',
   )
-  refused({ operation: 'update', task_id: 'linked', issue: 'https://github.com/acme/app/pull/12' }, 'GitHub issue URL')
+  refused(
+    { operation: 'update', task_id: 'linked', issue: 'https://github.com/acme/app/pull/12' },
+    'GitHub or GitHub Enterprise issue URL',
+  )
   refused(
     {
       operation: 'add',

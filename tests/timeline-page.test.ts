@@ -108,7 +108,7 @@ test('the selected task plan orders labeled details and link actions', () => {
             { at: now - 5 * 60_000, source: 'claude', kind: 'updated', detail: 'Added the pane' },
             { at: now - 2 * 60_000, source: 'status', kind: 'created' },
           ],
-          links: { pr: 'https://github.com/a/b/pull/1' },
+          links: { pr: 'https://git.example.org/a/b/pull/1' },
         }),
       ],
       segments,

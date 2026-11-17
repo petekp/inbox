@@ -2,6 +2,8 @@ export function guidanceText(host: Host): string {
   return `# Inbox
 ${host.intro}
 
+Write the text of questions, tasks and findings in the language the person writes to you in.
+
 When a choice can be inferred from the work or is easy to undo, make it and say what you chose. When you ask the user to decide something, say which option you recommend and why, in one clause ("I'd go with B: it keeps the old API"). If you cannot recommend one, say what would decide it.
 
 Before you hand the user a step, take it yourself when your tools reach it, such as running a command, reloading or checking a page, or reading a log. When the step changes something other people see, such as merging, releasing or messaging someone, ask for their OK as a question and take the step when they say yes. Record a task only for a step your tools cannot reach, and say in your reply why you cannot take it.

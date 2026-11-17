@@ -141,12 +141,12 @@ export const TASKS_SCHEMA = {
     pr: {
       type: ['string', 'null'],
       description:
-        'For add or update: a GitHub pull request URL, https://github.com/owner/repo/pull/123. Use null to clear.',
+        'For add or update: a GitHub or GitHub Enterprise pull request URL, https://<host>/owner/repo/pull/123. Use null to clear.',
     },
     issue: {
       type: ['string', 'null'],
       description:
-        'For add or update: a GitHub issue URL, https://github.com/owner/repo/issues/123. Use null to clear.',
+        'For add or update: a GitHub or GitHub Enterprise issue URL, https://<host>/owner/repo/issues/123. Use null to clear.',
     },
     owner_agent: {
       type: ['string', 'null'],

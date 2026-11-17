@@ -6,7 +6,7 @@ import { CLOSED_PR_REFRESH_MS, fetchTracked, LIMIT_RETRY_MS, NO_PR_SHARED, PR_SH
 import type { PrShared } from '../hooks/pr-fetch'
 import { runFailureOf } from '../hooks/pr-query'
 import { fetchFailureNotice, PR_REFRESH_LABEL, refreshProblem } from '../hooks/pr-refresh'
-import { ghNoticeOf, PR_REFRESH_ID } from '../hooks/pr-rows'
+import { ghNoticeOf, prMarkId, PR_REFRESH_ID } from '../hooks/pr-rows'
 import { applyPrPress, prBlockActions } from '../hooks/pr-tab'
 import { feedbackOf, feedbackText } from '../hooks/feedback'
 import { emptySession } from '../hooks/session-files'
@@ -20,6 +20,27 @@ import { LIMIT_ANSWER, prNodeOf, prsAnswerOf, queriedPrs, rateLimitAnswer } from
 import type { PrAnswer, ViewJson } from './gh-answers'
 
 const NOW = 1_000_000
+
+test('an untracked GitHub Enterprise PR or issue link opens through the PR press path', () => {
+  const start = emptySession()
+  for (const [url, name] of [
+    ['https://git.example.org/acme/app/pull/12', 'PR #12'],
+    ['https://git.example.org/acme/app/issues/34', 'issue #34'],
+  ] as const) {
+    const result = applyPrPress(
+      start.ledger,
+      start.prViews,
+      start.lastActions,
+      {
+        action: 'pr-open',
+        ref: url,
+      },
+      { now: NOW, turnsStarted: 0 },
+    )
+    expect('stale' in result ? null : result.effects).toEqual([{ kind: 'open', target: url, name }])
+    expect('stale' in result ? null : result.lasts[prMarkId(url)]?.result?.state).toBe('pending')
+  }
+})
 
 const viewJson = (ref: string, state = 'OPEN'): ViewJson => {
   const [repo, number] = ref.split('#') as [string, string]

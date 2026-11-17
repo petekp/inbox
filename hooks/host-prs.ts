@@ -6,9 +6,9 @@ import { fetchAccountPrs } from './pr-fetch'
 import { withFetchedPrs } from './session-presses'
 import { applyTaskPrFacts } from './task-facts'
 import { prStatesQuery, readPrsAnswer } from './pr-query'
-import { prRefs } from './prs'
 import { taskOwnerInHerdr } from './herdr'
 import { observedTaskOwnerFact, taskOwnerKey } from './task-facts'
+import { taskPrLink } from './task-tree'
 import type { Session, TaskOwner, TaskPrState } from '../types'
 import type { SessionHost } from './session-host'
 
@@ -22,11 +22,6 @@ export const TASK_OWNER_FETCH_LIMIT = 5
 
 function stateOf(value: unknown): TaskPrState | undefined {
   return value === 'OPEN' || value === 'CLOSED' || value === 'MERGED' ? value : undefined
-}
-
-function taskPrRef(url: string): string | undefined {
-  const [ref] = prRefs(url)
-  return ref
 }
 
 function taskPrUrls(s: Session): string[] {
@@ -103,26 +98,50 @@ async function fetchUntrackedTaskPrStates<S extends Session>(
   tracked: Set<string>,
 ): Promise<{ states: Record<string, TaskPrState>; cursor: string | null } | null> {
   const urls = taskPrUrls(s).filter(url => {
-    const ref = taskPrRef(url)
-    return ref !== undefined && !tracked.has(ref) && s.taskPrStates[url] !== 'MERGED'
+    const link = taskPrLink(url)
+    return (
+      link?.queryable === true &&
+      !(link.host === 'github.com' && tracked.has(link.ref)) &&
+      s.taskPrStates[url] !== 'MERGED'
+    )
   })
   const selected = afterCursor(urls, s.taskPrFactCursor).slice(0, TASK_PR_FETCH_LIMIT)
   if (selected.length === 0) return { states: {}, cursor: s.taskPrFactCursor }
 
-  const refs = selected.map(taskPrRef)
-  if (refs.some(ref => ref === undefined)) return null
+  const byHost = new Map<string, { urls: string[]; refs: string[] }>()
+  for (const url of selected) {
+    const link = taskPrLink(url)
+    if (!link) return null
+    const group = byHost.get(link.host) ?? { urls: [], refs: [] }
+    group.urls.push(url)
+    group.refs.push(link.ref)
+    byHost.set(link.host, group)
+  }
   const run = host.gh.run(s, bin, () => host.gh.forget())
-  const result = await run(['api', 'graphql', '-f', `query=${prStatesQuery(refs as string[])}`])
-  if (result.exitCode !== 0) return null
-  const answer = readPrsAnswer(result.stdout, refs as string[])
-  if (!answer) return null
-
   const states: Record<string, TaskPrState> = {}
-  selected.forEach((url, index) => {
-    const node = answer.prs[refs[index] as string]?.node
-    const state = stateOf(node?.state)
-    if (state) states[url] = state
-  })
+  const answers = await Promise.all(
+    [...byHost].map(async ([hostname, group]) => {
+      const args = [
+        'api',
+        ...(hostname === 'github.com' ? [] : ['--hostname', hostname]),
+        'graphql',
+        '-f',
+        `query=${prStatesQuery(group.refs)}`,
+      ]
+      const result = await run(args)
+      if (result.exitCode !== 0) return null
+      const answer = readPrsAnswer(result.stdout, group.refs)
+      return answer ? { group, answer } : null
+    }),
+  )
+  for (const entry of answers) {
+    if (!entry) return null
+    const { group, answer } = entry
+    group.urls.forEach((url, index) => {
+      const state = stateOf(answer.prs[group.refs[index] as string]?.node?.state)
+      if (state) states[url] = state
+    })
+  }
   return { states, cursor: selected.at(-1) ?? s.taskPrFactCursor }
 }
 
@@ -263,9 +282,9 @@ export async function fetchPrs<S extends Session>(
     const taskPrStates = Object.fromEntries(Object.entries(cur.taskPrStates).filter(([url]) => linked.has(url)))
     for (const task of next.taskTree) {
       const url = task.links?.pr
-      const ref = url ? taskPrRef(url) : undefined
-      if (!url || !ref || !tracked.has(ref)) continue
-      const state = stateOf(fetched[ref]?.state ?? s.prViews.views[ref]?.state)
+      const link = url ? taskPrLink(url) : undefined
+      if (!url || !link?.queryable || link.host !== 'github.com' || !tracked.has(link.ref)) continue
+      const state = stateOf(fetched[link.ref]?.state ?? s.prViews.views[link.ref]?.state)
       if (state) taskPrStates[url] = state
     }
     Object.assign(taskPrStates, taskFacts.states)
