@@ -117,6 +117,46 @@ describe('items the agent recorded', () => {
     expect(choice.result).not.toContain("can't approve")
   })
 
+  test('a record again in the turn that rewords the ask and adds context replaces the row, while another question stays its own', () => {
+    const options = ['Redis', 'Memory cache']
+    const bare = recordItem(
+      CLAUDE_CODE,
+      { ...EMPTY, turn: 1 },
+      { kind: 'question', ask: ask.ask, options },
+      1000,
+      TOOL_FIELDS,
+    )
+    const again = {
+      kind: 'question',
+      ask: 'Which cache should the price API use?',
+      options,
+      context: 'The price lookups are slow',
+    }
+    const replaced = recordItem(CLAUDE_CODE, bare.ledger, again, 1100, TOOL_FIELDS)
+    expect(replaced.ledger.items.map(i => [i.id, i.ask, i.context])).toEqual([
+      ['i1', 'Which cache should the price API use?', 'The price lookups are slow'],
+    ])
+
+    const staging = recordItem(
+      CLAUDE_CODE,
+      { ...EMPTY, turn: 1 },
+      { kind: 'question', ask: 'Deploy the API to staging today?', options: ['Yes', 'No'] },
+      1000,
+      TOOL_FIELDS,
+    )
+    const production = recordItem(
+      CLAUDE_CODE,
+      staging.ledger,
+      { kind: 'question', ask: 'Deploy the API to production today?', options: ['Yes', 'No'], context: 'It is Friday' },
+      1100,
+      TOOL_FIELDS,
+    )
+    expect(production.ledger.items.map(i => i.ask)).toEqual([
+      'Deploy the API to staging today?',
+      'Deploy the API to production today?',
+    ])
+  })
+
   test("an agent whose record tool is 0.3.0's is asked only for the fields that tool takes", () => {
     const old = (input: Record<string, unknown>) => recordItem(CLAUDE_CODE, EMPTY, input, 1000, V0_3_TOOL_FIELDS).result
     const question = { kind: 'question', ask: ask.ask, options: ask.options }
