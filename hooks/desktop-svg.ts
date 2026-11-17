@@ -1,8 +1,8 @@
-import { CLOSED_MARKS, NEEDS_YOU_MARKS } from './help'
+import { CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS } from './help'
 import { RUNNING_PULSE_MS } from './timing'
 import { markShape, mutedMarkShape } from './marks'
 import { DARK_TONES, LIGHT_TONES, toneColors, type ToneName } from './tones'
-import { DESKTOP_CELL_PT, DESKTOP_LINE_PT, UNDO_CELLS, UNDO_HEIGHT_PT } from './pane-sizes'
+import { DESKTOP_CELL_PT, DESKTOP_LINE_PT, DESKTOP_TREE_AT, UNDO_CELLS, UNDO_HEIGHT_PT } from './pane-sizes'
 
 /**
  * The app draws an Svg as an image, which runs SMIL animation, so the fill moves
@@ -29,17 +29,38 @@ export function undoSvg(fraction: number, leftMs: number): string {
 /**
  * Text draws one color in both
  * appearances, which the mod cannot read, but an Svg follows the system's light or dark setting, so this takes the
- * shared tone for each, as the Codex tab does.
+ * shared tone for each, as the Codex tab does. It gives the Svg's source and the cells it takes.
  */
-export function toneSvg(tone: ToneName, mark: string, tint?: string): string {
+export function toneSvg(tone: ToneName, mark: string, tint?: string): { source: string; cells: number } {
   const { light, dark } = toneColors(tone)
   // A marker needs only 3:1, so an error mark takes a stronger red than text could.
-  const shape = desktopMarkShape(mark)
-  if (tint) return markSvg(mark, shape, tint, tint)
+  const [lightMark, darkMark] = tint
+    ? [tint, tint]
+    : tone === 'error'
+      ? [LIGHT_TONES.errorMark, DARK_TONES.errorMark]
+      : [light, dark]
+  const cells = mark === HELD_MARK.mark ? HELD_MARK_CELLS : 1
 
-  return tone === 'error'
-    ? markSvg(mark, shape, LIGHT_TONES.errorMark, DARK_TONES.errorMark)
-    : markSvg(mark, shape, light, dark)
+  return { source: markSvg(mark, desktopMarkShape(mark), lightMark, darkMark, cells), cells }
+}
+/** Where a desktop tree's trunk runs in a mark's Svg, in points from its left edge. */
+const TRUNK_MID_PT = DESKTOP_TREE_AT * DESKTOP_CELL_PT
+/**
+ * ◆ as a square diamond centred on the trunk, as wide as the Svg's left edge leaves it whole. The system font draws ◆
+ * wider than a cell, so as text in a one-cell Svg it lost its right half.
+ */
+const HELD_MARK_PT = 2 * TRUNK_MID_PT
+const HELD_MARK_CELLS = Math.ceil(HELD_MARK_PT / DESKTOP_CELL_PT)
+function heldMarkShape(midY: number): string {
+  const half = HELD_MARK_PT / 2
+  const points = [
+    [TRUNK_MID_PT, midY - half],
+    [TRUNK_MID_PT + half, midY],
+    [TRUNK_MID_PT, midY + half],
+    [TRUNK_MID_PT - half, midY],
+  ]
+
+  return `<polygon points="${points.map(([x, y]) => `${x!.toFixed(2)},${y!.toFixed(2)}`).join(' ')}" fill="currentColor"/>`
 }
 /**
  * The checked box is drawn in a box 6 of 8 pt wide, which reads smaller here than the text ? beside it. It is scaled
@@ -47,7 +68,9 @@ export function toneSvg(tone: ToneName, mark: string, tint?: string): string {
  */
 const CHECKBOX_SCALE = 1.25
 const CHECKBOX_SHIFT_PT = 0.35
-function desktopMarkShape(mark: string): string | null {
+/** A toned mark's shape on desktop, or null for one the Svg draws as text. */
+export function desktopMarkShape(mark: string): string | null {
+  if (mark === HELD_MARK.mark) return heldMarkShape(DESKTOP_LINE_PT / 2)
   const shape = markShape(mark, DESKTOP_LINE_PT / 2)
   if (shape === null || mark !== NEEDS_YOU_MARKS.task.mark) return shape
   const mid = DESKTOP_LINE_PT / 2

@@ -16,10 +16,10 @@ section + section::before {
   height: 1px;
   background: var(--soft);
 }
-/* A title sits `head` over its first row's text, counting the row's padding. */
+/* A title sits `list-margin` over its first row's box. */
 .group-title {
   position: relative;
-  padding: 0 var(--edge) calc(var(--head-gap) - var(--row-pad)) var(--text-x);
+  padding: 0 var(--edge) var(--list-margin) var(--text-x);
 }
 .group-title.unmarked {
   padding-left: var(--mark-x);

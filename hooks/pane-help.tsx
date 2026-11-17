@@ -1,11 +1,10 @@
-import { toneSvg } from './desktop-svg'
+import { desktopMarkShape, toneSvg } from './desktop-svg'
 import { HELP_COPY, helpVersionText, type HelpKey, type LegendEntry, MARK_LEGEND } from './help'
-import { markShape } from './marks'
 import { mod } from './mod-state'
 import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
-import { DESKTOP_LINE_PT, TREE_LINE_AT } from './pane-sizes'
+import { TREE_LINE_AT } from './pane-sizes'
 
 export function paneHelp({
   pal,
@@ -26,8 +25,10 @@ export function paneHelp({
   Pick<PaneRowParts, 'section' | 'groupTitle' | 'sections'>) {
   /** A legend mark, drawn as rows draw it: the running mark moves, and desktop draws a shape where it has one. */
   const legendMark = (m: LegendEntry) => {
-    if (ToneSvg && m.tone && markShape(m.mark, DESKTOP_LINE_PT / 2) !== null)
-      return svgCell(toneSvg(m.tone, m.mark), m.mark)
+    if (ToneSvg && m.tone && desktopMarkShape(m.mark) !== null) {
+      const { source, cells } = toneSvg(m.tone, m.mark)
+      return svgCell(source, m.mark, undefined, cells)
+    }
 
     return markGlyph(
       { text: m.mark, isRunning: m.isRunning },

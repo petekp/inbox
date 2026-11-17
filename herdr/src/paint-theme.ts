@@ -6,6 +6,7 @@ import {
   CONTROL_GAP_PT,
   EDGE_PT,
   HEAD_GAP_PT,
+  LIST_MARGIN_PT,
   INSIDE_GAP_PT,
   ITEM_GAP_PT,
   LINE_PT,
@@ -128,6 +129,8 @@ export const CHILD_GAP = CHILD_GAP_PT
 export const ITEM_GAP = ITEM_GAP_PT
 /** A heading to what it heads, so it reads as that part's label. */
 export const HEAD_GAP = HEAD_GAP_PT
+/** A list's rows to its group's title above and its Closed fold below, from the title's line or to the fold's label. */
+export const LIST_MARGIN = LIST_MARGIN_PT
 /** Text to the buttons under it, and one button to the next. */
 export const CONTROL_GAP = CONTROL_GAP_PT
 /** Two sections, such as two groups or two PRs. A rule between them sits halfway. */

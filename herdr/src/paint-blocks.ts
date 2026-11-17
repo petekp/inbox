@@ -32,7 +32,7 @@ import { buttonEl, buttonsEl, lineEl, markEl, resultLineEl } from './paint-parts
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import type { RowMotion } from './motion'
-import { PATH_X, lineColor, panelId, restId, sizeEl, titleEl } from './paint-space'
+import { PATH_X, lineColor, padOf, panelId, restId, sizeEl, titleEl } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
@@ -524,7 +524,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .id(`fold ${b.id}`)
     .pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE)
     .pr(EDGE)
-    .py(ROW_PAD_PT)
+    .py(padOf(b))
     .items_start()
     .text_color(t.muted)
     .accessibility_label(b.text)
