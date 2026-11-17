@@ -8,7 +8,6 @@ import { demoSource, demoState } from '../src/demo'
 import { INITIAL_UI, holdsOf } from '../src/panel'
 import { afterHandOff, handleKey } from '../src/panel-keys'
 import {
-  buttonLine,
   drawn,
   ESC,
   firstQuestion,

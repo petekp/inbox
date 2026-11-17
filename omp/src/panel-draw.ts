@@ -191,7 +191,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   const holdsUp = line.row?.holdsUpLine
   const focused = ui.typing === line.id ? -1 : focusOf(line, ui)
-  const answerCell = (b: Button, n: number, room: number) => buttonCell(b, n === focused, s, labelMark(b, room, s))
+  const answerCell = (b: ButtonFace, n: number, room: number) => buttonCell(b, n === focused, s, labelMark(b, room, s))
   const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell) : []
   if (tree.length > 0) out.push(...tree)
   else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))
