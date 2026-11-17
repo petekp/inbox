@@ -152,8 +152,6 @@ const pressMotion = (id: string) => `press-${id}`
 
 /** What a row's line and side column draw, in its open form or its closed one. */
 type LineForm = {
-  isOpen: boolean
-  sideLabel: string | null
   last: string | null
   side: string | null | undefined
 }
@@ -198,12 +196,11 @@ export function ListRow({
   const { isPressing, pending, isSending, f, label } = pressOf(row)
   const ageAt = !isPressing && f && hasAge(f) ? f.at : null
   const lineForm = (isOpen: boolean): LineForm => {
-    const isInSide = ageAt !== null && !isOpen && f?.is !== 'queued' && f?.is !== 'unconfirmed'
     const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
-    const last = isInSide || statusUnder ? null : label
+    const last = statusUnder ? null : label
     const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : last ? null : row.age
 
-    return { isOpen, sideLabel: isInSide ? label : null, last, side }
+    return { last, side }
   }
   const drawn = lineForm(isSelected || isClosing)
   // A closing row also draws its closed line, hidden, so that collapse() measures the height it comes to rest at.
@@ -211,19 +208,12 @@ export function ListRow({
   const afterTone = !isPressing && isFailure(row.feedback) ? 'error' : undefined
   const after = (form: LineForm, only?: 'open' | 'closed') =>
     form.last ? (
-      <span
-        class={`after ${afterTone ? `tone-${afterTone}` : ''}${only === 'open' ? ' open-only' : only === 'closed' ? ' closed-only' : ''}`}
-      >
-        {form.isOpen ? `${DOT}${form.last}` : form.last}
+      <span class={only === 'open' ? 'open-only' : only === 'closed' ? 'closed-only' : undefined}>
+        <span class="muted">{DOT}</span>
+        <span class={afterTone ? `after tone-${afterTone}` : 'after'}>{form.last}</span>
       </span>
     ) : null
-  const side = (form: LineForm) => (
-    <>
-      {form.sideLabel ? <span class="side-label">{form.sideLabel}</span> : null}
-      {form.side}
-    </>
-  )
-  const isSideSplit = closed !== null && (closed.side !== drawn.side || closed.sideLabel !== drawn.sideLabel)
+  const isSideSplit = closed !== null && closed.side !== drawn.side
 
   return (
     <div
@@ -247,21 +237,21 @@ export function ListRow({
             <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
               {row.title}
             </TitleTint>
+            {after(drawn, closed ? 'open' : undefined)}
+            {closed ? after(closed, 'closed') : null}
           </span>
           {row.meta ? <span class="meta">{row.meta}</span> : null}
-          {after(drawn, closed ? 'open' : undefined)}
-          {closed ? after(closed, 'closed') : null}
           {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>
         {isSideSplit ? (
           <>
-            <span class="open-only">{side(drawn)}</span>
-            <span class="closed-only">{side(closed)}</span>
+            <span class="open-only">{drawn.side}</span>
+            <span class="closed-only">{closed.side}</span>
           </>
         ) : (
-          side(drawn)
+          drawn.side
         )}
       </span>
       {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} /> : null}
