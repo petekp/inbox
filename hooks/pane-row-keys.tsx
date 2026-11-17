@@ -65,7 +65,7 @@ export function paneRowKeys(
           {...action}
           {...(isFollowUp ? { plain: true } : emphasis === 'primary' ? { variant: 'primary' as const } : {})}
           label={fittedDesktopLabel({ ...action, ...(icon ? { icon } : {}) })}
-          {...(isDim ? { dimColor: true } : {})}
+          {...(isDim || isFollowUp ? { dimColor: true } : {})}
           onPress={press => unlessGuarded(rowId, press, action.onPress)}
         />
       ) : (
