@@ -100,6 +100,15 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     for (let n = 0; n < 50 && !ready(); n++) await new Promise<void>(resolve => setImmediate(resolve))
     assert.ok(ready())
   }
+  const eventually = async (ready: () => boolean) => {
+    const giveUpAt = performance.now() + 15_000
+    while (!ready() && performance.now() < giveUpAt) await new Promise<void>(resolve => setTimeout(resolve, 10))
+    assert.ok(ready())
+  }
+  const available = async (label: string) => {
+    await eventually(() => buttons(root).some(b => b.textContent === label))
+    return named(root, label)
+  }
   try {
     await import('../src/tab')
     await until(() => buttons(root).some(b => b.textContent === 'Reply'))
@@ -189,10 +198,10 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       Date.now(),
       TOOL_FIELDS,
     ).ledger
-    await pause(POLL_MS + 100)
-    await until(() => root.querySelector('.row.selected') !== null)
+    await eventually(() => (root.textContent ?? '').includes('Tag the release'))
+    await eventually(() => root.querySelector('.row.selected') !== null)
     await pause(PRESS_GUARD_MS + 50)
-    named(root, 'Done').click()
+    ;(await available('Done')).click()
     await until(() => buttons(root).some(b => b.textContent === 'Undo'))
     const tabNamed = (label: string) =>
       [...root.querySelectorAll<HTMLElement>('button.tab')].find(
@@ -224,10 +233,10 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         Date.now(),
         TOOL_FIELDS,
       ).ledger
-      await pause(POLL_MS + 100)
+      await eventually(() => (root.textContent ?? '').includes('Publish the notes'))
       root.querySelector<HTMLElement>('.row .line')!.click()
       await pause(PRESS_GUARD_MS + 50)
-      named(root, 'Done').click()
+      ;(await available('Done')).click()
       await until(() => root.querySelector('.row.settled') !== null)
       tabNamed('Finds').click()
       tabNamed('Asks').click()

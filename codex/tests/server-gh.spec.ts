@@ -16,7 +16,7 @@ test('a view starts a fetch of the session’s PRs through gh in its folder, and
   const first = await call('inbox_view', { tab: 'prs' })
   assert.equal(first.result.structuredContent.isFetchingPrs, true)
   assert.deepEqual(first.result.structuredContent.prs.drawn, [])
-  await new Promise(resolve => setTimeout(resolve, 50))
+  await call.settled()
   const next = await call('inbox_view', { tab: 'prs' })
   const { prs, isFetchingPrs } = next.result.structuredContent
   assert.equal(isFetchingPrs, false)
@@ -32,7 +32,7 @@ test('a view starts a fetch of the session’s PRs through gh in its folder, and
 test('a view says gh was not found when no gh can start', async () => {
   const { call } = await prServer(() => ({ code: -1, stdout: '', stderr: '' }))
   await call('inbox_view', { tab: 'prs' })
-  await new Promise(resolve => setTimeout(resolve, 50))
+  await call.settled()
   const next = await call('inbox_view', { tab: 'prs' })
   assert.equal(next.result.structuredContent.isGhMissing, true)
   assert.deepEqual(next.result.structuredContent.prs.drawn, [])
@@ -43,7 +43,7 @@ test('gh is found in the Homebrew folder when it is not on the PATH', async () =
     args[0] === 'gh' ? { code: -1, stdout: '', stderr: '' } : ghAnswer(['gh', ...args.slice(1)]),
   )
   await call('inbox_view', { tab: 'prs' })
-  await new Promise(resolve => setTimeout(resolve, 50))
+  await call.settled()
   const next = await call('inbox_view', { tab: 'prs' })
   assert.equal(next.result.structuredContent.isGhMissing, false)
   assert.equal(next.result.structuredContent.prs.drawn.length, 1)
@@ -188,11 +188,11 @@ test('a view polls the PRs again after 2 minutes while the PRs tab is shown, and
   assert.equal(queries(), 1)
   at += PRS_STALE_MS
   await call('inbox_view', { tab: 'needsYou' })
-  await new Promise(resolve => setTimeout(resolve, 50))
+  await call.settled()
   assert.equal(queries(), 1)
   at += PRS_HIDDEN_REFRESH_MS - PRS_STALE_MS
   await call('inbox_view', { tab: 'needsYou' })
-  await new Promise(resolve => setTimeout(resolve, 50))
+  await call.settled()
   assert.equal(queries(), 2)
   at += PRS_STALE_MS
   await viewAfterFetch(call)
@@ -213,7 +213,7 @@ test('while gh is missing, a PR the session tracks but never read sends the PRs 
   for (let n = 0; n < 200; n++) {
     at += 3000
     await call('inbox_view', { tab: 'prs' })
-    await new Promise(resolve => setTimeout(resolve, 5))
+    await call.settled()
   }
   assert.ok(looks() / perLook <= 6, `looked for gh ${looks() / perLook} times`)
 })

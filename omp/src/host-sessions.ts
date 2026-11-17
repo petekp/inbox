@@ -52,7 +52,9 @@ const publishFiles: PublishFiles = {
 const recordFiles: RecordFiles = {
   write: async (path, text) => {
     await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, text)
+    const tmp = `${path}.${process.pid}.tmp`
+    await writeFile(tmp, text)
+    await rename(tmp, path)
   },
   list: folder => readdir(folder).catch(() => []),
   removeFiles: async paths => void (await Promise.all(paths.map(p => rm(p, { force: true })))),
