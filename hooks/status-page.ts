@@ -267,16 +267,18 @@ export function statusPage(
   const openFold = (prefix: string, foldedOpen: Subject[], depth: number): StatusRow[] =>
     foldedOpen.length === 0
       ? []
-      : [
-          {
-            kind: 'fold',
-            id: `${prefix}open`,
-            depth,
-            ...SUBJECT_MARKS.queued,
-            text: `${foldedOpen.length} more`,
-            subjectIds: [],
-          },
-        ]
+      : foldedOpen.length === 1
+        ? partRows(foldedOpen, ctx, depth)
+        : [
+            {
+              kind: 'fold',
+              id: `${prefix}open`,
+              depth,
+              ...SUBJECT_MARKS.queued,
+              text: `${foldedOpen.length} more`,
+              subjectIds: [],
+            },
+          ]
   /**
    * A part's seen finished work as one done fold `depth` steps in, which holds their rows one step further in: its
    * subjects, then the finished delegates the person has seen that no subject holds. It reads "N more done" while
@@ -291,18 +293,20 @@ export function statusPage(
   ): StatusRow[] =>
     done.length + settled.length === 0
       ? []
-      : [
-          {
-            kind: 'done-fold',
-            id: `${prefix}done`,
-            depth,
-            text: `${done.length + settled.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
-            rows: [
-              ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
-              ...settled.map(c => childRow(c, null, depth + 1, finishedLine(c, now))),
-            ],
-          },
-        ]
+      : done.length + settled.length === 1
+        ? [...partRows(done, foldCtx, depth), ...settled.map(c => childRow(c, null, depth, finishedLine(c, now)))]
+        : [
+            {
+              kind: 'done-fold',
+              id: `${prefix}done`,
+              depth,
+              text: `${done.length + settled.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
+              rows: [
+                ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
+                ...settled.map(c => childRow(c, null, depth + 1, finishedLine(c, now))),
+              ],
+            },
+          ]
   /** A part's rows `depth` steps in: its work in the page's order with its folds, as the list after the goal folds. */
   const foldedPart = (prefix: string, p: PartSplit, depth: number, settled: Child[] = []): StatusRow[] => [
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),

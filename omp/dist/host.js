@@ -7646,7 +7646,7 @@ function statusPage(s, now) {
     now
   };
   const foldCtx = { ...ctx, running: [] };
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : foldedOpen.length === 1 ? partRows(foldedOpen, ctx, depth) : [
     {
       kind: "fold",
       id: `${prefix}open`,
@@ -7656,7 +7656,7 @@ function statusPage(s, now) {
       subjectIds: []
     }
   ];
-  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : [
+  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : done.length + settled.length === 1 ? [...partRows(done, foldCtx, depth), ...settled.map((c) => childRow(c, null, depth, finishedLine(c, now)))] : [
     {
       kind: "done-fold",
       id: `${prefix}done`,
@@ -10113,7 +10113,8 @@ function demoView(now, agent) {
           subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN),
           subject("s5", "waits-on-other", "Glasses trial", "lenses ship Friday", now - 3 * 60 * MIN),
           subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN),
-          subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN)
+          subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN),
+          subject("s8", "done", "Haptic tap", "a tap confirms the pinch", now - 7 * 60 * MIN)
         ],
         children: [
           {
@@ -10226,7 +10227,7 @@ function demoView(now, agent) {
           }
         ],
         nextMilestoneId: 6,
-        serves: { s1: "m2", s3: "m3", s4: "m1", s5: "m5", s6: "m4", s7: "none" },
+        serves: { s1: "m2", s3: "m3", s4: "m1", s5: "m5", s6: "m4", s7: "none", s8: "none" },
         goalRefused: null,
         suggestedGoal: null
       },

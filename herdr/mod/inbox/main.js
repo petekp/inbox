@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T05:46:10.009Z. 270649 characters follow.
+// Built at 2026-11-17T06:02:22.938Z. 270856 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -3595,7 +3595,7 @@ function statusPage(s, now) {
     now
   };
   const foldCtx = { ...ctx, running: [] };
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : foldedOpen.length === 1 ? partRows(foldedOpen, ctx, depth) : [
     {
       kind: "fold",
       id: `${prefix}open`,
@@ -3605,7 +3605,7 @@ function statusPage(s, now) {
       subjectIds: []
     }
   ];
-  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : [
+  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : done.length + settled.length === 1 ? [...partRows(done, foldCtx, depth), ...settled.map((c) => childRow(c, null, depth, finishedLine(c, now)))] : [
     {
       kind: "done-fold",
       id: `${prefix}done`,

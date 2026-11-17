@@ -70,7 +70,7 @@ test('inside a Herdr app terminal, nothing asks herdr, and hc is asked while the
   expect(asked).toEqual(['hc ls --json'])
 })
 
-test('a finished delegate no subject holds folds into "1 done" at once, seen or not, and unfolds to its row one step in with a line under its name', () => {
+test('a lone finished delegate no subject holds draws as its own row at once, seen or not, with a line under its name', () => {
   const now = 100 * MIN
   const base = after(null, 'NEW: working | Export | layout next', 10 * MIN)
   const started = withChild(
@@ -87,17 +87,14 @@ test('a finished delegate no subject holds folds into "1 done" at once, seen or 
     30 * MIN,
   )
   const finished = childEnded(started, 'd1', 40 * MIN)!
-  const doneChildren = (rows: ReturnType<typeof page>['rows']) =>
-    rows.flatMap(r => (r.kind === 'done-fold' ? r.rows : []))
-
   const unseen = page({ ...finished, lastLookAt: 30 * MIN }, now).rows
-  expect(shape(unseen)).toEqual(['◐ Export: layout next', '› 1 done'])
-  expect(doneChildren(unseen).map(r => [r.kind, r.depth, r.kind === 'child' ? r.text : null])).toEqual([
-    ['child', 1, 'Ran 20m, finished 1h ago'],
+  expect(shape(unseen)).toEqual(['◐ Export: layout next', '✓ pdf layout'])
+  expect(unseen.flatMap(r => (r.kind === 'child' ? [[r.depth, r.text]] : []))).toEqual([
+    [0, 'Ran 20m, finished 1h ago'],
   ])
 
   const looked = lookEnded(lookStarted(finished, 50 * MIN), 50 * MIN + LOOK_MIN_MS, 'all')
-  expect(shape(page(looked, now).rows)).toEqual(['◐ Export: layout next', '› 1 done'])
+  expect(shape(page(looked, now).rows)).toEqual(['◐ Export: layout next', '✓ pdf layout'])
 })
 
 test("a running hc delegate takes its terminal's focus as its name and last note as its line, which stay once it finishes, and a finished one costs no hc get", async () => {
@@ -129,8 +126,8 @@ test("a running hc delegate takes its terminal's focus as its name and last note
   ])
   expect(asked.filter(a => a.startsWith('hc get'))).toHaveLength(2)
   expect(later).toBe(done)
-  const fold = page({ ...done!, lastLookAt: 35 * MIN }, 100 * MIN).rows.find(r => r.kind === 'done-fold')
-  expect(fold?.kind === 'done-fold' && fold.rows.map(r => r.kind === 'child' && r.text)).toEqual(['PR #12 open'])
+  const row = page({ ...done!, lastLookAt: 35 * MIN }, 100 * MIN).rows.find(r => r.kind === 'child')
+  expect(row?.kind === 'child' && row.text).toBe('PR #12 open')
 })
 
 test('a look file the Herdr look wrote sets the last look on the saved Status', async () => {

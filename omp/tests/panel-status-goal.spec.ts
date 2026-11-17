@@ -197,7 +197,7 @@ test('with a goal set, subjects that serve none of its milestones draw under the
     '   dismissed glances fade',
   ])
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
-  expect(lineAt(lines, '2 more done ›')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
+  expect(lineAt(lines, '3 more done ›')).toBeGreaterThan(lineAt(lines, '✓ Fade-out'))
 })
 
 test('in a short panel, after Remove its New shows, even from a page scrolled past it', () => {

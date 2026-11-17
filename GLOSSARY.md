@@ -221,8 +221,7 @@ _Avoid_: Seen line, look line
 The line on the Status that counts seen finished work it does not draw, as "3
 done", with the chevron after it and no mark. Pressing it lists those rows under it,
 one step in, as the Closed fold lists closed items, and pressing it again folds
-them. The list after the goal, each milestone and Other work each have their
-own.
+them. One row draws as itself, never behind a fold.
 _Avoid_: done row, done count
 
 **Parent fold**:

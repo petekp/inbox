@@ -3767,7 +3767,7 @@ function statusPage(s, now) {
     now
   };
   const foldCtx = { ...ctx, running: [] };
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : foldedOpen.length === 1 ? partRows(foldedOpen, ctx, depth) : [
     {
       kind: "fold",
       id: `${prefix}open`,
@@ -3777,7 +3777,7 @@ function statusPage(s, now) {
       subjectIds: []
     }
   ];
-  const doneFold = (prefix, done, newClosed, depth, settled2) => done.length + settled2.length === 0 ? [] : [
+  const doneFold = (prefix, done, newClosed, depth, settled2) => done.length + settled2.length === 0 ? [] : done.length + settled2.length === 1 ? [...partRows(done, foldCtx, depth), ...settled2.map((c) => childRow(c, null, depth, finishedLine(c, now)))] : [
     {
       kind: "done-fold",
       id: `${prefix}done`,
