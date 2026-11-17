@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T20:41:26.283Z. 276805 characters follow.
+// Built at 2026-11-17T21:16:30.052Z. 277531 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -1113,16 +1113,17 @@ ${asks.map((a) => `- ${a}`).join(`
 };
 
 // ../hooks/help-steps.ts
+var COMMAND_LABEL_CHARS = 64;
+var commandLabel = (command) => clipLabel(command, COMMAND_LABEL_CHARS);
 function helpLabel(help) {
-  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
-  return clipLabel(label, 32);
+  return help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? commandLabel(help.command)}` : help.kind === "terminal" ? `Copy ${help.name ?? commandLabel(help.command)}` : `Open ${help.name ?? new URL(help.url).host}`;
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
   const open = helps.find((h) => h.kind === "open");
   if (!copy || !open || copy.kind !== "copy" || open.kind !== "open")
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
-  return helps.filter((h) => h !== copy).map((h) => h === open ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open.path)}`, 48), step: [copy, open] } : { label: helpLabel(h), step: [h] });
+  return helps.filter((h) => h !== copy).map((h) => h === open ? { label: `Copy ${copy.name ?? "snippet"} and open ${baseName(open.path)}`, step: [copy, open] } : { label: helpLabel(h), step: [h] });
 }
 function prSteps(item, tracked) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
@@ -1863,7 +1864,6 @@ var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 
 // ../hooks/rows.ts
 var OPTIONS_FOLD_AT = 5;
-var OPTION_LABEL_CHARS = 32;
 var DOT = " · ";
 var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
@@ -1911,7 +1911,6 @@ function optionDescriptionsOf(item, actions) {
     return [
       {
         option: a.press.option,
-        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
         description,
         reason,
         isFolded: a.isFolded
@@ -3144,7 +3143,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
-    ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
+    ...options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
@@ -5443,6 +5442,7 @@ var TEXT_X = EDGE + MARK_W;
 var NEST = MARK_W;
 var NARROW_PANE = 280;
 var BUTTON_H = 7 * SPACE_UNIT;
+var BUTTON_PAD_Y = (BUTTON_H - LINE_HEIGHT) / 2 - BUTTON_BORDER_PT;
 var BOX_RADIUS = 10;
 var TAB_RADIUS = 6;
 var HELP_INDENT = NEST;
@@ -5570,12 +5570,13 @@ function timeLeftEl(id, left, runsOutAt, now, t) {
 }
 
 // src/paint-parts.ts
-function buttonEl(b, p, isInert = false, isShrinkable = false) {
+function buttonEl(b, p, isInert = false, canWrap = false) {
   const { t } = p;
   const isPill = b.emphasis !== "quiet";
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
-  const base = h_flex().id(`button ${b.id}`).when(!isShrinkable, (e) => e.flex_none()).when(isShrinkable, (e) => e.flex_shrink_1().min_w(0)).h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isShrinkable ? div3().min_w(0).truncate().child(b.label) : b.label);
+  const isWrapping = canWrap && runsOutAt === undefined;
+  const base = h_flex().id(`button ${b.id}`).when(!isWrapping, (e) => e.flex_none().h(BUTTON_H)).when(isWrapping, (e) => e.flex_shrink_1().min_w(0).min_h(BUTTON_H).py(BUTTON_PAD_Y)).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isWrapping ? div3().min_w(0).whitespace_normal().child(b.label) : b.label);
   const shaped = isPill && runsOutAt === undefined ? base.px(BUTTON_PAD_X).rounded(BUTTON_H / 2).border_1() : base;
   if (b.isHidden)
     return shaped.invisible().disabled(true);
@@ -5594,7 +5595,7 @@ var CLEAR = "#00000000";
 var buttonsEl = (buttons, p, indent, isInert = false) => {
   const followUps = buttons.filter((b) => b.isFollowUp);
   const others = buttons.filter((b) => !b.isFollowUp);
-  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(others.map((b) => buttonEl(b, p, isInert))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
+  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(others.map((b) => buttonEl(b, p, isInert, true))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
 };
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
@@ -5894,12 +5895,23 @@ var trunkEl = (top, height, t, isSelected) => {
 };
 var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
+var armEl = (from, to, top, color) => div8().absolute().left(from).top(top).w(to - from).h(1).border_t_1().border_color(color);
+var ARM_END = NEST - SMALL_GAP;
+var optionEl = (option, p, isInert, isLast, t, isSelected) => {
+  const arm = armEl(PATH_X - EDGE, ARM_END, "50%", lineColor(t, isSelected ? t.selected : t.background));
+  return h_flex5().relative().min_w(0).pl(MARK_W).child(buttonEl(option, p, isInert, true)).children(isLast ? [arm, trunkEl(0, "50%", t, isSelected)] : [arm]);
+};
 var bodyLineEl = (l, t, isSelected, option = undefined, p = null, isInert = false) => {
   const above = l.gapAbove === "item" ? ITEM_GAP : l.gapAbove === "child" ? CHILD_GAP : INSIDE_GAP;
-  const armAt = above + (option ? BUTTON_H : LINE_HEIGHT) / 2;
-  const arm = div8().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
+  const color = lineColor(t, isSelected ? t.selected : t.background);
+  if (option && p) {
+    const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
+    return h_flex5().relative().min_w(0).pt(above).child(optionEl(option, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
+  }
+  const armAt = above + LINE_HEIGHT / 2;
+  const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = option && p ? h_flex5().min_w(0).pl(MARK_W).pt(above).child(buttonEl(option, p, isInert, true)) : l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above);
+  const line = l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above);
   return line.relative().children(strokes);
 };
 function fieldEl(f, p, indent, isInert = false) {

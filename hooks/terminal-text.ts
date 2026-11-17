@@ -158,7 +158,8 @@ export function terminalSpanLines(spans: TerminalSpan[], width: number, limit = 
   })
 }
 
-function wrapped(text: string, width: number): string[] {
+/** `text` wrapped at spaces to lines of `width` characters, a word longer than a line split across lines. */
+export function wrapped(text: string, width: number): string[] {
   const size = Math.max(1, width)
   const lines: string[] = []
   let line = ''

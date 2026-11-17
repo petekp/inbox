@@ -4,7 +4,7 @@ Part of [The Claude desktop app](../claude-desktop-app.md).
 
 | Element | What desktop does | Status | Source |
 |---|---|---|---|
-| Button drawing | Always a native button, plain or not. A plain Button still highlights under the pointer and on focus. One line tall and as wide as its label. It does not stretch to fill a column Box or an absolute overlay. Taller than a line of text. A long label is cut with an ellipsis. | verified live; stated (native, plain) | live; types:1056-1057 (`ButtonProps`), 1094 (`ButtonProps.plain`) |
+| Button drawing | Always a native button, plain or not. A plain Button still highlights under the pointer and on focus. One line tall and as wide as its label. It does not stretch to fill a column Box or an absolute overlay. Taller than a line of text. A Button wider than its row does not cut its label: it widens the row, whose text then lays out wider and is clipped at the pane's edge (seen 2026-11-17). | verified live; stated (native, plain) | live; types:1056-1057 (`ButtonProps`), 1094 (`ButtonProps.plain`) |
 | Button label spaces | A label of plain spaces draws with no size and takes no clicks. Non-breaking spaces keep their size. | verified live | live |
 | Button variant | `primary` draws a white filled button. The default is a dark gray rounded button, and `secondary` draws the same. `plain` wins over `variant`. | verified live (primary, default, secondary, 2.1.295); stated (plain) | live; types:1103-1112 (`ButtonProps.variant`); mods.md:664 |
 | Button `role: 'dismiss'` | Desktop draws its native close control at the trailing edge, with the label as its accessible name. Not seen live. | stated | types:1117-1118 (`ButtonProps.role`); mods.md:665 |

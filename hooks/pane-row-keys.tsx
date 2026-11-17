@@ -13,13 +13,18 @@ import {
   FRAME_INSET_PT,
 } from './pane-sizes'
 import { actionLabel, fieldExit, ROW_COPY } from './rows'
-import { cellWidth } from './text'
+import { wrapped } from './terminal-text'
+import { cellWidth, cutForEllipsis } from './text'
 
 const HOTKEY_SEPARATOR = ': '
 
 /** Cells a terminal button's label starts in from the button's edge, after its hotkey and the separator. */
 export const terminalLabelCells = (k: Pick<KeyAction, 'hotkey'>) =>
   k.hotkey ? k.hotkey.length + HOTKEY_SEPARATOR.length : 0
+
+/** A terminal button's label wrapped to fit `width` cells with its hotkey, each line after the first starting under the first. */
+const terminalLabelLines = (label: string, k: Pick<KeyAction, 'hotkey'>, width: number) =>
+  cellWidth(label) + terminalLabelCells(k) <= width ? [label] : wrapped(label, width - terminalLabelCells(k))
 
 export function paneRowKeys(
   {
@@ -54,18 +59,23 @@ export function paneRowKeys(
   const desktopRowTextPt = desktopColumnPt(DESKTOP_MARK_CELLS)
   const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
     a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
-  // A native Button cuts a label wider than its row.
+  /** A native Button grows to its whole label and widens its row with it, so a label wider than the row is cut here. */
   const fittedDesktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
     const icon = a.icon ? `${a.icon} ` : ''
     const fits = (label: string) => desktopButtonPt(icon + label, a.variant === 'primary') <= desktopRowTextPt
+    const label = actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
 
-    return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
+    return icon + (fits(label) ? label : `${cutForEllipsis(label, fits)}…`)
   }
+  /** A terminal button's label, wrapped to `width` cells when it is given and the label is wider. */
+  const terminalLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'hotkey'>, width = Infinity) =>
+    terminalLabelLines(shownLabel(a), a, width).join(`\n${' '.repeat(terminalLabelCells(a))}`)
   const keyedButton =
-    (rowId: string, isFollowUp = false) =>
+    (rowId: string, isFollowUp = false, width = Infinity) =>
     ({ hotkey, kind: _kind, emphasis, icon, isOut = false, note: _note, ...action }: KeyAction) => {
       const { label: _label, ...unlabeled } = action
       const isDim = isOpenGuarded || isOut
+      const label = terminalLabel({ ...action, ...(hotkey ? { hotkey } : {}) }, width)
 
       return look === 'desktop' ? (
         <Button
@@ -89,7 +99,7 @@ export function paneRowKeys(
                 {hotkey}
               </Text>
             ) : null}
-            {hotkey ? `${HOTKEY_SEPARATOR}${shownLabel(action)}` : shownLabel(action)}
+            {hotkey ? `${HOTKEY_SEPARATOR}${label}` : label}
           </Button>
         </Box>
       )
@@ -126,7 +136,7 @@ export function paneRowKeys(
       </Box>
     )
   }
-  const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = []) => {
+  const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = [], width = Infinity) => {
     // A click on a Client gives that Client the keys, so a field opened from one never gets the typing.
     const reply = hasClient && look === 'desktop' && more[0]?.key.startsWith('typekey-') ? more[0] : null
     const links = reply ? more.slice(1) : more
@@ -139,7 +149,7 @@ export function paneRowKeys(
         columnGap={space.buttonGap}
         rowGap={look === 'desktop' ? 1 : 0}
       >
-        {keys.map(keyedButton(rowId))}
+        {keys.map(keyedButton(rowId, false, width))}
         {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
         {reply || links.length > 0 ? (
           <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
@@ -148,7 +158,7 @@ export function paneRowKeys(
                 {keyedButton(rowId, true)(reply)}
               </Box>
             ) : null}
-            {links.length > 0 ? (followUpLinks(rowId, links) ?? links.map(keyedButton(rowId, true))) : null}
+            {links.length > 0 ? (followUpLinks(rowId, links) ?? links.map(keyedButton(rowId, true, width))) : null}
           </Box>
         ) : null}
       </Box>
@@ -159,24 +169,37 @@ export function paneRowKeys(
       hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
     )
   const terminalKeyCells = (k: KeyAction) => terminalLabelCells(k) + cellWidth(shownLabel(k))
+  /** A button wider than `width` wraps its label to fill the line. */
   const terminalActionLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
-    actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
-      width,
-      gap: space.buttonGap,
-      // keyRow's `·` and the gap after it.
-      separator: 1 + space.buttonGap,
-    })
-  const keyLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
-    terminalActionLines(keys, more, width).lines.length
+    actionLines(
+      keys.map(k => Math.min(width, terminalKeyCells(k))),
+      more.map(k => Math.min(width, terminalKeyCells(k))),
+      {
+        width,
+        gap: space.buttonGap,
+        // keyRow's `·` and the gap after it.
+        separator: 1 + space.buttonGap,
+      },
+    )
+  /** The lines a row's buttons take, each line as tall as its button whose label wraps to the most lines. */
+  const keyLines = (keys: KeyAction[], more: KeyAction[], width: number) => {
+    const buttons = [...keys, ...more]
+
+    return terminalActionLines(keys, more, width).lines.reduce(
+      (sum, line) =>
+        sum + Math.max(...line.map(at => terminalLabelLines(shownLabel(buttons[at]!), buttons[at]!, width).length)),
+      0,
+    )
+  }
   // Desktop's links Box wraps as a whole by its own width, so only the terminal draws a second row.
   const actionRows = (rowId: string, keys: KeyAction[], more: KeyAction[], terminalWidth: number) =>
     look === 'terminal' && terminalActionLines(keys, more, terminalWidth).isFollowUpLineNew ? (
       <Box flexDirection="column">
-        {keyRow(rowId, keys)}
-        {keyRow(rowId, [], more)}
+        {keyRow(rowId, keys, [], terminalWidth)}
+        {keyRow(rowId, [], more, terminalWidth)}
       </Box>
     ) : (
-      keyRow(rowId, keys, more)
+      keyRow(rowId, keys, more, terminalWidth)
     )
   const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
   const rowActions = (row: Row): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] } => {

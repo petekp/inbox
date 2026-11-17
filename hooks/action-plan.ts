@@ -1,5 +1,4 @@
 import type { Item, PressKind, Finding, LastAction, Tab } from '../types'
-import { clipLabel } from './text'
 import { actionId, ISSUE_LABEL } from './press-labels'
 import { stepIconKind } from './help-steps'
 import type { HelpStep } from './help-steps'
@@ -7,7 +6,7 @@ import type { RowPress } from './presses'
 import type { PrPress } from './pr-press'
 import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
-import { ROW_COPY, OPTIONS_FOLD_AT, OPTION_LABEL_CHARS, isWaitingRow, optionNote } from './rows'
+import { ROW_COPY, OPTIONS_FOLD_AT, isWaitingRow, optionNote } from './rows'
 import type { RowState, ActionView, RowView, SettledState } from './rows'
 import { pressOutAction, outAction, isAgain, fixLabel } from './feedback'
 import type { Feedback } from './feedback'
@@ -152,7 +151,7 @@ export function actionsOf(
 
   return [
     ...options.map((option, n) =>
-      action({ action: 'answer', id, option }, clipLabel(option, OPTION_LABEL_CHARS), 'mark', {
+      action({ action: 'answer', id, option }, option, 'mark', {
         isPrimary: option === item.rec,
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1,
       }),

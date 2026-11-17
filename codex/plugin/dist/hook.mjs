@@ -339,9 +339,10 @@ function inPrOrder(prs, ranked = []) {
 }
 
 // ../hooks/help-steps.ts
+var COMMAND_LABEL_CHARS = 64;
+var commandLabel = (command) => clipLabel(command, COMMAND_LABEL_CHARS);
 function helpLabel(help) {
-  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
-  return clipLabel(label, 32);
+  return help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? commandLabel(help.command)}` : help.kind === "terminal" ? `Copy ${help.name ?? commandLabel(help.command)}` : `Open ${help.name ?? new URL(help.url).host}`;
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
@@ -349,7 +350,7 @@ function steps(helps) {
   if (!copy || !open2 || copy.kind !== "copy" || open2.kind !== "open")
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
   return helps.filter((h) => h !== copy).map(
-    (h) => h === open2 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open2.path)}`, 48), step: [copy, open2] } : { label: helpLabel(h), step: [h] }
+    (h) => h === open2 ? { label: `Copy ${copy.name ?? "snippet"} and open ${baseName(open2.path)}`, step: [copy, open2] } : { label: helpLabel(h), step: [h] }
   );
 }
 function prSteps(item, tracked) {
@@ -1662,7 +1663,6 @@ function upgradeHostTasks(saved) {
 
 // ../hooks/rows.ts
 var OPTIONS_FOLD_AT = 5;
-var OPTION_LABEL_CHARS = 32;
 var DOT = "\u2007\xB7\u2002";
 var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
@@ -1701,7 +1701,6 @@ function optionDescriptionsOf(item, actions) {
     return [
       {
         option: a.press.option,
-        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
         description,
         reason,
         isFolded: a.isFolded
@@ -2681,7 +2680,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map(
-      (option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
+      (option, n) => action({ action: "answer", id, option }, option, "mark", {
         isPrimary: option === item.rec,
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
       })

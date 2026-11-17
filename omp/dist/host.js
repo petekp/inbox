@@ -1065,16 +1065,17 @@ function numberList(prs) {
 }
 
 // ../hooks/help-steps.ts
+var COMMAND_LABEL_CHARS = 64;
+var commandLabel = (command) => clipLabel(command, COMMAND_LABEL_CHARS);
 function helpLabel(help) {
-  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
-  return clipLabel(label, 32);
+  return help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? commandLabel(help.command)}` : help.kind === "terminal" ? `Copy ${help.name ?? commandLabel(help.command)}` : `Open ${help.name ?? new URL(help.url).host}`;
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
   const open = helps.find((h) => h.kind === "open");
   if (!copy || !open || copy.kind !== "copy" || open.kind !== "open")
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
-  return helps.filter((h) => h !== copy).map((h) => h === open ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open.path)}`, 48), step: [copy, open] } : { label: helpLabel(h), step: [h] });
+  return helps.filter((h) => h !== copy).map((h) => h === open ? { label: `Copy ${copy.name ?? "snippet"} and open ${baseName(open.path)}`, step: [copy, open] } : { label: helpLabel(h), step: [h] });
 }
 function prSteps(item, tracked) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
@@ -4638,7 +4639,6 @@ function resultGlyph(mark, now) {
 
 // ../hooks/rows.ts
 var OPTIONS_FOLD_AT = 5;
-var OPTION_LABEL_CHARS = 32;
 var DOT = "\u2007\xB7\u2002";
 var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
@@ -4689,7 +4689,6 @@ function optionDescriptionsOf(item, actions) {
     return [
       {
         option: a.press.option,
-        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
         description,
         reason,
         isFolded: a.isFolded
@@ -7377,7 +7376,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
-    ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
+    ...options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
@@ -8405,8 +8404,10 @@ function askTreeLines(line, pad, width, s, cell, labelCells) {
   const drawAnswer = (a, n) => {
     const isLast = n === lastBranch;
     const rest = isLast ? NONE : TRUNK;
+    const [first, ...more] = cell(a.b, a.index, room);
     return [
-      s.dim(margin + (isLast ? LAST : TEE)) + cell(a.b, a.index, room),
+      s.dim(margin + (isLast ? LAST : TEE)) + first,
+      ...more.map((l) => s.dim(margin + rest) + l),
       ...a.note ? draw(rest, a.note, rest, labelCells(a.b)) : []
     ];
   };
@@ -9793,14 +9794,28 @@ function bannerLines(b, width, s) {
 }
 var buttonLabelCells = (b) => b.key ? b.key.length + 2 : 1;
 function buttonCell(b, isFocused, s, mark = "") {
-  if (isFocused)
-    return s.inverse(b.isOut ? s.dim(` \u21B5 ${b.label}${mark} `) : s.bold(` \u21B5 ${b.label}${mark} `));
-  if (b.isOut && !b.isFollowUp)
-    return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `);
-  if (b.isFollowUp || b.isQuiet)
-    return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `);
-  const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark;
-  return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `;
+  return buttonCellLines(b, isFocused, s, mark, Infinity)[0];
+}
+function buttonCellLines(b, isFocused, s, mark, room) {
+  const head = isFocused ? " \u21B5 " : b.key ? ` ${b.key} ` : " ";
+  const isQuiet = !isFocused && (b.isFollowUp || b.isQuiet);
+  const text = isQuiet ? b.label : `${b.label}${mark}`;
+  const labelRoom = room - head.length - 1;
+  const lines = cellWidth(text) <= labelRoom ? [text] : wrapText(text, Math.max(1, labelRoom));
+  const widest = Math.max(...lines.map(cellWidth));
+  return lines.map((l, n) => {
+    const lead = n === 0 ? head : " ".repeat(head.length);
+    const padded = `${l}${" ".repeat(widest - cellWidth(l))} `;
+    if (isFocused)
+      return s.inverse(b.isOut ? s.dim(lead + padded) : s.bold(lead + padded));
+    if (isQuiet || b.isOut)
+      return s.dim(lead + padded);
+    const markPart = n === lines.length - 1 && mark && l.endsWith(mark.trim()) ? mark.trim() : "";
+    const labelPart = l.slice(0, l.length - markPart.length).trimEnd();
+    const label = (b.isRecommended ? s.underline(labelPart) : labelPart) + l.slice(labelPart.length);
+    const key = n === 0 && b.key ? ` ${s.bold(b.key)} ` : lead;
+    return `${key}${label}${" ".repeat(widest - cellWidth(l))} `;
+  });
 }
 function labelMark(b, room, s) {
   const fits = (label) => visibleLength(buttonCell({ ...b, label }, true, s)) <= room;
@@ -9812,16 +9827,17 @@ function buttonLines(line, ui, indent, width, s) {
   return faceLines(line.buttons.slice(answers), focused < answers ? -1 : focused - answers, indent, width, s);
 }
 function faceLines(buttons, focused, indent, width, s, between = "") {
-  const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
-  const sizes = cells.map(visibleLength);
+  const room = width - indent;
+  const cells = buttons.map((b, i) => buttonCellLines(b, i === focused, s, labelMark(b, Infinity, s), room));
+  const sizes = cells.map((c) => c.length > 1 ? room : visibleLength(c[0]));
   const firstFollowUp = buttons.findIndex((b) => b.isFollowUp);
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp;
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
-    width: width - indent,
+    width: room,
     gap: visibleLength(between),
     separator: 0
   });
-  return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(between));
+  return lines.flatMap((at) => at.length === 1 && cells[at[0]].length > 1 ? cells[at[0]].map((l) => " ".repeat(indent) + l) : [" ".repeat(indent) + at.map((i) => cells[i][0]).join(between)]);
 }
 function leadPaint(lead, text, s) {
   return lead.tone === "dim" ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text;
@@ -9883,7 +9899,7 @@ function drawLine(line, isSelected, d) {
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const holdsUp = line.row?.holdsUpLine;
   const focused = ui.typing === line.id ? -1 : focusOf2(line, ui);
-  const answerCell = (b, n, room) => buttonCell(b, n === focused, s, labelMark(b, room, s));
+  const answerCell = (b, n, room) => buttonCellLines(b, n === focused, s, labelMark(b, Infinity, s), room);
   const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell, buttonLabelCells) : [];
   if (tree.length > 0)
     out.push(...tree);

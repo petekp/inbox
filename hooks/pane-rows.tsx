@@ -245,7 +245,7 @@ export function paneRows(
     const treeEntries = row.view && look === 'desktop' && isSelected ? askEntries(row.view, options) : []
     const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
     const isTrunkBridged = look === 'terminal' && isSelected && row.view !== undefined && hasTree(row.view, options)
-    const descriptionsBlock = row.view && !isDesktopTree ? askTree(row.view, options) : null
+    const descriptionsBlock = row.view && !isDesktopTree ? askTree(row.view, options, textWidth) : null
     const trunked = (above: JSX.Element) =>
       isTrunkBridged ? (
         <Box

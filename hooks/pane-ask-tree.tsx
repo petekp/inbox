@@ -29,7 +29,7 @@ export type AskEntry = {
 export function paneAskTree(
   { look, Box, Text, pal }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal'>,
   { branch }: Pick<PaneRowLines, 'branch'>,
-  keyedButton: (rowId: string) => (action: KeyAction) => JSX.Element,
+  keyedButton: (rowId: string, isFollowUp?: boolean, width?: number) => (action: KeyAction) => JSX.Element,
 ) {
   const entriesOf = (view: RowView, answers: KeyAction[]): AskEntry[] => {
     if (view.type === 'finding' || view.state.is !== 'open') return []
@@ -67,7 +67,8 @@ export function paneAskTree(
   }
   const hasTree = (view: RowView, answers: KeyAction[]) =>
     look === 'terminal' && entriesOf(view, answers).some(e => e.pos !== null)
-  const askTree = (view: RowView, answers: KeyAction[]) => {
+  /** `width` is the cells of the row's text column, which an answer's label wraps to. */
+  const askTree = (view: RowView, answers: KeyAction[], width: number) => {
     const entries = entriesOf(view, answers)
     if (entries.length === 0) return null
     const isTree = entries.some(e => e.pos !== null)
@@ -82,7 +83,7 @@ export function paneAskTree(
               paddingLeft={(isTree ? TREE_TEXT_INDENT : 0) + (e.noteOf ? terminalLabelCells(e.noteOf) : 0)}
             >
               {e.option ? (
-                keyedButton(view.id)(e.option)
+                keyedButton(view.id, false, width)(e.option)
               ) : (
                 <Text wrap="wrap">
                   {e.lead ? <Text color={pal.muted}>{e.lead}</Text> : null}

@@ -97,20 +97,20 @@ test('the recommended option ends "(recommended)", outside its underline, and no
   expect(strip(moved).match(/\(recommended\)/g)).toHaveLength(1)
 })
 
-test('the recommended option drops "(recommended)" only where its button would not fit a line of its own', () => {
+test('the recommended option wraps "(recommended)" under its label where its button would not fit one line', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
   const has = (width: number) => text(screen, onRow(row), width).includes(`${row.item!.rec} (recommended)`)
   let tight = 200
   while (has(tight - 1)) tight--
   expect(has(tight)).toBe(true)
-  expect(text(screen, onRow(row), tight)).toContain(`${row.item!.rec} (recommended)`)
-  expect(text(screen, keys(screen, onRow(row), 'right'), tight)).toContain(`${row.item!.rec} (recommended)`)
-  expect(text(screen, onRow(row), tight - 1)).toContain(`↵ ${row.item!.rec} `)
-  expect(text(screen, onRow(row), tight - 1)).not.toContain('(recommended)')
-  expect(drawn(screen, keys(screen, onRow(row), 'right'), tight - 1).join('\n')).toContain(
-    `${ESC}4m${row.item!.rec}${ESC}24m `,
-  )
+  const wrapped = text(screen, onRow(row), tight - 1).split('\n')
+  const at = wrapped.findIndex(l => l.includes(`↵ ${row.item!.rec}`))
+  expect(wrapped[at + 1]).toMatch(/^\s*│\s+\(recommended\)/)
+  const moved = drawn(screen, keys(screen, onRow(row), 'right'), tight - 1).join('\n')
+  expect(moved).toContain(`${ESC}4m${row.item!.rec}${ESC}24m`)
+  expect(moved).not.toContain(`${ESC}4m(recommended)`)
+  expect(strip(moved).match(/\(recommended\)/g)).toHaveLength(1)
 })
 
 test('Enter on the opening focus answers with the recommended option', () => {
@@ -168,7 +168,7 @@ test('a question’s context draws whole and dim, under its title, on its select
   expect(at).toBeGreaterThan(shown.indexOf('Dismiss a glance'))
   const firstWords = context.split(' ').slice(0, 3).join(' ')
   const raw = text(screen, onRow(row), 50)
-  expect(raw.indexOf(firstWords)).toBeLessThan(raw.indexOf(row.optionDescriptions[0]!.label))
+  expect(raw.indexOf(firstWords)).toBeLessThan(raw.indexOf(row.optionDescriptions[0]!.option))
   expect(
     drawn(screen, onRow(row), 50).find(l =>
       strip(l)
