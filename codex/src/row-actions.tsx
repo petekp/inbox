@@ -42,6 +42,8 @@ export function Icon({ name }: { name: IconName }) {
 
 type RowAction = {
   label: string
+  /** An answer's line under its button. */
+  note?: string
   emphasis: ActionEmphasis
   isDismiss?: boolean
   icon?: IconName
@@ -63,9 +65,12 @@ export function ledgerActions(
     discard: () => void
     showOptions: () => void
   },
-): { keys: LedgerAction[]; more: LedgerAction[] } {
+): { options: LedgerAction[]; keys: LedgerAction[]; more: LedgerAction[] } {
   const planned = rowKeyPlan(row, allOptions)
-  const draw = (k: (typeof planned.keys)[number]): LedgerAction => {
+  type Drawn =
+    | (typeof planned.keys)[number]
+    | { slot: 'choice'; action: (typeof planned.options)[number]['action']; hotkey?: string }
+  const draw = (k: Drawn): LedgerAction => {
     if (k.slot === 'retry') return { label: k.label, emphasis: k.emphasis, icon: k.icon, run: () => on.press(k.press) }
     if (k.slot === 'allOptions') return { label: k.label, emphasis: k.emphasis, run: on.showOptions }
     const a = k.action
@@ -79,7 +84,14 @@ export function ledgerActions(
       run: a.press.action === 'type' ? on.reply : a.press.action === 'discard' ? on.discard : () => on.press(a.press),
     }
   }
-  return { keys: planned.keys.map(draw), more: planned.more.map(draw) }
+  return {
+    options: planned.options.map(o => ({
+      ...draw({ slot: 'choice', action: o.action, ...(o.hotkey ? { hotkey: o.hotkey } : {}) }),
+      ...(o.note ? { note: o.note } : {}),
+    })),
+    keys: planned.keys.map(draw),
+    more: planned.more.map(draw),
+  }
 }
 
 type Reply = {

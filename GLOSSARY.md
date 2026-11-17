@@ -36,8 +36,8 @@ shares, kept 180 days. Each host writes only its own sessions' files.
 **Option note**:
 What picking one of a question's options does, in at most 12 words. The agent
 gives one for each option when it records the question, and a dialog's option
-descriptions fill in where it gave none. The selected row draws each one beside
-its option's name. Stored as `Item.optionDescriptions`.
+descriptions fill in where it gave none. The selected row draws each one under
+its option's button. Stored as `Item.optionDescriptions`.
 
 **Design choice**:
 A question whose options the agent could try and show side by side, such as

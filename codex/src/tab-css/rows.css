@@ -249,13 +249,24 @@
   content: '';
   position: absolute;
   left: calc(-1 * var(--tree-x) - 0.75px);
-  top: calc(var(--above) + 0.8em);
+  top: calc(var(--above) + var(--tick, 0.8em));
   width: calc(var(--tree-x) - 6px + 0.75px);
   border-top: 1.5px solid var(--tree-line);
 }
 .body .tree > p.tree-last::before {
   bottom: auto;
-  height: calc(var(--above) + 0.8em);
+  height: calc(var(--above) + var(--tick, 0.8em));
+}
+/* An answer is its button with its note under it. Its arm meets the button's middle. */
+.body .tree > p.option-choice {
+  --tick: calc(3.5 * var(--unit));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--list-gap);
+}
+.option-choice .option-note {
+  display: block;
 }
 .body .tree > p.tree-after::before {
   display: none;

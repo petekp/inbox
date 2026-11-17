@@ -70,8 +70,12 @@ function labelMark(b: ButtonFace, room: number, s: Style): string {
   return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length)
 }
 
+/** The buttons under the tree: all but the answers, which the tree draws. */
 function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: Style): string[] {
-  return faceLines(line.buttons, focusOf(line, ui), indent, width, s)
+  const answers = line.buttons.filter(b => b.option).length
+  const focused = focusOf(line, ui)
+
+  return faceLines(line.buttons.slice(answers), focused < answers ? -1 : focused - answers, indent, width, s)
 }
 
 /** Buttons laid out in lines from `indent`, the one at `focused` drawn focused. -1 focuses none. */
@@ -186,7 +190,9 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   const holdsUp = line.row?.holdsUpLine
-  const tree = isOpen ? askTreeLines(line, pad, width, s, ui.optionsShown.includes(line.id)) : []
+  const focused = ui.typing === line.id ? -1 : focusOf(line, ui)
+  const answerCell = (b: ButtonFace, n: number, room: number) => buttonCell(b, n === focused, s, labelMark(b, room, s))
+  const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell) : []
   if (tree.length > 0) out.push(...tree)
   else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))
   if (line.body && isOpen) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
@@ -194,7 +200,8 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   if (!isOpen) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
   // As in the terminal, an open reply field replaces the row's buttons: Enter sends, so no button reads as focused.
-  if (line.buttons.length > 0 && ui.typing !== line.id) out.push(...buttonLines(line, ui, indent - 1, width, s))
+  if (line.buttons.some(b => !b.option) && ui.typing !== line.id)
+    out.push(...buttonLines(line, ui, indent - 1, width, s))
   if (ui.typing === line.id) {
     const hint = line.row ? replyHint(line.row, AGENT) : 'Your reply'
     const text = ui.drafts[line.id]?.text ?? ''
