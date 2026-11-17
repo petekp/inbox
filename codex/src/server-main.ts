@@ -10,6 +10,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { createHandler } from './server-handler'
 import { dataDir, devBuild } from './data-dir'
 import { detachedUpdate } from './detached-update'
+import { herdrLog } from './host'
+import { run } from './run'
+import { withoutSharedTerminal } from './shared-daemon'
 
 type Handler = ReturnType<typeof createHandler>
 
@@ -17,6 +20,8 @@ const here = dirname(fileURLToPath(import.meta.url))
 const pluginRoot = dirname(here)
 const dir = dataDir(process.env, pluginRoot)
 const BUNDLE = join('dist', 'server-handler.mjs')
+
+await withoutSharedTerminal(process.env, run, process.ppid, herdrLog(dir))
 
 const exists = (path: string) =>
   stat(path).then(

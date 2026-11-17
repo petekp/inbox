@@ -255,6 +255,10 @@ type After = (ms: number, fn: () => Promise<unknown>) => void
  * turn comes, so a later report never carries older tokens, and a report that would change nothing is skipped. Herdr
  * finds the pane from its id, so the command runs in `/`, as `delegatesInHerdr` does.
  *
+ * A final report is for a process that is about to exit, which a host may cut off within about a second. It sends at
+ * once, without waiting for a send already running, and every other report after it is dropped, so nothing sets again
+ * what it cleared.
+ *
  * A report counts as sent only when `run` exits 0. After a failed send, the next report is sent even when it matches
  * the last one. With `after`, a failed send also schedules a retry after the next wait in `HERDR_RETRY_MS`, with one
  * retry waiting at a time. Each call resolves true when Herdr took its report, or the last report Herdr took matches it.
@@ -262,12 +266,13 @@ type After = (ms: number, fn: () => Promise<unknown>) => void
  */
 export function herdrReporter(
   log?: (text: string) => void,
-): (run: Run, report: () => Promise<HerdrReport | null>, after?: After) => Promise<boolean> {
+): (run: Run, report: () => Promise<HerdrReport | null>, after?: After, isFinal?: boolean) => Promise<boolean> {
   let sent: string | null = null
+  let isFinished = false
   let retries = 0
   let isRetryWaiting = false
   let sending: Promise<unknown> = Promise.resolve()
-  let newest: { run: Run; report: () => Promise<HerdrReport | null>; after?: After } | null = null
+  let newest: { run: Run; report: () => Promise<HerdrReport | null>; after?: After; isFinal: boolean } | null = null
   let hcFound: string | null = null
   let logged: string | null = null
 
@@ -294,11 +299,17 @@ export function herdrReporter(
     after(wait, () => {
       isRetryWaiting = false
 
-      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false)
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after, newest.isFinal) : Promise.resolve(false)
     })
   }
 
-  const send = async (run: Run, report: () => Promise<HerdrReport | null>, after: After | undefined) => {
+  const send = async (
+    run: Run,
+    report: () => Promise<HerdrReport | null>,
+    after: After | undefined,
+    isFinal: boolean,
+  ) => {
+    if (isFinished && !isFinal) return false
     const r = await report()
     if (!r) return false
     const key = herdrReportKey(r)
@@ -317,9 +328,12 @@ export function herdrReporter(
     return isTaken
   }
 
-  const reportToHerdr = (run: Run, report: () => Promise<HerdrReport | null>, after?: After) => {
-    newest = { run, report, after }
-    const result = sending.then(() => send(run, report, after)).catch(() => false)
+  const reportToHerdr = (run: Run, report: () => Promise<HerdrReport | null>, after?: After, isFinal = false) => {
+    newest = { run, report, after, isFinal }
+    if (isFinal) isFinished = true
+    const result = (
+      isFinal ? send(run, report, after, true) : sending.then(() => send(run, report, after, false))
+    ).catch(() => false)
     sending = result
 
     return result

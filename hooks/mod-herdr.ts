@@ -225,28 +225,34 @@ export async function askHerdrModAgain(calls: HerdrCalls, show: () => Promise<un
  * Reports the drawn conversation to the Herdr pane or app terminal the session runs in. In an app terminal, each
  * report's turn first publishes the session for the Herdr look, so the files land in the order of the changes. The
  * labels name the session only once its file is written. With `endingId`, the report removes that conversation's file
- * and clears every token and label.
+ * while it clears every token and label. With `isExit` too, the process is about to exit, so the report does not wait for
+ * a send already running and no later report publishes the session again.
  */
-export function publishToHerdr(
+export async function publishToHerdr(
   calls: HerdrCalls,
   endingId: string | null,
   drawn: () => Promise<DrawnForHerdr>,
+  isExit = false,
 ): Promise<boolean> {
   const files = herdrFiles(calls)
   const logFailure = (err: unknown) => calls.log(`Herdr publish failed: ${message(err)}`)
   logReport = calls.log
+  let removal: Promise<unknown> = Promise.resolve()
 
-  return reportToHerdr(
+  const isTaken = await reportToHerdr(
     calls.run,
     async () => {
-      const target = await targetOf(calls)
-      if (!target) return null
-      const appHome = target.kind === 'terminal' ? target.appHome : null
       if (endingId !== null) {
-        if (appHome) await unpublishSession(files, appHome, endingId).catch(logFailure)
+        const { target } = await currentTarget(calls)
+        if (!target) return null
+        const appHome = target.kind === 'terminal' ? target.appHome : null
+        if (appHome) removal = unpublishSession(files, appHome, endingId).catch(logFailure)
 
         return { target, tokens: CLEARED_TOKENS, session: null }
       }
+      const target = await targetOf(calls)
+      if (!target) return null
+      const appHome = target.kind === 'terminal' ? target.appHome : null
       const [{ id, root, session, dialogs, isUnread, receipts, viewers, remoteHistoryAfter }, now] = await Promise.all([
         drawn(),
         calls.now(),
@@ -279,7 +285,11 @@ export function publishToHerdr(
       return { target, tokens, session: isPublished ? id : null }
     },
     calls.after,
+    isExit,
   )
+  await removal
+
+  return isTaken
 }
 
 /** The value of `inbox.press` in one line of `hc events` output about `terminal`, or null when the line has none. */

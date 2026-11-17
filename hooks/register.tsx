@@ -395,21 +395,30 @@ function herdrCalls($: EngineInterface): HerdrCalls {
   }
 }
 
-function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
-  return publishToHerdr(herdrCalls($), isEnding ? conversation.id : null, async () => {
-    const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
+function publishStatus($: EngineInterface, isEnding = false, isExit = false): Promise<boolean> {
+  return publishToHerdr(
+    herdrCalls($),
+    isEnding ? conversation.id : null,
+    async () => {
+      const [session, dialogs, unreadable] = await Promise.all([
+        read($, SESSION),
+        read($, DIALOGS),
+        read($, UNREADABLE),
+      ])
 
-    const root = (await sessionFolder(commandCalls($))) ?? ''
+      const root = (await sessionFolder(commandCalls($))) ?? ''
 
-    return {
-      id: conversation.id,
-      root,
-      session,
-      dialogs,
-      ...(await readRemoteState(saveEngine($), conversation.id, session)),
-      isUnread: unreadable === conversation.id,
-    }
-  })
+      return {
+        id: conversation.id,
+        root,
+        session,
+        dialogs,
+        ...(await readRemoteState(saveEngine($), conversation.id, session)),
+        isUnread: unreadable === conversation.id,
+      }
+    },
+    isExit,
+  )
 }
 
 /** Applies a Herdr look's press. False when it is for another conversation. */
@@ -2381,7 +2390,7 @@ export const register: Register = on => {
         update($, DIALOGS, () => []),
         update($, DEMO, () => null),
         update($, DEMO_RECORDING, () => false),
-        publishStatus($, true),
+        publishStatus($, true, e.reason !== 'clear' && e.reason !== 'resume'),
       ])
     }
     // /clear, /resume and /branch (which reports resume) go on in this process with another conversation.
