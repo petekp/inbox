@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T02:55:32.282Z. 269094 characters follow.
+// Built at 2026-11-17T05:29:33.942Z. 269067 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -3065,7 +3065,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press,
       label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
       ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,

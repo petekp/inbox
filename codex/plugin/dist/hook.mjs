@@ -2522,7 +2522,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press: press2,
       label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
       ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
