@@ -120,7 +120,7 @@ export const HEAD_LINE = '24px'
 export const INSIDE_GAP = INSIDE_GAP_PT
 /** Two one-line items of a list, as a subject's later children or two Help lines. */
 export const LIST_GAP = LIST_GAP_PT
-/** Two Status items nested under one parent, when either has more than one line. */
+/** Two Status items nested under one parent, when either has more than one line, and the parts of a question's tree. */
 export const CHILD_GAP = CHILD_GAP_PT
 /** Two Status items when either has more than one line. */
 export const ITEM_GAP = ITEM_GAP_PT

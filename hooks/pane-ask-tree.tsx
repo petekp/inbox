@@ -10,20 +10,12 @@ const TREE_TEXT_INDENT = 3
 export type AskEntry = { key: string; pos: TreePos | null; lead?: string; label: string; rest: string }
 
 /**
- * An open question's or task's context, earlier answer, option lines and Holds up line. In the terminal they hang from
- * the row's ◆ on one connector: the context and earlier answer beside it, each option and the Holds up line, the last,
- * on a branch. `askEntries`
- * gives desktop the same entries, which it draws on its own hairline pieces.
+ * An open question's or task's Holds up line, context, earlier answer and option lines, in that order. In the terminal
+ * they hang from the row's ◆ on one connector: the Holds up line and each option on a branch, the context and earlier
+ * answer beside it. `askEntries` gives desktop the same entries, which it draws on its own hairline pieces.
  */
 export function paneAskTree(
-  {
-    look,
-    Box,
-    Text,
-    pal,
-    optionsShown,
-    blankLine,
-  }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'optionsShown' | 'blankLine'>,
+  { look, Box, Text, pal, optionsShown }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'optionsShown'>,
   { branch }: Pick<PaneRowLines, 'branch'>,
 ) {
   const entriesOf = (view: RowView): AskEntry[] => {
@@ -45,11 +37,10 @@ export function paneAskTree(
     const earlier = view.earlierLine
     if (earlier)
       context.push({ key: 'earlier', pos: null, lead: earlier.lead, label: earlier.answer, rest: earlier.rest })
-    const tail = holdsUp ? [{ key: 'holds-up', pos: 'mid' as const, label: '', rest: holdsUp }] : []
-    const branches = [...options, ...tail]
-    const hasTree = branches.some(b => b.pos === 'mid')
+    const head = holdsUp ? [{ key: 'holds-up', pos: 'mid' as const, label: '', rest: holdsUp }] : []
+    const hasTree = [...head, ...options].some(b => b.pos === 'mid')
 
-    return [...context, ...branches].map((b, n, all): AskEntry => {
+    return [...head, ...context, ...options].map((b, n, all): AskEntry => {
       if (!hasTree) return { ...b, pos: null }
       const isLast = all.findLastIndex(x => x.pos === 'mid') === n
       const isAfterLast = n > all.findLastIndex(x => x.pos === 'mid')
@@ -64,14 +55,13 @@ export function paneAskTree(
     })
   }
   const hasTree = (view: RowView) => look === 'terminal' && entriesOf(view).some(e => e.pos !== null)
-  /** `isBridged` leaves the gap above the tree to the caller, which draws the trunk through it. */
-  const askTree = (view: RowView, isBridged = false) => {
+  const askTree = (view: RowView) => {
     const entries = entriesOf(view)
     if (entries.length === 0) return null
     const isTree = entries.some(e => e.pos !== null)
 
     return (
-      <Box flexDirection="column" marginTop={isBridged ? 0 : blankLine} marginLeft={isTree ? -TREE_TEXT_INDENT : 0}>
+      <Box flexDirection="column" marginLeft={isTree ? -TREE_TEXT_INDENT : 0}>
         {entries.map(e => (
           <Box key={e.key} flexDirection="row" position="relative" overflow="hidden">
             {e.pos ? branch(e.pos, 0, 0, pal.selectionLine ?? pal.line, 0, `tree-${e.key}`) : null}

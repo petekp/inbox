@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T02:55:32.282Z. 269094 characters follow.
+// Built at 2026-11-17T05:12:41.804Z. 269759 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -4415,29 +4415,35 @@ function rowBody(row, isAllShown) {
     const body = optionBody(o);
     const reason = optionReasonLine(o);
     return [
-      { text: body === null ? o.label : `${o.label}: ${body}`, tone: null },
+      { lead: body === null ? o.label : `${o.label}:`, text: body ?? "", tone: "muted" },
       ...reason ? [{ text: reason, tone: "muted" }] : []
     ];
   });
-  const branches = [...options, ...row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: "muted" }]] : []];
+  const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: "muted" }]] : [];
+  const branches = [...holdsUp, ...options];
   const lastBranch = branches.length - 1;
-  const hasTree = branches.length > 0;
+  const isTrunkAfterHoldsUp = options.length > 0;
   const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
+  const branchLines = (branch) => (branches[branch] ?? []).map((l, line) => {
+    const placed = tree(branch, line);
+    return { ...l, ...placed ? { tree: placed } : {}, ...line === 0 ? { isApart: true } : {} };
+  });
+  const contextTree = isTrunkAfterHoldsUp ? { tree: "trunk" } : {};
   const lines = [
-    { text: row.contextLine ?? "", tone: "muted", ...hasTree ? { tree: "trunk" } : {} },
+    ...holdsUp.flatMap((_, branch) => branchLines(branch)),
+    { text: row.contextLine ?? "", tone: "muted", isApart: true, ...contextTree },
     {
       text: row.earlierLine ? earlierLineText(row.earlierLine) : "",
       tone: "muted",
-      ...hasTree ? { tree: "trunk" } : {}
+      isApart: true,
+      ...contextTree
     },
     { text: row.detail ?? "", tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
-    ...branches.flatMap((lines, branch) => lines.map((l, line) => {
-      const placed = tree(branch, line);
-      return { ...l, ...placed ? { tree: placed } : {} };
-    }))
+    ...options.flatMap((_, n) => branchLines(holdsUp.length + n))
   ];
-  return lines.filter((l) => l.text);
+  const shown = lines.filter((l) => l.text || l.lead);
+  return shown.map(({ isApart, ...l }, n) => isApart && n > 0 ? { ...l, isApart } : l);
 }
 function rowBlock(row, ui, selected, screen) {
   const { state, feedback: f } = row;
@@ -5772,10 +5778,12 @@ var trunkEl = (top, height, t, isSelected) => {
   return height === null ? el.bottom(0) : el.h(height);
 };
 var bodyLineEl = (l, t, isSelected) => {
-  const armAt = INSIDE_GAP + LINE_HEIGHT / 2;
+  const above = l.isApart ? CHILD_GAP : INSIDE_GAP;
+  const armAt = above + LINE_HEIGHT / 2;
   const arm = div8().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes);
+  const line = l.lead ? h_flex5().pl(MARK_W).pt(above).flex_wrap().child(statusPartEl(l.lead).text_color(t.foreground).pr(SMALL_GAP)).children(l.text ? [statusPartEl(l.text).text_color(colorOf(t, l.tone))] : []) : lineEl(l.text, colorOf(t, l.tone)).pt(above);
+  return line.relative().children(strokes);
 };
 function fieldEl(f, p, indent, isInert = false) {
   const { t } = p;
