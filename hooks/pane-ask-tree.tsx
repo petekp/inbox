@@ -1,6 +1,7 @@
 import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
 import type { KeyAction } from './pane-keys'
+import { terminalLabelCells } from './pane-row-keys'
 import type { RowView } from './rows'
 import type { TreePos } from './terminal-text'
 
@@ -16,6 +17,8 @@ export type AskEntry = {
   rest: string
   /** An answer, drawn as its button in place of `label`. */
   option?: KeyAction
+  /** The answer this line is the note of, which it nests under at the answer's label. */
+  noteOf?: KeyAction
 }
 
 /**
@@ -33,7 +36,9 @@ export function paneAskTree(
     const options = answers.flatMap((option, n): AskEntry[] => {
       return [
         { key: `option-${n}`, pos: 'mid', label: option.label, rest: '', option },
-        ...(option.note ? [{ key: `reason-${n}`, pos: 'pass' as const, label: '', rest: option.note }] : []),
+        ...(option.note
+          ? [{ key: `reason-${n}`, pos: 'pass' as const, label: '', rest: option.note, noteOf: option }]
+          : []),
       ]
     })
     const holdsUp = view.state.is === 'open' && view.holdsUpLine ? view.holdsUpLine : null
@@ -72,7 +77,10 @@ export function paneAskTree(
         {entries.map(e => (
           <Box key={e.key} flexDirection="row" position="relative" overflow="hidden">
             {e.pos ? branch(e.pos, 0, 0, pal.selectionLine ?? pal.line, 0, `tree-${e.key}`) : null}
-            <Box flexShrink={1} paddingLeft={isTree ? TREE_TEXT_INDENT : 0}>
+            <Box
+              flexShrink={1}
+              paddingLeft={(isTree ? TREE_TEXT_INDENT : 0) + (e.noteOf ? terminalLabelCells(e.noteOf) : 0)}
+            >
               {e.option ? (
                 keyedButton(view.id)(e.option)
               ) : (

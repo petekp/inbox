@@ -4,8 +4,20 @@ import type { paneDesktopTree } from './pane-desktop-tree'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
-import { CHILD_GAP_PT } from './layout'
-import { DESKTOP_ARM_GAP, DESKTOP_MARK_CELLS, DESKTOP_TREE_AT, desktopPad } from './pane-sizes'
+import { CHILD_GAP_PT, ITEM_GAP_PT } from './layout'
+import {
+  DESKTOP_ANSWER_BUTTON_PT,
+  DESKTOP_ANSWER_LABEL_CELLS,
+  DESKTOP_ARM_GAP,
+  DESKTOP_HAIR_PT,
+  DESKTOP_MARK_CELLS,
+  DESKTOP_ROW_PT,
+  DESKTOP_TREE_AT,
+  desktopPad,
+} from './pane-sizes'
+
+/** An answer's arm meets its button's middle, which sits lower than a line of text's middle. */
+const ANSWER_ARM_AT = (DESKTOP_ANSWER_BUTTON_PT - DESKTOP_HAIR_PT) / 2 / DESKTOP_ROW_PT
 
 /**
  * A selected row's card on desktop when its lines hang from the row's ◆ on a tree: the title, each branch, and the
@@ -29,29 +41,48 @@ export function paneDesktopCard({
   Pick<ReturnType<typeof paneDesktopTree>, 'desktopTreeLine'> &
   Pick<PaneRowLines, 'gutterMark' | 'sideAge'>) {
   const hungMarkCenter = DESKTOP_TREE_AT - 1
+  const text = (en: AskEntry) => (
+    <Text key={en.key} wrap="wrap">
+      {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
+      {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
+      <Text color={pal.muted}>{en.rest}</Text>
+    </Text>
+  )
   const line = (rowId: string, en: AskEntry) =>
     en.option ? (
       <Box key={en.key} flexDirection="row">
         {keyedButton(rowId)(en.option)}
       </Box>
+    ) : en.noteOf ? (
+      <Box key={en.key} marginTop={desktopPad(CHILD_GAP_PT)} paddingLeft={DESKTOP_ANSWER_LABEL_CELLS}>
+        {text(en)}
+      </Box>
     ) : (
-      <Text key={en.key} wrap="wrap">
-        {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
-        {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
-        <Text color={pal.muted}>{en.rest}</Text>
-      </Text>
+      text(en)
     )
   /** The frames inside the card draw no border, so nothing lies between one frame's line and the next. */
-  const treeBox = (key: string, shape: 'down' | 'pass' | 'mid' | 'last', edge: number, edgeBelow = edge) =>
+  const treeBox = (
+    key: string,
+    shape: 'down' | 'pass' | 'mid' | 'last',
+    edge: number,
+    edgeBelow = edge,
+    armAt?: number,
+  ) =>
     desktopTreeLine(key, shape, {
       at: hungMarkCenter,
       arm: DESKTOP_MARK_CELLS - DESKTOP_ARM_GAP - hungMarkCenter,
       edge,
       edgeBelow,
       seam: 0,
+      ...(armAt === undefined ? {} : { armAt }),
     })
-  /** The padding that puts `CHILD_GAP_PT` between two entries: half under the one above and half above the one below. */
-  const halfGap = desktopPad(CHILD_GAP_PT / 2)
+  /**
+   * The padding that puts a gap between two groups: half under the one above and half above the one below. Two answers
+   * sit `ITEM_GAP_PT` apart, a step more than the `CHILD_GAP_PT` between an answer's button and its note, and the other
+   * lines `CHILD_GAP_PT`.
+   */
+  const halfGapBetween = (above: AskEntry[] | undefined, below: AskEntry[] | undefined) =>
+    above?.[0]?.option && below?.[0]?.option ? desktopPad(ITEM_GAP_PT / 2) : desktopPad(CHILD_GAP_PT / 2)
 
   return ({
     row,
@@ -98,8 +129,8 @@ export function paneDesktopCard({
             children: [title, row.subtitle ?? null, row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null],
           })}
           {groups.map((group, n) => {
-            const padY = n > 0 ? halfGap : 0
-            const padBelow = n < groups.length - 1 ? halfGap : 0
+            const padY = n > 0 ? halfGapBetween(groups[n - 1], group) : 0
+            const padBelow = n < groups.length - 1 ? halfGapBetween(group, groups[n + 1]) : 0
             const { pos } = group[0]!
             const shape = pos === 'mid' || pos === 'last' || pos === 'pass' ? pos : null
 
@@ -109,7 +140,15 @@ export function paneDesktopCard({
               isBordered: false,
               padY,
               padBelow,
-              tree: shape ? treeBox(`row-${row.id}-${group[0]!.key}-tree`, shape, padY, padBelow) : null,
+              tree: shape
+                ? treeBox(
+                    `row-${row.id}-${group[0]!.key}-tree`,
+                    shape,
+                    padY,
+                    padBelow,
+                    group[0]!.option ? ANSWER_ARM_AT : undefined,
+                  )
+                : null,
               children: group.map(en => line(row.id, en)),
             })
           })}

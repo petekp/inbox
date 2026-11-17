@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T07:34:04.795Z. 275958 characters follow.
+// Built at 2026-11-17T19:14:36.954Z. 276409 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -4102,6 +4102,8 @@ var ITEM_GAP_PT = 3 * SPACE_UNIT;
 var CHILD_GAP_PT = 2 * SPACE_UNIT;
 var HEAD_GAP_PT = 2 * SPACE_UNIT;
 var CONTROL_GAP_PT = 2 * SPACE_UNIT;
+var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
+var BUTTON_BORDER_PT = 1;
 var SECTION_GAP_PT = 6 * SPACE_UNIT;
 var EDGE_PT = 4 * SPACE_UNIT;
 var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
@@ -4474,25 +4476,27 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
 function rowBody(row, isAllShown) {
   const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
     { optionId: `${row.id} ${n}`, text: "", tone: "muted" },
-    ...o.note ? [{ text: o.note, tone: "muted" }] : []
+    ...o.note ? [{ text: o.note, tone: "muted", gapAbove: "child", isOptionNote: true }] : []
   ]);
   const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: "muted" }]] : [];
   const branches = [...holdsUp, ...options];
   const lastBranch = branches.length - 1;
   const isTrunkAfterHoldsUp = options.length > 0;
   const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
+  const isOptionAfterOption = (branch) => branch > holdsUp.length;
   const branchLines = (branch) => (branches[branch] ?? []).map((l, line) => {
     const placed = tree(branch, line);
-    return { ...l, ...placed ? { tree: placed } : {}, ...line === 0 ? { isApart: true } : {} };
+    const startGap = isOptionAfterOption(branch) ? "item" : "child";
+    return { ...l, ...placed ? { tree: placed } : {}, ...line === 0 ? { gapAbove: startGap } : {} };
   });
   const contextTree = isTrunkAfterHoldsUp ? { tree: "trunk" } : {};
   const lines = [
     ...holdsUp.flatMap((_, branch) => branchLines(branch)),
-    { text: row.contextLine ?? "", tone: "muted", isApart: true, ...contextTree },
+    { text: row.contextLine ?? "", tone: "muted", gapAbove: "child", ...contextTree },
     {
       text: row.earlierLine ? earlierLineText(row.earlierLine) : "",
       tone: "muted",
-      isApart: true,
+      gapAbove: "child",
       ...contextTree
     },
     { text: row.detail ?? "", tone: null },
@@ -4500,7 +4504,7 @@ function rowBody(row, isAllShown) {
     ...options.flatMap((_, n) => branchLines(holdsUp.length + n))
   ];
   const shown = lines.filter((l) => l.text || l.lead || l.optionId);
-  return shown.map(({ isApart, ...l }, n) => isApart && n > 0 ? { ...l, isApart } : l);
+  return shown.map(({ gapAbove, ...l }, n) => gapAbove && n > 0 ? { ...l, gapAbove } : l);
 }
 function rowBlock(row, ui, selected, screen) {
   const { state, feedback: f } = row;
@@ -5429,6 +5433,8 @@ var SECTION_GAP = SECTION_GAP_PT;
 var EDGE = EDGE_PT;
 var SMALL_GAP = SPACE_UNIT;
 var INSET = 3 * SPACE_UNIT;
+var BUTTON_PAD_X = BUTTON_PAD_X_PT;
+var BUTTON_LABEL_X = BUTTON_BORDER_PT + BUTTON_PAD_X;
 var END_SPACE = 2 * EDGE;
 var MARK_W = MARK_PT;
 var TEXT_X = EDGE + MARK_W;
@@ -5568,7 +5574,7 @@ function buttonEl(b, p, isInert = false, isShrinkable = false) {
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
   const base = h_flex().id(`button ${b.id}`).when(!isShrinkable, (e) => e.flex_none()).when(isShrinkable, (e) => e.flex_shrink_1().min_w(0)).h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isShrinkable ? div3().min_w(0).truncate().child(b.label) : b.label);
-  const shaped = isPill && runsOutAt === undefined ? base.px(INSET).rounded(BUTTON_H / 2).border_1() : base;
+  const shaped = isPill && runsOutAt === undefined ? base.px(BUTTON_PAD_X).rounded(BUTTON_H / 2).border_1() : base;
   if (b.isHidden)
     return shaped.invisible().disabled(true);
   if (b.isOut)
@@ -5880,11 +5886,11 @@ var trunkEl = (top, height, t, isSelected) => {
 var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
 var bodyLineEl = (l, t, isSelected, option = undefined, p = null, isInert = false) => {
-  const above = l.isApart ? CHILD_GAP : INSIDE_GAP;
+  const above = l.gapAbove === "item" ? ITEM_GAP : l.gapAbove === "child" ? CHILD_GAP : INSIDE_GAP;
   const armAt = above + (option ? BUTTON_H : LINE_HEIGHT) / 2;
   const arm = div8().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = option && p ? h_flex5().min_w(0).pl(MARK_W).pt(above).child(buttonEl(option, p, isInert, true)) : l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone)).pt(above);
+  const line = option && p ? h_flex5().min_w(0).pl(MARK_W).pt(above).child(buttonEl(option, p, isInert, true)) : l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above);
   return line.relative().children(strokes);
 };
 function fieldEl(f, p, indent, isInert = false) {

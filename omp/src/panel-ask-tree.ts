@@ -21,6 +21,8 @@ export function askTreeLines(
   s: Style,
   /** An answer's button as a cell, given its index among the line's buttons and the room it has. */
   cell: (b: Button, index: number, room: number) => string,
+  /** Cells an answer's label starts in from its button's edge, where the answer's note starts. */
+  labelCells: (b: Button) => number,
 ): string[] {
   const row = line.row
   if (!row || row.state.is !== 'open') return []
@@ -28,8 +30,8 @@ export function askTreeLines(
   const room = Math.max(10, width - margin.length - TRUNK.length - 1)
   const branches = line.buttons.flatMap((b, index) => (b.option ? [{ b, index, note: b.option.note }] : []))
   const holdsUp = row.holdsUpLine
-  const draw = (arm: string, text: string, rest: string): string[] =>
-    wrapText(text, room).map((l, i) => s.dim(margin + (i === 0 ? arm : rest)) + s.dim(l))
+  const draw = (arm: string, text: string, rest: string, indent = 0): string[] =>
+    wrapText(text, room - indent).map((l, i) => s.dim(margin + (i === 0 ? arm : rest) + ' '.repeat(indent)) + s.dim(l))
   const heads = holdsUp ? [{ text: holdsUp }] : []
   const lastBranch = heads.length + branches.length - 1
   const drawHead = (text: string, n: number): string[] => {
@@ -43,7 +45,7 @@ export function askTreeLines(
 
     return [
       s.dim(margin + (isLast ? LAST : TEE)) + cell(a.b, a.index, room),
-      ...(a.note ? draw(rest, a.note, rest) : []),
+      ...(a.note ? draw(rest, a.note, rest, labelCells(a.b)) : []),
     ]
   }
   const contextArm = branches.length > 0 ? TRUNK : NONE

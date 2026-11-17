@@ -54,6 +54,9 @@ export function bannerLines(b: BannerView, width: number, s: Style): string[] {
   return boxed(lines, b.tone, width, s)
 }
 
+/** Cells an unfocused button's label starts in from its cell's edge: a space, then its key and a space if it has one. */
+const buttonLabelCells = (b: ButtonFace) => (b.key ? b.key.length + 2 : 1)
+
 function buttonCell(b: ButtonFace, isFocused: boolean, s: Style, mark = ''): string {
   if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `))
   if (b.isOut && !b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `)
@@ -192,7 +195,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const holdsUp = line.row?.holdsUpLine
   const focused = ui.typing === line.id ? -1 : focusOf(line, ui)
   const answerCell = (b: ButtonFace, n: number, room: number) => buttonCell(b, n === focused, s, labelMark(b, room, s))
-  const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell) : []
+  const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell, buttonLabelCells) : []
   if (tree.length > 0) out.push(...tree)
   else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))
   if (line.body && isOpen) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
