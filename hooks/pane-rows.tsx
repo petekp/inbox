@@ -121,7 +121,7 @@ export function paneRows(
   const newTitleColor = newTitleTint({ look, pal, now, shownTab })
   const handleTint = (row: Row) => newTitleColor(row.id, row.handleTone ? pal.mark[row.handleTone] : pal.muted)
   const { askTree, askEntries, hasTree, treeTextIndent } = paneAskTree(
-    { look, Box, Text, pal, optionsShown, blankLine },
+    { look, Box, Text, pal, optionsShown },
     { branch },
   )
   const { desktopTreeLine } = paneDesktopTree({ Box, desktopHairline, pal })
@@ -240,7 +240,7 @@ export function paneRows(
     const treeEntries = row.view && look === 'desktop' && isSelected ? askEntries(row.view) : []
     const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
     const isTrunkBridged = look === 'terminal' && isSelected && row.view !== undefined && hasTree(row.view)
-    const descriptionsBlock = row.view && !isDesktopTree ? askTree(row.view, isTrunkBridged) : null
+    const descriptionsBlock = row.view && !isDesktopTree ? askTree(row.view) : null
     const trunked = (above: JSX.Element) =>
       isTrunkBridged ? (
         <Box
@@ -249,7 +249,6 @@ export function paneRows(
           overflow="hidden"
           marginLeft={-treeTextIndent}
           paddingLeft={treeTextIndent}
-          paddingBottom={blankLine}
         >
           {branch('pass', 0, 0, pal.selectionLine ?? pal.line, 1, `trunk-${row.id}`)}
           {above}

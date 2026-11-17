@@ -1502,7 +1502,7 @@ function pressText(p) {
     case "restore-goal":
       return "Undo";
     case "take-goal":
-      return "Set this goal";
+      return "Set goal";
     default:
       return capitalized(p.action);
   }
@@ -4086,7 +4086,7 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "take-goal" }, label: "Set goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
     { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
@@ -8082,32 +8082,32 @@ function askTreeLines(line, pad, width, s, isAllShown = false) {
     return { label: o.label, text: body === null ? o.label : `${o.label}: ${body}`, reason: optionReasonLine(o) };
   });
   const holdsUp = row.holdsUpLine;
-  const hasTree = branches.length > 0 || holdsUp !== null;
   const draw = (arm, text, rest, label = "") => wrapText(text, room).map((l, i) => {
     const arms = s.dim(margin + (i === 0 ? arm : rest));
     return i === 0 && label && l.startsWith(label) ? arms + label + s.dim(l.slice(label.length)) : arms + s.dim(l);
   });
-  const out = [];
+  const heads = holdsUp ? [{ label: "", text: holdsUp, reason: null }] : [];
+  const all = [...heads, ...branches];
+  const lastBranch = all.length - 1;
+  const drawBranch = (b, n) => {
+    const isLast = n === lastBranch;
+    const rest = isLast ? NONE : TRUNK;
+    return [...draw(isLast ? LAST : TEE, b.text, rest, b.label), ...b.reason ? draw(rest, b.reason, rest) : []];
+  };
+  const contextArm = branches.length > 0 ? TRUNK : NONE;
+  const out = heads.flatMap((b, n) => drawBranch(b, n));
   if (row.contextLine)
-    out.push(...draw(hasTree ? TRUNK : NONE, row.contextLine, hasTree ? TRUNK : NONE));
+    out.push(...draw(contextArm, row.contextLine, contextArm));
   const earlier = row.earlierLine;
   if (earlier) {
-    const arm = hasTree ? TRUNK : NONE;
     const head = earlier.lead + earlier.answer;
     wrapText(earlierLineText(earlier), room).forEach((l, i) => {
-      const arms = s.dim(margin + arm);
+      const arms = s.dim(margin + contextArm);
       const isAnswerWhole = i === 0 && l.startsWith(head);
       out.push(isAnswerWhole ? arms + s.dim(earlier.lead) + s.bold(earlier.answer) + s.dim(l.slice(head.length)) : arms + s.dim(l));
     });
   }
-  const all = [...branches, ...holdsUp ? [{ label: "", text: holdsUp, reason: null }] : []];
-  all.forEach((b, n) => {
-    const isLast = n === all.length - 1;
-    const rest = isLast ? NONE : TRUNK;
-    out.push(...draw(isLast ? LAST : TEE, b.text, rest, b.label));
-    if (b.reason)
-      out.push(...draw(rest, b.reason, rest));
-  });
+  branches.forEach((b, n) => out.push(...drawBranch(b, heads.length + n)));
   return out;
 }
 
@@ -8438,7 +8438,7 @@ function offerFaces(offer, d, isSelected) {
 }
 function offerLines(offer, d, at, isSelected) {
   const { width, style: s } = d;
-  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim);
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.bold);
   const { faces, focused } = offerFaces(offer, d, isSelected);
   if (faces.length === 0)
     return text;

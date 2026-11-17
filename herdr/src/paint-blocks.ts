@@ -9,6 +9,7 @@ import type { Block, Button, Field, LineBlock, PrBlock, RowBlock, StatusLine } f
 import {
   BOX_RADIUS,
   BUTTON_H,
+  CHILD_GAP,
   CONTROL_GAP,
   EDGE,
   HELP_COLUMN,
@@ -49,7 +50,8 @@ const trunkEl = (top: number, height: number | null, t: Theme, isSelected: boole
 
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean): Element => {
-  const armAt = INSIDE_GAP + LINE_HEIGHT / 2
+  const above = l.isApart ? CHILD_GAP : INSIDE_GAP
+  const armAt = above + LINE_HEIGHT / 2
   const arm = div()
     .absolute()
     .left(PATH_X - EDGE + 1)
@@ -67,7 +69,16 @@ const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean):
           ? [trunkEl(0, armAt + 1, t, isSelected), arm]
           : []
 
-  return lineEl(l.text, colorOf(t, l.tone)).relative().children(strokes)
+  const line = l.lead
+    ? h_flex()
+        .items_start()
+        .pl(MARK_W)
+        .pt(above)
+        .child(div().flex_none().text_color(t.foreground).pr(SMALL_GAP).child(l.lead))
+        .child(div().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text))
+    : lineEl(l.text, colorOf(t, l.tone)).pt(above)
+
+  return line.relative().children(strokes)
 }
 
 function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {

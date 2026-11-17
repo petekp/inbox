@@ -3,7 +3,8 @@ import type { PaneBase, Row } from './pane-context'
 import type { paneDesktopTree } from './pane-desktop-tree'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowLines } from './pane-row-lines'
-import { DESKTOP_ARM_GAP, DESKTOP_MARK_CELLS, DESKTOP_TREE_AT } from './pane-sizes'
+import { CHILD_GAP_PT } from './layout'
+import { DESKTOP_ARM_GAP, DESKTOP_MARK_CELLS, DESKTOP_TREE_AT, desktopPad } from './pane-sizes'
 
 /**
  * A selected row's card on desktop when its lines hang from the row's ◆ on a tree: the title, each branch, and the
@@ -33,13 +34,16 @@ export function paneDesktopCard({
     </Text>
   )
   /** The frames inside the card draw no border, so nothing lies between one frame's line and the next. */
-  const treeBox = (key: string, shape: 'down' | 'mid' | 'last', edge: number) =>
+  const treeBox = (key: string, shape: 'down' | 'pass' | 'mid' | 'last', edge: number, edgeBelow = edge) =>
     desktopTreeLine(key, shape, {
       at: hungMarkCenter,
       arm: DESKTOP_MARK_CELLS - DESKTOP_ARM_GAP - hungMarkCenter,
       edge,
+      edgeBelow,
       seam: 0,
     })
+  /** The padding that puts `CHILD_GAP_PT` between two entries: half under the one above and half above the one below. */
+  const halfGap = desktopPad(CHILD_GAP_PT / 2)
 
   return ({
     row,
@@ -56,13 +60,10 @@ export function paneDesktopCard({
     keys: JSX.Element
     gapY: number
   }) => {
-    const heads = entries.filter(en => en.key === 'context' || en.key === 'earlier')
-    const groups = entries
-      .filter(en => !heads.includes(en))
-      .reduce<AskEntry[][]>(
-        (all, en) => (en.pos === 'pass' ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
-        [],
-      )
+    const groups = entries.reduce<AskEntry[][]>(
+      (all, en) => (en.key.startsWith('reason-') ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
+      [],
+    )
 
     return (
       <Box
@@ -82,31 +83,28 @@ export function paneDesktopCard({
             markCells: DESKTOP_MARK_CELLS,
             isBordered: false,
             padY: 0,
-            padBelow: space.rowPad,
+            padBelow: 0,
             mark: gutterMark(row),
             side: <Text color={pal.age}>{sideAge(row)}</Text>,
-            tree: treeBox(`row-${row.id}-trunk`, 'down', space.rowPad),
-            children: [
-              title,
-              row.subtitle ?? null,
-              row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
-              heads.length > 0 ? (
-                <Box flexDirection="column" marginTop={blankLine}>
-                  {heads.map(line)}
-                </Box>
-              ) : null,
-            ],
+            tree: treeBox(`row-${row.id}-trunk`, 'down', 0),
+            children: [title, row.subtitle ?? null, row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null],
           })}
-          {groups.map(group =>
-            desktopFrame({
+          {groups.map((group, n) => {
+            const padY = n > 0 ? halfGap : 0
+            const padBelow = n < groups.length - 1 ? halfGap : 0
+            const { pos } = group[0]!
+            const shape = pos === 'mid' || pos === 'last' || pos === 'pass' ? pos : null
+
+            return desktopFrame({
               key: `row-${row.id}-${group[0]!.key}`,
               markCells: DESKTOP_MARK_CELLS,
               isBordered: false,
-              padY: 0,
-              tree: treeBox(`row-${row.id}-${group[0]!.key}-tree`, group[0]!.pos === 'last' ? 'last' : 'mid', 0),
+              padY,
+              padBelow,
+              tree: shape ? treeBox(`row-${row.id}-${group[0]!.key}-tree`, shape, padY, padBelow) : null,
               children: group.map(line),
-            }),
-          )}
+            })
+          })}
           {desktopFrame({
             key: `row-${row.id}-keys`,
             markCells: DESKTOP_MARK_CELLS,

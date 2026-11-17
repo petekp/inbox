@@ -29,7 +29,7 @@ window.HTMLElement.prototype.animate = function (...args: Parameters<typeof anim
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its milestones as a path with the next one’s word, its Now line and the field Edit opens draw in place, and a subject with rows under it folds them by its name and opens them again', async context => {
+test('the Codex tab draws the Status page from a release build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s Holds up line, then its context, under its title, an Asks row names the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its milestones as a path with the next one’s word, its Now line and the field Edit opens draw in place, and a subject with rows under it folds them by its name and opens them again', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -220,7 +220,9 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     ;(root.querySelector('main.status-page .list .actions button') as HTMLElement).click()
     assert.equal(shownTab(), 'Asks1')
     assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
-    assert.equal(root.querySelector('.row.selected .tree')?.firstElementChild?.className, 'context-line')
+    const treeLines = Array.from(root.querySelector('.row.selected .tree')?.children ?? [])
+    assert.match(treeLines[0]?.className ?? '', /holds-up/)
+    assert.match(treeLines[1]?.className ?? '', /context-line/)
     assert.equal(root.querySelector('.row.selected .context-line')?.textContent, 'The new tab needs a one-word name.')
     key('1')
     assert.equal(shownTab(), 'Status')
@@ -274,17 +276,17 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       overview: { ...state.ledger.overview!, suggestedGoal: 'Ship 0.5.0 to the store' },
     }
     await afterPoll()
-    assert.equal(root.querySelector('.goal-offer p')?.textContent, 'Next goal: “Ship 0.5.0 to the store”?')
-    assert.deepEqual(labels(), ['Set this goal', 'Edit'])
+    assert.equal(root.querySelector('.goal-offer h1')?.textContent, 'Next goal: “Ship 0.5.0 to the store”?')
+    assert.deepEqual(labels(), ['Set goal', 'Edit'])
     assert.equal(root.querySelector('.goal-heading .actions'), null)
     await pressLabel('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Ship 0.5.0 to the store')
     assert.deepEqual(labels(), ['Set', 'Cancel'])
     await pressLabel('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
-    assert.deepEqual(labels(), ['Set this goal', 'Edit'])
+    assert.deepEqual(labels(), ['Set goal', 'Edit'])
     assert.match(goalHead() ?? '', /^Next goal: “Ship 0.5.0 to the store”\?/)
-    await pressLabel('Set this goal')
+    await pressLabel('Set goal')
     assert.deepEqual(presses.at(-1), { action: 'take-goal', id: 'goal' })
     assert.equal(root.querySelector('.goal-offer'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Ship 0.5.0 to the store')
