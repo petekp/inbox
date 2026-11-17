@@ -65,6 +65,9 @@ export function layout(root: Painted, shown: (id: string) => number | undefined,
   return { boxes, sized, placed, fits }
 }
 
+const lengthIn = (length: number | string, height: number): number =>
+  typeof length === 'string' && length.endsWith('%') ? (parseFloat(length) / 100) * height : Number(length)
+
 function segmentsOf(root: Painted, placed: Map<Painted, Box>): Segment[] {
   const out: Segment[] = []
   const walk = (n: Painted, clip: [number, number], id: string) => {
@@ -79,9 +82,11 @@ function segmentsOf(root: Painted, placed: Map<Painted, Box>): Segment[] {
         continue
       }
       if (k.style.w !== 1) continue
-      const y0 = box.top + (k.style.top ?? 0)
+      const y0 = box.top + lengthIn(k.style.top ?? 0, box.height)
       const runsOn = k.style.h === undefined
-      const y1 = runsOn ? box.top + box.height - (k.style.bottom ?? 0) : y0 + (k.style.h ?? 0)
+      const y1 = runsOn
+        ? box.top + box.height - lengthIn(k.style.bottom ?? 0, box.height)
+        : y0 + lengthIn(k.style.h ?? 0, box.height)
       const shown = { y0: Math.max(y0, own[0]), y1: Math.min(y1, own[1]) }
       if (shown.y1 < shown.y0) {
         const isBelowClip = y0 > own[1] && Number.isFinite(own[1])

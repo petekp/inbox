@@ -38,7 +38,7 @@ import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 /** The trunk of a row's tree under the middle of the row's mark, from `top` to the end of its box or down to `height`. */
-const trunkEl = (top: number, height: number | null, t: Theme, isSelected: boolean): Element => {
+const trunkEl = (top: number, height: number | `${number}%` | null, t: Theme, isSelected: boolean): Element => {
   const el = div()
     .absolute()
     .left(PATH_X - EDGE)
@@ -79,29 +79,26 @@ const armEl = (from: number, to: number, top: number | `${number}%`, color: Colo
 const ARM_END = NEST - SMALL_GAP
 
 /**
- * An answer's button with its arm at the button's middle, however many lines its label wraps to. The arm starts on the
- * trunk, so on the last answer, where the trunk runs from the line's top, `above` over the button, down to the arm's
- * top edge, the arm fills the elbow's corner.
+ * An answer's button with its arm at the button's middle, however many lines its label wraps to. The box starts at the
+ * line's left edge, as the trunk's place does. On the last answer the trunk runs on from the button's top to the arm,
+ * and the arm starts on the trunk, so it fills the elbow's corner.
  */
 const optionEl = (
   option: Button,
   p: Paint,
   isInert: boolean,
-  above: number,
   isLast: boolean,
-  color: Color,
+  t: Theme,
+  isSelected: boolean,
 ): Element => {
-  const trunkX = PATH_X - EDGE - MARK_W
-  const arm = armEl(trunkX, ARM_END - MARK_W, '50%', color)
-  const strokes = isLast
-    ? [arm, div().absolute().left(trunkX).top(-above).bottom('50%').w(1).border_l_1().border_color(color)]
-    : [arm]
+  const arm = armEl(PATH_X - EDGE, ARM_END, '50%', lineColor(t, isSelected ? t.selected : t.background))
 
   return h_flex()
     .relative()
     .min_w(0)
+    .pl(MARK_W)
     .child(buttonEl(option, p, isInert, true))
-    .children(strokes)
+    .children(isLast ? [arm, trunkEl(0, '50%', t, isSelected)] : [arm])
 }
 
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
@@ -116,14 +113,14 @@ const bodyLineEl = (
   const above = l.gapAbove === 'item' ? ITEM_GAP : l.gapAbove === 'child' ? CHILD_GAP : INSIDE_GAP
   const color = lineColor(t, isSelected ? t.selected : t.background)
   if (option && p) {
-    const trunk = l.tree === 'tee' ? [trunkEl(0, null, t, isSelected)] : []
+    const trunk =
+      l.tree === 'tee' ? [trunkEl(0, null, t, isSelected)] : l.tree === 'last' ? [trunkEl(0, above, t, isSelected)] : []
 
     return h_flex()
       .relative()
       .min_w(0)
-      .pl(MARK_W)
       .pt(above)
-      .child(optionEl(option, p, isInert, above, l.tree === 'last', color))
+      .child(optionEl(option, p, isInert, l.tree === 'last', t, isSelected))
       .children(trunk)
   }
   const armAt = above + LINE_HEIGHT / 2

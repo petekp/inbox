@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T21:13:46.528Z. 277557 characters follow.
+// Built at 2026-11-17T21:16:30.052Z. 277531 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5897,18 +5897,16 @@ var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
 var armEl = (from, to, top, color) => div8().absolute().left(from).top(top).w(to - from).h(1).border_t_1().border_color(color);
 var ARM_END = NEST - SMALL_GAP;
-var optionEl = (option, p, isInert, above, isLast, color) => {
-  const trunkX = PATH_X - EDGE - MARK_W;
-  const arm = armEl(trunkX, ARM_END - MARK_W, "50%", color);
-  const strokes = isLast ? [arm, div8().absolute().left(trunkX).top(-above).bottom("50%").w(1).border_l_1().border_color(color)] : [arm];
-  return h_flex5().relative().min_w(0).child(buttonEl(option, p, isInert, true)).children(strokes);
+var optionEl = (option, p, isInert, isLast, t, isSelected) => {
+  const arm = armEl(PATH_X - EDGE, ARM_END, "50%", lineColor(t, isSelected ? t.selected : t.background));
+  return h_flex5().relative().min_w(0).pl(MARK_W).child(buttonEl(option, p, isInert, true)).children(isLast ? [arm, trunkEl(0, "50%", t, isSelected)] : [arm]);
 };
 var bodyLineEl = (l, t, isSelected, option = undefined, p = null, isInert = false) => {
   const above = l.gapAbove === "item" ? ITEM_GAP : l.gapAbove === "child" ? CHILD_GAP : INSIDE_GAP;
   const color = lineColor(t, isSelected ? t.selected : t.background);
   if (option && p) {
-    const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : [];
-    return h_flex5().relative().min_w(0).pl(MARK_W).pt(above).child(optionEl(option, p, isInert, above, l.tree === "last", color)).children(trunk);
+    const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
+    return h_flex5().relative().min_w(0).pt(above).child(optionEl(option, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
   }
   const armAt = above + LINE_HEIGHT / 2;
   const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
