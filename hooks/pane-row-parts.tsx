@@ -128,13 +128,14 @@ export function paneRowParts(
     ) : (
       titled
     )
+    const markSvg = mark && ToneSvg ? toneSvg(mark.tone, mark.mark) : null
     const lead = mark ? (
       <Box width={RESULT_MARK_CELLS} flexShrink={0}>
-        {ToneSvg ? (
+        {ToneSvg && markSvg ? (
           <ToneSvg
-            source={toneSvg(mark.tone, mark.mark)}
+            source={markSvg.source}
             alt={mark.mark}
-            width={DESKTOP_CELL_PT}
+            width={markSvg.cells * DESKTOP_CELL_PT}
             height={DESKTOP_LINE_PT}
           />
         ) : (

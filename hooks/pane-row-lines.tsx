@@ -278,10 +278,12 @@ export function paneRowLines({
         <ToneSvg source={source} alt={alt} width={cells * DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
       </Box>
     ) : null
+  const toneCell = (svg: { source: string; cells: number }, alt: string) =>
+    svgCell(svg.source, alt, undefined, svg.cells)
   /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
   const gutterMark = (row: Row) => {
     const mark = look === 'desktop' && row.view ? rowMark(row.view) : null
-    if (mark?.tone && ToneSvg) return svgCell(toneSvg(mark.tone, mark.text), mark.text)
+    if (mark?.tone && ToneSvg) return toneCell(toneSvg(mark.tone, mark.text), mark.text)
     return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
   }
   const svgColorsOf = (color: string) =>
@@ -295,7 +297,7 @@ export function paneRowLines({
     const isMutedHandle = !!row.handle && !row.handleTone && !row.isHandleRunning
     if (isMutedHandle) return markGlyph({ text: row.handle, isRunning: false }, `handle-${row.id}`, tint ?? pal.muted)
     if (ToneSvg === null || !row.handle || !row.handleTone) return null
-    return svgCell(toneSvg(row.handleTone, row.handle, tint), row.handle)
+    return toneCell(toneSvg(row.handleTone, row.handle, tint), row.handle)
   }
   const sideAge = (row: Row) => {
     const f = row.view ? row.view.feedback : feedbackOf(row.id, lastActions[row.id], notes[row.id], turns, now)
