@@ -80,13 +80,11 @@ test('finished work under a milestone shows as a row until the person looks, the
   const rowsOf = (o: SessionStatus) => page(o, 80, {}, [askItem('i1')]).goal?.milestones[1]?.rows ?? []
 
   expect(shape(rowsOf(finished))).toEqual(['◆ Error copy: not started · Ask i1?', '✓ CSV import: import ships'])
-  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · Ask i1?', '› 1 done'])
-  expect(shape(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true))).toEqual([
+  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual([
     '◆ Error copy: not started · Ask i1?',
-    '› 1 done',
     '✓ CSV import',
   ])
-  expect(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true).map(r => r.depth)).toEqual([1, 1, 2])
+  expect(rowsOf({ ...finished, lastLookAt: 70 }).map(r => r.depth)).toEqual([1, 1])
   expect(
     page({ ...finished, lastLookAt: 70 }, 80, {}, [askItem('i1')]).rows.some(
       r => r.kind === 'fold' || r.kind === 'done-fold',
@@ -182,7 +180,7 @@ test('under Other work, a queued subject an ask holds up stays a row, seen queue
   ])
 })
 
-test('running work draws with the milestone its subject serves, also when the subject sits in its done fold, and running work linked to no subject starts Other work', () => {
+test('running work draws with the milestone its subject serves, also when the subject is done, and running work linked to no subject starts Other work', () => {
   const MIN = 60_000
   let o = after(after(withGoal(), 'SERVES: s1 | m2', 30), 'DONE: s1 | bad rows skipped', 31)
   for (const ref of ['review', 'loose'])
@@ -195,7 +193,7 @@ test('running work draws with the milestone its subject serves, also when the su
   const m2 = p.goal?.milestones.find(m => m.id === 'm2')
 
   expect(m2?.rows[0]).toMatchObject({ kind: 'child', name: 'Check review', depth: 1, branch: null })
-  expect(m2?.rows.map(r => r.kind)).toEqual(['child', 'done-fold'])
+  expect(m2?.rows.map(r => r.kind)).toEqual(['child', 'subject'])
   expect(p.rows.slice(0, 2)).toMatchObject([
     { kind: 'part', text: 'Other work' },
     { kind: 'child', name: 'Check loose', depth: 0, branch: null },

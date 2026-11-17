@@ -8,6 +8,7 @@ export const SHARED = [
   'collapse',
   'conversation',
   'demo',
+  'demo-delegates',
   'dialogs',
   'gh',
   'help',

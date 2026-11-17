@@ -1,7 +1,7 @@
 import type { UiPressArgument } from 'claude-code'
 import type { FoldKind } from '../types'
 import { groupEmptyText } from './banners'
-import { foldSpacerSvg, RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
+import { RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
 import { closedTitleTint } from './pane-title-tint'
 import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
 import { foldGlyph } from './fold-chevron'
@@ -285,36 +285,26 @@ export function paneRowParts(
   /** A fold's line: `label`, then the chevron. Desktop posts its click under `fold-` and `key`. */
   const foldRow = (key: string, label: string, isUnfolded: boolean, toggle: () => void) =>
     hasClient ? (
-      <Box key={`fold-row-${key}`} flexDirection="row" overflow="hidden">
-        {'Svg' in elements ? (
-          <elements.Svg
-            source={foldSpacerSvg()}
-            alt={isUnfolded ? 'Unfolded' : 'Folded'}
-            width={FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT}
-            height={2 * ROW_PAD_PT + DESKTOP_LINE_PT}
-          />
-        ) : null}
-        <Box position="absolute" top={0} left={0} width="100%">
-          <elements.Client
-            key={`fold-${key}`}
-            module="./fold-client.tsx"
-            width="100%"
-            props={
-              {
-                markCells: DESKTOP_MARK_CELLS,
-                label,
-                isUnfolded,
-                chevron: foldGlyph(isUnfolded),
-                padY: DESKTOP_ROW_PAD,
-                colors: {
-                  rest: isInline ? null : (pal.card ?? null),
-                  text: pal.age,
-                  hoverText: 'text',
-                },
-              } satisfies FoldProps
-            }
-          />
-        </Box>
+      <Box key={`fold-row-${key}`} position="relative" width="100%">
+        <elements.Client
+          key={`fold-${key}`}
+          module="./fold-client.tsx"
+          width="100%"
+          props={
+            {
+              markCells: DESKTOP_MARK_CELLS,
+              label,
+              isUnfolded,
+              chevron: foldGlyph(isUnfolded),
+              padY: DESKTOP_ROW_PAD,
+              colors: {
+                rest: isInline ? null : (pal.card ?? null),
+                text: pal.age,
+                hoverText: 'text',
+              },
+            } satisfies FoldProps
+          }
+        />
       </Box>
     ) : (
       treeRow(

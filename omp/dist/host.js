@@ -1852,7 +1852,10 @@ function delegatesEnded(o, agents, at) {
     const agent = byRef.get(running.ref);
     const status = agent?.status;
     const focus = agent?.focus ? childName(agent.focus) : null;
-    const c = focus && focus !== running.name ? { ...running, name: focus } : running;
+    const note = agent?.note ? childName(agent.note) : null;
+    const isRenamed = focus !== null && focus !== running.name;
+    const isNoted = note !== null && note !== running.summary;
+    const c = isRenamed || isNoted ? { ...running, name: focus ?? running.name, summary: note ?? running.summary } : running;
     const isShownWorking = status === "working" || status === "blocked";
     if (isShownWorking)
       return c.delegateState === status ? c : { ...c, delegateState: status };
@@ -1900,14 +1903,35 @@ function childrenCutOff(o, at) {
 var HC_TIMEOUT_MS = 5000;
 var HC_STATUSES = ["idle", "working", "blocked", "done"];
 var HC_BLOCKED = new Set(["blocked", "error"]);
-async function delegatesInHc(target, run) {
+var FOCUS_LABEL = "inbox.focus";
+async function delegatesInHc(target, run, isRunning) {
   for (const hc of target.hc) {
     const r = await run([hc, "ls", "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
     if (r.code === UNSTARTABLE_CODE)
       continue;
-    return r.code === 0 ? childAgents(r.stdout, target.terminal) : null;
+    const listed = r.code === 0 ? childAgents(r.stdout, target.terminal) : null;
+    if (listed === null)
+      return null;
+    const detailed = await Promise.all([...listed].map(async ([key, { address, agent }]) => [key, isRunning(key) ? { ...agent, ...await described(hc, address, run) } : agent]));
+    return new Map(detailed);
   }
   return null;
+}
+async function described(hc, address, run) {
+  const r = await run([hc, "get", address, "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
+  if (r.code !== 0)
+    return { focus: null, note: null };
+  try {
+    const t = JSON.parse(r.stdout);
+    const focus = t?.labels?.[FOCUS_LABEL];
+    const note = t?.status?.msg;
+    return {
+      focus: typeof focus === "string" && focus.trim() ? focus.trim() : null,
+      note: typeof note === "string" && note.trim() ? note.trim() : null
+    };
+  } catch {
+    return { focus: null, note: null };
+  }
 }
 function childAgents(stdout, parent) {
   try {
@@ -1917,10 +1941,10 @@ function childAgents(stdout, parent) {
     const agents = new Map;
     for (const t of terminals) {
       const key = typeof t?.name === "string" && t.name ? t.name : t?.address;
-      if (typeof key !== "string" || t.parent !== parent || typeof t.status !== "string")
+      if (typeof key !== "string" || typeof t.address !== "string" || t.parent !== parent || typeof t.status !== "string")
         continue;
       const status = HC_BLOCKED.has(t.status) ? "blocked" : HC_STATUSES.find((s) => s === t.status) ?? "unknown";
-      agents.set(key, { status, focus: null, isChild: true });
+      agents.set(key, { address: t.address, agent: { status, focus: null, isChild: true } });
     }
     return agents;
   } catch {
@@ -2590,7 +2614,8 @@ function childOf(saved) {
     startedAt,
     endedAt: time2(c.endedAt),
     lastActivityAt: time2(c.lastActivityAt),
-    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null,
+    ...typeof c.summary === "string" && c.summary.trim() ? { summary: c.summary } : {}
   };
 }
 var OLD_STATUS = {
@@ -3829,7 +3854,15 @@ function carriedByChild(c, isHeld) {
     return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
 }
-function childRow(c, branch, depth) {
+function finishedLine(c, now) {
+  if (c.summary)
+    return c.summary;
+  if (c.endedAt === null)
+    return null;
+  const finished = ago(now - c.endedAt);
+  return `Ran ${duration(c.endedAt - c.startedAt)}, finished ${finished}`;
+}
+function childRow(c, branch, depth, text = null) {
   const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
     kind: "child",
@@ -3838,8 +3871,21 @@ function childRow(c, branch, depth) {
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
+    text,
     branch
   };
+}
+function unplacedChildren(children, c) {
+  const unshown = c.running.filter((x) => x.subjectId === null || !c.shownIds.has(x.subjectId)).map((child) => {
+    const subject = c.subjects.find((y) => y.id === child.subjectId);
+    return { child, milestoneId: subject === undefined ? null : c.milestoneOf(subject) };
+  });
+  const isFoldedFinished = (l) => l.child.delegateState === "finished" && l.milestoneId === null;
+  const settled = [
+    ...children.filter((x) => c.isSettled(x) && !c.subjects.some((y) => y.id === x.subjectId)),
+    ...unshown.filter(isFoldedFinished).map((l) => l.child)
+  ].sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
+  return { loose: unshown.filter((l) => !isFoldedFinished(l)), settled };
 }
 function askWords(items, ask) {
   const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
@@ -5398,7 +5444,7 @@ var HERDR_STATUSES = ["idle", "working", "blocked", "done", "unknown"];
 var HERDR_CHECK_MS = 30000;
 async function delegatesInHerdr(o, run, target = null) {
   if (target?.kind === "terminal")
-    return delegatesInHc(target, run);
+    return delegatesInHc(target, run, (name) => o?.children.some((c) => c.ref === delegateRef(name) && c.endedAt === null) ?? false);
   if (!hasRunningDelegate(o))
     return null;
   const r = await run(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
@@ -7816,7 +7862,7 @@ function statusPage(s, now) {
     now
   };
   const foldCtx = { ...ctx, running: [] };
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : foldedOpen.length === 1 ? partRows(foldedOpen, ctx, depth) : [
     {
       kind: "fold",
       id: `${prefix}open`,
@@ -7826,7 +7872,7 @@ function statusPage(s, now) {
       subjectIds: []
     }
   ];
-  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : [
+  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : done.length + settled.length === 1 ? [...partRows(done, foldCtx, depth), ...settled.map((c) => childRow(c, null, depth, finishedLine(c, now)))] : [
     {
       kind: "done-fold",
       id: `${prefix}done`,
@@ -7834,7 +7880,7 @@ function statusPage(s, now) {
       text: `${done.length + settled.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
       rows: [
         ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
-        ...settled.map((c) => childRow(c, null, depth + 1))
+        ...settled.map((c) => childRow(c, null, depth + 1, finishedLine(c, now)))
       ]
     }
   ];
@@ -7842,10 +7888,12 @@ function statusPage(s, now) {
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled)
   ];
-  const settled = (o?.children ?? []).filter((c) => isChildSettled(c, now, look) && !o?.subjects.some((x) => x.id === c.subjectId)).sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
-    const x = subjects.find((y) => y.id === c.subjectId);
-    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
+  const { loose, settled } = unplacedChildren(o?.children ?? [], {
+    subjects,
+    shownIds,
+    milestoneOf,
+    isSettled: (c) => isChildSettled(c, now, look),
+    running
   });
   const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
   const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
@@ -8534,8 +8582,8 @@ function drawPageRow(row, d, isSelected = false) {
   if (row.kind === "child") {
     const mark = paintMark(row, now, s);
     if (!row.branch)
-      return pageLine(d, at, mark, row.name, s.dim);
-    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim);
+      return pageLine(d, at, mark, row.name, s.dim, { text: row.text });
+    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim, { text: row.text });
     return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s);
   }
   if (row.kind === "more") {
@@ -10086,7 +10134,7 @@ var ANIMATION_MS = 200;
 var collapsedAfter = (collapsed, p) => p.isCollapsed ? [...collapsed.filter((id) => id !== p.id), p.id] : collapsed.filter((id) => id !== p.id);
 function createPanel(deps) {
   const { source, style, timers } = deps;
-  let ui = { ...INITIAL_UI, closedSeen: new Map, shownSince: deps.openedAt };
+  let ui = { ...INITIAL_UI, drafts: source.drafts(), closedSeen: new Map, shownSince: deps.openedAt };
   let screen = null;
   let animation = null;
   let frames = null;
@@ -10122,6 +10170,10 @@ function createPanel(deps) {
     }
     if (at !== null && timedChange === null)
       timedChange = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) };
+  };
+  const keepDraftsChangedFrom = (before) => {
+    if (ui.drafts !== before.drafts)
+      source.keepDrafts(ui.drafts, holdsOf(ui));
   };
   async function refresh(pressedId) {
     const mine = ++version;
@@ -10183,8 +10235,10 @@ function createPanel(deps) {
     const now = deps.now();
     const isDraftUnedited = sentDraft !== undefined && ui.drafts[rowId] === sentDraft;
     if (isPressConfirmed(outcome) && isDraftUnedited) {
+      const before = ui;
       const { [rowId]: _sent, ...drafts } = ui.drafts;
       ui = { ...ui, drafts };
+      keepDraftsChangedFrom(before);
     }
     const notice = noticeFor(outcome, now);
     if (notice)
@@ -10213,7 +10267,9 @@ function createPanel(deps) {
         return;
       const now = deps.now();
       const result = handleKey(screen, ui, key, now, text);
+      const before = ui;
       ui = { ...result.ui, listInput: withListInput(ui.listInput, now) };
+      keepDraftsChangedFrom(before);
       source.shown(ui.tab, holdsOf(ui));
       if (result.close)
         deps.close();
@@ -10251,14 +10307,33 @@ function createPanel(deps) {
   };
 }
 
-// ../hooks/demo.ts
+// ../hooks/demo-delegates.ts
 var MIN = 60000;
+function finishedDelegate(now, id, name, hoursAgo, summary) {
+  const endedAt = now - hoursAgo * 60 * MIN;
+  const startedAt = endedAt - 60 * MIN;
+  return {
+    id,
+    ref: id,
+    kind: "delegate",
+    name,
+    subjectId: null,
+    startedAt,
+    endedAt,
+    lastActivityAt: startedAt,
+    delegateState: "finished",
+    summary
+  };
+}
+
+// ../hooks/demo.ts
+var MIN2 = 60000;
 var REPO2 = "https://github.com/acme/visor";
 var DEMO_PLACE = { folder: "/Users/you/code/visor", branch: "pinch-dismiss" };
 function withDemoPresence(s, now) {
   return {
     ...s,
-    presence: { ...s.presence, isTurnRunning: false, lastReplyAt: now - 2 * MIN },
+    presence: { ...s.presence, isTurnRunning: false, lastReplyAt: now - 2 * MIN2 },
     place: DEMO_PLACE
   };
 }
@@ -10295,15 +10370,16 @@ function demoView(now, agent) {
       overview: {
         head: { title: "Pinch to dismiss", description: "Adding a pinch that dismisses glances" },
         subjects: [
-          subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN),
-          subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN),
-          subject("s3", "queued", "Flick option", "waits on your pick", now - 12 * MIN, {
+          subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN2),
+          subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN2),
+          subject("s3", "queued", "Flick option", "waits on your pick", now - 12 * MIN2, {
             was: "flick and pinch both"
           }),
-          subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN),
-          subject("s5", "waits-on-other", "Glasses trial", "lenses ship Friday", now - 3 * 60 * MIN),
-          subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN),
-          subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN)
+          subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN2),
+          subject("s5", "waits-on-other", "Glasses trial", "lenses ship Friday", now - 3 * 60 * MIN2),
+          subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN2),
+          subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN2),
+          subject("s8", "done", "Haptic tap", "a tap confirms the pinch", now - 7 * 60 * MIN2)
         ],
         children: [
           {
@@ -10312,9 +10388,9 @@ function demoView(now, agent) {
             kind: "subagent",
             name: "Review the gesture code",
             subjectId: "s1",
-            startedAt: now - 4 * MIN,
+            startedAt: now - 4 * MIN2,
             endedAt: null,
-            lastActivityAt: now - MIN,
+            lastActivityAt: now - MIN2,
             delegateState: null
           },
           {
@@ -10323,9 +10399,9 @@ function demoView(now, agent) {
             kind: "delegate",
             name: "Tune how hard a pinch must be",
             subjectId: "s1",
-            startedAt: now - 9 * MIN,
+            startedAt: now - 9 * MIN2,
             endedAt: null,
-            lastActivityAt: now - 9 * MIN,
+            lastActivityAt: now - 9 * MIN2,
             delegateState: "blocked"
           },
           {
@@ -10334,9 +10410,9 @@ function demoView(now, agent) {
             kind: "delegate",
             name: "Time the fade-out",
             subjectId: "s1",
-            startedAt: now - 30 * MIN,
-            endedAt: now - 3 * MIN,
-            lastActivityAt: now - 30 * MIN,
+            startedAt: now - 30 * MIN2,
+            endedAt: now - 3 * MIN2,
+            lastActivityAt: now - 30 * MIN2,
             delegateState: "finished"
           },
           {
@@ -10345,22 +10421,25 @@ function demoView(now, agent) {
             kind: "subagent",
             name: "Search the pairing errors",
             subjectId: "s2",
-            startedAt: now - 25 * MIN,
+            startedAt: now - 25 * MIN2,
             endedAt: null,
-            lastActivityAt: now - 20 * MIN,
+            lastActivityAt: now - 20 * MIN2,
             delegateState: null
-          }
+          },
+          finishedDelegate(now, "c6", "Calibrate the eye tracker", 2, "PR #31 open"),
+          finishedDelegate(now, "c7", "Write the lens notes", 4, "Notes are in docs/lenses.md"),
+          finishedDelegate(now, "c8", "Measure battery drain", 7)
         ],
         askSubjects: { d11: ["s3"], d14: ["s2"], d17: ["s2"] },
         nextId: 8,
-        nextChildId: 6,
-        lastLookAt: now - 30 * MIN,
+        nextChildId: 9,
+        lastLookAt: now - 30 * MIN2,
         missedInLastLook: {},
         look: null,
         lastCallReadAt: null,
         goal: {
           text: "Pinch ships in the beta",
-          setAt: now - 60 * MIN,
+          setAt: now - 60 * MIN2,
           metAt: null,
           was: null,
           isAwaitingMilestones: false,
@@ -10375,8 +10454,8 @@ function demoView(now, agent) {
             status: "done",
             text: "",
             was: null,
-            changedAt: now - 5 * 60 * MIN,
-            closedAt: now - 5 * 60 * MIN
+            changedAt: now - 5 * 60 * MIN2,
+            closedAt: now - 5 * 60 * MIN2
           },
           {
             id: "m1",
@@ -10384,8 +10463,8 @@ function demoView(now, agent) {
             status: "done",
             text: "",
             was: null,
-            changedAt: now - 40 * MIN,
-            closedAt: now - 40 * MIN
+            changedAt: now - 40 * MIN2,
+            closedAt: now - 40 * MIN2
           },
           {
             id: "m2",
@@ -10393,7 +10472,7 @@ function demoView(now, agent) {
             status: "working",
             text: "tuning pinch pressure",
             was: null,
-            changedAt: now - 35 * MIN,
+            changedAt: now - 35 * MIN2,
             closedAt: null
           },
           {
@@ -10402,7 +10481,7 @@ function demoView(now, agent) {
             status: "queued",
             text: "waits on your pick",
             was: null,
-            changedAt: now - 5 * MIN,
+            changedAt: now - 5 * MIN2,
             closedAt: null
           },
           {
@@ -10411,12 +10490,12 @@ function demoView(now, agent) {
             status: "queued",
             text: "after the glasses trial",
             was: null,
-            changedAt: now - 60 * MIN,
+            changedAt: now - 60 * MIN2,
             closedAt: null
           }
         ],
         nextMilestoneId: 6,
-        serves: { s1: "m2", s3: "m3", s4: "m1", s5: "m5", s6: "m4", s7: "none" },
+        serves: { s1: "m2", s3: "m3", s4: "m1", s5: "m5", s6: "m4", s7: "none", s8: "none" },
         goalRefused: null,
         suggestedGoal: null
       },
@@ -10438,11 +10517,11 @@ function demoView(now, agent) {
           isDesignChoice: true,
           helps: [],
           turn: 14,
-          at: now - 12 * MIN,
+          at: now - 12 * MIN2,
           earlier: {
             ask: "Which gesture should clear a glance?",
             answer: "Flick",
-            at: now - 3 * 24 * 60 * MIN,
+            at: now - 3 * 24 * 60 * MIN2,
             repo: "glasses-app",
             score: 0.41,
             isShown: true
@@ -10458,7 +10537,7 @@ function demoView(now, agent) {
           rec: "Leave it gone",
           helps: [],
           turn: 14,
-          at: now - 12 * MIN
+          at: now - 12 * MIN2
         },
         {
           id: "d13",
@@ -10470,7 +10549,7 @@ function demoView(now, agent) {
           rec: "No",
           helps: [],
           turn: 14,
-          at: now - 12 * MIN
+          at: now - 12 * MIN2
         },
         {
           id: "d14",
@@ -10482,7 +10561,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [{ kind: "terminal", command: "visor pair", name: "visor pair" }],
           turn: 14,
-          at: now - 5 * MIN
+          at: now - 5 * MIN2
         },
         {
           id: "d15",
@@ -10494,7 +10573,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [],
           turn: 11,
-          at: now - 40 * MIN
+          at: now - 40 * MIN2
         },
         {
           id: "d16",
@@ -10506,7 +10585,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [{ kind: "copy", text: "http://localhost:3000/preview", name: "preview URL" }],
           turn: 14,
-          at: now - 5 * MIN
+          at: now - 5 * MIN2
         },
         {
           id: "d18",
@@ -10518,7 +10597,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [{ kind: "run", command: "npm run test:gestures", name: "gesture tests" }],
           turn: 14,
-          at: now - 4 * MIN
+          at: now - 4 * MIN2
         },
         {
           id: "d17",
@@ -10530,7 +10609,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [],
           turn: 12,
-          at: now - 25 * MIN
+          at: now - 25 * MIN2
         }
       ],
       closed: [
@@ -10540,7 +10619,7 @@ function demoView(now, agent) {
           ask: "Track hands with the camera or the wristband?",
           outcome: "Wristband",
           how: "answered",
-          at: now - 90 * MIN
+          at: now - 90 * MIN2
         },
         {
           id: "d6",
@@ -10548,7 +10627,7 @@ function demoView(now, agent) {
           ask: "Commit the gesture and the anchor fix separately?",
           outcome: "yes",
           how: "answered",
-          at: now - 60 * MIN
+          at: now - 60 * MIN2
         },
         {
           id: "d9",
@@ -10556,7 +10635,7 @@ function demoView(now, agent) {
           ask: "Add the simulator key to .env.local",
           outcome: "done",
           how: "done",
-          at: now - 45 * MIN
+          at: now - 45 * MIN2
         },
         {
           id: "d7",
@@ -10564,7 +10643,7 @@ function demoView(now, agent) {
           ask: "Fall back to voice when your hands are busy?",
           outcome: `closed by ${agent}: no longer applies: voice already takes over when no hand is seen`,
           how: "claude",
-          at: now - 30 * MIN
+          at: now - 30 * MIN2
         },
         {
           id: "d8",
@@ -10572,7 +10651,7 @@ function demoView(now, agent) {
           ask: "Add a gaze-only mode too?",
           outcome: "dismissed",
           how: "dismissed",
-          at: now - 20 * MIN
+          at: now - 20 * MIN2
         },
         {
           id: "d10",
@@ -10591,7 +10670,7 @@ function demoView(now, agent) {
             rec: "Yes, fade it",
             helps: [],
             turn: 14,
-            at: now - 12 * MIN
+            at: now - 12 * MIN2
           }
         }
       ],
@@ -10602,7 +10681,7 @@ function demoView(now, agent) {
           title: "Pinch and flick could share one gesture handler",
           detail: "Both paths read the hand **the same way** before acting. One `onGesture` handler would keep them from *drifting apart*.",
           path: "src/input/gestures.ts",
-          at: now - 3 * 60 * MIN
+          at: now - 3 * 60 * MIN2
         },
         {
           id: "d21",
@@ -10610,7 +10689,7 @@ function demoView(now, agent) {
           title: "Glances could re-sort only when one moves",
           detail: "The view sorts every glance by distance on every frame. Sorting only when one moves would save battery on long sessions.",
           path: "src/view/glances.ts",
-          at: now - 90 * MIN
+          at: now - 90 * MIN2
         },
         {
           id: "d22",
@@ -10618,7 +10697,7 @@ function demoView(now, agent) {
           title: "Snoozed glances come back after a restart",
           detail: "The saved layout keeps snoozed glances, and a restart shows them again, so a glance snoozed for an hour returns at once.",
           path: "src/view/layout.ts",
-          at: now - 45 * MIN
+          at: now - 45 * MIN2
         },
         {
           id: "d23",
@@ -10626,7 +10705,7 @@ function demoView(now, agent) {
           title: "Pinned glances drift in a dim room",
           detail: "Anchoring trusts the camera\u2019s position even when tracking is poor, so in a dim room a pinned glance slides a few centimeters a minute.",
           path: "src/space/anchors.ts",
-          at: now - 30 * MIN
+          at: now - 30 * MIN2
         }
       ],
       closedFindings: [
@@ -10636,10 +10715,10 @@ function demoView(now, agent) {
           title: "The view redraws every glance when one changes",
           detail: "A change to one glance redraws all of them.",
           path: "src/view/Glance.tsx",
-          at: now - 4 * 60 * MIN,
+          at: now - 4 * 60 * MIN2,
           how: "claude",
           outcome: `closed by ${agent}: fixed, it now redraws only the glance that changed`,
-          closedAt: now - 2 * 60 * MIN
+          closedAt: now - 2 * 60 * MIN2
         }
       ],
       prs: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
@@ -10670,34 +10749,34 @@ function demoView(now, agent) {
               bucket: "pass",
               url: `${REPO2}/actions/runs/1`,
               workflow: "CI",
-              startedAt: now - 16 * MIN,
-              finishedAt: now - 16 * MIN + 19000
+              startedAt: now - 16 * MIN2,
+              finishedAt: now - 16 * MIN2 + 19000
             },
             {
               name: "unit tests",
               bucket: "fail",
               url: `${REPO2}/actions/runs/2`,
               workflow: "CI",
-              startedAt: now - 16 * MIN,
-              finishedAt: now - 12 * MIN - 8000
+              startedAt: now - 16 * MIN2,
+              finishedAt: now - 12 * MIN2 - 8000
             },
             {
               name: "lint",
               bucket: "fail",
               url: `${REPO2}/actions/runs/3`,
               workflow: "CI",
-              startedAt: now - 16 * MIN,
-              finishedAt: now - 15 * MIN - 19000
+              startedAt: now - 16 * MIN2,
+              finishedAt: now - 15 * MIN2 - 19000
             },
             {
               name: "device matrix",
               bucket: "cancelled",
               url: `${REPO2}/actions/runs/4/job/40`,
               workflow: "E2E",
-              startedAt: now - 16 * MIN,
-              finishedAt: now - 9 * MIN
+              startedAt: now - 16 * MIN2,
+              finishedAt: now - 9 * MIN2
             },
-            { name: "gesture e2e", bucket: "pending", url: null, workflow: "CI", startedAt: now - 2 * MIN }
+            { name: "gesture e2e", bucket: "pending", url: null, workflow: "CI", startedAt: now - 2 * MIN2 }
           ],
           threads: [
             {
@@ -10711,7 +10790,7 @@ function demoView(now, agent) {
               line: 47,
               body: "A glance flickers for one frame before it fades out. Can it wait for the fade?",
               url: `${REPO2}/pull/31#discussion_r1`,
-              at: now - 3 * 60 * MIN
+              at: now - 3 * 60 * MIN2
             },
             {
               id: "DT2",
@@ -10720,7 +10799,7 @@ function demoView(now, agent) {
                 author: "robin",
                 body: "Agreed, the glance you look at is the one you mean.",
                 url: `${REPO2}/pull/31#discussion_r3`,
-                at: now - 5 * 60 * MIN
+                at: now - 5 * 60 * MIN2
               },
               isWaiting: true,
               isOutdated: true,
@@ -10729,7 +10808,7 @@ function demoView(now, agent) {
               line: 87,
               body: "Should a pinch dismiss only the glance you look at?",
               url: `${REPO2}/pull/31#discussion_r2`,
-              at: now - 26 * 60 * MIN
+              at: now - 26 * 60 * MIN2
             },
             {
               id: "DT3",
@@ -10738,7 +10817,7 @@ function demoView(now, agent) {
                 author: "you",
                 body: "Done in the latest push.",
                 url: `${REPO2}/pull/31#discussion_r5`,
-                at: now - 2 * 60 * MIN
+                at: now - 2 * 60 * MIN2
               },
               isWaiting: false,
               isOutdated: false,
@@ -10747,7 +10826,7 @@ function demoView(now, agent) {
               line: 112,
               body: "Can the angle come from gaze.ts instead of being computed again here?",
               url: `${REPO2}/pull/31#discussion_r4`,
-              at: now - 26 * 60 * MIN
+              at: now - 26 * 60 * MIN2
             },
             {
               id: "DT4",
@@ -10760,7 +10839,7 @@ function demoView(now, agent) {
               line: 114,
               body: "A dismissed glance still takes pinches.",
               url: `${REPO2}/pull/31#discussion_r6`,
-              at: now - 50 * MIN
+              at: now - 50 * MIN2
             }
           ],
           isYours: true,
@@ -10812,16 +10891,16 @@ function demoView(now, agent) {
         kind: "handoff",
         action: "step-0",
         text: "Run gesture tests",
-        at: now - 1 * MIN,
+        at: now - 1 * MIN2,
         turnsStarted: 14
       },
       "acme/visor#31 thread DT1": {
         kind: "handoff",
         action: "thread-address",
         text: "Address",
-        at: now - 2 * MIN,
+        at: now - 2 * MIN2,
         turnsStarted: 14,
-        repliedAt: now - 1 * MIN
+        repliedAt: now - 1 * MIN2
       }
     },
     notes: {},
@@ -12404,6 +12483,8 @@ function demoSource(deps) {
     resume: async () => null,
     fetchPrsWhenDue: () => {},
     checkDelegatesWhenDue: () => {},
+    drafts: () => ({}),
+    keepDrafts: () => {},
     shown: () => {},
     showedRows: () => {},
     onChange: (listener) => {
@@ -14423,6 +14504,43 @@ function ompPresses(target, apply, log) {
   };
 }
 
+// src/host-send.ts
+var messageOf = (err) => err instanceof Error ? err.message : String(err);
+function takeBackFromEditor(ctx, text) {
+  if (ctx.hasUI && ctx.ui.getEditorText() === text)
+    ctx.ui.setEditorText("");
+}
+function agentSender(pi) {
+  const runStartWaiters = new Map;
+  const sendToAgent = async (ctx, text) => {
+    const id = sessionIdOf(ctx);
+    const waiters = runStartWaiters.get(id) ?? new Set;
+    runStartWaiters.set(id, waiters);
+    let started = () => {};
+    const runStarted = new Promise((resolve) => {
+      started = () => resolve(null);
+    });
+    waiters.add(started);
+    try {
+      const options = ctx.isIdle() ? undefined : { deliverAs: "followUp" };
+      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(() => null, (err) => {
+        takeBackFromEditor(ctx, text);
+        return messageOf(err);
+      });
+      return await Promise.race([sent, runStarted]);
+    } catch (err) {
+      return messageOf(err);
+    } finally {
+      waiters.delete(started);
+    }
+  };
+  const onRunStart = (ctx) => {
+    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? [])
+      started();
+  };
+  return { sendToAgent, onRunStart };
+}
+
 // src/host-herdr-ask.ts
 function ompHerdrAsk(target, memory, changed) {
   const appHome = target?.kind === "terminal" ? target.appHome ?? null : null;
@@ -14472,7 +14590,7 @@ function ompHerdrAsk(target, memory, changed) {
 
 // src/host-panel.ts
 function panelCalls(context, sessions, herdrAsk) {
-  const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
+  const { deps, dir, openPanels, drafts, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions;
   const shownRows = new Map;
   const takeShownRows = (id) => {
@@ -14525,7 +14643,13 @@ function panelCalls(context, sessions, herdrAsk) {
       const id = sessionIdOf(ctx);
       openPanels.delete(id);
       const shown = takeShownRows(id);
-      deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now(), shown), shownSince: null })));
+      const heldRows = Object.keys(heldReplies(null, drafts.get(id) ?? {}));
+      deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now(), shown), heldRows, shownSince: null })));
+    },
+    keepDrafts: (ctx, kept, holds) => {
+      const id = sessionIdOf(ctx);
+      drafts.set(id, kept);
+      deps.background(change(id, (s) => withHolds(s, holds)));
     },
     showRows: (ctx, ids) => {
       const id = sessionIdOf(ctx);
@@ -14570,6 +14694,8 @@ function panelCalls(context, sessions, herdrAsk) {
     resume: async () => inbox.resume(ctx),
     answerHerdr: herdrAsk.answer,
     collapse: (id, isCollapsed) => inbox.collapse(ctx, id, isCollapsed),
+    drafts: () => drafts.get(sessionIdOf(ctx)) ?? {},
+    keepDrafts: (kept, holds) => inbox.keepDrafts(ctx, kept, holds),
     fetchPrsWhenDue: (isTabShown) => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
@@ -14915,6 +15041,7 @@ function turnHandlers(context, sessions) {
   const onSessionShutdown = async (_event, ctx) => {
     const id = sessionIdOf(ctx);
     openPanels.delete(id);
+    context.drafts.delete(id);
     prepared.delete(id);
     if (noted?.id === id)
       noted = null;
@@ -15101,7 +15228,6 @@ var defaultDeps = {
   herdrTarget: herdrTarget(process.env),
   questionHistory: (dir) => questionHistoryPlace(process.env, dir)
 };
-var messageOf = (err) => err instanceof Error ? err.message : String(err);
 function byNewestRevision(a, b) {
   const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
   const [x, y] = [parts(a), parts(b)];
@@ -15125,30 +15251,7 @@ function createInbox(pi, deps = defaultDeps) {
       return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
-  const runStartWaiters = new Map;
-  const sendToAgent = async (ctx, text) => {
-    const id = sessionIdOf(ctx);
-    const waiters = runStartWaiters.get(id) ?? new Set;
-    runStartWaiters.set(id, waiters);
-    let started = () => {};
-    const runStarted = new Promise((resolve) => {
-      started = () => resolve(null);
-    });
-    waiters.add(started);
-    try {
-      const options = ctx.isIdle() ? undefined : { deliverAs: "followUp" };
-      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(() => null, (err) => messageOf(err));
-      return await Promise.race([sent, runStarted]);
-    } catch (err) {
-      return messageOf(err);
-    } finally {
-      waiters.delete(started);
-    }
-  };
-  const onRunStart = (ctx) => {
-    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? [])
-      started();
-  };
+  const { sendToAgent, onRunStart } = agentSender(pi);
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
       const model = inboxModel(ctx);
@@ -15205,6 +15308,7 @@ function createInbox(pi, deps = defaultDeps) {
     deps,
     dir,
     openPanels: new Map,
+    drafts: new Map,
     prepared: new Set,
     prFetches: prFetchTracker(deps.now, (id) => sessions.notifyChanged(id)),
     listeners: new Map,

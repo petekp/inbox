@@ -2,6 +2,7 @@ import type { Child, Item, Subject } from '../types'
 import { HELD_MARK, IDLE_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { IDLE_AFTER_MS, isOpen } from './status-limits'
+import { ago, duration } from './text'
 import type { StatusBranch, StatusCount, StatusRow, StatusStall } from './status-page'
 
 /**
@@ -107,7 +108,20 @@ function carriedByChild(
   return null
 }
 
-export function childRow(c: Child, branch: StatusBranch | null, depth: number): StatusRow {
+/**
+ * How a finished delegate reads under its name in a done fold: its last note when Herdr showed one, else how long it ran
+ * and how long ago it finished, as "Ran 40m, finished 2h ago".
+ */
+export function finishedLine(c: Pick<Child, 'startedAt' | 'endedAt' | 'summary'>, now: number): string | null {
+  if (c.summary) return c.summary
+  if (c.endedAt === null) return null
+  const finished = ago(now - c.endedAt)
+
+  return `Ran ${duration(c.endedAt - c.startedAt)}, finished ${finished}`
+}
+
+/** A child's row. `text` is the line under its name, which only a finished delegate in a done fold draws. */
+export function childRow(c: Child, branch: StatusBranch | null, depth: number, text: string | null = null): StatusRow {
   const marks =
     c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
@@ -118,8 +132,42 @@ export function childRow(c: Child, branch: StatusBranch | null, depth: number): 
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
+    text,
     branch,
   }
+}
+
+/** A child with no row under a shown subject, and the shown milestone its subject serves, if any. */
+type LooseChild = { child: Child; milestoneId: string | null }
+
+/**
+ * The children the list draws apart from any shown subject. `loose` are those that run, or finished under a
+ * milestone, which draw as rows. `settled` are finished delegates that fold into a done fold: those under no
+ * milestone, seen or not, and those the person has seen that no subject holds. A finished delegate never stacks as a row.
+ */
+export function unplacedChildren(
+  children: readonly Child[],
+  c: {
+    subjects: readonly Subject[]
+    shownIds: ReadonlySet<string>
+    milestoneOf: (x: Subject) => string | null
+    isSettled: (c: Child) => boolean
+    running: readonly Child[]
+  },
+): { loose: LooseChild[]; settled: Child[] } {
+  const unshown = c.running
+    .filter(x => x.subjectId === null || !c.shownIds.has(x.subjectId))
+    .map(child => {
+      const subject = c.subjects.find(y => y.id === child.subjectId)
+      return { child, milestoneId: subject === undefined ? null : c.milestoneOf(subject) }
+    })
+  const isFoldedFinished = (l: LooseChild) => l.child.delegateState === 'finished' && l.milestoneId === null
+  const settled = [
+    ...children.filter(x => c.isSettled(x) && !c.subjects.some(y => y.id === x.subjectId)),
+    ...unshown.filter(isFoldedFinished).map(l => l.child),
+  ].sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0))
+
+  return { loose: unshown.filter(l => !isFoldedFinished(l)), settled }
 }
 
 /** The words of the item `ask` names, on one line, or null when it names none or has no words. */
