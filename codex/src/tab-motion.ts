@@ -166,7 +166,8 @@ function fadeWithSpace(el: HTMLElement, from: number, to: 0 | 1) {
   slides.add(el)
   el.style.pointerEvents = to === 0 ? 'none' : ''
   const full = Math.max(g.from.x, g.to)
-  const opacities = g.xs.map(x => {
+  const opacities = g.xs.map((x, i) => {
+    if (i === g.xs.length - 1) return to
     const share = spaceOpacity(x, full)
 
     return to === 0 ? Math.min(from, share) : Math.max(from, share)
