@@ -5788,7 +5788,10 @@ function transcriptCatchUpPrompt(ledger, screen, transcript) {
 }
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
-  return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
+  if (!line || activity[activity.length - 1] === line)
+    return activity;
+  const others = activity.filter((seen) => seen !== line);
+  return [...others, line].slice(-MAX_ACTIVITY);
 }
 function toolActivity(tool, input) {
   const text = (key) => typeof input[key] === "string" ? input[key] : "";

@@ -202,6 +202,27 @@ test('a claimed Status call reads the running turn’s work with no reply and wr
   expect(prompts).toHaveLength(1)
 })
 
+test('a running turn that passes forty activity lines still shows its latest work to the Status call, and a repeated line moves to the end', async () => {
+  const prompts: string[] = []
+  const { host } = fakeHost(async prompt => {
+    prompts.push(prompt)
+    return 'NO CHANGE'
+  })
+  const lines = Array.from({ length: 45 }, (_, i) => `edited file-${i}.ts`)
+  await host.update(s => {
+    let active = notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state
+    for (const line of [...lines, lines[10]!]) active = noteActivity(active, line)
+    return active
+  })
+  await refreshStatus(host)
+  const activity = prompts[0]!.split('<activity>\n')[1]!.split('\n</activity>')[0]!.split('\n')
+
+  expect(activity).toHaveLength(40)
+  expect(activity.at(-1)).toBe('edited file-10.ts')
+  expect(activity.at(-2)).toBe('edited file-44.ts')
+  expect(activity).not.toContain('edited file-0.ts')
+})
+
 test('a Status call stamps its changes when the update applies them, and reports the time before it read the session as its read time', async () => {
   const { host } = fakeHost(async () => 'NEW: working | Offline mode | queue built')
   await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
