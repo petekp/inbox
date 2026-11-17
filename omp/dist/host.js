@@ -3978,8 +3978,8 @@ function milestoneRow(step, o, items) {
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isChanged,
-    isMuted: step.place === "later" || step.place === "dropped",
+    isBold: isOpen,
+    isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
     text: m.text || null,
@@ -8472,7 +8472,7 @@ function milestoneLines(m, d, isSelected) {
     return [name, ...withPathLine(wrapped, column, s)];
   }
   const chevron = foldChevron(m, d, isSelected);
-  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isChanged || chevron && isSelected ? s.bold(t) : t);
+  const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isBold || chevron && isSelected ? s.bold(t) : t);
   const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron });
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
