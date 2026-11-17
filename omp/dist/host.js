@@ -13384,8 +13384,9 @@ import { fileURLToPath } from "url";
 
 // ../hooks/herdr-press-file.ts
 var isLookFile = (file) => ("look" in file);
+var isPrsShownFile = (file) => ("prsShown" in file);
 var isPressFile = (file) => file.format === HERDR_FORMAT && ("press" in file);
-var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPressFile(file) ? file.pressedAt : file.collapse.at;
+var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPrsShownFile(file) ? file.prsShown.at : isPressFile(file) ? file.pressedAt : file.collapse.at;
 var PRESS_TARGETS = {
   answer: "id",
   type: "id",
@@ -13477,6 +13478,9 @@ function pressFile(text) {
   if ("look" in file) {
     const reason = lookProblem(file.look);
     return reason ? { ok: false, reason } : { ok: true, file };
+  }
+  if ("prsShown" in file) {
+    return isRecord(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
   }
   if ("collapse" in file) {
     const c = file.collapse;
@@ -14278,6 +14282,10 @@ async function applyHerdrFile(host, file, sessionId = "") {
   }
   if (isLookFile(file)) {
     await host.update((s) => lookReportedOn(s, file.look));
+    return LOOK_OUTCOME;
+  }
+  if (isPrsShownFile(file)) {
+    await host.refreshPrsIfDue?.();
     return LOOK_OUTCOME;
   }
   if (!isPressFile(file)) {
