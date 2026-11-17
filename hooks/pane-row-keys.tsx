@@ -14,7 +14,7 @@ import {
 } from './pane-sizes'
 import { actionLabel, fieldExit, ROW_COPY } from './rows'
 import { wrapped } from './terminal-text'
-import { cellWidth } from './text'
+import { cellWidth, cutForEllipsis } from './text'
 
 const HOTKEY_SEPARATOR = ': '
 
@@ -59,12 +59,13 @@ export function paneRowKeys(
   const desktopRowTextPt = desktopColumnPt(DESKTOP_MARK_CELLS)
   const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
     a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
-  // A native Button cuts a label wider than its row.
+  /** A native Button grows to its whole label and widens its row with it, so a label wider than the row is cut here. */
   const fittedDesktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
     const icon = a.icon ? `${a.icon} ` : ''
     const fits = (label: string) => desktopButtonPt(icon + label, a.variant === 'primary') <= desktopRowTextPt
+    const label = actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
 
-    return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
+    return icon + (fits(label) ? label : `${cutForEllipsis(label, fits)}…`)
   }
   /** A terminal button's label, wrapped to `width` cells when it is given and the label is wider. */
   const terminalLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'hotkey'>, width = Infinity) =>
