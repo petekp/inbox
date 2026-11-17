@@ -235,7 +235,7 @@ const headNote = (id: string, text: string, tone: Tone): Extract<Block, { kind: 
 })
 
 /** The head's title: the goal, or what the session is for. */
-const headTitle = (id: string, text: string): Block => ({
+const headTitle = (id: string, text: string): Extract<Block, { kind: 'note' }> => ({
   ...note(id, text, null),
   isHead: true,
   isAtEdge: true,
@@ -271,7 +271,7 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
     : []
   const suggestion: Block[] = [
     {
-      ...headNote('goal text', suggestedGoalOffer(page.suggestedGoal ?? ''), 'muted'),
+      ...headTitle('goal text', suggestedGoalOffer(page.suggestedGoal ?? '')),
       buttons: keyButtons(GOAL_KEYS_ID, groups.offer, groups.heading.length),
     },
   ]

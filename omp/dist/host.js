@@ -1502,7 +1502,7 @@ function pressText(p) {
     case "restore-goal":
       return "Undo";
     case "take-goal":
-      return "Set this goal";
+      return "Set goal";
     default:
       return capitalized(p.action);
   }
@@ -4086,7 +4086,7 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "take-goal" }, label: "Set goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
     { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
@@ -8438,7 +8438,7 @@ function offerFaces(offer, d, isSelected) {
 }
 function offerLines(offer, d, at, isSelected) {
   const { width, style: s } = d;
-  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.dim);
+  const text = indented(suggestedGoalOffer(offer.text), at, width, Infinity, s.bold);
   const { faces, focused } = offerFaces(offer, d, isSelected);
   if (faces.length === 0)
     return text;

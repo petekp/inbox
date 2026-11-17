@@ -1,5 +1,5 @@
 import { Icon } from './row-actions'
-import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
+import { STALL_GAP, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, goalSubmitLabel, milestoneKeyPlan } from '../../hooks/status-keys'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, suggestedGoalOffer } from '../../hooks/status-goal-page'
@@ -83,13 +83,16 @@ function GoalField({ page }: { page: StatusPage }) {
   )
 }
 
-/** The goal the Status call offers, as a muted line where "No goal yet" draws, with its buttons inline after it. */
+/** The goal the Status call offers, as the goal's text is drawn, where "No goal yet" draws, with its buttons inline after it. */
 function Offer({ text, keys }: { text: string; keys: StatusKey[] }) {
   return (
     <div class="goal-offer">
-      <p class="muted">{suggestedGoalOffer(text)}</p>
+      <h1>{suggestedGoalOffer(text)}</h1>
       <span class="offer-actions">
-        {keys.flatMap((k, n) => [...(n > 0 ? [<span class="muted">·</span>] : []), <Keys key={k.label} keys={[k]} />])}
+        {keys.flatMap((k, n) => [
+          ...(n > 0 ? [<span class="muted">{STALL_GAP}</span>] : []),
+          <Keys key={k.label} keys={[k]} />,
+        ])}
       </span>
     </div>
   )

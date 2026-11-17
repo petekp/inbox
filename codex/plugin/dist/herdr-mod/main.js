@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T02:55:32.282Z. 269094 characters follow.
+// Built at 2026-11-17T05:00:23.721Z. 269081 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -1674,7 +1674,7 @@ function goalKeyPlan(page) {
 }
 function suggestionKeyPlan(suggested) {
   return [
-    { press: { action: "take-goal" }, label: "Set this goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
+    { press: { action: "take-goal" }, label: "Set goal", hotkey: "s", kind: "mark", emphasis: "quiet" },
     { press: { action: "type-goal", text: suggested }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }
   ];
 }
@@ -4282,7 +4282,7 @@ function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
   const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
   const suggestion = [
     {
-      ...headNote("goal text", suggestedGoalOffer(page.suggestedGoal ?? ""), "muted"),
+      ...headTitle("goal text", suggestedGoalOffer(page.suggestedGoal ?? "")),
       buttons: keyButtons(GOAL_KEYS_ID, groups.offer, groups.heading.length)
     }
   ];

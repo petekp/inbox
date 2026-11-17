@@ -157,10 +157,10 @@ test('New on the empty Status page sets the typed goal before any Status call', 
   expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('Milestones after the next reply')
 })
 
-test('the suggested goal shows at once as a dim offer with Set this goal and Edit inline after it, Edit opens the field with its words, and Cancel shows it again', async ($, on) => {
+test('the suggested goal shows at once as an offer with Set goal and Edit inline after it, Edit opens the field with its words, and Cancel shows it again', async ($, on) => {
   const { clock, pane } = await statusShown($, on, `${INFERRING.split('\nGOAL')[0]}\nSUGGEST: Pilot ready to announce`)
   expect((await pane.find({ key: 'goal-offer' }))?.text).toMatch(
-    /^Next goal: “Pilot ready to announce”\?\s*s: Set this goal · e: Edit$/,
+    /^Next goal: “Pilot ready to announce”\?\s*s: Set goal · e: Edit$/,
   )
   expect((await pane.find({ key: 'goal-heading-title' }))?.text).toMatch(/^Goal ─+$/)
 
