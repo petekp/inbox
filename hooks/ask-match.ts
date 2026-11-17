@@ -226,6 +226,34 @@ export function matchOpen(
 }
 
 /**
+ * The question recorded this turn, without context, that a record with context rewords: the agent's record again after
+ * an answer asked for context. It has the same options, and its ask holds every key word of the open one, so a swapped
+ * word ("staging" for "production") is a different question. Undefined when none or several match.
+ */
+export function rewordedQuestion(
+  items: Pick<Item, 'id' | 'kind' | 'ask' | 'options' | 'turn' | 'from' | 'context'>[],
+  turn: number,
+  record: { ask: string; options: string[] },
+): (typeof items)[number] | undefined {
+  const optionsOf = (options: string[]) =>
+    options
+      .map(o => words(o).join(' '))
+      .toSorted()
+      .join('|')
+  const same = items.filter(
+    i =>
+      i.kind === 'question' &&
+      i.turn === turn &&
+      i.from === 'record' &&
+      !i.context &&
+      optionsOf(i.options) === optionsOf(record.options) &&
+      raisesOnly(record.ask, i.ask),
+  )
+
+  return same.length === 1 ? same[0] : undefined
+}
+
+/**
  * An ask closed this turn repeats on its label too. An expired one from before can be asked again, as in addAgentItem.
  * An ask closed before the prompt repeats a settled item as `repeatsSettled` says. An ask that raises a finding the
  * person dismissed repeats it too.

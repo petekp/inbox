@@ -5,7 +5,7 @@ import { CLAUDE_CODE } from '../hooks/model-text'
 import { recorded } from '../hooks/session-presses'
 import { sessionView } from '../hooks/session-view'
 import { press, wakeAfterSettle } from '../hooks/host-press'
-import { NO_HOLDS } from '../hooks/timing'
+import { NO_HOLDS, QUEUED_AFTER_MS } from '../hooks/timing'
 import { fakeHost } from './session-fake-host'
 import { TOOL_FIELDS } from '../hooks/tool-schemas'
 
@@ -109,3 +109,28 @@ test('a typed question back goes to the agent as a question about the ask, and t
   ])
   expect((await host.read()).ledger.items.map(i => i.id)).toEqual([id])
 })
+
+for (const isDeliveryHeldUntilRun of [false, true])
+  test(`an answer held for Undo reads sending, not Queued, from its release until QUEUED_AFTER_MS later, when delivery is held until run: ${isDeliveryHeldUntilRun}`, async () => {
+    let clock = 1_000_000
+    const scripted = fakeHost(async () => null).host
+    const host = {
+      ...scripted,
+      now: () => clock,
+      isDeliveryHeldUntilRun,
+      deliver: async () => ({ state: 'accepted' as const, queuedId: null, isInTurn: false }),
+    }
+    const holds = { ...NO_HOLDS, shownSince: clock }
+    const question = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'In-memory'] }
+    await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, clock, TOOL_FIELDS).state)
+    const id = (await host.read()).ledger.items[0]!.id
+    await press(host, { action: 'answer', id, option: 'Redis' }, false, holds)
+    clock += host.settleWindowMs
+    await wakeAfterSettle(host)
+    const deliveryAt = async (at: number) =>
+      sessionView(await host.read(), at, host.settleWindowMs, holds).needsYou.closed.questions.map(c => c.delivery)
+
+    expect(await deliveryAt(clock)).toEqual(['sending'])
+    expect(await deliveryAt(clock + QUEUED_AFTER_MS - 1)).toEqual(['sending'])
+    expect(await deliveryAt(clock + QUEUED_AFTER_MS)).toEqual(['queued'])
+  })

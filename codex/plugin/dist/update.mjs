@@ -1397,8 +1397,11 @@ var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
 var PR_READ_WAIT_MS = 6e4;
+function queuedSentAt(last) {
+  return last.delivery?.state === "queued" ? last.delivery.sentAt ?? last.at : last.at;
+}
 function isQueuedAt(last, now) {
-  return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
+  return last?.delivery?.state === "queued" && now - queuedSentAt(last) >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "held") return "held";
@@ -2438,7 +2441,15 @@ function optionDescriptionsOf(item, actions) {
     const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
     if (description === null && reason === null) return [];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
+    return [
+      {
+        option: a.press.option,
+        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
+        description,
+        reason,
+        isFolded: a.isFolded
+      }
+    ];
   });
 }
 function isWaitingRow(row) {
@@ -3365,7 +3376,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press: press2,
       label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "type" || press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
       ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -6553,7 +6564,9 @@ var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
 var recordFiles = {
   write: async (path, text2) => {
     await mkdir4(dirname5(path), { recursive: true });
-    await writeFile4(path, text2);
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile4(tmp, text2);
+    await rename4(tmp, path);
   },
   list: (folder) => readdir4(folder).catch(() => []),
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),

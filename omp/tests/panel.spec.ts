@@ -38,10 +38,10 @@ test('a selected row draws its buttons in the shared key plan order', () => {
   expect(rows.length).toBeGreaterThan(5)
   for (const row of rows) {
     const tab = row.type === 'finding' ? 'findings' : 'needsYou'
-    const line = buttonLine(screen, { ...onRow(row), tab, opened: row.id })
+    const drawnRow = text(screen, { ...onRow(row), tab, opened: row.id })
     let from = 0
     for (const label of plannedLabels(row)) {
-      const at = line.indexOf(label, from)
+      const at = drawnRow.indexOf(label, from)
       expect(at).toBeGreaterThanOrEqual(from)
       from = at + label.length
     }
@@ -100,8 +100,10 @@ test('the recommended option ends "(recommended)", outside its underline, and no
 test('the recommended option drops "(recommended)" only where its button would not fit a line of its own', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  const wide = buttonLine(screen, onRow(row))
-  const tight = wide.indexOf('(recommended) ') + '(recommended) '.length
+  const has = (width: number) => text(screen, onRow(row), width).includes(`${row.item!.rec} (recommended)`)
+  let tight = 200
+  while (has(tight - 1)) tight--
+  expect(has(tight)).toBe(true)
   expect(text(screen, onRow(row), tight)).toContain(`${row.item!.rec} (recommended)`)
   expect(text(screen, keys(screen, onRow(row), 'right'), tight)).toContain(`${row.item!.rec} (recommended)`)
   expect(text(screen, onRow(row), tight - 1)).toContain(`↵ ${row.item!.rec} `)

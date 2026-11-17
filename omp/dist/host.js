@@ -330,6 +330,11 @@ function sameAsk(a, b) {
 function matchOpen(items, a, sameBatch = new Set) {
   return items.findIndex((i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask));
 }
+function rewordedQuestion(items, turn, record) {
+  const optionsOf = (options) => options.map((o) => words2(o).join(" ")).toSorted().join("|");
+  const same = items.filter((i) => i.kind === "question" && i.turn === turn && i.from === "record" && !i.context && optionsOf(i.options) === optionsOf(record.options) && raisesOnly(record.ask, i.ask));
+  return same.length === 1 ? same[0] : undefined;
+}
 function repeatsClosed(closed, a, since, closedFindings = []) {
   const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
   const settled = closed.filter((c) => c.at < since && c.how !== "expired");
@@ -4478,17 +4483,22 @@ function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
   ]));
 }
 function withAcceptedSend(lastActions, rows, at, message, deliveryId) {
-  return withQueuedDelivery(lastActions, rows, at, (text) => text === message, { state: "queued", message, id: deliveryId }, deliveryId);
+  return withQueuedDelivery(lastActions, rows, at, (text) => text === message, (previous) => ({
+    state: "queued",
+    message,
+    id: deliveryId,
+    ...previous.sentAt !== undefined && { sentAt: previous.sentAt }
+  }), deliveryId);
 }
 function withQueuedDelivery(lastActions, rows, at, matches, delivery, deliveryId) {
   const changed = rows.flatMap((id) => {
     const a = lastActions[id];
-    return a?.at === at && (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && (deliveryId ? a.delivery.id === deliveryId : a.delivery.id === undefined) && matches(a.delivery.message) ? [[id, { ...a, delivery }]] : [];
+    return a?.at === at && (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && (deliveryId ? a.delivery.id === deliveryId : a.delivery.id === undefined) && matches(a.delivery.message) ? [[id, { ...a, delivery: delivery(a.delivery) }]] : [];
   });
   return changed.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(changed) };
 }
 function withFailure(lastActions, rows, at, reason, deliveryId) {
-  return withQueuedDelivery(lastActions, rows, at, () => true, { state: "failed", reason, ...deliveryId ? { id: deliveryId } : {} }, deliveryId);
+  return withQueuedDelivery(lastActions, rows, at, () => true, () => ({ state: "failed", reason, ...deliveryId ? { id: deliveryId } : {} }), deliveryId);
 }
 function withRewrite(lastActions, rows, at, message, entered, deliveryId) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, action]) => [
@@ -4522,8 +4532,11 @@ function timedChangeAt(lastActions, now) {
   }).filter((at) => at > now);
   return ends.length > 0 ? Math.min(...ends) : null;
 }
+function queuedSentAt(last) {
+  return last.delivery?.state === "queued" ? last.delivery.sentAt ?? last.at : last.at;
+}
 function isQueuedAt(last, now) {
-  return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
+  return last?.delivery?.state === "queued" && now - queuedSentAt(last) >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "held")
@@ -4670,7 +4683,15 @@ function optionDescriptionsOf(item, actions) {
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
     if (description === null && reason === null)
       return [];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
+    return [
+      {
+        option: a.press.option,
+        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
+        description,
+        reason,
+        isFolded: a.isFolded
+      }
+    ];
   });
 }
 function optionBody(o) {
@@ -4684,8 +4705,8 @@ function optionReasonLine(o) {
   return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null;
 }
 var recommendedLine = (reason) => `Recommended: ${reason}`;
-function shownOptionDescriptions(row, isShowingAll) {
-  return row.optionDescriptions.filter((o) => isShowingAll || !o.isFolded);
+function optionNote(o) {
+  return o ? optionBody(o) ?? optionReasonLine(o) : null;
 }
 function rowHandle(row) {
   return row.number === null ? "\u2022" : `${row.number})`;
@@ -6208,6 +6229,7 @@ var PAIR_FORMS = [
 ];
 var AFTER_ANSWER = /^ (?:selected preview:\n|notes: |user notes: )/;
 var SINGLE_FORMS = [
+  /^User provided custom input:\n((?:  .*(?:\n|$))+)/,
   /^The user responded: ([\s\S]+)$/,
   /^User (?:has )?(?:answered|selected)(?: your questions?)?: ([^"\n].*)/i,
   /^User provided custom input: (.+)/
@@ -6239,6 +6261,7 @@ function pairedAnswers(questions, pairs) {
     return quotedAnswer(pairs.slice(lead.answerAt, next).replace(/, $/, ""));
   });
 }
+var NOTES_ONLY_ANSWER = "(notes only)";
 function answersOf(questions, text) {
   const trimmed = text.trim();
   for (const { head, tail } of PAIR_FORMS) {
@@ -6248,15 +6271,22 @@ function answersOf(questions, text) {
     if (closed)
       return pairedAnswers(questions, rest.slice(0, closed.index));
   }
-  const single = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  const found = questions.length === 1 ? SINGLE_FORMS.map((form) => form.exec(trimmed)?.[1]).find(Boolean) : undefined;
+  const single = found?.replace(/^ {2}/gm, "").trimEnd();
   return questions.map(() => single ?? null);
+}
+function structuredAnswers(questions, answers) {
+  return questions.map((q) => {
+    const answer = answers[q.question];
+    return answer === undefined || answer === NOTES_ONLY_ANSWER ? null : answer;
+  });
 }
 function chosenOf(q, answer) {
   const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
   return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
 }
-function noteAnsweredDialog(s, questions, text, now) {
-  const answers = answersOf(questions, text);
+function noteAnsweredDialog(s, questions, outcome, now) {
+  const answers = outcome.answers ? structuredAnswers(questions, outcome.answers) : answersOf(questions, outcome.answer);
   const added = questions.map((q, index) => {
     const answer = answers[index]?.trim() ? chosenOf(q, answers[index]) : undefined;
     return {
@@ -6977,13 +7007,18 @@ function recordItem(host, ledger, input, now, fields) {
   const isDesignChoice = input.kind === "question" && input.design_choice === true;
   const kind = input.kind;
   const entry = { kind, ask, options, rec, helps, isDesignChoice, ...recReason ? { recReason } : {} };
-  const r = addAgentItem(ledger, entry, now);
+  const body = input.kind === "question" ? questionBody(input, options) : {};
+  const reworded = body.context && input.kind === "question" ? rewordedQuestion(ledger.items, ledger.turn, entry) : undefined;
+  const r = addAgentItem(ledger, reworded ? { ...entry, ask: reworded.ask } : entry, now);
   if (r.is === "closed")
     return unchanged(ledger, "title" in r.record ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.` : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
-  const body = input.kind === "question" ? questionBody(input, options) : {};
   const before = r.ledger.items.find((i) => i.id === r.id);
   const after = before && withBody(before, body);
-  const recorded = { ...r.ledger, items: r.ledger.items.map((i) => i === before && after ? after : i) };
+  const rewordedAsk = reworded && r.is === "open" && r.id === reworded.id ? { ask } : {};
+  const recorded = {
+    ...r.ledger,
+    items: r.ledger.items.map((i) => i === before && after ? { ...after, ...rewordedAsk } : i)
+  };
   if (r.is === "open") {
     const changes = [
       ...r.addedSteps > 0 ? ["added its new steps"] : [],
@@ -7303,7 +7338,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press,
       label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "type" || press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
       ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -7416,6 +7451,7 @@ function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
   const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
+  const options = [];
   const keys = [];
   const more = [];
   const retry = r.feedback?.is === "notSent" ? r.feedback.retry : null;
@@ -7428,7 +7464,11 @@ function rowKeyPlan(r, isAllShown) {
     const { press } = a;
     if (press.action === "answer" || press.action === "step") {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++] } : {};
-      keys.push({ slot: "choice", action: { ...a, press }, ...hotkey });
+      if (press.action === "answer") {
+        const note = optionNote(r.optionDescriptions.find((d) => d.option === press.option));
+        options.push({ action: { ...a, press }, note, ...hotkey });
+      } else
+        keys.push({ slot: "choice", action: { ...a, press }, ...hotkey });
       if (n === lastOption && folded > 0)
         keys.push({
           slot: "allOptions",
@@ -7443,7 +7483,7 @@ function rowKeyPlan(r, isAllShown) {
         hotkey: a.hotkey
       });
   }
-  return { keys, more };
+  return { options, keys, more };
 }
 function actionLines(keys, more, { width, gap, separator }) {
   const lines = [];
@@ -8345,31 +8385,31 @@ var TRUNK = "\u2502  ";
 var TEE = "\u251C\u2500 ";
 var LAST = "\u2514\u2500 ";
 var NONE = "   ";
-function askTreeLines(line, pad, width, s, isAllShown = false) {
+function askTreeLines(line, pad, width, s, cell) {
   const row = line.row;
   if (!row || row.state.is !== "open")
     return [];
   const margin = " ".repeat(3 + pad);
   const room = Math.max(10, width - margin.length - TRUNK.length - 1);
-  const branches = shownOptionDescriptions(row, isAllShown).map((o) => {
-    const body = optionBody(o);
-    return { label: o.label, text: body === null ? o.label : `${o.label}: ${body}`, reason: optionReasonLine(o) };
-  });
+  const branches = line.buttons.flatMap((b, index) => b.option ? [{ b, index, note: b.option.note }] : []);
   const holdsUp = row.holdsUpLine;
-  const draw = (arm, text, rest, label = "") => wrapText(text, room).map((l, i) => {
-    const arms = s.dim(margin + (i === 0 ? arm : rest));
-    return i === 0 && label && l.startsWith(label) ? arms + label + s.dim(l.slice(label.length)) : arms + s.dim(l);
-  });
-  const heads = holdsUp ? [{ label: "", text: holdsUp, reason: null }] : [];
-  const all = [...heads, ...branches];
-  const lastBranch = all.length - 1;
-  const drawBranch = (b, n) => {
+  const draw = (arm, text, rest) => wrapText(text, room).map((l, i) => s.dim(margin + (i === 0 ? arm : rest)) + s.dim(l));
+  const heads = holdsUp ? [{ text: holdsUp }] : [];
+  const lastBranch = heads.length + branches.length - 1;
+  const drawHead = (text, n) => {
+    const isLast = n === lastBranch;
+    return draw(isLast ? LAST : TEE, text, isLast ? NONE : TRUNK);
+  };
+  const drawAnswer = (a, n) => {
     const isLast = n === lastBranch;
     const rest = isLast ? NONE : TRUNK;
-    return [...draw(isLast ? LAST : TEE, b.text, rest, b.label), ...b.reason ? draw(rest, b.reason, rest) : []];
+    return [
+      s.dim(margin + (isLast ? LAST : TEE)) + cell(a.b, a.index, room),
+      ...a.note ? draw(rest, a.note, rest) : []
+    ];
   };
   const contextArm = branches.length > 0 ? TRUNK : NONE;
-  const out = heads.flatMap((b, n) => drawBranch(b, n));
+  const out = heads.flatMap((b, n) => drawHead(b.text, n));
   if (row.contextLine)
     out.push(...draw(contextArm, row.contextLine, contextArm));
   const earlier = row.earlierLine;
@@ -8381,7 +8421,7 @@ function askTreeLines(line, pad, width, s, isAllShown = false) {
       out.push(isAnswerWhole ? arms + s.dim(earlier.lead) + s.bold(earlier.answer) + s.dim(l.slice(head.length)) : arms + s.dim(l));
     });
   }
-  branches.forEach((b, n) => out.push(...drawBranch(b, heads.length + n)));
+  branches.forEach((b, n) => out.push(...drawAnswer(b, heads.length + n)));
   return out;
 }
 
@@ -9037,35 +9077,47 @@ function feedbackTone(f) {
   return null;
 }
 function rowButtons(row, isAllShown) {
-  const { keys, more } = rowKeyPlan(row, isAllShown);
+  const { options, keys, more } = rowKeyPlan(row, isAllShown);
   const recommended = row.item?.rec;
-  return [...keys, ...more].flatMap((k) => {
-    if (k.slot === "allOptions")
+  const answers = options.map((o) => ({
+    label: o.action.label,
+    key: o.hotkey ?? null,
+    press: o.action.press,
+    isRecommended: o.action.press.option === recommended,
+    isFollowUp: false,
+    isOut: o.action.isOut,
+    option: { note: o.note }
+  }));
+  return [
+    ...answers,
+    ...[...keys, ...more].flatMap((k) => {
+      if (k.slot === "allOptions")
+        return [
+          {
+            label: k.label,
+            key: null,
+            press: { action: "all-options", id: row.id },
+            isRecommended: false,
+            isFollowUp: false,
+            isQuiet: true
+          }
+        ];
+      if (k.slot === "retry")
+        return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }];
+      const { press } = k.action;
+      const key = k.hotkey ?? null;
       return [
         {
-          label: k.label,
-          key: null,
-          press: { action: "all-options", id: row.id },
+          label: k.action.label,
+          key,
+          press,
           isRecommended: false,
-          isFollowUp: false,
-          isQuiet: true
+          isFollowUp: k.slot === "action" && k.action.isFollowUp,
+          isOut: k.action.isOut
         }
       ];
-    if (k.slot === "retry")
-      return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }];
-    const { press } = k.action;
-    const key = k.hotkey ?? null;
-    return [
-      {
-        label: k.action.label,
-        key,
-        press,
-        isRecommended: k.slot === "choice" && press.action === "answer" && press.option === recommended,
-        isFollowUp: k.slot === "action" && k.action.isFollowUp,
-        isOut: k.action.isOut
-      }
-    ];
-  });
+    })
+  ];
 }
 function prButtons(actions) {
   return actions.map((a) => ({
@@ -9752,7 +9804,9 @@ function labelMark(b, room, s) {
   return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length);
 }
 function buttonLines(line, ui, indent, width, s) {
-  return faceLines(line.buttons, focusOf2(line, ui), indent, width, s);
+  const answers = line.buttons.filter((b) => b.option).length;
+  const focused = focusOf2(line, ui);
+  return faceLines(line.buttons.slice(answers), focused < answers ? -1 : focused - answers, indent, width, s);
 }
 function faceLines(buttons, focused, indent, width, s, between = "") {
   const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
@@ -9825,7 +9879,9 @@ function drawLine(line, isSelected, d) {
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const holdsUp = line.row?.holdsUpLine;
-  const tree = isOpen ? askTreeLines(line, pad, width, s, ui.optionsShown.includes(line.id)) : [];
+  const focused = ui.typing === line.id ? -1 : focusOf2(line, ui);
+  const answerCell = (b, n, room) => buttonCell(b, n === focused, s, labelMark(b, room, s));
+  const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell) : [];
   if (tree.length > 0)
     out.push(...tree);
   else if (holdsUp)
@@ -9838,7 +9894,7 @@ function drawLine(line, isSelected, d) {
     return out;
   if (line.file)
     out.push(" ".repeat(indent) + s.tone("accent", line.file));
-  if (line.buttons.length > 0 && ui.typing !== line.id)
+  if (line.buttons.some((b) => !b.option) && ui.typing !== line.id)
     out.push(...buttonLines(line, ui, indent - 1, width, s));
   if (ui.typing === line.id) {
     const hint = line.row ? replyHint(line.row, AGENT) : "Your reply";
@@ -10014,7 +10070,7 @@ function holdsOf(ui) {
 function isAnimating(screen, ui, now) {
   const { view } = screen;
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
-  const isPressMoving = Object.values(view.lastActions).some((l) => l.result !== undefined && (l.result.state === "pending" || now - l.result.at < SETTLED_MS) || l.delivery?.state === "queued" && now - l.at < QUEUED_AFTER_MS);
+  const isPressMoving = Object.values(view.lastActions).some((l) => l.result !== undefined && (l.result.state === "pending" || now - l.result.at < SETTLED_MS) || l.delivery?.state === "queued" && now - queuedSentAt(l) < QUEUED_AFTER_MS);
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
   const settled = [...rows, ...view.prs.drawn].flatMap((r) => r.state.is === "settled" ? [r.state] : []);
   const placing = { lastTypedMessageAt: null, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS };
@@ -13368,7 +13424,7 @@ function activityHandlers(context, sessions) {
       const noted = noteActivity(s, line);
       if (outcome.kind === "dismissed")
         return noteDialog(noted, null, questions);
-      return outcome.kind === "answered" ? noteAnsweredDialog(noted, questions, outcome.answer, endedAt) : noted;
+      return outcome.kind === "answered" ? noteAnsweredDialog(noted, questions, outcome, endedAt) : noted;
     }).catch(() => {
       return;
     });
@@ -13534,10 +13590,15 @@ async function releaseOne(host, id, isEarly) {
     await host.prepare?.(s);
     const deliveryId = last.commandId ? `${last.commandId}:send` : attemptId;
     attempt = { deliveryId, text: held.message, at: last.at };
-    const state = host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed";
+    const delivery = {
+      state: host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed",
+      message: held.message,
+      id: deliveryId,
+      sentAt: now
+    };
     return {
       ...s,
-      lastActions: { ...s.lastActions, [id]: { ...last, delivery: { state, message: held.message, id: deliveryId } } },
+      lastActions: { ...s.lastActions, [id]: { ...last, delivery } },
       sent: [
         ...s.sent,
         {
@@ -13611,6 +13672,7 @@ async function wakeForDone(host, current) {
     const deliveryId = attemptId;
     attempt = { deliveryId, text: wake.text };
     const lastActions = { ...s.lastActions };
+    const sentAt = await host.now();
     for (const closed of s.ledger.closed) {
       if (!wake.ids.includes(closed.id))
         continue;
@@ -13619,7 +13681,12 @@ async function wakeForDone(host, current) {
       lastActions[closed.id] = {
         ...last,
         ...closed.commandId && { commandId: closed.commandId },
-        delivery: { state: host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed", message: wake.text, id: deliveryId }
+        delivery: {
+          state: host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed",
+          message: wake.text,
+          id: deliveryId,
+          sentAt
+        }
       };
     }
     const next = {
@@ -13631,7 +13698,7 @@ async function wakeForDone(host, current) {
         {
           text: wake.text,
           press: { id: wake.ids[0], action: "done" },
-          at: await host.now(),
+          at: sentAt,
           row: wake.ids[0],
           queuedId: null,
           pressedAt: null,
@@ -14766,7 +14833,9 @@ var publishFiles = {
 var recordFiles = {
   write: async (path, text) => {
     await mkdir4(dirname3(path), { recursive: true });
-    await writeFile4(path, text);
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile4(tmp, text);
+    await rename4(tmp, path);
   },
   list: (folder) => readdir4(folder).catch(() => []),
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),

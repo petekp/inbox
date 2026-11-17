@@ -224,7 +224,7 @@ function sendReply(id: string, text: string) {
   })
 }
 
-function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
+function rowKeys(r: RowView): { options: Key[]; keys: Key[]; more: Key[] } {
   const actions = ledgerActions(r, optionsShown.has(r.id), sending.get(r.id)?.action ?? null, {
     press: p => {
       const step = p.action === 'step' ? r.steps[p.step] : undefined
@@ -248,6 +248,7 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
 function itemRow(v: View, r: RowView): Row {
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
+  const actions = rowKeys(r)
 
   return {
     id,
@@ -257,8 +258,8 @@ function itemRow(v: View, r: RowView): Row {
     title: r.title,
     ...(r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
-    ...askTree(r, optionsShown.has(id)),
-    ...rowKeys(r),
+    ...askTree(r, actions.options, isOpenGuarded),
+    ...actions,
     typing: {
       hint: replyHint(r, 'Codex'),
       send: text => sendReply(id, text),
@@ -358,6 +359,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
         ) : null}
       </div>
     ),
+    options: [],
     keys: actions.keys.map(a => prKey(id, pr, a)),
     more: actions.more.map(a => prKey(id, pr, a)),
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
@@ -380,6 +382,7 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
     meta: ran,
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
     body: <div class="muted">{ran}</div>,
+    options: [],
     keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, pr, a)),
     more: [],
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),

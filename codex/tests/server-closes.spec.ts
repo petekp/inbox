@@ -5,6 +5,7 @@ import { test } from 'node:test'
 
 import { applyUpdate } from '../../hooks/ledger-update'
 import { parseReply } from '../../hooks/reply-parse'
+import { QUEUED_AFTER_MS } from '../../hooks/timing'
 import { notePrompt, viewOf } from '../src/core'
 import type { View } from '../src/core'
 import { makeServer } from '../src/server'
@@ -209,7 +210,7 @@ for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as
     assert.ok(state.ledger.closed.every(c => c.isSentToAgent))
     const expected = failure === 'none' ? 'queued' : 'unconfirmed'
     assert.deepEqual(
-      viewOf(state, now).needsYou.closed.tasks.map(c => c.delivery),
+      viewOf(state, now + QUEUED_AFTER_MS).needsYou.closed.tasks.map(c => c.delivery),
       [expected, expected],
     )
     handle = server()
