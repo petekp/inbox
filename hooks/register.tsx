@@ -1722,6 +1722,8 @@ async function pollPrs($: EngineInterface, remote = false) {
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
 /** Sends the answers and Fixes held for Undo, and tells Claude about rows closed with Done, once their settle window has passed. */
 async function wakeAfterSettle($: EngineInterface) {
+  // A message sent now reads Queued once QUEUED_AFTER_MS passes, and no change to the session redraws the pane then.
+  later($, QUEUED_AFTER_MS, () => redraw($))
   await wakeSessionAfterSettle(hostOf($, currentOwner()))
 }
 

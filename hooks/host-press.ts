@@ -82,6 +82,7 @@ async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): P
     const deliveryId = attemptId
     attempt = { deliveryId, text: wake.text }
     const lastActions = { ...s.lastActions }
+    const sentAt = await host.now()
     for (const closed of s.ledger.closed) {
       if (!wake.ids.includes(closed.id)) continue
       const previous = lastActions[closed.id]
@@ -92,7 +93,12 @@ async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): P
       lastActions[closed.id] = {
         ...last,
         ...(closed.commandId && { commandId: closed.commandId }),
-        delivery: { state: host.isDeliveryHeldUntilRun ? 'queued' : 'unconfirmed', message: wake.text, id: deliveryId },
+        delivery: {
+          state: host.isDeliveryHeldUntilRun ? 'queued' : 'unconfirmed',
+          message: wake.text,
+          id: deliveryId,
+          sentAt,
+        },
       }
     }
     const next: S = {
@@ -104,7 +110,7 @@ async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): P
         {
           text: wake.text,
           press: { id: wake.ids[0]!, action: 'done' },
-          at: await host.now(),
+          at: sentAt,
           row: wake.ids[0]!,
           queuedId: null,
           pressedAt: null,

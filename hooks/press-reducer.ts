@@ -172,7 +172,12 @@ export function withAcceptedSend(
     rows,
     at,
     text => text === message,
-    { state: 'queued', message, id: deliveryId },
+    previous => ({
+      state: 'queued',
+      message,
+      id: deliveryId,
+      ...(previous.sentAt !== undefined && { sentAt: previous.sentAt }),
+    }),
     deliveryId,
   )
 }
@@ -182,7 +187,7 @@ function withQueuedDelivery(
   rows: string[],
   at: number,
   matches: (message: string) => boolean,
-  delivery: Delivery,
+  delivery: (previous: Extract<Delivery, { state: 'queued' | 'unconfirmed' }>) => Delivery,
   deliveryId?: string,
 ): Record<string, LastAction> {
   const changed = rows.flatMap(id => {
@@ -191,7 +196,7 @@ function withQueuedDelivery(
       (a.delivery?.state === 'queued' || a.delivery?.state === 'unconfirmed') &&
       (deliveryId ? a.delivery.id === deliveryId : a.delivery.id === undefined) &&
       matches(a.delivery.message)
-      ? [[id, { ...a, delivery }] as const]
+      ? [[id, { ...a, delivery: delivery(a.delivery) }] as const]
       : []
   })
 
@@ -210,7 +215,7 @@ export function withFailure(
     rows,
     at,
     () => true,
-    { state: 'failed', reason, ...(deliveryId ? { id: deliveryId } : {}) },
+    () => ({ state: 'failed', reason, ...(deliveryId ? { id: deliveryId } : {}) }),
     deliveryId,
   )
 }

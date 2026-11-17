@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T06:16:56.396Z. 271239 characters follow.
+// Built at 2026-11-17T06:49:05.075Z. 271370 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -1772,8 +1772,11 @@ function timedChangeAt(lastActions, now) {
   }).filter((at) => at > now);
   return ends.length > 0 ? Math.min(...ends) : null;
 }
+function queuedSentAt(last) {
+  return last.delivery?.state === "queued" ? last.delivery.sentAt ?? last.at : last.at;
+}
 function isQueuedAt(last, now) {
-  return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
+  return last?.delivery?.state === "queued" && now - queuedSentAt(last) >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "held")

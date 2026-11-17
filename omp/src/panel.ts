@@ -7,7 +7,7 @@ import type { SessionView } from '../../hooks/session-view'
 import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
-import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt } from '../../hooks/timing'
+import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt, queuedSentAt } from '../../hooks/timing'
 import type { ListInput } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
@@ -167,7 +167,7 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
   const isPressMoving = Object.values(view.lastActions).some(
     l =>
       (l.result !== undefined && (l.result.state === 'pending' || now - l.result.at < SETTLED_MS)) ||
-      (l.delivery?.state === 'queued' && now - l.at < QUEUED_AFTER_MS),
+      (l.delivery?.state === 'queued' && now - queuedSentAt(l) < QUEUED_AFTER_MS),
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
   const settled = [...rows, ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))

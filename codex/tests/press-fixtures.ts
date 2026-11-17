@@ -69,13 +69,16 @@ export function after(s: SessionState, p: RowPress): SessionState {
   return { ...s, ledger: r.ledger, lastActions: r.last ? { ...s.lastActions, [p.id]: r.last } : s.lastActions }
 }
 
-export function released(s: SessionState, id: string): SessionState {
+export function released(s: SessionState, id: string, sentAt?: number): SessionState {
   const last = s.lastActions[id]
   const held = last?.delivery
   assert.ok(last && held?.state === 'held')
 
   return {
     ...s,
-    lastActions: { ...s.lastActions, [id]: { ...last, delivery: { state: 'queued', message: held.message } } },
+    lastActions: {
+      ...s.lastActions,
+      [id]: { ...last, delivery: { state: 'queued', message: held.message, ...(sentAt !== undefined && { sentAt }) } },
+    },
   }
 }
