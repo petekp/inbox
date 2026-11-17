@@ -35,6 +35,13 @@ export const DESKTOP_OFFSET_ROUNDING = 1
 /** A native Button's height on desktop, in points, as measured in the pane for the desktop Undo. */
 export const DESKTOP_BUTTON_PT = 23
 /**
+ * An open question's answer Button's height on desktop, in points: the theme's control height, the same for a primary
+ * and a default Button. Measured on app 5.11492.5 with engine 2.1.325.
+ */
+export const DESKTOP_ANSWER_BUTTON_PT = 28
+/** How far an answer Button's label starts in from its edge, as cells: its border and medium side padding. Measured as above. */
+export const DESKTOP_ANSWER_LABEL_CELLS = 1.35
+/**
  * One column of `bodyColumns` in the Claude app pane, in points, measured on app 3.6556.2 with engine 2.1.308. The
  * engine reports the pane in columns only, so this cannot be measured at run time.
  * Remeasure it with the steps in docs/reference/claude-desktop-app/what-desktop-draws-layout.md.
@@ -57,9 +64,11 @@ export const ROW_COLUMNS = {
   desktop: { lead: 1, handleAt: 1, textAt: 3 },
 } as const
 export const DESKTOP_MARK_CELLS = 1
-/** One point, across in cells and down in lines: desktop draws a tree line as a filled Box, since it has no per-side borders. */
-export const DESKTOP_HAIR_CELLS = 1 / DESKTOP_CELL_PT
-export const DESKTOP_HAIR_LINES = 1 / DESKTOP_LINE_PT
+/** A desktop tree line's thickness. Desktop draws it as a filled Box, since it has no per-side borders. */
+export const DESKTOP_HAIR_PT = 1
+/** `DESKTOP_HAIR_PT`, across in cells and down in lines. */
+export const DESKTOP_HAIR_CELLS = DESKTOP_HAIR_PT / DESKTOP_CELL_PT
+export const DESKTOP_HAIR_LINES = DESKTOP_HAIR_PT / DESKTOP_LINE_PT
 /**
  * Where the Status tab's tree line runs on desktop, in cells from a row's mark column: under the middle of a subject's
  * mark, which the Claude app 3.6556 draws 6.4 pt into the column, where a cell is 8.8 pt.

@@ -41,8 +41,10 @@ export function askTree(r: RowView, options: Key[], isBlocked: () => boolean): P
     ...options.map(o => ({
       isBranch: true,
       draw: (place: string) => (
-        <p class={`branch option-choice tree-${place}`}>
-          <ActionButton action={o} isBlocked={isBlocked} />
+        <p class={`option-choice tree-${place}`}>
+          <span class="option-button">
+            <ActionButton action={o} isBlocked={isBlocked} />
+          </span>
           {o.note ? <span class="muted option-note">{o.note}</span> : null}
         </p>
       ),

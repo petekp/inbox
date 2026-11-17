@@ -9,6 +9,7 @@ import type { Block, Button, Field, LineBlock, PrBlock, RowBlock, StatusLine } f
 import {
   BOX_RADIUS,
   BUTTON_H,
+  BUTTON_LABEL_X,
   CHILD_GAP,
   CONTROL_GAP,
   EDGE,
@@ -17,6 +18,7 @@ import {
   END_SPACE,
   INSET,
   INSIDE_GAP,
+  ITEM_GAP,
   LINE_HEIGHT,
   LIST_GAP,
   MARK_W,
@@ -71,7 +73,7 @@ const bodyLineEl = (
   p: Paint | null = null,
   isInert = false,
 ): Element => {
-  const above = l.isApart ? CHILD_GAP : INSIDE_GAP
+  const above = l.gapAbove === 'item' ? ITEM_GAP : l.gapAbove === 'child' ? CHILD_GAP : INSIDE_GAP
   const armAt = above + (option ? BUTTON_H : LINE_HEIGHT) / 2
   const arm = div()
     .absolute()
@@ -103,7 +105,7 @@ const bodyLineEl = (
             .pl(MARK_W)
             .pt(above)
             .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
-        : lineEl(l.text, colorOf(t, l.tone)).pt(above)
+        : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above)
 
   return line.relative().children(strokes)
 }

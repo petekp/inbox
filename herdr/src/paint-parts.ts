@@ -4,7 +4,7 @@ import { h_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS } from '../../hooks/help'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import type { Button, Mark } from './blocks'
-import { BUTTON_H, CONTROL_GAP, INSET, INSIDE_GAP, MARK_W, colorOf } from './paint-theme'
+import { BUTTON_H, BUTTON_PAD_X, CONTROL_GAP, INSIDE_GAP, MARK_W, colorOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { checkboxEl } from './paint-checkbox'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -41,7 +41,7 @@ export function buttonEl(b: Button, p: Paint, isInert = false, isShrinkable = fa
   const shaped =
     isPill && runsOutAt === undefined
       ? base
-          .px(INSET)
+          .px(BUTTON_PAD_X)
           .rounded(BUTTON_H / 2)
           .border_1()
       : base

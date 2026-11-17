@@ -1,11 +1,15 @@
+/* A question's tree line is opaque, the text color mixed into the row's background, so a pixel two strokes share draws
+   in the same shade. Codex's muted color is translucent, so the line is not mixed from it. */
 .row {
-  --tree-line: color-mix(in srgb, var(--muted) 55%, transparent);
+  --row-bg: var(--bg);
+  --tree-line: color-mix(in srgb, var(--text) 32%, var(--row-bg));
   display: grid;
   grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
   padding: var(--row-pad) var(--edge) var(--row-pad) var(--mark-x);
 }
 .row.selected {
-  background-color: var(--selected);
+  --row-bg: var(--selected);
+  background-color: var(--row-bg);
 }
 .mark {
   align-self: start;
@@ -259,16 +263,47 @@
   bottom: auto;
   height: calc(var(--above) + var(--tick, 0.8em));
 }
-/* An answer is its button with its note under it. Its arm meets the button's middle. */
+/* An answer is its button with its note under it, the note starting at the button's label. The button's wrapper draws
+   the arm to the button's middle, however many lines the label takes. On the last answer the trunk stops at the
+   button's top, and the wrapper draws it on to the arm. */
 .body .tree > p.option-choice {
-  --tick: calc(3.5 * var(--unit));
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--list-gap);
+  gap: var(--child-gap);
+}
+.body .tree > p.option-choice + p.option-choice {
+  --above: calc(1px + var(--item-gap));
+}
+.body .tree > p.option-choice.tree-last::before {
+  height: var(--above);
+}
+.option-button {
+  position: relative;
+  display: flex;
+  max-width: 100%;
+}
+.option-button::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--tree-x) - 0.75px);
+  top: calc(50% - 0.75px);
+  width: calc(var(--tree-x) - 6px + 0.75px);
+  border-top: 1.5px solid var(--tree-line);
+  pointer-events: none;
+}
+.tree-last > .option-button::after {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--tree-x) - 0.75px);
+  top: 0;
+  height: 50%;
+  border-left: 1.5px solid var(--tree-line);
+  pointer-events: none;
 }
 .option-choice .option-note {
   display: block;
+  padding-left: calc(var(--button-border) + var(--button-pad-x));
 }
 .body .tree > p.tree-after::before {
   display: none;
@@ -316,8 +351,8 @@ code {
   justify-content: center;
   gap: var(--unit);
   min-height: calc(7 * var(--unit));
-  padding: var(--unit) calc(3 * var(--unit));
-  border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);
+  padding: var(--unit) var(--button-pad-x);
+  border: var(--button-border) solid color-mix(in oklab, var(--text) 28%, transparent);
   border-radius: calc(3.5 * var(--unit));
   background: transparent;
   font-weight: 400;

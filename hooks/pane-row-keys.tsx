@@ -15,6 +15,12 @@ import {
 import { actionLabel, fieldExit, ROW_COPY } from './rows'
 import { cellWidth } from './text'
 
+const HOTKEY_SEPARATOR = ': '
+
+/** Cells a terminal button's label starts in from the button's edge, after its hotkey and the separator. */
+export const terminalLabelCells = (k: Pick<KeyAction, 'hotkey'>) =>
+  k.hotkey ? k.hotkey.length + HOTKEY_SEPARATOR.length : 0
+
 export function paneRowKeys(
   {
     hasClient,
@@ -83,7 +89,7 @@ export function paneRowKeys(
                 {hotkey}
               </Text>
             ) : null}
-            {hotkey ? `: ${shownLabel(action)}` : shownLabel(action)}
+            {hotkey ? `${HOTKEY_SEPARATOR}${shownLabel(action)}` : shownLabel(action)}
           </Button>
         </Box>
       )
@@ -152,7 +158,7 @@ export function paneRowKeys(
     keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, note: _note, ...k }) =>
       hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
     )
-  const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
+  const terminalKeyCells = (k: KeyAction) => terminalLabelCells(k) + cellWidth(shownLabel(k))
   const terminalActionLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
     actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
       width,
