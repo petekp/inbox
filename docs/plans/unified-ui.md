@@ -11,7 +11,7 @@ This proposal concerns the hierarchy and fitting of native drawings. A shared de
 - Asks has Questions and Tasks. Finds has Issues and Opportunities. Each group has its own Closed fold.
 - Shared helpers choose row marks, reply hints, action labels and feedback. Fold labels count all closed rows outside the settle window and say how many earlier rows are not shown.
 - Action emphasis and action order are separate fields. Retry leads a failed row. Options or help steps precede Done or Fix. The desktop renderer follows the shared key plan.
-- The recommended option says "(recommended)" in every look. Done, Fix and Do it have primary emphasis on desktop and Codex. A terminal Button uses its plain native form.
+- The recommended option says "(recommended)" in every look. Fix has primary emphasis (a task has none, since its steps are shortcuts in no order) on desktop and Codex. A terminal Button uses its plain native form.
 - The first waiting row opens by default. New rows above it arrive closed. A close or handoff opens the next waiting row. New rows have no arrival bar; Codex animates entry.
 - Both hosts have PRs. Their shared rules fetch and track the same branch and linked PRs, compute readiness and apply presses. Native PR drawing still has adapter composition.
 - The desktop row Client reserves a side column for its age at narrow widths. Other drawings place the same age in their own row frame or header.
