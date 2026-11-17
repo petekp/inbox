@@ -47,6 +47,8 @@ export type Child = {
    * kinds, and for a delegate nothing has shown working yet.
    */
   delegateState: DelegateState | null
+  /** A delegate's last note, which Herdr shows beside its terminal. Missing or null until one reports it. */
+  summary?: string | null
 }
 
 /** The top of the Status page: what the session is focused on now. */

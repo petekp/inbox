@@ -1,16 +1,8 @@
 import { CLOSED_MARKS, NEEDS_YOU_MARKS } from './help'
 import { RUNNING_PULSE_MS } from './timing'
-import { ROW_PAD_PT } from './layout'
 import { markShape, mutedMarkShape } from './marks'
 import { DARK_TONES, LIGHT_TONES, toneColors, type ToneName } from './tones'
-import {
-  DESKTOP_CELL_PT,
-  DESKTOP_LINE_PT,
-  DESKTOP_MARK_CELLS,
-  FRAME_INSET_PT,
-  UNDO_CELLS,
-  UNDO_HEIGHT_PT,
-} from './pane-sizes'
+import { DESKTOP_CELL_PT, DESKTOP_LINE_PT, UNDO_CELLS, UNDO_HEIGHT_PT } from './pane-sizes'
 
 /**
  * The app draws an Svg as an image, which runs SMIL animation, so the fill moves
@@ -114,10 +106,4 @@ export function runningSvg(now: number, colors: { light: string; dark: string } 
 }
 function escapeXml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-/** An empty Svg the size of a fold line, which gives the fold's `Client` its height in the pane's flow. */
-export function foldSpacerSvg(): string {
-  const width = FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT
-  const height = 2 * ROW_PAD_PT + DESKTOP_LINE_PT
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"/>`
 }
