@@ -2488,7 +2488,7 @@ export const register: Register = on => {
         const noted = noteTurnActivity(s, line)
         if (wasDismissed) return noteDialog(noted, null, asked)
 
-        return outcome.kind === 'answered' ? noteAnsweredDialog(noted, asked, outcome.answer, endedAt) : noted
+        return outcome.kind === 'answered' ? noteAnsweredDialog(noted, asked, outcome, endedAt) : noted
       }).catch(() => undefined)
 
       return ran

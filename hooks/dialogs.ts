@@ -133,6 +133,7 @@ const AFTER_ANSWER = /^ (?:selected preview:\n|notes: |user notes: )/
  * and omp's choice or typed answer.
  */
 const SINGLE_FORMS = [
+  /^User provided custom input:\n((?:  .*(?:\n|$))+)/,
   /^The user responded: ([\s\S]+)$/,
   /^User (?:has )?(?:answered|selected)(?: your questions?)?: ([^"\n].*)/i,
   /^User provided custom input: (.+)/,
@@ -174,6 +175,9 @@ function pairedAnswers(questions: AskedQuestion[], pairs: string): (string | nul
   })
 }
 
+/** What the structured result holds for a question the person gave notes for and chose no option. */
+const NOTES_ONLY_ANSWER = '(notes only)'
+
 /**
  * Each question's answer in a dialog's answer text, or null for a question it leaves unanswered. Text in a form not
  * listed here answers no question, since its words cannot be told from the person's.
@@ -186,9 +190,19 @@ function answersOf(questions: AskedQuestion[], text: string): (string | null)[] 
     const closed = opened ? tail.exec(rest) : null
     if (closed) return pairedAnswers(questions, rest.slice(0, closed.index))
   }
-  const single = questions.length === 1 ? SINGLE_FORMS.map(form => form.exec(trimmed)?.[1]).find(Boolean) : undefined
+  const found = questions.length === 1 ? SINGLE_FORMS.map(form => form.exec(trimmed)?.[1]).find(Boolean) : undefined
+  const single = found?.replace(/^ {2}/gm, '').trimEnd()
 
   return questions.map(() => single ?? null)
+}
+
+/** Each question's answer in Claude Code's structured result, which keys the answers by question text. */
+function structuredAnswers(questions: AskedQuestion[], answers: Record<string, string>): (string | null)[] {
+  return questions.map(q => {
+    const answer = answers[q.question]
+
+    return answer === undefined || answer === NOTES_ONLY_ANSWER ? null : answer
+  })
 }
 
 /** The option `answer` names whole, else `answer` itself, which the person typed in the dialog's own field. */
@@ -203,8 +217,13 @@ function chosenOf(q: AskedQuestion, answer: string): string {
  * closes with that answer, whether the agent recorded it before the dialog or records it later in the turn. The copy
  * of a question it leaves unanswered stays open.
  */
-export function noteAnsweredDialog<S extends Session>(s: S, questions: DialogQuestion[], text: string, now: number): S {
-  const answers = answersOf(questions, text)
+export function noteAnsweredDialog<S extends Session>(
+  s: S,
+  questions: DialogQuestion[],
+  outcome: { answer: string; answers?: Record<string, string> },
+  now: number,
+): S {
+  const answers = outcome.answers ? structuredAnswers(questions, outcome.answers) : answersOf(questions, outcome.answer)
   const added = questions.map((q, index) => {
     const answer = answers[index]?.trim() ? chosenOf(q, answers[index]!) : undefined
 

@@ -1,3 +1,4 @@
+import { CAPTURED_DIALOGS } from './fixtures/ask-user-question-result'
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import type { Closed, Item } from '../types'
@@ -329,4 +330,59 @@ test('a dialog’s answer closes each copy with its own answer in every form Cla
     'Clear the logs?',
   ])
   expect(prompts.find(p => p.includes('"Drop the old column?"'))).toContain('the user dismissed it without answering')
+})
+
+test('a dialog’s structured result closes each copy with its answer, whatever the words around the answers in the text', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.ledgerReply = 'NONE'
+  const stored = () => JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[]; closed: Closed[] } }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  for (const [n, call] of CAPTURED_DIALOGS.entries()) {
+    const title = (question: string) => `${n + 1}. ${question}`
+    const questions = call.result.questions.map(q => ({ ...q, question: title(q.question) }))
+    const answers = Object.fromEntries(Object.entries(call.result.answers).map(([q, a]) => [title(q), a]))
+    w.dialogAnswer = { result: { ...call.result, questions, answers }, text: 'Wording a later Claude Code may use.' }
+    await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text: 'go on', turnId: `t${n}` })
+    for (const q of questions)
+      await $.tool.call({
+        tool: 'mcp__inbox__record',
+        kind: 'question',
+        ask: q.question,
+        options: q.options.map(o => o.label),
+      } as never)
+    await $.tool.call({ tool: 'AskUserQuestion', questions } as never)
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId: `t${n}`, reason: 'answer' })
+    await clock.settle()
+  }
+
+  expect(stored().ledger.closed.map(c => [c.ask, c.outcome])).toEqual([
+    ['1. Which region?', 'eu'],
+    ['1. Which size?', 'small'],
+    ['2. Which size?', 'medium "plus" notes: x'],
+    ['3. Which layout?', 'rail'],
+    ['3. Which size?', 'small'],
+  ])
+  expect(stored().ledger.items.map(i => i.ask)).toEqual(['2. Which layout?'])
+})
+
+test('omp’s multi-line custom input closes the copy with every line, dedented', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.ledgerReply = 'NONE'
+  w.dialogAnswer = { result: {}, text: 'User provided custom input:\n  first line\n  second line\nUser added note: ok' }
+  const stored = () => JSON.parse(w.stored.get('s:session-1')!) as { ledger: { items: Item[]; closed: Closed[] } }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'go on', turnId: 't1' })
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Which name?', options: ['a', 'b'] } as never)
+  await $.tool.call({
+    tool: 'AskUserQuestion',
+    questions: [{ question: 'Which name?', options: [{ label: 'a' }, { label: 'b' }] }],
+  } as never)
+  await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+
+  expect(stored().ledger.closed.map(c => [c.ask, c.outcome])).toEqual([['Which name?', 'first line\nsecond line']])
 })
