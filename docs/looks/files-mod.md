@@ -11,6 +11,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-row-frame.tsx` | Mod only. `desktopFrame`, the frame a desktop row, group title, PR block or Status row draws in: its mark column, side column and padding. |
 | `hooks/pane-asks.tsx` | Mod only. The Asks and Finds tabs: question, task and finding rows, the Needs you and Finds groups, and a tab's empty state. |
 | `hooks/pane-ask-tree.tsx` | Mod only. An open question's or task's context, option lines and Holds up line, hung on one connector in the terminal, and the entries desktop draws on its own lines. |
+| `hooks/pane-desktop-card.tsx` | Mod only. The selected card of an open question or task on desktop when it has a tree: the title, branch and button frames, inside one Box that draws the border, fill and padding. |
 | `hooks/pane-desktop-tree.tsx` | Mod only. A desktop tree line drawn from 1 pt pieces in a frame's mark column, for the Status tree and an open question's tree. |
 | `hooks/pane-rows.tsx` | Mod only. `listRow`, which draws one list row, selected or not, in both looks. |
 | `hooks/pane-title-tint.ts` | Mod only. `newTitleTint` and `closedTitleTint`, the color a row's title takes while its tint lasts, in both looks. |
