@@ -1,8 +1,8 @@
-/* A question's tree line is opaque, the muted text mixed into the row's background, so where a tick meets the trunk no
-   pixel draws twice as bright. */
+/* A question's tree line is opaque, the text color mixed into the row's background, so a pixel two strokes share draws
+   in the same shade. Codex's muted color is translucent, so the line is not mixed from it. */
 .row {
   --row-bg: var(--bg);
-  --tree-line: color-mix(in srgb, var(--muted) 55%, var(--row-bg));
+  --tree-line: color-mix(in srgb, var(--text) 32%, var(--row-bg));
   display: grid;
   grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
   padding: var(--row-pad) var(--edge) var(--row-pad) var(--mark-x);
@@ -263,10 +263,10 @@
   bottom: auto;
   height: calc(var(--above) + var(--tick, 0.8em));
 }
-/* An answer is its button with its note under it, the note starting at the button's label. Its arm meets the button's
-   middle. */
+/* An answer is its button with its note under it, the note starting at the button's label. The button's wrapper draws
+   the arm to the button's middle, however many lines the label takes. On the last answer the trunk stops at the
+   button's top, and the wrapper draws it on to the arm. */
 .body .tree > p.option-choice {
-  --tick: calc(3.5 * var(--unit));
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -274,6 +274,32 @@
 }
 .body .tree > p.option-choice + p.option-choice {
   --above: calc(1px + var(--item-gap));
+}
+.body .tree > p.option-choice.tree-last::before {
+  height: var(--above);
+}
+.option-button {
+  position: relative;
+  display: flex;
+  max-width: 100%;
+}
+.option-button::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--tree-x) - 0.75px);
+  top: calc(50% - 0.75px);
+  width: calc(var(--tree-x) - 6px + 0.75px);
+  border-top: 1.5px solid var(--tree-line);
+  pointer-events: none;
+}
+.tree-last > .option-button::after {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--tree-x) - 0.75px);
+  top: 0;
+  height: 50%;
+  border-left: 1.5px solid var(--tree-line);
+  pointer-events: none;
 }
 .option-choice .option-note {
   display: block;
