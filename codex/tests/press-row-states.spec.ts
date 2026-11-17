@@ -323,7 +323,7 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     await press(block(15), 'Undo')
     assert.ok(block(15).querySelector('.pr-head'))
     assert.ok(isMoving(block(15)))
-    await after(ROW_STATE_MS.closing + 100)
+    await after(ROW_STATE_MS.leaving + 100)
     await after(HEIGHT_SETTLE_MS + 100)
     assert.ok(!isMoving(block(15)))
     await press(block(13), 'Dismiss')

@@ -23,7 +23,7 @@ import {
   mixInto,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
-import { SLIDE_PX } from '../../hooks/row-motion'
+import { SLIDE_PX, enterDelayMs } from '../../hooks/row-motion'
 import { HEIGHT_SPRING } from '../../hooks/springs'
 
 /** A group's Closed fold, which ends its list. */
@@ -168,11 +168,11 @@ export function fitEl(key: string, p: Paint, el: Element, isPaneSized = false): 
 }
 
 /**
- * The height a row's title box moves to: one line unless the row is open, else the title's measured height, which is
- * undefined until its first measure.
+ * The height a row's title box moves to: one line unless the row is open or a closing row holds its height, else the
+ * title's measured height, which is undefined until its first measure.
  */
 const titleHeightOf = (r: RowBlock, p: Paint): number | undefined =>
-  isOpenRow(r) ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
+  isOpenRow(r) || p.motion.get(r.id)?.isHeightHeld ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
 
 /**
  * A row's title in a box whose height springs to `titleHeightOf`. The box clips, so a title that keeps its wrap while
@@ -362,7 +362,8 @@ function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): E
 /**
  * Each block in a box that never shrinks, with its space above it. Every distance that can change is the height of a
  * box whose spring is declared in every draw: the space, and the content. So a move that starts while another glides
- * starts where each box is drawn. A block that enters or leaves also fades its own drawing over the same move's length.
+ * starts where each box is drawn. A block that enters or leaves also fades its own drawing: out while its space holds,
+ * and in once its space is nearly open.
  * The path's line and the tree columns beside it do not fade, so they stay whole past a block that comes or goes. The
  * list scrolls in a box of fixed height, and a block that could shrink loses its space, or the end of its text,
  * whenever the list overflows.
@@ -381,15 +382,17 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const comesIn = runsIn(b)
     const intoSpace = [...comesIn, ...passes.filter(c => !comesIn.some(o => o.depth === c.depth))]
     const m = p.motion.get(b.id)
-    const isOpen = m?.box === 'open' && fitHeight(b, m, p) !== undefined
-    const fade = (e: Element): Element =>
-      m?.box ? e.opacity(isOpen ? 1 : 0).transition('opacity', { duration: m.fadeMs, easing: 'ease-out' }) : e
+    const height = fitHeight(b, m, p)
+    const isShown = m?.box === 'open' && m.isShown && height !== undefined
+    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height) : 0
+    const glide = { duration: m?.fadeMs ?? 0, delay, easing: 'ease-out' as const }
+    const fade = (e: Element): Element => (m?.box ? e.opacity(isShown ? 1 : 0).transition('opacity', glide) : e)
     const slide = (e: Element): Element =>
       m?.box
         ? e
             .relative()
-            .top(isOpen ? 0 : -SLIDE_PX)
-            .transition('top', { duration: m.fadeMs, easing: 'ease-out' })
+            .top(isShown ? 0 : -SLIDE_PX)
+            .transition('top', glide)
         : e
 
     return v_flex()

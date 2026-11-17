@@ -201,14 +201,14 @@
 .status-page .milestone-group + .row.part-line {
   margin-top: calc(var(--section-gap) / 2 - var(--row-above-pad, calc(var(--item-gap) / 2)) - var(--status-row-pad));
 }
-/* A connector fades with the rows it ties together. It fades in as it is drawn and out through a leaving class while the rows
-   leave, both for `--space-fade`, as the rows do. The arm of a row that leaves alone fades through `arm-leaving`,
-   and the column the row passes beside stays. */
+/* A connector fades with the rows it ties together. It fades in for `--enter-fade` as it is drawn, once a line's
+   space is nearly open, and out for `--leave-fade` through a leaving class while the rows leave, as the rows do. The
+   arm of a row that leaves alone fades through `arm-leaving`, and the column the row passes beside stays. */
 .status-page .row.milestone.connector-down::before,
 .status-page .work-joint::before,
 .status-page .work-joint::after,
 .status-page .row.has-children::before {
-  transition: opacity var(--space-fade);
+  transition: opacity var(--enter-fade);
 }
 @starting-style {
   .status-page .row.milestone.connector-down::before,
@@ -221,7 +221,7 @@
 .status-page .connector-leaving::before,
 .status-page .arm-leaving::after {
   opacity: 0;
-  transition: opacity var(--space-fade);
+  transition: opacity var(--leave-fade);
 }
 /* The path's line, from under a milestone's mark to the next milestone's mark, through the space above that one. */
 .status-page .milestone-group.path-continues::before,

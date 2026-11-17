@@ -25,6 +25,7 @@ export type Painted = {
   }
   springs: Set<string>
   transitions: Map<string, number>
+  delays: Map<string, number>
   onSize: ((size: { width: number; height: number }, cx: unknown) => void) | null
 }
 
@@ -124,6 +125,7 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
     style: {},
     springs: new Set(),
     transitions: new Map(),
+    delays: new Map(),
     onSize: null,
   }
   const adopt = (kid: unknown) => {
@@ -162,6 +164,7 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
           if (key === 'absolute') node.style.isAbsolute = true
           if (key === 'spring') node.springs.add(String(first))
           if (key === 'transition') node.transitions.set(String(first), (second as { duration: number }).duration)
+          if (key === 'transition') node.delays.set(String(first), (second as { delay?: number }).delay ?? 0)
           if (key === 'on_size_change') node.onSize = first as Painted['onSize']
 
           return proxy

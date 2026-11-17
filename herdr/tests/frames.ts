@@ -9,20 +9,21 @@ const { blockEl } = await import('../src/paint-blocks')
 const { moveRows, NO_TRACKS } = await import('../src/motion')
 const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
-const { LINE } = await import('../src/paint-theme')
+const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
 
 const FRAME_MS = 16
 const PANE_WIDTH = 300
 const WRAP_AT = 40
-const BLANK_MIN_HEIGHT = 2
-const BLANK_MAX_OPACITY = 0.05
+const CUT_MAX_OPACITY = 0.2
+const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 
 type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
 type Jump = { at: number; id: string; by: number }
 type TitleForm = { at: number; id: string; isCut: boolean; box: number; isBoxResting: boolean }
 type ColumnGap = { at: number; id: string; x: number; y: number }
-type Blank = { at: number; id: string; height: number; opacity: number }
+type Cut = { at: number; box: string; text: string; share: number; opacity: number }
+type Fading = { at: number; id: string; height: number; opacity: number }
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
 
 const linesOf = (n: Painted): number =>
@@ -168,6 +169,35 @@ function easeOut(x: number): number {
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
 
+/** The id of the nearest box that holds `n`, or null. */
+function boxOf(n: Painted): string | null {
+  for (let up: Painted | null = n; up; up = up.parent) if (up.id?.startsWith('box ')) return up.id
+  return null
+}
+
+/** Whether a clipping edge `hidden` px into lines `line` px tall cuts through a line's letters, not only its leading. */
+const isThroughLetters = (hidden: number, line: number): boolean =>
+  hidden % line > LEADING_PX && hidden % line < line - LEADING_PX
+
+/** Each text that a clipping box around it cuts through its letters, with the share of it the box shows. */
+function cutTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[] {
+  return [...placed].flatMap(([n, b]) => {
+    if (n.text === null || n.kids.some(k => !k.style.isAbsolute) || b.height <= 0) return []
+    let top = b.top
+    let bottom = b.top + b.height
+    for (let up = n.parent; up; up = up.parent) {
+      const clip = placed.get(up)
+      if (!up.style.isClipped || !clip) continue
+      top = Math.max(top, clip.top)
+      bottom = Math.min(bottom, clip.top + clip.height)
+    }
+    const line = b.height / linesOf(n)
+    const isCut = bottom > top && (isThroughLetters(top - b.top, line) || isThroughLetters(b.top + b.height - bottom, line))
+
+    return isCut ? [{ node: n, share: (bottom - top) / b.height }] : []
+  })
+}
+
 /** The opacity of the content of each block's box that fades. A change of the declared opacity starts an eased fade. */
 class Fades {
   states = new Map<string, Fade>()
@@ -181,9 +211,10 @@ class Fades {
         seen.add(inBox)
         const state = this.states.get(inBox)
         const to = n.style.opacity
+        const delay = n.delays.get('opacity') ?? 0
         if (!state) this.states.set(inBox, { shown: to, from: to, target: to, elapsed: duration, duration })
         else if (to !== state.target)
-          this.states.set(inBox, { ...state, from: state.shown, target: to, elapsed: 0, duration })
+          this.states.set(inBox, { ...state, from: state.shown, target: to, elapsed: -delay, duration })
         return n.kids.forEach(k => walk(k, null))
       }
       n.kids.forEach(k => walk(k, inBox))
@@ -195,7 +226,7 @@ class Fades {
   step(ms: number) {
     for (const s of this.states.values()) {
       s.elapsed = Math.min(s.duration, s.elapsed + ms)
-      s.shown = s.from + (s.target - s.from) * easeOut(s.elapsed / s.duration)
+      s.shown = s.from + (s.target - s.from) * easeOut(Math.max(0, s.elapsed) / s.duration)
     }
   }
 }
@@ -213,7 +244,8 @@ class Frames {
   gaps: ColumnGap[] = []
   listHeights: number[] = []
   slides: number[][] = []
-  blanks: Blank[] = []
+  cuts: Cut[] = []
+  fading: Fading[] = []
 
   draw(blocks: Block[], now: number) {
     const isFirst = this.last === null
@@ -251,10 +283,12 @@ class Frames {
     const shown = this.springs.shown()
     this.fades.declare(tree)
     const { boxes, sized, placed } = layout(tree, id => shown.get(id))
-    for (const [id, fade] of this.fades.states) {
-      const height = boxes.get(id)?.height ?? 0
-      if (height >= BLANK_MIN_HEIGHT && fade.shown < BLANK_MAX_OPACITY)
-        this.blanks.push({ at: now, id, height, opacity: fade.shown })
+    for (const [id, fade] of this.fades.states)
+      this.fading.push({ at: now, id, height: boxes.get(id)?.height ?? 0, opacity: fade.shown })
+    for (const { node, share } of cutTexts(placed)) {
+      const box = boxOf(node)
+      const opacity = box === null ? 1 : (this.fades.states.get(box)?.shown ?? 1)
+      if (opacity >= CUT_MAX_OPACITY) this.cuts.push({ at: now, box: box ?? '', text: node.text ?? '', share, opacity })
     }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
@@ -291,10 +325,18 @@ class Frames {
 export function framesOf(
   steps: [number, Block[]][],
   ms = 1500,
-): { jumps: Jump[]; titles: TitleForm[]; gaps: ColumnGap[]; heights: number[]; slides: number[][]; blanks: Blank[] } {
+): {
+  jumps: Jump[]
+  titles: TitleForm[]
+  gaps: ColumnGap[]
+  heights: number[]
+  slides: number[][]
+  cuts: Cut[]
+  fading: Fading[]
+} {
   const frames = new Frames()
   const [first] = steps
-  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], blanks: [] }
+  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [] }
   const start = 1_000_000
   for (let at = -500; at < ms; at += FRAME_MS) {
     const step = steps.findLast(([from]) => at >= from) ?? first
@@ -307,7 +349,8 @@ export function framesOf(
     gaps: frames.gaps.map(g => ({ ...g, at: g.at - start })),
     heights: frames.listHeights,
     slides: frames.slides,
-    blanks: frames.blanks.map(b => ({ ...b, at: b.at - start })),
+    cuts: frames.cuts.map(c => ({ ...c, at: c.at - start })),
+    fading: frames.fading.map(f => ({ ...f, at: f.at - start })),
   }
 }
 

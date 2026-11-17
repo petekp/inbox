@@ -2,7 +2,7 @@ import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
 import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
-import { ROW_FADE_MS } from '../../hooks/row-motion'
+import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import { STALL_GAP } from '../../hooks/status-page'
 import { isOpenRow } from './blocks'
 import type { Block, Button, Field, LineBlock, PrBlock, RowBlock, StatusLine } from './blocks'
@@ -270,7 +270,9 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   if (parts.length === 0) return []
   const key = panelId(r.id)
   const opacity = m?.panel ?? null
-  const glide = { duration: ROW_FADE_MS[m?.state ?? 'open'], easing: 'ease-out' as const }
+  const state = m?.state ?? 'open'
+  const delay = state === 'opening' ? enterDelayMs(p.heights.get(key) ?? 0) : 0
+  const glide = { duration: ROW_FADE_MS[state], delay, easing: 'ease-out' as const }
 
   return [
     v_flex()

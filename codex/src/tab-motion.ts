@@ -2,13 +2,14 @@ import { atEndWeight } from './weight-ease'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import * as layout from '../../hooks/layout'
 import {
+  ENTER_FADE_MS,
+  enterDelayMs,
   FADE_MS,
   isMoving,
+  LEAVE_FADE_MS,
   LINE_RETURN_FADE_MS,
   ROW_STATE_MS,
-  SPACE_FADE_MS,
   slideOffset,
-  spaceOpacity,
 } from '../../hooks/row-motion'
 import type { RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames, springStep } from '../../hooks/springs'
@@ -51,11 +52,17 @@ export function measure(): Drawing {
 type Size = 'height' | 'width'
 
 /**
- * A size move under way: where its spring started, where it goes, and the animation that plays it. An element that
- * comes or goes also scales its vertical padding and top margin with its height, so it truly grows from and shrinks
- * to no height.
+ * A size move under way: where its spring started, where it goes, how long it waits to start, and the animation that
+ * plays it. An element that comes or goes also scales its vertical padding and top margin with its height, so it truly
+ * grows from and shrinks to no height.
  */
-type Glide = { size: Size; from: SpringState; to: number; anim: Animation; scalesEdges: boolean; xs: number[] }
+type Glide = { size: Size; from: SpringState; to: number; delay: number; anim: Animation; scalesEdges: boolean }
+
+/**
+ * How long every height move in this draw waits, in ms: while a block that leaves holds its space as its content fades,
+ * nothing else changes height, so nothing grows into the list before that space starts to close.
+ */
+let heightWaitMs = 0
 const glides = new WeakMap<HTMLElement, Glide>()
 
 function play(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions): Animation {
@@ -79,8 +86,9 @@ const isRunning = (a: Animation | undefined) => a?.playState === 'running'
 function springOf(el: HTMLElement, size: number): SpringState {
   const g = glides.get(el)
   if (!g || !isRunning(g.anim)) return { x: size, v: 0 }
+  const ms = Number(g.anim.currentTime ?? 0) - g.delay
 
-  return springStep(g.from, g.to, Number(g.anim.currentTime ?? 0))
+  return ms < 0 ? { x: g.from.x, v: 0 } : springStep(g.from, g.to, ms)
 }
 
 const EDGES = ['paddingTop', 'paddingBottom', 'marginTop'] as const
@@ -99,10 +107,18 @@ function sizeFrames(size: Size, xs: number[], edges: number[] | null, full: numb
 }
 
 /**
- * Moves an element's size on the spring from `from` to `to`. `hold` keeps it at `to` once there, until released.
- * `comesOrGoes` marks an element growing in from nothing or shrinking away.
+ * Moves an element's size on the spring from `from` to `to`, after `delay` ms. `hold` keeps it at `to` once there,
+ * until released. `comesOrGoes` marks an element growing in from nothing or shrinking away.
  */
-function glide(el: HTMLElement, size: Size, from: SpringState, to: number, hold = false, comesOrGoes = false) {
+function glide(
+  el: HTMLElement,
+  size: Size,
+  from: SpringState,
+  to: number,
+  hold = false,
+  comesOrGoes = false,
+  delay = size === 'height' ? heightWaitMs : 0,
+) {
   const was = glides.get(el)
   const scalesEdges = size === 'height' && (comesOrGoes || (isRunning(was?.anim) && was!.scalesEdges))
   was?.anim.cancel()
@@ -112,10 +128,11 @@ function glide(el: HTMLElement, size: Size, from: SpringState, to: number, hold 
   if (xs.length < 2) xs.push(to)
   const anim = play(el, sizeFrames(size, xs, edges, Math.max(from.x, to)), {
     duration: (xs.length - 1) * FRAME_MS,
+    delay,
     easing: 'linear',
-    fill: hold ? 'forwards' : 'none',
+    fill: fillOf(hold, delay),
   })
-  glides.set(el, { size, from, to, anim, scalesEdges, xs })
+  glides.set(el, { size, from, to, delay, anim, scalesEdges })
 }
 
 /** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. Measured at the end weights. */
@@ -141,42 +158,21 @@ const slides = new WeakSet<HTMLElement>()
 const frameOf = (opacity: number, slides: boolean): Keyframe =>
   slides ? { opacity, transform: `translateY(${slideOffset(opacity)}px)` } : { opacity }
 
-function fade(el: HTMLElement, from: number, to: number, ms: number, hold = false, slide = false) {
+/** A move that waits draws its first frame while it waits, and one that holds keeps its last. */
+const fillOf = (hold: boolean, delay: number): FillMode =>
+  hold && delay > 0 ? 'both' : hold ? 'forwards' : delay > 0 ? 'backwards' : 'none'
+
+function fade(el: HTMLElement, from: number, to: number, ms: number, hold = false, slide = false, delay = 0) {
   fades.get(el)?.anim.cancel()
   if (slide) slides.add(el)
   const isSliding = slides.has(el)
   if (isSliding) el.style.pointerEvents = to === 0 ? 'none' : ''
   const anim = play(el, [frameOf(from, isSliding), frameOf(to, isSliding)], {
     duration: ms,
+    delay,
     easing: FADE_EASING,
-    fill: hold ? 'forwards' : 'none',
+    fill: fillOf(hold, delay),
   })
-  fades.set(el, { to, anim })
-}
-
-/**
- * Fades an element that enters or leaves along its own height glide, so its content shows for as long as its space
- * does: each frame's opacity is `spaceOpacity` of that frame's height. A fade that starts part way, as a move turned
- * back does, never jumps: leaving stays at or under the opacity it had, entering at or over it.
- */
-function fadeWithSpace(el: HTMLElement, from: number, to: 0 | 1) {
-  const g = glides.get(el)
-  if (!g) return fade(el, from, to, SPACE_FADE_MS, to === 0, true)
-  fades.get(el)?.anim.cancel()
-  slides.add(el)
-  el.style.pointerEvents = to === 0 ? 'none' : ''
-  const full = Math.max(g.from.x, g.to)
-  const opacities = g.xs.map((x, i) => {
-    if (i === g.xs.length - 1) return to
-    const share = spaceOpacity(x, full)
-
-    return to === 0 ? Math.min(from, share) : Math.max(from, share)
-  })
-  const anim = play(
-    el,
-    opacities.map(o => frameOf(o, true)),
-    { duration: (g.xs.length - 1) * FRAME_MS, easing: 'linear', fill: to === 0 ? 'forwards' : 'none' },
-  )
   fades.set(el, { to, anim })
 }
 
@@ -186,9 +182,21 @@ const isFadingIn = (el: HTMLElement) => {
   return f !== undefined && f.to === 1 && isRunning(f.anim)
 }
 
+/**
+ * Grows an element in from `from`, then fades its content in once its space is nearly open. Content already partly
+ * shown, as in a leave turned back, fades back in at once.
+ */
 function growIn(el: HTMLElement, from: SpringState, opacity: number) {
-  glide(el, 'height', from, naturalHeight(el), false, true)
-  fadeWithSpace(el, opacity, 1)
+  const to = naturalHeight(el)
+  glide(el, 'height', from, to, false, true)
+  const waits = opacity > 0.01 ? 0 : enterDelayMs(to - from.x)
+  fade(el, opacity, 1, ENTER_FADE_MS, false, true, heightWaitMs + waits)
+}
+
+/** Fades an element's content out while its space holds, then shrinks the space away. */
+function fadeAway(el: HTMLElement, from: SpringState, slide: boolean) {
+  fade(el, opacityOf(el), 0, LEAVE_FADE_MS, true, slide)
+  glide(el, 'height', from, 0, true, true, LEAVE_FADE_MS)
 }
 
 /**
@@ -202,6 +210,7 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   }
   const carried = new Set<Element>()
   const els = [...root.querySelectorAll<HTMLElement>('[data-motion]')].reverse()
+  heightWaitMs = startsLeave(els, changed) ? LEAVE_FADE_MS : 0
   for (const el of els) {
     if (!el.dataset.closing) moveOne(el, before.heights.get(el.dataset.motion!), changed, carried)
     if (isRunning(glides.get(el)?.anim)) {
@@ -211,6 +220,21 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   }
   glideTabs(before.tabWidths)
   entering.clear()
+  heightWaitMs = 0
+}
+
+/**
+ * Whether a block starts to leave in this draw: an entry whose state turned to `leaving`, or a group's empty note that
+ * starts to leave as its first rows arrive. The note's tab draws again once its fade ends, so it goes then.
+ */
+function startsLeave(els: HTMLElement[], changed: ReadonlySet<string>): boolean {
+  const note = root.querySelector<HTMLElement>('.group-empty.leaving:not([data-fading])')
+  if (note) {
+    note.dataset.fading = '1'
+    later(tabState.draw, LEAVE_FADE_MS)
+  }
+
+  return note !== null || els.some(el => changed.has(el.dataset.motion!) && drawnRows.get(el.dataset.motion!)?.track.state === 'leaving')
 }
 
 function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<string>, carried: Set<Element>) {
@@ -258,9 +282,7 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
       collapse(el, from, state === 'settling' ? openTop : null)
       return true
     case 'leaving':
-      glide(el, 'height', from, 0, true, true)
-      if (isInsideLeaving(el)) fade(el, opacityOf(el), 0, SPACE_FADE_MS, true)
-      else fadeWithSpace(el, opacityOf(el), 0)
+      fadeAway(el, from, !isInsideLeaving(el))
       return true
     default:
       return false
@@ -386,12 +408,11 @@ export function toggleFold(id: string, shown: Set<string>, motion = id) {
   closingFolds.add(motion)
   tabState.draw()
   el.dataset.closing = '1'
-  glide(el, 'height', springOf(el, el.getBoundingClientRect().height), 0, true, true)
-  fadeWithSpace(el, opacityOf(el), 0)
+  fadeAway(el, springOf(el, el.getBoundingClientRect().height), true)
   later(() => {
     if (shown.has(id) || !closingFolds.delete(motion)) return
     tabState.draw()
-  }, HEIGHT_SETTLE_MS)
+  }, LEAVE_FADE_MS + HEIGHT_SETTLE_MS)
 }
 
 /** Scrolls the open row into view, and again once its height has come to rest. */
@@ -430,7 +451,9 @@ export function applyPageVariables() {
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--fade', `${FADE_MS}ms ${FADE_EASING}`)
   document.documentElement.style.setProperty('--settle', `${HEIGHT_SETTLE_MS}ms ease-out`)
-  document.documentElement.style.setProperty('--space-fade', `${SPACE_FADE_MS}ms ${FADE_EASING}`)
+  document.documentElement.style.setProperty('--leave-fade', `${LEAVE_FADE_MS}ms ${FADE_EASING}`)
+  const lineWait = enterDelayMs(layout.LINE_PT)
+  document.documentElement.style.setProperty('--enter-fade', `${ENTER_FADE_MS}ms ${FADE_EASING} ${lineWait}ms`)
   document.documentElement.style.setProperty('--line-return-fade', `${LINE_RETURN_FADE_MS}ms ${FADE_EASING}`)
 }
 

@@ -355,9 +355,11 @@ test('a block that leaves slides its content up by the slide offset as it fades,
   expect(offsets([[0, some]])).toEqual(new Set())
 })
 
-test('a block that enters or leaves is never blank while its box holds space', () => {
+test('no text is cut through its letters while a row or a whole section enters or leaves', () => {
   const some = asks(['d11', 'd12'])
   const fewer = asks(['d11'])
+  const full = asks(ALL)
+  const none = asks([])
   const moves: Record<string, [number, Block[]][]> = {
     leaves: [
       [0, some],
@@ -367,7 +369,31 @@ test('a block that enters or leaves is never blank while its box holds space', (
       [0, fewer],
       [0, some],
     ],
+    fills: [
+      [0, none],
+      [0, full],
+    ],
+    empties: [
+      [0, full],
+      [0, none],
+    ],
   }
   for (const [name, steps] of Object.entries(moves))
-    expect({ name, blanks: framesOf(steps, 800).blanks }).toEqual({ name, blanks: [] })
+    expect({ name, cuts: framesOf(steps, 900).cuts }).toEqual({ name, cuts: [] })
+})
+
+test('a leaving block’s space closes as soon as its content has faded, and not before', () => {
+  const fading = framesOf(
+    [
+      [0, asks(['d11', 'd12'])],
+      [0, asks(['d11'])],
+    ],
+    900,
+  ).fading.filter(f => f.id === 'box d12')
+  const full = fading[0]?.height ?? 0
+  const fadedAt = fading.find(f => f.opacity < 0.05)?.at ?? Infinity
+  const closesAt = fading.find(f => f.height < full - 0.5)?.at ?? Infinity
+  expect(full).toBeGreaterThan(0)
+  expect(closesAt).toBeGreaterThanOrEqual(fadedAt)
+  expect(closesAt - fadedAt).toBeLessThanOrEqual(3 * 16)
 })
