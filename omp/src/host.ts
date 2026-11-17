@@ -362,19 +362,24 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       (tui, theme) => {
         const style = styleOf(theme)
         let screen: PanelScreen | null = null
-        const refresh = () =>
-          inbox
+        let newestRefresh = 0
+        const refresh = () => {
+          const mine = ++newestRefresh
+
+          return inbox
             .screen(ctx)
             .then(next => {
+              if (mine !== newestRefresh) return
               screen = next
               tui.requestRender()
             })
             .catch(() => {
-              if (screen && !screen.isReadFailed) {
+              if (mine === newestRefresh && screen && !screen.isReadFailed) {
                 screen = { ...screen, isReadFailed: true }
                 tui.requestRender()
               }
             })
+        }
         void refresh()
         const stop = inbox.onChange(ctx, () => void refresh())
 

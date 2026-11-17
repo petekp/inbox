@@ -178,7 +178,7 @@ test('the band shows above the editor and redraws with the counts after a change
   expect(band.render(80).join('')).toContain('Nothing needed')
   const before = renders.count
   await record({ kind: 'task', ask: 'Try the CLI by hand' }, ctx)
-  await until(() => renders.count > before)
+  await until(() => band.render(80).join('').includes('Asks'))
   expect(renders.count).toBeGreaterThan(before)
   expect(band.render(80).join('')).toContain('Asks')
   expect(band.render(80).join('')).toContain('/inbox to open')
