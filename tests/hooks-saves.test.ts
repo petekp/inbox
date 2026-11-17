@@ -4,7 +4,7 @@ import { w, world } from './hooks-world'
 import { SAVED_SESSION } from './hooks-helpers'
 import { changeSaved, readSettled, type SaveEngine } from '../hooks/mod-saves'
 
-test('tool calls during a turn leave the saved session alone, and the turn’s update saves it', async ($, on) => {
+test('tool calls during a turn save reminder counts without applying the turn’s update, which saves at its end', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let saves = 0
@@ -20,7 +20,10 @@ test('tool calls during a turn leave the saved session alone, and the turn’s u
   for (const command of ['ls', 'cat package.json', 'npm test'])
     await $.tool.call({ tool: 'Bash', command, description: command } as never)
   await clock.settle()
-  expect(saves).toBe(savesAtStart)
+  expect(saves).toBe(savesAtStart + 3)
+  const savedDuringTurn = JSON.parse(w.stored.get('s:session-1')!) as Session
+  expect(savedDuringTurn.taskReminder.callsSinceTasks).toBe(3)
+  expect(savedDuringTurn.presence.turnsApplied).toBe(0)
 
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()

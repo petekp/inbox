@@ -27,6 +27,11 @@ export function noteRanCall(id: string, tool: string) {
   ranCalls.add(id)
 }
 
+/** Whether this tool call's PostToolUse or PostToolUseFailure ran before the tool.call hook returned. */
+export function sawPostToolCall(id: string | undefined): boolean {
+  return id !== undefined && ranCalls.has(id)
+}
+
 /**
  * Whether a call to `tool` that just ended ran, and forgets it. Claude Code raises PostToolUse or PostToolUseFailure
  * only for a call that ran, never for one a deny rule, the person or a hook blocked. A call counts as run until a call
