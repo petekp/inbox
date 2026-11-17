@@ -234,7 +234,10 @@ function startsLeave(els: HTMLElement[], changed: ReadonlySet<string>): boolean 
     later(tabState.draw, LEAVE_FADE_MS)
   }
 
-  return note !== null || els.some(el => changed.has(el.dataset.motion!) && drawnRows.get(el.dataset.motion!)?.track.state === 'leaving')
+  return (
+    note !== null ||
+    els.some(el => changed.has(el.dataset.motion!) && drawnRows.get(el.dataset.motion!)?.track.state === 'leaving')
+  )
 }
 
 function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<string>, carried: Set<Element>) {

@@ -140,7 +140,9 @@ function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
     case 'open':
       return { state: 'opening', since: now, hasPanel: true }
     case 'closed':
-      return track.state === 'leaving' ? entering('closed', now) : { state: 'closing', since: now, hasPanel: track.hasPanel }
+      return track.state === 'leaving'
+        ? entering('closed', now)
+        : { state: 'closing', since: now, hasPanel: track.hasPanel }
     case 'settled':
       return { state: 'settling', since: now, hasPanel: track.hasPanel }
     case 'gone':

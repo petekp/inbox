@@ -36,7 +36,12 @@ test('a leaving row fades out while its box holds, then its box shuts; an enteri
   const shutAt = NOW + NEXT_FRAME_MS + LEAVE_FADE_MS
   const held = moveRows(without, fading.tracks, shutAt - 1, false)
   const shut = moveRows(without, held.tracks, shutAt, false)
-  expect(leaves.motion.get(row.id)).toMatchObject({ state: 'leaving', box: 'open', isShown: true, fadeMs: LEAVE_FADE_MS })
+  expect(leaves.motion.get(row.id)).toMatchObject({
+    state: 'leaving',
+    box: 'open',
+    isShown: true,
+    fadeMs: LEAVE_FADE_MS,
+  })
   expect(fading.motion.get(row.id)).toMatchObject({ box: 'open', isShown: false })
   expect(held.motion.get(row.id)?.box).toBe('open')
   expect(shut.motion.get(row.id)?.box).toBe('shut')
@@ -44,7 +49,12 @@ test('a leaving row fades out while its box holds, then its box shuts; an enteri
   const enters = moveRows(blocks, moveRows(without, NO_TRACKS, NOW, true).tracks, NOW, false)
   const opens = moveRows(blocks, enters.tracks, NOW + NEXT_FRAME_MS, false)
   expect(enters.motion.get(row.id)).toMatchObject({ state: 'entering', box: 'shut', isShown: false })
-  expect(opens.motion.get(row.id)).toMatchObject({ box: 'open', isShown: true, fadeMs: ENTER_FADE_MS, waitsForSpace: true })
+  expect(opens.motion.get(row.id)).toMatchObject({
+    box: 'open',
+    isShown: true,
+    fadeMs: ENTER_FADE_MS,
+    waitsForSpace: true,
+  })
 })
 
 test('while a block leaves and holds its space, a block that enters in the same draw waits to open', () => {

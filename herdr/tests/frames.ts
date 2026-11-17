@@ -192,7 +192,8 @@ function cutTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[]
       bottom = Math.min(bottom, clip.top + clip.height)
     }
     const line = b.height / linesOf(n)
-    const isCut = bottom > top && (isThroughLetters(top - b.top, line) || isThroughLetters(b.top + b.height - bottom, line))
+    const isCut =
+      bottom > top && (isThroughLetters(top - b.top, line) || isThroughLetters(b.top + b.height - bottom, line))
 
     return isCut ? [{ node: n, share: (bottom - top) / b.height }] : []
   })
