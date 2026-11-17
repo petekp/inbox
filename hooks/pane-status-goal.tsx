@@ -219,7 +219,7 @@ export function paneStatusGoal(
     }
     const name = {
       text: m.name,
-      ...(m.isChanged ? { bold: true as const } : {}),
+      ...(m.isBold ? { bold: true as const } : {}),
       ...(m.isMuted ? { isMuted: true as const } : {}),
     }
 

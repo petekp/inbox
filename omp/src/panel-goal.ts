@@ -236,7 +236,7 @@ function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[]
   }
   const chevron = foldChevron(m, d, isSelected)
   const namePaint = (t: string) =>
-    (m.isMuted ? s.dim : (u: string) => u)(m.isChanged || (chevron && isSelected) ? s.bold(t) : t)
+    (m.isMuted ? s.dim : (u: string) => u)(m.isBold || (chevron && isSelected) ? s.bold(t) : t)
   const [first = '', ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron })
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
   const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]

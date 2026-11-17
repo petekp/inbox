@@ -103,7 +103,7 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
     connector === null ? '' : 'connector-down',
     connector ?? '',
   ]
-  const nameClass = [m.isChanged ? 'changed' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
+  const nameClass = [m.isBold ? 'bold' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
 
   return (
     <div class={classes.filter(Boolean).join(' ')} {...lineMotion(motion)}>
