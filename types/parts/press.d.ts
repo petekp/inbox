@@ -7,6 +7,7 @@
 export type PressKind = 'talk' | 'handoff' | 'local' | 'mark' | 'view'
 
 export type LastAction = {
+  commandId?: string
   kind: Exclude<PressKind, 'view'>
   /** The action's id, as `actionId` makes it, so that action reads "… again". */
   action: string

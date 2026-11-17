@@ -1,0 +1,35 @@
+use SessionEntry, sessionLabel from "./model.contract"
+
+component SessionList
+  props
+    entries: SessionEntry[]
+    search: string
+    selected: string
+    error: string
+    loading: bool
+    rail: bool
+    restoreTop: number
+    onScroll: action
+    onSearch: action
+    onSelect: action
+  view
+    list scroll=onScroll scrollTop=restoreTop appearance="auto" listStyle="plain" flex=1 min-height=0 testId=(rail ? "rail-list" : "sessions-list")
+      section
+        row
+          input value=search input=onSearch placeholder="Find a session" aria-label="Find a session" flex=1
+        if error != ""
+          row
+            text error color="-exact-system-red"
+        for s in entries key=s.id
+          button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` background-color=(selected == s.id ? "-exact-tertiary-fill" : "transparent")
+            row padding=12
+              column flex=1 gap=4
+                text s.name
+                text (s.project != "" ? `${s.project} · ${s.agent}` : s.agent) font="-exact-subheadline" color="-exact-secondary-label"
+                if s.duplicate
+                  text s.location font="-exact-footnote" color="-exact-secondary-label"
+                text s.host font="-exact-footnote" color="-exact-secondary-label"
+                text sessionLabel(s) font="-exact-footnote" color="-exact-secondary-label"
+        if entries.length == 0
+          row
+            text (loading ? "Reading your sessions…" : error != "" ? error : "No matching sessions.")

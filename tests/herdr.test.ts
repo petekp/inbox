@@ -122,14 +122,15 @@ describe('herdrLabels', () => {
 })
 
 describe('herdrEnvelope', () => {
-  test("keeps every shared session field and drops the host's own", () => {
+  test('keeps presentation state and omits private command and viewer records', () => {
     const session = emptySession()
+    const { remoteCommands: _commands, remoteViewers: _viewers, remoteCommandFloor: _floor, ...presentation } = session
     const hostState = { ...session, herdrReport: { seq: 4 }, revision: 9 }
 
     expect(JSON.parse(JSON.stringify(herdrEnvelope(SOURCE, hostState)))).toEqual({
       format: 1,
       ...SOURCE,
-      session: JSON.parse(JSON.stringify(session)),
+      session: JSON.parse(JSON.stringify(presentation)),
     })
   })
 

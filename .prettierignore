@@ -25,3 +25,7 @@ evals/baselines.json
 # Ends in an open <plaintext> element that holds the JSON an agent appends.
 # Prettier would close it, and the appended data would land after </html>.
 hooks/compare-page.html
+
+prototypes/exact-inbox/.exact/
+prototypes/exact-inbox/.vscode/
+prototypes/exact-inbox/app.contract.d.ts

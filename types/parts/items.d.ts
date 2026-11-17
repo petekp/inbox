@@ -103,4 +103,5 @@ export type Closed = {
   /** A Done notification that may have reached the agent, so Undo cannot retract it. */
   isSentToAgent?: true
   doneNotification?: { id: string; error?: string }
+  commandId?: string
 }

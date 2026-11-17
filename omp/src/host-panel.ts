@@ -134,7 +134,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       return outcome
     },
     herdrFile: async (ctx, file) => {
-      if ((await applyHerdrFile(hostFor(ctx), file)).wakesAfterSettle) wakeLater(ctx)
+      if ((await applyHerdrFile(hostFor(ctx), file, sessionIdOf(ctx))).wakesAfterSettle) wakeLater(ctx)
     },
     resume: ctx => sendToAgent(ctx, RESUME_TEXT),
     collapse: async (ctx, row, isCollapsed) => {

@@ -269,7 +269,17 @@ import {
 import { withCollapse } from './collapse'
 import { foldAllOn } from './fold-all'
 import { desktopSpaceLines } from './pane-status-tops'
-import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import {
+  changeSaved,
+  isLastSaveRefused,
+  readRemoteState,
+  readDurableSession,
+  readSaved,
+  readSettled,
+  readSettledSession,
+  save,
+  type SaveEngine,
+} from './mod-saves'
 import { type HistoryEngine, withHistory } from './mod-history'
 import { runningSessions } from './running-sessions'
 import { paneAskRows, paneAskTabs } from './pane-asks'
@@ -391,14 +401,24 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
 
     const root = (await sessionFolder(commandCalls($))) ?? ''
 
-    return { id: conversation.id, root, session, dialogs, isUnread: unreadable === conversation.id }
+    return {
+      id: conversation.id,
+      root,
+      session,
+      dialogs,
+      ...(await readRemoteState(saveEngine($), conversation.id, session)),
+      isUnread: unreadable === conversation.id,
+    }
   })
 }
 
 /** Applies a Herdr look's press. False when it is for another conversation. */
 async function herdrPress($: EngineInterface, id: string, f: HerdrFile): Promise<boolean> {
   if (id !== conversation.id) return false
-  if ((await applyHerdrFile(hostOf($, currentOwner(), 'terminal'), f)).wakesAfterSettle)
+  if (
+    (await applyHerdrFile({ ...hostOf($, currentOwner(), 'terminal'), refreshPrsIfDue: () => pollPrs($, true) }, f, id))
+      .wakesAfterSettle
+  )
     later($, SETTLED_MS, () => wakeAfterSettle($))
 
   return true
@@ -578,7 +598,10 @@ async function changeSession(
     // leaves the saved copy alone.
     const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
     const shown = await read($, SHOWN)
-    const kept = pruned({ ...changed, heldRows: [...held], shownSince: shown && !shown.isDemo ? shown.since : null })
+    const kept = pruned(
+      { ...changed, heldRows: [...held], shownSince: shown && !shown.isDemo ? shown.since : null },
+      Object.keys(changed.remoteViewers).length > 0 ? await $.clock.now() : 0,
+    )
     let landed: ModSession | null = null
     await update($, SESSION, cur => {
       if (!isCurrent(owner) || cur.revision !== drawn.revision) {
@@ -721,9 +744,9 @@ function sessionHost(
     now: () => $.clock.now(),
     read: async () => {
       if (isCurrent(owner)) return upgradeSession(await read($, SESSION))
-      const saved = await readSettled(saveEngine($), owner.id)
-      return saved?.session ? upgradeSession(saved.session) : emptySession()
+      return readSettledSession(saveEngine($), owner.id)
     },
+    readDurable: () => readDurableSession(saveEngine($), owner.id),
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
     ask: (prompt, system, _kind, report) => askInboxModel($, prompt, system, 45_000, report),
@@ -1680,15 +1703,20 @@ async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   void followNewRows($).catch(() => undefined)
 }
 
-async function pollPrs($: EngineInterface) {
+async function pollPrs($: EngineInterface, remote = false) {
   const [away, session, isTabShown, now] = await Promise.all([
     read($, AWAY),
     read($, SESSION),
     isPrsTabShown($),
     $.clock.now(),
   ])
-  const poll = { lastFetchedAt: mod.prFetchEndedAt, now, isTabShown, isAway: away.isAway }
-  if (isPrPollDue(session, poll)) await fetchPrs($, isTabShown)
+  const poll = {
+    lastFetchedAt: mod.prFetchEndedAt,
+    now,
+    isTabShown: isTabShown || remote,
+    isAway: away.isAway && !remote,
+  }
+  if (isPrPollDue(session, poll)) await fetchPrs($, poll.isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T20:37:53.099Z. 268787 characters follow.
+// Built at 2026-11-17T05:33:28.472Z. 269119 characters follow.
 
 // src/main.ts
 import { View, div as div8 } from "gpui-kit";
@@ -2601,6 +2601,9 @@ function emptySession() {
     pending: [],
     sent: [],
     lastActions: {},
+    remoteCommands: {},
+    remoteCommandFloor: 0,
+    remoteViewers: {},
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -2654,6 +2657,9 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    remoteCommands: saved.remoteCommands ?? {},
+    remoteCommandFloor: saved.remoteCommandFloor ?? 0,
+    remoteViewers: saved.remoteViewers ?? {},
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     collapsed: saved.collapsed ?? {},
@@ -2700,7 +2706,7 @@ var COUNT_TOKENS = {
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var SESSION_LABEL = "inbox.session";
 var HERDR_FORMAT = 1;
-var SESSION_FIELDS = Object.keys(emptySession());
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor");
 function publishedSessionsFolder(appHome) {
   return `${appHome}/inbox/sessions`;
 }
