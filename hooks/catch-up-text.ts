@@ -29,8 +29,12 @@ export function transcriptCatchUpPrompt(ledger: Ledger, screen: string, transcri
 
 const MAX_ACTIVITY = 40
 
+/** The turn's activity with `line` last. A full list drops its oldest line, and a repeated line moves to the end. */
 export function addActivity(activity: string[], line: string | null): string[] {
-  return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line]
+  if (!line || activity[activity.length - 1] === line) return activity
+  const others = activity.filter(seen => seen !== line)
+
+  return [...others, line].slice(-MAX_ACTIVITY)
 }
 
 export function toolActivity(tool: string, input: Record<string, unknown>): string | null {

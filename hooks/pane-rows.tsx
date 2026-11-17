@@ -1,7 +1,8 @@
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { isStatusUnderActions } from './feedback'
 import { paneState } from './mod-state'
-import { type AskEntry, paneAskTree } from './pane-ask-tree'
+import { paneAskTree } from './pane-ask-tree'
+import { paneDesktopCard } from './pane-desktop-card'
 import { paneDesktopTree } from './pane-desktop-tree'
 import { newTitleTint } from './pane-title-tint'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
@@ -17,8 +18,6 @@ import {
   DESKTOP_MARK_CELLS,
   DESKTOP_REPLY_ROWS,
   fieldRows,
-  DESKTOP_ARM_GAP,
-  DESKTOP_TREE_AT,
   FRAME_INSET_PT,
   REPLY_ROWS,
   SELECTED_GAP_PT,
@@ -126,6 +125,17 @@ export function paneRows(
     { branch },
   )
   const { desktopTreeLine } = paneDesktopTree({ Box, desktopHairline, pal })
+  const desktopCard = paneDesktopCard({
+    Box,
+    Text,
+    pal,
+    space,
+    blankLine,
+    desktopFrame,
+    desktopTreeLine,
+    gutterMark,
+    sideAge,
+  })
   const listRow = (row: Row, tree: TreePos) => {
     const columns = columnsFor(row)
     const index = indexOf.get(row.id) ?? -1
@@ -310,81 +320,15 @@ export function paneRows(
       </Text>
     )
     const selectedGapY = (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT
-    if (isDesktopTree) {
-      const heads = treeEntries.filter(en => en.key === 'context' || en.key === 'earlier')
-      const groups = treeEntries
-        .filter(en => !heads.includes(en))
-        .reduce<AskEntry[][]>(
-          (all, en) => (en.pos === 'pass' ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
-          [],
-        )
-      const hungMarkCenter = DESKTOP_TREE_AT - 1
-      const textAt = DESKTOP_MARK_CELLS
-      const line = (en: AskEntry) => (
-        <Text key={en.key} wrap="wrap">
-          {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
-          {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
-          <Text color={pal.muted}>{en.rest}</Text>
-        </Text>
-      )
-      const treeBox = (key: string, shape: 'down' | 'mid' | 'last', edge: number) =>
-        desktopTreeLine(key, shape, {
-          at: hungMarkCenter,
-          arm: textAt - DESKTOP_ARM_GAP - hungMarkCenter,
-          edge,
-        })
-
-      return (
-        <Box key={`row-${row.id}`} flexDirection="column" marginY={selectedGapY} position="relative">
-          <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />
-          {desktopFrame({
-            key: `row-${row.id}-title`,
-            markCells: DESKTOP_MARK_CELLS,
-            mark: gutterMark(row),
-            side: <Text color={pal.age}>{sideAge(row)}</Text>,
-            fill: pal.selection,
-            tree: treeBox(`row-${row.id}-trunk`, 'down', space.rowPad),
-            children: [
-              desktopTitle,
-              row.subtitle ?? null,
-              row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
-              heads.length > 0 ? (
-                <Box flexDirection="column" marginTop={blankLine}>
-                  {heads.map(line)}
-                </Box>
-              ) : null,
-            ],
-          })}
-          {groups.map(group =>
-            desktopFrame({
-              key: `row-${row.id}-${group[0]!.key}`,
-              markCells: DESKTOP_MARK_CELLS,
-              fill: pal.selection,
-              padY: 0,
-              tree: treeBox(`row-${row.id}-${group[0]!.key}-tree`, group[0]!.pos === 'last' ? 'last' : 'mid', 0),
-              children: group.map(line),
-            }),
-          )}
-          {desktopFrame({
-            key: `row-${row.id}-keys`,
-            markCells: DESKTOP_MARK_CELLS,
-            fill: pal.selection,
-            children: [
-              status.length > 0 ? (
-                <Box flexDirection="column" marginTop={blankLine}>
-                  {status.map(st => (
-                    <Text color={st.color} wrap="wrap">
-                      {st.text}
-                    </Text>
-                  ))}
-                </Box>
-              ) : null,
-              keysBlock,
-            ],
-          })}
-        </Box>
-      )
-    }
+    if (isDesktopTree)
+      return desktopCard({
+        row,
+        entries: treeEntries,
+        title: desktopTitle,
+        status,
+        keys: keysBlock,
+        gapY: selectedGapY,
+      })
     if (look === 'desktop' && isSelected)
       return (
         <Box key={`row-${row.id}`} flexDirection="column">

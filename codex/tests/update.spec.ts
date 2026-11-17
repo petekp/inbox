@@ -203,7 +203,7 @@ test('an Explain exchange keeps its question open while applying the rest of the
   assert.deepEqual(applied.pending, [])
 })
 
-test('a finished turn gives the inbox model at most forty distinct nonempty activity lines', async () => {
+test('a finished turn gives the inbox model its latest forty distinct nonempty activity lines', async () => {
   const dir = tempDir()
   const lines = Array.from({ length: 45 }, (_, i) => `edited file-${i}.ts`)
   await updateState(dir, 's1', s => {
@@ -212,7 +212,7 @@ test('a finished turn gives the inbox model at most forty distinct nonempty acti
     return endTurn(active, 'Done.', 2)
   })
   const finished = await readState(dir, 's1')
-  assert.deepEqual(finished.pending[0]?.ex.activity, lines.slice(0, 40))
+  assert.deepEqual(finished.pending[0]?.ex.activity, lines.slice(5))
   assert.deepEqual(finished.turn.activity, [])
 })
 
