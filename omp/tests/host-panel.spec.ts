@@ -27,7 +27,9 @@ test('opening the panel finds gh missing when no gh starts', async () => {
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await inbox.openPanel(makeCtx(), w.clock)
   await settle()
-  expect((await inbox.screen(makeCtx())).isGhMissing).toBe(true)
+  const screen = await inbox.screen(makeCtx())
+  expect(screen.isGhMissing).toBe(true)
+  expect(screen.view.prs.refresh?.actions.map(a => a.label)).toEqual(['Refresh PRs'])
 })
 
 test('opening the panel does not find gh missing when every gh run times out', async () => {
@@ -176,7 +178,7 @@ test('the band shows above the editor and redraws with the counts after a change
   expect(band.render(80).join('')).toContain('Nothing needed')
   const before = renders.count
   await record({ kind: 'task', ask: 'Try the CLI by hand' }, ctx)
-  await until(() => renders.count > before)
+  await until(() => band.render(80).join('').includes('Asks'))
   expect(renders.count).toBeGreaterThan(before)
   expect(band.render(80).join('')).toContain('Asks')
   expect(band.render(80).join('')).toContain('/inbox to open')

@@ -139,6 +139,7 @@ async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): P
 }
 
 export type PressOutcome = {
+  /** The text of a copy the host could not run, for the look to show for copying by hand. */
   copy: { text: string; name: string } | null
   error: string | null
   note: RowNote['note'] | null
@@ -275,8 +276,10 @@ export async function startPress<S extends Session>(
         await host.refreshPrs()
         return why
       }
-      if (e.kind === 'copy') copy = { text: e.text, name: e.name }
-      return host.perform(await host.read(), e)
+      const why = await host.perform(await host.read(), e)
+      if (e.kind === 'copy' && why !== null) copy = { text: e.text, name: e.name }
+
+      return why
     },
     send: async (e, deliveryId) => {
       try {

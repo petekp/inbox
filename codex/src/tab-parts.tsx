@@ -12,7 +12,7 @@ import type { ToneName } from '../../hooks/tones'
 import type { ResultMark, RowView } from '../../hooks/rows'
 import { parseInline } from '../../hooks/inline'
 import { isUndoLeft } from './settle'
-import { errors, notes, copies } from './tab-state'
+import { errors, notes } from './tab-state'
 import type { Tone, Key, Row } from './tab-state'
 
 /** A tab's empty state from `emptyTab`, centred in the page, with its drawn `under` as children. */
@@ -53,7 +53,7 @@ export function noteOf(id: string): string | null {
 }
 
 export function isFeedbackShown(row: Row): boolean {
-  return !errors.has(row.id) && noteOf(row.id) === null && !copies.has(row.id)
+  return !errors.has(row.id) && noteOf(row.id) === null
 }
 
 /** Starts every running mark's pulse at the page's time origin, so a mark drawn at a later poll moves in step. */

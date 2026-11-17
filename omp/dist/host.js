@@ -1489,6 +1489,18 @@ import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
 var version = "0.5.0";
 
+// ../hooks/clipboard-commands.ts
+function clipboardCommands(platform) {
+  if (platform === "darwin")
+    return [["pbcopy"]];
+  if (platform === "win32")
+    return [["clip"]];
+  return [["wl-copy"], ["xclip", "-selection", "clipboard"]];
+}
+function noClipboardCommand(commands) {
+  return `no clipboard command started (${commands.map((c) => c[0]).join(", ")})`;
+}
+
 // ../hooks/press-labels.ts
 function actionId(p) {
   return p.action === "step" ? `step-${p.step}` : p.action;
@@ -13713,9 +13725,10 @@ async function startPress(host, p, isStale, holds, commandId) {
         await host.refreshPrs();
         return why;
       }
-      if (e.kind === "copy")
+      const why = await host.perform(await host.read(), e);
+      if (e.kind === "copy" && why !== null)
         copy = { text: e.text, name: e.name };
-      return host.perform(await host.read(), e);
+      return why;
     },
     send: async (e, deliveryId) => {
       try {
@@ -14579,7 +14592,7 @@ function panelCalls(context, sessions, herdrAsk) {
       const id = sessionIdOf(ctx);
       const s = await readState(dir, id);
       return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
+        view: sessionView({ ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } }, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         herdrModFailure: memory.herdrModFailure,
@@ -15174,8 +15187,8 @@ async function isUsageLimitOutcome(status, message) {
   return ai.isUsageLimitOutcome(status, message);
 }
 async function copyToClipboard(text) {
-  const candidates = process.platform === "darwin" ? [["pbcopy"]] : process.platform === "win32" ? [["clip"]] : [["wl-copy"], ["xclip", "-selection", "clipboard"]];
-  for (const argv of candidates) {
+  const commands = clipboardCommands(process.platform);
+  for (const argv of commands) {
     try {
       const child = Bun.spawn(argv, { stdin: Buffer.from(text), stdout: "ignore", stderr: "ignore" });
       if (await child.exited === 0)
@@ -15184,7 +15197,7 @@ async function copyToClipboard(text) {
       continue;
     }
   }
-  return `no clipboard command started (${candidates.map((c) => c[0]).join(", ")})`;
+  return noClipboardCommand(commands);
 }
 var defaultDeps = {
   stateDir: (pi) => join5(pi.pi.getAgentDir(), "inbox"),
@@ -15390,15 +15403,21 @@ function createInbox(pi, deps = defaultDeps) {
     ctx.ui.setWidget(BAND_KEY, (tui, theme) => {
       const style = styleOf(theme);
       let screen = null;
-      const refresh = () => inbox.screen(ctx).then((next) => {
-        screen = next;
-        tui.requestRender();
-      }).catch(() => {
-        if (screen && !screen.isReadFailed) {
-          screen = { ...screen, isReadFailed: true };
+      let newestRefresh = 0;
+      const refresh = () => {
+        const mine = ++newestRefresh;
+        return inbox.screen(ctx).then((next) => {
+          if (mine !== newestRefresh)
+            return;
+          screen = next;
           tui.requestRender();
-        }
-      });
+        }).catch(() => {
+          if (mine === newestRefresh && screen && !screen.isReadFailed) {
+            screen = { ...screen, isReadFailed: true };
+            tui.requestRender();
+          }
+        });
+      };
       refresh();
       const stop = inbox.onChange(ctx, () => void refresh());
       return {

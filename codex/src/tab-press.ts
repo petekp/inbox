@@ -2,7 +2,7 @@ import { allRows } from '../../hooks/rows'
 import { feedbackOf } from '../../hooks/feedback'
 import type { TabView as View } from './core'
 import type { Feedback } from '../../hooks/feedback'
-import { tabState, drafts, errors, copies, sending } from './tab-state'
+import { tabState, drafts, copies, sending } from './tab-state'
 import { keepPressedOpen } from './tab-selection'
 import { read, replies } from './tab-read'
 
@@ -30,15 +30,10 @@ export function outPending(v: View | null, id: string): Feedback | null {
   return lastPressKey(v, id) === out.lastBefore ? out.pending : null
 }
 
-export async function copy(rowId: string, c: { text: string; name: string }, isLatest: () => boolean) {
-  try {
-    await navigator.clipboard.writeText(c.text)
-  } catch {
-    if (!isLatest()) return
-    // The tab's frame may not get the clipboard, so the text shows for a manual copy.
-    errors.set(rowId, `Could not copy ${c.name}: this tab has no clipboard access`)
-    copies.set(rowId, c)
-  }
+/** Shows the text of a copy the server could not run, in a box to copy by hand. */
+export function showCopyFallback(rowId: string, c: { text: string; name: string }, isLatest: () => boolean) {
+  if (!isLatest()) return
+  copies.set(rowId, c)
 }
 
 export function startTyping(id: string) {
