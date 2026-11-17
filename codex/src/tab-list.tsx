@@ -208,7 +208,7 @@ export function ListRow({
   const afterTone = !isPressing && isFailure(row.feedback) ? 'error' : undefined
   const after = (form: LineForm, only?: 'open' | 'closed') =>
     form.last ? (
-      <span class={only ? `after-group ${only}-only` : 'after-group'}>
+      <span class={only === 'open' ? 'open-only' : only === 'closed' ? 'closed-only' : undefined}>
         <span class="muted">{DOT}</span>
         <span class={afterTone ? `after tone-${afterTone}` : 'after'}>{form.last}</span>
       </span>
@@ -229,16 +229,14 @@ export function ListRow({
           onClick={isSelected ? e => onSelect(e.altKey) : undefined}
         >
           <span class="text">
-            <span class="title">
-              {row.lead ? (
-                <>
-                  <span class="lead">{row.lead}</span>{' '}
-                </>
-              ) : null}
-              <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
-                {row.title}
-              </TitleTint>
-            </span>
+            {row.lead ? (
+              <>
+                <span class="lead">{row.lead}</span>{' '}
+              </>
+            ) : null}
+            <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
+              {row.title}
+            </TitleTint>
             {after(drawn, closed ? 'open' : undefined)}
             {closed ? after(closed, 'closed') : null}
           </span>

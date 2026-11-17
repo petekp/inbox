@@ -105,42 +105,6 @@
 .line .after {
   color: var(--muted);
 }
-/*
- * A collapsed row's status follows its title on the title's first line. The title wraps before the status shrinks below
- * `--status-room`, and the status takes what is left and is cut with an ellipsis at the row's end.
- */
-.row {
-  --status-room: 9ch;
-}
-.row.collapsed:not(.closing) .line .text {
-  display: flex;
-  align-items: baseline;
-  overflow: clip;
-}
-.row.collapsed:not(.closing) .line .title {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: clip;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-.row.collapsed:not(.closing) .line .after-group:not(.open-only) {
-  display: flex;
-  flex: 0 100 auto;
-  min-width: var(--status-room);
-}
-.row.collapsed:not(.closing) .line .after-group > .muted {
-  flex: none;
-  white-space: pre;
-}
-.row.collapsed:not(.closing) .line .after {
-  min-width: 0;
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .row.collapsed .line .after:not(.tone-error) {
   color: var(--age);
 }

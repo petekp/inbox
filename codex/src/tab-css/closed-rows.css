@@ -70,29 +70,15 @@
 .settled-line {
   flex: 1;
   min-width: 0;
-  display: flex;
-  align-items: baseline;
   overflow-wrap: anywhere;
-}
-.settled-line > .what {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-.settled-line > .muted {
-  flex: none;
-  white-space: pre;
-}
-/* The reply's words follow the title on its line and take what room is left, cut with an ellipsis. The title wraps first. */
-.settled .outcome-label {
-  color: var(--muted);
-  flex: 0 100 auto;
-  min-width: var(--status-room);
   overflow: clip;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
-.settled-line > .tone-error {
-  flex: none;
+.settled .outcome-label {
+  color: var(--muted);
 }
 /* The pill keeps the line's height, so the row does not grow. */
 .key.undo {
