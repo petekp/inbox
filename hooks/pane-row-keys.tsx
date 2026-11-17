@@ -134,8 +134,12 @@ export function paneRowKeys(
       >
         {keys.map(keyedButton(rowId))}
         {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
-        {reply ? keyedButton(rowId, true)(reply) : null}
-        {links.length > 0 ? (followUpLinks(rowId, links) ?? links.map(keyedButton(rowId, true))) : null}
+        {reply || links.length > 0 ? (
+          <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
+            {reply ? keyedButton(rowId, true)(reply) : null}
+            {links.length > 0 ? (followUpLinks(rowId, links) ?? links.map(keyedButton(rowId, true))) : null}
+          </Box>
+        ) : null}
       </Box>
     )
   }

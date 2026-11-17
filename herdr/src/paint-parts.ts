@@ -68,14 +68,28 @@ export function buttonEl(b: Button, p: Paint, isInert = false): Element {
 
 const CLEAR = '#00000000'
 
-export const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false): Element =>
-  h_flex()
+/** The buttons wrap by line. The follow-ups, which come last, share one group, so they wrap to the next line together. */
+export const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false): Element => {
+  const followUps = buttons.filter(b => b.isFollowUp)
+  const others = buttons.filter(b => !b.isFollowUp)
+
+  return h_flex()
     .flex_wrap()
     .items_center()
     .gap(CONTROL_GAP)
     .pt(CONTROL_GAP)
     .pl(indent)
-    .children(buttons.map(b => buttonEl(b, p, isInert)))
+    .children(others.map(b => buttonEl(b, p, isInert)))
+    .when(followUps.length > 0, e =>
+      e.child(
+        h_flex()
+          .flex_wrap()
+          .items_center()
+          .gap(CONTROL_GAP)
+          .children(followUps.map(b => buttonEl(b, p, isInert))),
+      ),
+    )
+}
 
 /** A mark, at the start of the column that hangs before the text, so a tab's first marks sit on the panel's edge. */
 export const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null = null): Element =>

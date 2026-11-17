@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T05:49:54.451Z. 269830 characters follow.
+// Built at 2026-11-17T06:03:33.996Z. 270207 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -3065,7 +3065,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press,
       label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "type" || press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
       ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -4379,7 +4379,11 @@ function rowButtons(row, isAllShown, agent) {
       return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent));
     const { action } = k;
     const does = rowDoes(row, action.press, action.kind, agent);
-    return { ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null), isOut: action.isOut };
+    return {
+      ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null),
+      isOut: action.isOut,
+      ...action.isFollowUp ? { isFollowUp: true } : {}
+    };
   });
 }
 var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
@@ -5487,7 +5491,11 @@ function buttonEl(b, p, isInert = false) {
   });
 }
 var CLEAR = "#00000000";
-var buttonsEl = (buttons, p, indent, isInert = false) => h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
+var buttonsEl = (buttons, p, indent, isInert = false) => {
+  const followUps = buttons.filter((b) => b.isFollowUp);
+  const others = buttons.filter((b) => !b.isFollowUp);
+  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(others.map((b) => buttonEl(b, p, isInert))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().gap(CONTROL_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
+};
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
 var resultLineEl = (text, color, indent = MARK_W) => lineEl(text, color, indent).pt(CONTROL_GAP);

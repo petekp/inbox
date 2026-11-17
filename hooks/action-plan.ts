@@ -99,7 +99,8 @@ export function actionsOf(
       emphasis:
         flags.isPrimary || press.action === 'address'
           ? 'primary'
-          : press.action === 'discuss' ||
+          : press.action === 'type' ||
+              press.action === 'discuss' ||
               press.action === 'explain' ||
               press.action === 'compare' ||
               press.action === 'dismiss' ||

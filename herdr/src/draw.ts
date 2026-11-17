@@ -120,7 +120,11 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
     const { action } = k
     const does = rowDoes(row, action.press, action.kind, agent)
 
-    return { ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null), isOut: action.isOut }
+    return {
+      ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null),
+      isOut: action.isOut,
+      ...(action.isFollowUp ? { isFollowUp: true as const } : {}),
+    }
   })
 }
 
