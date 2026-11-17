@@ -13,6 +13,17 @@ const { AGENT, NOW, demoScreen, uiOn } = await import('./fixtures')
 
 const ALL = ['d11', 'd12', 'd13', 'd15']
 
+function asksIn(order: string[], selected: string | null = null): Block[] {
+  const screen = demoScreen()
+  const view = screen.view
+  const questions = order.flatMap(id => view.needsYou.questions.filter(r => r.id === id))
+
+  return tabBlocks(
+    { ...screen, view: { ...view, needsYou: { ...view.needsYou, questions } } },
+    uiOn('needsYou', { selected }),
+  )
+}
+
 function asks(
   keep: string[],
   selected: string | null = null,
@@ -216,9 +227,32 @@ test('on the Status page, a done milestone’s fold opening and closing, a work 
   for (const [name, from, to] of moves) expect({ name, ...glideOf(from, to) }).toEqual({ name, jumps: [], gaps: [] })
 })
 
-test.failing('a dropped milestone moves below the path without the rows between its old and new place jumping', () => {
+test('a dropped milestone moves below the path without the rows between its old and new place jumping', () => {
   const dropped = withMilestones(m => (m.id === 'm3' ? { ...m, status: 'dropped', closedAt: NOW } : m))
   expect(glideOf(statusOf(), statusOf(dropped))).toEqual({ jumps: [], gaps: [] })
+})
+
+test('a question that moves to another place in Asks glides there, and the list comes to rest at the new order’s height', () => {
+  const moves: [string, Block[], Block[]][] = [
+    ['a row moves up', asksIn(ALL), asksIn(['d13', 'd11', 'd12', 'd15'])],
+    ['a row moves down past an open row', asksIn(ALL, 'd13'), asksIn(['d15', 'd11', 'd12', 'd13'], 'd13')],
+  ]
+  for (const [name, from, to] of moves) {
+    const { jumps, gaps, heights } = framesOf(
+      [
+        [0, from],
+        [0, to],
+      ],
+      1200,
+    )
+    const rest = framesOf([[0, to]]).heights.at(-1)
+    expect({ name, jumps, gaps, end: Math.round(heights.at(-1) ?? NaN) }).toEqual({
+      name,
+      jumps: [],
+      gaps: [],
+      end: Math.round(rest ?? NaN),
+    })
+  }
 })
 
 const REST_PX = 2

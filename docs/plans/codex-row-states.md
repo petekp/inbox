@@ -70,6 +70,7 @@ Rules that hold in every state:
 - **A closing row comes to rest at its closed line's height.** A closing row also draws its closed line's after-label and side column, hidden, so the collapse measures the height the row has once the move ends. A PR row's ran line, which only the closed form shows, is hidden while the row closes.
 - **Rows of a tab not shown are forgotten.** They show their form at once when their tab shows.
 - **Reduced motion.** Every move ends in the draw that starts it, including a resting row's glide, a Status line, a banner and a tab's width.
+- **A closing row's title keeps its open form until the height rests.** The title keeps its semibold weight through `closing`, and the weight eases to regular once the state ends. The row's line, which holds the title, glides from its open height to the closed title's height with the row, so the lines the closed title clamps away are clipped as the height shrinks instead of vanishing in one draw. A close that turns back glides the line up again. A measure of the row's natural height ignores a running line glide.
 - **The line never moves** between `closed`, `opening`, `open` and `closing`, as [motion-and-undo.md](motion-and-undo.md) says.
 
 ## Not changing

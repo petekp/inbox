@@ -1,6 +1,18 @@
 /** A box's size in px. */
 type Size = { width: number; height: number }
 
+/** What follows a block's id in the id of the copy it leaves behind when it moves to another place, and the time it moved. */
+const MOVED_FROM = '~from '
+
+/** What follows a block's id in the id of its boxes at the new place it moved to, and the time it moved. */
+export const MOVED_TO = '~to '
+
+/** The id of the copy a block leaves in its old place, when it moves at `at` ms. */
+export const copyIdOf = (id: string, at: number): string => `${id}${MOVED_FROM}${at}`
+
+/** The key of the block a copy was made from, or the key itself. */
+const originalKey = (key: string): string => key.replace(new RegExp(`${MOVED_FROM}\\d+$`), '')
+
 /** The app's zoom from its `settings()`, 1 when unset. */
 export function zoomOf(settings: Record<string, unknown>): number {
   const zoom = settings.zoom
@@ -19,8 +31,9 @@ export class Heights {
   private resized = new Set<string>()
   private zoom: number | null = null
 
+  /** A block's copy in its old place has no size of its own until it measures, and takes its original's until then. */
   get(key: string): number | undefined {
-    return this.sizes.get(key)?.height
+    return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.height
   }
 
   /**

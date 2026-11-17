@@ -122,7 +122,9 @@
 .row.closing .line .text {
   display: inline;
 }
-.row.selected .line .text {
+/* A closing row's title keeps the open form's weight until the row's height rests, and the weight then eases. */
+.row.selected .line .text,
+.row.closing .line .text {
   font-weight: 600;
   font-variation-settings: 'wght' 600;
 }

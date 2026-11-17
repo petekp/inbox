@@ -204,7 +204,7 @@ function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element, st
   const open = isAtOnce ? undefined : (measured ?? 0)
   const height = m?.box === 'shut' ? 0 : m?.box === 'open' ? open : atRest
 
-  return springBox(`fit ${id}`, height)
+  return springBox(`fit ${m?.springId ?? id}`, height)
     .when(strokes.length > 0, e => e.relative())
     .child(isRow ? el : sizeEl(id, p, el))
     .children(strokes)
@@ -216,7 +216,7 @@ function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element, st
  * run on into the block draw across the whole box, at the height it is drawn.
  */
 function spaceEl(s: Space, p: Paint, columns: Element[]): Element {
-  const id = `space ${s.block.id}`
+  const id = `space ${p.motion.get(s.block.id)?.springId ?? s.block.id}`
   const box = springHeight(div().id(id).flex_none())
     .when(columns.length > 0, e => e.relative())
     .children(columns)
@@ -377,7 +377,7 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
         : e
 
     return v_flex()
-      .id(`box ${b.id}`)
+      .id(`box ${m?.springId ?? b.id}`)
       .flex_none()
       .child(
         spaceEl(
