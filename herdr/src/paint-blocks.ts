@@ -1,5 +1,5 @@
 import { div } from 'gpui-kit'
-import type { Element } from 'gpui-kit'
+import type { Color, Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
 import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
 import { ROW_FADE_MS } from '../../hooks/row-motion'
@@ -48,6 +48,16 @@ const trunkEl = (top: number, height: number | null, t: Theme, isSelected: boole
   return height === null ? el.bottom(0) : el.h(height)
 }
 
+/**
+ * A paragraph of two colors. gpui-kit has no inline span, so each word is an item of a wrapping row, followed by its
+ * space. The paragraph flows as one text and its wrapped lines start back at the row's left edge.
+ */
+const wordEls = (text: string, color: Color): Element[] =>
+  text
+    .split(' ')
+    .filter(word => word)
+    .map(word => div().flex_none().text_color(color).child(`${word} `))
+
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean): Element => {
   const above = l.isApart ? CHILD_GAP : INSIDE_GAP
@@ -71,11 +81,10 @@ const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean):
 
   const line = l.lead
     ? h_flex()
-        .items_start()
+        .flex_wrap()
         .pl(MARK_W)
         .pt(above)
-        .child(div().flex_none().text_color(t.foreground).pr(SMALL_GAP).child(l.lead))
-        .child(div().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text))
+        .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
     : lineEl(l.text, colorOf(t, l.tone)).pt(above)
 
   return line.relative().children(strokes)
