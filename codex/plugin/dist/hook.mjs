@@ -4650,6 +4650,20 @@ import { resolve as resolve3 } from "node:path";
 function namedCli(env) {
   return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
 }
+var MAX_ANCESTORS = 8;
+async function ancestorCli(exec, startPid) {
+  let pid = startPid;
+  for (let level = 0; level < MAX_ANCESTORS && pid > 1; level++) {
+    const r = await exec(["ps", "-o", "ppid=,comm=", "-p", String(pid)], { cwd: "/", timeoutMs: 5e3 }).catch(
+      () => null
+    );
+    const match = r && r.code === 0 ? /^\s*(\d+)\s+(.+?)\s*$/.exec(r.stdout) : null;
+    if (!match) return null;
+    if (/^\/(.*\/)?codex$/.test(match[2])) return match[2];
+    pid = Number(match[1]);
+  }
+  return null;
+}
 
 // src/dialogs.ts
 function noteDialogs(s, dialogs) {
@@ -5374,7 +5388,8 @@ async function handleHook(input, deps) {
   const meta = await rolloutMeta(input.transcript_path);
   if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null;
   const { update: write, read } = codexStore(dir, id, now, deps.onWrite);
-  const cliPath = namedCli(env);
+  const named = namedCli(env);
+  const cliPath = named ?? ((await read()).cliPath === null ? await ancestorCli(deps.run, deps.parentPid) : null);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
   const withRollout = (s) => rolloutPath !== null && s.transcriptPath !== rolloutPath ? { ...s, transcriptPath: rolloutPath } : s;
@@ -5633,7 +5648,8 @@ async function main() {
     startUpdate: (id) => startUpdate(id),
     startStatusRefresh: (id) => startUpdate(id, STATUS_REFRESH),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now),
-    run
+    run,
+    parentPid: process.ppid
   });
   if (out) process.stdout.write(JSON.stringify(out));
 }

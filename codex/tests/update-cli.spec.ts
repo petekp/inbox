@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 import { readState, updateState } from '../src/state'
 import { codexAsk, runUpdates as runBothCalls } from '../src/update'
-import { findCli } from '../src/cli'
+import { BUNDLED_CLI, findCli } from '../src/cli'
 import { run } from '../src/run'
 import { TIMED_OUT_CODE } from '../../hooks/gh'
 import { PARTS_STATUS_SYSTEM } from '../../hooks/status-prompt'
@@ -24,7 +24,21 @@ test('an update for a session with no saved CLI runs the CLI its environment nam
     await findCli({ CODEX_CLI_PATH: '/person/codex', CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 1),
     '/person/codex',
   )
-  assert.equal(await findCli({}, exec, 1), 'codex')
+  assert.equal(await findCli({}, exec, 1, () => false), 'codex')
+})
+
+test("an update with no named CLI runs the codex among its ancestors, else the ChatGPT app's bundled copy when it exists, else the codex on PATH", async () => {
+  const table: Record<string, string> = {
+    '40': '41 /bin/zsh',
+    '41': '42 /Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex',
+    '42': '1 /sbin/launchd',
+    '50': '1 /bin/zsh',
+  }
+  const { exec } = fakeRunner(args => ({ code: 0, stdout: `${table[args.at(-1) ?? ''] ?? ''}\n`, stderr: '' }))
+
+  assert.equal(await findCli({}, exec, 40, () => false), BUNDLED_CLI)
+  assert.equal(await findCli({}, exec, 50, () => true), BUNDLED_CLI)
+  assert.equal(await findCli({}, exec, 50, () => false), 'codex')
 })
 
 test('the update process runs the CLI its session saved, else the one its environment names', async t => {
@@ -193,7 +207,7 @@ test('a failed codex call reports the signal that ended codex, the error of a co
     ['process', -1, null, 'ENOENT'],
   )
   assert.equal(unstartable.stderr, '')
-  assert.match(unstartable.error, /^codex exec failed with ENOENT/)
+  assert.match(unstartable.error, /^codex exec failed with ENOENT: no codex program at .*missing-codex$/)
   assert.deepEqual([late.cause, late.code, late.signal, late.timeoutMs], ['process', TIMED_OUT_CODE, null, 120_000])
   assert.match(late.error, /^codex exec timed out after 120 s/)
   assert.deepEqual([noReply.cause, noReply.code], ['no-reply', 0])

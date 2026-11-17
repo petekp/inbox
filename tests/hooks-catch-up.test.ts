@@ -42,13 +42,17 @@ test('a catch-up writes its Status with a separate call over the transcript', as
     return next(e)
   })
   on('session.turns', () => ({ value: 3 }))
-  on('model.fork', () => ({
-    value: {
-      isAnswered: true,
-      text: 'NONE',
-      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
-    },
-  }))
+  const forkEfforts: unknown[] = []
+  on('model.fork', (_$, e) => {
+    forkEfforts.push(e.effort)
+    return {
+      value: {
+        isAnswered: true,
+        text: 'NONE',
+        usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      },
+    }
+  })
   const said = (role: 'user' | 'assistant', text: string) => ({ role, text, toolUses: [] as never[] })
   w.transcriptRows = [
     said('user', 'Add a greeting CLI.'),
@@ -58,6 +62,7 @@ test('a catch-up writes its Status with a separate call over the transcript', as
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
 
+  expect(forkEfforts).toEqual(['low'])
   expect(session!.ledger.overview).toMatchObject({
     head: { title: 'Adding a greeting CLI' },
     subjects: [{ name: 'Command', status: 'queued' }],

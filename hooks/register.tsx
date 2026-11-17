@@ -979,7 +979,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   // The Status call reads the transcript.
   const statusCall = transcript ? catchUpStatus($, owner, transcript) : null
   const forkedAt = await $.clock.now()
-  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
+  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown), effort: 'low' })
   if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
@@ -1692,10 +1692,12 @@ function fetchPrs($: EngineInterface, findsBranchPr: boolean, isPress = false): 
 
 async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   const owner = currentOwner()
-  await markFetching($, true)
+  mod.isFetchingPrsNow = true
   try {
+    await markFetching($, true)
     await fetchSessionPrs(hostOf($, owner), ask.findsBranchPr, ask.isPress)
   } finally {
+    mod.isFetchingPrsNow = false
     mod.prFetchEndedAt = await $.clock.now()
     // Fetches run one at a time across conversations, so the drawn session reads whether one still runs.
     await markFetching($, mod.nextFetch !== null)
@@ -1716,7 +1718,8 @@ async function pollPrs($: EngineInterface, remote = false) {
     isTabShown: isTabShown || remote,
     isAway: away.isAway && !remote,
   }
-  if (isPrPollDue(session, poll)) await fetchPrs($, poll.isTabShown)
+  const isFetching = mod.isFetchingPrsNow || mod.nextFetch !== null
+  if (isPrPollDue({ ...session, prViews: { ...session.prViews, isFetching } }, poll)) await fetchPrs($, poll.isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
