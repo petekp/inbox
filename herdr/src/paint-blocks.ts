@@ -48,15 +48,19 @@ const trunkEl = (top: number, height: number | null, t: Theme, isSelected: boole
   return height === null ? el.bottom(0) : el.h(height)
 }
 
+const NO_BREAK_SPACE = '\u00a0'
+
 /**
- * A paragraph of two colors. gpui-kit has no inline span, so each word is an item of a wrapping row, followed by its
- * space. The paragraph flows as one text and its wrapped lines start back at the row's left edge.
+ * A paragraph of two colors. gpui-kit has no inline span, so each word is an item of a wrapping row, followed by a
+ * no-break space. That space is as wide as the font's own at any text size, and a line end does not trim it. A word
+ * wider than the line wraps inside its item. The paragraph flows as one text, and its wrapped lines start back at the
+ * row's left edge.
  */
 const wordEls = (text: string, color: Color): Element[] =>
   text
     .split(' ')
     .filter(word => word)
-    .map(word => div().flex_none().text_color(color).child(`${word} `))
+    .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
 
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (l: RowBlock['body'][number], t: Theme, isSelected: boolean): Element => {

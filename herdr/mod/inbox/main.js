@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T05:35:01.190Z. 269827 characters follow.
+// Built at 2026-11-17T05:35:37.976Z. 269857 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5777,7 +5777,8 @@ var trunkEl = (top, height, t, isSelected) => {
   const el = div8().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   return height === null ? el.bottom(0) : el.h(height);
 };
-var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => div8().flex_none().text_color(color).child(`${word} `));
+var NO_BREAK_SPACE = " ";
+var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
 var bodyLineEl = (l, t, isSelected) => {
   const above = l.isApart ? CHILD_GAP : INSIDE_GAP;
   const armAt = above + LINE_HEIGHT / 2;
