@@ -100,6 +100,39 @@ test('a finished delegate no subject holds folds into "1 done" at once, seen or 
   expect(shape(page(looked, now).rows)).toEqual(['◐ Export: layout next', '› 1 done'])
 })
 
+test("a running hc delegate takes its terminal's focus as its name and last note as its line, which stay once it finishes, and a finished one costs no hc get", async () => {
+  const o: SessionStatus | null = after(null, 'NEW: working | Export | layout next', 10 * MIN)
+  const asked: string[] = []
+  const at = async (x: SessionStatus | null, status: string) => {
+    const run: Run = async argv => {
+      asked.push(argv.join(' '))
+      if (argv[1] === 'ls') {
+        const terminals = [{ address: 't1', name: 'pdf', parent: 't9', status }]
+
+        return { code: 0, stdout: JSON.stringify({ terminals }), stderr: '' }
+      }
+      const detail = { labels: { 'inbox.focus': 'Fixing PDF page breaks' }, status: { msg: 'PR #12 open' } }
+
+      return { code: 0, stdout: JSON.stringify(detail), stderr: '' }
+    }
+
+    return delegatesSettled(x, (await delegatesInHerdr(x, run, HC_TARGET))!, status === 'working' ? 30 * MIN : 40 * MIN)
+  }
+
+  const working = await at(o, 'working')
+  const started = await at(working, 'working')
+  const done = await at(started, 'done')
+  const later = await at(done, 'done')
+
+  expect(done!.children.map(c => [c.name, c.summary, c.delegateState])).toEqual([
+    ['Fixing PDF page breaks', 'PR #12 open', 'finished'],
+  ])
+  expect(asked.filter(a => a.startsWith('hc get'))).toHaveLength(2)
+  expect(later).toBe(done)
+  const fold = page({ ...done!, lastLookAt: 35 * MIN }, 100 * MIN).rows.find(r => r.kind === 'done-fold')
+  expect(fold?.kind === 'done-fold' && fold.rows.map(r => r.kind === 'child' && r.text)).toEqual(['PR #12 open'])
+})
+
 test('a look file the Herdr look wrote sets the last look on the saved Status', async () => {
   let saved: Session = {
     ...emptySession(),

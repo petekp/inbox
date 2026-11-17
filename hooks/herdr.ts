@@ -1,7 +1,7 @@
 import type { Dialog, HerdrPressOutcome, Ledger, Session, SessionStatus, StatusHead, Stop, Tab } from '../types'
 import { bandCounts, isMaybeStale } from './band'
 import { MAYBE_STALE_TEXT } from './banners'
-import { hasRunningDelegate, onceEvery } from './children'
+import { delegateRef, hasRunningDelegate, onceEvery } from './children'
 import { delegatesInHc } from './hc-terminals'
 import type { ClientId } from './clients'
 import { emptySession, sessionFile } from './session-files'
@@ -59,10 +59,10 @@ export type HerdrStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown'
 const HERDR_STATUSES: readonly HerdrStatus[] = ['idle', 'working', 'blocked', 'done', 'unknown']
 
 /**
- * What Herdr shows about an agent: what it does, and the focus its session publishes, if it runs the inbox. `isChild`
+ * What Herdr shows about an agent: what it does, the focus its session publishes if it runs the inbox, and its last note, if Herdr shows one. `isChild`
  * is set for an agent the host knows started under this session, so a running one gets a row when the Status has none.
  */
-export type HerdrAgent = { status: HerdrStatus; focus: string | null; isChild?: boolean }
+export type HerdrAgent = { status: HerdrStatus; focus: string | null; note?: string | null; isChild?: boolean }
 
 /** How often a host asks Herdr about running delegates while its Status shows. */
 export const HERDR_CHECK_MS = 30_000
@@ -78,7 +78,12 @@ export async function delegatesInHerdr(
   run: Run,
   target: HerdrTarget | null = null,
 ): Promise<Map<string, HerdrAgent> | null> {
-  if (target?.kind === 'terminal') return delegatesInHc(target, run)
+  if (target?.kind === 'terminal')
+    return delegatesInHc(
+      target,
+      run,
+      name => o?.children.some(c => c.ref === delegateRef(name) && c.endedAt === null) ?? false,
+    )
   if (!hasRunningDelegate(o)) return null
   const r = await run(HERDR_AGENT_LIST, { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
 

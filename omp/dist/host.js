@@ -1846,7 +1846,10 @@ function delegatesEnded(o, agents, at) {
     const agent = byRef.get(running.ref);
     const status = agent?.status;
     const focus = agent?.focus ? childName(agent.focus) : null;
-    const c = focus && focus !== running.name ? { ...running, name: focus } : running;
+    const note = agent?.note ? childName(agent.note) : null;
+    const isRenamed = focus !== null && focus !== running.name;
+    const isNoted = note !== null && note !== running.summary;
+    const c = isRenamed || isNoted ? { ...running, name: focus ?? running.name, summary: note ?? running.summary } : running;
     const isShownWorking = status === "working" || status === "blocked";
     if (isShownWorking)
       return c.delegateState === status ? c : { ...c, delegateState: status };
@@ -1894,14 +1897,35 @@ function childrenCutOff(o, at) {
 var HC_TIMEOUT_MS = 5000;
 var HC_STATUSES = ["idle", "working", "blocked", "done"];
 var HC_BLOCKED = new Set(["blocked", "error"]);
-async function delegatesInHc(target, run) {
+var FOCUS_LABEL = "inbox.focus";
+async function delegatesInHc(target, run, isRunning) {
   for (const hc of target.hc) {
     const r = await run([hc, "ls", "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
     if (r.code === UNSTARTABLE_CODE)
       continue;
-    return r.code === 0 ? childAgents(r.stdout, target.terminal) : null;
+    const listed = r.code === 0 ? childAgents(r.stdout, target.terminal) : null;
+    if (listed === null)
+      return null;
+    const detailed = await Promise.all([...listed].map(async ([key, { address, agent }]) => [key, isRunning(key) ? { ...agent, ...await described(hc, address, run) } : agent]));
+    return new Map(detailed);
   }
   return null;
+}
+async function described(hc, address, run) {
+  const r = await run([hc, "get", address, "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
+  if (r.code !== 0)
+    return { focus: null, note: null };
+  try {
+    const t = JSON.parse(r.stdout);
+    const focus = t?.labels?.[FOCUS_LABEL];
+    const note = t?.status?.msg;
+    return {
+      focus: typeof focus === "string" && focus.trim() ? focus.trim() : null,
+      note: typeof note === "string" && note.trim() ? note.trim() : null
+    };
+  } catch {
+    return { focus: null, note: null };
+  }
 }
 function childAgents(stdout, parent) {
   try {
@@ -1911,10 +1935,10 @@ function childAgents(stdout, parent) {
     const agents = new Map;
     for (const t of terminals) {
       const key = typeof t?.name === "string" && t.name ? t.name : t?.address;
-      if (typeof key !== "string" || t.parent !== parent || typeof t.status !== "string")
+      if (typeof key !== "string" || typeof t.address !== "string" || t.parent !== parent || typeof t.status !== "string")
         continue;
       const status = HC_BLOCKED.has(t.status) ? "blocked" : HC_STATUSES.find((s) => s === t.status) ?? "unknown";
-      agents.set(key, { status, focus: null, isChild: true });
+      agents.set(key, { address: t.address, agent: { status, focus: null, isChild: true } });
     }
     return agents;
   } catch {
@@ -2584,7 +2608,8 @@ function childOf(saved) {
     startedAt,
     endedAt: time2(c.endedAt),
     lastActivityAt: time2(c.lastActivityAt),
-    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null,
+    ...typeof c.summary === "string" && c.summary.trim() ? { summary: c.summary } : {}
   };
 }
 var OLD_STATUS = {
@@ -3824,6 +3849,8 @@ function carriedByChild(c, isHeld) {
   return null;
 }
 function finishedLine(c, now) {
+  if (c.summary)
+    return c.summary;
   if (c.endedAt === null)
     return null;
   const finished = ago(now - c.endedAt);
@@ -5397,7 +5424,7 @@ var HERDR_STATUSES = ["idle", "working", "blocked", "done", "unknown"];
 var HERDR_CHECK_MS = 30000;
 async function delegatesInHerdr(o, run, target = null) {
   if (target?.kind === "terminal")
-    return delegatesInHc(target, run);
+    return delegatesInHc(target, run, (name) => o?.children.some((c) => c.ref === delegateRef(name) && c.endedAt === null) ?? false);
   if (!hasRunningDelegate(o))
     return null;
   const r = await run(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });

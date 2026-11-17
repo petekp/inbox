@@ -108,8 +108,12 @@ function carriedByChild(
   return null
 }
 
-/** How a finished delegate reads under its name in a done fold: how long it ran and how long ago it finished, as "Ran 40m, finished 2h ago". */
-export function finishedLine(c: Pick<Child, 'startedAt' | 'endedAt'>, now: number): string | null {
+/**
+ * How a finished delegate reads under its name in a done fold: its last note when Herdr showed one, else how long it ran
+ * and how long ago it finished, as "Ran 40m, finished 2h ago".
+ */
+export function finishedLine(c: Pick<Child, 'startedAt' | 'endedAt' | 'summary'>, now: number): string | null {
+  if (c.summary) return c.summary
   if (c.endedAt === null) return null
   const finished = ago(now - c.endedAt)
 

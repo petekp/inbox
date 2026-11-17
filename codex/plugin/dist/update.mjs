@@ -948,7 +948,8 @@ function childOf(saved) {
     startedAt,
     endedAt: time2(c.endedAt),
     lastActivityAt: time2(c.lastActivityAt),
-    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null,
+    ...typeof c.summary === "string" && c.summary.trim() ? { summary: c.summary } : {}
   };
 }
 var OLD_STATUS = {
@@ -2036,6 +2037,7 @@ function carriedByChild(c, isHeld) {
   return null;
 }
 function finishedLine(c, now) {
+  if (c.summary) return c.summary;
   if (c.endedAt === null) return null;
   const finished = ago(now - c.endedAt);
   return `Ran ${duration(c.endedAt - c.startedAt)}, finished ${finished}`;

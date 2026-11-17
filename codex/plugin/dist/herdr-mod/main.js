@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T05:35:32.193Z. 270522 characters follow.
+// Built at 2026-11-17T05:46:10.009Z. 270649 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -586,7 +586,8 @@ function childOf(saved) {
     startedAt,
     endedAt: time2(c.endedAt),
     lastActivityAt: time2(c.lastActivityAt),
-    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null,
+    ...typeof c.summary === "string" && c.summary.trim() ? { summary: c.summary } : {}
   };
 }
 var OLD_STATUS = {
@@ -1416,6 +1417,8 @@ function carriedByChild(c, isHeld) {
   return null;
 }
 function finishedLine(c, now) {
+  if (c.summary)
+    return c.summary;
   if (c.endedAt === null)
     return null;
   const finished = ago(now - c.endedAt);
