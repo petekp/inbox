@@ -2558,13 +2558,12 @@ function withCheckKeys(s, views) {
 
 // ../hooks/task-reminder.ts
 var TASK_REMINDER_THRESHOLD = 24;
-var NO_TASK_REMINDER = { callsSinceTasks: 0, hasUsedTasks: false };
+var NO_TASK_REMINDER = { callsSinceTasks: 0 };
 function taskReminderState(value) {
   if (!value || typeof value !== "object") return NO_TASK_REMINDER;
   const saved = value;
   return {
-    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0,
-    hasUsedTasks: saved.hasUsedTasks === true
+    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0
   };
 }
 

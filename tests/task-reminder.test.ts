@@ -4,66 +4,71 @@ import {
   NO_TASK_REMINDER,
   TASK_REMINDER_TEXT,
   TASK_REMINDER_THRESHOLD,
-  resetTaskReminderTurn,
   taskReminderAfterToolCall,
   taskReminderSession,
   taskReminderState,
 } from '../hooks/task-reminder'
-import { emptySession } from '../hooks/session-files'
+import { emptySession, upgradeSession } from '../hooks/session-files'
+import { startTurn } from '../hooks/session-turns'
+import type { SavedSession } from '../hooks/session-files'
 import type { TaskReminderState } from '../hooks/task-reminder'
 
-function call(state: TaskReminderState, options = { isMainAgent: true, isTasksCall: false, hasTaskTree: true }) {
+function call(state: TaskReminderState, options = { isMainAgent: true, isTasksCall: false }) {
   return taskReminderAfterToolCall(state, options)
 }
 
-test('the task reminder waits for 24 main-agent calls, then resets its count', () => {
-  let state = NO_TASK_REMINDER
-  for (let n = 0; n < TASK_REMINDER_THRESHOLD - 1; n++) {
-    const result = call(state)
-    state = result.state
-    expect(result.reminder).toBeNull()
+test('the task reminder counts across short prompts with no task tree', () => {
+  let session = emptySession()
+  const reminders: number[] = []
+  let calls = 0
+
+  for (let prompt = 0; prompt < 12; prompt++) {
+    session = startTurn(session)
+    for (let n = 0; n < 2; n++) {
+      calls++
+      const result = taskReminderSession(session, true, false)
+      session = result.session
+      if (result.reminder) reminders.push(calls)
+      if (calls < TASK_REMINDER_THRESHOLD) expect(result.reminder).toBeNull()
+    }
   }
 
-  expect(state.callsSinceTasks).toBe(23)
-  const result = call(state)
-  expect(result.reminder).toBe(TASK_REMINDER_TEXT)
-  expect(result.state.callsSinceTasks).toBe(0)
+  expect(reminders).toEqual([24])
+  expect(session.taskReminder).toEqual(NO_TASK_REMINDER)
+
+  for (let n = 1; n <= TASK_REMINDER_THRESHOLD; n++) {
+    const result = taskReminderSession(session, true, false)
+    session = result.session
+    expect(result.reminder).toBe(n === TASK_REMINDER_THRESHOLD ? TASK_REMINDER_TEXT : null)
+  }
 })
 
-test('a tasks call and a new turn reset calls, while tasks use stays remembered', () => {
-  const afterTasks = call(
-    { callsSinceTasks: 17, hasUsedTasks: false },
-    { isMainAgent: true, isTasksCall: true, hasTaskTree: false },
-  ).state
-  expect(afterTasks).toEqual({ callsSinceTasks: 0, hasUsedTasks: true })
-  expect(resetTaskReminderTurn({ ...afterTasks, callsSinceTasks: 9 })).toEqual(afterTasks)
+test('a tasks call resets the count, and subagent calls do not count', () => {
+  const beforeTasks = { callsSinceTasks: 17 }
+  const afterTasks = call(beforeTasks, { isMainAgent: true, isTasksCall: true }).state
+  expect(afterTasks).toEqual(NO_TASK_REMINDER)
+
+  const subagent = call({ callsSinceTasks: 9 }, { isMainAgent: false, isTasksCall: false })
+  expect(subagent).toEqual({ state: { callsSinceTasks: 9 }, reminder: null })
 })
 
-test('subagent calls do not count, and a session without a task tree gets no reminder', () => {
-  const state = { callsSinceTasks: 23, hasUsedTasks: false }
-  expect(taskReminderAfterToolCall(state, { isMainAgent: false, isTasksCall: false, hasTaskTree: true })).toEqual({
-    state,
-    reminder: null,
-  })
-  expect(call(state, { isMainAgent: true, isTasksCall: false, hasTaskTree: false })).toEqual({
-    state: { callsSinceTasks: 24, hasUsedTasks: false },
-    reminder: null,
-  })
+test('saved reminder state drops the old flag and defaults absent or invalid counts to zero', () => {
+  expect(taskReminderState({ callsSinceTasks: 99, hasUsedTasks: true })).toEqual({ callsSinceTasks: 24 })
+  expect(taskReminderState({ callsSinceTasks: -1, hasUsedTasks: true })).toEqual(NO_TASK_REMINDER)
+  expect(taskReminderState({ hasUsedTasks: true })).toEqual(NO_TASK_REMINDER)
+  expect(
+    upgradeSession({ taskReminder: { callsSinceTasks: 7, hasUsedTasks: true } } as SavedSession).taskReminder,
+  ).toEqual({ callsSinceTasks: 7 })
+  expect(upgradeSession({ taskReminder: { hasUsedTasks: true } } as unknown as SavedSession).taskReminder).toEqual(
+    NO_TASK_REMINDER,
+  )
 })
 
-test('saved reminder state is bounded and defaults safely', () => {
-  expect(taskReminderState({ callsSinceTasks: 99, hasUsedTasks: true })).toEqual({
-    callsSinceTasks: 24,
-    hasUsedTasks: true,
-  })
-  expect(taskReminderState({ callsSinceTasks: -1, hasUsedTasks: 'yes' })).toEqual(NO_TASK_REMINDER)
-})
-
-test('the session adapter saves the reminder counter with the task call result', () => {
-  const session = { ...emptySession(), taskReminder: { callsSinceTasks: 23, hasUsedTasks: true } }
+test('the session adapter saves the reminder count after a reminder', () => {
+  const session = { ...emptySession(), taskReminder: { callsSinceTasks: 23 } }
   const result = taskReminderSession(session, true, false)
 
   expect(result.reminder).toBe(TASK_REMINDER_TEXT)
-  expect(result.session.taskReminder).toEqual({ callsSinceTasks: 0, hasUsedTasks: true })
+  expect(result.session.taskReminder).toEqual(NO_TASK_REMINDER)
   expect(result.session).not.toBe(session)
 })

@@ -59,26 +59,33 @@ test('a session starts with the guidance, records the prompt, and ends the turn 
   assert.deepEqual(deps.updates, ['s1'])
 })
 
-test('PostToolUse gives the main agent one reminder after 24 calls, and ignores subagent calls', async () => {
+test('PostToolUse reminds across prompts without a task tree and ignores subagent calls', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
   await handleHook(input('UserPromptSubmit', { prompt: 'Continue the work', turn_id: 't1' }), deps)
-  await updateState(dir, 's1', s => ({ ...s, taskReminder: { callsSinceTasks: 0, hasUsedTasks: true } }))
 
   for (let i = 0; i < 5; i++)
     await handleHook(input('PostToolUse', { tool_name: 'Read', agent_id: 'subagent-1' }), deps)
   assert.equal((await readState(dir, 's1')).taskReminder.callsSinceTasks, 0)
 
-  const reminders: string[] = []
-  for (let i = 0; i < 24; i++) {
-    const result = await handleHook(input('PostToolUse', { tool_name: 'Read' }), deps)
-    const context = (result as { hookSpecificOutput?: { additionalContext?: string } } | null)?.hookSpecificOutput
-      ?.additionalContext
-    if (context) reminders.push(context)
+  const reminderCalls: number[] = []
+  for (let prompt = 0; prompt < 12; prompt++) {
+    await handleHook(
+      input('UserPromptSubmit', { prompt: `Continue the work ${prompt}`, turn_id: `t${prompt + 2}` }),
+      deps,
+    )
+    for (let call = 0; call < 2; call++) {
+      const callNumber = prompt * 2 + call + 1
+      const result = await handleHook(input('PostToolUse', { tool_name: 'Read' }), deps)
+      const context = (result as { hookSpecificOutput?: { additionalContext?: string } } | null)?.hookSpecificOutput
+        ?.additionalContext
+      if (context === TASK_REMINDER_TEXT) reminderCalls.push(callNumber)
+      if (callNumber < 24) assert.notEqual(context, TASK_REMINDER_TEXT)
+    }
   }
 
-  assert.deepEqual(reminders, [TASK_REMINDER_TEXT])
+  assert.deepEqual(reminderCalls, [24])
   assert.equal((await readState(dir, 's1')).taskReminder.callsSinceTasks, 0)
 })
 

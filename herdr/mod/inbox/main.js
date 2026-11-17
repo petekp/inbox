@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-16T14:40:57.470Z. 218492 characters follow.
+// Built at 2026-11-17T04:12:20.908Z. 218424 characters follow.
 
 // src/main.ts
 import { View, div as div5 } from "gpui-kit";
@@ -2617,14 +2617,13 @@ function withCheckKeys(s, views) {
 
 // ../hooks/task-reminder.ts
 var TASK_REMINDER_THRESHOLD = 24;
-var NO_TASK_REMINDER = { callsSinceTasks: 0, hasUsedTasks: false };
+var NO_TASK_REMINDER = { callsSinceTasks: 0 };
 function taskReminderState(value) {
   if (!value || typeof value !== "object")
     return NO_TASK_REMINDER;
   const saved = value;
   return {
-    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0,
-    hasUsedTasks: saved.hasUsedTasks === true
+    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0
   };
 }
 

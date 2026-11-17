@@ -239,7 +239,6 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const next = taskReminderAfterToolCall(s.taskReminder, {
           isMainAgent: true,
           isTasksCall: input.tool_name === 'mcp__inbox__tasks',
-          hasTaskTree: s.taskTree.length > 0,
         })
         reminder = next.reminder
         return next.state === s.taskReminder ? s : { ...s, taskReminder: next.state }

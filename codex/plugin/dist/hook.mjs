@@ -2101,24 +2101,20 @@ function withCheckKeys(s, views) {
 
 // ../hooks/task-reminder.ts
 var TASK_REMINDER_THRESHOLD = 24;
-var TASK_REMINDER_TEXT = "You have made 24 tool calls since this turn began or your last tasks call. Update your task tree if your plan or progress changed.";
-var NO_TASK_REMINDER = { callsSinceTasks: 0, hasUsedTasks: false };
+var TASK_REMINDER_TEXT = "You have made 24 tool calls across turns without calling tasks. Create a task tree if you do not have one, or update it if your plan or progress changed.";
+var NO_TASK_REMINDER = { callsSinceTasks: 0 };
 function taskReminderState(value) {
   if (!value || typeof value !== "object") return NO_TASK_REMINDER;
   const saved = value;
   return {
-    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0,
-    hasUsedTasks: saved.hasUsedTasks === true
+    callsSinceTasks: typeof saved.callsSinceTasks === "number" && Number.isSafeInteger(saved.callsSinceTasks) ? Math.max(0, Math.min(TASK_REMINDER_THRESHOLD, saved.callsSinceTasks)) : 0
   };
-}
-function resetTaskReminderTurn(state) {
-  return state.callsSinceTasks === 0 ? state : { ...state, callsSinceTasks: 0 };
 }
 function taskReminderAfterToolCall(state, options) {
   if (!options.isMainAgent) return { state, reminder: null };
-  if (options.isTasksCall) return { state: { callsSinceTasks: 0, hasUsedTasks: true }, reminder: null };
+  if (options.isTasksCall) return { state: NO_TASK_REMINDER, reminder: null };
   const callsSinceTasks = Math.min(TASK_REMINDER_THRESHOLD, state.callsSinceTasks + 1);
-  const shouldRemind = callsSinceTasks === TASK_REMINDER_THRESHOLD && (options.hasTaskTree || state.hasUsedTasks);
+  const shouldRemind = callsSinceTasks === TASK_REMINDER_THRESHOLD;
   return {
     state: { ...state, callsSinceTasks: shouldRemind ? 0 : callsSinceTasks },
     reminder: shouldRemind ? TASK_REMINDER_TEXT : null
@@ -3637,7 +3633,6 @@ function placed(s, folder, branch) {
 function startTurn(s) {
   return {
     ...s,
-    taskReminder: resetTaskReminderTurn(s.taskReminder),
     presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 },
     stop: null
   };
@@ -5354,8 +5349,7 @@ async function handleHook(input, deps) {
       await write((s) => {
         const next = taskReminderAfterToolCall(s.taskReminder, {
           isMainAgent: true,
-          isTasksCall: input.tool_name === "mcp__inbox__tasks",
-          hasTaskTree: s.taskTree.length > 0
+          isTasksCall: input.tool_name === "mcp__inbox__tasks"
         });
         reminder = next.reminder;
         return next.state === s.taskReminder ? s : { ...s, taskReminder: next.state };

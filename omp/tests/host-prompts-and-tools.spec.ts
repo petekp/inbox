@@ -190,21 +190,19 @@ test('only bash, edit and write calls that ran become turn activity', async () =
   ])
 })
 
-test('24 main-agent tool results queue one hidden task reminder', async () => {
+test('tool results queue a reminder across prompts without a task tree', async () => {
   createInbox(pi(), deps())
-  await prompt('Continue the work')
-  const task = w.tools.get('tasks')
-  await task.execute(
-    'call',
-    { operation: 'add', task_id: 't1', title: 'Finish the work' },
-    undefined,
-    undefined,
-    makeCtx(),
-  )
-  await call('tool_result', { toolName: 'tasks', input: { operation: 'add' } })
+  const reminderCalls: number[] = []
+  for (let promptIndex = 0; promptIndex < 12; promptIndex++) {
+    await prompt(`Continue the work ${promptIndex}`)
+    for (let callIndex = 0; callIndex < 2; callIndex++) {
+      const callNumber = promptIndex * 2 + callIndex + 1
+      await call('tool_result', { toolName: 'read', input: {} })
+      if (w.hidden.some(message => message.content === TASK_REMINDER_TEXT)) reminderCalls.push(callNumber)
+    }
+  }
 
-  for (let i = 0; i < 24; i++) await call('tool_result', { toolName: 'read', input: {} })
-
+  expect(reminderCalls).toEqual([24])
   expect(w.hidden.filter(message => message.content === TASK_REMINDER_TEXT)).toHaveLength(1)
   expect(w.hidden.at(-1)?.options).toEqual({ deliverAs: 'nextTurn' })
 })

@@ -62,7 +62,6 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
         const counted = taskReminderAfterToolCall(s.taskReminder, {
           isMainAgent: true,
           isTasksCall,
-          hasTaskTree: s.taskTree.length > 0,
         })
         reminder = counted.reminder
         const withReminder = counted.state === s.taskReminder ? s : { ...s, taskReminder: counted.state }

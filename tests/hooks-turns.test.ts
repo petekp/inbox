@@ -83,32 +83,30 @@ test('once a call from its source raised a Post hook, a call that raised none ad
   expect(activity).toEqual(['ran: echo probe-ok', 'ran: false', 'called othermod__ping'])
 })
 
-test('PostToolUse adds one task reminder after 24 calls through the hook context', async ($, on) => {
+test('PostToolUse reminds across prompts without a task tree', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await $.prompt.submit({ text: 'continue the work', wait: false, origin: { kind: 'composer' } })
-  await $.turn.start({ text: 'continue the work', turnId: 't1' })
-  await $.tool.call({
-    tool: 'mcp__inbox__tasks',
-    operation: 'add',
-    task_id: 't1',
-    title: 'Finish the work',
-  } as never)
+  const reminderCalls: number[] = []
 
-  const reminders: string[] = []
-  for (let i = 0; i < 24; i++) {
-    const result = await $.classic.PostToolUse({
-      tool_use_id: `read-${i}`,
-      tool_name: 'Read',
-      tool_input: {},
-      tool_response: 'ok',
-    } as never)
-    const contexts = (result as { additionalContext?: string[] } | null)?.additionalContext ?? []
-    reminders.push(...contexts)
+  for (let prompt = 0; prompt < 12; prompt++) {
+    await $.prompt.submit({ text: `continue the work ${prompt}`, wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text: `continue the work ${prompt}`, turnId: `t${prompt}` })
+    for (let call = 0; call < 2; call++) {
+      const callNumber = prompt * 2 + call + 1
+      const result = await $.classic.PostToolUse({
+        tool_use_id: `read-${callNumber}`,
+        tool_name: 'Read',
+        tool_input: {},
+        tool_response: 'ok',
+      } as never)
+      const contexts = (result as { additionalContext?: string[] } | null)?.additionalContext ?? []
+      if (contexts.includes(TASK_REMINDER_TEXT)) reminderCalls.push(callNumber)
+      if (callNumber < 24) expect(contexts).not.toContain(TASK_REMINDER_TEXT)
+    }
   }
 
-  expect(reminders).toEqual([TASK_REMINDER_TEXT])
+  expect(reminderCalls).toEqual([24])
 })
 
 test('where no Post hook runs, as under the guard, every call adds its activity line', async ($, on) => {
