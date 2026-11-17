@@ -263,16 +263,21 @@
   bottom: auto;
   height: calc(var(--above) + var(--tick, 0.8em));
 }
-/* An answer is its button with its note under it. Its arm meets the button's middle. */
+/* An answer is its button with its note under it, the note starting at the button's label. Its arm meets the button's
+   middle. */
 .body .tree > p.option-choice {
   --tick: calc(3.5 * var(--unit));
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--list-gap);
+  gap: var(--child-gap);
+}
+.body .tree > p.option-choice + p.option-choice {
+  --above: calc(1px + var(--item-gap));
 }
 .option-choice .option-note {
   display: block;
+  padding-left: calc(var(--button-border) + var(--button-pad-x));
 }
 .body .tree > p.tree-after::before {
   display: none;
@@ -320,8 +325,8 @@ code {
   justify-content: center;
   gap: var(--unit);
   min-height: calc(7 * var(--unit));
-  padding: var(--unit) calc(3 * var(--unit));
-  border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);
+  padding: var(--unit) var(--button-pad-x);
+  border: var(--button-border) solid color-mix(in oklab, var(--text) 28%, transparent);
   border-radius: calc(3.5 * var(--unit));
   background: transparent;
   font-weight: 400;

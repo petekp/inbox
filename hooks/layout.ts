@@ -30,6 +30,12 @@ export const HEAD_GAP_PT = 2 * SPACE_UNIT
 /** Text to the buttons under it, and one button to the next. */
 export const CONTROL_GAP_PT = 2 * SPACE_UNIT
 
+/** The side padding inside a pill button, from its border to its label. */
+export const BUTTON_PAD_X_PT = 3 * SPACE_UNIT
+
+/** A pill button's border. With `BUTTON_PAD_X_PT`, how far its label sits in from its edge. */
+export const BUTTON_BORDER_PT = 1
+
 /** Between two groups or sections. A rule between them sits halfway. */
 export const SECTION_GAP_PT = 6 * SPACE_UNIT
 

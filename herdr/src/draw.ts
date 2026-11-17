@@ -189,7 +189,9 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
 function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
   const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
     { optionId: `${row.id} ${n}`, text: '', tone: 'muted' as const },
-    ...(o.note ? [{ text: o.note, tone: 'muted' as const }] : []),
+    ...(o.note
+      ? [{ text: o.note, tone: 'muted' as const, gapAbove: 'child' as const, isOptionNote: true as const }]
+      : []),
   ])
   const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: 'muted' as const }]] : []
   const branches = [...holdsUp, ...options]
@@ -197,20 +199,22 @@ function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
   const isTrunkAfterHoldsUp = options.length > 0
   const tree = (branch: number, line: number): RowBlock['body'][number]['tree'] =>
     line > 0 ? (branch === lastBranch ? undefined : 'trunk') : branch === lastBranch ? 'last' : 'tee'
+  const isOptionAfterOption = (branch: number) => branch > holdsUp.length
   const branchLines = (branch: number): RowBlock['body'] =>
     (branches[branch] ?? []).map((l, line) => {
       const placed = tree(branch, line)
+      const startGap = isOptionAfterOption(branch) ? ('item' as const) : ('child' as const)
 
-      return { ...l, ...(placed ? { tree: placed } : {}), ...(line === 0 ? { isApart: true as const } : {}) }
+      return { ...l, ...(placed ? { tree: placed } : {}), ...(line === 0 ? { gapAbove: startGap } : {}) }
     })
   const contextTree = isTrunkAfterHoldsUp ? { tree: 'trunk' as const } : {}
   const lines: RowBlock['body'] = [
     ...holdsUp.flatMap((_, branch) => branchLines(branch)),
-    { text: row.contextLine ?? '', tone: 'muted', isApart: true, ...contextTree },
+    { text: row.contextLine ?? '', tone: 'muted', gapAbove: 'child', ...contextTree },
     {
       text: row.earlierLine ? earlierLineText(row.earlierLine) : '',
       tone: 'muted',
-      isApart: true,
+      gapAbove: 'child',
       ...contextTree,
     },
     { text: row.detail ?? '', tone: null },
@@ -219,7 +223,7 @@ function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
   ]
   const shown = lines.filter(l => l.text || l.lead || l.optionId)
 
-  return shown.map(({ isApart, ...l }, n) => (isApart && n > 0 ? { ...l, isApart } : l))
+  return shown.map(({ gapAbove, ...l }, n) => (gapAbove && n > 0 ? { ...l, gapAbove } : l))
 }
 
 function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: LookScreen): RowBlock {

@@ -8387,7 +8387,7 @@ var TRUNK = "\u2502  ";
 var TEE = "\u251C\u2500 ";
 var LAST = "\u2514\u2500 ";
 var NONE = "   ";
-function askTreeLines(line, pad, width, s, cell) {
+function askTreeLines(line, pad, width, s, cell, labelCells) {
   const row = line.row;
   if (!row || row.state.is !== "open")
     return [];
@@ -8395,7 +8395,7 @@ function askTreeLines(line, pad, width, s, cell) {
   const room = Math.max(10, width - margin.length - TRUNK.length - 1);
   const branches = line.buttons.flatMap((b, index) => b.option ? [{ b, index, note: b.option.note }] : []);
   const holdsUp = row.holdsUpLine;
-  const draw = (arm, text, rest) => wrapText(text, room).map((l, i) => s.dim(margin + (i === 0 ? arm : rest)) + s.dim(l));
+  const draw = (arm, text, rest, indent = 0) => wrapText(text, room - indent).map((l, i) => s.dim(margin + (i === 0 ? arm : rest) + " ".repeat(indent)) + s.dim(l));
   const heads = holdsUp ? [{ text: holdsUp }] : [];
   const lastBranch = heads.length + branches.length - 1;
   const drawHead = (text, n) => {
@@ -8407,7 +8407,7 @@ function askTreeLines(line, pad, width, s, cell) {
     const rest = isLast ? NONE : TRUNK;
     return [
       s.dim(margin + (isLast ? LAST : TEE)) + cell(a.b, a.index, room),
-      ...a.note ? draw(rest, a.note, rest) : []
+      ...a.note ? draw(rest, a.note, rest, labelCells(a.b)) : []
     ];
   };
   const contextArm = branches.length > 0 ? TRUNK : NONE;
@@ -9791,6 +9791,7 @@ function bannerLines(b, width, s) {
   const lines = wrapText(text, width - 4).map((line) => line.split(" ").map((w) => leadWords-- > 0 ? lead(w) : w).join(" "));
   return boxed(lines, b.tone, width, s);
 }
+var buttonLabelCells = (b) => b.key ? b.key.length + 2 : 1;
 function buttonCell(b, isFocused, s, mark = "") {
   if (isFocused)
     return s.inverse(b.isOut ? s.dim(` \u21B5 ${b.label}${mark} `) : s.bold(` \u21B5 ${b.label}${mark} `));
@@ -9883,7 +9884,7 @@ function drawLine(line, isSelected, d) {
   const holdsUp = line.row?.holdsUpLine;
   const focused = ui.typing === line.id ? -1 : focusOf2(line, ui);
   const answerCell = (b, n, room) => buttonCell(b, n === focused, s, labelMark(b, room, s));
-  const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell) : [];
+  const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell, buttonLabelCells) : [];
   if (tree.length > 0)
     out.push(...tree);
   else if (holdsUp)

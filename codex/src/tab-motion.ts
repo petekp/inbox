@@ -385,6 +385,8 @@ const SPACING_VARIABLES: [string, number][] = [
   ['--row-pad', layout.ROW_PAD_PT],
   ['--banner-pad-y', layout.BANNER_PAD_Y_PT],
   ['--banner-gap', layout.BANNER_GAP_PT],
+  ['--button-pad-x', layout.BUTTON_PAD_X_PT],
+  ['--button-border', layout.BUTTON_BORDER_PT],
 ]
 
 export function applyPageVariables() {

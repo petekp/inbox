@@ -1,5 +1,7 @@
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import {
+  BUTTON_BORDER_PT,
+  BUTTON_PAD_X_PT,
   CHILD_GAP_PT,
   CONTROL_GAP_PT,
   EDGE_PT,
@@ -134,8 +136,11 @@ export const SECTION_GAP = SECTION_GAP_PT
 export const EDGE = EDGE_PT
 /** A chevron to the words before it, one tab to the next, and a tree's arm to the mark it points at. */
 export const SMALL_GAP = SPACE_UNIT
-/** A pill's and a banner's side padding, and a row's title to its age. */
+/** A tab's and a banner's side padding, and a row's title to its age. */
 export const INSET = 3 * SPACE_UNIT
+export const BUTTON_PAD_X = BUTTON_PAD_X_PT
+/** A pill button's label, in from the button's edge: its border and its side padding. */
+export const BUTTON_LABEL_X = BUTTON_BORDER_PT + BUTTON_PAD_X
 /** The space under the list's last block, around an empty tab's words, the list's bottom fade and a labelled rule's shortest line. */
 export const END_SPACE = 2 * EDGE
 
