@@ -1,11 +1,15 @@
+/* A question's tree line is opaque, the muted text mixed into the row's background, so where a tick meets the trunk no
+   pixel draws twice as bright. */
 .row {
-  --tree-line: color-mix(in srgb, var(--muted) 55%, transparent);
+  --row-bg: var(--bg);
+  --tree-line: color-mix(in srgb, var(--muted) 55%, var(--row-bg));
   display: grid;
   grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
   padding: var(--row-pad) var(--edge) var(--row-pad) var(--mark-x);
 }
 .row.selected {
-  background-color: var(--selected);
+  --row-bg: var(--selected);
+  background-color: var(--row-bg);
 }
 .mark {
   align-self: start;
