@@ -397,3 +397,15 @@ test('a leaving block’s space closes as soon as its content has faded, and not
   expect(closesAt).toBeGreaterThanOrEqual(fadedAt)
   expect(closesAt - fadedAt).toBeLessThanOrEqual(3 * 16)
 })
+
+test('a settled row the view brings in opens from no height, so the rows below it glide', () => {
+  const steps: [number, Block[]][] = [
+    [0, asks(ALL)],
+    [0, asks([...ALL, 'd10'])],
+  ]
+  const frames = framesOf(steps, 900)
+  expect(asks([...ALL, 'd10']).some(b => b.id === 'd10')).toBe(true)
+  expect(jumpsOf(steps)).toEqual([])
+  expect(frames.fading.find(f => f.id === 'box d10')?.height).toBe(0)
+  expect(frames.cuts).toEqual([])
+})

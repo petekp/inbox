@@ -237,6 +237,7 @@ class Frames {
   private linesAbove = NO_LINES_ABOVE
   private springs = new Springs()
   private fades = new Fades()
+  private closedSeen = new Map<string, number>()
   private lastShown = new Map<string, number>()
   private last: Map<string, Box> | null = null
   jumps: Jump[] = []
@@ -267,6 +268,7 @@ class Frames {
       measure: (key: string, size: { width: number; height: number }) => void this.heights.measure(key, size, 1),
       now,
       newRows: new Map(),
+      closedSeen: this.closedSeen,
       tab: 'needsYou',
       timeLeft: new Map(),
       input: () => null,

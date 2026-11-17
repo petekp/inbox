@@ -50,9 +50,9 @@ export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
 
 /**
  * A row's state, when it entered it, and whether it draws the open row's panel: an open row, one growing in open,
- * and a row closing, settling or leaving from a state that drew it.
+ * and a row closing, settling or leaving from a state that drew it. `entersSettled` marks a row growing in settled.
  */
-export type RowTrack = { state: RowState; since: number; hasPanel: boolean }
+export type RowTrack = { state: RowState; since: number; hasPanel: boolean; entersSettled?: true }
 
 /** How long each state's fade lasts, in ms. Resting states are 0. */
 export const ROW_FADE_MS: Record<RowState, number> = {
@@ -89,8 +89,8 @@ export function isMoving(state: RowState): boolean {
 /**
  * A row's next track, at each draw. A new target starts the move toward it from wherever the row is drawn. A moving
  * state comes to rest once its length has passed, so an animation that never reports its end cannot hold a row.
- * `isNew` grows a row the view just brought in, closed or open; any other row the tab has not drawn yet shows its
- * form at once. With `isReduced`, every move ends in the draw that starts it. Null when the row is no longer drawn.
+ * `isNew` grows a row the view just brought in, in any form; any other row the tab has not drawn yet shows its form at
+ * once. With `isReduced`, every move ends in the draw that starts it. Null when the row is no longer drawn.
  */
 export function stepRow(
   track: RowTrack | undefined,
@@ -101,8 +101,7 @@ export function stepRow(
 ): RowTrack | null {
   const form: Form = target === 'undoing' ? 'settled' : target
   if (!track) {
-    if (isNew && !isReduced && (form === 'closed' || form === 'open'))
-      return { state: 'entering', since: now, hasPanel: form === 'open' }
+    if (isNew && !isReduced && form !== 'gone') return entering(form, now)
     return rest(undefined, form, target, now)
   }
   const next = formOf(track) === form ? track : moveToward(track, form, now)
@@ -111,10 +110,16 @@ export function stepRow(
   return rest(next, form, target, now)
 }
 
-function formOf({ state, hasPanel }: RowTrack): Form {
+function entering(form: Exclude<Form, 'gone'>, now: number): RowTrack {
+  const track: RowTrack = { state: 'entering', since: now, hasPanel: form === 'open' }
+
+  return form === 'settled' ? { ...track, entersSettled: true } : track
+}
+
+function formOf({ state, hasPanel, entersSettled }: RowTrack): Form {
   switch (state) {
     case 'entering':
-      return hasPanel ? 'open' : 'closed'
+      return entersSettled ? 'settled' : hasPanel ? 'open' : 'closed'
     case 'opening':
     case 'open':
       return 'open'
@@ -135,9 +140,7 @@ function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
     case 'open':
       return { state: 'opening', since: now, hasPanel: true }
     case 'closed':
-      return track.state === 'leaving'
-        ? { state: 'entering', since: now, hasPanel: false }
-        : { state: 'closing', since: now, hasPanel: track.hasPanel }
+      return track.state === 'leaving' ? entering('closed', now) : { state: 'closing', since: now, hasPanel: track.hasPanel }
     case 'settled':
       return { state: 'settling', since: now, hasPanel: track.hasPanel }
     case 'gone':

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T23:09:37.522Z. 280403 characters follow.
+// Built at 2026-11-17T23:14:10.533Z. 280539 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5149,8 +5149,8 @@ function isMoving(state) {
 function stepRow2(track, target, now, isNew = false, isReduced = false) {
   const form = target === "undoing" ? "settled" : target;
   if (!track) {
-    if (isNew && !isReduced && (form === "closed" || form === "open"))
-      return { state: "entering", since: now, hasPanel: form === "open" };
+    if (isNew && !isReduced && form !== "gone")
+      return entering(form, now);
     return rest(undefined, form, target, now);
   }
   const next = formOf(track) === form ? track : moveToward(track, form, now);
@@ -5158,10 +5158,14 @@ function stepRow2(track, target, now, isNew = false, isReduced = false) {
     return next;
   return rest(next, form, target, now);
 }
-function formOf({ state, hasPanel }) {
+function entering(form, now) {
+  const track = { state: "entering", since: now, hasPanel: form === "open" };
+  return form === "settled" ? { ...track, entersSettled: true } : track;
+}
+function formOf({ state, hasPanel, entersSettled }) {
   switch (state) {
     case "entering":
-      return hasPanel ? "open" : "closed";
+      return entersSettled ? "settled" : hasPanel ? "open" : "closed";
     case "opening":
     case "open":
       return "open";
@@ -5181,7 +5185,7 @@ function moveToward(track, form, now) {
     case "open":
       return { state: "opening", since: now, hasPanel: true };
     case "closed":
-      return track.state === "leaving" ? { state: "entering", since: now, hasPanel: false } : { state: "closing", since: now, hasPanel: track.hasPanel };
+      return track.state === "leaving" ? entering("closed", now) : { state: "closing", since: now, hasPanel: track.hasPanel };
     case "settled":
       return { state: "settling", since: now, hasPanel: track.hasPanel };
     case "gone":
