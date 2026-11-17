@@ -117,20 +117,12 @@ import { openTarget } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerError } from './view'
-import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
+import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf } from './banners'
+import { rowKeyActions } from './row-key-actions'
 import { comparePagePath, nextBuildMarkPath } from './mod-plugin-files'
 import { bandCounts, isMaybeStale, noCountsText } from './band'
-import {
-  drawnLists,
-  rowKeyPlan,
-  rowsIn,
-  firstWaiting,
-  steppedIndex,
-  tabUndos,
-  latestUndo,
-  type PlannedKey,
-} from './action-plan'
+import { drawnLists, rowsIn, firstWaiting, steppedIndex, tabUndos, latestUndo } from './action-plan'
 import { isRowTab, isShownTab, screenTabOf, shownTabs, tabBadge, INBOX_COMMAND_TEXT, type ShownTab } from './tabs'
 import {
   heldReplies,
@@ -193,7 +185,6 @@ import {
 } from './pane-selection'
 import {
   type Action,
-  ACTION_GLYPHS,
   COPY_FAILURES,
   fieldKey,
   focusHintFor,
@@ -678,7 +669,7 @@ async function askInboxModel(
     effort: 'low',
     timeoutMs,
   })
-  report?.(callReport(r))
+  report?.(callReport(r, MODEL))
   return r.isAnswered ? r.text : null
 }
 
@@ -997,7 +988,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   if (!forked.isAnswered && forked.reason === 'nothing-to-fork')
     return transcriptReply($, owner, ledger, shown, transcript)
   const text = forked.isAnswered ? forked.text : null
-  const heard = { text, report: callReport(forked), thrown: null, ms: (await $.clock.now()) - forkedAt }
+  const heard = { text, report: callReport(forked, null), thrown: null, ms: (await $.clock.now()) - forkedAt }
 
   return text === null ? { kind: 'failed', heard } : { kind: 'reply', text, source: null, statusCall, heard }
 }
@@ -1715,6 +1706,8 @@ async function pollPrs($: EngineInterface, remote = false) {
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
 /** Sends the answers and Fixes held for Undo, and tells Claude about rows closed with Done, once their settle window has passed. */
 async function wakeAfterSettle($: EngineInterface) {
+  // A message sent now reads Queued once QUEUED_AFTER_MS passes, and no change to the session redraws the pane then.
+  later($, QUEUED_AFTER_MS, () => redraw($))
   await wakeSessionAfterSettle(hostOf($, currentOwner()))
 }
 
@@ -1891,85 +1884,6 @@ async function runDemoPress(
   }
   if ('stale' in pressed || pressed.effects.length > 0)
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
-}
-
-function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { keys: KeyAction[]; more: KeyAction[] } {
-  const { id, item, finding } = r
-  const keyAction = (k: PlannedKey): KeyAction => {
-    switch (k.slot) {
-      case 'retry':
-        return {
-          key: `retry-${id}`,
-          label: k.label,
-          icon: ACTION_GLYPHS[k.icon],
-          emphasis: k.emphasis,
-          kind: k.kind,
-          onPress: press => runPress($, k.press, press.surface),
-        }
-      case 'allOptions':
-        return {
-          key: `all-options-${id}`,
-          label: k.label,
-          emphasis: k.emphasis,
-          kind: 'view',
-          onPress: () => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
-        }
-      case 'choice': {
-        const { action: a, hotkey } = k
-        const p = a.press
-        const base = {
-          label: a.label,
-          kind: a.kind,
-          emphasis: a.emphasis,
-          isOut: a.isOut,
-          ...(hotkey ? { hotkey } : {}),
-          onPress: (press: UiPressArgument) => runPress($, p, press.surface),
-        }
-        if (p.action === 'answer')
-          return {
-            ...base,
-            key: `answer-${id}-${(item?.options ?? []).indexOf(p.option)}`,
-            ...(a.isPrimary ? { variant: 'primary' as const } : {}),
-          }
-        const icon = a.icon && ACTION_GLYPHS[a.icon]
-        return { ...base, ...(icon ? { icon } : {}), key: `help-${id}-${p.step}` }
-      }
-      case 'action': {
-        const { action: a, hotkey } = k
-        const p = a.press
-        const presentation = { emphasis: a.emphasis, isOut: a.isOut }
-        if (p.action === 'type')
-          return {
-            label: a.label,
-            kind: 'view',
-            key: `typekey-${id}`,
-            hotkey,
-            ...presentation,
-            onPress: () => void startTyping($, id),
-          }
-        if (p.action === 'discard')
-          return {
-            label: a.label,
-            kind: a.kind,
-            key: `discard-${id}`,
-            hotkey,
-            ...presentation,
-            onPress: () => void discardReply($, id),
-          }
-        return {
-          label: a.label,
-          kind: a.kind,
-          key: p.action === 'dismiss' && finding ? `drop-${id}` : `${p.action}-${id}`,
-          hotkey,
-          ...presentation,
-          onPress: press => runPress($, p, press.surface),
-        }
-      }
-    }
-  }
-  const { keys, more } = rowKeyPlan(r, isAllShown)
-
-  return { keys: keys.map(keyAction), more: more.map(keyAction) }
 }
 
 async function drawnState(
@@ -2574,7 +2488,7 @@ export const register: Register = on => {
         const noted = noteTurnActivity(s, line)
         if (wasDismissed) return noteDialog(noted, null, asked)
 
-        return outcome.kind === 'answered' ? noteAnsweredDialog(noted, asked, outcome.answer, endedAt) : noted
+        return outcome.kind === 'answered' ? noteAnsweredDialog(noted, asked, outcome, endedAt) : noted
       }).catch(() => undefined)
 
       return ran
@@ -3054,7 +2968,17 @@ export const register: Register = on => {
 
     const client: PaneClient = hasClient ? { hasClient: true, elements } : { hasClient: false, elements }
     const handlers: PaneHandlers = {
-      rowKeyActions: (r, isAllShown) => rowKeyActions($, r, isAllShown),
+      rowKeyActions: (r, isAllShown) =>
+        rowKeyActions(
+          {
+            runPress: (p, surface) => runPress($, p, surface),
+            startTyping: id => startTyping($, id),
+            discardReply: id => discardReply($, id),
+            showAllOptions: id => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
+          },
+          r,
+          isAllShown,
+        ),
       unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
       sendDraft: (id, surface) => sendDraft($, id, surface),
       discardReply: id => discardReply($, id),
@@ -3147,6 +3071,7 @@ export const register: Register = on => {
       actionRows,
       rowActions,
       fieldActions,
+      keyedButton,
     } = paneRowKeys(
       { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
       handlers,
@@ -3232,6 +3157,7 @@ export const register: Register = on => {
         keyRow,
         fieldActions,
         actionRows,
+        keyedButton,
         desktopFrame,
       },
       handlers,
@@ -3493,7 +3419,9 @@ export const register: Register = on => {
     const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
     const rowKeys = [
       ...statusRowKeys,
-      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
+      ...(selectedActions
+        ? [...selectedActions.options, ...selectedActions.keys, ...selectedActions.more]
+        : closeKeysWithoutRow(statusRowKeys)),
       ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prClearKeys] : []),
       // The goal's Undo takes the undo key on the Status, where no list row closes.
       ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)

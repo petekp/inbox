@@ -72,7 +72,8 @@ import type { PressTarget } from './press-queue'
 import { herdrIo } from './io'
 import { runHere } from './run-here'
 import { screenOf } from './screen'
-import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, StatusLook, isPaneShown, statusDrawn, writeLook } from './status-look'
+import { LookReports } from './look-reports'
+import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, statusDrawn } from './status-look'
 
 type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; queue: PressQueue }
 
@@ -115,7 +116,7 @@ export default class Inbox extends View {
   /** The next read for the presses still out, and the next draw for a fold or a move. */
   outTimer: Timer | null = null
   drawTimer: Timer | null = null
-  look = new StatusLook()
+  look = new LookReports()
 
   init(_props: unknown, cx: Context): void {
     this.focus = cx.focus_handle()
@@ -156,8 +157,8 @@ export default class Inbox extends View {
   /** Writes the look at the Status for its session's host once the pane stops showing it. */
   async checkLook(isClosing = false): Promise<void> {
     const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow())
-    const ended = this.look.check(isShown, Date.now())
-    if (ended) await writeLook(queueIo, appHome(), ended)
+    const page = { tab: this.ui.tab, sessionId: this.sessionId, read: this.read }
+    await this.look.check(queueIo, appHome(), isShown, page, Date.now())
   }
 
   close(): Promise<void> {
@@ -445,7 +446,7 @@ export default class Inbox extends View {
     if (screen.is === 'message') {
       this.timeLeft = new Map()
       this.tracksOf = ''
-      this.look.drew(null, now)
+      this.look.status.drew(null, now)
       return root.child(messageEl(screen.message, t))
     }
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
@@ -457,7 +458,7 @@ export default class Inbox extends View {
     paint.motion = moved.motion
     const read = drawn.read?.is === 'read' && this.ui.tab === 'overview' && !this.isHelpShown ? drawn.read : null
     const room = moved.nextAt === null ? paint.listRoom : null
-    this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
+    this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
     const wakeAt = nextDrawAt(now, this.ui, screen, moved)

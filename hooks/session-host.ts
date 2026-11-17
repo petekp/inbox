@@ -60,13 +60,13 @@ export function orderedKeys(): { run<T>(key: string, fn: () => Promise<T>): Prom
 export const CATCH_UP_CALL: CallKind = { call: 'ledger', reads: 'catch-up' }
 
 /**
- * What a host knows about one model call besides its answer: the model it asked for, the model that answered when
- * the host says, and why the call gave no answer. `cause` says whether the call's process failed, the call ended with
- * an error, or it ended with no text; absent, an `error` reads as an error and none as no text. `process` is the
- * failed process, for a host that runs the call as one.
+ * What a host knows about one model call besides its answer: the model it asked for, or null when the call ran on the
+ * conversation's model, the model that answered when the host says, and why the call gave no answer. `cause` says
+ * whether the call's process failed, the call ended with an error, or it ended with no text; absent, an `error` reads
+ * as an error and none as no text. `process` is the failed process, for a host that runs the call as one.
  */
 export type CallReport = {
-  model: string
+  model: string | null
   answeredBy?: string
   error?: string
   cause?: 'process' | 'error' | 'no-reply'

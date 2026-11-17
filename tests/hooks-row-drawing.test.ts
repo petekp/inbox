@@ -77,10 +77,18 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
     const forms = new Set<string>()
     for (let columns = 26; columns <= 120; columns++) {
       await pane.redraw({ ...PANE.props, bodyColumns: columns })
-      const rows = (await pane.findAll({ type: 'Box' }))
-        .filter(b => b.props.flexWrap === 'wrap')
-        .map(b => b.children.flatMap(shownLabels))
-        .filter(shown => followUpLabels.some(l => holds(shown, l)))
+      const holdsFollowUps = (await pane.findAll({ type: 'Box' })).filter(
+        b => b.props.flexWrap === 'wrap' && followUpLabels.some(l => holds(b.children.flatMap(shownLabels), l)),
+      )
+      const wrapsGroup = (b: (typeof holdsFollowUps)[number]) =>
+        b.children.some(
+          c =>
+            (c as { type?: string }).type === 'Box' &&
+            (c as { props?: { flexWrap?: string } }).props?.flexWrap === 'wrap' &&
+            followUpLabels.some(l => holds(shownLabels(c), l)),
+        )
+      const outer = holdsFollowUps.filter(wrapsGroup)
+      const rows = (outer.length > 0 ? outer : holdsFollowUps).map(b => b.children.flatMap(shownLabels))
       expect(rows, `${look} at ${columns} columns`).toHaveLength(1)
       expect(
         followUpLabels.every(l => holds(rows[0]!, l)),

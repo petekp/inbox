@@ -12,7 +12,7 @@ Some content and host bookkeeping still have two copies. These are remaining wor
 
 A `deliveryId` identifies one local press. Each host keeps a sent-prompt record
 before an arrival can change its rows. Arrival events provide message text but
-no matching delivery ID, so they consume the oldest matching record. A press whose host holds its delivery until the message runs, as the mod does in the terminal and the desktop app, reads “Queued” from the moment it is sent. Codex and omp deliver at once, so their press reads unconfirmed until the delivery is saved. Queued feedback appears only after the message has waited one second. Until then the press shows its plain label and no ✓.
+no matching delivery ID, so they consume the oldest matching record. A press whose host holds its delivery until the message runs, as the mod does in the terminal and the desktop app, reads “Queued” from the moment it is sent. Codex and omp deliver at once, so their press reads unconfirmed until the delivery is saved. Queued feedback appears only after the message has waited one second since it was sent, which for an answer or Fix held for Undo is when Undo ends (`Delivery.sentAt`). Until then the press shows its plain label and no ✓.
 Unconfirmed feedback has no delay and is for a delivery in doubt: a delivery that failed to report, a message another plugin changed, or a restart that lost it. A newer
 identical press reads “Not confirmed” until a later arrival can confirm
 its record. Open rows, settled rows and Closed folds preserve that status

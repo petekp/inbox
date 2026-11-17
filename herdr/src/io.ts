@@ -1,6 +1,6 @@
 import type { Run } from '../../hooks/gh'
+import { PRESS_LABEL } from '../../hooks/herdr-labels'
 import type { PathProbe } from '../../hooks/open-targets'
-import { PRESS_LABEL } from './press-file'
 import { claimedPath } from './press-queue'
 import type { QueueIo } from './press-queue'
 

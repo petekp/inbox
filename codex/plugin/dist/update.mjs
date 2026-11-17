@@ -1397,8 +1397,11 @@ var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
 var PR_READ_WAIT_MS = 6e4;
+function queuedSentAt(last) {
+  return last.delivery?.state === "queued" ? last.delivery.sentAt ?? last.at : last.at;
+}
 function isQueuedAt(last, now) {
-  return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
+  return last?.delivery?.state === "queued" && now - queuedSentAt(last) >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "held") return "held";
@@ -2438,7 +2441,15 @@ function optionDescriptionsOf(item, actions) {
     const description = descriptions && Object.hasOwn(descriptions, a.press.option) ? descriptions[a.press.option] : null;
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
     if (description === null && reason === null) return [];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
+    return [
+      {
+        option: a.press.option,
+        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
+        description,
+        reason,
+        isFolded: a.isFolded
+      }
+    ];
   });
 }
 function isWaitingRow(row) {
@@ -3365,7 +3376,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press: press2,
       label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "type" || press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
       ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -3790,7 +3801,7 @@ function isSubjectSeen(o, s) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
@@ -4902,6 +4913,9 @@ function delegateRefs(command) {
   return new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
 }
 
+// ../hooks/herdr-labels.ts
+var SESSION_LABEL = "inbox.session";
+
 // ../hooks/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -4977,7 +4991,6 @@ function paneReport(pane, tokens, seq) {
     ...seq === void 0 ? [] : ["--seq", String(seq)]
   ];
 }
-var SESSION_LABEL = "inbox.session";
 function reportCommand(r, hc = "hc") {
   if (r.target.kind === "pane") return paneReport(r.target.pane, r.tokens, r.seq);
   const labels = { [SESSION_LABEL]: r.session ?? "", ...herdrLabels(r.tokens) };
@@ -6553,7 +6566,9 @@ var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
 var recordFiles = {
   write: async (path, text2) => {
     await mkdir4(dirname5(path), { recursive: true });
-    await writeFile4(path, text2);
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile4(tmp, text2);
+    await rename4(tmp, path);
   },
   list: (folder) => readdir4(folder).catch(() => []),
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),

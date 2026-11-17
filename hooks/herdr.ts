@@ -5,6 +5,7 @@ import { bandCounts, isMaybeStale } from './band'
 import { MAYBE_STALE_TEXT } from './banners'
 import { delegateRef, hasRunningDelegate, onceEvery } from './children'
 import { delegatesInHc } from './hc-terminals'
+import { SESSION_LABEL } from './herdr-labels'
 import type { ClientId } from './clients'
 import { emptySession, sessionFile } from './session-files'
 import { UNSTARTABLE_CODE } from './gh'
@@ -218,9 +219,6 @@ function paneReport(pane: string, tokens: HerdrTokens, seq?: number): string[] {
     ...(seq === undefined ? [] : ['--seq', String(seq)]),
   ]
 }
-
-/** The label that names the session a terminal runs, so the Herdr look can find its published file. */
-export const SESSION_LABEL = 'inbox.session'
 
 /**
  * What a host reports: where, its tokens, and the session whose published file the labels name, which is null when no

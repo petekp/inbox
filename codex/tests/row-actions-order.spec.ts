@@ -7,7 +7,7 @@ import type { Ledger } from '../../types'
 import { applyPress } from '../../hooks/press-reducer'
 import type { PressResult } from '../../hooks/press-reducer'
 import { inboxView } from '../../hooks/view'
-import { ledgerActions, RowActions } from '../src/row-actions'
+import { ActionButton, ledgerActions, RowActions } from '../src/row-actions'
 import { recordItem } from '../../hooks/tools'
 import { CODEX } from '../src/texts'
 import { buttons, named, task } from './row-actions-fixtures'
@@ -117,7 +117,15 @@ test('the Codex renderer preserves retry, folded-option and finding action order
         drawQuestion()
       },
     })
-    render(h(RowActions, { keys: choices.keys, more: choices.more, reply: null, isBlocked: () => false }), root)
+    render(
+      h(
+        'div',
+        null,
+        ...choices.options.map(action => h(ActionButton, { action, isBlocked: () => false })),
+        h(RowActions, { keys: choices.keys, more: choices.more, reply: null, isBlocked: () => false }),
+      ),
+      root,
+    )
   }
   await act(drawQuestion)
   assert.deepEqual(

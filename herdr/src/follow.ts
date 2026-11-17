@@ -1,4 +1,4 @@
-import { SESSION_LABEL } from '../../hooks/herdr'
+import { SESSION_LABEL } from '../../hooks/herdr-labels'
 import { isSessionFile } from '../../hooks/session-files'
 
 /** What the look reads from Herdr's live data to pick a terminal. Each field is the part of Herdr's own value it uses. */

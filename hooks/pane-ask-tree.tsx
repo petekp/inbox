@@ -1,13 +1,22 @@
 import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
-import { optionBody, optionReasonLine, type RowView, shownOptionDescriptions } from './rows'
+import type { KeyAction } from './pane-keys'
+import type { RowView } from './rows'
 import type { TreePos } from './terminal-text'
 
 /** Cells the terminal's tree takes in front of a branch's text: the glyph, its dash and a space. */
 const TREE_TEXT_INDENT = 3
 
 /** `lead` draws muted before `label`, which then draws bold, as the earlier answer's line reads "You answered **Flick**". */
-export type AskEntry = { key: string; pos: TreePos | null; lead?: string; label: string; rest: string }
+export type AskEntry = {
+  key: string
+  pos: TreePos | null
+  lead?: string
+  label: string
+  rest: string
+  /** An answer, drawn as its button in place of `label`. */
+  option?: KeyAction
+}
 
 /**
  * An open question's or task's Holds up line, context, earlier answer and option lines, in that order. In the terminal
@@ -15,19 +24,16 @@ export type AskEntry = { key: string; pos: TreePos | null; lead?: string; label:
  * answer beside it. `askEntries` gives desktop the same entries, which it draws on its own hairline pieces.
  */
 export function paneAskTree(
-  { look, Box, Text, pal, optionsShown }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'optionsShown'>,
+  { look, Box, Text, pal }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal'>,
   { branch }: Pick<PaneRowLines, 'branch'>,
+  keyedButton: (rowId: string) => (action: KeyAction) => JSX.Element,
 ) {
-  const entriesOf = (view: RowView): AskEntry[] => {
+  const entriesOf = (view: RowView, answers: KeyAction[]): AskEntry[] => {
     if (view.type === 'finding' || view.state.is !== 'open') return []
-    const options = shownOptionDescriptions(view, optionsShown.includes(view.id)).flatMap((o, n): AskEntry[] => {
-      const body = optionBody(o)
-      const reason = optionReasonLine(o)
-      const first: AskEntry = { key: `option-${n}`, pos: 'mid', label: o.label, rest: body === null ? '' : `: ${body}` }
-
+    const options = answers.flatMap((option, n): AskEntry[] => {
       return [
-        first,
-        ...(reason === null ? [] : [{ key: `reason-${n}`, pos: 'pass' as const, label: '', rest: reason }]),
+        { key: `option-${n}`, pos: 'mid', label: option.label, rest: '', option },
+        ...(option.note ? [{ key: `reason-${n}`, pos: 'pass' as const, label: '', rest: option.note }] : []),
       ]
     })
     const holdsUp = view.state.is === 'open' && view.holdsUpLine ? view.holdsUpLine : null
@@ -54,9 +60,10 @@ export function paneAskTree(
             : b
     })
   }
-  const hasTree = (view: RowView) => look === 'terminal' && entriesOf(view).some(e => e.pos !== null)
-  const askTree = (view: RowView) => {
-    const entries = entriesOf(view)
+  const hasTree = (view: RowView, answers: KeyAction[]) =>
+    look === 'terminal' && entriesOf(view, answers).some(e => e.pos !== null)
+  const askTree = (view: RowView, answers: KeyAction[]) => {
+    const entries = entriesOf(view, answers)
     if (entries.length === 0) return null
     const isTree = entries.some(e => e.pos !== null)
 
@@ -66,11 +73,15 @@ export function paneAskTree(
           <Box key={e.key} flexDirection="row" position="relative" overflow="hidden">
             {e.pos ? branch(e.pos, 0, 0, pal.selectionLine ?? pal.line, 0, `tree-${e.key}`) : null}
             <Box flexShrink={1} paddingLeft={isTree ? TREE_TEXT_INDENT : 0}>
-              <Text wrap="wrap">
-                {e.lead ? <Text color={pal.muted}>{e.lead}</Text> : null}
-                {e.label ? <Text bold={e.lead !== undefined}>{e.label}</Text> : null}
-                <Text color={pal.muted}>{e.rest}</Text>
-              </Text>
+              {e.option ? (
+                keyedButton(view.id)(e.option)
+              ) : (
+                <Text wrap="wrap">
+                  {e.lead ? <Text color={pal.muted}>{e.lead}</Text> : null}
+                  {e.label ? <Text bold={e.lead !== undefined}>{e.label}</Text> : null}
+                  <Text color={pal.muted}>{e.rest}</Text>
+                </Text>
+              )}
             </Box>
           </Box>
         ))}

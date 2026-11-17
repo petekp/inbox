@@ -1,5 +1,6 @@
 import type { Run } from './gh'
-import { HERDR_FORMAT, publishedSessionsFolder, SESSION_LABEL } from './herdr'
+import { HERDR_FORMAT, publishedSessionsFolder } from './herdr'
+import { SESSION_LABEL } from './herdr-labels'
 import { unpublishSession } from './herdr-app'
 import { modTemporaryWrittenAt } from './herdr-install'
 import type { PublishFiles } from './herdr-app'

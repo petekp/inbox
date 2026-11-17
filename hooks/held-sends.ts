@@ -1,5 +1,5 @@
 import { confirmRemoteDelivery } from './remote-command-state'
-import type { Session } from '../types'
+import type { Delivery, Session } from '../types'
 import { reopenOnFailure, withFailure, withUnconfirmed } from './press-reducer'
 import { completedAttempt } from './session-presses'
 import type { SendOutcome } from './session-presses'
@@ -66,11 +66,16 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, i
     await host.prepare?.(s)
     const deliveryId = last.commandId ? `${last.commandId}:send` : attemptId
     attempt = { deliveryId, text: held.message, at: last.at }
-    const state = host.isDeliveryHeldUntilRun ? ('queued' as const) : ('unconfirmed' as const)
+    const delivery: Delivery = {
+      state: host.isDeliveryHeldUntilRun ? 'queued' : 'unconfirmed',
+      message: held.message,
+      id: deliveryId,
+      sentAt: now,
+    }
 
     return {
       ...s,
-      lastActions: { ...s.lastActions, [id]: { ...last, delivery: { state, message: held.message, id: deliveryId } } },
+      lastActions: { ...s.lastActions, [id]: { ...last, delivery } },
       sent: [
         ...s.sent,
         {

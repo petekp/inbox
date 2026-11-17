@@ -1,4 +1,4 @@
-import { isQuestionBack, recommendedOption } from './ask-match'
+import { isQuestionBack, recommendedOption, rewordedQuestion } from './ask-match'
 import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
@@ -139,7 +139,10 @@ export function recordItem(
   const isDesignChoice = input.kind === 'question' && input.design_choice === true
   const kind: Item['kind'] = input.kind
   const entry = { kind, ask, options, rec, helps, isDesignChoice, ...(recReason ? { recReason } : {}) }
-  const r = addAgentItem(ledger, entry, now)
+  const body = input.kind === 'question' ? questionBody(input, options) : {}
+  const reworded =
+    body.context && input.kind === 'question' ? rewordedQuestion(ledger.items, ledger.turn, entry) : undefined
+  const r = addAgentItem(ledger, reworded ? { ...entry, ask: reworded.ask } : entry, now)
   if (r.is === 'closed')
     return unchanged(
       ledger,
@@ -147,10 +150,13 @@ export function recordItem(
         ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.`
         : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`,
     )
-  const body = input.kind === 'question' ? questionBody(input, options) : {}
   const before = r.ledger.items.find(i => i.id === r.id)
   const after = before && withBody(before, body)
-  const recorded = { ...r.ledger, items: r.ledger.items.map(i => (i === before && after ? after : i)) }
+  const rewordedAsk = reworded && r.is === 'open' && r.id === reworded.id ? { ask } : {}
+  const recorded = {
+    ...r.ledger,
+    items: r.ledger.items.map(i => (i === before && after ? { ...after, ...rewordedAsk } : i)),
+  }
   if (r.is === 'open') {
     const changes = [
       ...(r.addedSteps > 0 ? ['added its new steps'] : []),

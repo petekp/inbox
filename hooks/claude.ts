@@ -15,9 +15,22 @@ export function dialogOutcome(ran: { text?: string; isError?: true; deny?: strin
   if (ran.isError || typeof ran.deny === 'string' || ran.text?.trim() === UNANSWERED_DIALOG)
     return { kind: 'dismissed' }
   const answer = ran.text ?? ''
-  const fields = ran.result && typeof ran.result === 'object' ? (ran.result as { afkTimeoutMs?: unknown }) : {}
+  const fields =
+    ran.result && typeof ran.result === 'object' ? (ran.result as { afkTimeoutMs?: unknown; answers?: unknown }) : {}
+  if (typeof fields.afkTimeoutMs === 'number') return { kind: 'timed-out', answer }
+  const answers = structuredAnswersOf(fields.answers)
 
-  return typeof fields.afkTimeoutMs === 'number' ? { kind: 'timed-out', answer } : { kind: 'answered', answer }
+  return answers ? { kind: 'answered', answer, answers } : { kind: 'answered', answer }
+}
+
+/** The structured result's answers, keyed by question text, or null when it has none or not in that form. */
+function structuredAnswersOf(answers: unknown): Record<string, string> | null {
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return null
+  const entries = Object.entries(answers)
+
+  return entries.every(([, v]) => typeof v === 'string')
+    ? (Object.fromEntries(entries) as Record<string, string>)
+    : null
 }
 
 /**

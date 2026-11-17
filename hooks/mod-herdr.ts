@@ -11,6 +11,7 @@ import {
   herdrTokens,
 } from './herdr'
 import type { EnvelopeSource, HerdrAgent, HerdrTarget } from './herdr'
+import { PRESS_LABEL } from './herdr-labels'
 import {
   followPresses,
   isPublishedHere,
@@ -313,7 +314,7 @@ function wakeLabelIn(line: string, terminal: string): string | null {
     const event = JSON.parse(line) as { params?: { type?: string; terminal?: string; data?: { labels?: unknown } } }
     const params = event.params
     const labels = params?.type === 'labels' && params.terminal === terminal ? params.data?.labels : null
-    const value = labels && typeof labels === 'object' ? (labels as Record<string, unknown>)['inbox.press'] : null
+    const value = labels && typeof labels === 'object' ? (labels as Record<string, unknown>)[PRESS_LABEL] : null
 
     return typeof value === 'string' && value ? value : null
   } catch {

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T07:17:43.808Z. 272973 characters follow.
+// Built at 2026-11-17T07:34:04.795Z. 275958 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -278,6 +278,10 @@ var GH_TIMEOUT_MS = 20000;
 
 // ../hooks/hc-terminals.ts
 var HC_BLOCKED = new Set(["blocked", "error"]);
+
+// ../hooks/herdr-labels.ts
+var SESSION_LABEL = "inbox.session";
+var PRESS_LABEL = "inbox.press";
 
 // ../hooks/ask-match.ts
 function words2(text) {
@@ -1772,8 +1776,11 @@ function timedChangeAt(lastActions, now) {
   }).filter((at) => at > now);
   return ends.length > 0 ? Math.min(...ends) : null;
 }
+function queuedSentAt(last) {
+  return last.delivery?.state === "queued" ? last.delivery.sentAt ?? last.at : last.at;
+}
 function isQueuedAt(last, now) {
-  return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
+  return last?.delivery?.state === "queued" && now - queuedSentAt(last) >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "held")
@@ -1901,7 +1908,15 @@ function optionDescriptionsOf(item, actions) {
     const reason = item?.rec === a.press.option && item.recReason ? item.recReason : null;
     if (description === null && reason === null)
       return [];
-    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, reason, isFolded: a.isFolded }];
+    return [
+      {
+        option: a.press.option,
+        label: clipLabel(a.press.option, OPTION_LABEL_CHARS),
+        description,
+        reason,
+        isFolded: a.isFolded
+      }
+    ];
   });
 }
 function optionBody(o) {
@@ -1915,8 +1930,8 @@ function optionReasonLine(o) {
   return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null;
 }
 var recommendedLine = (reason) => `Recommended: ${reason}`;
-function shownOptionDescriptions(row, isShowingAll) {
-  return row.optionDescriptions.filter((o) => isShowingAll || !o.isFolded);
+function optionNote(o) {
+  return o ? optionBody(o) ?? optionReasonLine(o) : null;
 }
 function rowHandle(row) {
   return row.number === null ? "•" : `${row.number})`;
@@ -2726,7 +2741,6 @@ var COUNT_TOKENS = {
   prs: "inbox-prs"
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
-var SESSION_LABEL = "inbox.session";
 var HERDR_FORMAT = 1;
 var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor");
 function publishedSessionsFolder(appHome) {
@@ -3093,7 +3107,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       press,
       label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "type" || press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
       ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -3206,6 +3220,7 @@ function rowKeyPlan(r, isAllShown) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
   const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
+  const options = [];
   const keys = [];
   const more = [];
   const retry = r.feedback?.is === "notSent" ? r.feedback.retry : null;
@@ -3218,7 +3233,11 @@ function rowKeyPlan(r, isAllShown) {
     const { press } = a;
     if (press.action === "answer" || press.action === "step") {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++] } : {};
-      keys.push({ slot: "choice", action: { ...a, press }, ...hotkey });
+      if (press.action === "answer") {
+        const note = optionNote(r.optionDescriptions.find((d) => d.option === press.option));
+        options.push({ action: { ...a, press }, note, ...hotkey });
+      } else
+        keys.push({ slot: "choice", action: { ...a, press }, ...hotkey });
       if (n === lastOption && folded > 0)
         keys.push({
           slot: "allOptions",
@@ -3233,7 +3252,7 @@ function rowKeyPlan(r, isAllShown) {
         hotkey: a.hotkey
       });
   }
-  return { keys, more };
+  return { options, keys, more };
 }
 
 // ../hooks/earlier-answers.ts
@@ -3529,7 +3548,7 @@ function withCollapse(s, row, isCollapsed, at) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";
@@ -4400,17 +4419,29 @@ function rowDoes(row, press, kind, agent) {
   return { is: "press", press, effects };
 }
 function rowButtons(row, isAllShown, agent) {
-  const { keys, more } = rowKeyPlan(row, isAllShown);
-  return [...keys, ...more].map((k, n) => {
-    const id = `${row.id} ${n}`;
-    if (k.slot === "allOptions")
-      return button(id, k.label, k.emphasis, { is: "view", change: { showOptions: row.id } });
-    if (k.slot === "retry")
-      return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent));
-    const { action } = k;
-    const does = rowDoes(row, action.press, action.kind, agent);
-    return { ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null), isOut: action.isOut };
-  });
+  const { options, keys, more } = rowKeyPlan(row, isAllShown);
+  const answers = options.map((o, n) => ({
+    ...button(`${row.id} ${n}`, actionLabel(o.action), o.action.emphasis, rowDoes(row, o.action.press, o.action.kind, agent), o.hotkey ?? null),
+    isOut: o.action.isOut,
+    isOption: true
+  }));
+  return [
+    ...answers,
+    ...[...keys, ...more].map((k, n) => {
+      const id = `${row.id} ${options.length + n}`;
+      if (k.slot === "allOptions")
+        return button(id, k.label, k.emphasis, { is: "view", change: { showOptions: row.id } });
+      if (k.slot === "retry")
+        return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent));
+      const { action } = k;
+      const does = rowDoes(row, action.press, action.kind, agent);
+      return {
+        ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null),
+        isOut: action.isOut,
+        ...action.isFollowUp ? { isFollowUp: true } : {}
+      };
+    })
+  ];
 }
 var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
 function undoButtons(row, agent, now) {
@@ -4441,14 +4472,10 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   };
 }
 function rowBody(row, isAllShown) {
-  const options = shownOptionDescriptions(row, isAllShown).map((o) => {
-    const body = optionBody(o);
-    const reason = optionReasonLine(o);
-    return [
-      { lead: body === null ? o.label : `${o.label}:`, text: body ?? "", tone: "muted" },
-      ...reason ? [{ text: reason, tone: "muted" }] : []
-    ];
-  });
+  const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
+    { optionId: `${row.id} ${n}`, text: "", tone: "muted" },
+    ...o.note ? [{ text: o.note, tone: "muted" }] : []
+  ]);
   const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: "muted" }]] : [];
   const branches = [...holdsUp, ...options];
   const lastBranch = branches.length - 1;
@@ -4472,7 +4499,7 @@ function rowBody(row, isAllShown) {
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
     ...options.flatMap((_, n) => branchLines(holdsUp.length + n))
   ];
-  const shown = lines.filter((l) => l.text || l.lead);
+  const shown = lines.filter((l) => l.text || l.lead || l.optionId);
   return shown.map(({ isApart, ...l }, n) => isApart && n > 0 ? { ...l, isApart } : l);
 }
 function rowBlock(row, ui, selected, screen) {
@@ -4503,7 +4530,7 @@ function rowBlock(row, ui, selected, screen) {
     isSelected,
     ...isCollapsed && { isCollapsed },
     body: isOpen ? rowBody(row, isAllShown) : [],
-    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isOpen && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
+    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isOpen ? rowButtons(row, isAllShown, screen.agent).filter((b) => !isTyping || b.isOption) : [],
     field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
   };
 }
@@ -4886,7 +4913,6 @@ function withChange(ui, c) {
 }
 
 // src/press-file.ts
-var PRESS_LABEL = "inbox.press";
 var pressPath = (appHome, sessionId, pressId) => `${pressFolder(appHome, sessionId)}/${pressId}.json`;
 var newPressId = (now, random) => `${now.toString(36)}-${Math.floor(random * 36 ** 6).toString(36)}`;
 function pressFileText(id, pressedAt, press, holds, result = null) {
@@ -5536,12 +5562,12 @@ function timeLeftEl(id, left, runsOutAt, now, t) {
 }
 
 // src/paint-parts.ts
-function buttonEl(b, p, isInert = false) {
+function buttonEl(b, p, isInert = false, isShrinkable = false) {
   const { t } = p;
   const isPill = b.emphasis !== "quiet";
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
-  const base = h_flex().id(`button ${b.id}`).flex_none().h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(b.label);
+  const base = h_flex().id(`button ${b.id}`).when(!isShrinkable, (e) => e.flex_none()).when(isShrinkable, (e) => e.flex_shrink_1().min_w(0)).h(BUTTON_H).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isShrinkable ? div3().min_w(0).truncate().child(b.label) : b.label);
   const shaped = isPill && runsOutAt === undefined ? base.px(INSET).rounded(BUTTON_H / 2).border_1() : base;
   if (b.isHidden)
     return shaped.invisible().disabled(true);
@@ -5557,7 +5583,11 @@ function buttonEl(b, p, isInert = false) {
   });
 }
 var CLEAR = "#00000000";
-var buttonsEl = (buttons, p, indent, isInert = false) => h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
+var buttonsEl = (buttons, p, indent, isInert = false) => {
+  const followUps = buttons.filter((b) => b.isFollowUp);
+  const others = buttons.filter((b) => !b.isFollowUp);
+  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(others.map((b) => buttonEl(b, p, isInert))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
+};
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
 var resultLineEl = (text, color, indent = MARK_W) => lineEl(text, color, indent).pt(CONTROL_GAP);
@@ -5849,12 +5879,12 @@ var trunkEl = (top, height, t, isSelected) => {
 };
 var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
-var bodyLineEl = (l, t, isSelected) => {
+var bodyLineEl = (l, t, isSelected, option = undefined, p = null, isInert = false) => {
   const above = l.isApart ? CHILD_GAP : INSIDE_GAP;
-  const armAt = above + LINE_HEIGHT / 2;
+  const armAt = above + (option ? BUTTON_H : LINE_HEIGHT) / 2;
   const arm = div8().absolute().left(PATH_X - EDGE + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone)).pt(above);
+  const line = option && p ? h_flex5().min_w(0).pl(MARK_W).pt(above).child(buttonEl(option, p, isInert, true)) : l.lead ? h_flex5().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone)).pt(above);
   return line.relative().children(strokes);
 };
 function fieldEl(f, p, indent, isInert = false) {
@@ -5890,8 +5920,10 @@ function panelEl(r, m, p, isLeaving) {
   const isInert = isLeaving || from !== r;
   const under = from === r && isStatusUnder(r) ? r.feedback : null;
   const parts = [
-    ...from.body.map((l) => bodyLineEl(l, t, r.isSelected)),
-    ...from.buttons.length > 0 ? [buttonsEl(from.buttons, p, MARK_W, isInert)] : [],
+    ...from.body.map((l) => bodyLineEl(l, t, r.isSelected, from.buttons.find((b) => b.id === l.optionId), p, isInert)),
+    ...from.buttons.some((b) => !b.isOption) ? [
+      buttonsEl(from.buttons.filter((b) => !b.isOption), p, MARK_W, isInert)
+    ] : [],
     ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : [],
     ...under ? [bodyLineEl(under, t, r.isSelected).pt(CONTROL_GAP)] : []
   ];
@@ -6424,6 +6456,48 @@ async function writeLook(io, appHome, ended) {
     await io.wake(ended.terminal, id);
 }
 
+// src/look-reports.ts
+var PRS_REPORT_MS = 30000;
+function prsShownTarget(isPaneShown, tab, sessionId, read) {
+  if (!isPaneShown || tab !== "prs" || sessionId === null || read?.is !== "read")
+    return null;
+  return { sessionId, terminal: read.envelope.terminal };
+}
+
+class PrsShownReport {
+  last = null;
+  check(target, now) {
+    if (target === null) {
+      this.last = null;
+      return null;
+    }
+    const last = this.last;
+    if (last?.sessionId === target.sessionId && now - last.at < PRS_REPORT_MS)
+      return null;
+    this.last = { sessionId: target.sessionId, at: now };
+    return target;
+  }
+}
+async function writePrsShown(io, appHome, target, now) {
+  const id = newPressId(now, io.random());
+  const file = { format: HERDR_FORMAT, id, prsShown: { at: now } };
+  if (await io.write(pressPath(appHome, target.sessionId, id), JSON.stringify(file)) === null)
+    await io.wake(target.terminal, id);
+}
+
+class LookReports {
+  status = new StatusLook;
+  prs = new PrsShownReport;
+  async check(io, appHome, isPaneShown, page, now) {
+    const ended = this.status.check(isPaneShown, now);
+    if (ended)
+      await writeLook(io, appHome, ended);
+    const target = this.prs.check(prsShownTarget(isPaneShown, page.tab, page.sessionId, page.read), now);
+    if (target)
+      await writePrsShown(io, appHome, target, now);
+  }
+}
+
 // src/main.ts
 var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
 
@@ -6457,7 +6531,7 @@ class Inbox extends View {
   focus = null;
   outTimer = null;
   drawTimer = null;
-  look = new StatusLook;
+  look = new LookReports;
   init(_props, cx) {
     this.focus = cx.focus_handle();
     cx.spawn(async (cx) => {
@@ -6495,9 +6569,8 @@ class Inbox extends View {
   }
   async checkLook(isClosing = false) {
     const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow());
-    const ended = this.look.check(isShown, Date.now());
-    if (ended)
-      await writeLook(queueIo, appHome(), ended);
+    const page = { tab: this.ui.tab, sessionId: this.sessionId, read: this.read };
+    await this.look.check(queueIo, appHome(), isShown, page, Date.now());
   }
   close() {
     return this.checkLook(true);
@@ -6765,7 +6838,7 @@ class Inbox extends View {
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
-      this.look.drew(null, now);
+      this.look.status.drew(null, now);
       return root.child(messageEl(screen.message, t));
     }
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
@@ -6777,7 +6850,7 @@ class Inbox extends View {
     paint.motion = moved.motion;
     const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
     const room = moved.nextAt === null ? paint.listRoom : null;
-    this.look.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
+    this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
     const wakeAt = nextDrawAt(now, this.ui, screen, moved);

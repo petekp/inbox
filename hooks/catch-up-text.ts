@@ -55,7 +55,7 @@ export function toolActivity(tool: string, input: Record<string, unknown>): stri
 }
 
 export type DialogOutcome =
-  | { kind: 'answered'; answer: string }
+  | { kind: 'answered'; answer: string; answers?: Record<string, string> }
   | { kind: 'timed-out'; answer: string }
   | { kind: 'dismissed' }
   | { kind: 'open' }
