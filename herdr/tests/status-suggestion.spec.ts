@@ -24,12 +24,12 @@ const labelsOf = (blocks: Block[]) => offerOf(blocks)?.buttons ?? []
 
 const textsOf = (blocks: Block[]) => blocks.flatMap(b => (b.kind === 'note' ? [b.text] : []))
 
-test('the suggestion shows at once as a dim offer with Set this goal and Edit after it, and nothing on the heading', () => {
+test('the suggestion shows at once as an offer with Set goal and Edit after it, and nothing on the heading', () => {
   const open = tabBlocks(screenWith('none'), uiOn('overview'))
   const heading = open.find(b => b.kind === 'heading' && b.id === 'goal heading')
   expect(heading?.kind === 'heading' && heading.buttons).toEqual([])
-  expect(offerOf(open)).toMatchObject({ text: `Next goal: “${SUGGESTION}”?`, tone: 'muted', isStrong: false })
-  expect(labelsOf(open).map(b => b.label)).toEqual(['Set this goal', 'Edit'])
+  expect(offerOf(open)).toMatchObject({ text: `Next goal: “${SUGGESTION}”?`, tone: null, isStrong: true })
+  expect(labelsOf(open).map(b => b.label)).toEqual(['Set goal', 'Edit'])
 })
 
 test('Set sends the goal press for the suggestion', () => {
@@ -46,7 +46,7 @@ test('Edit opens the field with the suggestion and a Set button, and the field�
   expect(field?.kind === 'field' && field.field.buttons.map(b => b.label)).toEqual(['Set', 'Cancel'])
   expect(textsOf(tabBlocks(screen, typing))).not.toContain(SUGGESTION)
   const left = tabBlocks(screen, { ...typing, typing: null })
-  expect(labelsOf(left).map(b => b.label)).toEqual(['Set this goal', 'Edit'])
+  expect(labelsOf(left).map(b => b.label)).toEqual(['Set goal', 'Edit'])
 })
 
 test('sending the goal field closes it, and a refused send keeps it open', () => {

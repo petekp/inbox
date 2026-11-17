@@ -17,24 +17,24 @@ const screenWith = (fields: Partial<SessionStatus>) => {
 }
 const suggesting = () => screenWith({ suggestedGoal: SUGGESTED })
 
-test('the suggestion shows at once as a dim offer with Set this goal and Edit after it, and no New or Dismiss', () => {
+test('the suggestion shows at once as an offer with Set goal and Edit after it, and no New or Dismiss', () => {
   const screen = suggesting()
   const lines = text(screen, onPage, 120).split('\n')
   const offer = lines.find(l => l.includes('Next goal:'))
-  expect(offer?.trim()).toMatch(/^Next goal: “Ship 0.5.0 to the store”\?\s+↵ Set this goal\s+·\s+e Edit$/)
+  expect(offer?.trim()).toMatch(/^Next goal: “Ship 0.5.0 to the store”\?\s+↵ Set goal\s+·\s+e Edit$/)
   const goal = lines.slice(
     lines.findIndex(l => l.startsWith(' Goal ─')),
     lines.findIndex(l => l.includes('Next goal:')) + 1,
   )
   expect(goal.join('\n')).not.toMatch(/Suggested|Dismiss|New/)
-  expect(drawn(screen, onPage, 120).join('\n')).toContain(style.dim('Next goal: “Ship 0.5.0 to the store”?'))
+  expect(drawn(screen, onPage, 120).join('\n')).toContain(style.bold('Next goal: “Ship 0.5.0 to the store”?'))
 })
 
 test('at a width where the buttons do not fit after the offer, they sit under it', () => {
   const lines = text(suggesting(), onPage, 60).split('\n')
   const at = lines.findIndex(l => l.includes('Next goal:'))
   expect(lines[at]).not.toContain('Edit')
-  expect(lines[at + 1]).toMatch(/Set this goal.*Edit/)
+  expect(lines[at + 1]).toMatch(/Set goal.*Edit/)
 })
 
 test('Edit opens the field holding the suggestion with a Set submit, and the field’s Cancel shows the suggestion again', () => {
@@ -110,7 +110,7 @@ test('with Undo on the heading and the offer below, only the pressed button draw
   const focused = (ui: typeof onPage) =>
     text(screen, ui, 120)
       .split('\n')
-      .filter(l => /Undo|Set this goal/.test(l) && l.includes('↵')).length
+      .filter(l => /Undo|Set goal/.test(l) && l.includes('↵')).length
   expect(focused(keys(screen, onPage, 'right'))).toBe(1)
   expect(focused(keys(screen, onPage, 'right', 'right'))).toBe(1)
 })
