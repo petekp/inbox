@@ -10935,7 +10935,8 @@ function notePrompt(host, s, text, isOpen) {
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
 }
 function matchSent(s, text) {
-  const matchingAt = s.sent.findIndex((x) => x.text === text);
+  const sameText = (a) => a.trim() === text.trim();
+  const matchingAt = s.sent.findIndex((x) => sameText(x.text));
   const matching = matchingAt >= 0 ? s.sent[matchingAt] : undefined;
   const isMatchable = matching !== undefined && (matching.phase === undefined || matching.phase === "accepted" || matching.phase === "attempting" && matching.deliveryId !== null);
   const sentAt = isMatchable ? matchingAt : -1;
@@ -10943,9 +10944,9 @@ function matchSent(s, text) {
   const eligible = sent?.deliveryId === null ? Object.fromEntries(Object.entries(s.lastActions).filter(([_id, last]) => (last.delivery?.state === "queued" || last.delivery?.state === "unconfirmed") && last.delivery.id === undefined)) : s.lastActions;
   const arrived = sent && sent.row !== null ? {
     ...s.lastActions,
-    ...sent.deliveryId === null ? withUnconfirmed(eligible, text) : withArrival(eligible, text, sent.pressedAt ?? undefined, sent.deliveryId)
+    ...sent.deliveryId === null ? withUnconfirmed(eligible, sent.text) : withArrival(eligible, sent.text, sent.pressedAt ?? undefined, sent.deliveryId)
   } : s.lastActions;
-  const lastActions = s.sent.slice(matchingAt + 1).reduce((actions, later) => later.text === text && later.row !== null ? withUnconfirmed(actions, text, later.pressedAt ?? undefined, later.deliveryId) : actions, arrived);
+  const lastActions = s.sent.slice(matchingAt + 1).reduce((actions, later) => sameText(later.text) && later.row !== null ? withUnconfirmed(actions, later.text, later.pressedAt ?? undefined, later.deliveryId) : actions, arrived);
   return {
     state: { ...s, lastActions, sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent },
     sentBy: sent ? { press: sent.press } : null
@@ -14456,7 +14457,7 @@ function turnHandlers(context, sessions) {
       return;
     const finished = agentTexts?.id === id && agentTexts.isFinished ? agentTexts : null;
     try {
-      const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text === text);
+      const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text.trim() === text.trim());
       if (!isSentByPress)
         return;
       if (agentTexts === finished)

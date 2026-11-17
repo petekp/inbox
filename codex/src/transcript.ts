@@ -206,21 +206,26 @@ export async function rolloutTail(path: string | null): Promise<string[]> {
   return path === null ? [] : tailLines(path, TAIL_BYTES).catch(() => [])
 }
 
-/** Whether the rollout saved a user message whose whole text is `text` at or after `since`, in ms. */
-export async function hasUserMessageSince(path: string | null, text: string, since: number): Promise<boolean> {
-  return (await rolloutTail(path)).some(line => {
+/** The user messages the rollout's tail saved at or after `since`, in ms, with their trimmed text and time. */
+export async function userMessagesSince(path: string | null, since: number): Promise<{ text: string; at: number }[]> {
+  return (await rolloutTail(path)).flatMap(line => {
     let row: TranscriptLine & { timestamp?: unknown }
     try {
       row = JSON.parse(line) as typeof row
     } catch {
-      return false
+      return []
     }
     const p = row.payload
     const isUserMessage = row.type === 'response_item' && p?.type === 'message' && p.role === 'user'
     const at = typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : NaN
 
-    return isUserMessage && at >= since && contentText(p.content) === text.trim()
+    return isUserMessage && at >= since ? [{ text: contentText(p.content).trim(), at }] : []
   })
+}
+
+/** Whether the rollout saved a user message whose whole text is `text` at or after `since`, in ms. */
+export async function hasUserMessageSince(path: string | null, text: string, since: number): Promise<boolean> {
+  return (await userMessagesSince(path, since)).some(m => m.text === text.trim())
 }
 
 const ROLLOUT_BYTES = 8 * 1024 * 1024
