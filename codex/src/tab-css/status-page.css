@@ -203,7 +203,8 @@
 }
 /* A connector fades with the rows it ties together. It fades in for `--enter-fade` as it is drawn, once a line's
    space is nearly open, and out for `--leave-fade` through a leaving class while the rows leave, as the rows do. The
-   arm of a row that leaves alone fades through `arm-leaving`, and the column the row passes beside stays. */
+   arm of a row that leaves alone fades through `arm-leaving`, and the column the row passes beside stays. The leaving
+   rule names each connector's own selector with the leaving class, so it outranks that connector's fade in. */
 .status-page .row.milestone.connector-down::before,
 .status-page .work-joint::before,
 .status-page .work-joint::after,
@@ -219,6 +220,8 @@
   }
 }
 .status-page .connector-leaving::before,
+.status-page .row.milestone.connector-down.connector-leaving::before,
+.status-page .row.has-children.connector-leaving::before,
 .status-page .arm-leaving::after {
   opacity: 0;
   transition: opacity var(--leave-fade);

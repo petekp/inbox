@@ -242,3 +242,14 @@ test('the Asks tab takes its new count in the draw that sets the rows moving, wi
   expect(badge(startTabs)).toBe(badge(before))
   expect(badge(heldTabs(after, startTabs, moving.motion))).toBe(badge(after))
 })
+
+test('a row closes on its spring when the selection leaves it while another block’s leave holds its space', () => {
+  const screen = demoScreen()
+  const questions = screen.view.needsYou.questions.filter(r => r.id !== 'd15')
+  const fewer = { ...screen, view: { ...screen.view, needsYou: { ...screen.view.needsYou, questions } } }
+  const first = moveRows(tabBlocks(screen, uiOn('needsYou', { selected: 'd11' })), NO_TRACKS, NOW, true)
+  const leaves = moveRows(tabBlocks(fewer, uiOn('needsYou', { selected: 'd11' })), first.tracks, NOW + 1, false)
+  const moves = moveRows(tabBlocks(fewer, uiOn('needsYou', { selected: 'd12' })), leaves.tracks, NOW + 50, false)
+  expect(moves.motion.get('d15')?.state).toBe('leaving')
+  expect(moves.motion.get('d11')).toMatchObject({ state: 'closing', isHeightHeld: false })
+})

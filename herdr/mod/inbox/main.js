@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T23:50:30.322Z. 281026 characters follow.
+// Built at 2026-11-17T23:53:36.245Z. 281027 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5350,7 +5350,7 @@ function moveRows(blocks, last, now, isFirst) {
     rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId });
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
-    const isHeld = closing !== null && holdsUntil > now && track.since >= holdsUntil - HOLD_MS;
+    const isHeld = closing !== null && holdsUntil > now && track.since === holdsUntil - HOLD_MS;
     motion.set(block.id, {
       state: track.state,
       isStart,

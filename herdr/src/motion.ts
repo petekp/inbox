@@ -56,8 +56,8 @@ type Glide = {
  * panel's height, so the row the selection moves to measures its new height in that draw and both start together.
  * `isWrapHeld` says a row that is not open keeps its title wrapped, from the draw it stops being open until its title's
  * box has glided to one line and come to rest, so only the end of the first line changes as the title is cut.
- * `isHeightHeld` says a row whose close starts while a leaving block holds its space keeps its open height, its title's
- * and its panel's, until the hold ends, while its panel fades. `shutForMs` is how long the box of a block that turned
+ * `isHeightHeld` says a row whose close starts in the draw a block starts to leave keeps its open height, its title's
+ * and its panel's, while its panel fades and the leaving block holds its space. `shutForMs` is how long the box of a block that turned
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
  * still drawn, and a new box starts from the height it is drawn at.
  */
@@ -206,7 +206,7 @@ function movedOf(blocks: Block[], was: Tracks): Set<string> {
  * form, so it does not leave and the new one does not enter. A block that changes place leaves its old place as a copy
  * under its own id, which is drawn as it was and leaves, and enters at its new place, so both glide on the height
  * spring. While a block that leaves holds its space, a block that enters waits to open, and a row whose close starts
- * then keeps its height while its panel fades. The person's own moves do not wait: a row the selection opens moves
+ * with the leave keeps its height while its panel fades. The person's own moves do not wait: a row the selection opens moves
  * at once, and so does a field a press brings in. `isFirst` forgets the tracks and draws every block at rest, as a newly shown tab
  * does. `nextAt` is when a move ends, a box opens or shuts, or a box's glide comes to rest, so the look draws again
  * then.
@@ -239,7 +239,7 @@ export function moveRows(
     rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId })
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
-    const isHeld = closing !== null && holdsUntil > now && track.since >= holdsUntil - HOLD_MS
+    const isHeld = closing !== null && holdsUntil > now && track.since === holdsUntil - HOLD_MS
     motion.set(block.id, {
       state: track.state,
       isStart,

@@ -56,8 +56,9 @@ type Size = 'height' | 'width'
 type Glide = { size: Size; from: SpringState; to: number; delay: number; anim: Animation; scalesEdges: boolean }
 
 /**
- * How long every height move in this draw waits, in ms: while a block that leaves holds its space as its content fades,
- * nothing else changes height, so nothing grows into the list before that space starts to close.
+ * How long a height move that starts in this draw waits, in ms: while a block that leaves holds its space as its
+ * content fades, nothing that enters grows into the list before that space starts to close. The person's own moves do
+ * not wait: a row the selection opens, and a leave turned back. Nor does a glide already under way.
  */
 let heightWaitMs = 0
 const glides = new WeakMap<HTMLElement, Glide>()
@@ -78,6 +79,13 @@ function play(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOpti
 }
 
 const isRunning = (a: Animation | undefined) => a?.playState === 'running'
+
+/** Whether an element's glide is moving now, past any wait it started with. */
+function isUnderWay(el: HTMLElement): boolean {
+  const g = glides.get(el)
+
+  return g !== undefined && isRunning(g.anim) && Number(g.anim.currentTime ?? 0) >= g.delay
+}
 
 /** Where an element's size is and how fast it moves, from its glide, or `size` at rest without one. */
 function springOf(el: HTMLElement, size: number): SpringState {
@@ -180,14 +188,15 @@ const isFadingIn = (el: HTMLElement) => {
 }
 
 /**
- * Grows an element in from `from`, then fades its content in once its space is nearly open. Content already partly
- * shown, as in a leave turned back, fades back in at once.
+ * Grows an element in from `from`, then fades its content in once its space is nearly open. A leave turned back moves at
+ * once, without waiting for another leave's fade, and its content, if still partly shown, fades back in at once.
  */
-function growIn(el: HTMLElement, from: SpringState, opacity: number) {
+function growIn(el: HTMLElement, from: SpringState, opacity: number, isTurn: boolean) {
   const to = naturalHeight(el)
-  glide(el, 'height', from, to, false, true)
+  const delay = isTurn ? 0 : heightWaitMs
+  glide(el, 'height', from, to, false, true, delay)
   const waits = opacity > 0.01 ? 0 : enterDelayMs(to - from.x)
-  fade(el, opacity, 1, ENTER_FADE_MS, false, true, heightWaitMs + waits)
+  fade(el, opacity, 1, ENTER_FADE_MS, false, true, delay + waits)
 }
 
 /** Fades an element's content out while its space holds, then shrinks the space away. */
@@ -264,10 +273,11 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const part = drawnRows.has(key) ? el.querySelector<HTMLElement>(OPEN_PART) : null
   if (part && !part.classList.contains('closing')) part.style.marginTop = ''
   const from = springOf(el, isFresh ? el.getBoundingClientRect().height : was.height)
+  const delay = state === 'opening' || isUnderWay(el) ? 0 : heightWaitMs
   if (state && changed.has(key) && startState(el, state, from, isFresh, was?.openTop ?? null)) return
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
-    if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0)
+    if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, false)
     return
   }
   if (carried.has(el) && !(state && isMoving(state))) {
@@ -277,7 +287,8 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const opacity = opacityOf(el)
   const target = naturalHeight(el)
   for (const a of el.getAnimations()) if (a.playState === 'finished') a.cancel()
-  if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5) glide(el, 'height', from, target)
+  if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
+    glide(el, 'height', from, target, false, false, delay)
   if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
 }
 
@@ -286,7 +297,7 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
   switch (state) {
     case 'entering': {
       const isTurn = !isFresh && el.getAnimations().length > 0
-      growIn(el, isTurn ? from : { x: 0, v: 0 }, isTurn ? opacityOf(el) : 0)
+      growIn(el, isTurn ? from : { x: 0, v: 0 }, isTurn ? opacityOf(el) : 0, isTurn)
       return true
     }
     case 'closing':
