@@ -49,7 +49,7 @@ const runsAsk = {
 export const restartReadsBacklog: Replay = {
   name: 'restart-reads-backlog',
   about:
-    'No Status yet. The person sends only the coordinator command, and the agent reads its backlog with commands. The reply lists three draft PRs, and the one open ask says why: they block the next release. A goal is set.',
+    "No Status yet. The person sends only the coordinator command, and the agent reads its backlog with commands. The reply lists three draft PRs, and the one open ask says why: they block the next release. Nothing says the release is the person's direction, so the release shows as a goal or as the suggested goal, not only in the head.",
   hasLedgerCalls: false,
   start: {
     ledger: {
@@ -79,7 +79,7 @@ export const restartReadsBacklog: Replay = {
       facts: {
         focus: 'readying the next release',
         focusMatch: 'release|PR|draft|coordinat|fleet',
-        goalClear: { text: RELEASE_GOAL.text, match: RELEASE_GOAL.match },
+        goalClear: { text: RELEASE_GOAL.text, match: RELEASE_GOAL.match, alsoSuggested: true },
         goal: RELEASE_GOAL,
         pieces: releaseWork,
       },
