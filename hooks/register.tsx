@@ -106,6 +106,7 @@ import {
   startInHerdr,
   askHerdrModAgain,
   openInHerdr,
+  isExitReason,
   publishToHerdr,
   type HerdrCalls,
 } from './mod-herdr'
@@ -2390,7 +2391,7 @@ export const register: Register = on => {
         update($, DIALOGS, () => []),
         update($, DEMO, () => null),
         update($, DEMO_RECORDING, () => false),
-        publishStatus($, true, e.reason !== 'clear' && e.reason !== 'resume'),
+        publishStatus($, true, isExitReason(e.reason)),
       ])
     }
     // /clear, /resume and /branch (which reports resume) go on in this process with another conversation.

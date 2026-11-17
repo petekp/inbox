@@ -4987,7 +4987,7 @@ function herdrReporter(log) {
   const send = async (run2, report, after, isFinal) => {
     if (isFinished && !isFinal) return false;
     const r = await report();
-    if (!r) return false;
+    if (!r || isFinished && !isFinal) return false;
     const key = herdrReportKey(r);
     if (key === sent) return true;
     sent = null;
@@ -5005,9 +5005,7 @@ function herdrReporter(log) {
   const reportToHerdr = (run2, report, after, isFinal = false) => {
     newest = { run: run2, report, after, isFinal };
     if (isFinal) isFinished = true;
-    const result = (isFinal ? send(run2, report, after, true) : sending.then(() => send(run2, report, after, false))).catch(
-      () => false
-    );
+    const result = (isFinal ? send(run2, report, after, true) : sending.then(() => send(run2, report, after, false))).catch(() => false);
     sending = result;
     return result;
   };

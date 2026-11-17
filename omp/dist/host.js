@@ -5532,7 +5532,7 @@ function herdrReporter(log) {
     if (isFinished && !isFinal)
       return false;
     const r = await report();
-    if (!r)
+    if (!r || isFinished && !isFinal)
       return false;
     const key = herdrReportKey(r);
     if (key === sent)

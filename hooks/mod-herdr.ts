@@ -67,6 +67,14 @@ export type HerdrCalls = {
 
 const FILE_TIMEOUT_MS = 5000
 
+/** The `session.end` reasons that end the process. `clear` and `resume` go on in it under another conversation. */
+const EXIT_REASONS: ReadonlySet<string> = new Set(['logout', 'prompt_input_exit', 'other'])
+
+export const isExitReason = (reason: string) => EXIT_REASONS.has(reason)
+
+/** Set once the process is exiting, so a report already running does not publish the session again. */
+let isExiting = false
+
 let logReport: (text: string) => void = () => undefined
 const reportToHerdr = herdrReporter(text => logReport(text))
 const isHerdrCheckDue = herdrCheckGate()
@@ -237,6 +245,7 @@ export async function publishToHerdr(
   const files = herdrFiles(calls)
   const logFailure = (err: unknown) => calls.log(`Herdr publish failed: ${message(err)}`)
   logReport = calls.log
+  if (isExit) isExiting = true
   let removal: Promise<unknown> = Promise.resolve()
 
   const isTaken = await reportToHerdr(
@@ -257,6 +266,7 @@ export async function publishToHerdr(
         drawn(),
         calls.now(),
       ])
+      if (isExiting) return null
       const isPublished =
         target.kind === 'terminal' &&
         (await publishedSession(
@@ -279,6 +289,11 @@ export async function publishToHerdr(
           session,
           calls.log,
         ))
+      if (isExiting) {
+        if (appHome) await unpublishSession(files, appHome, id).catch(logFailure)
+
+        return null
+      }
       const view = sessionView(session, now, SETTLED_MS)
       const tokens = herdrTokens(session.ledger, session.stop, view, dialogs, isUnread)
 

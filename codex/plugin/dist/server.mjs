@@ -528,9 +528,9 @@ function exitCodeOf(err) {
 
 // src/shared-daemon.ts
 var PS_TIMEOUT_MS = 5e3;
-var MAX_ANCESTORS = 6;
 var INIT_PID = 1;
-var isAppServer = (command) => /(^|\/)codex\s.*\bapp-server\b/.test(command);
+var MAX_ANCESTORS = 6;
+var isSharedDaemon = (command) => /(^|\/)codex\s.*\bapp-server\b/.test(command) && /--managed-daemon\b|--listen[ =]unix:\/\//.test(command);
 async function isUnderSharedDaemon(pid, run2) {
   let current2 = pid;
   for (let level = 0; level < MAX_ANCESTORS && current2 > INIT_PID; level++) {
@@ -538,17 +538,19 @@ async function isUnderSharedDaemon(pid, run2) {
     const match = r.code === 0 ? /^\s*(\d+)\s+(.*)$/.exec(r.stdout.trim()) : null;
     if (!match) return false;
     const [, parent, command] = match;
-    if (isAppServer(command ?? "") && Number(parent) === INIT_PID) return true;
+    if (isSharedDaemon(command ?? "")) return true;
     current2 = Number(parent);
   }
   return false;
 }
 async function withoutSharedTerminal(env, run2, pid, log) {
-  if (!env.HC_TERMINAL_ID || env.HERDR_PANE_ID) return;
+  const where = env.HERDR_PANE_ID ?? env.HC_TERMINAL_ID;
+  if (!where) return;
   if (!await isUnderSharedDaemon(pid, run2).catch(() => false)) return;
   log(
-    `Herdr terminal ${env.HC_TERMINAL_ID} ignored: Codex runs this thread in a daemon shared by every Codex CLI, so the terminal is the one that started it. Start Codex with codex --no-daemon, as Herdr does.`
+    `Herdr ${where} ignored: Codex runs this thread in a daemon shared by every Codex CLI, so ${where} is where the daemon started, not necessarily where this thread runs. The inbox reports to no terminal.`
   );
+  delete env.HERDR_PANE_ID;
   delete env.HC_TERMINAL_ID;
 }
 
