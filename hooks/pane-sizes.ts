@@ -1,7 +1,7 @@
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { cellWidth } from './text'
 import { fitTabs, tabName, type TabNaming } from './tabs'
-import { LIST_GAP_PT, ROW_PAD_PT, SECTION_GAP_PT } from './layout'
+import { LIST_GAP_PT, LIST_MARGIN_PT, ROW_PAD_PT, SECTION_GAP_PT } from './layout'
 import { TAB_COUNT_GAP } from './tabs-client'
 
 export const REPLY_ROWS = 3
@@ -58,6 +58,11 @@ export const UNDO_HEIGHT_PT = 23
  * A Box in the hooks tree counts padding in half lines, so it pads twice this.
  */
 export const DESKTOP_ROW_PAD = ROW_PAD_PT / DESKTOP_LINE_PT
+/**
+ * A Closed fold's padding above and below its label, in lines: `LIST_MARGIN_PT`, so its label sits that far under the
+ * last row's frame.
+ */
+export const DESKTOP_LIST_MARGIN = LIST_MARGIN_PT / DESKTOP_LINE_PT
 export const TREE_LINE_AT = 2
 export const ROW_COLUMNS = {
   tree: { lead: TREE_LINE_AT + 3, handleAt: TREE_LINE_AT + 3, textAt: TREE_LINE_AT + 6 },

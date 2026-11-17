@@ -254,7 +254,7 @@ export function panePrBlocks({
           <Box key={`group-${key}`} marginTop={blankLine}>
             {groupTitle(title, group.length, undefined, true)}
           </Box>,
-          ...(look === 'desktop' ? [] : titleGap()),
+          ...titleGap(),
           ...divided(
             group.map((r, n) => listRow(r, childPos(n, group.length))),
             key,
