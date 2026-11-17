@@ -95,7 +95,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
         isBold: false,
         isMuted: true,
         stall: null,
-        under: [],
+        under: row.text ? [row.text] : [],
         buttons: [],
         ...(row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}),
       },

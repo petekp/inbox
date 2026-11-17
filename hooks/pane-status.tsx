@@ -385,7 +385,10 @@ export function paneStatus(
         key: `status-${r.id}`,
         depth: r.depth,
         mark,
-        content: statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, null, r.depth),
+        content: [
+          statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, null, r.depth),
+          ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], r.depth)] : []),
+        ],
         tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1, pad.padY, pad.padBelow) : null,
         ...pad,
       })

@@ -203,8 +203,8 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   }
   if (row.kind === 'child') {
     const mark = paintMark(row, now, s)
-    if (!row.branch) return pageLine(d, at, mark, row.name, s.dim)
-    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim)
+    if (!row.branch) return pageLine(d, at, mark, row.name, s.dim, { text: row.text })
+    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim, { text: row.text })
 
     return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s)
   }

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T06:05:05.520Z. 270162 characters follow.
+// Built at 2026-11-17T06:16:56.396Z. 271239 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -586,7 +586,8 @@ function childOf(saved) {
     startedAt,
     endedAt: time2(c.endedAt),
     lastActivityAt: time2(c.lastActivityAt),
-    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null,
+    ...typeof c.summary === "string" && c.summary.trim() ? { summary: c.summary } : {}
   };
 }
 var OLD_STATUS = {
@@ -1415,7 +1416,15 @@ function carriedByChild(c, isHeld) {
     return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
 }
-function childRow(c, branch, depth) {
+function finishedLine(c, now) {
+  if (c.summary)
+    return c.summary;
+  if (c.endedAt === null)
+    return null;
+  const finished = ago(now - c.endedAt);
+  return `Ran ${duration(c.endedAt - c.startedAt)}, finished ${finished}`;
+}
+function childRow(c, branch, depth, text = null) {
   const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
     kind: "child",
@@ -1424,8 +1433,21 @@ function childRow(c, branch, depth) {
     ...marks,
     isRunning: isChildWorking(c),
     name: c.name,
+    text,
     branch
   };
+}
+function unplacedChildren(children, c) {
+  const unshown = c.running.filter((x) => x.subjectId === null || !c.shownIds.has(x.subjectId)).map((child) => {
+    const subject = c.subjects.find((y) => y.id === child.subjectId);
+    return { child, milestoneId: subject === undefined ? null : c.milestoneOf(subject) };
+  });
+  const isFoldedFinished = (l) => l.child.delegateState === "finished" && l.milestoneId === null;
+  const settled = [
+    ...children.filter((x) => c.isSettled(x) && !c.subjects.some((y) => y.id === x.subjectId)),
+    ...unshown.filter(isFoldedFinished).map((l) => l.child)
+  ].sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
+  return { loose: unshown.filter((l) => !isFoldedFinished(l)), settled };
 }
 function askWords(items, ask) {
   const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
@@ -3579,7 +3601,7 @@ function statusPage(s, now) {
     now
   };
   const foldCtx = { ...ctx, running: [] };
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : [
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : foldedOpen.length === 1 ? partRows(foldedOpen, ctx, depth) : [
     {
       kind: "fold",
       id: `${prefix}open`,
@@ -3589,7 +3611,7 @@ function statusPage(s, now) {
       subjectIds: []
     }
   ];
-  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : [
+  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : done.length + settled.length === 1 ? [...partRows(done, foldCtx, depth), ...settled.map((c) => childRow(c, null, depth, finishedLine(c, now)))] : [
     {
       kind: "done-fold",
       id: `${prefix}done`,
@@ -3597,7 +3619,7 @@ function statusPage(s, now) {
       text: `${done.length + settled.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
       rows: [
         ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
-        ...settled.map((c) => childRow(c, null, depth + 1))
+        ...settled.map((c) => childRow(c, null, depth + 1, finishedLine(c, now)))
       ]
     }
   ];
@@ -3605,10 +3627,12 @@ function statusPage(s, now) {
     ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled)
   ];
-  const settled = (o?.children ?? []).filter((c) => isChildSettled(c, now, look) && !o?.subjects.some((x) => x.id === c.subjectId)).sort((x, y) => (y.endedAt ?? 0) - (x.endedAt ?? 0));
-  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => {
-    const x = subjects.find((y) => y.id === c.subjectId);
-    return { child: c, milestoneId: x === undefined ? null : milestoneOf(x) };
+  const { loose, settled } = unplacedChildren(o?.children ?? [], {
+    subjects,
+    shownIds,
+    milestoneOf,
+    isSettled: (c) => isChildSettled(c, now, look),
+    running
   });
   const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
   const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
@@ -4156,7 +4180,7 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
         isBold: false,
         isMuted: true,
         stall: null,
-        under: [],
+        under: row.text ? [row.text] : [],
         buttons: [],
         ...row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}
       }
@@ -5775,7 +5799,7 @@ function ruleEl(b, t) {
 }
 function noteEl(b, t, buttons = []) {
   const text = div7().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  return h_flex4().flex_wrap().items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex4().flex_none().items_center().gap(CONTROL_GAP).pl(CONTROL_GAP).children(buttons)));
+  return h_flex4().flex_wrap().gap_x(CONTROL_GAP).items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex4().flex_none().items_center().gap(CONTROL_GAP).children(buttons)));
 }
 
 // src/paint-blocks.ts

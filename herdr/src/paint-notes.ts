@@ -35,13 +35,12 @@ export function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme, buttons: E
 
   return h_flex()
     .flex_wrap()
+    .gap_x(CONTROL_GAP)
     .items_baseline()
     .pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST)
     .pr(EDGE)
     .whitespace_normal()
     .when(b.isStrong, e => e.text_size(HEAD_TEXT).line_height(HEAD_LINE))
     .child(text)
-    .when(buttons.length > 0, e =>
-      e.child(h_flex().flex_none().items_center().gap(CONTROL_GAP).pl(CONTROL_GAP).children(buttons)),
-    )
+    .when(buttons.length > 0, e => e.child(h_flex().flex_none().items_center().gap(CONTROL_GAP).children(buttons)))
 }
