@@ -330,6 +330,11 @@ function sameAsk(a, b) {
 function matchOpen(items, a, sameBatch = new Set) {
   return items.findIndex((i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask));
 }
+function rewordedQuestion(items, turn, record) {
+  const optionsOf = (options) => options.map((o) => words2(o).join(" ")).toSorted().join("|");
+  const same = items.filter((i) => i.kind === "question" && i.turn === turn && i.from === "record" && !i.context && optionsOf(i.options) === optionsOf(record.options) && raisesOnly(record.ask, i.ask));
+  return same.length === 1 ? same[0] : undefined;
+}
 function repeatsClosed(closed, a, since, closedFindings = []) {
   const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
   const settled = closed.filter((c) => c.at < since && c.how !== "expired");
@@ -6993,13 +6998,18 @@ function recordItem(host, ledger, input, now, fields) {
   const isDesignChoice = input.kind === "question" && input.design_choice === true;
   const kind = input.kind;
   const entry = { kind, ask, options, rec, helps, isDesignChoice, ...recReason ? { recReason } : {} };
-  const r = addAgentItem(ledger, entry, now);
+  const body = input.kind === "question" ? questionBody(input, options) : {};
+  const reworded = body.context && input.kind === "question" ? rewordedQuestion(ledger.items, ledger.turn, entry) : undefined;
+  const r = addAgentItem(ledger, reworded ? { ...entry, ask: reworded.ask } : entry, now);
   if (r.is === "closed")
     return unchanged(ledger, "title" in r.record ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.` : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
-  const body = input.kind === "question" ? questionBody(input, options) : {};
   const before = r.ledger.items.find((i) => i.id === r.id);
   const after = before && withBody(before, body);
-  const recorded = { ...r.ledger, items: r.ledger.items.map((i) => i === before && after ? after : i) };
+  const rewordedAsk = reworded && r.is === "open" && r.id === reworded.id ? { ask } : {};
+  const recorded = {
+    ...r.ledger,
+    items: r.ledger.items.map((i) => i === before && after ? { ...after, ...rewordedAsk } : i)
+  };
   if (r.is === "open") {
     const changes = [
       ...r.addedSteps > 0 ? ["added its new steps"] : [],
@@ -14806,7 +14816,9 @@ var publishFiles = {
 var recordFiles = {
   write: async (path, text) => {
     await mkdir4(dirname3(path), { recursive: true });
-    await writeFile4(path, text);
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile4(tmp, text);
+    await rename4(tmp, path);
   },
   list: (folder) => readdir4(folder).catch(() => []),
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),

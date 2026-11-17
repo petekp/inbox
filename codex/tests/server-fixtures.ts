@@ -140,13 +140,14 @@ export async function prServer(
     tabHtml: '<html></html>',
     fallbackCli: async () => 'codex',
   })
-  const call = (name: string, args: Record<string, unknown>) =>
+  const callOnly = (name: string, args: Record<string, unknown>) =>
     handle({
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
       params: { name, arguments: args, _meta: { thread_id: 's1' } },
     }) as Promise<PrReply>
+  const call = Object.assign(callOnly, { settled: handle.settled })
 
   return { dir, calls: runner.calls, call }
 }
@@ -173,9 +174,11 @@ export const ghAnswer = (args: string[]) => {
 
 export const PRS_STALE_MS = 3 * 60_000
 
-export async function viewAfterFetch(call: (name: string, args: Record<string, unknown>) => Promise<PrReply>) {
+export async function viewAfterFetch(
+  call: ((name: string, args: Record<string, unknown>) => Promise<PrReply>) & { settled(): Promise<void> },
+) {
   await call('inbox_view', { tab: 'prs' })
-  await new Promise(resolve => setTimeout(resolve, 50))
+  await call.settled()
 
   return call('inbox_view', { tab: 'prs' })
 }
