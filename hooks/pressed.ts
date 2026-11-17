@@ -38,7 +38,16 @@ export function localLast(
 ): LastAction {
   const result = { ...pending, action: pressed.action }
 
-  return last && last.kind !== 'local' ? { ...last, result } : { kind: 'local', ...pressed, at: result.at, result }
+  return last && last.kind !== 'local'
+    ? { ...last, result }
+    : { kind: 'local', ...pressed, at: result.at, result, ...keptExplanation(last) }
+}
+
+/** The row's explanation, kept on a later press so Show explanation stays while that press is out. */
+function keptExplanation(previous: LastAction | undefined): Pick<LastAction, 'explanation'> {
+  const replyId = previous?.explanation?.replyId
+
+  return replyId ? { explanation: { replyId } } : {}
 }
 
 export function retryOf(id: string, last: LastAction): RowPress | null {
@@ -99,6 +108,7 @@ export function recordPress(
     at: ctx.now,
     turnsStarted: ctx.turnsStarted,
     ...(isRepeatOf(previous, action) ? { isRepeat: true as const } : {}),
+    ...keptExplanation(previous),
   }
 }
 
@@ -159,6 +169,15 @@ export function pressed(ledger: Ledger, last: LastAction | undefined, p: RowPres
     if (closedFinding && isUndoable(closedFinding))
       return { ...unchanged, ledger: reopenFinding(ledger, p.id), reopenedId: p.id }
     return stale
+  }
+
+  if (p.action === 'show-explanation') {
+    const replyId = last?.explanation?.replyId
+    if (!replyId) return stale
+    const effects: Effect[] = [{ kind: 'scroll', requestId: replyId, name: 'the explanation' }]
+    const pressedAs = { action: actionId(p), text: pressText(p) }
+
+    return { ledger, last: localLast(last, pressedAs, pendingResult(effects, ctx.now, ctx.localPressId)), effects }
   }
 
   const finding = ledger.findings.find(f => f.id === p.id)

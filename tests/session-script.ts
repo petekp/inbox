@@ -15,7 +15,7 @@ import { TOOL_FIELDS } from '../hooks/tool-schemas'
 type ScriptedHost<S extends Session = Session> = {
   host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host }
   delivered: string[]
-  performed: Extract<Effect, { kind: 'open' | 'copy' }>[]
+  performed: Extract<Effect, { kind: 'open' | 'copy' | 'scroll' }>[]
 }
 
 export type MakeHost<S extends Session = Session> = (ask: Ask) => ScriptedHost<S>
@@ -28,7 +28,7 @@ export function fakeHostWith<S extends Session>(
     let ids = 0
     const order = orderedKeys()
     const delivered: string[] = []
-    const performed: Extract<Effect, { kind: 'open' | 'copy' }>[] = []
+    const performed: Extract<Effect, { kind: 'open' | 'copy' | 'scroll' }>[] = []
     const host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host } = {
       ...storage,
       names: CLAUDE_CODE,

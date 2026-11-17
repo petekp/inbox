@@ -70,3 +70,15 @@ export type FeatureId =
   | 'collapse-rows'
   | 'fold-all'
   | 'suggested-goal'
+  | 'show-explanation'
+
+/** A host. Terminal and desktop share `claude-code`, since both run the mod. */
+export type ClientId = 'claude-code' | 'codex' | 'omp'
+
+/**
+ * The parity record: how each host supports each feature. `full` means the host does what the shared flow
+ * describes. `different` means the person gets the feature another way. `unsupported` means the person gets none of it.
+ */
+type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
+
+export type Client = { support: Record<FeatureId, Support> }

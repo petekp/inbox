@@ -642,6 +642,7 @@ function capitalized(text2) {
   return text2.charAt(0).toUpperCase() + text2.slice(1);
 }
 var ISSUE_LABEL = "File issue";
+var SHOW_EXPLANATION_LABEL = "Show explanation";
 
 // ../hooks/status-goal-gate.ts
 function heldSubjects(o) {
@@ -2496,7 +2497,8 @@ function outcomeLabel(c) {
 // ../hooks/feedback.ts
 function pressUnderWaySince(f) {
   if (f?.is === "working" || f?.is === "sending") return f.at;
-  return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
+  if (f?.is !== "local") return null;
+  return f.talkOutSince ?? (f.result.state === "pending" ? f.result.at : null);
 }
 function prTabHoldSince(f) {
   return f?.is === "working" && f.isHandoff === true ? null : pressUnderWaySince(f);
@@ -2505,7 +2507,11 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
-  if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) return { is: "local", result };
+  if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
+    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now) : null;
+    const talkOutSince = under?.is === "working" || under?.is === "sending" ? under.at : void 0;
+    return { is: "local", result, ...talkOutSince === void 0 ? {} : { talkOutSince } };
+  }
   if (!last || last.kind === "local") return null;
   const delivery = last.delivery;
   const pending = pendingDeliveryAt(last, now);
@@ -2587,6 +2593,7 @@ function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
 function pressOutAction(last, f) {
+  if (f?.is === "local" && f.result.state !== "pending" && f.talkOutSince !== void 0) return last?.action ?? null;
   if (!isPressOut(f)) return null;
   return (f?.is === "local" ? f.result.action : last?.action) ?? null;
 }
@@ -3348,6 +3355,7 @@ function stepKind(step) {
 }
 var FOLLOW_UPS = /* @__PURE__ */ new Set([
   "type",
+  "show-explanation",
   "explain",
   "compare",
   "discuss",
@@ -3359,23 +3367,26 @@ var ACTION_KEYS = {
   address: "a",
   issue: "i",
   type: "t",
+  "show-explanation": "s",
   explain: "e",
   compare: "p",
   discuss: "d",
   dismiss: "x",
   discard: "x"
 };
-function actionsOf(row, last, state, feedback, isUndoOut = false) {
+function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConversation = false) {
   const { id, item, steps: steps2 } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
+  const isFirstExplanationOut = last?.explanation?.isFirstReply === true && pressing === "explain";
+  const isExplanationShown = canScrollConversation && last?.explanation?.replyId !== void 0 && !isFirstExplanationOut;
   const action = (press2, label, kind, flags = {}) => {
     const pressAction = actionId(press2);
     return {
       press: press2,
       label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "type" || press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "type" || press2.action === "discuss" || press2.action === "explain" || press2.action === "show-explanation" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
       ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -3392,12 +3403,16 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       action({ action: "discard", id }, ROW_COPY.discard, "view")
     ];
   const stepActions = steps2.map((s, n) => action({ action: "step", id, step: n, label: s.label }, s.label, stepKind(s)));
+  const explainActions = [
+    ...isExplanationShown ? [action({ action: "show-explanation", id }, SHOW_EXPLANATION_LABEL, "local")] : [],
+    action({ action: "explain", id }, "Explain", "talk")
+  ];
   if (!item)
     return [
       action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
       action({ action: "issue", id }, ISSUE_LABEL, "handoff"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk"),
+      ...explainActions,
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
@@ -3406,7 +3421,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       ...stepActions,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk"),
+      ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
@@ -3420,7 +3435,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
     ),
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
-    action({ action: "explain", id }, "Explain", "talk"),
+    ...explainActions,
     ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
@@ -3540,7 +3555,8 @@ function inboxView({
   listInput,
   undoShown,
   undoOut = [],
-  collapsed = []
+  collapsed = [],
+  canScrollConversation = false
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
@@ -3650,7 +3666,8 @@ function inboxView({
       last,
       state,
       pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt),
-      undoOut.includes(row.id)
+      undoOut.includes(row.id),
+      canScrollConversation
     );
     const held2 = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
@@ -3994,7 +4011,7 @@ function updateRecovery(s) {
   if (s.pending.length === 0 && presence.isConversationUnreadable) return "unreadable";
   return presence.failedAttempts > 1 ? "failed-again" : "waiting";
 }
-function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canScrollConversation = false) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
   const inbox = inboxView({
@@ -4008,7 +4025,8 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
-    collapsed: collapsedRows(s)
+    collapsed: collapsedRows(s),
+    canScrollConversation
   });
   return {
     ...inbox,

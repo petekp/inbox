@@ -1,7 +1,7 @@
 import type { Finding, Item } from '../types'
 import { isQuestionBack } from './ask-match'
 import { CLIENTS } from './clients'
-import type { ClientId } from './clients'
+import type { ClientId } from './client-features'
 
 function findingBody(finding: Finding): string[] {
   return [

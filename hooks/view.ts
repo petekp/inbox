@@ -64,6 +64,8 @@ export type ViewInput = {
   undoOut?: string[]
   /** The rows that draw collapsed, from `hooks/collapse.ts:collapsedRows`. */
   collapsed?: string[]
+  /** Whether the look can scroll the conversation to a reply, which only the fullscreen Claude Code terminal can. */
+  canScrollConversation?: boolean
 }
 
 export type InboxView = {
@@ -118,6 +120,7 @@ export function inboxView({
   undoShown,
   undoOut = [],
   collapsed = [],
+  canScrollConversation = false,
 }: ViewInput): InboxView {
   const isFindingId = (id: string) =>
     ledger.findings.some(f => f.id === id) || ledger.closedFindings.some(f => f.id === id)
@@ -260,6 +263,7 @@ export function inboxView({
       state,
       pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt),
       undoOut.includes(row.id),
+      canScrollConversation,
     )
 
     const held = state.is === 'open' ? heldSubjectsOf(ledger.overview, row.id) : []
