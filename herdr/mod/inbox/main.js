@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T03:54:12.270Z. 289848 characters follow.
+// Built at 2026-11-18T04:24:01.069Z. 290054 characters follow.
 
 // src/main.ts
 import { View, div as div11 } from "gpui-kit";
@@ -5297,20 +5297,22 @@ class Heights {
 
 // src/title-motion.ts
 var wraps = (height) => height !== undefined && height > LINE_PT + 0.5;
+var isWrapDrawn = (g, now) => g.isWrapped && g.fadesAt !== null && now >= g.fadesAt || now < g.wrapGoneAt;
 function stepTitle(last, wasOpen, isOpen, now, height) {
   const live = last !== null && now < last.endsAt ? last : null;
   if (isOpen && !wasOpen) {
     const shrunkForMs = live && !live.isWrapped ? Math.max(0, now - live.boxHeldUntil) : null;
-    const glide = { isWrapped: true, since: now, fadesAt: null, boxHeldUntil: now, shrunkForMs };
+    const wrapGoneAt = live && isWrapDrawn(live, now) ? now + ENTER_FADE_MS : now;
+    const glide = { isWrapped: true, since: now, fadesAt: null, boxHeldUntil: now, shrunkForMs, wrapGoneAt };
     return { ...glide, endsAt: now + 2 * FRAME_MS + HEIGHT_SETTLE_MS };
   }
   if (!isOpen && wasOpen) {
     if (!wraps(height))
       return null;
-    const wasShown = live === null || live.fadesAt !== null && now >= live.fadesAt;
+    const wasShown = live === null || isWrapDrawn(live, now);
     const fadesAt = live ? now : now + FRAME_MS;
     const boxHeldUntil = wasShown ? fadesAt + LEAVE_FADE_MS : now;
-    const glide = { isWrapped: false, since: now, fadesAt, boxHeldUntil, shrunkForMs: null };
+    const glide = { isWrapped: false, since: now, fadesAt, boxHeldUntil, shrunkForMs: null, wrapGoneAt: boxHeldUntil };
     return { ...glide, endsAt: boxHeldUntil + HEIGHT_SETTLE_MS + FRAME_MS };
   }
   if (!live || !live.isWrapped || live.fadesAt !== null || now === live.since)

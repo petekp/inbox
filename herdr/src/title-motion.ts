@@ -8,7 +8,8 @@ import { FRAME_MS, HEIGHT_SETTLE_MS, springStep } from '../../hooks/springs'
  * height from the start, and the wrapped form fades in once that box is nearly open, so `fadesAt` is null until the
  * wrapped height is measured. A closing title's wrapped form fades out first, while its box keeps the wrapped height
  * until `boxHeldUntil`, then the box shrinks to one line. `shrunkForMs` is how long the box of an opening that turned a
- * close back had been shrinking, null when it opens from one line at rest. At `endsAt` the title draws one form again.
+ * close back had been shrinking, null when it opens from one line at rest. `wrapGoneAt` is when the wrapped form has
+ * faded out, unless the glide fades it in again. At `endsAt` the title draws one form again.
  */
 export type TitleGlide = {
   isWrapped: boolean
@@ -16,6 +17,7 @@ export type TitleGlide = {
   fadesAt: number | null
   boxHeldUntil: number
   shrunkForMs: number | null
+  wrapGoneAt: number
   endsAt: number
 }
 
@@ -27,12 +29,16 @@ export type TitleMotion = { isWrapShown: boolean; isBoxWrapped: boolean; fadeMs:
 
 const wraps = (height: number | undefined): height is number => height !== undefined && height > LINE_PT + 0.5
 
+/** Whether a title's wrapped form draws at all at `now`, at rest or partway through a fade. */
+const isWrapDrawn = (g: TitleGlide, now: number): boolean =>
+  (g.isWrapped && g.fadesAt !== null && now >= g.fadesAt) || now < g.wrapGoneAt
+
 /**
  * A row's title glide in this draw, from its last glide, whether the row was and is open, and the title's measured
  * height, which is the wrapped height while the row is open or its title moves. A title that fits on one line has no
  * glide. A move that turns back starts from where the last one is: a close that turns an opening back holds the box
- * only if the wrapped form had begun to show, and an open that turns a close back fades in at once if the box still
- * holds the wrapped height.
+ * only while the wrapped form still draws, and an open that turns a close back fades in at once if the box still holds
+ * the wrapped height.
  */
 export function stepTitle(
   last: TitleGlide | null,
@@ -44,16 +50,17 @@ export function stepTitle(
   const live = last !== null && now < last.endsAt ? last : null
   if (isOpen && !wasOpen) {
     const shrunkForMs = live && !live.isWrapped ? Math.max(0, now - live.boxHeldUntil) : null
-    const glide = { isWrapped: true, since: now, fadesAt: null, boxHeldUntil: now, shrunkForMs }
+    const wrapGoneAt = live && isWrapDrawn(live, now) ? now + ENTER_FADE_MS : now
+    const glide = { isWrapped: true, since: now, fadesAt: null, boxHeldUntil: now, shrunkForMs, wrapGoneAt }
 
     return { ...glide, endsAt: now + 2 * FRAME_MS + HEIGHT_SETTLE_MS }
   }
   if (!isOpen && wasOpen) {
     if (!wraps(height)) return null
-    const wasShown = live === null || (live.fadesAt !== null && now >= live.fadesAt)
+    const wasShown = live === null || isWrapDrawn(live, now)
     const fadesAt = live ? now : now + FRAME_MS
     const boxHeldUntil = wasShown ? fadesAt + LEAVE_FADE_MS : now
-    const glide = { isWrapped: false, since: now, fadesAt, boxHeldUntil, shrunkForMs: null }
+    const glide = { isWrapped: false, since: now, fadesAt, boxHeldUntil, shrunkForMs: null, wrapGoneAt: boxHeldUntil }
 
     return { ...glide, endsAt: boxHeldUntil + HEIGHT_SETTLE_MS + FRAME_MS }
   }
