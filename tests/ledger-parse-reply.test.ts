@@ -256,6 +256,26 @@ describe('parseReply', () => {
     ])
   })
 
+  test('a decide line that leaves out the label keeps its question as the ask and every answer', () => {
+    const [item] = parseReply('NEW: decide | Push the headless Chrome change? | Push / Not yet | Push | -')!.added
+    expect([item?.ask, item?.label, item?.options, item?.rec]).toEqual([
+      'Push the headless Chrome change?',
+      null,
+      ['Push', 'Not yet'],
+      'Push',
+    ])
+  })
+
+  test('a question whose ask is only its answers is dropped, and a question that names alternatives is kept', () => {
+    const u = parseReply(
+      [
+        'NEW: decide | 2 | Push / Not yet | Push | - | -',
+        'NEW: decide | - | Keep tabs / spaces as they are? | Keep / Change | - | -',
+      ].join('\n'),
+    )
+    expect(u?.added.map(a => a.ask)).toEqual(['Keep tabs / spaces as they are?'])
+  })
+
   test('returns null for prose with no keys', () => {
     expect(parseReply('Sure! Here is the ledger you asked for.')).toBe(null)
   })
