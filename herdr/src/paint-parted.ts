@@ -13,10 +13,11 @@ const SEP_W = 3 * SPACE_UNIT
  */
 export function partedEl(parts: Element[], dotColor: Color): Element {
   const [first, ...rest] = parts
-  const dot = h_flex().flex_none().w(SEP_W).justify_center().text_color(dotColor).child('·')
+  // An element joins one parent only, so each part gets its own dot.
+  const dot = () => h_flex().flex_none().w(SEP_W).justify_center().text_color(dotColor).child('·')
   const items = [
     ...(first ? [div().ml(SEP_W).min_w(0).max_w_full().child(first)] : []),
-    ...rest.map(part => h_flex().items_start().min_w(0).max_w_full().child(dot).child(div().min_w(0).child(part))),
+    ...rest.map(part => h_flex().items_start().min_w(0).max_w_full().child(dot()).child(div().min_w(0).child(part))),
   ]
 
   return div().overflow_hidden().min_w(0).child(h_flex().flex_wrap().items_start().ml(-SEP_W).children(items))

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T21:00:43.320Z. 298045 characters follow.
+// Built at 2026-11-18T22:22:57.758Z. 298053 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -6266,10 +6266,10 @@ import { h_flex as h_flex7 } from "gpui-base";
 var SEP_W = 3 * SPACE_UNIT;
 function partedEl(parts, dotColor) {
   const [first, ...rest] = parts;
-  const dot = h_flex7().flex_none().w(SEP_W).justify_center().text_color(dotColor).child("·");
+  const dot = () => h_flex7().flex_none().w(SEP_W).justify_center().text_color(dotColor).child("·");
   const items = [
     ...first ? [div12().ml(SEP_W).min_w(0).max_w_full().child(first)] : [],
-    ...rest.map((part) => h_flex7().items_start().min_w(0).max_w_full().child(dot).child(div12().min_w(0).child(part)))
+    ...rest.map((part) => h_flex7().items_start().min_w(0).max_w_full().child(dot()).child(div12().min_w(0).child(part)))
   ];
   return div12().overflow_hidden().min_w(0).child(h_flex7().flex_wrap().items_start().ml(-SEP_W).children(items));
 }
