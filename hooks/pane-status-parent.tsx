@@ -72,7 +72,7 @@ export function paneStatusParent(
     chevron: string,
   ): Drawn => {
     const nbsp = (text: string) => text.replaceAll(' ', ' ')
-    const after = `${CHEVRON_GAP}${nbsp(chevron)}`
+    const after = nbsp(`${CHEVRON_GAP}${chevron}`)
     const { spans } = nameLineSpans(name, stall, depth, desktopTextPt(after))
     const parts: ParentProps['parts'] = [
       ...spans.map((s): ParentProps['parts'][number] => ({
