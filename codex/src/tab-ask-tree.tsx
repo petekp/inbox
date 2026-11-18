@@ -37,7 +37,7 @@ export function settleAnswers(root: HTMLElement): boolean {
   for (const tree of root.querySelectorAll<HTMLElement>(`[${ANSWERS_ATTRIBUTE}]`)) {
     const rowId = tree.getAttribute(ANSWERS_ATTRIBUTE)!
     const fits = fitsOneLine(tree)
-    if (answersFit.get(rowId) !== fits) isChanged = true
+    if ((answersFit.get(rowId) ?? true) !== fits) isChanged = true
     answersFit.set(rowId, fits)
   }
 
