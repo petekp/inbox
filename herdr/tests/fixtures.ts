@@ -60,7 +60,7 @@ export function dismissedPr(ref: string, at = NOW - 500, undoOut: string[] = [])
   return { view, blocks: tabBlocks({ ...demoScreen(), view, shownSince }, uiOn('prs')) }
 }
 
-export function withDismissedAsk(id: string, at: number) {
+export function dismissedSession(id: string, at: number) {
   const s = demoSession(NOW, AGENT)
   const item = s.ledger.items.find(i => i.id === id)!
   const dismissed = {
@@ -73,6 +73,15 @@ export function withDismissedAsk(id: string, at: number) {
     item,
   }
   const ledger = { ...s.ledger, items: s.ledger.items.filter(i => i !== item), closed: [...s.ledger.closed, dismissed] }
+
+  return { ...s, ledger }
+}
+
+export function withDismissedAsk(id: string, at: number) {
   const holds = { replies: {}, discarded: {}, shownSince: NOW - 1000, listInput: null }
-  return { ...demoScreen(), view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, holds), shownSince: NOW - 1000 }
+  return {
+    ...demoScreen(),
+    view: sessionView(dismissedSession(id, at), NOW, SETTLED_MS, holds),
+    shownSince: NOW - 1000,
+  }
 }

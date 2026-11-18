@@ -360,22 +360,24 @@ function collapse(el: HTMLElement, from: SpringState, openTop: number | null, de
 const LINE = '.line'
 
 /**
- * Lets go of a line held at the closed title's height, once its row's state is no longer `closing`, so the row
- * measures its natural height. When the row turns back to `opening`, the function it returns glides the line from the
- * height it was drawn at to the open form's. A row whose close has ended takes the closed form's, with its meta, at
- * once, since its own height already holds that space. Null when the row holds no line, or needs no glide.
+ * Lets go of a line held at the closed title's height, once its row's state is no longer `closing`, so the row measures
+ * its natural height. When the row turns back to `opening`, the function it returns glides the line from the height it
+ * was drawn at to the open form's, at once while the row's glide is under way. A row whose close has ended takes the
+ * closed form's, with its meta, at once, since its own height already holds that space. Null when the row holds no
+ * line, or needs no glide.
  */
 function releaseLine(el: HTMLElement, isOpening: boolean): (() => void) | null {
   const line = el.querySelector<HTMLElement>(LINE)
   const was = line && glides.get(line)
   if (!line || !was || was.anim.playState === 'idle') return null
   const from = springOf(line, line.getBoundingClientRect().height)
+  const isRowMoving = isUnderWay(el)
   was.anim.cancel()
   if (!isOpening) return null
 
   return () => {
     const to = atEndWeight(line, () => line.getBoundingClientRect().height)
-    const delay = tabState.isReadDraw ? heightWaitMs : 0
+    const delay = tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0
     if (Math.abs(from.x - to) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
       glide(line, 'height', from, to, false, false, delay)
   }

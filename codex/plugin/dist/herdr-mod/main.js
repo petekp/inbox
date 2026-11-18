@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T01:10:38.419Z. 286045 characters follow.
+// Built at 2026-11-18T03:02:06.689Z. 286849 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -4919,10 +4919,14 @@ function withShownNewRows(ui, at) {
   const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
   return isSame ? ui : { ...ui, newRows };
 }
-function withDrawnRows(ui, last, rows, at, isTabShown) {
+var waitsIn = (rows, id) => rows.some((r) => r.id === id && r.isWaiting);
+function withDrawnRows(ui, last, rows, at, isTabShown, outs) {
   const lastRows = last.tab === ui.tab ? last.rows : null;
-  const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
-  return isTabShown ? withShownNewRows(arrived, at) : arrived;
+  const isCompared = rows !== null && lastRows !== null;
+  const arrived = isCompared ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
+  const isAnswer = isCompared && last.pressed.some((id) => waitsIn(lastRows, id) && !waitsIn(rows, id));
+  const drawn = isTabShown ? withShownNewRows(arrived, at) : arrived;
+  return { ui: drawn, last: { tab: drawn.tab, rows, pressed: outs.map((o) => o.rowId) }, isAnswer };
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
@@ -5381,13 +5385,18 @@ function moveRows(blocks, last, now, isFirst, isInput = false) {
   const moved = movedOf(blocks, was);
   const copies = new Map([...moved].map((id) => [id, copyIdOf(id, now)]));
   const isDrawn = new Set(blocks.map((b) => b.id));
-  const isFieldPressed = !isFirst && blocks.some((b) => b.kind === "field" && !wasDrawn.has(b.id));
+  const isFieldBack = (id) => !wasDrawn.has(id) || was.rows.get(id)?.track.state === "leaving";
+  const isFieldPressed = !isFirst && blocks.some((b) => b.kind === "field" && isFieldBack(b.id));
   const startsLeave = was.order.some((id) => {
     const state = was.rows.get(id)?.track.state;
     return state !== undefined && state !== "leaving" && (copies.has(id) || !isDrawn.has(id));
   });
   const holdsUntil = startsLeave && !isFieldPressed ? now + HOLD_MS : was.holdsUntil;
   const isHolding = holdsUntil > now;
+  const opensRow = blocks.some((b) => {
+    const old = was.rows.get(b.id);
+    return old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
+  });
   const waiting = new Map;
   const rows = new Map;
   const motion = new Map;
@@ -5399,7 +5408,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false) {
     const isStart = track.since === now && isMoving(track.state);
     const isPressed = block.kind === "field";
     const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, isPressed, isFieldPressed);
-    const isInputMove = isStart ? isInput : last?.isInputMove ?? false;
+    const isReleased = isInput && opensRow && track.state === "closing";
+    const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
     rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId, isInputMove });
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
@@ -6462,7 +6472,7 @@ class PressQueue {
 }
 
 // src/io.ts
-function herdrIo({ exec, hc, readTextFile, writeTextFile }) {
+function herdrIo({ exec, hc, readTextFile, writeTextFile, home }) {
   const herdrRun = (args, opts) => exec(args[0] ?? "", args.slice(1), { cwd: opts.cwd, timeout: opts.timeoutMs }).catch((e) => ({
     code: 127,
     stdout: "",
@@ -6494,7 +6504,14 @@ function herdrIo({ exec, hc, readTextFile, writeTextFile }) {
       await hc(["label", terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null);
     }
   };
-  return { herdrRun, probe, queueIo };
+  const hereIo = (projectFolder, cx) => ({
+    run: herdrRun,
+    probe,
+    home: home(),
+    projectFolder,
+    copy: (text) => cx.write_to_clipboard(text)
+  });
+  return { queueIo, hereIo };
 }
 
 // src/screen.ts
@@ -6690,7 +6707,7 @@ class LookReports {
 }
 
 // src/main.ts
-var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
+var { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home });
 
 class Inbox extends View {
   tab = null;
@@ -6717,7 +6734,7 @@ class Inbox extends View {
   drawnTabs = [];
   heights = new Heights;
   tracksOf = "";
-  lastWaits = { tab: "needsYou", rows: null };
+  lastWaits = { tab: "needsYou", rows: null, pressed: [] };
   timeLeft = new Map;
   linesAbove = NO_LINES_ABOVE;
   focus = null;
@@ -6893,13 +6910,7 @@ class Inbox extends View {
     const queue = this.queue;
     const projectFolder = target?.projectFolder ?? null;
     cx.spawn(async (cx) => {
-      await sent.finish((effects, pending) => runHere(effects, pending, {
-        run: herdrRun,
-        probe,
-        home: home(),
-        projectFolder,
-        copy: (t) => cx.write_to_clipboard(t)
-      }), () => cx.notify());
+      await sent.finish((effects, pending) => runHere(effects, pending, hereIo(projectFolder, cx)), () => cx.notify());
       cx.notify();
       if (queue === this.queue)
         this.checkOutsAt(queue.nextCheckAt(), cx);
@@ -6936,6 +6947,7 @@ class Inbox extends View {
     this.collapses = { ...this.collapses, [id]: c };
     if (isSelecting)
       this.ui = withCollapsed(this.ui, id, isCollapsed);
+    this.listInput = withListInput(this.listInput, c.at);
     this.closeStaleField();
     const to = { appHome: appHome(), sessionId: this.sessionId };
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c));
@@ -6977,10 +6989,10 @@ class Inbox extends View {
     });
     let screen = screenFor(this.ui);
     const inbox = screen.is === "inbox" ? screen : null;
-    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown);
-    if (ui !== this.ui)
-      screen = screenFor(this.ui = ui);
-    this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null };
+    const drew = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, this.queue.outs);
+    if (drew.ui !== this.ui)
+      screen = screenFor(this.ui = drew.ui);
+    this.lastWaits = drew.last;
     this.view = inbox?.view ?? null;
     this.drawTimer?.cancel();
     this.drawTimer = null;
@@ -7025,7 +7037,7 @@ class Inbox extends View {
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now);
     this.linesAbove = held.held;
-    const isInput = (this.listInput?.last ?? 0) > this.tracks.drawnAt;
+    const isInput = drew.isAnswer || (this.listInput?.last ?? 0) > this.tracks.drawnAt;
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput);
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;

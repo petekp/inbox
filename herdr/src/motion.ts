@@ -227,14 +227,16 @@ function movedOf(blocks: Block[], was: Tracks): Set<string> {
  * nearest block that was above it and is still drawn. A block that takes a leaving block's id is that block in another
  * form, so it does not leave and the new one does not enter. A block that changes place leaves its old place as a copy
  * under its own id, which is drawn as it was and leaves, and enters at its new place, so both glide on the height
- * spring. While a block that leaves holds its space, nothing that moves in a draw that did not follow the person's input
- * grows: a block that enters waits to open, a row that would open keeps its last form, and a row whose close starts with
- * or after the leave keeps its height while its panel fades. So the closing and the opening row start together, as the
- * leaving block's space starts to close. The person's own moves do not wait: in a draw that follows their input
- * (`isInput`), the row the selection opens and the row it closes move at once, and a field a press brings in shows at
- * once. A block that leaves in the draw a press's field enters is what the field replaces: it hides at once and shuts
- * without holding anything. `isFirst` forgets the tracks and draws every block at rest, as a newly shown tab does.
- * `nextAt` is when a move ends, a box opens or shuts, or a box's glide comes to rest, so the look draws again then.
+ * spring. While a block that leaves holds its space, nothing that moves in a draw that did not follow the person's
+ * input grows: a block that enters waits to open, a row that would open keeps its last form, and a row whose close
+ * starts with or after the leave keeps its height while its panel fades. So the closing and the opening row start
+ * together, as the leaving block's space starts to close. The person's own moves do not wait: in a draw that follows
+ * their input (`isInput`), the row the selection opens and the row it closes move at once, and a field a press brings
+ * in shows at once. When their input opens a row, a row whose close a publish began lets go of its height, so both move
+ * together. A block that leaves in the draw a press's field enters, or comes back as it leaves, is what the field
+ * replaces: it hides at once and shuts without holding anything. `isFirst` forgets the tracks and draws every block at
+ * rest, as a newly shown tab does. `nextAt` is when a move ends, a box opens or shuts, or a box's glide comes to rest,
+ * so the look draws again then.
  */
 export function moveRows(
   blocks: Block[],
@@ -248,13 +250,18 @@ export function moveRows(
   const moved = movedOf(blocks, was)
   const copies = new Map([...moved].map(id => [id, copyIdOf(id, now)]))
   const isDrawn = new Set(blocks.map(b => b.id))
-  const isFieldPressed = !isFirst && blocks.some(b => b.kind === 'field' && !wasDrawn.has(b.id))
+  const isFieldBack = (id: string) => !wasDrawn.has(id) || was.rows.get(id)?.track.state === 'leaving'
+  const isFieldPressed = !isFirst && blocks.some(b => b.kind === 'field' && isFieldBack(b.id))
   const startsLeave = was.order.some(id => {
     const state = was.rows.get(id)?.track.state
     return state !== undefined && state !== 'leaving' && (copies.has(id) || !isDrawn.has(id))
   })
   const holdsUntil = startsLeave && !isFieldPressed ? now + HOLD_MS : was.holdsUntil
   const isHolding = holdsUntil > now
+  const opensRow = blocks.some(b => {
+    const old = was.rows.get(b.id)
+    return old !== undefined && targetOf(b) === 'open' && targetOf(old.block) !== 'open'
+  })
   const waiting = new Map<string, Block>()
   const rows = new Map<string, Tracked>()
   const motion = new Map<string, RowMotion>()
@@ -266,7 +273,8 @@ export function moveRows(
     const isStart = track.since === now && isMoving(track.state)
     const isPressed = block.kind === 'field'
     const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, isPressed, isFieldPressed)
-    const isInputMove = isStart ? isInput : (last?.isInputMove ?? false)
+    const isReleased = isInput && opensRow && track.state === 'closing'
+    const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
     rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId, isInputMove })
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'

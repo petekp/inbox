@@ -499,6 +499,11 @@ test('when a publish moves the selection as another block leaves, the list never
       [0, asks(ALL)],
       [0, asks([])],
     ],
+    keyAfter: [
+      [0, asks(ALL, 'd11')],
+      [0, asks(['d11', 'd12', 'd13'], 'd12')],
+      [50, asks(['d11', 'd12', 'd13'], 'd13'), 'input'],
+    ],
   }
   for (const [name, steps] of Object.entries(moves)) {
     const heights = framesOf(steps, 900).heights
@@ -519,4 +524,19 @@ test('opening the goal field never raises the Status page’s height', () => {
   const start = heights[0] ?? 0
   expect(heights.at(-1)).not.toBe(start)
   expect(Math.max(...heights)).toBeLessThanOrEqual(start + 0.5)
+})
+
+test('reopening the goal field while it still closes never raises the Status page above its closed height', () => {
+  const closed = tabBlocks(demoScreen(), uiOn('overview'))
+  const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
+  const heights = framesOf(
+    [
+      [0, closed],
+      [0, typing, 'input'],
+      [900, closed, 'input'],
+      [1200, typing, 'input'],
+    ],
+    2200,
+  ).heights
+  expect(Math.max(...heights)).toBeLessThan((heights[0] ?? 0) + 1)
 })

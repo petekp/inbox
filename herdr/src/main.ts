@@ -77,7 +77,7 @@ import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, statusDrawn } from '
 
 type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; queue: PressQueue }
 
-const { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile })
+const { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home })
 
 type Timer = { cancel(): void }
 
@@ -110,7 +110,7 @@ export default class Inbox extends View {
   heights = new Heights()
   tracksOf = ''
   /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
-  lastWaits: LastWaits = { tab: 'needsYou', rows: null }
+  lastWaits: LastWaits = { tab: 'needsYou', rows: null, pressed: [] }
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
@@ -314,14 +314,7 @@ export default class Inbox extends View {
     const projectFolder = target?.projectFolder ?? null
     cx.spawn(async cx => {
       await sent.finish(
-        (effects, pending) =>
-          runHere(effects, pending, {
-            run: herdrRun,
-            probe,
-            home: home(),
-            projectFolder,
-            copy: t => cx.write_to_clipboard(t),
-          }),
+        (effects, pending) => runHere(effects, pending, hereIo(projectFolder, cx)),
         () => cx.notify(),
       )
       cx.notify()
@@ -355,6 +348,7 @@ export default class Inbox extends View {
     const c = { isCollapsed, at: Date.now() }
     this.collapses = { ...this.collapses, [id]: c }
     if (isSelecting) this.ui = withCollapsed(this.ui, id, isCollapsed)
+    this.listInput = withListInput(this.listInput, c.at)
     this.closeStaleField()
     const to = { appHome: appHome(), sessionId: this.sessionId }
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c))
@@ -391,9 +385,9 @@ export default class Inbox extends View {
       })
     let screen = screenFor(this.ui)
     const inbox = screen.is === 'inbox' ? screen : null
-    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown)
-    if (ui !== this.ui) screen = screenFor((this.ui = ui))
-    this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null }
+    const drew = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, this.queue.outs)
+    if (drew.ui !== this.ui) screen = screenFor((this.ui = drew.ui))
+    this.lastWaits = drew.last
     this.view = inbox?.view ?? null
     this.drawTimer?.cancel()
     this.drawTimer = null
@@ -447,7 +441,7 @@ export default class Inbox extends View {
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const isInput = (this.listInput?.last ?? 0) > this.tracks.drawnAt
+    const isInput = drew.isAnswer || (this.listInput?.last ?? 0) > this.tracks.drawnAt
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf

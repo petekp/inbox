@@ -40,8 +40,11 @@ export function applyView(next: View, seq: number) {
   }
   follow(next, isOpening ? openRows(next) : rows.added)
   tabState.isReadDraw = true
-  tabState.draw()
-  tabState.isReadDraw = false
+  try {
+    tabState.draw()
+  } finally {
+    tabState.isReadDraw = false
+  }
 }
 
 export async function read() {

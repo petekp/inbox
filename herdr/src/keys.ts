@@ -163,13 +163,20 @@ function withShownNewRows(ui: LookUi, at: number): LookUi {
   return isSame ? ui : { ...ui, newRows }
 }
 
-/** The tab a draw showed, and its rows, or null when it showed no inbox, as while a session is read. */
-export type LastWaits = { tab: ShownTab; rows: RowWait[] | null }
+/**
+ * The tab a draw showed, and its rows, or null when it showed no inbox, as while a session is read. `pressed` are the
+ * rows that had a press out.
+ */
+export type LastWaits = { tab: ShownTab; rows: RowWait[] | null; pressed: string[] }
+
+const waitsIn = (rows: RowWait[], id: string) => rows.some(r => r.id === id && r.isWaiting)
 
 /**
- * The look's state after a draw that shows `rows`, from the rows the last draw showed. Rows count as closed or new
- * only between two draws of the same tab's rows. A new row's clock starts once `isTabShown`, which is false while Help
- * covers the tab.
+ * The look's state after a draw that shows `rows` while the presses `outs` are out, from the rows the last draw showed,
+ * and what this draw leaves for the next. Rows count as closed or new only between two draws of the same tab's rows. A
+ * new row's clock starts once `isTabShown`, which is false while Help covers the tab. `isAnswer` says a row that had a
+ * press out at the last draw no longer waits: the publish answers the person's press, so its moves are theirs and the
+ * next row opens at once, as the Codex tab opens it when the press returns.
  */
 export function withDrawnRows(
   ui: LookUi,
@@ -177,12 +184,15 @@ export function withDrawnRows(
   rows: RowWait[] | null,
   at: number,
   isTabShown: boolean,
-): LookUi {
+  outs: readonly { rowId: string }[],
+): { ui: LookUi; last: LastWaits; isAnswer: boolean } {
   const lastRows = last.tab === ui.tab ? last.rows : null
-  const arrived =
-    rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui
+  const isCompared = rows !== null && lastRows !== null
+  const arrived = isCompared ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui
+  const isAnswer = isCompared && last.pressed.some(id => waitsIn(lastRows, id) && !waitsIn(rows, id))
+  const drawn = isTabShown ? withShownNewRows(arrived, at) : arrived
 
-  return isTabShown ? withShownNewRows(arrived, at) : arrived
+  return { ui: drawn, last: { tab: drawn.tab, rows, pressed: outs.map(o => o.rowId) }, isAnswer }
 }
 
 /**
