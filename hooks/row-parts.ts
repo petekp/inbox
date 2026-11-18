@@ -1,12 +1,4 @@
-import {
-  CHILD_GAP_PT,
-  CONTROL_GAP_PT,
-  DESKTOP_LINE_PT,
-  INSIDE_GAP_PT,
-  ITEM_GAP_PT,
-  LIST_GAP_PT,
-  ROW_PAD_PT,
-} from './layout'
+import { CHILD_GAP_PT, CONTROL_GAP_PT, INSIDE_GAP_PT, ITEM_GAP_PT, LIST_GAP_PT } from './layout'
 import type { RowView } from './rows'
 
 /**
@@ -48,8 +40,7 @@ export type RowPart = (typeof ROW_PARTS)[number]
 /**
  * The steps of the scale a gap between two parts takes. `inside` and `list` join two parts into one group, as a title
  * and the line under it, or an answer and its note. `child`, `control` and `item` sit between groups. Every step inside
- * a group is smaller than every step between groups, so space shows what belongs together. Herdr draws every gap at
- * its step. The other looks draw some pairs at their own value, and for those the rule can break.
+ * a group is smaller than every step between groups, so space shows what belongs together.
  */
 export const GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT } as const
 const BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT } as const
@@ -58,92 +49,41 @@ type GapStep = keyof typeof GROUP_STEPS | keyof typeof BETWEEN_STEPS
 const STEP_PT: Record<GapStep, number> = { ...GROUP_STEPS, ...BETWEEN_STEPS }
 
 /**
- * A form of an open row that places its parts in points. Desktop draws a row whose lines hang on a tree as a card of
- * frames, and any other row as one frame, and the two place some parts apart differently.
+ * The gap between two parts: its step, which Herdr, the Codex tab and desktop draw, and the blank rows the docked
+ * terminal draws. omp and the inline terminal draw no blank row inside a row.
  */
-export type PartForm = 'herdr' | 'codex' | 'desktopCard' | 'desktopFrame'
-
-/**
- * The gap between two parts: its step, the points a form draws where it differs from the step, and the blank rows
- * the docked terminal draws. omp and the inline terminal draw no blank row inside a row.
- */
-type PartGap = { step: GapStep; forms: Partial<Record<PartForm, number>>; rows: 0 | 1 }
-
-/** A blank line on desktop: a written 1, which the pane draws as half its line. */
-const DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2
+type PartGap = { step: GapStep; rows: 0 | 1 }
 
 const TITLE_PARTS: readonly RowPart[] = ['title', 'titleStatus']
-const TREE_TEXT: readonly RowPart[] = ['holdsUp', 'context', 'earlier']
-const BODY_PARTS: readonly RowPart[] = ['detail', 'file']
-const ANSWER_PARTS: readonly RowPart[] = ['answer', 'note', 'answers', 'reason']
-const TREE_PARTS: readonly RowPart[] = [...TREE_TEXT, ...ANSWER_PARTS]
 
-const gap = (step: GapStep, rows: 0 | 1, forms: PartGap['forms'] = {}): PartGap => ({ step, forms, rows })
+const gap = (step: GapStep, rows: 0 | 1 = 0): PartGap => ({ step, rows })
 
 /** A line of text under the title is the title's own detail. */
-const UNDER_TITLE = gap('inside', 0)
-/** Answers sit under the text above them as any buttons do. */
-const ANSWERS_UNDER_TITLE = gap('control', 0, { codex: CONTROL_GAP_PT })
-
-/** The parts the Codex tab draws as lines of a tree. A note or a reason sits inside its answer's line. */
-const CODEX_TREE_LINES: readonly RowPart[] = ['holdsUp', 'context', 'earlier', 'answer', 'answers']
-/** The px the Codex tab adds to a step above a line of a tree, and again under one. */
-const CODEX_TREE_EXTRA_PX = 1
-
-const codexTreeExtra = (above: RowPart, below: RowPart) =>
-  CODEX_TREE_EXTRA_PX *
-  (Number(CODEX_TREE_LINES.includes(below)) +
-    Number(TREE_PARTS.includes(above) && below !== 'note' && below !== 'reason'))
-
+const UNDER_TITLE = gap('inside')
 /**
- * The buttons or the field under the parts above them. Desktop's card puts them a row's padding under its tree, and
- * desktop's frame a blank line under any part.
+ * The status, the buttons and the field sit a control's step under the parts above them. The docked terminal puts a
+ * blank row there, since a row is the smallest space it can draw and the buttons would otherwise run into the text.
  */
-function aboveButtons(above: RowPart): PartGap {
-  const desktopFrame = DESKTOP_BLANK_LINE_PT
-  if (TREE_PARTS.includes(above)) return gap('control', 1, { desktopCard: ROW_PAD_PT, desktopFrame })
-  if (above === 'status') return gap('control', 1, { desktopCard: 0, desktopFrame })
-
-  return gap('control', 1, { desktopFrame })
-}
+const UNDER_TEXT = gap('control', 1)
 
 /** The gap above each part, given the part above it. The title is always first, so nothing sits above it. */
 const GAP_ABOVE: Record<Exclude<RowPart, 'title'>, (above: RowPart) => PartGap> = {
-  titleStatus: () => gap('inside', 0),
+  titleStatus: () => UNDER_TITLE,
   holdsUp: () => UNDER_TITLE,
-  context: above => (TITLE_PARTS.includes(above) ? UNDER_TITLE : gap('child', 0)),
-  earlier: above =>
-    TITLE_PARTS.includes(above) ? UNDER_TITLE : gap('child', 0, above === 'context' ? { desktopFrame: 0 } : {}),
-  detail: () =>
-    gap('inside', 1, {
-      codex: CONTROL_GAP_PT,
-      desktopCard: DESKTOP_BLANK_LINE_PT,
-      desktopFrame: DESKTOP_BLANK_LINE_PT,
-    }),
-  file: above =>
-    above === 'detail'
-      ? gap('inside', 1, { codex: LIST_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT })
-      : GAP_ABOVE.detail(above),
+  context: above => (TITLE_PARTS.includes(above) ? UNDER_TITLE : gap('child')),
+  earlier: above => (TITLE_PARTS.includes(above) ? UNDER_TITLE : gap('child')),
+  detail: () => UNDER_TITLE,
+  file: above => (above === 'detail' ? gap('list') : UNDER_TITLE),
   answer: above =>
-    TITLE_PARTS.includes(above)
-      ? ANSWERS_UNDER_TITLE
-      : above === 'answer' || above === 'note'
-        ? gap('item', 0)
-        : gap('child', 0),
-  note: () => gap('list', 0),
-  answers: above => (TITLE_PARTS.includes(above) ? ANSWERS_UNDER_TITLE : gap('child', 0)),
-  reason: () => gap('list', 0),
-  status: above => {
-    if (TITLE_PARTS.includes(above))
-      return gap('inside', 1, { codex: CONTROL_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT })
-    if (BODY_PARTS.includes(above)) return gap('control', 1, { desktopFrame: DESKTOP_BLANK_LINE_PT })
-
-    return gap('control', 1, { desktopCard: ROW_PAD_PT + DESKTOP_BLANK_LINE_PT, desktopFrame: DESKTOP_BLANK_LINE_PT })
-  },
-  buttons: aboveButtons,
-  field: aboveButtons,
-  result: () => gap('control', 0, { desktopCard: 0, desktopFrame: 0 }),
-  copy: () => gap('control', 0),
+    TITLE_PARTS.includes(above) ? gap('control') : above === 'answer' || above === 'note' ? gap('item') : gap('child'),
+  note: () => gap('list'),
+  answers: above => (TITLE_PARTS.includes(above) ? gap('control') : gap('child')),
+  reason: () => gap('list'),
+  status: () => UNDER_TEXT,
+  buttons: above => (above === 'status' ? gap('list') : UNDER_TEXT),
+  field: above => (above === 'status' ? gap('list') : UNDER_TEXT),
+  result: () => gap('list'),
+  copy: () => gap('control'),
 }
 
 /** The gap between two neighboring parts, `above` drawn directly over `below`. */
@@ -151,11 +91,9 @@ export function partGap(above: RowPart, below: Exclude<RowPart, 'title'>): PartG
   return GAP_ABOVE[below](above)
 }
 
-/** The points `form` draws between two neighboring parts: its own value, else the step, with Codex's tree extra. */
-export function partPt(above: RowPart, below: Exclude<RowPart, 'title'>, form: PartForm): number {
-  const g = partGap(above, below)
-
-  return g.forms[form] ?? STEP_PT[g.step] + (form === 'codex' ? codexTreeExtra(above, below) : 0)
+/** The points Herdr, the Codex tab and desktop draw between two neighboring parts: the step of their gap. */
+export function partPt(above: RowPart, below: Exclude<RowPart, 'title'>): number {
+  return STEP_PT[partGap(above, below).step]
 }
 
 /** The blank rows between two neighboring parts in a look drawn in whole rows: none but in the docked terminal. */

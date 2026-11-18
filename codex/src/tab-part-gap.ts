@@ -7,7 +7,7 @@ import type { RowPart } from '../../hooks/row-parts'
  * height grows smoothly when the panel mounts. It is inline, so no rule in the tab's CSS outranks it.
  */
 export const partAttrs = (above: RowPart, part: Exclude<RowPart, 'title'>) => {
-  const gap = `${partPt(above, part, 'codex')}px`
+  const gap = `${partPt(above, part)}px`
 
   return { 'data-part': part, style: { '--above': gap, paddingTop: gap } }
 }

@@ -389,5 +389,38 @@
       "reply": "Opened PR #41: https://github.com/acme/reports/pull/41. The lint check failed on an unused import in export.ts, and the PR now conflicts with main in reports.ts. Want me to fix the lint failure and resolve the conflict?"
     },
     "checks": [{ "added": 0 }]
+  },
+  {
+    "name": "url-parameter-options-in-words",
+    "about": "A reply that offers two page versions only by their URL parameters and recommends one gives options and a rec without links or parameters.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 6,
+      "card": {
+        "goal": "Redesign the shop's product and checkout pages",
+        "done": ["Export job fixed"],
+        "now": "Comparing card-layout mockups",
+        "running": []
+      },
+      "items": [],
+      "findings": [],
+      "closed": [],
+      "batchTurn": 4
+    },
+    "exchange": {
+      "person": null,
+      "trigger": "a background task finished",
+      "turn": 5,
+      "activity": ["ran: npm run reindex", "ran: npm test -- search", "ran: git status"],
+      "reply": "The background job that rebuilds the search index finished. It reindexed 4,212 products in 6 minutes, and the search tests pass against the new index.\n\nA correction to what I asked earlier: the A-or-B question about the product page no longer applies. You turned down B, so a helper agent mocked the product and checkout pages again in the card layout. Both are on the dev server at http://localhost:3000/product and http://localhost:3000/checkout. Three questions on those:\n\n- **Product page in the card layout:** `?dv=a` or `?dv=b`. The helper recommends B, because it doesn't show the price twice.\n- **Checkout page in the card layout:** A or B. The helper recommends A, because the order summary stays beside the form.\n- **Old layout styles:** should I delete them once you've picked both pages?"
+    },
+    "checks": [
+      {
+        "new": "product",
+        "kind": "question",
+        "rec": "\\bB\\b|second|price",
+        "noOption": "[?=/]|http"
+      }
+    ]
   }
 ]

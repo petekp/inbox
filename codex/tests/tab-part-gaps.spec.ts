@@ -70,7 +70,7 @@ function expected(c: RowCase, row: RowView, hasCopy: boolean): string[] {
     hasCopy,
   })
 
-  return partPairs(parts).map(([above, below]) => `${below} ${partPt(above, below, 'codex')}px`)
+  return partPairs(parts).map(([above, below]) => `${below} ${partPt(above, below)}px`)
 }
 
 test('the Codex tab pads each part of an open question, task and finding partGap under the part above, with no other space on the way to its panel, wide and narrow, with and without the copy box', async () => {

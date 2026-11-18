@@ -326,7 +326,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one."
     },
     option_notes: {
       type: "array",

@@ -154,7 +154,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
         v_flex()
           .children(
             lines.map((l, n) => {
-              const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus', 'herdr')
+              const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
               const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, above, t, r.isSelected)
 
               return 'isHidden' in l && l.isHidden ? el.opacity(0) : el
@@ -203,7 +203,7 @@ function bodyEls(
     : from.body
   let end = titleEnd
   const els = shown.map(({ part, ...l }) => {
-    const above = partPt(end, part, 'herdr')
+    const above = partPt(end, part)
     end = part
     const buttons = part === 'answers' ? answers : buttonOf(l.optionId)
 
@@ -229,10 +229,10 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   const parts = [
     ...body.els,
     ...(actions.length > 0
-      ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons', 'herdr'))]
+      ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons'))]
       : []),
-    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field', 'herdr'))] : []),
-    ...underEls(r, m, p, partPt(end, 'result', 'herdr')),
+    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field'))] : []),
+    ...underEls(r, m, p, partPt(end, 'result')),
   ]
   if (parts.length === 0) return []
   const key = panelId(r.id)
