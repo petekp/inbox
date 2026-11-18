@@ -16,9 +16,9 @@ The sweep relies on the last three facts. It removes nothing unless the list hol
 
 ## The globals a mod gets
 
-Herdr's mod runtime is gpui-shell 0.7.1, built into the Herdr app. It runs a mod on QuickJS, through the `rquickjs` crate. The app's binary names its engine files under `vendor/gpui-kit/crates/shell/src/engine/quickjs/`. The source of the app and of gpui-kit is not on this Mac, so this list was not read from source. `~/Code/herdr`, at `70389c38`, is `herdr`, the terminal multiplexer. It holds no gpui-kit or app code.
+Herdr's mod runtime is gpui-shell 0.7.1, built into the Herdr app. It runs a mod on QuickJS, through the `rquickjs` crate. The app's binary names its engine files under `vendor/gpui-kit/crates/shell/src/engine/quickjs/`. The source of the app and of gpui-kit was not available, so this list comes from the runtime, not from source. Herdr's own repository, the terminal multiplexer, holds no gpui-kit or app code.
 
-The list comes from the runtime itself. It was checked on 2026-11-18 with Herdr app 0.1.16, by running `herdr-app check` with a scratch `HERDR_APP_HOME` on a mod whose `main.js` throws `Object.getOwnPropertyNames(globalThis)` in its error. `herdr-app` is a link to the app's binary, `/Applications/Herdr.app/Contents/MacOS/Herdr`, so `herdr-app check` and the window run the same gpui-shell 0.7.1. Whether the window's runtime installs the same globals as `herdr-app check` is unverified.
+The list comes from the runtime itself. It was checked on 2026-11-18 with Herdr app 0.1.16, by running `herdr-app check` with a scratch `HERDR_APP_HOME` on a mod whose `main.js` throws `Object.getOwnPropertyNames(globalThis)` in its error. `herdr-app` is a link to the app's own binary, so `herdr-app check` and the window run the same gpui-shell 0.7.1. Whether the window's runtime installs the same globals as `herdr-app check` is unverified.
 
 A mod's global object holds these 89 names. `HERDR_GLOBALS` in `herdr/tests/herdr-runtime.ts` holds the same list.
 
