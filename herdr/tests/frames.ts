@@ -214,6 +214,8 @@ class Fades {
         const to = n.style.opacity
         const delay = n.delays.get('opacity') ?? 0
         if (!state) this.states.set(inBox, { shown: to, from: to, target: to, elapsed: duration, duration })
+        else if (to !== state.target && duration === 0 && delay === 0)
+          this.states.set(inBox, { shown: to, from: to, target: to, elapsed: 0, duration })
         else if (to !== state.target)
           this.states.set(inBox, { ...state, from: state.shown, target: to, elapsed: -delay, duration })
         return n.kids.forEach(k => walk(k, null))
@@ -234,7 +236,8 @@ class Fades {
   step(ms: number) {
     for (const s of this.states.values()) {
       s.elapsed = Math.min(s.duration, s.elapsed + ms)
-      s.shown = s.from + (s.target - s.from) * easeOut(Math.max(0, s.elapsed) / s.duration)
+      const done = s.duration > 0 ? Math.max(0, s.elapsed) / s.duration : s.elapsed >= 0 ? 1 : 0
+      s.shown = s.from + (s.target - s.from) * easeOut(done)
     }
   }
 }
@@ -261,7 +264,7 @@ class Frames {
     const resized = this.heights.takeResized()
     const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, id => this.heights.get(`title ${id}`))
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
     this.tracks = moved.tracks
     const noop = () => {}
     const paint = {

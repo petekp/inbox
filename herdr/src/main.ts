@@ -64,7 +64,7 @@ import { timeLeftDraws } from './time-left'
 import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
-import { fitEl, spacedEls, titleId } from './paint-space'
+import { fitEl, spacedEls } from './paint-space'
 import { EDGE, END_SPACE, LINE, onSize, paneFit, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PressQueue } from './press-queue'
@@ -442,7 +442,7 @@ export default class Inbox extends View {
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
     const isInput = drew.isAnswer || (this.listInput?.last ?? 0) > this.tracks.drawnAt
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, id => this.heights.get(titleId(id)))
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion

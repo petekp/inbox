@@ -23,6 +23,7 @@ import {
   mixInto,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
+import { titleId } from './heights'
 import { SLIDE_PX, enterDelayMs } from '../../hooks/row-motion'
 import { HEIGHT_SPRING, springStep } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
@@ -97,9 +98,6 @@ function aboveOf(prev: Block | null, b: Block, section: number | null): number {
 
 /** The key a row's panel is measured under, beside the row's own height. */
 export const panelId = (id: string): string => `panel ${id}`
-
-/** The key a row's title is measured under. */
-export const titleId = (id: string): string => `title ${id}`
 
 /** The key a row's lines under its title, with its panel, are measured under. */
 export const restId = (id: string): string => `rest ${id}`

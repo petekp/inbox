@@ -1,6 +1,6 @@
 import { earliestOf } from '../../hooks/timing'
 import type { LookUi } from './draw'
-import { NEXT_FRAME_MS } from './motion'
+import { NEXT_FRAME_MS } from './block-glide'
 import type { moveRows } from './motion'
 import { titleTintNextAt } from './paint-title-tint'
 import type { screenOf } from './screen'

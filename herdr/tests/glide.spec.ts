@@ -441,7 +441,7 @@ test('reopening the goal field while it still closes never raises the Status pag
   expect(Math.max(...heights)).toBeLessThan((heights[0] ?? 0) + 1)
 })
 
-test('closing the goal field before it has opened takes the Status page to its closed height without passing it, and cuts no text', () => {
+test('closing the goal field while it opens takes the Status page to its closed height without passing it, and cuts no text as it closes', () => {
   const closed = tabBlocks(demoScreen(), uiOn('overview'))
   const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
   for (const closesAt of [50, 100, 200, 400]) {
@@ -455,11 +455,36 @@ test('closing the goal field before it has opened takes the Status page to its c
     )
     const start = heights[0] ?? 0
     const end = Math.round(heights.at(-1) ?? NaN)
-    expect({ closesAt, over: Math.max(...heights) > start + 0.5, end, cuts }).toEqual({
+    const closeCuts = cuts.filter(c => c.at >= closesAt)
+    expect({ closesAt, over: Math.max(...heights) > start + 0.5, end, closeCuts }).toEqual({
       closesAt,
       over: false,
       end: start,
-      cuts: [],
+      closeCuts: [],
     })
+  }
+})
+
+test('closing the goal field once it has opened fades its content out while its box holds, and never raises the Status page', () => {
+  const closed = tabBlocks(demoScreen(), uiOn('overview'))
+  const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
+  for (const closesAt of [300, 500]) {
+    const { heights, fading } = framesOf(
+      [
+        [0, closed],
+        [0, typing, 'input'],
+        [closesAt, closed, 'input'],
+      ],
+      1400,
+    )
+    const field = fading.filter(f => f.id === 'box goal field')
+    const open = Math.max(...field.map(f => f.height))
+    const fadingOut = field.filter(f => f.at > closesAt && f.opacity > 0.1 && f.opacity < 0.9)
+    expect({
+      closesAt,
+      fades: fadingOut.length > 0,
+      holds: fadingOut.every(f => f.height > open - SLIDE_PX / 2),
+      over: Math.max(...heights) > (heights[0] ?? 0) + 0.5,
+    }).toEqual({ closesAt, fades: true, holds: true, over: false })
   }
 })

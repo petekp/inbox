@@ -1,10 +1,11 @@
-import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, isMoving, stepRow } from '../../hooks/row-motion'
+import { ROW_STATE_MS, isMoving, stepRow } from '../../hooks/row-motion'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import type { TabCell } from './draw'
-import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
-import { MOVED_TO, copyIdOf } from './heights'
+import { MOVED_TO, copyIdOf, titleId } from './heights'
+import { HOLD_MS, glideOf, isShownAtOnce } from './block-glide'
+import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
 import type { TitleGlide, TitleMotion } from './title-motion'
 
@@ -39,24 +40,6 @@ export type Tracks = {
 export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, drawnAt: 0 }
 
 /**
- * Where a block's box glides to as it enters or leaves, whether its content shows, how long the content fades, whether
- * that fade waits for the box to open, and for a box that turns back as it springs shut, how long it had been shutting
- * (`shutForMs`), so the fade waits only for the rest of the way. Then when an entering box opens if it waits for a leaving
- * block (`opensAt`), when a leaving box starts to close (`shutAt`), and when both its fade and its height spring have
- * come to rest.
- */
-type Glide = {
-  box: 'open' | 'shut'
-  isShown: boolean
-  fadeMs: number
-  waitsForSpace: boolean
-  shutForMs: number | null
-  opensAt: number | null
-  shutAt: number | null
-  endsAt: number
-}
-
-/**
  * How a block moves in this draw. `isStart` marks the draw a move began. A block that enters or leaves draws in a box
  * whose height springs and whose content fades over `fadeMs`, once the box is nearly open if `waitsForSpace`: `box` is `open` at the block's
  * measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
@@ -88,102 +71,10 @@ export type RowMotion = {
   springId: string | null
 }
 
-/** The draw after a move's first frame, which starts its transition or spring. */
-export const NEXT_FRAME_MS = 16
-
-/** How long a block that starts to leave holds its space: its first draw, then its fade. */
-const HOLD_MS = NEXT_FRAME_MS + LEAVE_FADE_MS
-
 const targetOf = (b: Block): RowTarget =>
   b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : isOpenRow(b) ? 'open' : 'closed'
 
 const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
-
-/** When a glide that starts or changes its target `now` has come to rest, its height a frame behind its fade. */
-const restAt = (now: number, fadeMs: number): number => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS
-
-/**
- * The glide of a block's box as it enters or leaves. gpui-kit animates only a later change of a target, so a move's
- * first draw sets the height and opacity it moves from, and the next draw sets the ones it moves to. A block that
- * leaves fades its content out while its box holds its height, and its box springs shut at `shutAt`, once the fade
- * has ended. A block that enters springs its box open, at `opensAt` when a leaving block holds its space, and its
- * content fades in once the box is nearly open. A block that turns back mid-glide was already in its box, so it moves
- * to its new end from where it is, at once: one that turns back to enter fades in from where its fade is, and if its box
- * had begun to shut or had not yet opened, once the box is nearly open. A field enters as soon as its press, so it never
- * waits for a leaving block, and shows as soon as its box opens. A field that leaves while it still opens turns back as
- * it came: it hides at once and its box springs shut from where it is, in the same draw, holding no space. A block the
- * field replaces (`isReplaced`) hides at once
- * and its box shuts from the next draw. A block that leaves stays drawn until its glide comes to rest. A row selected as it
- * enters keeps its box: the box springs on to the row's new height, which arrives in the draw after the open starts,
- * and lets go once that comes to rest.
- */
-function glideOf(
-  track: RowTrack,
-  isStart: boolean,
-  last: Glide | null,
-  now: number,
-  holdsUntil: number,
-  isPressed: boolean,
-  isReplaced: boolean,
-): Glide | null {
-  const { state } = track
-  const isLive = last !== null && now < last.endsAt
-  if (state === 'leaving') {
-    if (!isStart && last !== null) {
-      const box = last.shutAt !== null && now >= last.shutAt ? 'shut' : last.box
-      return { ...last, box, isShown: false }
-    }
-    const isTurned = isShownAtOnce(last, now)
-    const fadeMs = isReplaced || isTurned ? 0 : LEAVE_FADE_MS
-    const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + fadeMs
-    const from = isTurned
-      ? { box: 'shut' as const, isShown: false }
-      : isLive || isReplaced
-        ? { box: last?.box ?? 'open', isShown: false }
-        : { box: 'open' as const, isShown: true }
-
-    const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt }
-
-    return { ...glide, endsAt: restAt(shutAt, 0) }
-  }
-  if (state === 'entering') {
-    if (!isStart && last !== null) return openedAt(last, now)
-    if (isLive) {
-      const isShutting = last.shutAt !== null && now > last.shutAt
-      const shutForMs = isShutting && last.shutAt !== null ? now - last.shutAt : null
-      const waitsForSpace = isShutting || last.box !== 'open'
-      const glide = { box: 'open' as const, isShown: true, fadeMs: ENTER_FADE_MS, waitsForSpace, shutForMs }
-
-      return { ...glide, opensAt: null, shutAt: null, endsAt: restAt(now, ENTER_FADE_MS) }
-    }
-    const opensAt = !isPressed && holdsUntil > now ? holdsUntil : now + NEXT_FRAME_MS
-    const glide = { box: 'shut' as const, isShown: isPressed, fadeMs: isPressed ? 0 : ENTER_FADE_MS }
-
-    return {
-      ...glide,
-      waitsForSpace: !isPressed,
-      shutForMs: null,
-      opensAt,
-      shutAt: null,
-      endsAt: restAt(opensAt, glide.fadeMs),
-    }
-  }
-  if (!isLive || (last.box !== 'open' && last.opensAt === null)) return null
-  const glide = openedAt(last, now)
-
-  return isStart ? { ...glide, endsAt: Math.max(glide.endsAt, restAt(now, glide.fadeMs)) } : glide
-}
-
-/** Whether `g` is the glide of a field still opening, whose content showed as soon as its box began to open. */
-const isShownAtOnce = (g: Glide | null, now: number): boolean =>
-  g !== null && now < g.endsAt && g.box === 'open' && g.shutAt === null && g.fadeMs === 0
-
-/** An entering glide in a draw after its first: open and shown from `opensAt`, shut and hidden before it unless it shows at once. */
-function openedAt(g: Glide, now: number): Glide {
-  const isOpen = g.opensAt === null || now >= g.opensAt
-
-  return { ...g, box: isOpen ? 'open' : 'shut', isShown: isOpen || g.fadeMs === 0 }
-}
 
 /** A row's panel fades in as it opens and out as it closes, from where it is when the move turns back. */
 function panelOf(state: RowState, isStart: boolean, was: RowState | undefined, closing: RowBlock | null) {
@@ -246,8 +137,8 @@ function movedOf(blocks: Block[], was: Tracks): Set<string> {
  * in shows at once. When their input opens a row, a row whose close a publish began lets go of its height, so both move
  * together. A block that leaves in the draw a press's field enters, or comes back as it leaves, is what the field
  * replaces: it hides at once and shuts without holding anything. `isFirst` forgets the tracks and draws every block at
- * rest, as a newly shown tab does. `nextAt` is when a move ends, a box opens or shuts, or a box's glide comes to rest,
- * so the look draws again then.
+ * rest, as a newly shown tab does. `heightOf` gives the height measured under a key, as the
+ * look measures it. `nextAt` is when a move ends, a box opens or shuts, or a box's glide comes to rest, so the look draws again then.
  */
 export function moveRows(
   blocks: Block[],
@@ -255,7 +146,7 @@ export function moveRows(
   now: number,
   isFirst: boolean,
   isInput = false,
-  titleHeight: (id: string) => number | undefined = () => undefined,
+  heightOf: (key: string) => number | undefined = () => undefined,
 ): { blocks: Block[]; tracks: Tracks; motion: ReadonlyMap<string, RowMotion>; nextAt: number | null } {
   const was = isFirst ? NO_TRACKS : last
   const wasDrawn = new Set(was.order)
@@ -266,7 +157,11 @@ export function moveRows(
   const isFieldPressed = !isFirst && blocks.some(b => b.kind === 'field' && isFieldBack(b.id))
   const startsLeave = was.order.some(id => {
     const old = was.rows.get(id)
-    const holdsSpace = old !== undefined && old.track.state !== 'leaving' && !isShownAtOnce(old.glide, now)
+    const holdsSpace =
+      old !== undefined &&
+      old.track.state !== 'leaving' &&
+      old.glide?.box !== 'shut' &&
+      !isShownAtOnce(old.glide, now, heightOf(id))
     return holdsSpace && (copies.has(id) || !isDrawn.has(id))
   })
   const holdsUntil = startsLeave && !isFieldPressed ? now + HOLD_MS : was.holdsUntil
@@ -282,11 +177,22 @@ export function moveRows(
     const isOpen = block.kind === 'row' && isOpenRow(block)
     const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
     const title =
-      block.kind === 'row' && last ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, titleHeight(block.id)) : null
+      block.kind === 'row' && last
+        ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)))
+        : null
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const isPressed = block.kind === 'field'
-    const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, isPressed, isFieldPressed)
+    const glide = glideOf(
+      track,
+      isStart,
+      last?.glide ?? null,
+      now,
+      holdsUntil,
+      isPressed,
+      isFieldPressed,
+      heightOf(block.id),
+    )
     const isReleased = isInput && opensRow && track.state === 'closing'
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
     rows.set(block.id, { track, block, opened, glide, title, springId, isInputMove })
