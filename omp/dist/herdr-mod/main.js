@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T03:02:06.689Z. 286849 characters follow.
+// Built at 2026-11-18T03:09:15.518Z. 287043 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -1409,7 +1409,8 @@ function subjectStall(x, isHeld, isWorkRunning, now) {
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
-var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
+var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,…]+$/, "");
+var textBeyondName = (name, text) => text && comparableName(text) !== comparableName(name) ? text : null;
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
 }
@@ -1483,7 +1484,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       isRunning,
       ...carried,
       name: x.name,
-      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
+      text: c.isNew(x) || isOpen(x) ? textBeyondName(x.name, x.text) : null,
       stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
@@ -1602,7 +1603,7 @@ function milestoneRow(step, o, items) {
     isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
-    text: m.text || null,
+    text: textBeyondName(m.name, m.text),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
@@ -2625,6 +2626,7 @@ function withCheckKeys(s, views) {
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
+var NO_ANSWERS = { ledger: null, status: null };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -2658,6 +2660,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     callFailures: NO_CALL_FAILURES,
+    lastAnswers: NO_ANSWERS,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -2733,6 +2736,7 @@ function sessionFields(saved, views) {
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
+    lastAnswers: { ...NO_ANSWERS, ...saved.lastAnswers },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -2752,7 +2756,8 @@ var COUNT_TOKENS = {
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var HERDR_FORMAT = 1;
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor");
+var UNPUBLISHED_FIELDS = new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 function publishedSessionsFolder(appHome) {
   return `${appHome}/inbox/sessions`;
 }
@@ -3693,7 +3698,7 @@ function statusPage(s, now) {
     ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
     ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0, hasMilestones ? settled : [])
   ];
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
   const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows = [
@@ -5719,8 +5724,7 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
     return shaped.invisible().disabled(true);
   if (b.isOut)
     return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true);
-  const isRecommendedAnswer = b.isOption === true && b.emphasis === "primary";
-  const styled = isRecommendedAnswer ? shaped.border_color(t.accent).bg(t.accent).text_color(t.accent_foreground) : b.emphasis === "primary" ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? shaped.border_color(t.input).text_color(t.foreground) : shaped.text_color(t.muted);
+  const styled = b.emphasis === "primary" ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? shaped.border_color(t.input).text_color(t.foreground) : shaped.text_color(t.muted);
   if (isInert)
     return styled;
   const live = b.emphasis === "primary" ? styled.hover((s) => s.opacity(0.85)).active((s) => s.opacity(0.7)) : b.emphasis === "normal" ? styled.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)) : styled.hover((s) => s.text_color(t.foreground)).active((s) => s.text_color(t.foreground).opacity(0.7));

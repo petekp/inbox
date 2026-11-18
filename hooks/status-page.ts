@@ -6,7 +6,15 @@ import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
-import { childRow, countsByMark, finishedLine, namedFolds, partRows, unplacedChildren } from './status-page-parts'
+import {
+  childRow,
+  countsByMark,
+  finishedLine,
+  namedFolds,
+  partRows,
+  textBeyondName,
+  unplacedChildren,
+} from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
@@ -344,7 +352,7 @@ export function statusPage(
       hasMilestones ? settled : [],
     ),
   ]
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
+  const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null
   const g = goalParts.goal
   const isHeadApart = head !== null && (g === null || g.isMet)
   const listRows: StatusRow[] = [

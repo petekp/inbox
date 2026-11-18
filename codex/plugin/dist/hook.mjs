@@ -629,7 +629,8 @@ function subjectStall(x, isHeld, isWorkRunning, now) {
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
-var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "");
+var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,…]+$/, "");
+var textBeyondName = (name, text2) => text2 && comparableName(text2) !== comparableName(name) ? text2 : null;
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
 }
@@ -697,7 +698,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       isRunning,
       ...carried,
       name: x.name,
-      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
+      text: c.isNew(x) || isOpen(x) ? textBeyondName(x.name, x.text) : null,
       stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
@@ -793,7 +794,7 @@ function milestoneRow(step, o, items) {
     isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
-    text: m.text || null,
+    text: textBeyondName(m.name, m.text),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
@@ -2065,6 +2066,7 @@ function withCheckKeys(s, views) {
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
+var NO_ANSWERS = { ledger: null, status: null };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -2098,6 +2100,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     callFailures: NO_CALL_FAILURES,
+    lastAnswers: NO_ANSWERS,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -2179,6 +2182,7 @@ function sessionFields(saved, views) {
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
+    lastAnswers: { ...NO_ANSWERS, ...saved.lastAnswers },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -3212,7 +3216,7 @@ function statusPage(s, now) {
       hasMilestones ? settled : []
     )
   ];
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
   const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows = [
@@ -4509,9 +4513,8 @@ function herdrLabels(tokens) {
   );
 }
 var HERDR_FORMAT = 1;
-var SESSION_FIELDS = Object.keys(emptySession()).filter(
-  (field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor"
-);
+var UNPUBLISHED_FIELDS = /* @__PURE__ */ new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;

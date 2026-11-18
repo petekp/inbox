@@ -81,8 +81,19 @@ function isChildWorking(c: Child): boolean {
   return c.endedAt === null && c.delegateState !== 'blocked'
 }
 
-/** A name as `isNamedLikeSubject` compares it: lower case, with no spaces, hyphens or underscores. */
-const comparableName = (name: string) => name.toLowerCase().replace(/[\s\-_]+/g, '')
+/**
+ * A name as `isNamedLikeSubject` and `textBeyondName` compare it: lower case, with no spaces, hyphens or underscores,
+ * and no closing punctuation.
+ */
+const comparableName = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[\s\-_]+/g, '')
+    .replace(/[.!?:;,…]+$/, '')
+
+/** `text`, or `null` when it only repeats the row's `name`, as `comparableName` compares them. */
+export const textBeyondName = (name: string, text: string | null | undefined): string | null =>
+  text && comparableName(text) !== comparableName(name) ? text : null
 
 /**
  * Whether `c` is the only child of `x` and has the same name, so the subject's row says what the session says and
@@ -224,7 +235,7 @@ export function partRows(
       isRunning,
       ...carried,
       name: x.name,
-      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
+      text: c.isNew(x) || isOpen(x) ? textBeyondName(x.name, x.text) : null,
       stall: waitsOn === null && !carried ? ownStall : null,
       waitsOn,
       merged: c.isNew(x) ? x.merged : null,
