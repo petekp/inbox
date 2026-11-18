@@ -23,8 +23,11 @@ const BASE_ID = { question: 'd12', task: 'd14', finding: 'd23' } as const
 const TAB_CSS = new URL('../src/tab-css/', import.meta.url)
 const OWN_SPACING = ['paddingBottom', 'marginTop', 'marginBottom'] as const
 const CHILD_SPACING = ['gap', 'rowGap'] as const
+const INNER_SPACING = ['marginTop', 'marginBottom'] as const
 
 const isNone = (value: string) => value === '' || value === 'normal' || parseFloat(value) === 0
+
+const nameOf = (el: HTMLElement) => el.dataset.part ?? (el.className || el.tagName)
 
 function strays(part: HTMLElement): string[] {
   const out: string[] = []
@@ -35,9 +38,14 @@ function strays(part: HTMLElement): string[] {
       ...(at.dataset.part ? [] : (['paddingTop'] as const)),
       ...(at === part ? [] : CHILD_SPACING),
     ]
-    for (const prop of props)
-      if (!isNone(style[prop])) out.push(`${at.dataset.part ?? at.className} ${prop} ${style[prop]}`)
+    for (const prop of props) if (!isNone(style[prop])) out.push(`${nameOf(at)} ${prop} ${style[prop]}`)
     if (at.classList.contains('panel')) break
+  }
+  for (const el of part.querySelectorAll<HTMLElement>('*')) {
+    if (el.closest('[data-part]') !== part) continue
+    const style = getComputedStyle(el)
+    for (const prop of INNER_SPACING)
+      if (!isNone(style[prop])) out.push(`${nameOf(part)} > ${nameOf(el)} ${prop} ${style[prop]}`)
   }
 
   return out
