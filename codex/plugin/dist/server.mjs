@@ -257,6 +257,7 @@ var PR_READ_FIRST_LABELS = {
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
+var NO_ANSWERS = { ledger: null, status: null };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -290,6 +291,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     callFailures: NO_CALL_FAILURES,
+    lastAnswers: NO_ANSWERS,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -455,9 +457,8 @@ var COUNT_TOKENS = {
 var CLEARED_TOKENS = Object.fromEntries(
   [STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
 );
-var SESSION_FIELDS = Object.keys(emptySession()).filter(
-  (field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor"
-);
+var UNPUBLISHED_FIELDS = /* @__PURE__ */ new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 
 // ../hooks/host-prs.ts
 var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;

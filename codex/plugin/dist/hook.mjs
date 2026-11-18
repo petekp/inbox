@@ -2065,6 +2065,7 @@ function withCheckKeys(s, views) {
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
+var NO_ANSWERS = { ledger: null, status: null };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -2098,6 +2099,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     callFailures: NO_CALL_FAILURES,
+    lastAnswers: NO_ANSWERS,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -2179,6 +2181,7 @@ function sessionFields(saved, views) {
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
+    lastAnswers: { ...NO_ANSWERS, ...saved.lastAnswers },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -4509,9 +4512,8 @@ function herdrLabels(tokens) {
   );
 }
 var HERDR_FORMAT = 1;
-var SESSION_FIELDS = Object.keys(emptySession()).filter(
-  (field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor"
-);
+var UNPUBLISHED_FIELDS = /* @__PURE__ */ new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
