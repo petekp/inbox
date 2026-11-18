@@ -176,16 +176,8 @@
 .row.closing .line .meta {
   display: none;
 }
-/* The line returns with the end of the close, fading in so it does not pop in over the settled height. */
-.row.just-closed .line .holds-up {
-  animation: holds-up-in var(--line-return-fade);
-}
-@keyframes holds-up-in {
-  from {
-    opacity: 0;
-  }
-}
-/* An open row's Holds up line is the first branch of its tree, which a closing row's fading body still draws. */
+/* An open row's Holds up line is the first branch of its tree. A closing row's panel draws it, at full opacity, in the
+   place the closed line's Holds up line takes once the close ends, so that line shows at once. */
 .row.selected .line .holds-up,
 .row.closing .line .holds-up {
   display: none;
