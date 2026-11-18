@@ -18,7 +18,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/fold-all.ts` | Shared module. Option-click or the `w` key on a fold folds every fold of the shown tab, or opens them all. `tabFolds` lists a tab's folds, `foldAllOn` gives the lists to save and the rows and parents that collapse. Each look applies the change to its own fold state. |
 | `hooks/help.ts` | Shared module. The marks that rows and group titles draw, the Help legend, Help's labels, and the keys Help lists in each look. |
 | `hooks/presses.ts` | Shared module. The press types `RowPress` and `PrActionId`, and `isPrRowId`, which tells whether a row id is a PR row's. |
-| `hooks/press-labels.ts` | Shared module. `actionId` and `pressText`, the action id and label that a press records, and the `capitalized` and `ISSUE_LABEL` they use. It imports only types, so importing it loads no other module. |
+| `hooks/press-labels.ts` | Shared module. `actionId` and `pressText`, the action id and label that a press records, and the `capitalized`, `ISSUE_LABEL` and `SHOW_EXPLANATION_LABEL` they use. It imports only types, so importing it loads no other module. |
 | `hooks/open-targets.ts` | Shared module. `openTarget`, which opens a row's link or path through a host's command runner, and `baseName`. |
 | `hooks/help-steps.ts` | Shared module. A row's help steps: each step's label and icon, the Open PR step for the PRs an item names, and the effects each step runs. |
 | `hooks/last-actions.ts` | Shared module. What a row's saved last action says: whether the row waits on a reply, was handed off or had its fix sent, and whether its press folds the row. Also `upgradeLastActions`, which converts the last actions an earlier build saved. |
@@ -54,7 +54,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including the PRs tab. `showsRunningMark` says whether a text look draws a running mark. |
 | `hooks/conversation.ts` | Shared module. `flattenConversation` turns a conversation's `Turn`s into the text a catch-up reads, and clips it. Each host maps its own conversation to turns. |
 | `hooks/clients.ts` | Shared module. The parity record: how each host supports each feature, and why where it does not. |
-| `hooks/client-features.ts` | Shared module. `FeatureId`, every feature the parity record in `hooks/clients.ts` covers. |
+| `hooks/client-features.ts` | Shared module. `FeatureId`, every feature the parity record in `hooks/clients.ts` covers, and the record's `ClientId` and `Client` types. |
 | `hooks/session-host.ts` | Shared module. The `SessionHost` and `UpdateHost` types a host supplies, and the update flows that run on a host's store: `runUpdates`, `askOverConversation` and `reconcileUpdateStatus`. It also holds `exclusiveKeys` and `orderedKeys`, which keep runs of one key apart in a process. |
 | `hooks/clipboard-commands.ts` | Shared module. The commands that put text on the clipboard on each platform, and the words for when none starts. The Codex server and omp run them. |
 | `hooks/host-press.ts` | Shared module. `press` and `startPress`, which run a press on a host's store, and `wakeAfterSettle`, which sends what waited for the settle window: held answers and Fixes, then the Done message. |

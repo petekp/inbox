@@ -11,6 +11,8 @@ export type Effect =
   | { kind: 'copy'; text: string; name: string; isCommand: boolean }
   | { kind: 'refresh-prs'; name: string }
   | { kind: 'rerun'; repo: string; run: string; name: string }
+  /** Scrolls the conversation to a transcript row, `requestId`. */
+  | { kind: 'scroll'; requestId: string; name: string }
 
 /**
  * `last` null leaves the row's last action as it was.

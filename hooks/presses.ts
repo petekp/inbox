@@ -6,7 +6,17 @@ export type RowPress =
   | { action: 'answer'; id: string; option: string }
   | { action: 'type'; id: string; text: string }
   | {
-      action: 'explain' | 'compare' | 'done' | 'dismiss' | 'address' | 'issue' | 'discuss' | 'undo' | 'discard'
+      action:
+        | 'explain'
+        | 'show-explanation'
+        | 'compare'
+        | 'done'
+        | 'dismiss'
+        | 'address'
+        | 'issue'
+        | 'discuss'
+        | 'undo'
+        | 'discard'
       id: string
     }
   | { action: 'step'; id: string; step: number; label: string }

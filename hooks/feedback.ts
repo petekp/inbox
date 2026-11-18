@@ -20,7 +20,11 @@ export type Feedback =
   | { is: 'queued'; label: string; at: number }
   | { is: 'unconfirmed'; label: string; at: number }
   | { is: 'notSent'; reason: string; retry: RowPress | null }
-  | { is: 'local'; result: LocalResult }
+  /**
+   * An open, copy or scroll's result. `talkOutSince` is when the row's talk press began, while that press still waits on
+   * its reply under the result, so its button stays out.
+   */
+  | { is: 'local'; result: LocalResult; talkOutSince?: number }
   | { is: 'note'; note: RowNote['note']; at: number }
   | { is: 'closed'; label: string; at: number }
 
@@ -46,8 +50,9 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
  */
 export function pressUnderWaySince(f: Feedback | null): number | null {
   if (f?.is === 'working' || f?.is === 'sending') return f.at
+  if (f?.is !== 'local') return null
 
-  return f?.is === 'local' && f.result.state === 'pending' ? f.result.at : null
+  return f.talkOutSince ?? (f.result.state === 'pending' ? f.result.at : null)
 }
 
 /** `pressUnderWaySince` for the PRs tab's hold on its settled rows. A hand-off's work can run for minutes, so it does not hold them. */
@@ -66,7 +71,13 @@ export function feedbackOf(
   const result = last?.result
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: 'note', note: note.note, at: note.at }
-  if (result && (result.state !== 'done' || now - result.at < SETTLED_MS)) return { is: 'local', result }
+  if (result && (result.state !== 'done' || now - result.at < SETTLED_MS)) {
+    const under = last.kind === 'talk' ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now) : null
+    const isTalkOut = under?.is === 'working' || under?.is === 'sending' || under?.is === 'queued'
+    const talkOutSince = isTalkOut ? under.at : undefined
+
+    return { is: 'local', result, ...(talkOutSince === undefined ? {} : { talkOutSince }) }
+  }
   if (!last || last.kind === 'local') return null
   const delivery = last.delivery
   const pending = pendingDeliveryAt(last, now)
@@ -214,6 +225,7 @@ function isPressOut(f: Feedback | null): boolean {
 
 /** The id of the action whose press is out on a row, as `actionId` makes it, or null. */
 export function pressOutAction(last: LastAction | undefined, f: Feedback | null): string | null {
+  if (f?.is === 'local' && f.result.state !== 'pending' && f.talkOutSince !== undefined) return last?.action ?? null
   if (!isPressOut(f)) return null
 
   return (f?.is === 'local' ? f.result.action : last?.action) ?? null
@@ -269,7 +281,10 @@ const VERBS = {
   copy: { pending: 'Copying', done: 'Copied', failed: 'copy' },
   'refresh-prs': { pending: 'Refreshing', done: 'Refreshed', failed: 'refresh' },
   rerun: { pending: 'Starting a re-run of', done: 'Started a re-run of', failed: 'start a re-run of' },
+  scroll: { pending: 'Showing', done: 'Shown', failed: 'show' },
 }
+const doneText = (p: LocalResult['parts'][number]) =>
+  p.kind === 'scroll' ? 'Shown in the conversation' : `${VERBS[p.kind].done} ${p.name}`
 
 function localText(r: LocalResult, look: Look): string {
   const isPrs =
@@ -277,9 +292,7 @@ function localText(r: LocalResult, look: Look): string {
   const parts = isPrs ? [{ ...r.parts[0]!, name: `${r.parts.length} PRs` }] : r.parts
   if (r.state === 'pending') return `${parts.map(p => `${VERBS[p.kind].pending} ${p.name}`).join(DOT)}…`
   const text = parts
-    .map(p =>
-      p.error === null ? `${VERBS[p.kind].done} ${p.name}` : `Could not ${VERBS[p.kind].failed} ${p.name}: ${p.error}`,
-    )
+    .map(p => (p.error === null ? doneText(p) : `Could not ${VERBS[p.kind].failed} ${p.name}: ${p.error}`))
     .join(DOT)
   if (r.state === 'failed') return text
   const isCommand = parts.some(p => p.kind === 'copy' && p.isCommand)

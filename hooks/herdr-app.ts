@@ -1,5 +1,5 @@
 import type { Session } from '../types'
-import type { ClientId } from './clients'
+import type { ClientId } from './client-features'
 import { herdrEnvelope, pressFolder, publishedSessionPath } from './herdr'
 import type { EnvelopeSource } from './herdr'
 import { fileTime, isLookFile, isPressFile, isPrsShownFile, pressFile } from './herdr-press-file'

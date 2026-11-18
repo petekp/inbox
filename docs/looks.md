@@ -64,6 +64,7 @@ The Herdr look is a Herdr app mod that draws the session a host publishes. This 
 - [The Herdr look's Status page](looks/differences-herdr-status.md)
 - [The Herdr look's motion](looks/differences-herdr-motion.md)
 - [The Herdr look's questions](looks/differences-herdr-questions.md)
+- [The Herdr look's row buttons](looks/differences-herdr-buttons.md)
 
 ## Adding a host
 

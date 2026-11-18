@@ -32,6 +32,14 @@ export type LastAction = {
   isRepeat?: true
   /** A PR's Dismiss on a PR only the agent's order showed, so its Undo does not link it. Missing on a Dismiss of a linked PR. */
   isUnlinked?: true
+  /**
+   * The row's latest explanation, in Claude Code. `replyId` is the transcript row where its reply's text begins, which
+   * Show explanation scrolls to, and a later press on the row keeps it. `isAwaitingReply` marks an Explain press whose
+   * message started a turn of its own and whose reply has not begun; a message that entered a running turn marks none.
+   * `isFirstReply` marks the row's first explanation, whose button waits for that Explain press to settle. Missing on
+   * rows never explained, and on presses saved before the mod kept it.
+   */
+  explanation?: { replyId?: string; isAwaitingReply?: true; isFirstReply?: true }
 }
 
 /**
@@ -51,7 +59,7 @@ export type Delivery =
 export type SentPrompt = { id: string; sessionId: string; text: string; pressedAt: number | null }
 
 export type LocalPart = {
-  kind: 'open' | 'copy' | 'refresh-prs' | 'rerun'
+  kind: 'open' | 'copy' | 'refresh-prs' | 'rerun' | 'scroll'
   name: string
   /** A command only the person can run, so the row says where to run it. */
   isCommand: boolean
