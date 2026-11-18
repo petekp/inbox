@@ -308,7 +308,13 @@ export function paneAskTabs(
           g.kind,
           ROW_COLUMNS.tree.handleAt,
         ),
-        ...closedFold(g.kind, closed, closedTotal(closedOf, settled), unfolded.includes(g.kind)),
+        ...closedFold(
+          g.kind,
+          closed,
+          closedTotal(closedOf, settled),
+          unfolded.includes(g.kind),
+          ROW_COLUMNS.tree.handleAt,
+        ),
       ])
     })
 

@@ -209,7 +209,7 @@ test('the Status page says what it is for before the session has any work', asyn
   expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
 })
 
-test('seen finished work folds into "N done" with no mark, a press unfolds it to list the finished rows one step in and a second folds it, and j selects the fold so f unfolds it, and desktop’s fold line takes its click', async ($, on) => {
+test('seen finished work folds into "N done" with no mark, a press unfolds it to list the finished rows one step in and a second folds it, and j selects the fold so f unfolds it, and desktop’s fold line takes its click and keeps a Status row’s mark column, so its text starts with its siblings’', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -252,7 +252,7 @@ test('seen finished work folds into "N done" with no mark, a press unfolds it to
   await clock.settle()
   const desktopFold = async () => (await desktop.find({ key: 'fold-status-done' }))?.props.props as FoldProps
   expect(await desktop.find({ key: 'fold-status-done' })).toMatchObject({ type: 'Client' })
-  expect(await desktopFold()).toMatchObject({ label: '2 done', isUnfolded: true })
+  expect(await desktopFold()).toMatchObject({ label: '2 done', isUnfolded: true, status: { mark: null } })
   await desktop.post({ isUnfolded: false }, { in: 'fold-status-done' })
   await clock.settle()
   expect((await desktopFold()).isUnfolded).toBe(false)

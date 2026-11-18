@@ -213,6 +213,36 @@ test('an Asks row names the open subject it holds up', () => {
   expect(shown).toContain('Holds up Glasses pairing')
 })
 
+test('a collapsed row’s Holds up line and its group’s Closed fold start at the rows’ title column', () => {
+  const demo = screenOf()
+  const { findings } = demo.view
+  const holdingFinding = (r: RowView, n: number) => (n === 1 ? { ...r, holdsUpLine: 'Holds up Dismiss gesture' } : r)
+  const screen = { ...demo, view: { ...demo.view, findings: { ...findings, rows: findings.rows.map(holdingFinding) } } }
+  const tabs = [
+    { tab: 'needsYou' as const, rows: [...screen.view.needsYou.questions, ...screen.view.needsYou.tasks] },
+    { tab: 'findings' as const, rows: screen.view.findings.rows },
+  ]
+  for (const { tab, rows } of tabs) {
+    const lines = text(screen, { ...INITIAL_UI, tab, selectedId: null }, 120).split('\n')
+    const titleAt = (row: RowView) => {
+      const start = new RegExp(`(\\d+\\) )?${row.title.slice(0, 16).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+      const line = lines.findIndex(l => start.test(l))
+      return { line, column: lines[line]!.search(start) }
+    }
+    const isCollapsed = (r: RowView) => !lines[titleAt(r).line]!.includes('❯')
+    const holding = rows.filter(r => r.state.is === 'open' && r.holdsUpLine && isCollapsed(r))
+    expect(holding.length, tab).toBeGreaterThan(0)
+    for (const row of holding) {
+      const title = titleAt(row)
+      expect(lines[title.line + 1]!.indexOf('Holds up'), `${tab} ${row.id}`).toBe(title.column)
+    }
+    const column = titleAt(holding[0]!).column
+    const folds = lines.filter(l => / closed ›/.test(l))
+    expect(folds.length, tab).toBeGreaterThan(0)
+    for (const fold of folds) expect(fold.search(/\d+ closed/), `${tab} fold`).toBe(column)
+  }
+})
+
 test('moving through rows wraps from the last to the first, and stops on each Closed line', () => {
   const screen = screenOf()
   const openIn = (rows: RowView[]) => rows.filter(r => r.state.is !== 'settled').map(r => ({ id: r.id }))

@@ -201,12 +201,22 @@ export function paneStatusPath(
    * draws the name muted with the fold's chevron after it, as one button. Desktop draws a fold line, since only a
    * `Client` takes a click across the line.
    */
-  const foldedName = (m: Pick<MilestoneRow, 'id' | 'name'> & { foldId: string }) => {
+  const foldedName = (
+    m: Pick<MilestoneRow, 'id' | 'name'> & { foldId: string },
+    mark: { text: string; color: string | null } | null = null,
+  ) => {
     const toggle = () => toggleFold(m.foldId)
     const isOpen = isUnfolded(m.foldId)
     const key = foldKey({ statusId: m.foldId })
     if (look === 'desktop')
-      return { el: <Box key={`status-${m.id}`}>{foldRow(key, m.name, isOpen, toggle)}</Box>, lines: desktopFoldLines }
+      return {
+        el: (
+          <Box key={`status-${m.id}`}>
+            {foldRow(key, m.name, isOpen, toggle, undefined, undefined, undefined, { mark })}
+          </Box>
+        ),
+        lines: desktopFoldLines,
+      }
 
     return {
       el: <Box key={`goal-${m.id}-fold`}>{foldButton(key, m.name, isOpen, toggle)}</Box>,

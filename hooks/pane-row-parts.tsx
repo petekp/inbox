@@ -234,7 +234,7 @@ export function paneRowParts(
       <Box key={`reopen-${d.id}`} flexDirection="row">
         <Button
           key={`reopen-${d.id}`}
-          label={look === 'desktop' ? action.label : ` ${action.label} `}
+          label={action.label}
           onPress={(press: { surface: UiPressArgument['surface'] }) => void runPress(action.press, press.surface)}
         />
       </Box>
@@ -277,7 +277,7 @@ export function paneRowParts(
               )}
               {lineAction(d)}
             </Box>
-            <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
+            <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end">
               <Text color={pal.age}>{shortAgo(now - d.at)}</Text>
             </Box>
           </Box>,
@@ -311,6 +311,8 @@ export function paneRowParts(
     toggle: () => void,
     padY = DESKTOP_ROW_PAD,
     units?: CountsUnits,
+    textAt: number = ROW_COLUMNS.tree.textAt,
+    status?: FoldProps['status'],
   ) =>
     hasClient ? (
       <Box key={`fold-row-${key}`} position="relative" width="100%">
@@ -328,6 +330,7 @@ export function paneRowParts(
               isUnfolded,
               chevron: foldGlyph(isUnfolded),
               padY,
+              ...(status ? { status } : {}),
               colors: {
                 rest: isInline ? null : (pal.card ?? null),
                 text: pal.age,
@@ -344,7 +347,7 @@ export function paneRowParts(
         <Box flexDirection="row">{foldButton(key, label, isUnfolded, toggle, units)}</Box>,
         `fold-row-${key}`,
         0,
-        ROW_COLUMNS.tree.textAt,
+        textAt,
       )
     )
   /** The lines a desktop fold row takes: its chevron's height, in the pane's scroll rows. */
@@ -361,7 +364,14 @@ export function paneRowParts(
       onPress={() => void updateClosedAll(a => (a.includes(kind) ? a : [...a, kind]))}
     />
   )
-  const closedFold = (kind: FoldKind, closed: ClosedLine[], total: number, isUnfolded: boolean) => {
+  /** A group's Closed fold, its label at `textAt`, where the group's rows start their text. */
+  const closedFold = (
+    kind: FoldKind,
+    closed: ClosedLine[],
+    total: number,
+    isUnfolded: boolean,
+    textAt: number = ROW_COLUMNS.tree.textAt,
+  ) => {
     const earlier = earlierLabel(total, closed.length)
     return closed.length === 0
       ? []
@@ -377,6 +387,8 @@ export function paneRowParts(
                 updateClosedAll(a => a.filter(k => k !== kind)),
               ]),
             DESKTOP_LIST_MARGIN,
+            undefined,
+            textAt,
           ),
           ...(isUnfolded && look !== 'desktop' && !isInline
             ? [

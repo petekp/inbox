@@ -9157,7 +9157,7 @@ async function askHerdrAgain(files, appHome, home) {
 
 // src/panel-lines.ts
 var AGENT = "omp";
-var INDENT = 7;
+var INDENT = 6;
 var UNLED_INDENT = INDENT - 3;
 var STOP_ID = "stop";
 var HERDR_ASK_ID = "herdr-ask";
@@ -9316,7 +9316,7 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
     kind: "row",
     line: {
       ...blankLine(foldId(g.kind)),
-      lead: g.mark ? null : { text: "", tone: null },
+      lead: g.isRowLed ? { text: "", tone: null } : null,
       title: `${foldLabel(total)} ${foldGlyph(isUnfolded)}`,
       isDim: true,
       fold: g.kind,
@@ -9427,12 +9427,14 @@ function rowEntries(screen, ui, tab) {
     kind: g.kind,
     title: g.title,
     mark: { text: g.mark.mark, tone: g.mark.tone },
+    isRowLed: true,
     rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, ui.shownSince)),
     closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
   })) : Object.keys(FINDING_GROUPS).map((kind) => ({
     kind,
     title: FINDING_GROUPS[kind].title,
     mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
+    isRowLed: false,
     rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
     closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
   }));

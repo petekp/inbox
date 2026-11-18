@@ -341,7 +341,7 @@ export function paneRowLines({
         <Box flexGrow={1} flexShrink={1}>
           {line}
         </Box>
-        <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
+        <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end">
           <Text color={pal.age}>{sideAge(row)}</Text>
         </Box>
       </Box>
