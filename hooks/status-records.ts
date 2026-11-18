@@ -5,7 +5,7 @@ import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-stat
 import type { ClientId } from './client-features'
 import type { CallKind, Exchange, Session, SessionStatus, HostTask } from '../types'
 import type { Ask, UpdateHost } from './session-host'
-import { heardCall, withCall } from './call-record'
+import { heardCall, withAnswer, withCall } from './call-record'
 import type { HeardCall } from './call-record'
 
 /**
@@ -189,11 +189,17 @@ export async function askAndWriteStatus<S extends Session>(
   const answer = last.text === null ? null : parseStatus(last.text)
   let before: SessionStatus | null = null
   let isWritten = false
-  const noted = (current: S, now: number) =>
-    heards.reduce(
-      (x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now),
-      current,
-    )
+  const answeredTurn = (x: S) => (call.exchange.kind === 'reply' ? call.exchange.exchange.turn : x.ledger.turn)
+  const noted = (current: S, now: number) => {
+    const isCurrent = isStatusCallCurrent(current, appliedAfter)
+
+    return heards.reduce((x, h) => {
+      const isParsed = h.heard.text !== null && parseStatus(h.heard.text) !== null
+      const recorded = withCall(x, h.kind, h.heard, isParsed, now)
+
+      return isCurrent ? withAnswer(recorded, h.kind, h.heard, isParsed, now, answeredTurn(x)) : recorded
+    }, current)
+  }
   const after = await host.update(async current => {
     const now = await host.now()
     const x = noted(current, now)

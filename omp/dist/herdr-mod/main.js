@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T00:48:15.071Z. 281505 characters follow.
+// Built at 2026-11-18T01:17:57.272Z. 281690 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -2625,6 +2625,7 @@ function withCheckKeys(s, views) {
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
+var NO_ANSWERS = { ledger: null, status: null };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -2658,6 +2659,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     callFailures: NO_CALL_FAILURES,
+    lastAnswers: NO_ANSWERS,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -2733,6 +2735,7 @@ function sessionFields(saved, views) {
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
+    lastAnswers: { ...NO_ANSWERS, ...saved.lastAnswers },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -2752,7 +2755,8 @@ var COUNT_TOKENS = {
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var HERDR_FORMAT = 1;
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor");
+var UNPUBLISHED_FIELDS = new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 function publishedSessionsFolder(appHome) {
   return `${appHome}/inbox/sessions`;
 }

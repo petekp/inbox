@@ -1,8 +1,10 @@
 import type { Ask, CallReport } from './session-host'
-import type { CallFailure, CallKind, Session } from '../types'
+import type { CallAnswer, CallFailure, CallKind, Session } from '../types'
 
 /** How much of a host's reason a failure keeps. */
 const ERROR_CHARS = 500
+/** How much of an answer `lastAnswers` keeps. Every save writes the whole session, so a runaway answer must not grow each write. */
+export const ANSWER_CHARS = 4000
 
 /**
  * What the host gave for one model call: its answer or null, its report, the error it threw, and how long it ran.
@@ -61,6 +63,32 @@ function failureOf(kind: CallKind, heard: HeardCall, isParsed: boolean, at: numb
     ms: heard.ms,
     process: text === null ? (report?.process ?? null) : null,
   }
+}
+
+/**
+ * The session with the answer `heard` gave as its call's entry in `lastAnswers`: the start of its text, its length,
+ * when it arrived and the `turn` it answered. A call that gave no text leaves the session as it was.
+ */
+export function withAnswer<S extends Session>(
+  s: S,
+  kind: CallKind,
+  heard: HeardCall,
+  isParsed: boolean,
+  at: number,
+  turn: number,
+): S {
+  if (heard.text === null) return s
+  const { text } = heard
+  const answer: CallAnswer = {
+    at,
+    turn,
+    reads: kind.reads,
+    isParsed,
+    text: text.slice(0, ANSWER_CHARS),
+    chars: text.length,
+  }
+
+  return { ...s, lastAnswers: { ...s.lastAnswers, [kind.call]: answer } }
 }
 
 /**

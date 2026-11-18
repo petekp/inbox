@@ -9,6 +9,7 @@ const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
 
 const NO_FAILURE = { lastFailure: null, recoveredAt: null }
 export const NO_CALL_FAILURES: Session['callFailures'] = { ledger: NO_FAILURE, status: NO_FAILURE }
+const NO_ANSWERS: Session['lastAnswers'] = { ledger: null, status: null }
 
 export const NO_TURN: Session['turn'] = { person: null, trigger: null, activity: [], press: null }
 
@@ -44,6 +45,7 @@ export function emptySession(): Session {
     stop: null,
     overviewFailure: null,
     callFailures: NO_CALL_FAILURES,
+    lastAnswers: NO_ANSWERS,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -175,6 +177,7 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
+    lastAnswers: { ...NO_ANSWERS, ...saved.lastAnswers },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),

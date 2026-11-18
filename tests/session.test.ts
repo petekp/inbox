@@ -2,7 +2,8 @@ import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
 import { flattenConversation } from '../hooks/conversation'
-import { emptySession } from '../hooks/session-files'
+import { emptySession, upgradeSession } from '../hooks/session-files'
+import { ANSWER_CHARS } from '../hooks/call-record'
 import { noteCommandOutput } from '../hooks/session-turns'
 import { sessionView } from '../hooks/session-view'
 import { askOverConversation, reconcileUpdateStatus, runUpdates } from '../hooks/session-host'
@@ -285,7 +286,7 @@ test('each call’s last failure is saved in its own record with its cause, a pr
   })
   const failure = async () => {
     const s = await host.read()
-    return { ...s.callFailures.ledger, status: s.callFailures.status, saved: JSON.stringify(s) }
+    return { ...s.callFailures.ledger, status: s.callFailures.status, saved: JSON.stringify(s.callFailures) }
   }
   await host.update(s => finishTurn(s, 'Which runtime?'))
   await runUpdates({ ...host, catchUp: undefined })
@@ -325,6 +326,36 @@ test('each call’s last failure is saved in its own record with its cause, a pr
   })
   expect(recovered.status.recoveredAt).toBe(recovered.status.lastFailure!.at)
   expect(recovered.saved).not.toContain('Here is where things stand.')
+})
+
+test('each call’s latest answer is saved as the model wrote it, with the turn its rows carry, a call with no text keeps the answer before it, and a long answer keeps its start', async () => {
+  const misread = 'NEW: decide | Push the change? | Push / Not yet | Push | -'
+  const long = `${LEDGER_REPLY}\n${'x'.repeat(ANSWER_CHARS)}`
+  const ledgerAnswers = [misread, null, long]
+  const { host } = fakeHost(async (_prompt, system) =>
+    system === STATUS_SYSTEM ? 'Here is where things stand.' : (ledgerAnswers.shift() ?? null),
+  )
+  await host.update(s => finishTurn(s, 'Push it?'))
+  await runUpdates({ ...host, catchUp: undefined })
+  const first = await host.read()
+  await host.update(s => finishTurn(s, 'Which runtime?'))
+  await runUpdates({ ...host, catchUp: undefined })
+  const failed = await host.read()
+  await runUpdates({ ...host, catchUp: undefined })
+  const retried = await host.read()
+
+  expect(first.lastAnswers.ledger).toMatchObject({
+    text: misread,
+    chars: misread.length,
+    reads: 'reply',
+    isParsed: true,
+  })
+  expect(first.lastAnswers.ledger?.turn).toBe(first.ledger.items[0]?.turn)
+  expect(first.lastAnswers.status).toMatchObject({ text: 'Here is where things stand.', isParsed: false })
+  expect(failed.lastAnswers.ledger).toEqual(first.lastAnswers.ledger)
+  expect(retried.lastAnswers.ledger).toMatchObject({ text: long.slice(0, ANSWER_CHARS), chars: long.length })
+  expect(retried.lastAnswers.ledger?.turn).toBe(retried.ledger.items.at(-1)?.turn)
+  expect(upgradeSession({}).lastAnswers).toEqual({ ledger: null, status: null })
 })
 
 test('the conversation keeps its newest lines when it is too long, and leaves out the inbox notes', () => {
