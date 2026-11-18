@@ -6,7 +6,7 @@ type TitleProps = {
   titleColor: string | null
   /** Muted text after the title, such as a press's result, or empty for none. */
   after: string
-  /** Whether `after` draws on lines of its own under the title, rather than beside it. */
+  /** Whether `after` draws on lines of its own under the title, rather than beside it. A line feed starts a new line. */
   isAfterUnder: boolean
   colors: { muted: string | null; hover: string | null; hoverText: string | null; pressed: string | null }
 }
@@ -51,7 +51,9 @@ const Title: ClientModule<TitleProps, State> = (props, surface) => {
           ...(props.isAfterUnder ? [] : after),
         ],
       }),
-      ...(props.isAfterUnder ? [Text({ wrap: 'wrap', children: after })] : []),
+      ...(props.isAfterUnder
+        ? props.after.split('\n').map(line => Text({ wrap: 'wrap', ...colored(props.colors.muted), children: line }))
+        : []),
     ],
   })
 }

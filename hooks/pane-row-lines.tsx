@@ -1,5 +1,5 @@
 import type { UiPressArgument } from 'claude-code'
-import { DESKTOP_CHARS_PER_CELL, DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
+import { DESKTOP_CHARS_PER_CELL, DESKTOP_CLIP_CHARS_PER_CELL, desktopTextPt } from './desktop-metrics'
 import { MUTED_MARK, mutedMarkSvg, RUNNING_SVG_CELLS, runningSvg, toneSvg, WORKING_MARK } from './desktop-svg'
 import { textMark } from './marks'
 import { WORKING } from './palettes'
@@ -29,8 +29,8 @@ import {
 import type { RowProps } from './row-client'
 import { COLLAPSED_TITLE_LINES } from './row-parts'
 import { DOT, type ResultMark, rowMark, rowResultMark, type RowView, shortAgo } from './rows'
-import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './terminal-text'
-import { ago, clipLabel } from './text'
+import { desktopSpanLines, LEADING_DOT, partedLines, type TreePos, treeText } from './terminal-text'
+import { ago, cellWidth, clipLabel } from './text'
 import { resultGlyph, runningMark } from './timing'
 
 const holdsUpLineOf = (r: RowView | undefined) => r?.holdsUpLine ?? null
@@ -261,7 +261,7 @@ export function paneRowLines({
         {second ? <Box paddingLeft={line.before?.length ?? 0}>{titleButton(`title-${row.id}-2`, second)}</Box> : null}
         {meta ? (
           <Text wrap="wrap" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-            {withDoneText(meta, line.afterDoneText)}
+            {withDoneText(partedLines(meta.split(DOT), s => cellWidth(s) <= width).join('\n'), line.afterDoneText)}
           </Text>
         ) : null}
         {holdsUpLine ? (
@@ -310,6 +310,7 @@ export function paneRowLines({
     const f = feedbackLabel(row.id, row)
     const before = row.line?.before ?? ''
     const text = (row.line?.text ?? row.title).trim()
+    const status = f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim()
     const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, COLLAPSED_TITLE_LINES, {
       isCutAtWord: true,
     })
@@ -320,7 +321,7 @@ export function paneRowLines({
       before,
       title: titleSpans.map(s => s.text).join(''),
       titleColor: titleColor ?? null,
-      after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
+      after: partedLines(status.split(DOT), s => desktopTextPt(s) <= textColumnPt).join('\n'),
       note: holdsUpLineOf(row.view) ?? '',
       side: sideAge(row),
       padY: DESKTOP_ROW_PAD,

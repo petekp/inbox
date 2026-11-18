@@ -3338,6 +3338,8 @@ export const register: Register = on => {
       ...rowFns,
       prKeyAction,
       desktopLabel,
+      desktopRowTextPt,
+      listColumns,
       keyRow,
       emptyState,
       banner,

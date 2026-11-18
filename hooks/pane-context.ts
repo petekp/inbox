@@ -54,7 +54,7 @@ export type Row = {
   bodyEnd?: Extract<RowPart, 'detail' | 'file'>
   clippedBody?: (lines: number, width: number) => JSX.Element | null
   /** The body as the terminal draws it in `width` cells, for a body whose lines depend on the width. */
-  bodyAt?: (width: number) => JSX.Element
+  bodyAt?: (fits: (text: string) => boolean) => JSX.Element
   /** The answers, which the question's tree draws. */
   optionKeys?: () => KeyAction[]
   /** Whether the answers may sit side by side, as `rowKeyPlan` offers it. */

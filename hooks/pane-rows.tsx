@@ -254,7 +254,7 @@ export function paneRows(
     // Claude Code's terminal starts a new line at a line feed inside wrapped text.
     const shownAfter = after ? `${after.isUnder ? '\n' : ''}${after.text}` : ''
     const titleLines = after?.isUnder
-      ? lineCount(row.title, titleWidth) + lineCount(after.text, titleWidth)
+      ? lineCount(row.title, titleWidth) + after.text.split('\n').reduce((n, l) => n + lineCount(l, titleWidth), 0)
       : lineCount(`${row.title}${shownAfter}`, titleWidth)
     const bodyLines =
       isSelected && isInline && look === 'terminal' && row.clippedBody
@@ -268,8 +268,8 @@ export function paneRows(
     const body =
       bodyLines !== null && row.clippedBody && row.body
         ? row.clippedBody(bodyLines, textWidth)
-        : look === 'terminal' && row.bodyAt
-          ? row.bodyAt(textWidth)
+        : row.bodyAt
+          ? row.bodyAt(look === 'desktop' ? fitsTitleLine : s => cellWidth(s) <= textWidth)
           : (row.body ?? null)
     const treeEntries =
       row.view && look === 'desktop' && isSelected ? askEntries(row.view, options, answerRow, Infinity) : []

@@ -187,7 +187,8 @@ export const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => 
 /**
  * A status drawn after a title, `after`, which starts with DOT. It stays beside the title when the title and the whole
  * status fit on one line. Otherwise it starts a line of its own under the title, without the DOT, since no line starts
- * or ends in a separator. There it wraps between words when it is too long for one line, as the Codex tab's does.
+ * or ends in a separator. There it wraps between words when it is too long for one line, as the Codex tab's does, and
+ * a status of several DOT-joined parts takes `partedLines`, one line feed between lines.
  */
 export function statusAfterTitle(
   after: string,
@@ -197,9 +198,23 @@ export function statusAfterTitle(
   if (fits(title + after)) return { text: glued(after), isUnder: false }
   const rest = after.replace(LEADING_DOT, '')
   const firstBreak = rest.indexOf(' ')
+  if (rest.includes(DOT)) return { text: partedLines(rest.split(DOT), fits).join('\n'), isUnder: true }
   const text = fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak)
 
   return { text, isUnder: true }
+}
+
+/**
+ * `parts` set in lines that `fits`, joined by DOT within a line. A part that does not fit beside the line before it
+ * starts a new line without DOT, so no line starts or ends in a separator. A part longer than a line wraps by itself.
+ */
+export function partedLines(parts: string[], fits: (text: string) => boolean): string[] {
+  const separator = glued(DOT)
+
+  return parts.reduce<string[]>((lines, part) => {
+    const joined = `${lines.at(-1)}${separator}${part}`
+    return lines.length > 0 && fits(joined) ? [...lines.slice(0, -1), joined] : [...lines, part]
+  }, [])
 }
 
 /**

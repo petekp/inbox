@@ -8,7 +8,7 @@ export type RowProps = {
   title: string
   /** The title's tint, or null for the theme's own. */
   titleColor: string | null
-  /** The row's status, drawn whole on the lines under the title. */
+  /** The row's status, drawn whole on the lines under the title. A line feed starts a new line. */
   after: string
   /** A muted line under the title and `after`, or empty for none. */
   note: string
@@ -110,7 +110,9 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
               props.title,
             ],
           }),
-          ...(props.after ? [Text({ wrap: 'wrap', ...colored(ageColor), children: props.after })] : []),
+          ...(props.after
+            ? props.after.split('\n').map(line => Text({ wrap: 'wrap', ...colored(ageColor), children: line }))
+            : []),
           ...(note
             ? [
                 Text({
