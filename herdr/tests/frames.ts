@@ -20,7 +20,7 @@ const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
 type Jump = { at: number; id: string; by: number }
-type TitleForm = { at: number; id: string; isCut: boolean; box: number; isBoxResting: boolean }
+type TitleForm = { at: number; id: string; wrapped: number; box: number; isBoxResting: boolean }
 type ColumnGap = { at: number; id: string; x: number; y: number }
 type Cut = { at: number; box: string; text: string; share: number; opacity: number }
 type Fading = { at: number; id: string; height: number; opacity: number }
@@ -169,8 +169,8 @@ function easeOut(x: number): number {
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
 
-const fadesOn = (id: string | null | undefined): boolean =>
-  id?.startsWith('box ') === true || id?.startsWith('panel ') === true
+const FADE_PREFIXES = ['box ', 'panel ', 'wrapped ', 'one line ']
+const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))
 
 function boxOf(n: Painted): string | null {
   for (let up: Painted | null = n; up; up = up.parent) if (fadesOn(up.id)) return up.id ?? null
@@ -214,6 +214,8 @@ class Fades {
         const to = n.style.opacity
         const delay = n.delays.get('opacity') ?? 0
         if (!state) this.states.set(inBox, { shown: to, from: to, target: to, elapsed: duration, duration })
+        else if (to !== state.target && duration === 0 && delay === 0)
+          this.states.set(inBox, { shown: to, from: to, target: to, elapsed: 0, duration })
         else if (to !== state.target)
           this.states.set(inBox, { ...state, from: state.shown, target: to, elapsed: -delay, duration })
         return n.kids.forEach(k => walk(k, null))
@@ -234,7 +236,8 @@ class Fades {
   step(ms: number) {
     for (const s of this.states.values()) {
       s.elapsed = Math.min(s.duration, s.elapsed + ms)
-      s.shown = s.from + (s.target - s.from) * easeOut(Math.max(0, s.elapsed) / s.duration)
+      const done = s.duration > 0 ? Math.max(0, s.elapsed) / s.duration : s.elapsed >= 0 ? 1 : 0
+      s.shown = s.from + (s.target - s.from) * easeOut(done)
     }
   }
 }
@@ -261,7 +264,7 @@ class Frames {
     const resized = this.heights.takeResized()
     const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput)
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
     this.tracks = moved.tracks
     const noop = () => {}
     const paint = {
@@ -319,11 +322,13 @@ class Frames {
     }
     for (const { node } of sized) {
       const id = node.id?.match(/^title (.+)$/)?.[1]
-      const text = node.kids[1]
+      const isTitleText = (k: Painted) => k.kids.some(c => c.id === `wrapped ${id}`) || (k.text?.length ?? 0) > 3
+      const text = node.kids.find(isTitleText)
       if (id === undefined || !text) continue
       const box = `fit title ${id}`
-      const isCut = text.style.isTruncated === true
-      this.titles.push({ at: now, id, isCut, box: shown.get(box) ?? NaN, isBoxResting: this.springs.isResting(box) })
+      const layer = this.fades.states.get(`wrapped ${id}`)
+      const wrapped = text.text !== null ? (text.style.isTruncated ? 0 : 1) : (layer?.shown ?? NaN)
+      this.titles.push({ at: now, id, wrapped, box: shown.get(box) ?? NaN, isBoxResting: this.springs.isResting(box) })
     }
     for (const { node, height } of sized) node.onSize?.({ width: PANE_WIDTH, height }, null)
     this.lastShown = shown

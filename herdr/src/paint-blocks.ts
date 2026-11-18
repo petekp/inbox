@@ -36,6 +36,7 @@ import { PATH_X, lineColor, padOf, panelId, restId, sizeEl, titleEl } from './pa
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
+import { titleTextEl } from './paint-title-text'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { ARM_END, answersEl, armEl, isSideBySide, trunkEl } from './paint-tree'
 
@@ -130,7 +131,6 @@ function rowEl(r: RowBlock, p: Paint): Element {
   const m = p.motion.get(r.id)
   const isLeaving = m?.state === 'leaving'
   const isOpen = isOpenRow(r)
-  const isWrapped = isOpen || m?.isWrapHeld === true
   const isPressable = r.isSelectable && !isLeaving
   const hasTree = (m?.closing ?? r).body.some(l => l.tree !== undefined)
   const line = h_flex()
@@ -139,15 +139,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .when(isPressable && isOpen, e => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt)))
     .when(hasTree, e => e.relative().child(trunkEl(LINE_HEIGHT, null, t, r.isSelected)))
     .child(markEl(r.mark, t, markTintOf(r, p)))
-    .child(
-      div()
-        .flex_1()
-        .min_w(0)
-        .text_color(titleColorOf(r, p))
-        .when(!isWrapped, e => e.truncate())
-        .when(isOpen, e => e.font_semibold())
-        .child(r.title),
-    )
+    .child(titleTextEl(r, p, titleColorOf(r, p)))
     .when(r.age !== null, e =>
       e.child(
         div()

@@ -10,10 +10,7 @@ const { framesOf, jumpsOf } = await import('./frames')
 type Step = import('./frames').Step
 const { LINE_HEIGHT } = await import('../src/paint-theme')
 const { tabBlocks } = await import('../src/draw')
-const { isOpenRow } = await import('../src/blocks')
-const { AGENT, NOW, demoScreen, uiOn } = await import('./fixtures')
-
-const ALL = ['d11', 'd12', 'd13', 'd15']
+const { AGENT, ALL, NOW, asks, demoScreen, uiOn } = await import('./fixtures')
 
 function asksIn(order: string[], selected: string | null = null): Block[] {
   const screen = demoScreen()
@@ -22,24 +19,6 @@ function asksIn(order: string[], selected: string | null = null): Block[] {
 
   return tabBlocks(
     { ...screen, view: { ...view, needsYou: { ...view.needsYou, questions } } },
-    uiOn('needsYou', { selected }),
-  )
-}
-
-function asks(
-  keep: string[],
-  selected: string | null = null,
-  added: { from: string; id: string } | null = null,
-  collapsed: string[] = [],
-): Block[] {
-  const screen = demoScreen()
-  const view = screen.view
-  const questions = view.needsYou.questions.filter(r => keep.includes(r.id))
-  const from = view.needsYou.questions.find(r => r.id === added?.from)
-  if (added && from) questions.unshift({ ...from, id: added.id })
-
-  return tabBlocks(
-    { ...screen, view: { ...view, collapsed, needsYou: { ...view.needsYou, questions } } },
     uiOn('needsYou', { selected }),
   )
 }
@@ -105,79 +84,6 @@ test('a move that starts while another glides starts where every block is drawn'
     ],
   ]
   for (const [name, steps] of staggered) expect({ name, jumps: jumpsOf(steps) }).toEqual({ name, jumps: [] })
-})
-
-test('when the selection moves between rows whose titles wrap open, the rows close and open on their springs', () => {
-  expect(
-    jumpsOf([
-      [0, asks(ALL, 'd11')],
-      [0, asks(ALL, 'd12')],
-    ]),
-  ).toEqual([])
-  expect(
-    jumpsOf([
-      [0, asks(ALL, 'd12')],
-      [0, asks(ALL, 'd11')],
-      [96, asks(ALL, 'd13')],
-    ]),
-  ).toEqual([])
-})
-
-function titleOf(steps: [number, Block[]][]) {
-  const { jumps, titles } = framesOf(steps)
-  const d11 = titles.filter(t => t.id === 'd11' && t.at >= 0)
-
-  return {
-    jumps,
-    isWrappedAtFirst: d11[0]?.isCut === false,
-    isCutOnlyAtRest: d11.filter(t => t.isCut).every(t => t.isBoxResting && Math.abs(t.box - LINE_HEIGHT) < 0.5),
-    isWrappedWhileGliding: d11.some(t => !t.isCut && t.box > LINE_HEIGHT + 0.5 && t.box < 2 * LINE_HEIGHT - 0.5),
-    isCutAtEnd: d11.at(-1)?.isCut === true,
-  }
-}
-
-test('a closing row keeps its title wrapped while the title box glides to one line, and cuts it once the box rests', () => {
-  const closes: [string, [number, Block[]][]][] = [
-    [
-      'the open row collapses',
-      [
-        [0, asks(ALL, 'd11')],
-        [0, asks(ALL, 'd11', null, ['d11'])],
-      ],
-    ],
-    [
-      'the selection moves to the next row',
-      [
-        [0, asks(ALL, 'd11')],
-        [0, asks(ALL, 'd12')],
-      ],
-    ],
-  ]
-  for (const [name, steps] of closes)
-    expect({ name, ...titleOf(steps) }).toEqual({
-      name,
-      jumps: [],
-      isWrappedAtFirst: true,
-      isCutOnlyAtRest: true,
-      isWrappedWhileGliding: true,
-      isCutAtEnd: true,
-    })
-})
-
-test('an opening row wraps its title from its first frame, and a close that turns back never cuts it', () => {
-  expect(
-    titleOf([
-      [0, asks(ALL)],
-      [0, asks(ALL, 'd11')],
-    ]),
-  ).toMatchObject({ jumps: [], isWrappedAtFirst: true, isCutAtEnd: false })
-  expect(
-    titleOf([
-      [0, asks(ALL, 'd11')],
-      [0, asks(ALL, 'd11', null, ['d11'])],
-      [200, asks(ALL, 'd11')],
-    ]),
-  ).toMatchObject({ jumps: [], isWrappedAtFirst: true, isCutOnlyAtRest: true, isCutAtEnd: false })
 })
 
 type Overview = NonNullable<ReturnType<typeof demoSession>['ledger']['overview']>
@@ -380,14 +286,8 @@ test('no text is cut through its letters while a row or a whole section enters o
       [0, none],
     ],
   }
-  const openTitles = (blocks: Block[]) => blocks.flatMap(b => (b.kind === 'row' && isOpenRow(b) ? [b.title] : []))
-  for (const [name, steps] of Object.entries(moves)) {
-    const before = openTitles(steps[0]![1])
-    const after = openTitles(steps.at(-1)![1])
-    const folds = [...before, ...after].filter(title => !before.includes(title) || !after.includes(title))
-    const cuts = framesOf(steps, 900).cuts.filter(c => !folds.includes(c.text))
-    expect({ name, cuts }).toEqual({ name, cuts: [] })
-  }
+  for (const [name, steps] of Object.entries(moves))
+    expect({ name, cuts: framesOf(steps, 900).cuts }).toEqual({ name, cuts: [] })
 })
 
 test('a leaving block’s space closes as soon as its content has faded, and not before', () => {
@@ -539,4 +439,52 @@ test('reopening the goal field while it still closes never raises the Status pag
     2200,
   ).heights
   expect(Math.max(...heights)).toBeLessThan((heights[0] ?? 0) + 1)
+})
+
+test('closing the goal field while it opens takes the Status page to its closed height without passing it, and cuts no text as it closes', () => {
+  const closed = tabBlocks(demoScreen(), uiOn('overview'))
+  const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
+  for (const closesAt of [50, 100, 200, 400]) {
+    const { heights, cuts } = framesOf(
+      [
+        [0, closed],
+        [0, typing, 'input'],
+        [closesAt, closed, 'input'],
+      ],
+      1400,
+    )
+    const start = heights[0] ?? 0
+    const end = Math.round(heights.at(-1) ?? NaN)
+    const closeCuts = cuts.filter(c => c.at >= closesAt)
+    expect({ closesAt, over: Math.max(...heights) > start + 0.5, end, closeCuts }).toEqual({
+      closesAt,
+      over: false,
+      end: start,
+      closeCuts: [],
+    })
+  }
+})
+
+test('closing the goal field once it has opened fades its content out while its box holds, and never raises the Status page', () => {
+  const closed = tabBlocks(demoScreen(), uiOn('overview'))
+  const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
+  for (const closesAt of [300, 500]) {
+    const { heights, fading } = framesOf(
+      [
+        [0, closed],
+        [0, typing, 'input'],
+        [closesAt, closed, 'input'],
+      ],
+      1400,
+    )
+    const field = fading.filter(f => f.id === 'box goal field')
+    const open = Math.max(...field.map(f => f.height))
+    const fadingOut = field.filter(f => f.at > closesAt && f.opacity > 0.1 && f.opacity < 0.9)
+    expect({
+      closesAt,
+      fades: fadingOut.length > 0,
+      holds: fadingOut.every(f => f.height > open - SLIDE_PX / 2),
+      over: Math.max(...heights) > (heights[0] ?? 0) + 0.5,
+    }).toEqual({ closesAt, fades: true, holds: true, over: false })
+  }
 })

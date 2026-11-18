@@ -2,7 +2,7 @@ import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import * as layout from '../../hooks/layout'
 import { ENTER_FADE_MS, enterDelayMs, FADE_MS, LEAVE_FADE_MS, LINE_RETURN_FADE_MS } from '../../hooks/row-motion'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
-import { FADE_EASING } from './tab-motion'
+import { FADE_EASING } from './tab-glide'
 
 /** The shared spacing scale, as the CSS variables the tab's styles read. */
 const SPACING_VARIABLES: [string, number][] = [

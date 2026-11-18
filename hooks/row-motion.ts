@@ -1,4 +1,5 @@
 import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames } from './springs'
+import type { SpringState } from './springs'
 
 /** How long a fade lasts when it does not move space, such as a hover or a row's fill, in ms. */
 export const FADE_MS = 200
@@ -22,15 +23,16 @@ export const LINE_RETURN_FADE_MS = 300
 export const SLIDE_PX = 8
 
 /**
- * How long the content of a space that opens `height` px from none waits before it fades in, in ms: until the space is
- * within half of `SLIDE_PX` of open, so the edge of a space still opening never cuts the letters of content that
- * slides down into it. A tall space comes the last few px slowly, so the wait is at most what lets the fade end as the
- * height spring comes to rest.
+ * How long the content of a space that opens to `height` px, from none at rest or from `from`, waits before it fades
+ * in, in ms: until the space stays within half of `SLIDE_PX` of open, so the edge of a space still opening never cuts
+ * the letters of content that slides down into it. A space that was shutting keeps shutting for a moment before it
+ * turns, so the wait follows its speed as well as its height. A tall space comes the last few px slowly, so the wait is
+ * at most what lets the fade end as the height spring comes to rest.
  */
-export function enterDelayMs(height: number): number {
-  const at = springFrames({ x: 0, v: 0 }, height).findIndex(x => height - x <= SLIDE_PX / 2)
+export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 }): number {
+  const at = springFrames(from, height).findLastIndex(x => height - x > SLIDE_PX / 2) + 1
 
-  return Math.min(Math.max(0, at) * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
+  return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
 }
 
 /** The vertical offset of content at `opacity`: none when shown, `SLIDE_PX` above its place when faded out. */

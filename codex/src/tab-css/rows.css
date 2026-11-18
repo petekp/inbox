@@ -91,6 +91,7 @@
   gap: 0;
 }
 .line {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -131,6 +132,16 @@
 .row.closing .line .text {
   font-weight: 600;
   font-variation-settings: 'wght' 600;
+}
+/* A moving row's title in its closed form, which fades across with the full title under it. */
+.row .line .text.short {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: -webkit-box;
+  opacity: 0;
+  pointer-events: none;
 }
 .row.selected .line .after,
 .row.closing .line .after {

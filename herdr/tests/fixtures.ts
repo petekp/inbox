@@ -6,6 +6,7 @@ import type { ShownTab } from '../../hooks/tabs'
 import { applyPrPress } from '../../hooks/pr-tab'
 import { freshUi, tabBlocks } from '../src/draw'
 import type { LookScreen, LookUi } from '../src/draw'
+import type { Block } from '../src/blocks'
 
 export const NOW = Date.UTC(2026, 10, 10, 12)
 export const AGENT = 'Claude'
@@ -84,4 +85,24 @@ export function withDismissedAsk(id: string, at: number) {
     view: sessionView(dismissedSession(id, at), NOW, SETTLED_MS, holds),
     shownSince: NOW - 1000,
   }
+}
+
+export const ALL = ['d11', 'd12', 'd13', 'd15']
+
+export function asks(
+  keep: string[],
+  selected: string | null = null,
+  added: { from: string; id: string } | null = null,
+  collapsed: string[] = [],
+): Block[] {
+  const screen = demoScreen()
+  const view = screen.view
+  const questions = view.needsYou.questions.filter(r => keep.includes(r.id))
+  const from = view.needsYou.questions.find(r => r.id === added?.from)
+  if (added && from) questions.unshift({ ...from, id: added.id })
+
+  return tabBlocks(
+    { ...screen, view: { ...view, collapsed, needsYou: { ...view.needsYou, questions } } },
+    uiOn('needsYou', { selected }),
+  )
 }
