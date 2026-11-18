@@ -1,7 +1,7 @@
 import { Icon, RowActions } from './row-actions'
 import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
-import { COUNTS_GAP, COUNTS_LABEL, unfoldedRows } from '../../hooks/status-folds'
+import { COUNTS_GAP, COUNTS_LABEL, countWords, unfoldedRows } from '../../hooks/status-folds'
 import { statusRowPads } from '../../hooks/status-gaps'
 import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
@@ -215,7 +215,7 @@ export function StatusLine({
                     <span class={markClassOf(c.tone, false)}>
                       <MarkGlyph text={c.mark} />
                     </span>
-                    {` ${c.text}`}
+                    {countWords(c)}
                     {isLast ? chevron : null}
                   </>
                 )

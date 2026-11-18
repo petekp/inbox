@@ -54,6 +54,7 @@ test('a counts fold wraps between units with the dot ending a line, never starti
   const texts = units.map(unit => unit.map(part => part.text).join(''))
   expect(texts.slice(1).every(t => !t.startsWith('·') && !t.startsWith(' '))).toBe(true)
   expect(texts.slice(1, -1).every(t => t.endsWith('\u00a0· '))).toBe(true)
+  expect(texts.slice(1).every(t => !t.trimEnd().includes(' '))).toBe(true)
   expect(texts.at(-1)).not.toMatch(/·/)
   expect(texts.join('').replaceAll('\u00a0', ' ')).toBe(countsText(counts))
 })
