@@ -6,6 +6,7 @@ import { demoView } from '../hooks/demo'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { inboxView, perTurnStatus } from '../hooks/view'
 import { rowKeyPlan } from '../hooks/action-plan'
+import { ROW_COPY } from '../hooks/rows'
 import { w, world } from './hooks-world'
 import { PANE, selectRow, leaveAndReturn, replyKey } from './hooks-helpers'
 
@@ -156,7 +157,7 @@ test('in a theme without tone colors, a replied question’s ✓ takes the done 
   expect(await doneMark()).toBe('suggestion')
 })
 
-test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismissed one’s ✕ as text, so the two read apart', async ($, on) => {
+test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismissed one’s ✕ as text, so the two read apart, and the terminal labels the dismissed one’s Reopen as plainly as any other button', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -178,6 +179,9 @@ test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismiss
   } as never)
   await clock.advance(SETTLED_MS)
   await leaveAndReturn(pane, clock, 'needsYou')
+  await pane.press({ key: 'fold-question' })
+  await clock.settle()
+  expect((await pane.find({ key: 'reopen-i1', type: 'Button' }))?.props.label).toBe(ROW_COPY.reopen)
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
