@@ -622,7 +622,7 @@ function namedList(names) {
   const hidden = names.length - LISTED_NAMES;
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var NAMED_FOLD_TEXT = { done: "Done: ", dropped: "Dropped: " };
 var namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
   const closed = named.filter((x) => x.status === status);
   return closed.length === 0 ? [] : [
