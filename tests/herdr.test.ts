@@ -124,9 +124,15 @@ describe('herdrLabels', () => {
 })
 
 describe('herdrEnvelope', () => {
-  test('keeps presentation state and omits private command and viewer records', () => {
+  test('keeps presentation state and omits private command and viewer records and the inbox model’s last answers', () => {
     const session = emptySession()
-    const { remoteCommands: _commands, remoteViewers: _viewers, remoteCommandFloor: _floor, ...presentation } = session
+    const {
+      remoteCommands: _commands,
+      remoteViewers: _viewers,
+      remoteCommandFloor: _floor,
+      lastAnswers: _answers,
+      ...presentation
+    } = session
     const hostState = { ...session, herdrReport: { seq: 4 }, revision: 9 }
 
     expect(JSON.parse(JSON.stringify(herdrEnvelope(SOURCE, hostState)))).toEqual({
