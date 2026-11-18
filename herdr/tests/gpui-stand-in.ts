@@ -193,53 +193,58 @@ export const writtenFiles: { path: string; text: string }[] = []
 
 const pathBuilder: Record<string, () => unknown> = new Proxy({}, { get: () => () => pathBuilder })
 
-mock.module('gpui-kit', () => ({
-  View: class {},
-  div: () => element(),
-  PathBuilder: { fill: () => pathBuilder, stroke: () => pathBuilder },
-  Background: { linear_gradient: () => ({}) },
-}))
+export const appModules = {
+  'gpui-kit': {
+    View: class {},
+    div: () => element(),
+    PathBuilder: { fill: () => pathBuilder, stroke: () => pathBuilder },
+    Background: { linear_gradient: () => ({}) },
+  },
+  'gpui-base': {
+    h_flex: () => element(null, 'row'),
+    v_flex: () => element(),
+    Input: { new: (state: StandInField) => element(state) },
+    InputState: { new: (options?: { value?: string }) => new StandInField(options) },
+    Scrollbar: { vertical: () => element() },
+  },
+  herdr: {
+    appHome: () => '/app',
+    home: () => '/home',
+    props: () => ({ pane: 'p-inbox' }),
+    panes: () => [
+      { pane: 'p-inbox', tab: 'tab1', terminal: null },
+      { pane: 'p-agent', tab: 'tab1', terminal: 't1' },
+      { pane: 'p-shell', tab: 'tab1', terminal: 't2' },
+    ],
+    focused: () => ({ tab: 'tab1', terminal: focusedTerminal }),
+    spaces: () => [{ active: true, tabs: [{ id: 'tab1', active: true, zoomed: false }] }],
+    window: () => ({ active: true }),
+    terminals: () => [
+      { address: 't1', labels: { [SESSION_LABEL]: 's1' }, program: { name: 'Claude Code', shell: false } },
+      { address: 't2', labels: {}, program: { name: 'zsh', shell: true } },
+    ],
+    theme: () => new Proxy({}, { get: () => '#808080' }),
+    settings: () => ({ zoom }),
+    readTextFile: async (path: string) => (path.endsWith('s1.json') ? demoEnvelopeText() : ''),
+    writeTextFile: async (path: string, text: string) => (writtenFiles.push({ path, text }), null),
+    watchFolder: () => new Promise(() => {}),
+    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
+    hc: async () => null,
+    run() {},
+  },
+}
 
-Object.assign(globalThis, { window: { paint_path: () => element() } })
+export const standInWindow = { paint_path: () => element() }
 
-mock.module('gpui-base', () => ({
-  h_flex: () => element(null, 'row'),
-  v_flex: () => element(),
-  Input: { new: (state: StandInField) => element(state) },
-  InputState: { new: (options?: { value?: string }) => new StandInField(options) },
-  Scrollbar: { vertical: () => element() },
-}))
-
-mock.module('herdr', () => ({
-  appHome: () => '/app',
-  home: () => '/home',
-  props: () => ({ pane: 'p-inbox' }),
-  panes: () => [
-    { pane: 'p-inbox', tab: 'tab1', terminal: null },
-    { pane: 'p-agent', tab: 'tab1', terminal: 't1' },
-    { pane: 'p-shell', tab: 'tab1', terminal: 't2' },
-  ],
-  focused: () => ({ tab: 'tab1', terminal: focusedTerminal }),
-  spaces: () => [{ active: true, tabs: [{ id: 'tab1', active: true, zoomed: false }] }],
-  window: () => ({ active: true }),
-  terminals: () => [
-    { address: 't1', labels: { [SESSION_LABEL]: 's1' }, program: { name: 'Claude Code', shell: false } },
-    { address: 't2', labels: {}, program: { name: 'zsh', shell: true } },
-  ],
-  theme: () => new Proxy({}, { get: () => '#808080' }),
-  settings: () => ({ zoom }),
-  readTextFile: async (path: string) => (path.endsWith('s1.json') ? demoEnvelopeText() : ''),
-  writeTextFile: async (path: string, text: string) => (writtenFiles.push({ path, text }), null),
-  watchFolder: () => new Promise(() => {}),
-  exec: async () => ({ code: 0, stdout: '', stderr: '' }),
-  hc: async () => null,
-  run() {},
-}))
+Object.assign(globalThis, { window: standInWindow })
+for (const [name, exports] of Object.entries(appModules)) mock.module(name, () => exports)
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 
-export async function openPanel() {
-  const { default: Inbox } = await import('../src/main')
+type InboxClass = typeof import('../src/main').default
+
+export async function openPanel(built?: InboxClass) {
+  const Inbox = built ?? (await import('../src/main')).default
   keys = null
   focusedTerminal = 't1'
   const panel = new Inbox()
