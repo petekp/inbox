@@ -22,7 +22,7 @@ import {
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
 /** An element's height before a draw, and the top of the part it draws open, a row's panel or a PR block's body. */
-type Drawn = { el: HTMLElement; height: number; openTop: number | null }
+type Drawn = { el: HTMLElement; height: number; openTop: number | null; openPart: Element | null }
 type TabWidth = { el: HTMLElement; width: number; isShown: boolean }
 type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; fieldKeys: Set<Element> }
 
@@ -41,6 +41,7 @@ export function measure(): Drawing {
       el,
       height: el.getBoundingClientRect().height,
       openTop: part ? topIn(el, part) : null,
+      openPart: part,
     })
   }
   const tabWidths = new Map<string, TabWidth>()
@@ -208,8 +209,16 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
     glide(el, 'height', from, target, false, scalesEdges, delay)
   if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
-  if (part && state === 'opening' && changed.has(key))
-    fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
+  if (part && state === 'opening' && changed.has(key)) openPanel(part, was?.openPart === part, delay, target, from)
+}
+
+/**
+ * Fades an opening row's panel in once its space is nearly open, counted from where the space is. A panel the row
+ * still drew as it closed turns back from the opacity it shows, and one that shows whole stays as it is.
+ */
+function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
+  const opacity = wasDrawn ? opacityOf(part) : 0
+  if (opacity < 0.99) fade(part, opacity, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
 }
 
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */

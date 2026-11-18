@@ -1,4 +1,4 @@
-import { ROW_STATE_MS, isMoving, stepRow } from '../../hooks/row-motion'
+import { ROW_STATE_MS, drawsPanel, isMoving, stepRow } from '../../hooks/row-motion'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
@@ -48,7 +48,9 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * whose height springs and whose content fades over `fadeMs`, once the box is nearly open if `waitsForSpace`: `box` is `open` at the block's
  * measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
  * `closing` the open form whose panel a closing row keeps drawn. `isPanelWaiting` says an opening row's panel fades in
- * once its space is nearly open, as an entering block's content does, the person's own move included. `isPanelLeftOut` says the row's content box moves to
+ * once its space is nearly open, as an entering block's content does, the person's own move included. A row that turns
+ * back from a close counts that wait from where its space is: `panelShutForMs` is how long the panel's space had been
+ * shutting, and null when the open starts from a shut space. `isPanelLeftOut` says the row's content box moves to
  * its measured height less its panel's: through a close after its first draw, through all of a close that turns an
  * open back, and in the draw after a close, before the row measures without the panel. A close's first draw keeps the
  * panel's height, so the row the selection moves to measures its new height in that draw and both start together.
@@ -71,6 +73,7 @@ export type RowMotion = {
   shutForMs: number | null
   panel: 0 | 1 | null
   isPanelWaiting: boolean
+  panelShutForMs: number | null
   closing: RowBlock | null
   isPanelLeftOut: boolean
   title: TitleMotion | null
@@ -185,12 +188,12 @@ export function moveRows(
   const add = (block: Block, track: RowTrack, last: Tracked | undefined, springId: string | null = null) => {
     const isOpen = block.kind === 'row' && isOpenRow(block)
     const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
-    const isTitleSwapped = track.state === 'settling'
+    const isOpenFormSwapped = track.hasOpenForm && !drawsPanel(track)
     const title =
-      block.kind === 'row' && last && !isTitleSwapped
+      block.kind === 'row' && last && !isOpenFormSwapped
         ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)))
         : null
-    const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? (last?.opened ?? null) : null
+    const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const isPressed = block.kind === 'field'
     const glide = glideOf(
@@ -220,6 +223,7 @@ export function moveRows(
       shutForMs: glide?.shutForMs ?? null,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
       isPanelWaiting: track.state === 'opening',
+      panelShutForMs: isStart && track.state === 'opening' && last?.track.state === 'closing' ? now - last.track.since : null,
       closing,
       isPanelLeftOut:
         (closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))) ||

@@ -28,7 +28,7 @@ import { isStatusUnder } from './held-line'
 import { underId } from './under-line'
 import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
-import { PATH_X, lineColor, padOf, panelId, restId, sizeEl, titleEl } from './paint-space'
+import { PATH_X, lineColor, padOf, panelId, restId, shutTo, sizeEl, titleEl } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
@@ -236,7 +236,8 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   if (parts.length === 0) return []
   const key = panelId(r.id)
   const opacity = m?.panel ?? null
-  const delay = m?.isPanelWaiting ? enterDelayMs(p.heights.get(key) ?? 0) : 0
+  const height = p.heights.get(key) ?? 0
+  const delay = m?.isPanelWaiting ? enterDelayMs(height, shutTo(height, m.panelShutForMs)) : 0
   const glide = { duration: ROW_FADE_MS[m?.state ?? 'open'], delay, easing: 'ease-out' as const }
 
   return [

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T20:50:41.339Z. 297841 characters follow.
+// Built at 2026-11-18T21:45:00.646Z. 298159 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -5198,6 +5198,7 @@ function enterDelayMs(height, from = { x: 0, v: 0 }) {
   const at = springFrames(from, height).findLastIndex((x) => height - x > SLIDE_PX / 2) + 1;
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
 }
+var drawsPanel = (track) => track.hasOpenForm && track.state !== "settling";
 var ROW_FADE_MS = {
   entering: ENTER_FADE_MS,
   opening: ENTER_FADE_MS,
@@ -5229,13 +5230,13 @@ function stepRow2(track, target, now, isNew = false, isReduced = false) {
   return rest(next, form, target, now);
 }
 function entering(form, now) {
-  const track = { state: "entering", since: now, hasPanel: form === "open" };
+  const track = { state: "entering", since: now, hasOpenForm: form === "open" };
   return form === "settled" ? { ...track, entersSettled: true } : track;
 }
-function formOf({ state, hasPanel, entersSettled }) {
+function formOf({ state, hasOpenForm, entersSettled }) {
   switch (state) {
     case "entering":
-      return entersSettled ? "settled" : hasPanel ? "open" : "closed";
+      return entersSettled ? "settled" : hasOpenForm ? "open" : "closed";
     case "opening":
     case "open":
       return "open";
@@ -5253,20 +5254,20 @@ function formOf({ state, hasPanel, entersSettled }) {
 function moveToward(track, form, now) {
   switch (form) {
     case "open":
-      return { state: "opening", since: now, hasPanel: true };
+      return { state: "opening", since: now, hasOpenForm: true };
     case "closed":
-      return track.state === "leaving" ? entering("closed", now) : { state: "closing", since: now, hasPanel: track.hasPanel };
+      return track.state === "leaving" ? entering("closed", now) : { state: "closing", since: now, hasOpenForm: track.hasOpenForm };
     case "settled":
-      return { state: "settling", since: now, hasPanel: track.hasPanel };
+      return { state: "settling", since: now, hasOpenForm: track.hasOpenForm };
     case "gone":
-      return { state: "leaving", since: now, hasPanel: track.hasPanel };
+      return { state: "leaving", since: now, hasOpenForm: track.hasOpenForm };
   }
 }
 function rest(track, form, target, now) {
   if (form === "gone")
     return null;
   const state = target === "undoing" ? "undoing" : form;
-  return track?.state === state ? track : { state, since: now, hasPanel: state === "open" };
+  return track?.state === state ? track : { state, since: now, hasOpenForm: state === "open" };
 }
 
 // src/heights.ts
@@ -5505,9 +5506,9 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
   const add = (block, track, last, springId = null) => {
     const isOpen = block.kind === "row" && isOpenRow(block);
     const wasOpen = last?.block.kind === "row" && isOpenRow(last.block);
-    const isTitleSwapped = track.state === "settling";
-    const title = block.kind === "row" && last && !isTitleSwapped ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id))) : null;
-    const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? last?.opened ?? null : null;
+    const isOpenFormSwapped = track.hasOpenForm && !drawsPanel(track);
+    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id))) : null;
+    const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const isPressed = block.kind === "field";
     const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, isPressed, isFieldPressed, heightOf(block.id));
@@ -5528,6 +5529,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       shutForMs: glide?.shutForMs ?? null,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
       isPanelWaiting: track.state === "opening",
+      panelShutForMs: isStart && track.state === "opening" && last?.track.state === "closing" ? now - last.track.since : null,
       closing,
       isPanelLeftOut: closing !== null && !isHeld && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
       title: titleMotion(title, now),
@@ -6377,7 +6379,8 @@ function panelEl(r, m, p, isLeaving, titleEnd) {
     return [];
   const key = panelId(r.id);
   const opacity = m?.panel ?? null;
-  const delay = m?.isPanelWaiting ? enterDelayMs(p.heights.get(key) ?? 0) : 0;
+  const height = p.heights.get(key) ?? 0;
+  const delay = m?.isPanelWaiting ? enterDelayMs(height, shutTo(height, m.panelShutForMs)) : 0;
   const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], delay, easing: "ease-out" };
   return [
     v_flex6().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))

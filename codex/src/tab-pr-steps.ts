@@ -110,10 +110,10 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
       drawnRows.set(motion, { track, openBlock: { block, tracks } })
       return [block]
     }
-    if (track.hasPanel && wasOpen) drawnRows.set(motion, { track, openBlock: wasOpen })
+    if (track.hasOpenForm && wasOpen) drawnRows.set(motion, { track, openBlock: wasOpen })
     const empty = { threads: null, checks: null, cancelled: null }
 
-    return [{ ...b, drawn: empty, line: null, wasOpen: track.hasPanel ? (wasOpen ?? null) : null }]
+    return [{ ...b, drawn: empty, line: null, wasOpen: track.hasOpenForm ? (wasOpen ?? null) : null }]
   })
   const clear = v.prs.clear.length > 0 ? v.prs.clear : (last?.clear ?? [])
   const isClearShown = step(PR_CLEAR_MOTION, v.prs.clear.length > 0 ? 'closed' : 'gone', last !== null)

@@ -377,7 +377,7 @@ function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): E
 }
 
 /** Where a box `height` tall has sprung to after shutting for `ms`, and how fast, or no height at rest when it opens from shut. */
-const shutTo = (height: number, ms: number | null): SpringState =>
+export const shutTo = (height: number, ms: number | null): SpringState =>
   ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING)
 
 /**

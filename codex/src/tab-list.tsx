@@ -11,7 +11,7 @@ import { TAB_OF } from './arrivals'
 import { closedTitleClock, newRowIn, showNewRows } from '../../hooks/arrivals'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
-import { stepRow } from '../../hooks/row-motion'
+import { drawsPanel, stepRow } from '../../hooks/row-motion'
 import type { RowTarget, RowTrack } from '../../hooks/row-motion'
 import { isUndoLeft } from './settle'
 import { tabState, drafts, sending, SENDING, errors, copies, entering, undoing, drawnRows } from './tab-state'
@@ -90,7 +90,7 @@ export function stepLists(v: View): {
       drawnRows.set(id, { track })
       kept.add(id)
       drawn.push(x)
-      if (track.hasPanel && 'row' in x) {
+      if (drawsPanel(track) && 'row' in x) {
         const { text, tone } = statusUnderOf(x.row)
         const lines = text ? [{ id: x.row.id, text, tone }] : []
         pressLines.set(x.row.id, stepLines(lines, lastPressLines.get(x.row.id), pressMotion, now, changed, kept))
@@ -164,8 +164,8 @@ export function ListRow({
   onSelect: (isAll: boolean) => void
   now: number
 }) {
-  const isClosing = track.hasPanel && (track.state === 'closing' || track.state === 'leaving')
-  const isSelected = track.hasPanel && !isClosing
+  const isClosing = drawsPanel(track) && (track.state === 'closing' || track.state === 'leaving')
+  const isSelected = drawsPanel(track) && !isClosing
   const isTreeHung = row.hasTree && (isSelected || isClosing)
   const handle = (
     <span
@@ -205,7 +205,7 @@ export function ListRow({
       </span>
     ) : null
   const isSideSplit = closed !== null && closed.side !== drawn.side
-  const isTitleMoving = isClosing || (track.hasPanel && track.state === 'opening')
+  const isTitleMoving = isClosing || (drawsPanel(track) && track.state === 'opening')
   const textParts = () => (
     <>
       {row.lead ? (
@@ -404,7 +404,7 @@ export function Entries({ entries, group, all, now }: { entries: Entry[]; group:
                 onSelect={isAll => pressTitle(t, all, all.indexOf(x.row), isAll ? foldAllHere : undefined)}
               />
             ) : (
-              <SettledView settled={x.settled} wasOpen={drawn.track.hasPanel} />
+              <SettledView settled={x.settled} wasOpen={drawn.track.hasOpenForm} />
             )}
           </div>
         )
