@@ -138,16 +138,18 @@ function showNotes(before: Drawing) {
 const FIELD_KEYS = '.field-keys'
 
 /**
- * A field's buttons that this draw brings in wait until the box the field opens has nearly grown to hold them, then
- * fade in, while the text field shows at once, as in Herdr.
+ * A field's buttons that this draw brings into a moving block fade in while the text field shows at once, as in Herdr.
+ * While the field's box grows they wait until it has nearly grown to hold them. The empty page's field sits in no
+ * moving block, and shows its buttons at once, as Herdr's does.
  */
 function showFieldKeys(before: Drawing) {
   for (const keys of root.querySelectorAll<HTMLElement>(FIELD_KEYS)) {
     if (before.fieldKeys.has(keys)) continue
     const box = keys.closest<HTMLElement>('[data-motion]')
-    const g = box ? glides.get(box) : undefined
-    if (!g || !isRunning(g.anim) || g.to <= g.from.x) continue
-    fade(keys, 0, 1, ENTER_FADE_MS, false, false, g.delay + enterDelayMs(g.to, g.from))
+    if (!box) continue
+    const g = glides.get(box)
+    const isGrowing = g !== undefined && isRunning(g.anim) && g.to > g.from.x
+    fade(keys, 0, 1, ENTER_FADE_MS, false, false, isGrowing ? g.delay + enterDelayMs(g.to, g.from) : 0)
   }
 }
 
