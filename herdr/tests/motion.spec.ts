@@ -202,27 +202,47 @@ test('in the panel, opening each row of a tab and pressing z leaves no row open 
   expect(panel.ui.selected).toBe(collapsed.at(-1)!)
 })
 
-test('a field a press brings in opens and shows in the draw after the press, while the lines it takes the place of fade', () => {
+test('a field a press brings in opens and shows in the draw after the press, and the lines it takes the place of hide at once and shut', () => {
   const before = tabBlocks(demoScreen(), uiOn('overview'))
   const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
-  const press = moveRows(typing, moveRows(before, NO_TRACKS, NOW, true).tracks, NOW, false)
+  const press = moveRows(typing, moveRows(before, NO_TRACKS, NOW, true).tracks, NOW, false, true)
   const next = moveRows(typing, press.tracks, NOW + NEXT_FRAME_MS, false)
-  const leaving = [...next.motion].filter(([, m]) => m.state === 'leaving').map(([id]) => id)
+  const leaving = [...press.motion].filter(([, m]) => m.state === 'leaving').map(([id]) => id)
   expect(leaving.length).toBeGreaterThan(0)
+  for (const id of leaving) expect(press.motion.get(id)).toMatchObject({ isShown: false, fadeMs: 0 })
+  for (const id of leaving) expect(next.motion.get(id)?.box).toBe('shut')
   expect(next.motion.get('goal field')).toMatchObject({ box: 'open', isShown: true, fadeMs: 0 })
 })
 
-test('the row the selection moves to opens in the draw that moves it, while another block leaves', () => {
+test('the row the person’s selection moves to opens in the draw that moves it, while another block leaves', () => {
   const screen = demoScreen()
   const questions = screen.view.needsYou.questions.filter(r => r.id !== 'd15')
   const fewer = { ...screen, view: { ...screen.view, needsYou: { ...screen.view.needsYou, questions } } }
   const before = tabBlocks(screen, uiOn('needsYou', { selected: 'd11' }))
   const after = tabBlocks(fewer, uiOn('needsYou', { selected: 'd12' }))
-  const moved = moveRows(after, moveRows(before, NO_TRACKS, NOW, true).tracks, NOW, false)
+  const moved = moveRows(after, moveRows(before, NO_TRACKS, NOW, true).tracks, NOW, false, true)
   const d12 = rowsOf(moved.blocks).find(r => r.id === 'd12')
   expect(moved.motion.get('d15')?.state).toBe('leaving')
   expect(d12?.isSelected).toBe(true)
   expect(moved.motion.get('d12')?.state).toBe('opening')
+  expect(moved.motion.get('d11')).toMatchObject({ state: 'closing', isHeightHeld: false })
+})
+
+test('the row a publish moves the selection to keeps its last form while another block leaves, then opens as the height of the row it left starts to close', () => {
+  const screen = demoScreen()
+  const questions = screen.view.needsYou.questions.filter(r => r.id !== 'd15')
+  const fewer = { ...screen, view: { ...screen.view, needsYou: { ...screen.view.needsYou, questions } } }
+  const first = moveRows(tabBlocks(screen, uiOn('needsYou', { selected: 'd11' })), NO_TRACKS, NOW, true)
+  const after = tabBlocks(fewer, uiOn('needsYou', { selected: 'd12' }))
+  const leaves = moveRows(after, first.tracks, NOW, false)
+  const d12 = rowsOf(leaves.blocks).find(r => r.id === 'd12')
+  expect(leaves.motion.get('d15')?.state).toBe('leaving')
+  expect(d12?.isSelected).toBe(false)
+  expect(leaves.motion.get('d12')?.state).not.toBe('opening')
+  expect(leaves.motion.get('d11')).toMatchObject({ state: 'closing', isHeightHeld: true })
+  const opens = moveRows(after, leaves.tracks, leaves.tracks.holdsUntil, false)
+  expect(opens.motion.get('d12')).toMatchObject({ state: 'opening', isStart: true })
+  expect(opens.motion.get('d11')).toMatchObject({ state: 'closing', isHeightHeld: false })
 })
 
 test('the Asks tab takes its new count in the draw that sets the rows moving, with the group title', () => {
@@ -254,7 +274,35 @@ test('a row closes on its spring when the selection leaves it while another bloc
   const fewer = { ...screen, view: { ...screen.view, needsYou: { ...screen.view.needsYou, questions } } }
   const first = moveRows(tabBlocks(screen, uiOn('needsYou', { selected: 'd11' })), NO_TRACKS, NOW, true)
   const leaves = moveRows(tabBlocks(fewer, uiOn('needsYou', { selected: 'd11' })), first.tracks, NOW + 1, false)
-  const moves = moveRows(tabBlocks(fewer, uiOn('needsYou', { selected: 'd12' })), leaves.tracks, NOW + 50, false)
+  const moves = moveRows(tabBlocks(fewer, uiOn('needsYou', { selected: 'd12' })), leaves.tracks, NOW + 50, false, true)
   expect(moves.motion.get('d15')?.state).toBe('leaving')
   expect(moves.motion.get('d11')).toMatchObject({ state: 'closing', isHeightHeld: false })
+})
+
+test('a block listed again before its box had opened fades in once its box is nearly open', () => {
+  const screen = demoScreen()
+  const asksOf = (ids: string[]) => {
+    const questions = screen.view.needsYou.questions.filter(r => ids.includes(r.id))
+    return tabBlocks(
+      { ...screen, view: { ...screen.view, needsYou: { ...screen.view.needsYou, questions } } },
+      uiOn('needsYou'),
+    )
+  }
+  const first = moveRows(asksOf(['d11']), NO_TRACKS, NOW, true)
+  const enters = moveRows(asksOf(['d11', 'd12']), first.tracks, NOW + 1, false)
+  const leaves = moveRows(asksOf(['d11']), enters.tracks, NOW + 5, false)
+  const back = moveRows(asksOf(['d11', 'd12']), leaves.tracks, NOW + 10, false)
+  expect(enters.motion.get('d12')?.box).toBe('shut')
+  expect(back.motion.get('d12')).toMatchObject({ state: 'entering', box: 'open', isShown: true, waitsForSpace: true })
+})
+
+test('a tab that gains its first count shows none in the draw that sets the rows moving', () => {
+  const screen = demoScreen()
+  const blocks = tabBlocks(screen, uiOn('needsYou'))
+  const fewer = blocks.filter(b => b.id !== 'd15')
+  const starts = moveRows(fewer, moveRows(blocks, NO_TRACKS, NOW, true).tracks, NOW, false)
+  const after = tabCells(screen, 'needsYou')
+  const before = after.map(t => ({ ...t, badge: null }))
+  expect(after.find(t => t.id === 'needsYou')?.badge).not.toBeNull()
+  expect(heldTabs(after, before, starts.motion).find(t => t.id === 'needsYou')?.badge).toBeNull()
 })

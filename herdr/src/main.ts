@@ -448,7 +448,8 @@ export default class Inbox extends View {
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst)
+    const isInput = (this.listInput?.last ?? 0) > this.tracks.drawnAt
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion

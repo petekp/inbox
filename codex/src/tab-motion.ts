@@ -57,8 +57,9 @@ type Glide = { size: Size; from: SpringState; to: number; delay: number; anim: A
 
 /**
  * How long a height move that starts in this draw waits, in ms: while a block that leaves holds its space as its
- * content fades, nothing that enters grows into the list before that space starts to close. The person's own moves do
- * not wait: a row the selection opens, and a leave turned back. Nor does a glide already under way.
+ * content fades, nothing a read brings in grows before that space starts to close: a block that enters, a row a read
+ * selects and the row it closes, and a group's end growing to hold its empty note. In a draw that is not a read, the
+ * selection's rows move at once. A leave turned back, a glide under way and a block's own change of height never wait.
  */
 let heightWaitMs = 0
 const glides = new WeakMap<HTMLElement, Glide>()
@@ -122,7 +123,7 @@ function glide(
   to: number,
   hold = false,
   comesOrGoes = false,
-  delay = size === 'height' ? heightWaitMs : 0,
+  delay = 0,
 ) {
   const was = glides.get(el)
   const scalesEdges = size === 'height' && (comesOrGoes || (isRunning(was?.anim) && was!.scalesEdges))
@@ -230,9 +231,12 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   heightWaitMs = 0
 }
 
+/** A group's empty note this draw brings in. */
+const NEW_NOTE = '.group-empty:not(.leaving):not([data-shown])'
+
 /** A group's empty note that this draw brings in waits until its group's end has nearly grown to hold it, then fades in. */
 function showNotes(before: Drawing) {
-  for (const note of root.querySelectorAll<HTMLElement>('.group-empty:not(.leaving):not([data-shown])')) {
+  for (const note of root.querySelectorAll<HTMLElement>(NEW_NOTE)) {
     note.dataset.shown = '1'
     const end = note.closest<HTMLElement>('[data-motion]')
     const g = end && before.heights.has(end.dataset.motion!) ? glides.get(end) : undefined
@@ -273,7 +277,9 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const part = drawnRows.has(key) ? el.querySelector<HTMLElement>(OPEN_PART) : null
   if (part && !part.classList.contains('closing')) part.style.marginTop = ''
   const from = springOf(el, isFresh ? el.getBoundingClientRect().height : was.height)
-  const delay = state === 'opening' || isUnderWay(el) ? 0 : heightWaitMs
+  const isOwnMove = (state === 'opening' && !tabState.isReadDraw) || isUnderWay(el)
+  const waitsForLeave = state === 'opening' || el.querySelector(NEW_NOTE) !== null
+  const delay = isOwnMove || !waitsForLeave ? 0 : heightWaitMs
   if (state && changed.has(key) && startState(el, state, from, isFresh, was?.openTop ?? null)) return
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
@@ -290,6 +296,8 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
     glide(el, 'height', from, target, false, false, delay)
   if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
+  if (part && state === 'opening' && changed.has(key) && tabState.isReadDraw)
+    fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target - from.x))
 }
 
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */
@@ -302,7 +310,7 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
     }
     case 'closing':
     case 'settling':
-      collapse(el, from, state === 'settling' ? openTop : null)
+      collapse(el, from, state === 'settling' ? openTop : null, tabState.isReadDraw ? heightWaitMs : 0)
       return true
     case 'leaving':
       fadeAway(el, from, !isInsideLeaving(el))
@@ -324,7 +332,7 @@ function isInsideLeaving(el: HTMLElement): boolean {
  * a PR block's body. A settling entry's settled line replaces the line above that part, so the part keeps the top it
  * had at `openTop` while the height shrinks over it.
  */
-function collapse(el: HTMLElement, from: SpringState, openTop: number | null) {
+function collapse(el: HTMLElement, from: SpringState, openTop: number | null, delay: number) {
   const part = el.querySelector<HTMLElement>('.closing[inert]')
   // A closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
   const row = el.querySelector<HTMLElement>('.row.closing')
@@ -340,8 +348,8 @@ function collapse(el: HTMLElement, from: SpringState, openTop: number | null) {
   row?.classList.add('closing')
   if (part && openTop !== null) keepTop(el, part, openTop)
   const opacity = opacityOf(el)
-  glide(el, 'height', from, target, true)
-  if (line && lineFrom && lineTo !== null) glide(line, 'height', lineFrom, lineTo, true)
+  glide(el, 'height', from, target, true, false, delay)
+  if (line && lineFrom && lineTo !== null) glide(line, 'height', lineFrom, lineTo, true, false, delay)
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)
 }
 
@@ -367,7 +375,9 @@ function releaseLine(el: HTMLElement, isOpening: boolean): (() => void) | null {
 
   return () => {
     const to = atEndWeight(line, () => line.getBoundingClientRect().height)
-    if (Math.abs(from.x - to) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5) glide(line, 'height', from, to)
+    const delay = tabState.isReadDraw ? heightWaitMs : 0
+    if (Math.abs(from.x - to) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
+      glide(line, 'height', from, to, false, false, delay)
   }
 }
 

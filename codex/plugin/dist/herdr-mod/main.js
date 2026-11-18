@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T00:19:32.087Z. 282321 characters follow.
+// Built at 2026-11-18T01:07:08.796Z. 283325 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -5269,13 +5269,13 @@ class Heights {
 }
 
 // src/motion.ts
-var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0 };
+var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
 var NEXT_FRAME_MS = 16;
 var HOLD_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
 var restAt = (now, fadeMs) => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS;
-function glideOf(track, isStart, last, now, holdsUntil, isPressed) {
+function glideOf(track, isStart, last, now, holdsUntil, isPressed, isReplaced) {
   const { state } = track;
   const isLive = last !== null && now < last.endsAt;
   if (state === "leaving") {
@@ -5283,9 +5283,10 @@ function glideOf(track, isStart, last, now, holdsUntil, isPressed) {
       const box = last.shutAt !== null && now >= last.shutAt ? "shut" : last.box;
       return { ...last, box, isShown: false };
     }
-    const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + LEAVE_FADE_MS;
-    const from = isLive ? { box: last.box, isShown: false } : { box: "open", isShown: true };
-    const glide = { ...from, fadeMs: LEAVE_FADE_MS, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt };
+    const fadeMs = isReplaced ? 0 : LEAVE_FADE_MS;
+    const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + fadeMs;
+    const from = isLive || isReplaced ? { box: last?.box ?? "open", isShown: false } : { box: "open", isShown: true };
+    const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt };
     return { ...glide, endsAt: restAt(shutAt, 0) };
   }
   if (state === "entering") {
@@ -5294,7 +5295,8 @@ function glideOf(track, isStart, last, now, holdsUntil, isPressed) {
     if (isLive) {
       const isShutting = last.shutAt !== null && now > last.shutAt;
       const shutForMs = isShutting && last.shutAt !== null ? now - last.shutAt : null;
-      const glide = { box: "open", isShown: true, fadeMs: ENTER_FADE_MS, waitsForSpace: isShutting, shutForMs };
+      const waitsForSpace = isShutting || last.box !== "open";
+      const glide = { box: "open", isShown: true, fadeMs: ENTER_FADE_MS, waitsForSpace, shutForMs };
       return { ...glide, opensAt: null, shutAt: null, endsAt: restAt(now, ENTER_FADE_MS) };
     }
     const opensAt = !isPressed && holdsUntil > now ? holdsUntil : now + NEXT_FRAME_MS;
@@ -5355,17 +5357,20 @@ function movedOf(blocks, was) {
   const stays = longestRun(at);
   return new Set(kept.filter((_, i) => !stays.has(i)).map((b) => b.id));
 }
-function moveRows(blocks, last, now, isFirst) {
+function moveRows(blocks, last, now, isFirst, isInput = false) {
   const was = isFirst ? NO_TRACKS : last;
   const wasDrawn = new Set(was.order);
   const moved = movedOf(blocks, was);
   const copies = new Map([...moved].map((id) => [id, copyIdOf(id, now)]));
   const isDrawn = new Set(blocks.map((b) => b.id));
+  const isFieldPressed = !isFirst && blocks.some((b) => b.kind === "field" && !wasDrawn.has(b.id));
   const startsLeave = was.order.some((id) => {
     const state = was.rows.get(id)?.track.state;
     return state !== undefined && state !== "leaving" && (copies.has(id) || !isDrawn.has(id));
   });
-  const holdsUntil = startsLeave ? now + HOLD_MS : was.holdsUntil;
+  const holdsUntil = startsLeave && !isFieldPressed ? now + HOLD_MS : was.holdsUntil;
+  const isHolding = holdsUntil > now;
+  const waiting = new Map;
   const rows = new Map;
   const motion = new Map;
   const add = (block, track, last, springId = null) => {
@@ -5374,11 +5379,13 @@ function moveRows(blocks, last, now, isFirst) {
     const wrapEndsAt = isOpen ? null : wasOpen ? restAt(now, 0) : last?.wrapEndsAt ?? null;
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
-    const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, block.kind === "field");
-    rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId });
+    const isPressed = block.kind === "field";
+    const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, isPressed, isFieldPressed);
+    const isInputMove = isStart ? isInput : last?.isInputMove ?? false;
+    rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId, isInputMove });
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
-    const isHeld = closing !== null && holdsUntil > now && track.since === holdsUntil - HOLD_MS;
+    const isHeld = closing !== null && isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
     motion.set(block.id, {
       state: track.state,
       isStart,
@@ -5388,6 +5395,7 @@ function moveRows(blocks, last, now, isFirst) {
       waitsForSpace: glide?.waitsForSpace ?? false,
       shutForMs: glide?.shutForMs ?? null,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
+      isPanelWaiting: track.state === "opening" && !isInputMove,
       closing,
       isPanelLeftOut: closing !== null && !isHeld && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
       isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt,
@@ -5398,11 +5406,15 @@ function moveRows(blocks, last, now, isFirst) {
   for (const b of blocks) {
     const isMoved = moved.has(b.id);
     const old = isMoved ? undefined : was.rows.get(b.id);
-    const track = stepRow2(old?.track, targetOf(b), now, isMoved || !isFirst && !wasDrawn.has(b.id));
+    const waits = !isInput && isHolding && old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
+    if (waits)
+      waiting.set(b.id, old.block);
+    const drawn = waits ? old.block : b;
+    const track = stepRow2(old?.track, targetOf(drawn), now, isMoved || !isFirst && !wasDrawn.has(b.id));
     if (track)
-      add(b, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : old?.springId ?? null);
+      add(drawn, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : old?.springId ?? null);
   }
-  const shown = [...blocks];
+  const shown = blocks.map((b) => waiting.get(b.id) ?? b);
   was.order.forEach((id, i) => {
     const old = was.rows.get(id);
     const copyId = copies.get(id);
@@ -5426,7 +5438,7 @@ function moveRows(blocks, last, now, isFirst) {
   ]).filter((at) => at > now);
   return {
     blocks: drawn,
-    tracks: { rows, order: shown.map((b) => b.id), holdsUntil },
+    tracks: { rows, order: shown.map((b) => b.id), holdsUntil, drawnAt: now },
     motion,
     nextAt: ends.length ? Math.min(...ends) : null
   };
@@ -5440,7 +5452,10 @@ function heldForm(b, was, motion) {
 function heldTabs(tabs, last, motion) {
   if (![...motion.values()].some((m) => m.isStart))
     return tabs;
-  return tabs.map((t) => ({ ...t, badge: last.find((l) => l.id === t.id)?.badge ?? t.badge }));
+  return tabs.map((t) => {
+    const was = last.find((l) => l.id === t.id);
+    return was ? { ...t, badge: was.badge } : t;
+  });
 }
 function placeAfter(shown, above) {
   for (let i = above.length - 1;i >= 0; i--) {
@@ -6055,7 +6070,8 @@ function panelEl(r, m, p, isLeaving) {
     return [];
   const key = panelId(r.id);
   const opacity = m?.panel ?? null;
-  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], easing: "ease-out" };
+  const delay = m?.isPanelWaiting ? enterDelayMs(p.heights.get(key) ?? 0) : 0;
+  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], delay, easing: "ease-out" };
   return [
     v_flex3().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];
@@ -6961,7 +6977,8 @@ class Inbox extends View {
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now);
     this.linesAbove = held.held;
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst);
+    const isInput = (this.listInput?.last ?? 0) > this.tracks.drawnAt;
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput);
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;

@@ -7,6 +7,7 @@ import { SLIDE_PX } from '../../hooks/row-motion'
 import { SETTLED_MS } from '../../hooks/timing'
 
 const { framesOf, jumpsOf } = await import('./frames')
+type Step = import('./frames').Step
 const { LINE_HEIGHT } = await import('../src/paint-theme')
 const { tabBlocks } = await import('../src/draw')
 const { isOpenRow } = await import('../src/blocks')
@@ -361,7 +362,7 @@ test('no text is cut through its letters while a row or a whole section enters o
   const fewer = asks(['d11'])
   const full = asks(ALL)
   const none = asks([])
-  const moves: Record<string, [number, Block[]][]> = {
+  const moves: Record<string, Step[]> = {
     leaves: [
       [0, some],
       [0, fewer],
@@ -379,10 +380,12 @@ test('no text is cut through its letters while a row or a whole section enters o
       [0, none],
     ],
   }
-  const openRows = (blocks: Block[]) => blocks.flatMap(b => (b.kind === 'row' && isOpenRow(b) ? [b.id] : []))
+  const openTitles = (blocks: Block[]) => blocks.flatMap(b => (b.kind === 'row' && isOpenRow(b) ? [b.title] : []))
   for (const [name, steps] of Object.entries(moves)) {
-    const opens = openRows(steps.at(-1)![1]).filter(id => !openRows(steps[0]![1]).includes(id))
-    const cuts = framesOf(steps, 900).cuts.filter(c => !opens.some(id => c.box === `box ${id}`))
+    const before = openTitles(steps[0]![1])
+    const after = openTitles(steps.at(-1)![1])
+    const folds = [...before, ...after].filter(title => !before.includes(title) || !after.includes(title))
+    const cuts = framesOf(steps, 900).cuts.filter(c => !folds.includes(c.text))
     expect({ name, cuts }).toEqual({ name, cuts: [] })
   }
 })
@@ -419,7 +422,7 @@ test('a row the selection leaves keeps closing when another block starts to leav
   const titleBoxes = framesOf(
     [
       [0, asks(ALL, 'd11')],
-      [0, asks(ALL, 'd12')],
+      [0, asks(ALL, 'd12'), 'input'],
       [100, asks(['d11', 'd12', 'd13'], 'd12')],
     ],
     900,
@@ -431,14 +434,14 @@ test('a row the selection leaves keeps closing when another block starts to leav
   expect(rises).toEqual([])
 })
 
-test('the row the selection moves to shows its panel from the next frame', () => {
+test('the row the person’s selection moves to shows its panel from the next frame', () => {
   const fading = framesOf(
     [
       [0, asks(ALL, 'd11')],
-      [0, asks(ALL, 'd12')],
+      [0, asks(ALL, 'd12'), 'input'],
     ],
     300,
-  ).fading.filter(f => f.id === 'box d12')
+  ).fading.filter(f => f.id === 'panel d12')
   const start = fading[0]?.at ?? 0
   expect(fading.find(f => f.opacity > 0.01)?.at ?? Infinity).toBeLessThanOrEqual(start + 2 * 16)
 })
@@ -476,4 +479,44 @@ test('a block listed again after its space began to close fades in once its spac
   const showsAt = box.find(f => f.opacity > 0.02)?.at ?? Infinity
   expect(showsAt).toBeGreaterThanOrEqual(nearlyOpenAt - 16)
   expect(showsAt - nearlyOpenAt).toBeLessThanOrEqual(2 * 16)
+})
+
+test('when a publish moves the selection as another block leaves, the list never grows before it shrinks', () => {
+  const moves: Record<string, Step[]> = {
+    selectedLeaves: [
+      [0, asks(ALL, 'd11')],
+      [0, asks(['d12', 'd13', 'd15'], 'd12')],
+    ],
+    firstLeaves: [
+      [0, asks(ALL)],
+      [0, asks(['d12', 'd13', 'd15'])],
+    ],
+    otherLeaves: [
+      [0, asks(ALL, 'd11')],
+      [0, asks(['d11', 'd12', 'd13'], 'd12')],
+    ],
+    empties: [
+      [0, asks(ALL)],
+      [0, asks([])],
+    ],
+  }
+  for (const [name, steps] of Object.entries(moves)) {
+    const heights = framesOf(steps, 900).heights
+    const start = heights[0] ?? 0
+    const rise = Math.max(...heights) - start
+    expect({ name, rise: rise > 0.5 ? rise : 0 }).toEqual({ name, rise: 0 })
+  }
+})
+
+test('opening the goal field never raises the Status page’s height', () => {
+  const heights = framesOf(
+    [
+      [0, tabBlocks(demoScreen(), uiOn('overview'))],
+      [0, tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' })), 'input'],
+    ],
+    900,
+  ).heights
+  const start = heights[0] ?? 0
+  expect(heights.at(-1)).not.toBe(start)
+  expect(Math.max(...heights)).toBeLessThanOrEqual(start + 0.5)
 })

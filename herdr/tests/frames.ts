@@ -169,8 +169,11 @@ function easeOut(x: number): number {
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
 
+const fadesOn = (id: string | null | undefined): boolean =>
+  id?.startsWith('box ') === true || id?.startsWith('panel ') === true
+
 function boxOf(n: Painted): string | null {
-  for (let up: Painted | null = n; up; up = up.parent) if (up.id?.startsWith('box ')) return up.id
+  for (let up: Painted | null = n; up; up = up.parent) if (fadesOn(up.id)) return up.id ?? null
   return null
 }
 
@@ -203,7 +206,7 @@ class Fades {
   declare(root: Painted) {
     const seen = new Set<string>()
     const walk = (n: Painted, box: string | null) => {
-      const inBox = n.id?.startsWith('box ') ? n.id : box
+      const inBox = fadesOn(n.id) ? (n.id ?? null) : box
       const duration = n.transitions.get('opacity')
       if (inBox !== null && duration !== undefined && n.style.opacity !== undefined && !n.style.isAbsolute) {
         seen.add(inBox)
@@ -219,6 +222,13 @@ class Fades {
     }
     walk(root, null)
     for (const id of [...this.states.keys()]) if (!seen.has(id)) this.states.delete(id)
+  }
+
+  opacityOf(n: Painted): number {
+    let opacity = 1
+    for (let up: Painted | null = n; up; up = up.parent)
+      if (fadesOn(up.id)) opacity *= this.states.get(up.id ?? '')?.shown ?? 1
+    return opacity
   }
 
   step(ms: number) {
@@ -246,12 +256,12 @@ class Frames {
   cuts: Cut[] = []
   fading: Fading[] = []
 
-  draw(blocks: Block[], now: number) {
+  draw(blocks: Block[], now: number, isInput = false) {
     const isFirst = this.last === null
     const resized = this.heights.takeResized()
     const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst)
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput)
     this.tracks = moved.tracks
     const noop = () => {}
     const paint = {
@@ -287,7 +297,7 @@ class Frames {
       this.fading.push({ at: now, id, height: boxes.get(id)?.height ?? 0, opacity: fade.shown })
     for (const { node, share } of cutTexts(placed)) {
       const box = boxOf(node)
-      const opacity = box === null ? 1 : (this.fades.states.get(box)?.shown ?? 1)
+      const opacity = this.fades.opacityOf(node)
       if (opacity >= CUT_MAX_OPACITY) this.cuts.push({ at: now, box: box ?? '', text: node.text ?? '', share, opacity })
     }
     const end = placed.get(tree)?.height ?? 0
@@ -322,8 +332,10 @@ class Frames {
   }
 }
 
+export type Step = [number, Block[]] | [number, Block[], 'input']
+
 export function framesOf(
-  steps: [number, Block[]][],
+  steps: Step[],
   ms = 1500,
 ): {
   jumps: Jump[]
@@ -338,9 +350,11 @@ export function framesOf(
   const [first] = steps
   if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [] }
   const start = 1_000_000
+  let drawn: Step | null = null
   for (let at = -500; at < ms; at += FRAME_MS) {
     const step = steps.findLast(([from]) => at >= from) ?? first
-    frames.draw(step[1], start + at)
+    frames.draw(step[1], start + at, step !== drawn && step[2] === 'input')
+    drawn = step
   }
 
   return {
@@ -354,4 +368,4 @@ export function framesOf(
   }
 }
 
-export const jumpsOf = (steps: [number, Block[]][], ms = 1500): Jump[] => framesOf(steps, ms).jumps
+export const jumpsOf = (steps: Step[], ms = 1500): Jump[] => framesOf(steps, ms).jumps
