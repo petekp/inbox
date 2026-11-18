@@ -45,6 +45,22 @@ export function settleAnswers(root: HTMLElement): boolean {
 }
 
 /**
+ * Calls `redraw` in the next frame when a tree's width changes its answers' form, as a window resize or a classic
+ * scrollbar appearing does. A redraw inside the observer's callback would resize the trees it observes, which the
+ * browser reports as a ResizeObserver loop error. Returns the call that watches the trees drawn now, which each draw
+ * makes.
+ */
+export function watchAnswerWidths(root: HTMLElement, redraw: () => void, signal: AbortSignal): () => void {
+  const observer = new ResizeObserver(() => requestAnimationFrame(() => settleAnswers(root) && redraw()))
+  signal.addEventListener('abort', () => observer.disconnect())
+
+  return () => {
+    observer.disconnect()
+    for (const tree of root.querySelectorAll<HTMLElement>(`[${ANSWERS_ATTRIBUTE}]`)) observer.observe(tree)
+  }
+}
+
+/**
  * A question's answers, the last branches of its tree. When `answerRow` lets them, and their buttons last fit one line
  * of the tree, they share one branch with the recommendation's reason under them. Otherwise each answer is its own
  * branch with its note under it. `settleAnswers` measures them.
