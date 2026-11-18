@@ -40,7 +40,7 @@ export function paneDesktopCard({
   keyedButton,
   partSpace,
 }: Pick<PaneBase, 'Box' | 'Text' | 'pal' | 'space'> & {
-  /** The space between two parts of the card, from `partSpace` in its `desktopCard` form. */
+  /** The space between two parts of the card, from `partSpace`. */
   partSpace: (above: RowPart, below: Exclude<RowPart, 'title'>) => number
 } & Pick<PaneRowKeys, 'keyedButton'> &
   Pick<PaneRowFrame, 'desktopFrame'> &

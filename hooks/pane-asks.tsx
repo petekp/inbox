@@ -69,7 +69,7 @@ export function paneAskRows(
     }
   }
   const findingBody = (detail: string, path: string | null, fitted?: TerminalSpan[][]) => (
-    <Box flexDirection="column" rowGap={partSpace(look, isInline, 'desktopFrame')('detail', 'file')}>
+    <Box flexDirection="column" rowGap={partSpace(look, isInline)('detail', 'file')}>
       <Box key="detail">
         <Text wrap="wrap">{fitted ? terminalText(fitted) : inlineText(detail)}</Text>
       </Box>
