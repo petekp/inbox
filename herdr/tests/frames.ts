@@ -10,6 +10,7 @@ const { moveRows, NO_TRACKS } = await import('../src/motion')
 const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
+const { InputState } = await import('gpui-base')
 
 const FRAME_MS = 16
 const PANE_WIDTH = 300
@@ -182,7 +183,8 @@ const isThroughLetters = (hidden: number, line: number): boolean =>
 
 function cutTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[] {
   return [...placed].flatMap(([n, b]) => {
-    if (n.text === null || n.kids.some(k => !k.style.isAbsolute) || b.height <= 0) return []
+    const isText = n.text !== null || n.field !== null
+    if (!isText || n.kids.some(k => !k.style.isAbsolute) || b.height <= 0) return []
     let top = b.top
     let bottom = b.top + b.height
     for (let up = n.parent; up; up = up.parent) {
@@ -242,6 +244,8 @@ class Fades {
   }
 }
 
+const fieldState = InputState.new({ value: 'Pinch ships in the beta' })
+
 function paintOf(
   motion: Paint['motion'],
   heights: InstanceType<typeof Heights>,
@@ -268,7 +272,7 @@ function paintOf(
     closedSeen,
     tab: 'needsYou',
     timeLeft: new Map(),
-    input: () => null,
+    input: () => fieldState,
     mono: 'Menlo',
     isNarrow: false,
     listRoom: null,
@@ -332,7 +336,8 @@ class Frames {
     for (const { node, share } of cutTexts(placed)) {
       const box = boxOf(node)
       const opacity = this.fades.opacityOf(node)
-      if (opacity >= CUT_MAX_OPACITY) this.cuts.push({ at: now, box: box ?? '', text: node.text ?? '', share, opacity })
+      const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
+      if (opacity >= CUT_MAX_OPACITY) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
     }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
