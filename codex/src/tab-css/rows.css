@@ -75,11 +75,6 @@
   display: flex;
   flex-direction: column;
 }
-/* Each part of an open row sits `partGap` under the part above it, which its `--above` gives. The space is padding, not
-   a gap or a margin, so the row's height grows smoothly when the panel mounts. */
-[data-part] {
-  padding-top: var(--above);
-}
 .row > .panel {
   grid-column: 2 / -1;
 }

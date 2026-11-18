@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { Window } from 'happy-dom'
 import { h, render } from 'preact'
@@ -19,6 +20,28 @@ const ANSWER_W = 60
 const WIDE_ROOM = 1000
 const NARROW_ROOM = 100
 const BASE_ID = { question: 'd12', task: 'd14', finding: 'd23' } as const
+const TAB_CSS = new URL('../src/tab-css/', import.meta.url)
+const OWN_SPACING = ['paddingBottom', 'marginTop', 'marginBottom'] as const
+const CHILD_SPACING = ['gap', 'rowGap'] as const
+
+const isNone = (value: string) => value === '' || value === 'normal' || parseFloat(value) === 0
+
+function strays(part: HTMLElement): string[] {
+  const out: string[] = []
+  for (let at: HTMLElement | null = part; at; at = at.parentElement) {
+    const style = getComputedStyle(at)
+    const props = [
+      ...OWN_SPACING,
+      ...(at.dataset.part ? [] : (['paddingTop'] as const)),
+      ...(at === part ? [] : CHILD_SPACING),
+    ]
+    for (const prop of props)
+      if (!isNone(style[prop])) out.push(`${at.dataset.part ?? at.className} ${prop} ${style[prop]}`)
+    if (at.classList.contains('panel')) break
+  }
+
+  return out
+}
 
 function answersOf(row: RowView, isWide: boolean): AnswersForm | null {
   const { options, answerRow } = rowKeyPlan(row, false)
@@ -42,8 +65,12 @@ function expected(c: RowCase, row: RowView, hasCopy: boolean): string[] {
   return partPairs(parts).map(([above, below]) => `${below} ${partPt(above, below, 'codex')}px`)
 }
 
-test('the Codex tab sets each part of an open question, task and finding partGap under the part above, wide and narrow, with and without the copy box', async () => {
+test('the Codex tab pads each part of an open question, task and finding partGap under the part above, with no other space on the way to its panel, wide and narrow, with and without the copy box', async () => {
   const window = new Window()
+  const css = readdirSync(TAB_CSS)
+    .filter(file => file.endsWith('.css'))
+    .map(file => readFileSync(new URL(file, TAB_CSS), 'utf8'))
+  window.document.head.innerHTML = `<style>${css.join('\n')}</style>`
   window.document.body.innerHTML = '<div id="app"></div>'
   const media = window.matchMedia('(prefers-reduced-motion: reduce)')
   Object.defineProperty(media, 'matches', { get: () => true })
@@ -70,6 +97,8 @@ test('the Codex tab sets each part of an open question, task and finding partGap
   for (const [key, value] of Object.entries(globals))
     Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
   try {
+    const { applyPageVariables } = await import('../src/tab-page-variables')
+    applyPageVariables()
     const { tabState, selection, errors, copies, root } = await import('../src/tab-state')
     const { stepLists } = await import('../src/tab-list')
     const { NeedsYou, Findings } = await import('../src/tab-groups')
@@ -109,9 +138,10 @@ test('the Codex tab sets each part of an open question, task and finding partGap
       draw()
       if (settleAnswers(root)) draw()
 
-      return [...root.querySelectorAll<HTMLElement>('.panel [data-part]')].map(
-        el => `${el.dataset.part} ${el.style.getPropertyValue('--above')}`,
-      )
+      return [...root.querySelectorAll<HTMLElement>('.panel [data-part]')].flatMap(el => [
+        `${el.dataset.part} ${getComputedStyle(el).paddingTop}`,
+        ...strays(el),
+      ])
     }
     const cases = rowCases().flatMap(c =>
       [false, true].map(hasCopy => ({
