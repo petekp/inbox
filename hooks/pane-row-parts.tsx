@@ -234,7 +234,7 @@ export function paneRowParts(
       <Box key={`reopen-${d.id}`} flexDirection="row">
         <Button
           key={`reopen-${d.id}`}
-          label={look === 'desktop' ? action.label : ` ${action.label} `}
+          label={action.label}
           onPress={(press: { surface: UiPressArgument['surface'] }) => void runPress(action.press, press.surface)}
         />
       </Box>
