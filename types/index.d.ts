@@ -702,7 +702,7 @@ export type CallAnswer = {
   chars: number
 }
 
-/** A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed. */
+/** One viewer app's lease on this session: rows it has replies on or has seen closed stay in place until `expiresAt` or its release. */
 export type RemoteViewerRecord = {
   generation: number
   sequence: number
@@ -716,6 +716,7 @@ export type RemoteViewerRecord = {
   listInput?: { since: number; last: number } | null
 }
 
+/** A command a remote viewer sent, and the durable receipt of what happened to it. */
 export type RemoteCommandRecord = {
   timeWasValid?: boolean
   issuedAt?: number
@@ -730,6 +731,7 @@ export type RemoteCommandRecord = {
   delivered: boolean
 }
 
+/** A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed. */
 export type HerdrPressOutcome = { id: string; outcome: 'applied' | 'stale' }
 
 /** One conversation's inbox: what every host saves and the shared session functions change. */
