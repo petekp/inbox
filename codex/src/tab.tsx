@@ -98,7 +98,8 @@ let drawnPage: string | null = null
 function draw() {
   if (tabState.isDisposed || !tabState.isActive) return
   const page = `${drawnTab()}${tabState.isHelpShown ? ' help' : ''}`
-  if (drawnPage !== null && page !== drawnPage) document.documentElement.classList.add('page-switched')
+  const isPageSwitch = drawnPage !== null && page !== drawnPage
+  if (isPageSwitch) document.documentElement.classList.add('page-switched', 'page-switching')
   drawnPage = page
   const before = measure()
   const step = tabState.view ? stepLists(tabState.view) : null
@@ -112,6 +113,7 @@ function draw() {
   if (settleAnswers(root)) render(app(), root)
   watchAnswers()
   animateDraw(before, step?.changed ?? new Set())
+  if (isPageSwitch) endPageSwitch()
   noteStatusInView()
   const fieldToFocus =
     tabState.focusTyping && tabState.typing ? document.getElementById(`type-${tabState.typing}`) : null
@@ -122,6 +124,15 @@ function draw() {
 }
 
 tabState.draw = draw
+
+/**
+ * Takes away the mark that keeps a switch's new banner and empty block from fading in. Their fade starts from their
+ * first computed style, so the page's style is computed first, while the mark still holds.
+ */
+function endPageSwitch() {
+  root.getBoundingClientRect()
+  document.documentElement.classList.remove('page-switching')
+}
 const watchAnswers = watchAnswerWidths(root, draw, instanceAbort.signal)
 
 /** Notes the Status subject rows on screen now, while the tab shows the real Status, for the look under way. The demo's ids name sample rows. */
