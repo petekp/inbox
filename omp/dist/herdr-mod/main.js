@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T07:03:47.814Z. 293240 characters follow.
+// Built at 2026-11-18T07:58:16.920Z. 293540 characters follow.
 
 // src/main.ts
 import { View, div as div12 } from "gpui-kit";
@@ -5939,7 +5939,7 @@ function aboveOf(prev, b, section) {
 }
 var panelId = (id) => `panel ${id}`;
 var restId = (id) => `rest ${id}`;
-function spacesOf(blocks, isShut) {
+function spacesOf(blocks, isShut, formOf = (b) => b) {
   const out = [];
   let prev = null;
   let section = null;
@@ -5954,8 +5954,9 @@ function spacesOf(blocks, isShut) {
       out.push({ block: b, above: 0 });
       continue;
     }
-    out.push({ block: b, above: aboveOf(prev, b, section) });
-    prev = b;
+    const form = formOf(b);
+    out.push({ block: b, above: aboveOf(prev, form, section) });
+    prev = form;
     section = null;
   }
   return out;
@@ -6069,7 +6070,14 @@ function contentStrokeEls(b, t, fade) {
 var shutTo = (height, ms) => ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING);
 function spacedEls(blocks, p, el) {
   const isShut = (b) => p.motion.get(b.id)?.box === "shut";
-  const spaces = spacesOf(blocks, isShut);
+  const heldForm = (b) => {
+    const m = p.motion.get(b.id);
+    if (!m?.former)
+      return b;
+    const isNewFormUnmeasured = fitHeight(b, { ...m, former: null }, p) === undefined;
+    return isNewFormUnmeasured ? m.former : b;
+  };
+  const spaces = spacesOf(blocks, isShut, heldForm);
   const passing = passingOf(spaces.map((s) => s.block), isShut);
   return spaces.map((s, i) => {
     const b = s.block;

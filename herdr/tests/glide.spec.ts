@@ -467,15 +467,19 @@ test('a press’s status under a row’s buttons fades in once the row’s box i
   }).toEqual({ cuts: [], fadesOut: true, holds: true, shrinks: true })
 })
 
-test('a dismissed PR’s block glides between its open and dismissed forms in both directions', () => {
+test('a dismissed PR’s block glides between its open and dismissed forms in both directions, and the list moves only toward its new height', () => {
   const open = tabBlocks(demoScreen(), uiOn('prs'))
   const dismissed = dismissedPr('acme/visor#29').blocks
   for (const [name, from, to] of [
     ['dismiss', open, dismissed],
     ['undo', dismissed, open],
   ] as const) {
-    const jumps = framesOf([[0, [...from]], [0, [...to]]], 900).jumps.filter(j => j.at >= 0)
-    expect({ name, jumps }).toEqual({ name, jumps: [] })
+    const frames = framesOf([[0, [...from]], [0, [...to]]], 900)
+    const jumps = frames.jumps.filter(j => j.at >= 0)
+    const start = frames.heights[0] ?? 0
+    const end = frames.heights.at(-1) ?? 0
+    const isOutside = (h: number) => h < Math.min(start, end) - 0.5 || h > Math.max(start, end) + 0.5
+    expect({ name, jumps, outside: frames.heights.filter(isOutside) }).toEqual({ name, jumps: [], outside: [] })
   }
 })
 

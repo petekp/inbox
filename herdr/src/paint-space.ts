@@ -109,9 +109,11 @@ type Space = { block: Block; above: number }
  * Each drawn block with the space above it, from the last block above it that is not shut. A gap block draws nothing
  * and opens a section's space above the next block, or a milestone step's smaller space. A shut block, one that enters
  * or leaves at no height, has no space, and a shut gap opens none, so the space a gap held closes in the same glide as the
- * rows beside it instead of waiting for the gap to leave the list.
+ * rows beside it instead of waiting for the gap to leave the list. `formOf` gives the form a block's spaces are measured
+ * from, so a block whose content box keeps its former form's height keeps that form's spaces too, and both start to
+ * glide in the same draw.
  */
-export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[] {
+export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean, formOf: (b: Block) => Block = b => b): Space[] {
   const out: Space[] = []
   let prev: Block | null = null
   let section: number | null = null
@@ -125,8 +127,9 @@ export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[
       out.push({ block: b, above: 0 })
       continue
     }
-    out.push({ block: b, above: aboveOf(prev, b, section) })
-    prev = b
+    const form = formOf(b)
+    out.push({ block: b, above: aboveOf(prev, form, section) })
+    prev = form
     section = null
   }
 
@@ -379,7 +382,14 @@ const shutTo = (height: number, ms: number | null): SpringState =>
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
   const isShut = (b: Block) => p.motion.get(b.id)?.box === 'shut'
-  const spaces = spacesOf(blocks, isShut)
+  const heldForm = (b: Block) => {
+    const m = p.motion.get(b.id)
+    if (!m?.former) return b
+    const isNewFormUnmeasured = fitHeight(b, { ...m, former: null }, p) === undefined
+
+    return isNewFormUnmeasured ? m.former : b
+  }
+  const spaces = spacesOf(blocks, isShut, heldForm)
   const passing = passingOf(
     spaces.map(s => s.block),
     isShut,
