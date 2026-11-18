@@ -43,6 +43,18 @@ export const namedFolds = (prefix: string, named: Subject[], depth: number): Sta
         ]
   })
 
+/**
+ * A part of the list's subjects: those it draws, the work that closed since the last look past its rows, which a fold
+ * names, and those it folds into a count.
+ */
+export type PartSplit = {
+  shown: Subject[]
+  newClosed: Subject[]
+  named: Subject[]
+  foldedOpen: Subject[]
+  foldedDone: Subject[]
+}
+
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
 
@@ -54,9 +66,15 @@ const COUNT_WORDS: Record<'working' | 'waits-on-other', string> = {
   'waits-on-other': 'waiting',
 }
 
-/** Open subjects folded into one count for each status that is under way, in the page's order of marks. Queued work gets no count. */
+/** The statuses a `counts` row counts, in the page's order of marks. Queued work gets no count. */
+const COUNTED_STATUSES = ['working', 'waits-on-other'] as const
+
+/** Whether the counts row counts `x`, and lists it once unfolded. */
+export const isCounted = (x: Subject) => COUNTED_STATUSES.some(status => status === x.status)
+
+/** Open subjects folded into one count for each status that is under way. */
 export function countsByMark(folded: Subject[]): StatusCount[] {
-  return (['working', 'waits-on-other'] as const).flatMap(status => {
+  return COUNTED_STATUSES.flatMap(status => {
     const n = folded.filter(x => x.status === status).length
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
   })

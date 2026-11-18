@@ -77,7 +77,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(await pane.find({ key: 'row-f3' })).toBeUndefined()
   expect(await pane.find({ text: 'No open issues' })).toBeDefined()
   expect(await pane.find({ text: 'No open opportunities' })).toBeDefined()
-  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed ›')
+  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed\u00a0›')
   await pane.press({ key: 'fold-issue' })
   expect(await pane.find({ text: /^README is stale$/ })).toBeDefined()
   expect(await pane.find({ text: /^Closed by Claude: fixed$/ })).toBeDefined()
@@ -140,7 +140,7 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
   await clock.advance(FOLD_QUIET_MS)
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
-  expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('1 closed ›')
+  expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('1 closed\u00a0›')
   expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
 
   await clock.advance(PRESS_GUARD_MS)
@@ -151,7 +151,7 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   expect(await pane.find({ key: 'undo-i2' })).toBeDefined()
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
-  expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('2 closed ›')
+  expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('2 closed\u00a0›')
 })
 
 test('an Explain under way on the tab keeps a closed row in place past its fold time, until the agent answers', async ($, on) => {

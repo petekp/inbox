@@ -190,6 +190,12 @@ var MARK_LEGEND = [
 var CHILD_MARK = SUBJECT_MARKS.working;
 var DAY_MS = 24 * 60 * 6e4;
 
+// ../hooks/status-page.ts
+var STALL_GAP = " \xB7 ";
+
+// ../hooks/status-folds.ts
+var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
+
 // ../hooks/timing.ts
 var SETTLED_MS = 5120;
 var COMPARE_LIMIT_MS = 30 * 6e4;

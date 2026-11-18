@@ -67,11 +67,16 @@ test('work that serves a milestone draws under it one step in, and work the goal
     ['◆ Error copy: not started · Ask i1?', '◐ CSV import: bad rows skipped'],
     [],
   ])
-  expect(shape(p.rows)).toEqual(['== Other work', '● 1 working'])
+  expect(shape(p.rows)).toEqual(['== Other work', 'Also open: ● 1 working ›'])
   expect(shape(page(changed, 60, {}, [askItem('i1')]).rows)).toEqual([
     '== Other work',
     '◐ Logo refresh: new logo drawn',
-    '● 1 working',
+    'Also open: ● 1 working ›',
+  ])
+  expect(shape(unfoldedRows(p.rows, id => id === 'other-counts'))).toEqual([
+    '== Other work',
+    'Also open: ● 1 working ›',
+    '◐ Dark mode: toggle drawn',
   ])
 })
 

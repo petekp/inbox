@@ -1,9 +1,9 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T07:32:38.908Z. 294337 characters follow.
+// Built at 2026-11-18T08:22:58.408Z. 295856 characters follow.
 
 // src/main.ts
-import { View, div as div11 } from "gpui-kit";
-import { InputState, Scrollbar, v_flex as v_flex4 } from "gpui-base";
+import { View, div as div13 } from "gpui-kit";
+import { InputState, Scrollbar, v_flex as v_flex6 } from "gpui-base";
 import {
   appHome,
   exec,
@@ -1321,50 +1321,6 @@ function helpKeys(look) {
   }
 }
 
-// ../hooks/status-folds.ts
-function waitingUnderParents(ledger) {
-  const o = ledger.overview;
-  if (!o)
-    return new Map;
-  const blockedOf = (subjectId) => o.children.filter((c) => c.subjectId === subjectId && c.endedAt === null && c.delegateState === "blocked").map((c) => c.id);
-  const asksOf = (subjectId) => ledger.items.filter((i) => o.askSubjects[i.id]?.includes(subjectId)).map((i) => i.id);
-  const subjects = o.subjects.filter((x) => x.into === null);
-  const delegating = subjects.filter((x) => o.children.some((c) => c.subjectId === x.id));
-  const milestones = o.goal ? o.milestones.filter((m) => subjects.some((x) => o.serves[x.id] === m.id)) : [];
-  return new Map([
-    ...delegating.map((x) => [x.id, blockedOf(x.id)]),
-    ...milestones.map((m) => {
-      const serving = subjects.filter((x) => o.serves[x.id] === m.id);
-      return [m.id, [...new Set(serving.flatMap((x) => [...asksOf(x.id), ...blockedOf(x.id)]))]];
-    })
-  ]);
-}
-var NONE_COLLAPSED = () => false;
-function withoutCollapsed(rows, isCollapsed) {
-  let hiddenBelow = null;
-  return rows.filter((r) => {
-    if (hiddenBelow !== null && r.depth > hiddenBelow)
-      return false;
-    hiddenBelow = r.kind === "subject" && isParentCollapsed(r, isCollapsed) ? r.depth : null;
-    return true;
-  });
-}
-function unfoldedRows(rows, isUnfolded, isCollapsed = NONE_COLLAPSED) {
-  return withoutCollapsed(rows, isCollapsed).flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
-}
-var isParentCollapsed = (p, isCollapsed) => p.foldCount > 0 && isCollapsed(p.id);
-function milestoneRows(m, isUnfolded, isCollapsed = NONE_COLLAPSED) {
-  const isShut = m.foldId !== null && !isUnfolded(m.foldId) || isParentCollapsed(m, isCollapsed);
-  return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed);
-}
-var listRows = (milestones, rows) => [
-  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
-  ...rows
-];
-function statusListRows(page) {
-  return listRows(page.goal?.milestones ?? [], page.rows);
-}
-
 // ../hooks/status-page-parts.ts
 var LISTED_NAMES = 2;
 var namedFoldMore = (n) => `+${n} more`;
@@ -1392,8 +1348,10 @@ var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting"
 };
+var COUNTED_STATUSES = ["working", "waits-on-other"];
+var isCounted = (x) => COUNTED_STATUSES.some((status) => status === x.status);
 function countsByMark(folded) {
-  return ["working", "waits-on-other"].flatMap((status) => {
+  return COUNTED_STATUSES.flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -1640,6 +1598,232 @@ function goalPage(o, items) {
   };
 }
 
+// ../hooks/status-page.ts
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
+var OTHER_WORK = "Other work";
+var WAS_PREFIX = "Prev: ";
+var MERGED_PREFIX = "merged in: ";
+var STALL_GAP = " · ";
+var NEW_CLOSED_ROWS = 2;
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function mergedLine(merged, fits) {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
+}
+function statusPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => o === null || !isSubjectSeen(o, x);
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const goalParts = goalPage(o, s.ledger.items);
+  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
+  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
+  const milestoneOf = (x) => {
+    const to = servedBy(x);
+    return to !== undefined && milestoneIds.has(to) ? to : null;
+  };
+  const hasMilestones = milestoneIds.size > 0;
+  const isUnneeded = (x) => servedBy(x) === "none";
+  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
+  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
+  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
+  const needed = subjects.filter((x) => !isUnneeded(x));
+  const main = needed.filter((x) => !isOther(x));
+  const other = subjects.filter(isOther);
+  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
+  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
+  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
+  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
+  const foldable = open.filter(canFold);
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
+  const split = (part, isLater = false) => {
+    const unseenClosed = unseenClosedOf(part);
+    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
+    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
+    return {
+      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
+      newClosed,
+      named: unseenClosed.slice(NEW_CLOSED_ROWS),
+      foldedOpen: part.filter(isFoldedOpen),
+      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
+    };
+  };
+  const top = split(main.filter((x) => milestoneOf(x) === null));
+  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
+  const otherUnseenClosed = unseenClosedOf(other);
+  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
+  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
+  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
+  const ctx = {
+    isNew,
+    isHeld,
+    oldestAskOf,
+    items: s.ledger.items,
+    running,
+    isTurnRunning: s.presence.isTurnRunning,
+    now
+  };
+  const foldCtx = { ...ctx, running: [] };
+  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : foldedOpen.length === 1 ? partRows(foldedOpen, ctx, depth) : [
+    {
+      kind: "fold",
+      id: `${prefix}open`,
+      depth,
+      ...SUBJECT_MARKS.queued,
+      text: `${foldedOpen.length} more`,
+      subjectIds: []
+    }
+  ];
+  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : done.length + settled.length === 1 ? [...partRows(done, foldCtx, depth), ...settled.map((c) => childRow(c, null, depth, finishedLine(c, now)))] : [
+    {
+      kind: "done-fold",
+      id: `${prefix}done`,
+      depth,
+      text: `${done.length + settled.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: [
+        ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
+        ...settled.map((c) => childRow(c, null, depth + 1, finishedLine(c, now)))
+      ]
+    }
+  ];
+  const foldedPart = (prefix, p, depth, settled = []) => [
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled)
+  ];
+  const { loose, settled } = unplacedChildren(o?.children ?? [], {
+    subjects,
+    shownIds,
+    milestoneOf,
+    isSettled: (c) => isChildSettled(c, now, look),
+    running
+  });
+  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
+  const otherCountedSubjects = otherFolded.filter((x) => isOpen(x) && isUnneeded(x) && isCounted(x));
+  const otherCounts = countsByMark(otherCountedSubjects);
+  const afterOtherOpen = [
+    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
+    ...otherCounts.length === 0 ? [] : [
+      {
+        kind: "counts",
+        id: "other-counts",
+        depth: 0,
+        counts: otherCounts,
+        rows: partRows([...otherCountedSubjects].sort(pageOrder), foldCtx, 1)
+      }
+    ]
+  ];
+  const otherRows = [
+    ...hasMilestones ? looseRows(null, 0) : [],
+    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0, hasMilestones ? settled : [])
+  ];
+  const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
+  const g = goalParts.goal;
+  const isHeadApart = head !== null && (g === null || g.isMet);
+  const listRows = [
+    ...hasMilestones ? [] : looseRows(null, 0),
+    ...foldedPart("", top, 0, hasMilestones ? [] : settled),
+    ...otherRows.length > 0 ? [
+      { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
+      ...otherRows
+    ] : []
+  ];
+  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const rows = [
+    ...headPart,
+    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
+  ];
+  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
+  const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
+  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
+  const withRows = (m, p) => {
+    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
+    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
+    return isShrunk ? {
+      ...m,
+      text: null,
+      isMuted: true,
+      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
+      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
+    } : {
+      ...m,
+      rows,
+      foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
+    };
+  };
+  const goal = g && {
+    ...g,
+    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
+    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
+  };
+  return {
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    head,
+    ...goalParts,
+    goal,
+    rows,
+    error: s.overviewFailure ? STATUS_FAILED : null
+  };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
+}
+
+// ../hooks/status-folds.ts
+function waitingUnderParents(ledger) {
+  const o = ledger.overview;
+  if (!o)
+    return new Map;
+  const blockedOf = (subjectId) => o.children.filter((c) => c.subjectId === subjectId && c.endedAt === null && c.delegateState === "blocked").map((c) => c.id);
+  const asksOf = (subjectId) => ledger.items.filter((i) => o.askSubjects[i.id]?.includes(subjectId)).map((i) => i.id);
+  const subjects = o.subjects.filter((x) => x.into === null);
+  const delegating = subjects.filter((x) => o.children.some((c) => c.subjectId === x.id));
+  const milestones = o.goal ? o.milestones.filter((m) => subjects.some((x) => o.serves[x.id] === m.id)) : [];
+  return new Map([
+    ...delegating.map((x) => [x.id, blockedOf(x.id)]),
+    ...milestones.map((m) => {
+      const serving = subjects.filter((x) => o.serves[x.id] === m.id);
+      return [m.id, [...new Set(serving.flatMap((x) => [...asksOf(x.id), ...blockedOf(x.id)]))]];
+    })
+  ]);
+}
+var COUNTS_LABEL = "Also open: ";
+var countsText = (counts) => `${COUNTS_LABEL}${counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP)}`;
+var COUNTS_GAP = STALL_GAP.replace(" ", " ");
+var NONE_COLLAPSED = () => false;
+function withoutCollapsed(rows, isCollapsed) {
+  let hiddenBelow = null;
+  return rows.filter((r) => {
+    if (hiddenBelow !== null && r.depth > hiddenBelow)
+      return false;
+    hiddenBelow = r.kind === "subject" && isParentCollapsed(r, isCollapsed) ? r.depth : null;
+    return true;
+  });
+}
+function unfoldedRows(rows, isUnfolded, isCollapsed = NONE_COLLAPSED) {
+  return withoutCollapsed(rows, isCollapsed).flatMap((r) => (r.kind === "done-fold" || r.kind === "counts") && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
+}
+var isParentCollapsed = (p, isCollapsed) => p.foldCount > 0 && isCollapsed(p.id);
+function milestoneRows(m, isUnfolded, isCollapsed = NONE_COLLAPSED) {
+  const isShut = m.foldId !== null && !isUnfolded(m.foldId) || isParentCollapsed(m, isCollapsed);
+  return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed);
+}
+var listRows = (milestones, rows) => [
+  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
+  ...rows
+];
+function statusListRows(page) {
+  return listRows(page.goal?.milestones ?? [], page.rows);
+}
+
 // ../hooks/status-keys.ts
 var GOAL_KEYS_ID = "goal";
 var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
@@ -1655,6 +1839,8 @@ function viewAsk(ask) {
 function statusKeyPlan(row) {
   if (row.kind === "done-fold")
     return [toggleFold(row.id, row.text)];
+  if (row.kind === "counts")
+    return [toggleFold(row.id, countsText(row.counts))];
   return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
 }
 var toggleFold = (foldId, label) => ({
@@ -3581,176 +3767,6 @@ function withCollapse(s, row, isCollapsed, at) {
   return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
 }
 
-// ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
-var OTHER_WORK = "Other work";
-var WAS_PREFIX = "Prev: ";
-var MERGED_PREFIX = "merged in: ";
-var STALL_GAP = " · ";
-var NEW_CLOSED_ROWS = 2;
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function mergedLine(merged, fits) {
-  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
-}
-function statusPage(s, now) {
-  const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => o === null || !isSubjectSeen(o, x);
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const goalParts = goalPage(o, s.ledger.items);
-  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
-  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
-  const milestoneOf = (x) => {
-    const to = servedBy(x);
-    return to !== undefined && milestoneIds.has(to) ? to : null;
-  };
-  const hasMilestones = milestoneIds.size > 0;
-  const isUnneeded = (x) => servedBy(x) === "none";
-  const isOther = (x) => isUnneeded(x) || hasMilestones && milestoneOf(x) === null;
-  const running = (o?.children ?? []).filter((c) => isChildShown(c, now, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
-  const needed = subjects.filter((x) => !isUnneeded(x));
-  const main = needed.filter((x) => !isOther(x));
-  const other = subjects.filter(isOther);
-  const canFold = (x) => !isHeld(x) && !isNew(x) && !hasChildRow(x);
-  const laterIds = new Set((goalParts.goal?.milestones ?? []).filter((m) => m.place === "later").map((m) => m.id));
-  const isFoldedUnderLater = (x) => laterIds.has(milestoneOf(x) ?? "") && canFold(x);
-  const open = needed.filter((x) => isOpen(x) && !isFoldedUnderLater(x)).sort(pageOrder);
-  const foldable = open.filter(canFold);
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
-  const split = (part, isLater = false) => {
-    const unseenClosed = unseenClosedOf(part);
-    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
-    const isFoldedOpen = (x) => isOpen(x) && (folded.includes(x) || isLater && canFold(x));
-    return {
-      shown: [...part.filter((x) => isOpen(x) && !isFoldedOpen(x)), ...newClosed].sort(pageOrder),
-      newClosed,
-      named: unseenClosed.slice(NEW_CLOSED_ROWS),
-      foldedOpen: part.filter(isFoldedOpen),
-      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
-    };
-  };
-  const top = split(main.filter((x) => milestoneOf(x) === null));
-  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id), m.place === "later"));
-  const otherUnseenClosed = unseenClosedOf(other);
-  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
-  const isOtherFolded = (x) => !isOpen(x) ? x.status === "done" && !isNew(x) : isUnneeded(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : folded.includes(x);
-  const otherFolded = other.filter(isOtherFolded);
-  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
-  const ctx = {
-    isNew,
-    isHeld,
-    oldestAskOf,
-    items: s.ledger.items,
-    running,
-    isTurnRunning: s.presence.isTurnRunning,
-    now
-  };
-  const foldCtx = { ...ctx, running: [] };
-  const openFold = (prefix, foldedOpen, depth) => foldedOpen.length === 0 ? [] : foldedOpen.length === 1 ? partRows(foldedOpen, ctx, depth) : [
-    {
-      kind: "fold",
-      id: `${prefix}open`,
-      depth,
-      ...SUBJECT_MARKS.queued,
-      text: `${foldedOpen.length} more`,
-      subjectIds: []
-    }
-  ];
-  const doneFold = (prefix, done, newClosed, depth, settled) => done.length + settled.length === 0 ? [] : done.length + settled.length === 1 ? [...partRows(done, foldCtx, depth), ...settled.map((c) => childRow(c, null, depth, finishedLine(c, now)))] : [
-    {
-      kind: "done-fold",
-      id: `${prefix}done`,
-      depth,
-      text: `${done.length + settled.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: [
-        ...partRows([...done].sort(pageOrder), foldCtx, depth + 1),
-        ...settled.map((c) => childRow(c, null, depth + 1, finishedLine(c, now)))
-      ]
-    }
-  ];
-  const foldedPart = (prefix, p, depth, settled = []) => [
-    ...partRows(p.shown, ctx, depth, openFold(prefix, p.foldedOpen, depth), namedFolds(prefix, p.named, depth)),
-    ...doneFold(prefix, p.foldedDone, p.newClosed, depth, settled)
-  ];
-  const { loose, settled } = unplacedChildren(o?.children ?? [], {
-    subjects,
-    shownIds,
-    milestoneOf,
-    isSettled: (c) => isChildSettled(c, now, look),
-    running
-  });
-  const looseRows = (milestoneId, depth) => loose.filter((l) => l.milestoneId === milestoneId).map((l) => childRow(l.child, null, depth));
-  const otherCounts = countsByMark(otherFolded.filter((x) => isOpen(x) && isUnneeded(x)));
-  const afterOtherOpen = [
-    ...openFold("other-", otherFolded.filter((x) => isOpen(x) && !isUnneeded(x)), 0),
-    ...otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }]
-  ];
-  const otherRows = [
-    ...hasMilestones ? looseRows(null, 0) : [],
-    ...partRows(otherShown, ctx, 0, afterOtherOpen, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0, hasMilestones ? settled : [])
-  ];
-  const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
-  const g = goalParts.goal;
-  const isHeadApart = head !== null && (g === null || g.isMet);
-  const listRows = [
-    ...hasMilestones ? [] : looseRows(null, 0),
-    ...foldedPart("", top, 0, hasMilestones ? [] : settled),
-    ...otherRows.length > 0 ? [
-      { kind: "part", id: "other", depth: 0, text: OTHER_WORK, description: null, isTitle: false },
-      ...otherRows
-    ] : []
-  ];
-  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
-  const rows = [
-    ...headPart,
-    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
-  ];
-  const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
-  const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
-  const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
-  const withRows = (m, p) => {
-    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
-    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
-    const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
-    return isShrunk ? {
-      ...m,
-      text: null,
-      isMuted: true,
-      foldId: p.foldedDone.length > 0 ? `${m.id}-done` : null,
-      rows: partRows([...p.foldedDone].sort(pageOrder), foldCtx, 1)
-    } : {
-      ...m,
-      rows,
-      foldCount: rows.length === 0 ? 0 : workCount(p) + loose.filter((l) => l.milestoneId === m.id).length
-    };
-  };
-  const goal = g && {
-    ...g,
-    milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
-    milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
-  };
-  return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
-    head,
-    ...goalParts,
-    goal,
-    rows,
-    error: s.overviewFailure ? STATUS_FAILED : null
-  };
-}
-function seenSubjectIds(row) {
-  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
-}
-
 // ../hooks/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
@@ -4250,15 +4266,19 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
       { kind: "rule", id: row.id, text: row.text, ...row.isTitle ? { isTitle: true } : {} },
       ...row.description ? [note2(`${row.id} description`, row.description, "muted")] : []
     ];
-  if (row.kind === "counts")
-    return [{ ...note2(row.id, row.counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP), "muted"), depth: row.depth }];
-  if (row.kind === "done-fold")
+  if (row.kind === "done-fold" || row.kind === "counts")
     return [
       {
         kind: "fold",
         id: row.id,
         depth: row.depth,
-        text: row.text,
+        text: row.kind === "counts" ? countsText(row.counts) : row.text,
+        ...row.kind === "counts" ? {
+          counts: {
+            label: COUNTS_LABEL,
+            items: row.counts.map((c) => ({ mark: markOf2(c.mark, c.tone, false), text: c.text }))
+          }
+        } : {},
         isOpen: isUnfolded(row.id),
         change: { toggleFold: row.id }
       }
@@ -4993,11 +5013,11 @@ var statusFoldsOf = (view) => {
   const page = view.statusPage;
   const milestones = page.goal?.milestones ?? [];
   const rows = [...milestones.flatMap((m) => m.rows), ...page.rows];
-  const listed = rows.flatMap((r) => r.kind === "done-fold" ? [r, ...r.rows] : [r]);
+  const listed = rows.flatMap((r) => r.kind === "done-fold" || r.kind === "counts" ? [r, ...r.rows] : [r]);
   const foldIds = [
     ...page.goal?.milestonesFold ? [page.goal.milestonesFold.id] : [],
     ...milestones.flatMap((m) => m.foldId === null ? [] : [m.foldId]),
-    ...listed.filter((r) => r.kind === "done-fold").map((r) => r.id)
+    ...listed.filter((r) => r.kind === "done-fold" || r.kind === "counts").map((r) => r.id)
   ];
   const parentIds = [
     ...milestones.filter((m) => m.foldCount > 0).map((m) => m.id),
@@ -5731,8 +5751,8 @@ function nextDrawAt(now, ui, screen, moved) {
 }
 
 // src/paint-blocks.ts
-import { div as div10 } from "gpui-kit";
-import { Input, h_flex as h_flex6, v_flex as v_flex3 } from "gpui-base";
+import { div as div12 } from "gpui-kit";
+import { h_flex as h_flex7, v_flex as v_flex5 } from "gpui-base";
 
 // ../hooks/desktop-metrics.ts
 var DESKTOP_LINE_PT = 19;
@@ -5805,6 +5825,10 @@ function partPt(above, below, form) {
   return g.forms[form] ?? STEP_PT[g.step] + (form === "codex" ? codexTreeExtra(above, below) : 0);
 }
 
+// src/paint-field.ts
+import { div as div4 } from "gpui-kit";
+import { Input, v_flex } from "gpui-base";
+
 // src/paint-parts.ts
 import { div as div3 } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -5859,9 +5883,32 @@ var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
 var resultLineEl = (text, color, indent = MARK_W) => lineEl(text, color, indent).pt(CONTROL_GAP);
 
+// src/paint-field.ts
+function fieldEl(f, p, indent, isInert = false) {
+  const { t } = p;
+  const state = p.input(f.rowId);
+  const input = state ? [
+    div4().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
+  ] : [];
+  return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
+}
+
+// src/paint-empty.ts
+import { div as div5 } from "gpui-kit";
+import { h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
+function emptyEl(b, p, isInert) {
+  return v_flex2().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(emptyContentEl(b, p, isInert));
+}
+function emptyContentEl(b, p, isInert) {
+  const { t } = p;
+  const { empty, under } = b;
+  const centred = (text, color = t.foreground) => div5().text_center().whitespace_normal().text_color(color).child(text);
+  return v_flex2().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div5().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div5()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)));
+}
+
 // src/paint-chevron.ts
-import { PathBuilder as PathBuilder2, div as div4 } from "gpui-kit";
-import { h_flex as h_flex2 } from "gpui-base";
+import { PathBuilder as PathBuilder2, div as div6 } from "gpui-kit";
+import { h_flex as h_flex3 } from "gpui-base";
 var SIZE_PX = 12;
 var STROKE_PX = 1;
 var GRID = 24;
@@ -5887,15 +5934,15 @@ var OPEN_PATH = pathOf(true);
 function chevronEl(isOpen, t, isLive) {
   const path = isOpen ? OPEN_PATH : FOLDED_PATH;
   const shape = (color) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`);
-  return div4().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div4().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
+  return div6().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div6().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
 }
 function foldChevronEl(t, fold) {
-  return h_flex2().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div4().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
+  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div6().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
 }
 
 // src/paint-space.ts
-import { div as div5 } from "gpui-kit";
-import { v_flex } from "gpui-base";
+import { div as div7 } from "gpui-kit";
+import { v_flex as v_flex3 } from "gpui-base";
 var isClosedFold = (b) => b.kind === "fold" && ("closedFold" in b.change);
 function padOf(b) {
   if (isClosedFold(b))
@@ -5969,8 +6016,8 @@ function spacesOf(blocks, isShut) {
   return out;
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
-var springBox = (id, height) => springHeight(v_flex().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
-var sizeEl = (key, p, el) => div5().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
+var springBox = (id, height) => springHeight(v_flex3().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
+var sizeEl = (key, p, el) => div7().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
 function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
@@ -6008,7 +6055,7 @@ function contentEl(b, m, p, el, strokes) {
 }
 function spaceEl(s, p, columns) {
   const id = `space ${p.motion.get(s.block.id)?.springId ?? s.block.id}`;
-  const box = springHeight(div5().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
+  const box = springHeight(div7().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
 var TREE_LINE_SHARE = 0.2;
@@ -6017,12 +6064,12 @@ var PATH_X = EDGE + 4;
 function pathLineEl(line, top, height, t) {
   if (line === null)
     return [];
-  const el = div5().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div7().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
   const sized = height === null ? el.bottom(0) : el.h(height);
   return [line === "to-next" ? sized.border_dashed() : sized];
 }
 var columnEl = (depth, top, height, t) => {
-  const el = div5().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div7().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
   return height === null ? el.bottom(0) : el.h(height);
 };
 var pathColumn = (line) => line === null ? [] : [{ depth: 0, isDashed: line === "to-next" }];
@@ -6060,7 +6107,7 @@ function contentStrokeEls(b, t, fade) {
   const armAt = Math.round(top + LINE_HEIGHT / 2);
   const pathEls = (side) => side.is === "work" ? pathLineEl(side.line, 0, null, t) : [...pathLineEl(side.above, 0, top, t), ...pathLineEl(side.below, top + LINE_HEIGHT, null, t)];
   const treeEls = tree.flatMap(({ depth, is }) => {
-    const arm = fade(div5().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)));
+    const arm = fade(div7().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)));
     if (is === "down")
       return [columnEl(depth, top + LINE_HEIGHT, null, t)];
     if (is === "past")
@@ -6090,7 +6137,7 @@ function spacedEls(blocks, p, el) {
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
     const fade = (e) => m?.box ? e.opacity(isShown ? 1 : 0).transition("opacity", glide) : e;
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
-    return v_flex().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
+    return v_flex3().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
       ...contentStrokeEls(b, p.t, fade),
       ...passes.map((c) => wholeColumnEl(c, p.t))
     ]));
@@ -6098,8 +6145,8 @@ function spacedEls(blocks, p, el) {
 }
 
 // src/paint-chrome.ts
-import { Background, PathBuilder as PathBuilder3, div as div6 } from "gpui-kit";
-import { h_flex as h_flex3, v_flex as v_flex2 } from "gpui-base";
+import { Background, PathBuilder as PathBuilder3, div as div8 } from "gpui-kit";
+import { h_flex as h_flex4, v_flex as v_flex4 } from "gpui-base";
 var helpButton = {
   id: "help",
   label: HELP_COPY.name,
@@ -6108,24 +6155,24 @@ var helpButton = {
   hotkey: null,
   does: { is: "view", change: { toggleHelp: true } }
 };
-var helpIconEl = (t, isSelected) => h_flex3().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(isSelected ? t.foreground : t.muted).when(!isSelected, (e) => e.hover((s) => s.border_color(t.foreground))).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
+var helpIconEl = (t, isSelected) => h_flex4().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(isSelected ? t.foreground : t.muted).when(!isSelected, (e) => e.hover((s) => s.border_color(t.foreground))).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
 function tabsEl(tabs, isHelpShown, p) {
   const { t } = p;
-  return h_flex3().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(SMALL_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => {
+  return h_flex4().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(SMALL_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => {
     const isTabSelected = tab.isSelected && !isHelpShown;
-    return h_flex3().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div6().ml(SMALL_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? "")));
-  })).child(div6().flex_1()).child(h_flex3().id("help").h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(helpButton.label).when(isHelpShown, (e) => e.bg(t.raised).text_color(t.foreground)).when(!isHelpShown, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.press(helpButton, cx)).child(helpIconEl(t, isHelpShown)));
+    return h_flex4().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div8().ml(SMALL_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? "")));
+  })).child(div8().flex_1()).child(h_flex4().id("help").h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(helpButton.label).when(isHelpShown, (e) => e.bg(t.raised).text_color(t.foreground)).when(!isHelpShown, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.press(helpButton, cx)).child(helpIconEl(t, isHelpShown)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
   const tone = colorOf(t, BANNER_TONES2[b.tone]);
-  const text = v_flex2().flex_1().min_w(0).whitespace_normal().child(div6().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div6().child(b.body ?? "")));
-  const row = h_flex3().gap(INSET).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex3().flex_none().gap(CONTROL_GAP).children(buttons)));
-  return v_flex2().mx(EDGE).px(INSET).py(BANNER_PAD_Y_PT).rounded(BOX_RADIUS).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);
+  const text = v_flex4().flex_1().min_w(0).whitespace_normal().child(div8().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div8().child(b.body ?? "")));
+  const row = h_flex4().gap(INSET).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex4().flex_none().gap(CONTROL_GAP).children(buttons)));
+  return v_flex4().mx(EDGE).px(INSET).py(BANNER_PAD_Y_PT).rounded(BOX_RADIUS).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);
 }
-var sessionNoteEl = (text, t) => div6().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text);
+var sessionNoteEl = (text, t) => div8().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text);
 function messageEl(m, t) {
-  return v_flex2().flex_1().justify_center().items_center().p(END_SPACE).gap(INSIDE_GAP).child(div6().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div6().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+  return v_flex4().flex_1().justify_center().items_center().p(END_SPACE).gap(INSIDE_GAP).child(div8().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div8().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
 }
 var FILL = PathBuilder3.fill().add_polygon([
   [0, 0],
@@ -6140,39 +6187,39 @@ function scrollFadeEl(t, edge) {
 }
 
 // src/paint-title-text.ts
-import { div as div7 } from "gpui-kit";
+import { div as div9 } from "gpui-kit";
 function titleTextEl(r, p, color) {
   const isOpen = isOpenRow(r);
   const m = p.motion.get(r.id)?.title ?? null;
-  const text = div7().flex_1().min_w(0).text_color(color).when(isOpen, (e) => e.font_semibold());
+  const text = div9().flex_1().min_w(0).text_color(color).when(isOpen, (e) => e.font_semibold());
   if (m === null)
     return text.when(!isOpen, (e) => e.truncate()).child(r.title);
-  const fade = (id, isShown) => div7().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
-  return text.relative().child(fade(`wrapped ${r.id}`, m.isWrapShown).child(r.title)).child(div7().absolute().top(0).left(0).w_full().child(fade(`one line ${r.id}`, !m.isWrapShown).truncate().child(r.title)));
+  const fade = (id, isShown) => div9().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
+  return text.relative().child(fade(`wrapped ${r.id}`, m.isWrapShown).child(r.title)).child(div9().absolute().top(0).left(0).w_full().child(fade(`one line ${r.id}`, !m.isWrapShown).truncate().child(r.title)));
 }
 
 // src/paint-notes.ts
-import { div as div8 } from "gpui-kit";
-import { h_flex as h_flex4 } from "gpui-base";
-var ruleLine = (t) => div8().flex_1().border_t(1).border_color(t.border);
+import { div as div10 } from "gpui-kit";
+import { h_flex as h_flex5 } from "gpui-base";
+var ruleLine = (t) => div10().flex_1().border_t(1).border_color(t.border);
 function ruleEl(b, t) {
   if (b.text === null)
-    return h_flex4().pl(EDGE).pr(EDGE).child(ruleLine(t));
-  return h_flex4().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div8().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
+    return h_flex5().pl(EDGE).pr(EDGE).child(ruleLine(t));
+  return h_flex5().pl(TEXT_X).pr(EDGE).gap(CONTROL_GAP).items_center().child(div10().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t, buttons = []) {
-  const text = div8().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  return h_flex4().flex_wrap().gap_x(CONTROL_GAP).items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex4().flex_none().items_center().gap(CONTROL_GAP).children(buttons)));
+  const text = div10().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+  return h_flex5().flex_wrap().gap_x(CONTROL_GAP).items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex5().flex_none().items_center().gap(CONTROL_GAP).children(buttons)));
 }
 
 // src/paint-tree.ts
-import { div as div9 } from "gpui-kit";
-import { h_flex as h_flex5 } from "gpui-base";
+import { div as div11 } from "gpui-kit";
+import { h_flex as h_flex6 } from "gpui-base";
 var trunkEl = (top, height, t, isSelected) => {
-  const el = div9().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
+  const el = div11().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   return height === null ? el.bottom(0) : el.h(height);
 };
-var armEl = (from, to, top, color) => div9().absolute().left(from).top(top).w(to - from).h(1).border_t_1().border_color(color);
+var armEl = (from, to, top, color) => div11().absolute().left(from).top(top).w(to - from).h(1).border_t_1().border_color(color);
 var ARM_END = NEST - SMALL_GAP;
 var answerKey = (buttonId) => `answer ${buttonId}`;
 function isSideBySide(r, p) {
@@ -6187,7 +6234,7 @@ var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
   const arm = armEl(PATH_X - EDGE, ARM_END, "50%", lineColor(t, isSelected ? t.selected : t.background));
   const isAlone = answers.length === 1;
   const buttons = answers.map((b) => buttonEl(b, p, isInert, isAlone).on_size_change((size, cx) => p.measure(answerKey(b.id), size, cx, true)));
-  return h_flex5().relative().min_w(0).pl(MARK_W).child(isAlone ? buttons[0] : h_flex5().flex_wrap().gap(CONTROL_GAP).children(buttons)).children(isLast ? [arm, trunkEl(0, "50%", t, isSelected)] : [arm]);
+  return h_flex6().relative().min_w(0).pl(MARK_W).child(isAlone ? buttons[0] : h_flex6().flex_wrap().gap(CONTROL_GAP).children(buttons)).children(isLast ? [arm, trunkEl(0, "50%", t, isSelected)] : [arm]);
 };
 
 // src/paint-blocks.ts
@@ -6197,22 +6244,14 @@ var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = fal
   const color = lineColor(t, isSelected ? t.selected : t.background);
   if (answers.length > 0 && p) {
     const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
-    return h_flex6().relative().min_w(0).pt(above).child(answersEl(answers, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
+    return h_flex7().relative().min_w(0).pt(above).child(answersEl(answers, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
   }
   const armAt = above + LINE_HEIGHT / 2;
   const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = l.lead ? h_flex6().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above);
+  const line = l.lead ? h_flex7().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above);
   return line.relative().children(strokes);
 };
-function fieldEl(f, p, indent, isInert = false) {
-  const { t } = p;
-  const state = p.input(f.rowId);
-  const input = state ? [
-    div10().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
-  ] : [];
-  return v_flex3().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
-}
 function rowEl(r, p) {
   const { t } = p;
   const m = p.motion.get(r.id);
@@ -6220,14 +6259,14 @@ function rowEl(r, p) {
   const isOpen = isOpenRow(r);
   const isPressable = r.isSelectable && !isLeaving;
   const hasTree = (m?.closing ?? r).body.some((l) => l.tree !== undefined);
-  const line = h_flex6().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t, r.isSelected))).child(markEl(r.mark, t, markTintOf(r, p))).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div10().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex7().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t, r.isSelected))).child(markEl(r.mark, t, markTintOf(r, p))).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div12().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
   const titleEnd = lines.length > 0 ? "titleStatus" : "title";
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l, n) => {
+  return v_flex5().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex5().children(lines.map((l, n) => {
     const above = partPt(n === 0 ? "title" : "titleStatus", "titleStatus", "herdr");
     const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, above, t, r.isSelected);
     return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
@@ -6285,12 +6324,12 @@ function panelEl(r, m, p, isLeaving, titleEnd) {
   const delay = m?.isPanelWaiting ? enterDelayMs(p.heights.get(key) ?? 0) : 0;
   const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], delay, easing: "ease-out" };
   return [
-    v_flex3().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
+    v_flex5().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];
 }
-var statusPartEl = (text) => div10().min_w(0).max_w_full().whitespace_normal().child(text);
+var statusPartEl = (text) => div12().min_w(0).max_w_full().whitespace_normal().child(text);
 function keyEl(s, does, t) {
-  return h_flex6().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div10().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div10().font_semibold().child(s.name))).child(div10().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex7().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div12().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div12().font_semibold().child(s.name))).child(div12().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;
@@ -6306,37 +6345,38 @@ function statusEl(s, p, isInert) {
       ...s.fold.isFolded ? { count: s.fold.count } : {}
     })
   ] : [];
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex6().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex6().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  return v_flex5().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex7().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex7().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 function prEl(b, p, isInert) {
   const { t } = p;
-  const title = h_flex6().items_start().child(div10().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div10().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
+  const title = h_flex7().items_start().child(div12().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div12().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
   const hasReasons = b.unlisted.length > 0;
-  const word = h_flex6().items_start().min_w(0).max_w_full().child(div10().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div10().flex_none().text_color(t.muted).child(SEP)));
+  const word = h_flex7().items_start().min_w(0).max_w_full().child(div12().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div12().flex_none().text_color(t.muted).child(SEP)));
   const reasons = b.unlisted.map((u, i) => statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted));
-  const status = h_flex6().flex_wrap().items_start().pt(INSIDE_GAP).when(p.isNarrow, (e) => e.child(div10().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
-  return v_flex3().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(resultLineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  const status = h_flex7().flex_wrap().items_start().pt(INSIDE_GAP).when(p.isNarrow, (e) => e.child(div12().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
+  return v_flex5().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(resultLineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex3().pl(EDGE).pr(EDGE).child(h_flex6().gap(CONTROL_GAP).items_center().child(div10().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex6().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(resultLineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex5().pl(EDGE).pr(EDGE).child(h_flex7().gap(CONTROL_GAP).items_center().child(div12().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex7().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(resultLineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function headingEl(b, p, isInert) {
   const { t } = p;
-  const buttons = h_flex6().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
+  const buttons = h_flex7().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
-    return h_flex6().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex6().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
-  return h_flex6().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div10().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div10().text_color(t.muted).child(`${SEP}${b.count}`))).child(div10().flex_1()).when(b.aside !== undefined, (e) => e.child(div10().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
+    return h_flex7().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex7().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
+  return h_flex7().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div12().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div12().text_color(t.muted).child(`${SEP}${b.count}`))).child(div12().flex_1()).when(b.aside !== undefined, (e) => e.child(div12().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
-function emptyEl(b, p, isInert) {
-  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(emptyContentEl(b, p, isInert));
-}
-function emptyContentEl(b, p, isInert) {
-  const { t } = p;
-  const { empty, under } = b;
-  const centred = (text, color = t.foreground) => div10().text_center().whitespace_normal().text_color(color).child(text);
-  return v_flex3().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex6().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div10().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div10()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)));
-}
+var countsEl = (counts, t) => h_flex7().flex_wrap().min_w(0).children([
+  ...wordEls(counts.label, t.muted),
+  ...counts.items.flatMap((c, n) => [
+    ...n > 0 ? wordEls("·", t.muted) : [],
+    h_flex7().flex_none().children([
+      div12().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+      statusPartEl(`${NO_BREAK_SPACE}${c.text}${NO_BREAK_SPACE}`).text_color(t.muted)
+    ])
+  ])
+]);
 function foldEl(b, p, isInert) {
   const { t } = p;
   const press = {
@@ -6349,7 +6389,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex6().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div10().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
+  return h_flex7().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div12().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -6371,14 +6411,14 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div10().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
+    return div12().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
   if (b.kind === "note")
     return noteEl(b, t, (b.buttons ?? []).map((x) => buttonEl(x, p, isLeaving)));
   if (b.kind === "caption")
-    return div10().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
+    return div12().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? resultLineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
-  return div10();
+  return div12();
 }
 
 // src/out.ts
@@ -7178,7 +7218,7 @@ class Inbox extends View {
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
       ...paneFit(this, zoomOf(settings()))
     };
-    const root = v_flex4().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
+    const root = v_flex6().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
@@ -7203,7 +7243,7 @@ class Inbox extends View {
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div11().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex6().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div13().flex_1().min_h(0).relative().child(v_flex6().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

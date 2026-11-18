@@ -1,16 +1,14 @@
 import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
-import { Input, h_flex, v_flex } from 'gpui-base'
-import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { h_flex, v_flex } from 'gpui-base'
+import { ROW_PAD_PT } from '../../hooks/layout'
 import { partPt } from '../../hooks/row-parts'
 import type { RowPart } from '../../hooks/row-parts'
 import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import { STALL_GAP } from '../../hooks/status-page'
 import { isOpenRow } from './blocks'
-import type { Block, BodyLine, Button, Field, LineBlock, PrBlock, RowBlock, StatusLine } from './blocks'
+import type { Block, BodyLine, Button, LineBlock, PrBlock, RowBlock, StatusLine } from './blocks'
 import {
-  BOX_RADIUS,
-  BUTTON_H,
   BUTTON_LABEL_X,
   CONTROL_GAP,
   EDGE,
@@ -24,10 +22,11 @@ import {
   MARK_W,
   NEST,
   SEP,
-  SMALL_GAP,
   TEXT_X,
   colorOf,
 } from './paint-theme'
+import { fieldEl } from './paint-field'
+import { emptyEl } from './paint-empty'
 import { buttonEl, buttonsEl, lineEl, markEl, resultLineEl } from './paint-parts'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
@@ -95,28 +94,6 @@ const bodyLineEl = (
     : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above)
 
   return line.relative().children(strokes)
-}
-
-function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
-  const { t } = p
-  const state = p.input(f.rowId)
-  const input = state
-    ? [
-        div()
-          .min_h(BUTTON_H)
-          .px(INSET)
-          .py(SMALL_GAP)
-          .rounded(BOX_RADIUS)
-          .border_1()
-          .border_color(t.input)
-          .child(Input.new(state).w_full()),
-      ]
-    : []
-
-  return v_flex()
-    .pl(indent)
-    .children(input)
-    .child(buttonsEl(f.buttons, p, 0, isInert))
 }
 
 function rowEl(r: RowBlock, p: Paint): Element {
@@ -442,51 +419,23 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
     .child(buttons)
 }
 
-/** An empty tab's block, centred across and, at least as tall as the list's room, centred down it too. */
-function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
-  return v_flex()
-    .items_center()
-    .justify_center()
-    .when(p.listRoom !== null, e => e.min_h(p.listRoom ?? 0))
-    .p(END_SPACE)
-    .child(emptyContentEl(b, p, isInert))
-}
-
-function emptyContentEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
-  const { t } = p
-  const { empty, under } = b
-  const centred = (text: string, color = t.foreground) =>
-    div().text_center().whitespace_normal().text_color(color).child(text)
-
-  return v_flex()
-    .items_center()
-    .max_w(EMPTY_STATE_MAX_WIDTH_PT)
-    .gap(INSIDE_GAP)
-    .child(centred(empty.title).font_semibold())
-    .when(empty.hint !== null, e => e.child(centred(empty.hint ?? '', t.muted)))
-    .when(under?.text != null, e => e.child(centred(under?.text ?? '').pt(CONTROL_GAP)))
-    .when((under?.buttons.length ?? 0) > 0, e =>
-      e.child(
+/** Other work's counts: the label, then each mark in its tone with its count, as items of a wrapping row so a count stays with its mark. */
+const countsEl = (counts: NonNullable<Extract<Block, { kind: 'fold' }>['counts']>, t: Theme): Element =>
+  h_flex()
+    .flex_wrap()
+    .min_w(0)
+    .children([
+      ...wordEls(counts.label, t.muted),
+      ...counts.items.flatMap((c, n) => [
+        ...(n > 0 ? wordEls('·', t.muted) : []),
         h_flex()
-          .flex_wrap()
-          .justify_center()
-          .gap(CONTROL_GAP)
-          .pt(CONTROL_GAP)
-          .children((under?.buttons ?? []).map(x => buttonEl(x, p, isInert))),
-      ),
-    )
-    .when(under?.field != null, e =>
-      e.child(
-        div()
-          .w_full()
-          .pt(CONTROL_GAP)
-          .child(under?.field ? fieldEl(under.field, p, 0, isInert) : div()),
-      ),
-    )
-    .when(under?.feedback != null, e =>
-      e.child(centred(under?.feedback?.text ?? '', colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)),
-    )
-}
+          .flex_none()
+          .children([
+            div().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+            statusPartEl(`${NO_BREAK_SPACE}${c.text}${NO_BREAK_SPACE}`).text_color(t.muted),
+          ]),
+      ]),
+    ])
 
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
@@ -511,7 +460,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .accessibility_label(b.text)
     .when(!isInert, e => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
-    .child(div().min_w(0).whitespace_normal().child(b.text))
+    .child(fold?.counts ? countsEl(fold.counts, t) : div().min_w(0).whitespace_normal().child(b.text))
     .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))
 }
 
