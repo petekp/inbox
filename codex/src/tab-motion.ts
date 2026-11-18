@@ -6,7 +6,18 @@ import type { SpringState } from '../../hooks/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
 import { later, cancelTimer } from './tab-host'
 import { atEndLines, closeTitle, openTitle, releaseLine, LINE } from './tab-title-motion'
-import { fade, glide, glides, isFadingIn, isRunning, isUnderWay, opacityOf, springOf } from './tab-glide'
+import {
+  fade,
+  glide,
+  glides,
+  isFadingIn,
+  isRunning,
+  isScalingEdges,
+  isUnderWay,
+  opacityOf,
+  springOf,
+  waitLeftMs,
+} from './tab-glide'
 
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -44,7 +55,8 @@ export function measure(): Drawing {
  * content fades, nothing a read brings in grows before that space starts to close: a block that enters, a row a read
  * selects and the row it closes, and a group's end growing to hold its empty note. In a draw that is not a read, the
  * selection's rows move at once. A leave turned back waits only once it no longer holds its space, as a block that
- * enters does. A glide under way and a block's own change of height never wait.
+ * enters does. A block that a later draw restarts while it still waits keeps what is left of its wait. A glide under
+ * way and a block's own change of height never wait.
  */
 let heightWaitMs = 0
 
@@ -174,8 +186,10 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   if (part && !part.classList.contains('closing')) part.style.marginTop = ''
   const from = springOf(el, isFresh ? el.getBoundingClientRect().height : was.height)
   const isOwnMove = (state === 'opening' && !tabState.isReadDraw) || isUnderWay(el)
-  const waitsForLeave = state === 'opening' || el.querySelector(NEW_NOTE) !== null
-  const delay = isOwnMove || !waitsForLeave ? 0 : heightWaitMs
+  const waitLeft = waitLeftMs(el)
+  const scalesEdges = isScalingEdges(el)
+  const waitsForLeave = state === 'opening' || waitLeft > 0 || el.querySelector(NEW_NOTE) !== null
+  const delay = isOwnMove ? 0 : Math.max(waitsForLeave ? heightWaitMs : 0, waitLeft)
   if (state && changed.has(key) && startState(el, state, from, isFresh, was?.openTop ?? null)) return
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
@@ -190,7 +204,7 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const target = naturalHeight(el)
   for (const a of el.getAnimations()) if (a.playState === 'finished') a.cancel()
   if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
-    glide(el, 'height', from, target, false, false, delay)
+    glide(el, 'height', from, target, false, scalesEdges, delay)
   if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
   if (part && state === 'opening' && changed.has(key) && tabState.isReadDraw)
     fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))

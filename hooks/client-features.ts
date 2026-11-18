@@ -82,4 +82,10 @@ export type ClientId = 'claude-code' | 'codex' | 'omp'
  */
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
+/**
+ * One host's table, declared in `hooks/clients-<host>.ts` and named in `CLIENTS` in `hooks/clients.ts`. Write each entry
+ * as an object literal with a string-literal `kind` and `reason`, because `scripts/structure/clients.mjs` reads the files
+ * with the TypeScript AST. A feature that is not `full` also needs a row in "Differences on purpose" in `docs/looks.md`,
+ * whose first column names the feature id in backticks. The check fails when the row is missing.
+ */
 export type Client = { support: Record<FeatureId, Support> }
