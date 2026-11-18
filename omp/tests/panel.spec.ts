@@ -119,7 +119,7 @@ test('the recommended option wraps "(recommended)" under its label where its but
   expect(has(tight)).toBe(true)
   const wrapped = text(screen, onRow(row), tight - 1).split('\n')
   const at = wrapped.findIndex(l => l.includes(`↵ ${row.item!.rec}`))
-  expect(wrapped[at + 1]).toMatch(/^\s*│\s+\(recommended\)/)
+  expect(wrapped[at + 1]).toMatch(/^ │  │\s+\(recommended\)/)
   const moved = drawn(screen, keys(screen, onRow(row), 'right'), tight - 1).join('\n')
   expect(moved).toContain(`${ESC}4m${row.item!.rec}${ESC}24m`)
   expect(moved).not.toContain(`${ESC}4m(recommended)`)
@@ -240,6 +240,38 @@ test('a collapsed row’s Holds up line and its group’s Closed fold start at t
     const folds = lines.filter(l => / closed ›/.test(l))
     expect(folds.length, tab).toBeGreaterThan(0)
     for (const fold of folds) expect(fold.search(/\d+ closed/), `${tab} fold`).toBe(column)
+  }
+})
+
+test('the rows of an Asks, Finds or PR group hang from the mark of its heading, ├─ for each and └─ for the last, with the trunk beside the lines under every row but the last', () => {
+  const screen = screenOf()
+  const tabs = [
+    { ui: { ...INITIAL_UI, tab: 'needsYou' as const }, groups: 2 },
+    { ui: { ...INITIAL_UI, tab: 'findings' as const }, groups: 2 },
+    { ui: { ...INITIAL_UI, tab: 'prs' as const }, groups: 3 },
+  ]
+  for (const { ui, groups } of tabs) {
+    const lines = text(screen, ui, 120).split('\n')
+    const isArm = (l: string | undefined) => l?.[1] === '├' || l?.[1] === '└'
+    const headings = lines.flatMap((l, n) => (/^ [^ ├└│]/.test(l) && isArm(lines[n + 1]) ? [n] : []))
+    expect(headings.length, ui.tab).toBe(groups)
+    for (const [k, heading] of headings.entries()) {
+      const last = lines.findIndex((l, n) => n > heading && l[1] === '└')
+      const end = headings[k + 1] ?? lines.length
+      expect(
+        lines.slice(heading + 1, last).every(l => l[1] === '├' || l[1] === '│'),
+        lines[heading],
+      ).toBe(true)
+      expect(
+        lines.slice(last + 1, end).some(l => isArm(l) || l[1] === '│'),
+        lines[heading],
+      ).toBe(false)
+    }
+    expect(
+      lines.some(l => /^❯[├└]─ /.test(l)),
+      ui.tab,
+    ).toBe(true)
+    expect(lines.filter(l => l.startsWith(' │ ')).length, ui.tab).toBeGreaterThan(1)
   }
 })
 

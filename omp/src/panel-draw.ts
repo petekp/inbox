@@ -11,7 +11,7 @@ import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
 import { askTreeLines } from './panel-ask-tree'
 import { focusOf } from './panel-keys'
-import { AGENT, INDENT, UNLED_INDENT, isShut } from './panel-lines'
+import { AGENT, LEAD_CELLS, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
 import { cutTitle, fit, indented, spread, visibleLength, wrapText } from './panel-text'
 import type { PanelScreen, PanelUi, Style, Tone } from './panel'
@@ -173,8 +173,8 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : [fit(buttons, width), fit(`${' '.repeat(visibleLength(head))}${status}`, width)]
   }
   const isOpen = isSelected && line.isCollapsed !== true
-  const pad = line.depth * 2
-  const out: string[] = []
+  const isOnTree = line.tree === 'mid' || line.tree === 'last'
+  const pad = isOnTree ? 0 : line.depth * 2
   const status = line.status
     ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}`
     : ''
@@ -198,7 +198,12 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : ''
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and draws a fold's chevron as › and v.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
-  const head = ` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s, tint)}`
+  // A row on its group's tree puts its arm under the heading's mark, in the column the cursor takes on other lines, so
+  // its cursor moves one cell left. The group's other lines move one cell right, to keep their place under its titles.
+  const lead = leadText(line.lead, s, tint)
+  const head = isOnTree
+    ? `${cursor}${s.dim(line.tree === 'mid' ? '├─' : '└─')} ${lead}`
+    : `${line.tree === 'off' ? ' ' : ''} ${' '.repeat(pad)}${cursor} ${lead}`
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width
   const shownTitle = line.mark
@@ -212,41 +217,41 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
         ? s.bold(shownTitle)
         : shownTitle
   const title = tint ? s.tint(tint.tone, tint.share, ownTitle) : ownTitle
-  out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
-  if (line.settled || isShut(line, ui)) return out
-  const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
+  const first = spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width)
+  // The lines under a row on the tree draw in the room right of its trunk, or of the space left of a last row's arm.
+  const gutter = line.tree === 'mid' ? ` ${s.dim('│')} ` : line.tree === 'last' ? '   ' : ''
+  const room = width - visibleLength(gutter)
+  const lines = (rest: string[]) => [first, ...rest.map(l => gutter + l)]
+  if (line.settled || isShut(line, ui)) return [first]
+  const leadAt = (isOnTree ? 4 : line.tree === 'off' ? 4 + pad : 3 + pad) - visibleLength(gutter)
+  const indent = leadAt + (line.lead === null ? 0 : LEAD_CELLS)
+  const out: string[] = []
   const holdsUp = line.row?.holdsUpLine
   const focused = ui.typing === line.id ? -1 : focusOf(line, ui)
-  const answerCell = (b: ButtonFace, n: number, room: number) =>
-    buttonCellLines(b, n === focused, s, labelMark(b, Infinity, s), room)
-  const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell, buttonLabelCells) : []
+  const answerCell = (b: ButtonFace, n: number, cellRoom: number) =>
+    buttonCellLines(b, n === focused, s, labelMark(b, Infinity, s), cellRoom)
+  const tree = isOpen ? askTreeLines(line, leadAt, room, s, answerCell, buttonLabelCells) : []
   if (tree.length > 0) out.push(...tree)
-  else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))
-  if (line.body && isOpen) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
-  if (line.detail && (isOpen || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
-  if (!isOpen) return out
+  else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, room))
+  if (line.body && isOpen) out.push(...indented(line.body, indent, room, BODY_LINES, t => t))
+  if (line.detail && (isOpen || line.isDetailShown)) out.push(...indented(line.detail, indent, room, 4, s.dim))
+  if (!isOpen) return lines(out)
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
   // As in the terminal, an open reply field replaces the row's buttons: Enter sends, so no button reads as focused.
   if (line.buttons.some(b => !b.option) && ui.typing !== line.id)
-    out.push(...buttonLines(line, ui, indent - 1, width, s))
+    out.push(...buttonLines(line, ui, indent - 1, room, s))
   if (ui.typing === line.id) {
     const hint = line.row ? replyHint(line.row, AGENT) : 'Your reply'
     const text = ui.drafts[line.id]?.text ?? ''
     out.push(' '.repeat(indent) + s.dim(`${hint}:`))
-    const field = wrapText(`${text}\u0000`, Math.max(10, width - indent - 1))
+    const field = wrapText(`${text}\u0000`, Math.max(10, room - indent - 1))
     out.push(...field.map(l => ' '.repeat(indent) + l.replace('\u0000', s.inverse(' '))))
   }
   if (statusUnder) {
     const markCells = mark ? 2 : 0
-    const [first, ...rest] = indented(
-      statusUnder.text,
-      indent + markCells,
-      width,
-      4,
-      feedbackPaint(statusUnder.tone, s),
-    )
-    if (first !== undefined) out.push(' '.repeat(indent) + mark + first.slice(indent + markCells), ...rest)
+    const [top, ...under] = indented(statusUnder.text, indent + markCells, room, 4, feedbackPaint(statusUnder.tone, s))
+    if (top !== undefined) out.push(' '.repeat(indent) + mark + top.slice(indent + markCells), ...under)
   }
 
-  return out
+  return lines(out)
 }

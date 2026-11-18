@@ -241,7 +241,7 @@ test('a press on the PRs tab says when it was made, and a failing check keeps As
   expect(drawn).toMatch(new RegExp(`${check.name}\\s+✓ Asked to fix\\s+14m ago`))
   const open = text(pressed, { ...INITIAL_UI, tab: 'prs', selectedId: checkId }).split('\n')
   const buttons = open.findIndex(l => l.includes('Fix again'))
-  expect(open[buttons + 1]?.trim()).toBe('✓ Asked to fix')
+  expect(open[buttons + 1]?.replace(/^ │ /, '').trim()).toBe('✓ Asked to fix')
 })
 
 test('a thread row reads its comment’s time and a check row its finish time before any press', () => {

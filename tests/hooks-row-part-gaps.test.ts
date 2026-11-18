@@ -143,7 +143,7 @@ function answersOf(row: RowView, isWide: boolean): AnswersForm | null {
 
 function expectedSpaces(look: Look, c: RowCase, row: RowView): string[] {
   const parts = rowParts(row, {
-    answers: c.typing ? null : answersOf(row, c.isWide),
+    answers: answersOf(row, c.isWide),
     hasTitleStatus: false,
     hasStatus: c.feedback === 'above',
     hasButtons: true,
@@ -251,7 +251,7 @@ const sessions = (['question', 'task', 'finding'] as const).flatMap(kind => {
 
 for (const look of ['desktop', 'terminal'] as const)
   for (const { kind, wide, first } of sessions)
-    test(`each part of an open ${kind} sits partGap under the part above, wide and narrow, with the answers hidden while the field is open, in the ${look} look, cases ${first} to ${first + wide.length - 1}`, async ($, on) => {
+    test(`each part of an open ${kind} sits partGap under the part above, wide and narrow, with the answers kept while the field is open, in the ${look} look, cases ${first} to ${first + wide.length - 1}`, async ($, on) => {
       const clock = mock.clock(on, { now: NOW })
       let now = NOW
       const settle = async () => {

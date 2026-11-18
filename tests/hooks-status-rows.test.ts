@@ -111,7 +111,7 @@ test('on the Status, while the goal shows milestones, work linked to none of the
   expect(await inline.find({ key: 'status-s2' })).toBeDefined()
 })
 
-test('on the Status, a parent folds its rows by its name or its f key and opens them again, in the terminal and on desktop, where its chevron follows the name’s last word with a no-break space', async ($, on) => {
+test('on the Status, a parent folds its rows by its name or its f key and opens them again, in the terminal and on desktop, where its chevron follows the name’s last word with a no-break space, and the selected parent’s chevron shows no key, as no other fold does', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
 
@@ -141,7 +141,7 @@ test('on the Status, a parent folds its rows by its name or its f key and opens 
     await terminal.press({ key: 'next' })
     await clock.settle()
   }
-  expect((await terminal.find({ key: 'parent-s1' }))?.text).toBe('f: v')
+  expect(await chevron()).toBe('v')
   await terminal.press({ key: 'toggle-collapse-s1-key' })
   await clock.settle()
   expect(await terminal.find({ key: 'status-c1' })).toBeUndefined()

@@ -47,6 +47,7 @@ import {
   blankLine,
   doneAt,
   groupEntries,
+  onTree,
   isGroupEmpty,
   prButtons,
   pressFeedback,
@@ -296,7 +297,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
     ]
     for (const { title, entries } of groups) {
       if (entries.length > 0) out.push({ kind: 'heading', text: title, count: entries.length })
-      out.push(...entries)
+      out.push(...onTree(entries))
     }
   }
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })

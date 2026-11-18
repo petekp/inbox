@@ -8484,11 +8484,11 @@ var TRUNK = "\u2502  ";
 var TEE = "\u251C\u2500 ";
 var LAST = "\u2514\u2500 ";
 var NONE = "   ";
-function askTreeLines(line, pad, width, s, cell, labelCells) {
+function askTreeLines(line, at, width, s, cell, labelCells) {
   const row = line.row;
   if (!row || row.state.is !== "open")
     return [];
-  const margin = " ".repeat(3 + pad);
+  const margin = " ".repeat(at);
   const room = Math.max(10, width - margin.length - TRUNK.length - 1);
   const branches = line.buttons.flatMap((b, index) => b.option ? [{ b, index, note: b.option.note }] : []);
   const holdsUp = row.holdsUpLine;
@@ -9157,8 +9157,7 @@ async function askHerdrAgain(files, appHome, home) {
 
 // src/panel-lines.ts
 var AGENT = "omp";
-var INDENT = 6;
-var UNLED_INDENT = INDENT - 3;
+var LEAD_CELLS = 3;
 var STOP_ID = "stop";
 var HERDR_ASK_ID = "herdr-ask";
 var blankLine = (id) => ({
@@ -9300,15 +9299,19 @@ function closedLines(d) {
     isWaiting: false
   };
 }
+function onTree(entries) {
+  const last = entries.findLastIndex((e) => e.kind === "row");
+  return entries.map((e, n) => e.kind === "row" ? { ...e, line: { ...e.line, tree: n === last ? "last" : "mid" } } : e);
+}
 function groupEntries(g, { unfolded, closedAll, optionsShown }) {
   const settled = settledIn(g);
   const total = closedTotal(g.closed, settled);
   const out = [
     { kind: "heading", text: g.title, count: waitingCount(g.rows), ...g.mark ? { mark: g.mark } : {} }
   ];
-  out.push(...g.rows.map((row) => ({ kind: "row", line: lineOfRow(row, optionsShown.includes(row.id)) })));
+  out.push(...onTree(g.rows.map((row) => ({ kind: "row", line: lineOfRow(row, optionsShown.includes(row.id)) }))));
   if (g.rows.length === 0)
-    out.push({ kind: "note", text: groupEmptyText(g.title), indent: 3 });
+    out.push({ kind: "note", text: groupEmptyText(g.title), indent: 4 });
   if (total === 0)
     return out;
   const isUnfolded = unfolded.includes(g.kind);
@@ -9316,6 +9319,7 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
     kind: "row",
     line: {
       ...blankLine(foldId(g.kind)),
+      tree: "off",
       lead: g.isRowLed ? { text: "", tone: null } : null,
       title: `${foldLabel(total)} ${foldGlyph(isUnfolded)}`,
       isDim: true,
@@ -9326,7 +9330,7 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
   if (!isUnfolded)
     return out;
   const shown = closedShown(g.closed, settled, closedAll.includes(g.kind));
-  out.push(...shown.map((d) => ({ kind: "row", line: closedLines(d) })));
+  out.push(...shown.map((d) => ({ kind: "row", line: { ...closedLines(d), tree: "off" } })));
   const earlier = earlierLabel(total, shown.length);
   if (earlier)
     out.push({
@@ -9334,6 +9338,7 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
       line: {
         ...blankLine(`earlier ${g.kind}`),
         depth: 1,
+        tree: "off",
         title: earlier,
         isDim: true,
         earlierOf: g.kind,
@@ -9590,7 +9595,7 @@ function prEntries(screen, ui, now) {
     for (const { title, entries } of groups) {
       if (entries.length > 0)
         out.push({ kind: "heading", text: title, count: entries.length });
-      out.push(...entries);
+      out.push(...onTree(entries));
     }
   }
   if (prs.olderText)
@@ -9997,8 +10002,8 @@ function drawLine(line, isSelected, d) {
     return visibleLength(together) <= width ? [together] : [fit(buttons, width), fit(`${" ".repeat(visibleLength(head))}${status}`, width)];
   }
   const isOpen = isSelected && line.isCollapsed !== true;
-  const pad = line.depth * 2;
-  const out = [];
+  const isOnTree = line.tree === "mid" || line.tree === "last";
+  const pad = isOnTree ? 0 : line.depth * 2;
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isOpen) ? line.feedback : null;
   const clock = line.settled ? closedTitleClock(ui.closedSeen, line.id, line.settled.at, now) : line.isPrHead ? undefined : newRowIn(ui.newRows, line.id, ui.tab);
@@ -10008,48 +10013,54 @@ function drawLine(line, isSelected, d) {
   const mark = markText(line.mark, now, s, line.settled ? tint : undefined);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
-  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s, tint)}`;
+  const lead = leadText(line.lead, s, tint);
+  const head = isOnTree ? `${cursor}${s.dim(line.tree === "mid" ? "\u251C\u2500" : "\u2514\u2500")} ${lead}` : `${line.tree === "off" ? " " : ""} ${" ".repeat(pad)}${cursor} ${lead}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
   const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
   const ownTitle = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isOpen ? s.bold(shownTitle) : shownTitle;
   const title = tint ? s.tint(tint.tone, tint.share, ownTitle) : ownTitle;
-  out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width));
+  const first = spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width);
+  const gutter = line.tree === "mid" ? ` ${s.dim("\u2502")} ` : line.tree === "last" ? "   " : "";
+  const room = width - visibleLength(gutter);
+  const lines = (rest) => [first, ...rest.map((l) => gutter + l)];
   if (line.settled || isShut(line, ui))
-    return out;
-  const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
+    return [first];
+  const leadAt = (isOnTree ? 4 : line.tree === "off" ? 4 + pad : 3 + pad) - visibleLength(gutter);
+  const indent = leadAt + (line.lead === null ? 0 : LEAD_CELLS);
+  const out = [];
   const holdsUp = line.row?.holdsUpLine;
   const focused = ui.typing === line.id ? -1 : focusOf2(line, ui);
-  const answerCell = (b, n, room) => buttonCellLines(b, n === focused, s, labelMark(b, Infinity, s), room);
-  const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell, buttonLabelCells) : [];
+  const answerCell = (b, n, cellRoom) => buttonCellLines(b, n === focused, s, labelMark(b, Infinity, s), cellRoom);
+  const tree = isOpen ? askTreeLines(line, leadAt, room, s, answerCell, buttonLabelCells) : [];
   if (tree.length > 0)
     out.push(...tree);
   else if (holdsUp)
-    out.push(fit(`${" ".repeat(indent)}${s.dim(holdsUp)}`, width));
+    out.push(fit(`${" ".repeat(indent)}${s.dim(holdsUp)}`, room));
   if (line.body && isOpen)
-    out.push(...indented(line.body, indent, width, BODY_LINES, (t) => t));
+    out.push(...indented(line.body, indent, room, BODY_LINES, (t) => t));
   if (line.detail && (isOpen || line.isDetailShown))
-    out.push(...indented(line.detail, indent, width, 4, s.dim));
+    out.push(...indented(line.detail, indent, room, 4, s.dim));
   if (!isOpen)
-    return out;
+    return lines(out);
   if (line.file)
     out.push(" ".repeat(indent) + s.tone("accent", line.file));
   if (line.buttons.some((b) => !b.option) && ui.typing !== line.id)
-    out.push(...buttonLines(line, ui, indent - 1, width, s));
+    out.push(...buttonLines(line, ui, indent - 1, room, s));
   if (ui.typing === line.id) {
     const hint = line.row ? replyHint(line.row, AGENT) : "Your reply";
     const text = ui.drafts[line.id]?.text ?? "";
     out.push(" ".repeat(indent) + s.dim(`${hint}:`));
-    const field = wrapText(`${text}\x00`, Math.max(10, width - indent - 1));
+    const field = wrapText(`${text}\x00`, Math.max(10, room - indent - 1));
     out.push(...field.map((l) => " ".repeat(indent) + l.replace("\x00", s.inverse(" "))));
   }
   if (statusUnder) {
     const markCells = mark ? 2 : 0;
-    const [first, ...rest] = indented(statusUnder.text, indent + markCells, width, 4, feedbackPaint(statusUnder.tone, s));
-    if (first !== undefined)
-      out.push(" ".repeat(indent) + mark + first.slice(indent + markCells), ...rest);
+    const [top, ...under] = indented(statusUnder.text, indent + markCells, room, 4, feedbackPaint(statusUnder.tone, s));
+    if (top !== undefined)
+      out.push(" ".repeat(indent) + mark + top.slice(indent + markCells), ...under);
   }
-  return out;
+  return lines(out);
 }
 
 // src/panel-tabs.ts

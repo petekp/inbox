@@ -215,11 +215,15 @@ export function paneRowKeys(
   const rowActions = (
     row: Row,
   ): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[]; answerRow: AnswerRow | null } => {
-    if (Input && row.typeHint && typing === row.id) return { options: [], keys: [], more: [], answerRow: null }
+    const options = row.optionKeys?.() ?? []
+    const answerRow = row.answerRow?.() ?? null
+    // The open field takes the keys, so the answers it leaves drawn take clicks only.
+    if (Input && row.typeHint && typing === row.id)
+      return { options: options.map(({ hotkey: _hotkey, ...a }) => a), keys: [], more: [], answerRow }
 
     return {
-      options: row.optionKeys?.() ?? [],
-      answerRow: row.answerRow?.() ?? null,
+      options,
+      answerRow,
       keys: pressable(row.keys()),
       more: pressable(row.moreKeys?.() ?? []),
     }

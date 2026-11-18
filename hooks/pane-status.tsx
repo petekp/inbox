@@ -153,7 +153,6 @@ export function paneStatus(
       statusNameLine,
       nameLineSpans,
       statusTextWidth,
-      statusKeyRow,
     },
     handlers,
   )
