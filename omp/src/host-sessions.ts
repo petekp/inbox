@@ -15,7 +15,13 @@ import { endTurn, turnEnded } from '../../hooks/session-turns'
 import { forkedFrom, hasLedger, isUnseen, statusChanged } from '../../hooks/session-status'
 import { sessionView } from '../../hooks/session-view'
 import { delegatesSettled } from '../../hooks/children'
-import { askOverConversation, orderedKeys, reconcileUpdateStatus, runUpdates } from '../../hooks/session-host'
+import {
+  askOverConversation,
+  NO_CONVERSATION_SCROLL,
+  orderedKeys,
+  reconcileUpdateStatus,
+  runUpdates,
+} from '../../hooks/session-host'
 import type { SessionHost, UpdateHost } from '../../hooks/session-host'
 import { fetchPrs } from '../../hooks/host-prs'
 import { wakeAfterSettle } from '../../hooks/host-press'
@@ -205,7 +211,11 @@ export function sessionCalls(context: HostContext) {
         return why === null ? { state: 'accepted', queuedId: null } : { state: 'rejected', reason: why }
       },
       perform: async (_s, effect) =>
-        effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home),
+        effect.kind === 'scroll'
+          ? NO_CONVERSATION_SCROLL
+          : effect.kind === 'copy'
+            ? deps.copy(effect.text)
+            : openTarget(run, effect.target, ctx.cwd, deps.home),
       refreshPrsIfDue: async () => fetchPrsWhenDue(ctx, true),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true)),
       gh: {

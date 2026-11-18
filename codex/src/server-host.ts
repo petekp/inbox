@@ -16,6 +16,7 @@ import type { Background } from './background'
 import { NO_PR_SHARED } from '../../hooks/pr-fetch'
 import type { PrShared } from '../../hooks/pr-fetch'
 import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/host-press'
+import { NO_CONVERSATION_SCROLL } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
 import { applyHerdrFile } from '../../hooks/herdr-app'
@@ -105,7 +106,12 @@ export function makeSessionHost(
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },
       deliver: (s, message) => sendMessage(s, message, preparedCli),
-      perform: async (s, e) => (e.kind === 'copy' ? copyToClipboard(deps.exec, e.text) : open(s, e.target)),
+      perform: async (s, e) =>
+        e.kind === 'scroll'
+          ? NO_CONVERSATION_SCROLL
+          : e.kind === 'copy'
+            ? copyToClipboard(deps.exec, e.text)
+            : open(s, e.target),
       refreshPrsIfDue: async () => fetchPrsWhenDue(id, await readState(dir, id), true),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true)),
       gh: {

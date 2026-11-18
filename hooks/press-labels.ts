@@ -13,6 +13,8 @@ export function pressText(p: RowPress): string {
       return 'Reply'
     case 'issue':
       return ISSUE_LABEL
+    case 'show-explanation':
+      return SHOW_EXPLANATION_LABEL
     case 'step':
       return p.label
     case 'remove-goal':
@@ -31,3 +33,4 @@ export function capitalized(text: string): string {
 }
 
 export const ISSUE_LABEL = 'File issue'
+export const SHOW_EXPLANATION_LABEL = 'Show explanation'
