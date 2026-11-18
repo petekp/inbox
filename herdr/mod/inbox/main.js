@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T06:20:40.996Z. 294062 characters follow.
+// Built at 2026-11-18T06:48:23.525Z. 294363 characters follow.
 
 // src/main.ts
 import { View, div as div11 } from "gpui-kit";
@@ -5752,7 +5752,6 @@ var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
 var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
 var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
 var DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2;
-var CODEX_TREE_PAD_PX = 1;
 var TITLE_PARTS = ["title", "titleStatus"];
 var TREE_TEXT = ["holdsUp", "context", "earlier"];
 var BODY_PARTS = ["detail", "file"];
@@ -5760,7 +5759,10 @@ var ANSWER_PARTS = ["answer", "note", "answers", "reason"];
 var TREE_PARTS = [...TREE_TEXT, ...ANSWER_PARTS];
 var gap = (step, rows, forms = {}) => ({ step, forms, rows });
 var UNDER_TITLE = gap("inside", 0);
-var ANSWERS_UNDER_TITLE = gap("control", 0, { codex: CONTROL_GAP_PT - CODEX_TREE_PAD_PX });
+var ANSWERS_UNDER_TITLE = gap("control", 0, { codex: CONTROL_GAP_PT });
+var CODEX_TREE_LINES = ["holdsUp", "context", "earlier", "answer", "answers"];
+var CODEX_TREE_EXTRA_PX = 1;
+var codexTreeExtra = (above, below) => CODEX_TREE_EXTRA_PX * (Number(CODEX_TREE_LINES.includes(below)) + Number(TREE_PARTS.includes(above) && below !== "note" && below !== "reason"));
 function aboveButtons(above) {
   const desktopFrame = DESKTOP_BLANK_LINE_PT;
   if (TREE_PARTS.includes(above))
@@ -5797,7 +5799,7 @@ function partGap(above, below) {
 }
 function partPt(above, below, form) {
   const g = partGap(above, below);
-  return g.forms[form] ?? STEP_PT[g.step];
+  return g.forms[form] ?? STEP_PT[g.step] + (form === "codex" ? codexTreeExtra(above, below) : 0);
 }
 
 // src/paint-parts.ts

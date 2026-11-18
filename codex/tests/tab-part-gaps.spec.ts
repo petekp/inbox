@@ -4,8 +4,8 @@ import { Window } from 'happy-dom'
 import { h, render } from 'preact'
 import { rowKeyPlan } from '../../hooks/action-plan'
 import { demoSession } from '../../hooks/demo'
-import { CODEX_TREE_PAD_PX, partPairs, partPt, rowParts } from '../../hooks/row-parts'
-import type { AnswersForm, RowPart } from '../../hooks/row-parts'
+import { partPairs, partPt, rowParts } from '../../hooks/row-parts'
+import type { AnswersForm } from '../../hooks/row-parts'
 import type { RowView } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import { SETTLED_MS } from '../../hooks/timing'
@@ -19,7 +19,6 @@ const ANSWER_W = 60
 const WIDE_ROOM = 1000
 const NARROW_ROOM = 100
 const BASE_ID = { question: 'd12', task: 'd14', finding: 'd23' } as const
-const TREE_PARTS: RowPart[] = ['holdsUp', 'context', 'earlier', 'answer', 'answers']
 
 function answersOf(row: RowView, isWide: boolean): AnswersForm | null {
   const { options, answerRow } = rowKeyPlan(row, false)
@@ -40,10 +39,7 @@ function expected(c: RowCase, row: RowView, hasCopy: boolean): string[] {
     hasCopy,
   })
 
-  return partPairs(parts).map(
-    ([above, below]) =>
-      `${below} ${partPt(above, below, 'codex') + (TREE_PARTS.includes(below) ? CODEX_TREE_PAD_PX : 0)}px`,
-  )
+  return partPairs(parts).map(([above, below]) => `${below} ${partPt(above, below, 'codex')}px`)
 }
 
 test('the Codex tab sets each part of an open question, task and finding partGap under the part above, wide and narrow, with and without the copy box', async () => {

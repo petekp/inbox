@@ -80,7 +80,7 @@ export function watchAnswerWidths(root: HTMLElement, redraw: () => void, signal:
 function Answers({ rowId, options, answerRow, above, isBlocked }: AnswersProps) {
   if (isSideBySide(rowId, answerRow))
     return (
-      <p class="option-choice option-row tree-last" {...partAttrs(above, 'answers', true)}>
+      <p class="option-choice option-row tree-last" {...partAttrs(above, 'answers')}>
         <span class="option-button">
           {options.map((o, n) => (
             <ActionButton key={n} action={o} isBlocked={isBlocked} />
@@ -100,7 +100,7 @@ function Answers({ rowId, options, answerRow, above, isBlocked }: AnswersProps) 
         <p
           key={n}
           class={`option-choice tree-${n === options.length - 1 ? 'last' : 'before'}`}
-          {...partAttrs(n === 0 ? above : options[n - 1]!.note ? 'note' : 'answer', 'answer', true)}
+          {...partAttrs(n === 0 ? above : options[n - 1]!.note ? 'note' : 'answer', 'answer')}
         >
           <span class="option-button">
             <ActionButton action={o} isBlocked={isBlocked} />
@@ -149,7 +149,7 @@ export function askTree(
             part: 'holdsUp' as const,
             isBranch: true,
             draw: (place: string, above: RowPart) => (
-              <p class={`branch holds-up muted tree-${place}`} {...partAttrs(above, 'holdsUp', true)}>
+              <p class={`branch holds-up muted tree-${place}`} {...partAttrs(above, 'holdsUp')}>
                 {holdsUp}
               </p>
             ),
@@ -162,7 +162,7 @@ export function askTree(
             part: 'context' as const,
             isBranch: false,
             draw: (place: string, above: RowPart) => (
-              <p class={`context-line tree-${place}`} {...partAttrs(above, 'context', true)}>
+              <p class={`context-line tree-${place}`} {...partAttrs(above, 'context')}>
                 {r.contextLine}
               </p>
             ),
@@ -175,7 +175,7 @@ export function askTree(
             part: 'earlier' as const,
             isBranch: false,
             draw: (place: string, above: RowPart) => (
-              <p class={`context-line tree-${place}`} {...partAttrs(above, 'earlier', true)}>
+              <p class={`context-line tree-${place}`} {...partAttrs(above, 'earlier')}>
                 {earlier.lead}
                 <strong class="option-label">{earlier.answer}</strong>
                 {earlier.rest}

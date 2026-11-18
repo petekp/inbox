@@ -64,8 +64,6 @@ export type PartGap = { step: GapStep; forms: Partial<Record<PartForm, number>>;
 /** A blank line on desktop: a written 1, which the pane draws as half its line. */
 export const DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2
 
-/** The 1 px the Codex tab pads above and below each line of a tree, so its strokes meet. Its CSS pads below. */
-export const CODEX_TREE_PAD_PX = 1
 
 const TITLE_PARTS: readonly RowPart[] = ['title', 'titleStatus']
 const TREE_TEXT: readonly RowPart[] = ['holdsUp', 'context', 'earlier']
@@ -77,8 +75,18 @@ const gap = (step: GapStep, rows: 0 | 1, forms: PartGap['forms'] = {}): PartGap 
 
 /** A line of text under the title is the title's own detail. */
 const UNDER_TITLE = gap('inside', 0)
-/** Answers sit under the text above them as any buttons do. Codex's tree pads the stroke's 1 px above. */
-const ANSWERS_UNDER_TITLE = gap('control', 0, { codex: CONTROL_GAP_PT - CODEX_TREE_PAD_PX })
+/** Answers sit under the text above them as any buttons do. */
+const ANSWERS_UNDER_TITLE = gap('control', 0, { codex: CONTROL_GAP_PT })
+
+/** The parts the Codex tab draws as lines of a tree. A note or a reason sits inside its answer's line. */
+const CODEX_TREE_LINES: readonly RowPart[] = ['holdsUp', 'context', 'earlier', 'answer', 'answers']
+/** The px the Codex tab adds to a step above a line of a tree, and again under one. */
+const CODEX_TREE_EXTRA_PX = 1
+
+const codexTreeExtra = (above: RowPart, below: RowPart) =>
+  CODEX_TREE_EXTRA_PX *
+  (Number(CODEX_TREE_LINES.includes(below)) +
+    Number(TREE_PARTS.includes(above) && below !== 'note' && below !== 'reason'))
 
 /**
  * The buttons or the field under the parts above them. Desktop's card puts them a row's padding under its tree, and
@@ -131,11 +139,11 @@ export function partGap(above: RowPart, below: Exclude<RowPart, 'title'>): PartG
   return GAP_ABOVE[below](above)
 }
 
-/** The points `form` draws between two neighboring parts. */
+/** The points `form` draws between two neighboring parts: its own value, else the step, with Codex's tree extra. */
 export function partPt(above: RowPart, below: Exclude<RowPart, 'title'>, form: PartForm): number {
   const g = partGap(above, below)
 
-  return g.forms[form] ?? STEP_PT[g.step]
+  return g.forms[form] ?? STEP_PT[g.step] + (form === 'codex' ? codexTreeExtra(above, below) : 0)
 }
 
 /** The blank rows between two neighboring parts in a look that draws whole rows: none unless it is the docked terminal. */

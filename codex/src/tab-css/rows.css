@@ -244,7 +244,6 @@
 }
 .body .tree > p {
   position: relative;
-  padding-bottom: 1px;
 }
 .body .tree:not(.plain) > p::before {
   content: '';
