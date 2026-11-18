@@ -3030,7 +3030,7 @@ export const register: Register = on => {
       showAsk: askId => showAsk($, askId),
     }
     const { itemRow, findingRow } = paneAskRows(
-      { now, look, Text, pal, optionsShown, Box, blankLine, terminalText, inlineText },
+      { now, look, isInline, Text, pal, optionsShown, Box, terminalText, inlineText },
       handlers,
     )
     const isThreadSent = threadSentIn(lastActions)
@@ -3244,6 +3244,7 @@ export const register: Register = on => {
       foldButton,
       foldRow,
       desktopFoldLines,
+      desktopFoldLinesOf,
       closedFold,
       undoPlace,
       settledContent,
@@ -3384,6 +3385,7 @@ export const register: Register = on => {
         foldRow,
         foldButton,
         desktopFoldLines,
+        desktopFoldLinesOf,
         statusUnfolded,
       },
       handlers,

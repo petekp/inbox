@@ -1,7 +1,8 @@
 import type { Ledger } from '../types'
 import { foldGlyph } from './fold-chevron'
 import type { MilestoneRow } from './status-goal-page'
-import type { StatusPage, StatusRow } from './status-page'
+import { STALL_GAP } from './status-page'
+import type { StatusCount, StatusPage, StatusRow } from './status-page'
 
 /**
  * Status parents and what waits on the person under each, by parent id. A parent is a subject with a delegate under it,
@@ -32,6 +33,31 @@ export function waitingUnderParents(ledger: Pick<Ledger, 'overview' | 'items'>):
   ])
 }
 
+/** What the closed counts fold says before its counts. */
+export const COUNTS_LABEL = 'Also open: '
+
+/** The closed counts fold's line as one string, as "Also open: ● 3 working · ◌ 3 waiting", for a look that draws a fold as plain text. */
+export const countsText = (counts: StatusCount[]) =>
+  `${COUNTS_LABEL}${counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP)}`
+
+/** `STALL_GAP` with a no-break space before its dot, so a wrapped line ends with the dot and never starts with it. */
+export const COUNTS_GAP = STALL_GAP.replace(' ', '\u00a0')
+
+/** A count's words after its mark, joined with no-break spaces so a wrapped line never splits a count. */
+export const countWords = (c: StatusCount) => `\u00a0${c.text.replaceAll(' ', '\u00a0')}`
+
+/** The closed counts fold's line as units that wrap whole: the label, then each count with its mark and, but for the last, the gap after it. A mark has its tone. */
+export const countsUnits = (counts: StatusCount[]): { text: string; tone: StatusCount['tone'] | 'plain' }[][] => [
+  [{ text: COUNTS_LABEL, tone: 'plain' }],
+  ...counts.map((c, n) => [
+    { text: c.mark, tone: c.tone },
+    { text: `${countWords(c)}${n < counts.length - 1 ? COUNTS_GAP : ''}`, tone: 'plain' as const },
+  ]),
+]
+
+/** The units `countsUnits` gives. */
+export type CountsUnits = ReturnType<typeof countsUnits>
+
 /** What follows a parent's name: v while its rows show, else › and how many rows of work its fold hides. */
 export const parentChevron = (isCollapsed: boolean, foldCount: number) =>
   isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true)
@@ -53,8 +79,9 @@ function withoutCollapsed(rows: StatusRow[], isCollapsed: IsCollapsed): StatusRo
 }
 
 /**
- * `rows` as a look draws them: each done fold that `isUnfolded` names by id followed by the finished rows it holds, and
- * none of the rows under a subject `isCollapsed` names.
+ * `rows` as a look draws them: each done fold and counts fold that `isUnfolded` names by id followed by the rows it
+ * holds, which are finished work for a done fold and open work for a counts fold, and none of the rows under a subject
+ * `isCollapsed` names.
  */
 export function unfoldedRows(
   rows: StatusRow[],
@@ -62,7 +89,7 @@ export function unfoldedRows(
   isCollapsed: IsCollapsed = NONE_COLLAPSED,
 ): StatusRow[] {
   return withoutCollapsed(rows, isCollapsed).flatMap(r =>
-    r.kind === 'done-fold' && isUnfolded(r.id) ? [r, ...r.rows] : [r],
+    (r.kind === 'done-fold' || r.kind === 'counts') && isUnfolded(r.id) ? [r, ...r.rows] : [r],
   )
 }
 

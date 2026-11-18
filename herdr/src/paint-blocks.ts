@@ -1,16 +1,15 @@
 import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
-import { Input, h_flex, v_flex } from 'gpui-base'
-import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { h_flex, v_flex } from 'gpui-base'
+import { ROW_PAD_PT } from '../../hooks/layout'
+import { partPt } from '../../hooks/row-parts'
+import type { RowPart } from '../../hooks/row-parts'
 import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import { STALL_GAP } from '../../hooks/status-page'
 import { isOpenRow } from './blocks'
-import type { Block, Button, Field, LineBlock, PrBlock, RowBlock, StatusLine } from './blocks'
+import type { Block, BodyLine, Button, LineBlock, PrBlock, RowBlock, StatusLine } from './blocks'
 import {
-  BOX_RADIUS,
-  BUTTON_H,
   BUTTON_LABEL_X,
-  CHILD_GAP,
   CONTROL_GAP,
   EDGE,
   HELP_COLUMN,
@@ -18,16 +17,16 @@ import {
   END_SPACE,
   INSET,
   INSIDE_GAP,
-  ITEM_GAP,
   LINE_HEIGHT,
   LIST_GAP,
   MARK_W,
   NEST,
   SEP,
-  SMALL_GAP,
   TEXT_X,
   colorOf,
 } from './paint-theme'
+import { fieldEl } from './paint-field'
+import { emptyEl } from './paint-empty'
 import { buttonEl, buttonsEl, lineEl, markEl, resultLineEl } from './paint-parts'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
@@ -54,23 +53,16 @@ const wordEls = (text: string, color: Color): Element[] =>
     .filter(word => word)
     .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
 
-/** A line under a row's title, with its part of the tree that hangs from the row's mark. */
+/** A line under a row's title, `above` under the part above it, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (
-  l: RowBlock['body'][number],
+  l: Omit<BodyLine, 'part'>,
+  above: number,
   t: Theme,
   isSelected: boolean,
   answers: Button[] = [],
   p: Paint | null = null,
   isInert = false,
 ): Element => {
-  const above =
-    l.gapAbove === 'item'
-      ? ITEM_GAP
-      : l.gapAbove === 'child'
-        ? CHILD_GAP
-        : l.gapAbove === 'list'
-          ? LIST_GAP
-          : INSIDE_GAP
   const color = lineColor(t, isSelected ? t.selected : t.background)
   if (answers.length > 0 && p) {
     const trunk =
@@ -104,28 +96,6 @@ const bodyLineEl = (
   return line.relative().children(strokes)
 }
 
-function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
-  const { t } = p
-  const state = p.input(f.rowId)
-  const input = state
-    ? [
-        div()
-          .min_h(BUTTON_H)
-          .px(INSET)
-          .py(SMALL_GAP)
-          .rounded(BOX_RADIUS)
-          .border_1()
-          .border_color(t.input)
-          .child(Input.new(state).w_full()),
-      ]
-    : []
-
-  return v_flex()
-    .pl(indent)
-    .children(input)
-    .child(buttonsEl(f.buttons, p, 0, isInert))
-}
-
 function rowEl(r: RowBlock, p: Paint): Element {
   const { t } = p
   const m = p.motion.get(r.id)
@@ -154,6 +124,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     ...(r.feedback && !isStatusUnder(r) ? [r.feedback] : []),
     ...(r.heldLine ? [r.heldLine] : []),
   ]
+  const titleEnd: RowPart = lines.length > 0 ? 'titleStatus' : 'title'
 
   return v_flex()
     .id(`row ${r.id}`)
@@ -173,46 +144,72 @@ function rowEl(r: RowBlock, p: Paint): Element {
         p,
         v_flex()
           .children(
-            lines.map(l => {
-              const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, t, r.isSelected)
+            lines.map((l, n) => {
+              const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus', 'herdr')
+              const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, above, t, r.isSelected)
 
               return 'isHidden' in l && l.isHidden ? el.opacity(0) : el
             }),
           )
-          .children(panelEl(r, m, p, isLeaving)),
+          .children(panelEl(r, m, p, isLeaving, titleEnd)),
       ),
     )
 }
 
 /**
- * A row's body lines. Answers that `isSideBySide` lets share the first answer's line, as the last branch, with the
- * recommendation's reason on one line under them in place of each answer's note.
+ * A row's body lines, each `partGap` under the part above, from `titleEnd`, the title's last part. Answers that
+ * `isSideBySide` lets share the first answer's line, as the last branch, with the recommendation's reason on one line
+ * under them in place of each answer's note. Returns the lines and the last part they draw.
  */
-function bodyEls(from: RowBlock, isSelected: boolean, p: Paint, isInert: boolean): Element[] {
+function bodyEls(
+  from: RowBlock,
+  isSelected: boolean,
+  p: Paint,
+  isInert: boolean,
+  titleEnd: RowPart,
+): { els: Element[]; end: RowPart } {
   const buttonOf = (id: string | undefined) => from.buttons.filter(b => b.id === id)
-  if (!isSideBySide(from, p))
-    return from.body.map(l => bodyLineEl(l, p.t, isSelected, buttonOf(l.optionId), p, isInert))
-  const { optionIds, recLine } = from.sideBySide
+  const sideBySide = isSideBySide(from, p) ? from.sideBySide : null
+  const answers = sideBySide ? from.buttons.filter(b => sideBySide.optionIds.includes(b.id)) : []
   const first = from.body.find(l => l.optionId)
-  const answers = from.buttons.filter(b => optionIds.includes(b.id))
-  const reason = recLine
-    ? [bodyLineEl({ text: recLine, tone: 'muted', gapAbove: 'list', isOptionNote: true }, p.t, isSelected)]
-    : []
+  const shown: BodyLine[] = sideBySide
+    ? from.body.flatMap((l): BodyLine[] => {
+        if (l === first)
+          return [
+            { ...l, part: 'answers', tree: 'last' },
+            ...(sideBySide.recLine
+              ? [
+                  {
+                    part: 'reason' as const,
+                    text: sideBySide.recLine,
+                    tone: 'muted' as const,
+                    isOptionNote: true as const,
+                  },
+                ]
+              : []),
+          ]
 
-  return from.body.flatMap(l => {
-    if (l === first) return [bodyLineEl({ ...l, tree: 'last' }, p.t, isSelected, answers, p, isInert), ...reason]
-    if (l.optionId || l.isOptionNote) return []
+        return l.optionId || l.isOptionNote ? [] : [l]
+      })
+    : from.body
+  let end = titleEnd
+  const els = shown.map(({ part, ...l }) => {
+    const above = partPt(end, part, 'herdr')
+    end = part
+    const buttons = part === 'answers' ? answers : buttonOf(l.optionId)
 
-    return [bodyLineEl(l, p.t, isSelected, [], p, isInert)]
+    return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)
   })
+
+  return { els, end }
 }
 
 /**
- * A row's panel: its body, its buttons or text field, and a status its buttons put under them. A closing row keeps
- * the panel of its open form drawn, without clicks, while it fades. The panel's opacity glides as the row opens or
- * closes, and it reports its height, so a closing row's box can leave it out.
+ * A row's panel: its body, its buttons or text field, and a status its buttons put under them, each `partGap` under
+ * the part above. A closing row keeps the panel of its open form drawn, without clicks, while it fades. The panel's
+ * opacity glides as the row opens or closes, and it reports its height, so a closing row's box can leave it out.
  */
-function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boolean): Element[] {
+function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boolean, titleEnd: RowPart): Element[] {
   const { t } = p
   const from = m?.closing ?? r
   const isInert = isLeaving || from !== r
@@ -220,11 +217,15 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   const actions = from.buttons.filter(b => !b.isOption)
   const hasAnswers = from.buttons.some(b => b.isOption)
   const followsAnswers = hasAnswers && actions[0]?.emphasis !== 'quiet'
+  const body = bodyEls(from, r.isSelected, p, isInert, titleEnd)
+  const end: RowPart = from.field ? 'field' : actions.length > 0 ? 'buttons' : body.end
   const parts = [
-    ...bodyEls(from, r.isSelected, p, isInert),
-    ...(actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers)] : []),
-    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : []),
-    ...(under ? [bodyLineEl(under, t, r.isSelected).pt(CONTROL_GAP)] : []),
+    ...body.els,
+    ...(actions.length > 0
+      ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons', 'herdr'))]
+      : []),
+    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field', 'herdr'))] : []),
+    ...(under ? [bodyLineEl(under, partPt(end, 'result', 'herdr'), t, r.isSelected)] : []),
   ]
   if (parts.length === 0) return []
   const key = panelId(r.id)
@@ -418,51 +419,23 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
     .child(buttons)
 }
 
-/** An empty tab's block, centred across and, at least as tall as the list's room, centred down it too. */
-function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
-  return v_flex()
-    .items_center()
-    .justify_center()
-    .when(p.listRoom !== null, e => e.min_h(p.listRoom ?? 0))
-    .p(END_SPACE)
-    .child(emptyContentEl(b, p, isInert))
-}
-
-function emptyContentEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
-  const { t } = p
-  const { empty, under } = b
-  const centred = (text: string, color = t.foreground) =>
-    div().text_center().whitespace_normal().text_color(color).child(text)
-
-  return v_flex()
-    .items_center()
-    .max_w(EMPTY_STATE_MAX_WIDTH_PT)
-    .gap(INSIDE_GAP)
-    .child(centred(empty.title).font_semibold())
-    .when(empty.hint !== null, e => e.child(centred(empty.hint ?? '', t.muted)))
-    .when(under?.text != null, e => e.child(centred(under?.text ?? '').pt(CONTROL_GAP)))
-    .when((under?.buttons.length ?? 0) > 0, e =>
-      e.child(
+/** Other work's counts: the label, then each mark in its tone with its count, as items of a wrapping row so a count stays with its mark. */
+const countsEl = (counts: NonNullable<Extract<Block, { kind: 'fold' }>['counts']>, t: Theme): Element =>
+  h_flex()
+    .flex_wrap()
+    .min_w(0)
+    .children([
+      ...wordEls(counts.label, t.muted),
+      ...counts.items.flatMap((c, n) => [
+        ...(n > 0 ? wordEls('·', t.muted) : []),
         h_flex()
-          .flex_wrap()
-          .justify_center()
-          .gap(CONTROL_GAP)
-          .pt(CONTROL_GAP)
-          .children((under?.buttons ?? []).map(x => buttonEl(x, p, isInert))),
-      ),
-    )
-    .when(under?.field != null, e =>
-      e.child(
-        div()
-          .w_full()
-          .pt(CONTROL_GAP)
-          .child(under?.field ? fieldEl(under.field, p, 0, isInert) : div()),
-      ),
-    )
-    .when(under?.feedback != null, e =>
-      e.child(centred(under?.feedback?.text ?? '', colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)),
-    )
-}
+          .flex_none()
+          .children([
+            div().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+            statusPartEl(`${NO_BREAK_SPACE}${c.text}${NO_BREAK_SPACE}`).text_color(t.muted),
+          ]),
+      ]),
+    ])
 
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
@@ -487,7 +460,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .accessibility_label(b.text)
     .when(!isInert, e => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
-    .child(div().min_w(0).whitespace_normal().child(b.text))
+    .child(fold?.counts ? countsEl(fold.counts, t) : div().min_w(0).whitespace_normal().child(b.text))
     .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))
 }
 

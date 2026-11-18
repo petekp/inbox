@@ -41,11 +41,13 @@ const statusFoldsOf = (view: SessionView): Pick<TabFolds, 'statusFolds' | 'paren
   const page = view.statusPage
   const milestones = page.goal?.milestones ?? []
   const rows = [...milestones.flatMap(m => m.rows), ...page.rows]
-  const listed = rows.flatMap((r): StatusRow[] => (r.kind === 'done-fold' ? [r, ...r.rows] : [r]))
+  const listed = rows.flatMap((r): StatusRow[] =>
+    r.kind === 'done-fold' || r.kind === 'counts' ? [r, ...r.rows] : [r],
+  )
   const foldIds = [
     ...(page.goal?.milestonesFold ? [page.goal.milestonesFold.id] : []),
     ...milestones.flatMap(m => (m.foldId === null ? [] : [m.foldId])),
-    ...listed.filter(r => r.kind === 'done-fold').map(r => r.id),
+    ...listed.filter(r => r.kind === 'done-fold' || r.kind === 'counts').map(r => r.id),
   ]
   const parentIds = [
     ...milestones.filter(m => m.foldCount > 0).map(m => m.id),

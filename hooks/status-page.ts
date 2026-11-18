@@ -10,12 +10,13 @@ import {
   childRow,
   countsByMark,
   finishedLine,
+  isCounted,
   namedFolds,
   partRows,
   textBeyondName,
   unplacedChildren,
 } from './status-page-parts'
-import type { ListContext } from './status-page-parts'
+import type { ListContext, PartSplit } from './status-page-parts'
 
 const STATUS_FAILED =
   "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try."
@@ -103,10 +104,11 @@ export type StatusRow = {
    */
   | { kind: 'part'; id: string; text: string; description: string | null; isTitle: boolean }
   /**
-   * Seen open rows of the work the goal does not need, folded into a count for each mark that is under way, as "● 5
-   * working · ◌ 8 waiting". Folded queued rows get no count.
+   * Seen open rows of the work the goal does not need, folded into a count for each mark that is under way, as "Also
+   * open: ● 5 working · ◌ 8 waiting ›". Folded queued rows get no count. It folds as the done fold does: while the person
+   * has it unfolded, a look draws its `rows` after it, one step in, as `unfoldedRows` gives them.
    */
-  | { kind: 'counts'; id: string; counts: StatusCount[] }
+  | { kind: 'counts'; id: string; counts: StatusCount[]; rows: StatusRow[] }
 )
 
 /** One mark's share of a `counts` row. */
@@ -166,18 +168,6 @@ export function nameBeforeStall(name: string, fits: (shown: string) => boolean):
   const cuts = words.map((_, n) => (n === 0 ? name : `${words.slice(0, words.length - n).join(' ')}…`))
 
   return cuts.find(fits) ?? cuts.at(-1)!
-}
-
-/**
- * A part of the list's subjects: those it draws, the work that closed since the last look past its rows, which a fold
- * names, and those it folds into a count.
- */
-type PartSplit = {
-  shown: Subject[]
-  newClosed: Subject[]
-  named: Subject[]
-  foldedOpen: Subject[]
-  foldedDone: Subject[]
 }
 
 export function statusPage(
@@ -330,7 +320,8 @@ export function statusPage(
   /** Loose running work drawn first in a milestone's rows, or with `null` first in the list after the goal. */
   const looseRows = (milestoneId: string | null, depth: number): StatusRow[] =>
     loose.filter(l => l.milestoneId === milestoneId).map(l => childRow(l.child, null, depth))
-  const otherCounts = countsByMark(otherFolded.filter(x => isOpen(x) && isUnneeded(x)))
+  const otherCountedSubjects = otherFolded.filter(x => isOpen(x) && isUnneeded(x) && isCounted(x))
+  const otherCounts = countsByMark(otherCountedSubjects)
   const afterOtherOpen: StatusRow[] = [
     ...openFold(
       'other-',
@@ -339,7 +330,15 @@ export function statusPage(
     ),
     ...(otherCounts.length === 0
       ? []
-      : [{ kind: 'counts' as const, id: 'other-counts', depth: 0, counts: otherCounts }]),
+      : [
+          {
+            kind: 'counts' as const,
+            id: 'other-counts',
+            depth: 0,
+            counts: otherCounts,
+            rows: partRows([...otherCountedSubjects].sort(pageOrder), foldCtx, 1),
+          },
+        ]),
   ]
   const otherRows: StatusRow[] = [
     ...(hasMilestones ? looseRows(null, 0) : []),

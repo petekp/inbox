@@ -17,6 +17,7 @@ import type { settledLayoutId } from './pane-selection'
 import type { RowPress } from './presses'
 import type { PrPress } from './pr-press'
 import type { prBlockRows, threadSentIn } from './pr-rows'
+import type { RowPart } from './row-parts'
 import type { ModLook, NEEDS_YOU_GROUPS, RowView } from './rows'
 import type { SessionView } from './session-view'
 import type { ShownTab, shownTabs } from './tabs'
@@ -50,6 +51,8 @@ export type Row = {
   line?: { before?: string; text: string; after?: string; afterTone?: Tone; age?: string }
   hasSecondLine?: boolean
   body?: JSX.Element | null
+  /** The last part `body` draws, where it is a finding's file. A body is otherwise one `detail` part. */
+  bodyEnd?: Extract<RowPart, 'detail' | 'file'>
   clippedBody?: (lines: number, width: number) => JSX.Element | null
   /** The answers, which the question's tree draws. */
   optionKeys?: () => KeyAction[]

@@ -4,6 +4,7 @@ import type { IconName } from './row-actions'
 import type { ActionEmphasis, RowView } from '../../hooks/rows'
 import type { DrawnEntry, DrawnLists } from '../../hooks/action-plan'
 import type { Feedback } from '../../hooks/feedback'
+import type { RowPart } from '../../hooks/row-parts'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft, Finding, Tab } from '../../types'
 import type { FoldGroup, SeenRows } from './arrivals'
@@ -51,6 +52,11 @@ export type Row = {
   age?: string
   /** Draws the open row's body at each render, so a decision a draw makes after rendering, such as whether a question's answers fit one line, reaches it. */
   body?: () => JSX.Element
+  /**
+   * The last part an open ask's body draws, at each render. Each part of the body carries its own gap from the part
+   * above. A row without it, as a PR row, draws its body as one part, its `detail`.
+   */
+  bodyEnd?: () => RowPart
   /** An open question's answers, which its tree draws as buttons. Their hotkeys press them. */
   options: Key[]
   keys: Key[]

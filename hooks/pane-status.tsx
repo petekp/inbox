@@ -15,9 +15,9 @@ import { paneStatusPart } from './pane-status-part'
 import { paneStatusPath } from './pane-status-path'
 import {
   desktopButtonLines,
-  desktopCountsLines,
   desktopFrameLines,
   desktopSpaceLines,
+  desktopCountsFoldLines,
   desktopTextLines,
   exactly,
   inkLines,
@@ -29,11 +29,11 @@ import {
 import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import { mergedLine, seenSubjectIds, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
-import { isParentCollapsed, unfoldedRows } from './status-folds'
+import { mergedLine, seenSubjectIds, type StatusRow, WAS_PREFIX } from './status-page'
+import { countsText, countsUnits, isParentCollapsed, unfoldedRows } from './status-folds'
+import { foldGlyph } from './fold-chevron'
 import { statusRowPads } from './status-gaps'
 import { SELECTION_BAR } from './terminal-text'
-import { cellWidth } from './text'
 
 export function paneStatus(
   {
@@ -76,6 +76,7 @@ export function paneStatus(
     foldRow,
     foldButton,
     desktopFoldLines,
+    desktopFoldLinesOf,
     statusUnfolded,
   }: PaneClient &
     Pick<
@@ -113,7 +114,16 @@ export function paneStatus(
     Pick<PaneRowFrame, 'desktopFrame'> &
     Pick<PaneRowKeys, 'keyRow' | 'keyLines' | 'terminalKeyCells'> &
     Pick<PaneAskTabs, 'emptyState'> &
-    Pick<PaneRowParts, 'sections' | 'section' | 'terminalSectionGap' | 'foldRow' | 'foldButton' | 'desktopFoldLines'>,
+    Pick<
+      PaneRowParts,
+      | 'sections'
+      | 'section'
+      | 'terminalSectionGap'
+      | 'foldRow'
+      | 'foldButton'
+      | 'desktopFoldLines'
+      | 'desktopFoldLinesOf'
+    >,
   handlers: Pick<
     PaneHandlers,
     | 'showAsk'
@@ -252,9 +262,6 @@ export function paneStatus(
 
     return [{ el, lines: isKnown ? exactly(lines) : null }]
   }
-  /** The cells a `counts` row's marks and words take on one line. */
-  const countsCells = (counts: StatusCount[]) =>
-    counts.reduce((n, x, i) => n + (i > 0 ? cellWidth(STALL_GAP) : 0) + 2 + cellWidth(x.text), 0)
   /** Plain text that Claude Code or desktop wraps, `depth` steps in. */
   const plainText = (el: JSX.Element, text: string, depth: number): Drawn => ({
     el,
@@ -291,7 +298,7 @@ export function paneStatus(
                 ? void toggleParent(press.id)
                 : pressGoal(press.action, p.surface),
     }))
-  const { goalSection, setGoalBare, markRun, isTypingGoal } = paneStatusGoal(
+  const { goalSection, setGoalBare, isTypingGoal } = paneStatusGoal(
     {
       e,
       look,
@@ -402,47 +409,35 @@ export function paneStatus(
         tree: statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1, pad.padY, pad.padBelow),
         ...pad,
       })
-    if (r.kind === 'done-fold') {
+    if (r.kind === 'done-fold' || r.kind === 'counts') {
       const key = foldKey({ statusId: r.id })
       const toggle = () => toggleFold(r.id)
+      const text = r.kind === 'counts' ? countsText(r.counts) : r.text
+      const units = r.kind === 'counts' ? countsUnits(r.counts) : undefined
+      const glyph = foldGlyph(isUnfolded(r.id))
 
       return look === 'desktop'
         ? {
             el: (
               <Box key={`status-${r.id}`} paddingLeft={DESKTOP_MARK_CELLS * 2 * r.depth}>
-                {foldRow(key, r.text, isUnfolded(r.id), toggle)}
+                {foldRow(key, text, isUnfolded(r.id), toggle, undefined, units)}
               </Box>
             ),
-            lines: desktopFoldLines,
+            lines: units
+              ? desktopFoldLinesOf(desktopCountsFoldLines(units, statusTextWidth(r.depth), glyph))
+              : desktopFoldLines,
           }
         : statusRowLine({
             key: `status-${r.id}`,
             depth: r.depth,
             mark: null,
-            content: plainText(foldButton(key, r.text, isUnfolded(r.id), toggle), r.text, r.depth),
+            content: plainText(foldButton(key, text, isUnfolded(r.id), toggle, units), text, r.depth),
             isSelected: r.id === statusKeyRow?.id,
             ...pad,
           })
     }
     if (r.kind === 'part')
       return statusPartLine(r.id, r.text, n === 0, r.isTitle ? { description: r.description } : undefined, rowAbovePad)
-    if (r.kind === 'counts')
-      return statusRowLine({
-        key: `status-${r.id}`,
-        depth: r.depth,
-        mark: null,
-        content: {
-          el: markRun(`status-${r.id}-counts`, r.counts, STALL_GAP, true),
-          lines:
-            look === 'desktop'
-              ? desktopCountsLines(r.counts, statusTextWidth(r.depth))
-              : countsCells(r.counts) < statusTextWidth(r.depth)
-                ? exactly(1)
-                : null,
-        },
-        ...pad,
-      })
-
     const fold = statusRowLine({
       key: `status-${r.id}`,
       depth: r.depth,

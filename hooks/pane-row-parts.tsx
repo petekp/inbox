@@ -5,6 +5,7 @@ import { RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
 import { closedTitleTint } from './pane-title-tint'
 import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
 import { foldGlyph } from './fold-chevron'
+import type { CountsUnits } from './status-folds'
 import type { FoldProps } from './fold-client'
 import { LIST_MARGIN_PT, ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
@@ -284,12 +285,33 @@ export function paneRowParts(
           1,
         )
   /** The terminal's fold control: `label`, a space and the chevron, one Button. */
-  const foldButton = (key: string, label: string, isUnfolded: boolean, toggle: () => void) => (
-    <Button plain dimColor key={`fold-${key}`} label={`${label} ${foldGlyph(isUnfolded)}`} onPress={toggle} />
+  const foldButton = (key: string, label: string, isUnfolded: boolean, toggle: () => void, units?: CountsUnits) => (
+    <Button plain dimColor key={`fold-${key}`} label={`${label}\u00a0${foldGlyph(isUnfolded)}`} onPress={toggle}>
+      {units
+        ? [
+            ...units.flat().map((part, n) => (
+              <Text key={`${n}`} {...(unitColor(part.tone) ? { color: unitColor(part.tone)! } : {})}>
+                {part.text}
+              </Text>
+            )),
+            `\u00a0${foldGlyph(isUnfolded)}`,
+          ]
+        : undefined}
+    </Button>
   )
+  /** A counts fold's mark draws in its tone; its other words, and a mark with no tone, in the fold's color. */
+  const unitColor = (tone: CountsUnits[number][number]['tone']) =>
+    tone === 'plain' || tone === null ? null : pal.mark[tone]
   // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
   /** A fold's line: `label`, then the chevron. Desktop posts its click under `fold-` and `key`. */
-  const foldRow = (key: string, label: string, isUnfolded: boolean, toggle: () => void, padY = DESKTOP_ROW_PAD) =>
+  const foldRow = (
+    key: string,
+    label: string,
+    isUnfolded: boolean,
+    toggle: () => void,
+    padY = DESKTOP_ROW_PAD,
+    units?: CountsUnits,
+  ) =>
     hasClient ? (
       <Box key={`fold-row-${key}`} position="relative" width="100%">
         <elements.Client
@@ -300,6 +322,9 @@ export function paneRowParts(
             {
               markCells: DESKTOP_MARK_CELLS,
               label,
+              ...(units
+                ? { units: units.map(unit => unit.map(part => ({ text: part.text, color: unitColor(part.tone) }))) }
+                : {}),
               isUnfolded,
               chevron: foldGlyph(isUnfolded),
               padY,
@@ -316,15 +341,16 @@ export function paneRowParts(
       treeRow(
         null,
         null,
-        <Box flexDirection="row">{foldButton(key, label, isUnfolded, toggle)}</Box>,
+        <Box flexDirection="row">{foldButton(key, label, isUnfolded, toggle, units)}</Box>,
         `fold-row-${key}`,
         0,
         ROW_COLUMNS.tree.textAt,
       )
     )
   /** The lines a desktop fold row takes: its chevron's height, in the pane's scroll rows. */
-  const desktopFoldLines: Lines | null =
-    hasClient && 'Svg' in elements ? exactly((2 * ROW_PAD_PT + DESKTOP_LINE_PT) / DESKTOP_ROW_PT) : null
+  const desktopFoldLinesOf = (lines: number): Lines | null =>
+    hasClient && 'Svg' in elements ? exactly((2 * ROW_PAD_PT + lines * DESKTOP_LINE_PT) / DESKTOP_ROW_PT) : null
+  const desktopFoldLines = desktopFoldLinesOf(1)
   /** The button that lists the rest of a Closed fold. */
   const earlierButton = (kind: FoldKind, label: string) => (
     <Button
@@ -523,6 +549,7 @@ export function paneRowParts(
     foldButton,
     foldRow,
     desktopFoldLines,
+    desktopFoldLinesOf,
     closedFold,
     undoPlace,
     settledContent,

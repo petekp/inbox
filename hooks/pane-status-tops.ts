@@ -1,9 +1,9 @@
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
-import { RUNNING_SVG_CELLS } from './desktop-svg'
+import type { CountsUnits } from './status-folds'
 import { DESKTOP_BUTTON_PT, DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_ROW_PT } from './pane-sizes'
 import { ITEM_GAP_PT } from './layout'
 import { statusGaps } from './status-gaps'
-import { STALL_GAP, type StatusCount, type StatusRow } from './status-page'
+import type { StatusRow } from './status-page'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
 
@@ -111,19 +111,14 @@ export function desktopButtonLines(labels: string[], widthPt: number): Lines {
 }
 
 /**
- * The lines Other work's counts take on desktop in a column about `widthPt` wide, as `markRun` wraps them. Each mark
- * counts at least the two cells of a mark's Svg, and each count moves to the next line whole, with the gap before it.
+ * The lines a counts fold takes on desktop in a column about `widthPt` wide, as the fold's Client wraps its units: each
+ * moves to the next line whole, and the chevron stays with the last.
  */
-export function desktopCountsLines(counts: StatusCount[], widthPt: number): Lines {
-  const gapPt = desktopTextPt(STALL_GAP)
-  const widths = counts.map(
-    (x, n) =>
-      (n > 0 ? gapPt : 0) +
-      Math.max(desktopTextPt(x.mark), RUNNING_SVG_CELLS * DESKTOP_CELL_PT) +
-      desktopTextPt(` ${x.text}`),
-  )
+export function desktopCountsFoldLines(units: CountsUnits, widthPt: number, chevron: string): number {
+  const widths = units.map(unit => desktopTextPt(unit.map(part => part.text).join('')))
+  widths[widths.length - 1]! += desktopTextPt(` ${chevron}`)
 
-  return { least: 1, most: desktopWrapLines(widths, 0, widthPt) }
+  return desktopWrapLines(widths, 0, widthPt)
 }
 
 /**
