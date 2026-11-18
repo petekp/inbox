@@ -187,7 +187,9 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
       await settle()
     }
     const panelFades = (id: string) =>
-      fades.filter(f => f.el.matches('.panel') && rowOf(id).contains(f.el)).map(({ from, to, delay }) => ({ from, to, delay }))
+      fades
+        .filter(f => f.el.matches('.panel') && rowOf(id).contains(f.el))
+        .map(({ from, to, delay }) => ({ from, to, delay }))
     await press(pressed.id)
     const opens = moves.filter(m => m.key.includes(pressed.id))
     assert.ok(opens.length > 0, `pressing ${pressed.id} started no glide`)
@@ -215,7 +217,13 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
       'a close the person turned back fades its shown panel in again from less than shown',
     )
     await after(ROW_STATE_MS.opening + 50)
-    const dismissed = { id: pressed.id, kind: pressed.kind, ask: pressed.ask, outcome: 'dismissed', how: 'dismissed' as const }
+    const dismissed = {
+      id: pressed.id,
+      kind: pressed.kind,
+      ask: pressed.ask,
+      outcome: 'dismissed',
+      how: 'dismissed' as const,
+    }
     state.ledger = {
       ...state.ledger,
       items: [item('i1', 'Check the build', 1)],

@@ -223,7 +223,8 @@ export function moveRows(
       shutForMs: glide?.shutForMs ?? null,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
       isPanelWaiting: track.state === 'opening',
-      panelShutForMs: isStart && track.state === 'opening' && last?.track.state === 'closing' ? now - last.track.since : null,
+      panelShutForMs:
+        isStart && track.state === 'opening' && last?.track.state === 'closing' ? now - last.track.since : null,
       closing,
       isPanelLeftOut:
         (closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))) ||
