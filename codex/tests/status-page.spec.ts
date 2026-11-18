@@ -84,6 +84,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     HTMLElement: window.HTMLElement,
     Element: window.Element,
     KeyboardEvent: window.KeyboardEvent,
+    ResizeObserver: window.ResizeObserver,
     sessionStorage: window.sessionStorage,
     matchMedia: () => media,
     getComputedStyle: window.getComputedStyle.bind(window),

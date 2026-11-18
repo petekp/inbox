@@ -1,10 +1,12 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { actionLines, drawnLists, tabUndos } from '../hooks/action-plan'
+import { actionLines, answersFitLine, drawnLists, rowKeyPlan, tabUndos } from '../hooks/action-plan'
 import { demoSession } from '../hooks/demo'
 import { sessionView } from '../hooks/session-view'
 import { deliveryLabel, settledLabel } from '../hooks/rows'
+import type { RowView } from '../hooks/rows'
+import { cellWidth } from '../hooks/text'
 import { FOLD_QUIET_MS, SETTLED_MS, isSettledInPlace, nextFoldAt, withListInput } from '../hooks/timing'
 import type { ListInput, Placing } from '../hooks/timing'
 
@@ -192,4 +194,26 @@ test('in every kind of open row, a primary action is the first action, and a tas
   }
   expect(rows.some(r => r.actions.some(a => a.emphasis === 'primary'))).toBe(true)
   expect(view.needsYou.tasks.some(r => r.actions.some(a => a.press.action === 'step'))).toBe(true)
+})
+
+test('a question offers its answers side by side only when two or more show and none has a note of its own, and they fit only when their widths and gaps fit the room, a wide character taking two cells', () => {
+  const view = sessionView(demoSession(AT, 'Claude'), AT, SETTLED_MS)
+  const question = (start: string) => view.needsYou.questions.find(r => r.title.startsWith(start))!
+  const short = question('Bring a dismissed glance back')
+  const described = question('Dismiss a glance with a pinch')
+  const firstAnswer = short.actions.find(a => a.press.action === 'answer')
+  const oneShown: RowView = {
+    ...short,
+    actions: short.actions.filter(a => a.press.action !== 'answer' || a === firstAnswer),
+  }
+  expect(rowKeyPlan(short, true).answerRow).not.toBeNull()
+  expect(rowKeyPlan(described, true).answerRow).toBeNull()
+  expect(rowKeyPlan(oneShown, true).answerRow).toBeNull()
+
+  expect(answersFitLine([10, 8], 2, 20)).toBe(true)
+  expect(answersFitLine([10, 8], 2, 19)).toBe(false)
+  const wide = ['检查一下', '以后再说'].map(cellWidth)
+  expect(wide).toEqual([8, 8])
+  expect(answersFitLine(wide, 2, 18)).toBe(true)
+  expect(answersFitLine(wide, 2, 17)).toBe(false)
 })

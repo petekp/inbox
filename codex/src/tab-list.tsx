@@ -272,7 +272,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
 
   return (
     <div class={isClosing ? 'panel closing' : 'panel'} inert={isClosing}>
-      {row.body ? <div class="body">{row.body}</div> : null}
+      {row.body ? <div class="body">{row.body()}</div> : null}
       {notes.length > 0 ? <div>{notes}</div> : null}
       <RowActions
         keys={keys}

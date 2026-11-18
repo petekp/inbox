@@ -190,7 +190,7 @@ function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
   const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
     { optionId: `${row.id} ${n}`, text: '', tone: 'muted' as const },
     ...(o.note
-      ? [{ text: o.note, tone: 'muted' as const, gapAbove: 'child' as const, isOptionNote: true as const }]
+      ? [{ text: o.note, tone: 'muted' as const, gapAbove: 'list' as const, isOptionNote: true as const }]
       : []),
   ])
   const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: 'muted' as const }]] : []
@@ -226,6 +226,14 @@ function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
   return shown.map(({ gapAbove, ...l }, n) => (gapAbove && n > 0 ? { ...l, gapAbove } : l))
 }
 
+function sideBySideOf(row: RowView, isAllShown: boolean): Pick<RowBlock, 'sideBySide'> {
+  const { options, answerRow } = rowKeyPlan(row, isAllShown)
+
+  return answerRow
+    ? { sideBySide: { optionIds: options.map((_, n) => `${row.id} ${n}`), recLine: answerRow.recLine } }
+    : {}
+}
+
 function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: LookScreen): RowBlock {
   const { state, feedback: f } = row
   const isSettled = state.is === 'settled'
@@ -257,6 +265,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     isSelected,
     ...(isCollapsed && { isCollapsed }),
     body: isOpen ? rowBody(row, isAllShown) : [],
+    ...(isOpen ? sideBySideOf(row, isAllShown) : {}),
     buttons: isSettled
       ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)]
       : isOpen

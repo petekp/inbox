@@ -28,6 +28,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     HTMLElement: window.HTMLElement,
     Element: window.Element,
     KeyboardEvent: window.KeyboardEvent,
+    ResizeObserver: window.ResizeObserver,
     sessionStorage: window.sessionStorage,
     matchMedia: () => media,
     getComputedStyle: window.getComputedStyle.bind(window),

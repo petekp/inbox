@@ -202,7 +202,7 @@ function optionBody(o: OptionDescription): string | null {
 }
 
 /** The recommendation's reason on a line of its own, for a recommended option that has no description. */
-function optionReasonLine(o: OptionDescription): string | null {
+export function optionReasonLine(o: OptionDescription): string | null {
   return o.description === null && o.reason !== null ? recommendedLine(o.reason) : null
 }
 

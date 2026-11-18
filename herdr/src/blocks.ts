@@ -112,8 +112,8 @@ export type RowBlock = {
   /**
    * The row's lines under its title. `tree` places a line on the tree that hangs from the title's mark: `trunk` passes
    * it, `tee` joins a branch to the trunk, and `last` ends the trunk at the last branch. `gapAbove` starts a line a
-   * `CHILD_GAP_PT` or an `ITEM_GAP_PT` below the line above, as one option starts an item step below the option before
-   * it. `isOptionNote` indents an option's note to its button's label. `lead` is an option's label, drawn in the
+   * `LIST_GAP_PT`, a `CHILD_GAP_PT` or an `ITEM_GAP_PT` below the line above, as one option starts an item step below
+   * the option before it and its note a list step below its button. `isOptionNote` indents an option's note to its button's label. `lead` is an option's label, drawn in the
    * foreground color before `text`, which takes `tone`. `optionId` draws the row's option button of that id in place
    * of text.
    */
@@ -122,11 +122,16 @@ export type RowBlock = {
     text: string
     tone: Tone
     tree?: 'trunk' | 'tee' | 'last'
-    gapAbove?: 'child' | 'item'
+    gapAbove?: 'list' | 'child' | 'item'
     isOptionNote?: true
     optionId?: string
   }[]
   buttons: Button[]
+  /**
+   * Set when the row's answers may sit side by side, as `rowKeyPlan` offers it: the answers' button ids, and the
+   * recommendation's reason, which goes on one line under them. The paint draws them so when they fit the row.
+   */
+  sideBySide?: { optionIds: string[]; recLine: string | null }
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
   /** The line the row had above its buttons, kept while a press puts its status under them. See `holdLinesAbove`. */

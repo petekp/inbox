@@ -236,7 +236,7 @@
   position: relative;
   padding: var(--above) 0 1px;
 }
-/* A question's context, earlier answer, option notes and Holds up line sit a child step apart. */
+/* A question's context, earlier answer, answers and Holds up line sit a child step apart. */
 .body .tree > p + p {
   --above: calc(1px + var(--child-gap));
 }
@@ -263,14 +263,14 @@
   bottom: auto;
   height: calc(var(--above) + var(--tick, 0.8em));
 }
-/* An answer is its button with its note under it, the note starting at the button's label. The button's wrapper draws
+/* An answer is its button with its note a list step under it, the note starting at the button's label. The button's wrapper draws
    the arm to the button's middle, however many lines the label takes. On the last answer the trunk stops at the
    button's top, and the wrapper draws it on to the arm. */
 .body .tree > p.option-choice {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--child-gap);
+  gap: var(--list-gap);
 }
 .body .tree > p.option-choice + p.option-choice {
   --above: calc(1px + var(--item-gap));
@@ -304,6 +304,14 @@
 .option-choice .option-note {
   display: block;
   padding-left: calc(var(--button-border) + var(--button-pad-x));
+}
+/* Answers side by side share one wrapper, so its arm meets the line of buttons. Each button keeps its whole width, so
+   the tab measures what the line needs. */
+.option-row > .option-button {
+  gap: var(--control-gap);
+}
+.option-row > .option-button > .key {
+  flex: none;
 }
 .body .tree > p.tree-after::before {
   display: none;

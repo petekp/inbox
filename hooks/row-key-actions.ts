@@ -1,6 +1,6 @@
 import type { UiPressArgument } from 'claude-code'
 import { rowKeyPlan } from './action-plan'
-import type { PlannedKey, PlannedOption } from './action-plan'
+import type { AnswerRow, PlannedKey, PlannedOption } from './action-plan'
 import { ACTION_GLYPHS } from './pane-keys'
 import type { KeyAction } from './pane-keys'
 import type { RowPress } from './presses'
@@ -18,7 +18,7 @@ export function rowKeyActions(
   fx: RowKeyEffects,
   r: RowView,
   isAllShown: boolean,
-): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] } {
+): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[]; answerRow: AnswerRow | null } {
   const { id, item, finding } = r
   const keyAction = (k: PlannedKey): KeyAction => {
     switch (k.slot) {
@@ -87,7 +87,7 @@ export function rowKeyActions(
       }
     }
   }
-  const { options, keys, more } = rowKeyPlan(r, isAllShown)
+  const { options, keys, more, answerRow } = rowKeyPlan(r, isAllShown)
 
   const answerAction = ({ action: a, note, hotkey }: PlannedOption): KeyAction => ({
     label: a.label,
@@ -105,5 +105,6 @@ export function rowKeyActions(
     options: options.map(answerAction),
     keys: keys.map(keyAction),
     more: more.map(keyAction),
+    answerRow,
   }
 }

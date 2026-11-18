@@ -37,18 +37,7 @@ import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
-/** The trunk of a row's tree under the middle of the row's mark, from `top` to the end of its box or down to `height`. */
-const trunkEl = (top: number, height: number | `${number}%` | null, t: Theme, isSelected: boolean): Element => {
-  const el = div()
-    .absolute()
-    .left(PATH_X - EDGE)
-    .top(top)
-    .w(1)
-    .border_l_1()
-    .border_color(lineColor(t, isSelected ? t.selected : t.background))
-
-  return height === null ? el.bottom(0) : el.h(height)
-}
+import { ARM_END, answersEl, armEl, isSideBySide, trunkEl } from './paint-tree'
 
 const NO_BREAK_SPACE = '\u00a0'
 
@@ -64,55 +53,25 @@ const wordEls = (text: string, color: Color): Element[] =>
     .filter(word => word)
     .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
 
-/** A tree's arm, from `from` to `to` across its box and with its top edge at `top`. */
-const armEl = (from: number, to: number, top: number | `${number}%`, color: Color): Element =>
-  div()
-    .absolute()
-    .left(from)
-    .top(top)
-    .w(to - from)
-    .h(1)
-    .border_t_1()
-    .border_color(color)
-
-/** Where an arm ends, `SMALL_GAP` before the text column, across a line under a row's title. */
-const ARM_END = NEST - SMALL_GAP
-
-/**
- * An answer's button with its arm at the button's middle, however many lines its label wraps to. The box starts at the
- * line's left edge, as the trunk's place does. On the last answer the trunk runs on from the button's top to the arm,
- * and the arm starts on the trunk, so it fills the elbow's corner.
- */
-const optionEl = (
-  option: Button,
-  p: Paint,
-  isInert: boolean,
-  isLast: boolean,
-  t: Theme,
-  isSelected: boolean,
-): Element => {
-  const arm = armEl(PATH_X - EDGE, ARM_END, '50%', lineColor(t, isSelected ? t.selected : t.background))
-
-  return h_flex()
-    .relative()
-    .min_w(0)
-    .pl(MARK_W)
-    .child(buttonEl(option, p, isInert, true))
-    .children(isLast ? [arm, trunkEl(0, '50%', t, isSelected)] : [arm])
-}
-
 /** A line under a row's title, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (
   l: RowBlock['body'][number],
   t: Theme,
   isSelected: boolean,
-  option: Button | undefined = undefined,
+  answers: Button[] = [],
   p: Paint | null = null,
   isInert = false,
 ): Element => {
-  const above = l.gapAbove === 'item' ? ITEM_GAP : l.gapAbove === 'child' ? CHILD_GAP : INSIDE_GAP
+  const above =
+    l.gapAbove === 'item'
+      ? ITEM_GAP
+      : l.gapAbove === 'child'
+        ? CHILD_GAP
+        : l.gapAbove === 'list'
+          ? LIST_GAP
+          : INSIDE_GAP
   const color = lineColor(t, isSelected ? t.selected : t.background)
-  if (option && p) {
+  if (answers.length > 0 && p) {
     const trunk =
       l.tree === 'tee' ? [trunkEl(0, null, t, isSelected)] : l.tree === 'last' ? [trunkEl(0, above, t, isSelected)] : []
 
@@ -120,7 +79,7 @@ const bodyLineEl = (
       .relative()
       .min_w(0)
       .pt(above)
-      .child(optionEl(option, p, isInert, l.tree === 'last', t, isSelected))
+      .child(answersEl(answers, p, isInert, l.tree === 'last', t, isSelected))
       .children(trunk)
   }
   const armAt = above + LINE_HEIGHT / 2
@@ -234,6 +193,29 @@ function rowEl(r: RowBlock, p: Paint): Element {
 }
 
 /**
+ * A row's body lines. Answers that `isSideBySide` lets share the first answer's line, as the last branch, with the
+ * recommendation's reason on one line under them in place of each answer's note.
+ */
+function bodyEls(from: RowBlock, isSelected: boolean, p: Paint, isInert: boolean): Element[] {
+  const buttonOf = (id: string | undefined) => from.buttons.filter(b => b.id === id)
+  if (!isSideBySide(from, p))
+    return from.body.map(l => bodyLineEl(l, p.t, isSelected, buttonOf(l.optionId), p, isInert))
+  const { optionIds, recLine } = from.sideBySide
+  const first = from.body.find(l => l.optionId)
+  const answers = from.buttons.filter(b => optionIds.includes(b.id))
+  const reason = recLine
+    ? [bodyLineEl({ text: recLine, tone: 'muted', gapAbove: 'list', isOptionNote: true }, p.t, isSelected)]
+    : []
+
+  return from.body.flatMap(l => {
+    if (l === first) return [bodyLineEl({ ...l, tree: 'last' }, p.t, isSelected, answers, p, isInert), ...reason]
+    if (l.optionId || l.isOptionNote) return []
+
+    return [bodyLineEl(l, p.t, isSelected, [], p, isInert)]
+  })
+}
+
+/**
  * A row's panel: its body, its buttons or text field, and a status its buttons put under them. A closing row keeps
  * the panel of its open form drawn, without clicks, while it fades. The panel's opacity glides as the row opens or
  * closes, and it reports its height, so a closing row's box can leave it out.
@@ -244,16 +226,7 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   const isInert = isLeaving || from !== r
   const under = from === r && isStatusUnder(r) ? r.feedback : null
   const parts = [
-    ...from.body.map(l =>
-      bodyLineEl(
-        l,
-        t,
-        r.isSelected,
-        from.buttons.find(b => b.id === l.optionId),
-        p,
-        isInert,
-      ),
-    ),
+    ...bodyEls(from, r.isSelected, p, isInert),
     ...(from.buttons.some(b => !b.isOption)
       ? [
           buttonsEl(

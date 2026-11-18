@@ -1,4 +1,5 @@
-import { actionLines } from './action-plan'
+import { actionLines, answersFitLine } from './action-plan'
+import type { AnswerRow } from './action-plan'
 import { desktopButtonPt, desktopTextPt } from './desktop-metrics'
 import type { LinksProps } from './links-client'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
@@ -202,11 +203,23 @@ export function paneRowKeys(
       keyRow(rowId, keys, more, terminalWidth)
     )
   const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
-  const rowActions = (row: Row): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] } => {
-    if (Input && row.typeHint && typing === row.id) return { options: [], keys: [], more: [] }
+  /** Whether a question's answers fit side by side on one line of its text column, `width` cells in the terminal. */
+  const answersFit = (answers: KeyAction[], width: number) =>
+    look === 'desktop'
+      ? answersFitLine(
+          answers.map(a => desktopButtonPt(shownLabel(a), a.variant === 'primary')),
+          space.buttonGap * DESKTOP_CELL_PT,
+          desktopRowTextPt,
+        )
+      : answersFitLine(answers.map(terminalKeyCells), space.buttonGap, width)
+  const rowActions = (
+    row: Row,
+  ): { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[]; answerRow: AnswerRow | null } => {
+    if (Input && row.typeHint && typing === row.id) return { options: [], keys: [], more: [], answerRow: null }
 
     return {
       options: row.optionKeys?.() ?? [],
+      answerRow: row.answerRow?.() ?? null,
       keys: pressable(row.keys()),
       more: pressable(row.moreKeys?.() ?? []),
     }
@@ -245,6 +258,7 @@ export function paneRowKeys(
     rowActions,
     fieldActions,
     keyedButton,
+    answersFit,
   }
 }
 

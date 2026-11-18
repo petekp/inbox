@@ -8,7 +8,7 @@ import type {
   UiPressArgument,
 } from 'claude-code'
 import type { Draft, FoldKind, LastAction, PrViews, RowNote, Stop, Tab, Turns } from '../types'
-import type { DrawnEntry, DrawnLists } from './action-plan'
+import type { AnswerRow, DrawnEntry, DrawnLists } from './action-plan'
 import type { statusSelected } from './status-keys'
 import type { PressState } from './feedback'
 import type { helpKeys } from './help'
@@ -53,6 +53,8 @@ export type Row = {
   clippedBody?: (lines: number, width: number) => JSX.Element | null
   /** The answers, which the question's tree draws. */
   optionKeys?: () => KeyAction[]
+  /** Whether the answers may sit side by side, as `rowKeyPlan` offers it. */
+  answerRow?: () => AnswerRow | null
   keys: () => KeyAction[]
   moreKeys?: () => KeyAction[]
   typeHint?: string
@@ -133,7 +135,10 @@ export type PaneBase = {
 
 /** The render's calls that need `$`, each a function the hooks module builds around it. */
 export type PaneHandlers = {
-  rowKeyActions: (r: RowView, isAllShown: boolean) => { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[] }
+  rowKeyActions: (
+    r: RowView,
+    isAllShown: boolean,
+  ) => { options: KeyAction[]; keys: KeyAction[]; more: KeyAction[]; answerRow: AnswerRow | null }
   unlessGuarded: (rowId: string, press: UiPressArgument, onPress: Action['onPress']) => Promise<void>
   sendDraft: (id: string, surface: UiPressArgument['surface']) => Promise<void>
   discardReply: (id: string) => Promise<void>
