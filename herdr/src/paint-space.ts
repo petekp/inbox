@@ -113,7 +113,11 @@ type Space = { block: Block; above: number }
  * from, so a block whose content box keeps its former form's height keeps that form's spaces too, and both start to
  * glide in the same draw.
  */
-export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean, formOf: (b: Block) => Block = b => b): Space[] {
+export function spacesOf(
+  blocks: Block[],
+  isShut: (b: Block) => boolean,
+  formOf: (b: Block) => Block = b => b,
+): Space[] {
   const out: Space[] = []
   let prev: Block | null = null
   let section: number | null = null

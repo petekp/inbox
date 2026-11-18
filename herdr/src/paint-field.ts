@@ -35,7 +35,11 @@ export function fieldEl(
       ]
     : []
 
-  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0, easing: 'ease-out' as const }
+  const glide = {
+    duration: ENTER_FADE_MS,
+    delay: opening ? enterDelayMs(opening.height) : 0,
+    easing: 'ease-out' as const,
+  }
 
   return v_flex()
     .pl(indent)

@@ -53,6 +53,10 @@ export function underMotion(u: UnderLine | null, now: number, height: number | u
 
 /** When a status under a row's buttons next changes how it draws. */
 export const underTimes = (u: UnderLine | null): number[] =>
-  !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS] : [u.since + NEXT_FRAME_MS, u.since + ROW_STATE_MS.entering]
+  !u
+    ? []
+    : u.isLeaving
+      ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS]
+      : [u.since + NEXT_FRAME_MS, u.since + ROW_STATE_MS.entering]
 
 export const underId = (id: string): string => `status ${id}`

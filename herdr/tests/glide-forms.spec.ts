@@ -24,7 +24,15 @@ test('opening the goal field shows its text field as soon as its box opens and c
 })
 
 function sendingOn(open: Block[]): Block[] {
-  const out = { pressId: 'p5', rowId: 'd11', path: '/x', action: 'discuss', label: 'Discuss', pending: null, result: null }
+  const out = {
+    pressId: 'p5',
+    rowId: 'd11',
+    path: '/x',
+    action: 'discuss',
+    label: 'Discuss',
+    pending: null,
+    result: null,
+  }
 
   return drawOuts(open, [{ ...out, before: '', isWritten: true, waitingSince: NOW, isTaken: false }], {}, NOW)
 }
@@ -40,8 +48,15 @@ test('closing the goal field while its buttons fade in never shows them more tha
 
     return new Map(ats.map(at => [at, of('buttons goal', at) * of('box goal field', at)]))
   }
-  const stayed = shownAt([[0, closed], [0, typing, 'input']])
-  const shut = shownAt([[0, closed], [0, typing, 'input'], [closeAt, closed, 'input']])
+  const stayed = shownAt([
+    [0, closed],
+    [0, typing, 'input'],
+  ])
+  const shut = shownAt([
+    [0, closed],
+    [0, typing, 'input'],
+    [closeAt, closed, 'input'],
+  ])
   const above = [...shut].filter(([at, o]) => o > (stayed.get(at) ?? 1) + 0.01).map(([at]) => at)
   expect(above).toEqual([])
 })
@@ -89,7 +104,13 @@ test('a dismissed PR’s block glides between its open and dismissed forms in bo
     ['dismiss', open, dismissed],
     ['undo', dismissed, open],
   ] as const) {
-    const frames = framesOf([[0, [...from]], [0, [...to]]], 900)
+    const frames = framesOf(
+      [
+        [0, [...from]],
+        [0, [...to]],
+      ],
+      900,
+    )
     const jumps = frames.jumps.filter(j => j.at >= 0)
     const start = frames.heights[0] ?? 0
     const end = frames.heights.at(-1) ?? 0

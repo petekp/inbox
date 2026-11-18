@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T08:47:30.672Z. 298619 characters follow.
+// Built at 2026-11-18T08:52:08.631Z. 298614 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -5912,7 +5912,11 @@ function fieldEl(f, p, indent, isInert = false, opening = null) {
   const input = state ? [
     div4().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
-  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0, easing: "ease-out" };
+  const glide = {
+    duration: ENTER_FADE_MS,
+    delay: opening ? enterDelayMs(opening.height) : 0,
+    easing: "ease-out"
+  };
   return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => e.id(`buttons ${f.rowId}`).opacity(opening?.isOpen ? 1 : 0).transition("opacity", glide)));
 }
 
@@ -6358,7 +6362,6 @@ function bodyEls(from, isSelected, p, isInert, titleEnd) {
   return { els, end };
 }
 function panelEl(r, m, p, isLeaving, titleEnd) {
-  const { t } = p;
   const from = m?.closing ?? r;
   const isInert = isLeaving || from !== r;
   const actions = from.buttons.filter((b) => !b.isOption);
