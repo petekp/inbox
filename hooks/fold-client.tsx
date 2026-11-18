@@ -14,6 +14,9 @@ export type FoldProps = {
   colors: { rest: string | null; text: string | null; hoverText: string | null }
 }
 
+/** A no-break space, so a chevron never wraps onto a line of its own. */
+const NO_BREAK = '\u00a0'
+
 type State = { hover: boolean }
 
 const Fold: ClientModule<FoldProps, State> = (props, surface) => {
@@ -60,13 +63,13 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
                     Text({ ...((part.color ?? color) ? { color: part.color ?? color! } : {}), children: part.text }),
                   ),
                   ...(n === props.units!.length - 1
-                    ? [Text({ ...(color ? { color } : {}), children: ` ${props.chevron}` })]
+                    ? [Text({ ...(color ? { color } : {}), children: `${NO_BREAK}${props.chevron}` })]
                     : []),
                 ],
               }),
             ),
           })
-        : Text({ ...(color ? { color } : {}), children: `${props.label} ${props.chevron}` }),
+        : Text({ ...(color ? { color } : {}), children: `${props.label}${NO_BREAK}${props.chevron}` }),
     ],
   })
 }

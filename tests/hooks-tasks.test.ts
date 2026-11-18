@@ -209,5 +209,5 @@ test('last actions an earlier build saved convert once by the table, and a task 
   expect(await band.find({ text: /Asks/ })).toBeUndefined()
   await clock.advance(SETTLED_MS)
   await pane.press({ key: 'tab-findings' })
-  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed v')
+  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed\u00a0v')
 })

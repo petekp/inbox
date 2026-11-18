@@ -286,7 +286,7 @@ export function paneRowParts(
         )
   /** The terminal's fold control: `label`, a space and the chevron, one Button. */
   const foldButton = (key: string, label: string, isUnfolded: boolean, toggle: () => void, units?: CountsUnits) => (
-    <Button plain dimColor key={`fold-${key}`} label={`${label} ${foldGlyph(isUnfolded)}`} onPress={toggle}>
+    <Button plain dimColor key={`fold-${key}`} label={`${label}\u00a0${foldGlyph(isUnfolded)}`} onPress={toggle}>
       {units
         ? [
             ...units.flat().map((part, n) => (
@@ -294,7 +294,7 @@ export function paneRowParts(
                 {part.text}
               </Text>
             )),
-            ` ${foldGlyph(isUnfolded)}`,
+            `\u00a0${foldGlyph(isUnfolded)}`,
           ]
         : undefined}
     </Button>
