@@ -312,6 +312,7 @@ export function paneRowParts(
     padY = DESKTOP_ROW_PAD,
     units?: CountsUnits,
     textAt: number = ROW_COLUMNS.tree.textAt,
+    status?: FoldProps['status'],
   ) =>
     hasClient ? (
       <Box key={`fold-row-${key}`} position="relative" width="100%">
@@ -329,6 +330,7 @@ export function paneRowParts(
               isUnfolded,
               chevron: foldGlyph(isUnfolded),
               padY,
+              ...(status ? { status } : {}),
               colors: {
                 rest: isInline ? null : (pal.card ?? null),
                 text: pal.age,

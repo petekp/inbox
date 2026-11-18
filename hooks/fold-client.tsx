@@ -12,6 +12,10 @@ export type FoldProps = {
   padY: number
   /** A null color is the theme's own. */
   colors: { rest: string | null; text: string | null; hoverText: string | null }
+  /**
+   * Set on a Status line, whose frames keep their mark a cell clear of the text: the mark the line draws there, if any.
+   */
+  status?: { mark: { text: string; color: string | null } | null }
 }
 
 /** A no-break space, so a chevron never wraps onto a line of its own. */
@@ -49,7 +53,13 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
     paddingY: props.padY,
     ...(background ? { backgroundColor: background } : {}),
     children: [
-      Box({ width: props.markCells, flexShrink: 0 }),
+      Box({
+        width: props.status ? props.markCells + 1 : props.markCells,
+        flexShrink: 0,
+        children: props.status?.mark
+          ? Text({ ...(props.status.mark.color ? { color: props.status.mark.color } : {}), children: props.status.mark.text })
+          : [],
+      }),
       props.units
         ? Box({
             flexDirection: 'row',
