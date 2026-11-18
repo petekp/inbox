@@ -36,8 +36,6 @@ export type Theme = Record<
   | 'selected'
   | 'solid'
   | 'solid_foreground'
-  | 'accent'
-  | 'accent_foreground'
   | 'muted'
   | 'done'
   | 'ansi1'
