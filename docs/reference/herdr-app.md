@@ -13,3 +13,23 @@ Checked live on 2026-11-11 by sending the request `hooks/herdr-sweep.ts:labelled
 - Every entry had `state: "live"`. Finished terminals are left out of the list, and `hidden_finished` counts them.
 
 The sweep relies on the last three facts. It removes nothing unless the list holds its own terminal's `address` and every entry has a `labels` object.
+
+## The globals a mod gets
+
+Herdr's mod runtime is gpui-shell 0.7.1, built into the Herdr app. It runs a mod on QuickJS, through the `rquickjs` crate. The app's binary names its engine files under `vendor/gpui-kit/crates/shell/src/engine/quickjs/`. The source of the app and of gpui-kit is not on this Mac, so this list was not read from source. `~/Code/herdr`, at `70389c38`, is `herdr`, the terminal multiplexer. It holds no gpui-kit or app code.
+
+The list comes from the runtime itself. It was checked on 2026-11-18 with Herdr app 0.1.16, by running `herdr-app check` with a scratch `HERDR_APP_HOME` on a mod whose `main.js` throws `Object.getOwnPropertyNames(globalThis)` in its error. `herdr-app check` loads a mod in the same gpui-shell the window runs. Whether the window installs anything more on the global object is unverified.
+
+A mod's global object holds these 89 names. `HERDR_GLOBALS` in `herdr/tests/herdr-runtime.ts` holds the same list.
+
+- The language's own: `AggregateError`, `Array`, `ArrayBuffer`, `AsyncDisposableStack`, `Atomics`, `BigInt`, `BigInt64Array`, `BigUint64Array`, `Boolean`, `DataView`, `Date`, `DisposableStack`, `Error`, `EvalError`, `FinalizationRegistry`, `Float16Array`, `Float32Array`, `Float64Array`, `Function`, `Infinity`, `Int8Array`, `Int16Array`, `Int32Array`, `InternalError`, `Iterator`, `JSON`, `Map`, `Math`, `NaN`, `Number`, `Object`, `Promise`, `Proxy`, `RangeError`, `ReferenceError`, `Reflect`, `RegExp`, `Set`, `SharedArrayBuffer`, `String`, `SuppressedError`, `Symbol`, `SyntaxError`, `TypeError`, `URIError`, `Uint8Array`, `Uint8ClampedArray`, `Uint16Array`, `Uint32Array`, `WeakMap`, `WeakRef`, `WeakSet`, `decodeURI`, `decodeURIComponent`, `encodeURI`, `encodeURIComponent`, `escape`, `globalThis`, `isFinite`, `isNaN`, `parseFloat`, `parseInt`, `undefined` and `unescape`. `InternalError` is QuickJS's own.
+- What gpui-shell adds: `Blob`, `Buffer`, `Crypto`, `CryptoKey`, `DOMException`, `File`, `SubtleCrypto`, `URL`, `URLSearchParams`, `atob`, `btoa`, `console`, `crypto`, `fetch`, `localStorage`, `performance`, `process`, `queueMicrotask`, `sessionStorage` and `window`.
+- Names that throw a `TypeError` when called: `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval` and `require`. The error says what to use instead, such as "`setTimeout` is not available in the shell: use cx.timer.after(ms, callback)".
+
+The global object also holds 232 names that start with `__`, which gpui-shell's own modules call. A mod has no use for them, and the load spec leaves them out.
+
+A mod has none of the globals Node, Bun or a browser add beyond that list. That includes `Intl`, `eval`, `TextEncoder`, `TextDecoder`, `structuredClone`, `navigator`, `WebAssembly`, `Temporal` and `ShadowRealm`. `window` is an ordinary object, not the global object. Its own keys are the window calls in `gpui-kit.d.ts`, such as `paint_path`, `open_dialog` and `viewport_size`, plus `localStorage` and `sessionStorage`. `process` holds only `run`, `nextTick`, `exit`, `platform` and `arch`. `performance` holds `now` and `timeOrigin`.
+
+The runtime freezes `Object.prototype`, `Array.prototype` and `String.prototype`, so a mod cannot add to them. The global object itself is not frozen. Whether the other built-in prototypes are frozen is unverified.
+
+`herdr/tests/mod-load.spec.ts` loads the built `herdr/mod/inbox/main.js` with only these globals. After a Herdr app update, run the probe again and update `HERDR_GLOBALS` to match.
