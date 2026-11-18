@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T01:17:57.272Z. 281690 characters follow.
+// Built at 2026-11-18T02:50:45.994Z. 281512 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -5626,8 +5626,7 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
     return shaped.invisible().disabled(true);
   if (b.isOut)
     return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true);
-  const isRecommendedAnswer = b.isOption === true && b.emphasis === "primary";
-  const styled = isRecommendedAnswer ? shaped.border_color(t.accent).bg(t.accent).text_color(t.accent_foreground) : b.emphasis === "primary" ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? shaped.border_color(t.input).text_color(t.foreground) : shaped.text_color(t.muted);
+  const styled = b.emphasis === "primary" ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? shaped.border_color(t.input).text_color(t.foreground) : shaped.text_color(t.muted);
   if (isInert)
     return styled;
   const live = b.emphasis === "primary" ? styled.hover((s) => s.opacity(0.85)).active((s) => s.opacity(0.7)) : b.emphasis === "normal" ? styled.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)) : styled.hover((s) => s.text_color(t.foreground)).active((s) => s.text_color(t.foreground).opacity(0.7));
