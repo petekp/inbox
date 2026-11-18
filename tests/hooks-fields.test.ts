@@ -66,6 +66,25 @@ test('t opens a field for the person’s own words: a question’s words go to C
   expect(await pane.find({ text: /README is stale/ })).toBeDefined()
 })
 
+test('a question’s answers stay drawn while its reply field is open, and take clicks but not their keys, which go to the field', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ key: 'answer-i1-0' }))?.text).toBe('a: yes')
+  expect(await pane.find({ key: 'answer-i1-0-key' })).toBeDefined()
+
+  await pane.press({ key: 'typekey-i1' })
+  await clock.settle()
+  expect(await replyField(pane, 'i1')).toBeDefined()
+  expect((await pane.find({ key: 'answer-i1-0' }))?.text).toBe('yes')
+  expect(await pane.find({ key: 'answer-i1-0-key' })).toBeUndefined()
+})
+
 test('Escape in a reply field closes the field and keeps the pane and the draft', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
