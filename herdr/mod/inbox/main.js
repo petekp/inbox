@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T08:52:08.631Z. 298614 characters follow.
+// Built at 2026-11-18T09:27:57.488Z. 298639 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -5324,7 +5324,7 @@ function glideOf(track, isStart, last, now, holdsUntil, isPressed, isReplaced, h
     const isTurned = isShownAtOnce(last, now, height);
     const fadeMs = isReplaced || isTurned ? 0 : LEAVE_FADE_MS;
     const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + fadeMs;
-    const from = isTurned ? { box: "shut", isShown: false } : isLive || isReplaced ? { box: last?.box ?? "open", isShown: false } : { box: "open", isShown: true };
+    const from = isTurned ? { box: "shut", isShown: false } : isLive || isReplaced ? { box: shutAt <= now ? "shut" : last?.box ?? "open", isShown: false } : { box: "open", isShown: true };
     const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt };
     return { ...glide, endsAt: restAt(shutAt, 0) };
   }

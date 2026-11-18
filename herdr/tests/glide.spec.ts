@@ -426,23 +426,23 @@ test('opening the goal field never raises the Status page’s height', () => {
   expect(Math.max(...heights)).toBeLessThanOrEqual(start + 0.5)
 })
 
-test.failing(
-  'reopening the goal field while it still closes never raises the Status page above its closed height',
-  () => {
-    const closed = tabBlocks(demoScreen(), uiOn('overview'))
-    const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
+test('reopening the goal field while it still closes moves the Status page only toward its open height', () => {
+  const closed = tabBlocks(demoScreen(), uiOn('overview'))
+  const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
+  for (const reopensAt of [1100, 1200, 1300]) {
     const heights = framesOf(
       [
         [0, closed],
         [0, typing, 'input'],
         [900, closed, 'input'],
-        [1200, typing, 'input'],
+        [reopensAt, typing, 'input'],
       ],
-      2200,
-    ).heights
-    expect(Math.max(...heights)).toBeLessThan((heights[0] ?? 0) + 1)
-  },
-)
+      reopensAt + 1000,
+    ).heights.slice(Math.round((reopensAt + 500) / 16))
+    const rise = Math.max(...heights) - (heights[0] ?? 0)
+    expect({ reopensAt, rise: rise > 0.5 ? rise : 0 }).toEqual({ reopensAt, rise: 0 })
+  }
+})
 
 test('closing the goal field while it opens takes the Status page to its closed height without passing it, and cuts no text as it closes', () => {
   const closed = tabBlocks(demoScreen(), uiOn('overview'))

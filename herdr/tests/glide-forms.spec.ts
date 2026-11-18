@@ -27,9 +27,12 @@ test('opening the goal field shows its buttons only once its box is nearly open 
   })
 })
 
-test.failing('opening the goal field cuts no text as its box grows', () => {
-  expect(goalFieldOpening().cuts.filter(c => c.at >= 0)).toEqual([])
-})
+test.failing(
+  'D1, the person’s own press cutting the panel it opens: opening the goal field cuts no text as its box grows',
+  () => {
+    expect(goalFieldOpening().cuts.filter(c => c.at >= 0)).toEqual([])
+  },
+)
 
 function sendingOn(open: Block[]): Block[] {
   const out = {
