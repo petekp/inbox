@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T04:55:13.992Z. 287825 characters follow.
+// Built at 2026-11-18T05:00:27.976Z. 288494 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -4272,6 +4272,12 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
         id: row.id,
         depth: row.depth,
         text: row.kind === "counts" ? countsText(row.counts) : row.text,
+        ...row.kind === "counts" ? {
+          counts: {
+            label: COUNTS_LABEL,
+            items: row.counts.map((c) => ({ mark: markOf2(c.mark, c.tone, false), text: c.text }))
+          }
+        } : {},
         isOpen: isUnfolded(row.id),
         change: { toggleFold: row.id }
       }
@@ -6205,6 +6211,16 @@ function emptyContentEl(b, p, isInert) {
   const centred = (text, color = t.foreground) => div9().text_center().whitespace_normal().text_color(color).child(text);
   return v_flex3().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex6().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div9().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div9()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)));
 }
+var countsEl = (counts, t) => h_flex6().flex_wrap().min_w(0).children([
+  ...wordEls(counts.label, t.muted),
+  ...counts.items.flatMap((c, n) => [
+    ...n > 0 ? wordEls("·", t.muted) : [],
+    h_flex6().flex_none().children([
+      div9().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+      statusPartEl(`${NO_BREAK_SPACE}${c.text}${NO_BREAK_SPACE}`).text_color(t.muted)
+    ])
+  ])
+]);
 function foldEl(b, p, isInert) {
   const { t } = p;
   const press = {
@@ -6217,7 +6233,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex6().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(div9().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
+  return h_flex6().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div9().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
 }
 function blockEl(b, p) {
   const { t } = p;

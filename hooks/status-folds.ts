@@ -40,6 +40,19 @@ export const COUNTS_LABEL = 'Also open: '
 export const countsText = (counts: StatusCount[]) =>
   `${COUNTS_LABEL}${counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP)}`
 
+/** The closed counts fold's line as units that wrap whole: the label, then each count with its gap and mark. A mark has its tone. */
+export const countsUnits = (counts: StatusCount[]): { text: string; tone: StatusCount['tone'] | 'plain' }[][] => [
+  [{ text: COUNTS_LABEL, tone: 'plain' }],
+  ...counts.map((c, n) => [
+    ...(n > 0 ? [{ text: STALL_GAP, tone: 'plain' as const }] : []),
+    { text: c.mark, tone: c.tone },
+    { text: ` ${c.text}`, tone: 'plain' as const },
+  ]),
+]
+
+/** The units `countsUnits` gives. */
+export type CountsUnits = ReturnType<typeof countsUnits>
+
 /** What follows a parent's name: v while its rows show, else › and how many rows of work its fold hides. */
 export const parentChevron = (isCollapsed: boolean, foldCount: number) =>
   isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true)
@@ -61,8 +74,9 @@ function withoutCollapsed(rows: StatusRow[], isCollapsed: IsCollapsed): StatusRo
 }
 
 /**
- * `rows` as a look draws them: each done fold and counts fold that `isUnfolded` names by id followed by the finished rows it holds, and
- * none of the rows under a subject `isCollapsed` names.
+ * `rows` as a look draws them: each done fold and counts fold that `isUnfolded` names by id followed by the rows it
+ * holds, which are finished work for a done fold and open work for a counts fold, and none of the rows under a subject
+ * `isCollapsed` names.
  */
 export function unfoldedRows(
   rows: StatusRow[],

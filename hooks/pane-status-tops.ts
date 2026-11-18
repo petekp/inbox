@@ -1,4 +1,5 @@
-import { desktopButtonPt, desktopLines } from './desktop-metrics'
+import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
+import type { CountsUnits } from './status-folds'
 import { DESKTOP_BUTTON_PT, DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_ROW_PT } from './pane-sizes'
 import { ITEM_GAP_PT } from './layout'
 import { statusGaps } from './status-gaps'
@@ -107,6 +108,17 @@ export function desktopButtonLines(labels: string[], widthPt: number): Lines {
   const rows = desktopWrapLines(widths, DESKTOP_CELL_PT, widthPt)
 
   return { least: 1, most: rows * DESKTOP_BUTTON_LINES + (rows - 1) * desktopSpaceLines(1) }
+}
+
+/**
+ * The lines a counts fold takes on desktop in a column about `widthPt` wide, as the fold's Client wraps its units: each
+ * moves to the next line whole, and the chevron stays with the last.
+ */
+export function desktopCountsFoldLines(units: CountsUnits, widthPt: number, chevron: string): number {
+  const widths = units.map(unit => desktopTextPt(unit.map(part => part.text).join('')))
+  widths[widths.length - 1]! += desktopTextPt(` ${chevron}`)
+
+  return desktopWrapLines(widths, 0, widthPt)
 }
 
 /**

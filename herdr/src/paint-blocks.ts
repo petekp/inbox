@@ -472,6 +472,24 @@ function emptyContentEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert:
     )
 }
 
+/** Other work's counts: the label, then each mark in its tone with its count, as items of a wrapping row so a count stays with its mark. */
+const countsEl = (counts: NonNullable<Extract<Block, { kind: 'fold' }>['counts']>, t: Theme): Element =>
+  h_flex()
+    .flex_wrap()
+    .min_w(0)
+    .children([
+      ...wordEls(counts.label, t.muted),
+      ...counts.items.flatMap((c, n) => [
+        ...(n > 0 ? wordEls('·', t.muted) : []),
+        h_flex()
+          .flex_none()
+          .children([
+            div().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+            statusPartEl(`${NO_BREAK_SPACE}${c.text}${NO_BREAK_SPACE}`).text_color(t.muted),
+          ]),
+      ]),
+    ])
+
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const press: Button = {
@@ -495,7 +513,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .accessibility_label(b.text)
     .when(!isInert, e => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
-    .child(div().min_w(0).whitespace_normal().child(b.text))
+    .child(fold?.counts ? countsEl(fold.counts, t) : div().min_w(0).whitespace_normal().child(b.text))
     .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))
 }
 

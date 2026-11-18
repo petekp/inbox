@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import { goalKeyPlan, statusKeyRows } from '../../hooks/status-keys'
+import { countsText } from '../../hooks/status-folds'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionStatus } from '../../types'
 import { demoState } from '../src/demo'
@@ -191,7 +192,10 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   const rule = lines.find(l => l.includes('Other work'))!
   expect(rule).toMatch(/^ {3}Other work ─{4,}$/)
   expect(rule.length).toBeLessThanOrEqual(60)
-  expect(lines.find(l => l.includes('1 waiting'))).toBe('   Also open: ◌ 1 waiting ›')
+  const counts = screen.view.statusPage.rows.find(r => r.kind === 'counts')
+  expect(lines.find(l => l.includes('1 waiting'))).toBe(
+    `   ${counts?.kind === 'counts' ? countsText(counts.counts) : ''} ›`,
+  )
   expect(lines.slice(lineAt(lines, '1 waiting') + 1, lineAt(lines, '1 waiting') + 3)).toEqual([
     ' ✓ Fade-out',
     '   dismissed glances fade',

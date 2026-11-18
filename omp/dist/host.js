@@ -8734,10 +8734,11 @@ function drawPageRow(row, d, isSelected = false) {
     const line = " ".repeat(childAt(row.depth - 1) + 2) + s.dim(row.text);
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s);
   }
-  if (row.kind === "done-fold" || row.kind === "counts") {
+  if (row.kind === "counts")
+    return countsFoldLines(row.counts, d.ui.statusUnfolded.includes(row.id), isSelected, textAt, width, s);
+  if (row.kind === "done-fold") {
     const chevron = foldGlyph(d.ui.statusUnfolded.includes(row.id));
-    const text = row.kind === "counts" ? countsText(row.counts) : row.text;
-    return pageLine(d, at, " ", text, isSelected ? s.bold : s.dim, {
+    return pageLine(d, at, " ", row.text, isSelected ? s.bold : s.dim, {
       chevron: { text: chevron, paint: isSelected ? (t) => s.tone("accent", t) : s.dim }
     });
   }
@@ -8748,6 +8749,32 @@ function drawPageRow(row, d, isSelected = false) {
       ...row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
     ];
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
+}
+function countsFoldLines(counts, isUnfolded, isSelected, textAt, width, s) {
+  const room = Math.max(1, width - textAt);
+  const gap = { cells: cellWidth(STALL_GAP), text: s.dim(STALL_GAP) };
+  const chevron = foldGlyph(isUnfolded);
+  const parts = counts.map((c, n) => {
+    const tail = n === counts.length - 1 ? ` ${chevron}` : "";
+    const chevronPaint = isSelected ? s.tone("accent", tail) : s.dim(tail);
+    return {
+      cells: cellWidth(`${c.mark} ${c.text}${tail}`),
+      text: feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`) + chevronPaint
+    };
+  });
+  const lines = [
+    { cells: cellWidth(COUNTS_LABEL), text: (isSelected ? s.bold : s.dim)(COUNTS_LABEL) }
+  ];
+  for (const [n, part] of parts.entries()) {
+    const line = lines.at(-1);
+    const joiner = n === 0 ? { cells: 0, text: "" } : gap;
+    if (line.cells + joiner.cells + part.cells <= room) {
+      line.cells += joiner.cells + part.cells;
+      line.text += joiner.text + part.text;
+    } else
+      lines.push(part);
+  }
+  return lines.map((l) => " ".repeat(textAt) + l.text);
 }
 
 // src/panel-goal.ts

@@ -3,6 +3,8 @@ import type { ClientModule } from 'claude-code'
 export type FoldProps = {
   markCells: number
   label: string
+  /** The label as units that wrap whole, each text with the color its mark has, or null for the theme's. Drawn in place of `label`. */
+  units?: { text: string; color: string | null }[][]
   isUnfolded: boolean
   /** The fold's chevron, from `foldGlyph`. */
   chevron: string
@@ -45,7 +47,26 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
     ...(background ? { backgroundColor: background } : {}),
     children: [
       Box({ width: props.markCells, flexShrink: 0 }),
-      Text({ ...(color ? { color } : {}), children: `${props.label} ${props.chevron}` }),
+      props.units
+        ? Box({
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            children: props.units.map((unit, n) =>
+              Box({
+                flexDirection: 'row',
+                flexShrink: 0,
+                children: [
+                  ...unit.map(part =>
+                    Text({ ...((part.color ?? color) ? { color: part.color ?? color! } : {}), children: part.text }),
+                  ),
+                  ...(n === props.units!.length - 1
+                    ? [Text({ ...(color ? { color } : {}), children: ` ${props.chevron}` })]
+                    : []),
+                ],
+              }),
+            ),
+          })
+        : Text({ ...(color ? { color } : {}), children: `${props.label} ${props.chevron}` }),
     ],
   })
 }

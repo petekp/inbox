@@ -5,7 +5,7 @@ import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from 
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../hooks/status-folds'
+import { COUNTS_LABEL, countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../hooks/status-folds'
 import { statusGaps } from '../../hooks/status-gaps'
 import { LATER_TEXT, isSpacedAbove, workJoints } from '../../hooks/status-path'
 import type { PathLine, WorkJoint } from '../../hooks/status-path'
@@ -115,6 +115,14 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
         id: row.id,
         depth: row.depth,
         text: row.kind === 'counts' ? countsText(row.counts) : row.text,
+        ...(row.kind === 'counts'
+          ? {
+              counts: {
+                label: COUNTS_LABEL,
+                items: row.counts.map(c => ({ mark: markOf(c.mark, c.tone, false), text: c.text })),
+              },
+            }
+          : {}),
         isOpen: isUnfolded(row.id),
         change: { toggleFold: row.id },
       },
