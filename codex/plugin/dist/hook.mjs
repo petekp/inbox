@@ -867,6 +867,7 @@ function goalPage(o, items) {
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
+var STALL_GAP = " \xB7 ";
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
@@ -1068,6 +1069,7 @@ function waitingUnderParents(ledger) {
     })
   ]);
 }
+var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
 
 // ../hooks/pressed.ts
 function offersUndo(c) {
