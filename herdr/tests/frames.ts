@@ -1,7 +1,7 @@
 import { HEIGHT_SPRING, springStep } from '../../hooks/springs'
 import type { Block } from '../src/blocks'
 import type { Paint } from '../src/paint-theme'
-import { columnOf } from './gpui-stand-in'
+import { columnOf, fieldOf } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 
 const { spacedEls } = await import('../src/paint-space')
@@ -10,7 +10,6 @@ const { moveRows, NO_TRACKS } = await import('../src/motion')
 const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
-const { InputState } = await import('gpui-base')
 
 const FRAME_MS = 16
 const PANE_WIDTH = 300
@@ -244,7 +243,7 @@ class Fades {
   }
 }
 
-const fieldState = InputState.new({ value: 'Pinch ships in the beta' })
+const fieldState = fieldOf('Pinch ships in the beta')
 
 function paintOf(
   motion: Paint['motion'],
