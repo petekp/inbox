@@ -420,7 +420,7 @@ export function paneStatus(
         ? {
             el: (
               <Box key={`status-${r.id}`} paddingLeft={DESKTOP_MARK_CELLS * 2 * r.depth}>
-                {foldRow(key, text, isUnfolded(r.id), toggle, undefined, units)}
+                {foldRow(key, text, isUnfolded(r.id), toggle, undefined, units, undefined, { mark: null })}
               </Box>
             ),
             lines: units
