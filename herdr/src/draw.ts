@@ -39,7 +39,7 @@ import { QUEUED_AFTER_MS, SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerError } from '../../hooks/view'
 import type { PressKind } from '../../types'
 import { button, emptyBlock } from './blocks'
-import type { Block, Button, Does, Field, Mark, RowBlock, Tone } from './blocks'
+import type { Block, BodyLine, Button, Does, Field, Mark, RowBlock, Tone } from './blocks'
 import { prTabBlocks } from './draw-prs'
 import { prRowWaits } from '../../hooks/pr-rows'
 import { openPrViews } from '../../hooks/pr-views'
@@ -186,46 +186,34 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
   }
 }
 
-function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
-  const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
-    { optionId: `${row.id} ${n}`, text: '', tone: 'muted' as const },
-    ...(o.note
-      ? [{ text: o.note, tone: 'muted' as const, gapAbove: 'list' as const, isOptionNote: true as const }]
-      : []),
+function rowBody(row: RowView, isAllShown: boolean): BodyLine[] {
+  const options = rowKeyPlan(row, isAllShown).options.map((o, n): BodyLine[] => [
+    { part: 'answer', optionId: `${row.id} ${n}`, text: '', tone: 'muted' },
+    ...(o.note ? [{ part: 'note' as const, text: o.note, tone: 'muted' as const, isOptionNote: true as const }] : []),
   ])
-  const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: 'muted' as const }]] : []
+  const holdsUp: BodyLine[][] = row.holdsUpLine ? [[{ part: 'holdsUp', text: row.holdsUpLine, tone: 'muted' }]] : []
   const branches = [...holdsUp, ...options]
   const lastBranch = branches.length - 1
   const isTrunkAfterHoldsUp = options.length > 0
-  const tree = (branch: number, line: number): RowBlock['body'][number]['tree'] =>
+  const tree = (branch: number, line: number): BodyLine['tree'] =>
     line > 0 ? (branch === lastBranch ? undefined : 'trunk') : branch === lastBranch ? 'last' : 'tee'
-  const isOptionAfterOption = (branch: number) => branch > holdsUp.length
-  const branchLines = (branch: number): RowBlock['body'] =>
+  const branchLines = (branch: number): BodyLine[] =>
     (branches[branch] ?? []).map((l, line) => {
       const placed = tree(branch, line)
-      const startGap = isOptionAfterOption(branch) ? ('item' as const) : ('child' as const)
 
-      return { ...l, ...(placed ? { tree: placed } : {}), ...(line === 0 ? { gapAbove: startGap } : {}) }
+      return placed ? { ...l, tree: placed } : l
     })
   const contextTree = isTrunkAfterHoldsUp ? { tree: 'trunk' as const } : {}
-  const lines: RowBlock['body'] = [
+  const lines: BodyLine[] = [
     ...holdsUp.flatMap((_, branch) => branchLines(branch)),
-    { text: row.contextLine ?? '', tone: 'muted', gapAbove: 'child', ...contextTree },
-    {
-      text: row.earlierLine ? earlierLineText(row.earlierLine) : '',
-      tone: 'muted',
-      gapAbove: 'child',
-      ...contextTree,
-    },
-    { text: row.detail ?? '', tone: null },
-    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : '', tone: 'muted' },
+    { part: 'context', text: row.contextLine ?? '', tone: 'muted', ...contextTree },
+    { part: 'earlier', text: row.earlierLine ? earlierLineText(row.earlierLine) : '', tone: 'muted', ...contextTree },
+    { part: 'detail', text: row.detail ?? '', tone: null },
+    { part: 'file', text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : '', tone: 'muted' },
     ...options.flatMap((_, n) => branchLines(holdsUp.length + n)),
   ]
-  const shown = lines.filter(l => l.text || l.lead || l.optionId)
 
-  return shown.map(({ gapAbove, ...l }, n) =>
-    n === 0 ? { ...l, gapAbove: 'title' } : gapAbove ? { ...l, gapAbove } : l,
-  )
+  return lines.filter(l => l.text || l.lead || l.optionId)
 }
 
 function sideBySideOf(row: RowView, isAllShown: boolean): Pick<RowBlock, 'sideBySide'> {

@@ -21,6 +21,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-read.ts` | Codex adapter. Reads the view and applies it, and sends the replies and discards the server holds with each request. |
 | `codex/src/tab-press.ts` | Codex adapter. The parts of a press that need no rows: showing the text a failed copy leaves for copying by hand, checking whether it was sent, and starting or dropping a reply. |
 | `codex/src/tab-rows.tsx` | Codex adapter. Each tab's rows, built from the view, and `act`, which sends a press. `act` and the row builders call each other, so they share a file. |
+| `codex/src/tab-part-gap.ts` | Codex adapter. `partAttrs` names a part of an open row and sets its top padding, and `--above` for the tree's strokes, from `partGap`. |
 | `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's Holds up line, context and option lines as the `.tree` its ◆ starts. |
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |

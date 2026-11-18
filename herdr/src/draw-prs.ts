@@ -101,9 +101,9 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
     isDim: text.mark.isDone,
     isSelectable: text.fold === null,
     body: [
-      ...(rest ? [{ text: clipLabel(rest, PR_QUOTE_CHARS), tone: null }] : []),
-      { text: `${threadWhere(t)}${DOT}@${t.author}`, tone: 'muted' as const },
-      ...(reply ? [{ text: reply, tone: null }] : []),
+      ...(rest ? [{ part: 'detail' as const, text: clipLabel(rest, PR_QUOTE_CHARS), tone: null }] : []),
+      { part: 'detail', text: `${threadWhere(t)}${DOT}@${t.author}`, tone: 'muted' as const },
+      ...(reply ? [{ part: 'detail' as const, text: reply, tone: null }] : []),
     ],
     buttons: [...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
     field: null,
@@ -125,7 +125,7 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
     settled: null,
     isDim: false,
     isSelectable: text.fold === null,
-    body: [{ text: text.meta, tone: 'muted' }],
+    body: [{ part: 'detail', text: text.meta, tone: 'muted' }],
     buttons: checkActions(pr, c, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
     field: null,
   }

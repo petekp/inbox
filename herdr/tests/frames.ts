@@ -276,13 +276,13 @@ function paintOf(
   } as unknown as Paint
 }
 
-export function layoutAtRest(blocks: Block[], measuredWidths: Record<string, number> = {}) {
+export function layoutAtRest(blocks: Block[], measuredWidths: Record<string, number> = {}, rowTextRoom = PANE_WIDTH) {
   const heights = new Heights()
   for (const [key, width] of Object.entries(measuredWidths))
     heights.measure(key, { width, height: LINE_HEIGHT }, 1, true)
   const now = 1_000_000
   const moved = moveRows(blocks, NO_TRACKS, now, true, false, key => heights.get(key))
-  const paint = paintOf(moved.motion, heights, () => true, now, new Map(), PANE_WIDTH)
+  const paint = paintOf(moved.motion, heights, () => true, now, new Map(), rowTextRoom)
 
   return layout(
     columnOf(

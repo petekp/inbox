@@ -128,16 +128,19 @@ export function RowActions({
   reply,
   isBlocked,
   followsAnswers = false,
+  part = {},
 }: {
   keys: RowAction[]
   more: RowAction[]
   reply: Reply | null
   followsAnswers?: boolean
   isBlocked: () => boolean
+  /** The attributes that place the actions as a part of an open row, `partGap` under the part above. */
+  part?: Record<string, unknown>
 }) {
   if (reply)
     return (
-      <div class="actions">
+      <div class="actions" {...part}>
         <form
           onSubmit={e => {
             e.preventDefault()
@@ -162,7 +165,7 @@ export function RowActions({
       </div>
     )
   return (
-    <div class="actions">
+    <div class="actions" {...part}>
       {keys.length + more.length > 0 ? (
         <div class={followsAnswers ? 'keys follows-answers' : 'keys'}>
           {keys.map(action => (

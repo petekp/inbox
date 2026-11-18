@@ -89,6 +89,7 @@ export const buttonsEl = (
   indent: number,
   isInert = false,
   followsAnswers = false,
+  above: number = CONTROL_GAP,
 ): Element => {
   const outdent = followsAnswers ? BUTTON_LABEL_X : 0
   const followUps = buttons.filter(b => b.isFollowUp)
@@ -98,7 +99,7 @@ export const buttonsEl = (
     .flex_wrap()
     .items_center()
     .gap(CONTROL_GAP)
-    .pt(CONTROL_GAP)
+    .pt(above)
     .pl(indent - outdent)
     .children(others.map(b => buttonEl(b, p, isInert, true)))
     .when(followUps.length > 0, e =>
