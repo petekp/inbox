@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T20:24:27.520Z. 299521 characters follow.
+// Built at 2026-11-18T20:50:41.339Z. 297841 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -4152,7 +4152,6 @@ function prTabBlocks(screen, selected) {
 // ../hooks/layout.ts
 var SPACE_UNIT = 4;
 var LINE_PT = 5 * SPACE_UNIT;
-var DESKTOP_LINE_PT = 19;
 var INSIDE_GAP_PT = 0;
 var LIST_GAP_PT = SPACE_UNIT;
 var ITEM_GAP_PT = 3 * SPACE_UNIT;
@@ -5797,59 +5796,32 @@ import { h_flex as h_flex8, v_flex as v_flex6 } from "gpui-base";
 var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
 var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
 var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
-var DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2;
 var TITLE_PARTS = ["title", "titleStatus"];
-var TREE_TEXT = ["holdsUp", "context", "earlier"];
-var BODY_PARTS = ["detail", "file"];
-var ANSWER_PARTS = ["answer", "note", "answers", "reason"];
-var TREE_PARTS = [...TREE_TEXT, ...ANSWER_PARTS];
-var gap = (step, rows, forms = {}) => ({ step, forms, rows });
-var UNDER_TITLE = gap("inside", 0);
-var ANSWERS_UNDER_TITLE = gap("control", 0, { codex: CONTROL_GAP_PT });
-var CODEX_TREE_LINES = ["holdsUp", "context", "earlier", "answer", "answers"];
-var CODEX_TREE_EXTRA_PX = 1;
-var codexTreeExtra = (above, below) => CODEX_TREE_EXTRA_PX * (Number(CODEX_TREE_LINES.includes(below)) + Number(TREE_PARTS.includes(above) && below !== "note" && below !== "reason"));
-function aboveButtons(above) {
-  const desktopFrame = DESKTOP_BLANK_LINE_PT;
-  if (TREE_PARTS.includes(above))
-    return gap("control", 1, { desktopCard: ROW_PAD_PT, desktopFrame });
-  if (above === "status")
-    return gap("control", 1, { desktopCard: 0, desktopFrame });
-  return gap("control", 1, { desktopFrame });
-}
+var gap = (step, rows = 0) => ({ step, rows });
+var UNDER_TITLE = gap("inside");
+var UNDER_TEXT = gap("control", 1);
 var GAP_ABOVE = {
-  titleStatus: () => gap("inside", 0),
+  titleStatus: () => UNDER_TITLE,
   holdsUp: () => UNDER_TITLE,
-  context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child", 0),
-  earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child", 0, above === "context" ? { desktopFrame: 0 } : {}),
-  detail: () => gap("inside", 1, {
-    codex: CONTROL_GAP_PT,
-    desktopCard: DESKTOP_BLANK_LINE_PT,
-    desktopFrame: DESKTOP_BLANK_LINE_PT
-  }),
-  file: (above) => above === "detail" ? gap("inside", 1, { codex: LIST_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT }) : GAP_ABOVE.detail(above),
-  answer: (above) => TITLE_PARTS.includes(above) ? ANSWERS_UNDER_TITLE : above === "answer" || above === "note" ? gap("item", 0) : gap("child", 0),
-  note: () => gap("list", 0),
-  answers: (above) => TITLE_PARTS.includes(above) ? ANSWERS_UNDER_TITLE : gap("child", 0),
-  reason: () => gap("list", 0),
-  status: (above) => {
-    if (TITLE_PARTS.includes(above))
-      return gap("inside", 1, { codex: CONTROL_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT });
-    if (BODY_PARTS.includes(above))
-      return gap("control", 1, { desktopFrame: DESKTOP_BLANK_LINE_PT });
-    return gap("control", 1, { desktopCard: ROW_PAD_PT + DESKTOP_BLANK_LINE_PT, desktopFrame: DESKTOP_BLANK_LINE_PT });
-  },
-  buttons: aboveButtons,
-  field: aboveButtons,
-  result: () => gap("control", 0, { desktopCard: 0, desktopFrame: 0 }),
-  copy: () => gap("control", 0)
+  context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
+  earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
+  detail: () => UNDER_TITLE,
+  file: (above) => above === "detail" ? gap("list") : UNDER_TITLE,
+  answer: (above) => TITLE_PARTS.includes(above) ? gap("control") : above === "answer" || above === "note" ? gap("item") : gap("child"),
+  note: () => gap("list"),
+  answers: (above) => TITLE_PARTS.includes(above) ? gap("control") : gap("child"),
+  reason: () => gap("list"),
+  status: () => UNDER_TEXT,
+  buttons: (above) => above === "status" ? gap("list") : UNDER_TEXT,
+  field: (above) => above === "status" ? gap("list") : UNDER_TEXT,
+  result: () => gap("list"),
+  copy: () => gap("control")
 };
 function partGap(above, below) {
   return GAP_ABOVE[below](above);
 }
-function partPt(above, below, form) {
-  const g = partGap(above, below);
-  return g.forms[form] ?? STEP_PT[g.step] + (form === "codex" ? codexTreeExtra(above, below) : 0);
+function partPt(above, below) {
+  return STEP_PT[partGap(above, below).step];
 }
 
 // src/paint-field.ts
@@ -6353,7 +6325,7 @@ function rowEl(r, p) {
   ];
   const titleEnd = lines.length > 0 ? "titleStatus" : "title";
   return v_flex6().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex6().children(lines.map((l, n) => {
-    const above = partPt(n === 0 ? "title" : "titleStatus", "titleStatus", "herdr");
+    const above = partPt(n === 0 ? "title" : "titleStatus", "titleStatus");
     const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, above, t, r.isSelected);
     return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
   })).children(panelEl(r, m, p, isLeaving, titleEnd))));
@@ -6380,7 +6352,7 @@ function bodyEls(from, isSelected, p, isInert, titleEnd) {
   }) : from.body;
   let end = titleEnd;
   const els = shown.map(({ part, ...l }) => {
-    const above = partPt(end, part, "herdr");
+    const above = partPt(end, part);
     end = part;
     const buttons = part === "answers" ? answers : buttonOf(l.optionId);
     return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert);
@@ -6397,9 +6369,9 @@ function panelEl(r, m, p, isLeaving, titleEnd) {
   const end = from.field ? "field" : actions.length > 0 ? "buttons" : body.end;
   const parts = [
     ...body.els,
-    ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, "buttons", "herdr"))] : [],
-    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, "field", "herdr"))] : [],
-    ...underEls(r, m, p, partPt(end, "result", "herdr"))
+    ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, "buttons"))] : [],
+    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, "field"))] : [],
+    ...underEls(r, m, p, partPt(end, "result"))
   ];
   if (parts.length === 0)
     return [];

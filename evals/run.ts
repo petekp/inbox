@@ -40,7 +40,15 @@ type Check =
   | { open: string }
   | { closed: string; outcome?: string }
   | { added: number }
-  | { new: string; kind?: 'question' | 'task'; rec?: string | null; help?: string; design?: boolean }
+  | {
+      new: string
+      kind?: 'question' | 'task'
+      rec?: string | null
+      help?: string
+      design?: boolean
+      /** A pattern that no option or rec of any new item like `new` may match. */
+      noOption?: string
+    }
   | { notNew: string }
   | { noHelp: string }
   | { item: string; rec?: string; options?: string }
@@ -154,8 +162,14 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
       const match = newMatches.get(c)
       if (!match)
         out.push(
-          `no new item like /${c.new}/: ${added.map(i => `"${i.ask}" kind=${i.kind} rec=${i.rec} design=${i.isDesignChoice === true} helps=${i.helps.map(h => h.kind).join('+') || '-'}`).join(', ')}`,
+          `no new item like /${c.new}/: ${added.map(i => `"${i.ask}" kind=${i.kind} options=${i.options.join(' / ')} rec=${i.rec} design=${i.isDesignChoice === true} helps=${i.helps.map(h => h.kind).join('+') || '-'}`).join(', ')}`,
         )
+      const { noOption } = c
+      const withBadAnswer = noOption
+        ? added.filter(i => has(c.new, i.ask) && [...i.options, i.rec].some(o => has(noOption, o)))
+        : []
+      for (const i of withBadAnswer)
+        out.push(`new item "${i.ask}" has an answer like /${noOption}/: options=${i.options.join(' / ')} rec=${i.rec}`)
     } else if ('notNew' in c && added.some(i => has(c.notNew, i.ask))) out.push(`added an item like /${c.notNew}/`)
     else if ('noHelp' in c && added.some(i => i.helps.some(h => h.kind === c.noHelp))) out.push(`a ${c.noHelp} step`)
     else if ('waiting' in c) {
@@ -196,6 +210,8 @@ type Result = Run & {
   outputTokens: number | null
   inputTokens?: number | null
   cachedTokens?: number | null
+  /** What the call cost in US dollars, as the claude CLI reports it. Codex reports none. */
+  costUsd?: number | null
   /** How long the call took. The mod's limit applies to it. */
   ledgerMs?: number
 }
@@ -246,6 +262,7 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     outputTokens,
     inputTokens: ledgerCall.inputTokens ?? null,
     cachedTokens: ledgerCall.cachedTokens ?? null,
+    costUsd: ledgerCall.costUsd ?? null,
     ledgerMs,
   }
   if (answer === null) return { ...base, error: `${agent} gave no answer`, failed: [], masked: [] }

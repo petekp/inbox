@@ -151,11 +151,9 @@ function expectedSpaces(look: Look, c: RowCase, row: RowView): string[] {
     hasResult: c.feedback === 'under',
     hasCopy: false,
   })
-  const isCard = parts.some(p => p === 'holdsUp' || p === 'answer' || p === 'answers')
 
   return partPairs(parts).map(([above, below]) => {
-    const space =
-      look === 'desktop' ? partPt(above, below, isCard ? 'desktopCard' : 'desktopFrame') : partRows(above, below, true)
+    const space = look === 'desktop' ? partPt(above, below) : partRows(above, below, true)
 
     return `${above} ${below} ${space}`
   })

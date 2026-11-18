@@ -12,6 +12,8 @@ export type Answer = {
   /** Input tokens the call read, cached ones included, and how many of them came from the cache. Codex reports none. */
   inputTokens?: number | null
   cachedTokens?: number | null
+  /** What the call cost in US dollars, from the CLI's `total_cost_usd`. */
+  costUsd?: number | null
 }
 
 /**
@@ -61,6 +63,7 @@ export function claude(prompt: string, system: string, model = CLAUDE_MODEL, eff
             outputTokens,
             inputTokens,
             cachedTokens,
+            costUsd: typeof result?.total_cost_usd === 'number' ? result.total_cost_usd : null,
           })
         } catch {
           resolve({ text: null, model: null, outputTokens: null })
