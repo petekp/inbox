@@ -346,13 +346,11 @@ code {
   align-items: center;
   gap: var(--control-gap);
 }
-/* After a list of answers, the first button's label starts where a follow-up's label does, which sets the buttons apart
-   from the answers above. The follow-ups move back by the same amount, so they stay where they were. */
 .keys.follows-answers {
-  margin-left: calc(var(--unit) - var(--button-border) - var(--button-pad-x));
+  margin-left: calc(var(--unit) - var(--button-pad-x));
 }
 .keys.follows-answers > .follow-ups {
-  margin-left: calc(var(--button-border) + var(--button-pad-x) - var(--unit));
+  margin-left: calc(var(--button-pad-x) - var(--unit));
 }
 .follow-ups {
   display: flex;

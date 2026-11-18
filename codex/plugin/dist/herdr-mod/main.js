@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T04:23:55.522Z. 287182 characters follow.
+// Built at 2026-11-18T04:36:51.968Z. 287288 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -6124,11 +6124,12 @@ function panelEl(r, m, p, isLeaving) {
   const from = m?.closing ?? r;
   const isInert = isLeaving || from !== r;
   const under = from === r && isStatusUnder(r) ? r.feedback : null;
+  const actions = from.buttons.filter((b) => !b.isOption);
+  const hasAnswers = from.buttons.some((b) => b.isOption);
+  const followsAnswers = hasAnswers && actions[0]?.emphasis !== "quiet";
   const parts = [
     ...bodyEls(from, r.isSelected, p, isInert),
-    ...from.buttons.some((b) => !b.isOption) ? [
-      buttonsEl(from.buttons.filter((b) => !b.isOption), p, MARK_W, isInert, from.buttons.some((b) => b.isOption))
-    ] : [],
+    ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers)] : [],
     ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : [],
     ...under ? [bodyLineEl(under, t, r.isSelected).pt(CONTROL_GAP)] : []
   ];
