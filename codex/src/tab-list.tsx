@@ -277,6 +277,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
       <RowActions
         keys={keys}
         more={more}
+        followsAnswers={row.options.length > 0 && keys[0]?.emphasis !== 'quiet'}
         reply={
           isTyping
             ? {

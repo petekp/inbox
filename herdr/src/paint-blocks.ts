@@ -225,18 +225,12 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   const from = m?.closing ?? r
   const isInert = isLeaving || from !== r
   const under = from === r && isStatusUnder(r) ? r.feedback : null
+  const actions = from.buttons.filter(b => !b.isOption)
+  const hasAnswers = from.buttons.some(b => b.isOption)
+  const followsAnswers = hasAnswers && actions[0]?.emphasis !== 'quiet'
   const parts = [
     ...bodyEls(from, r.isSelected, p, isInert),
-    ...(from.buttons.some(b => !b.isOption)
-      ? [
-          buttonsEl(
-            from.buttons.filter(b => !b.isOption),
-            p,
-            MARK_W,
-            isInert,
-          ),
-        ]
-      : []),
+    ...(actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers)] : []),
     ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : []),
     ...(under ? [bodyLineEl(under, t, r.isSelected).pt(CONTROL_GAP)] : []),
   ]
