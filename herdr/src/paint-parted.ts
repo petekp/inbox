@@ -19,8 +19,5 @@ export function partedEl(parts: Element[], dotColor: Color): Element {
     ...rest.map(part => h_flex().items_start().min_w(0).max_w_full().child(dot).child(div().min_w(0).child(part))),
   ]
 
-  return div()
-    .overflow_hidden()
-    .min_w(0)
-    .child(h_flex().flex_wrap().items_start().ml(-SEP_W).children(items))
+  return div().overflow_hidden().min_w(0).child(h_flex().flex_wrap().items_start().ml(-SEP_W).children(items))
 }

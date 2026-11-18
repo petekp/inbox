@@ -365,7 +365,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
                 {r.title}
               </TitleTint>
             </span>
-            <span class="part">
+            <span class="part settled-result">
               <Sep />
               <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
             </span>

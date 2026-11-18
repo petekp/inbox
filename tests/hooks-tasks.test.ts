@@ -43,7 +43,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(w.copied).toEqual(['npm login'])
   expect(
     await pane.find({
-      text: /^\u2007·\s✓\sCopied\snpm\slogin\.\sRun\sit\sin\sa\sterminal,\sor\stype\s!\sand\spaste\.$/,
+      text: /^✓\sCopied\snpm\slogin\.\sRun\sit\sin\sa\sterminal,\sor\stype\s!\sand\spaste\.$/,
     }),
   ).toBeDefined()
   await pane.press({ key: 'help-i1-2' })

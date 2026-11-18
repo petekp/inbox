@@ -3,7 +3,7 @@ import type { FoldKind } from '../types'
 import { groupEmptyText } from './banners'
 import { RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
 import { closedTitleTint } from './pane-title-tint'
-import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
+import { desktopTextPt } from './desktop-metrics'
 import { foldGlyph } from './fold-chevron'
 import type { CountsUnits } from './status-folds'
 import type { FoldProps } from './fold-client'
@@ -17,6 +17,7 @@ import { childPos, type PaneRowLines } from './pane-row-lines'
 import { type ClosedLine, settledScrollKey } from './pane-selection'
 import {
   DESKTOP_CELL_PT,
+  DESKTOP_SIDE_CELLS,
   DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
   DESKTOP_ROW_PT,
@@ -52,8 +53,7 @@ import {
   settledTone,
   shortAgo,
 } from './rows'
-import type { TreePos } from './terminal-text'
-import { clipLabel } from './text'
+import { settledTitleLine, type TreePos } from './terminal-text'
 import { SETTLED_MS } from './timing'
 import type { PressAreaProps } from './press-client'
 
@@ -514,12 +514,14 @@ export function paneRowParts(
       </Box>
     </Box>
   )
-  /** Desktop draws a settled label in its title's wrapping Text, so a long one, such as a reply's words, is cut to one line's characters. */
-  const desktopSettledLabel = (state: SettledState) =>
-    clipLabel(
-      settledLabel(state.label, state.delivery, state.reply),
-      Math.max(12, Math.floor((listColumns - 1) * DESKTOP_CLIP_CHARS_PER_CELL)),
-    )
+  /** A desktop settled row's title and label, measured against its text column, whose side keeps Undo's place. */
+  const desktopSettledLine = (title: string, state: SettledState) => {
+    const sideCells = 1 + (state.offersUndo ? UNDO_CELLS : DESKTOP_SIDE_CELLS)
+    const linePt = (listColumns - DESKTOP_MARK_CELLS - sideCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
+    const label = settledLabel(state.label, state.delivery, state.reply)
+
+    return settledTitleLine(title, label, text => desktopTextPt(text) <= linePt)
+  }
   const closedTitleColor = closedTitleTint({ look, pal, now })
   const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
     const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
@@ -540,8 +542,17 @@ export function paneRowParts(
       </Box>
     )
   }
-  const desktopRow = (r: RowView, state: SettledState, undo: RowPress | null, mark: ResultMark, titleColor?: string) =>
-    desktopFrame({
+  const desktopRow = (
+    r: RowView,
+    state: SettledState,
+    undo: RowPress | null,
+    mark: ResultMark,
+    titleColor?: string,
+  ) => {
+    const { title, after } = desktopSettledLine(r.title, state)
+    const label = <Text color={pal.muted}>{after.text}</Text>
+
+    return desktopFrame({
       key: `settled-frame-${r.id}`,
       markCells: DESKTOP_MARK_CELLS,
       mark: markGlyph(mark, `settled-${r.id}`, titleColor ?? pal.muted),
@@ -549,12 +560,18 @@ export function paneRowParts(
       padY: space.settledPad,
       isSideCentered: true,
       children: [
-        <Text wrap="wrap">
-          {titleColor ? <Text color={titleColor}>{r.title}</Text> : r.title}
-          <Text color={pal.muted}>{`${DOT}${desktopSettledLabel(state)}`}</Text>
+        <Text key="title" wrap="wrap">
+          {titleColor ? <Text color={titleColor}>{title}</Text> : title}
+          {after.isUnder ? null : label}
         </Text>,
+        after.isUnder ? (
+          <Text key="label" wrap="wrap">
+            {label}
+          </Text>
+        ) : null,
       ],
     })
+  }
 
   return {
     groupEmpty,

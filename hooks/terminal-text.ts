@@ -201,3 +201,15 @@ export function statusAfterTitle(
 
   return { text, isUnder: true }
 }
+
+/**
+ * A settled row's title and result label as `fits` measures a line. Every look cuts a settled title to one line, so the
+ * list does not jump when the row folds into the one-line Closed fold. The label, cut to one line, follows
+ * `statusAfterTitle`.
+ */
+export function settledTitleLine(title: string, label: string, fits: (text: string) => boolean) {
+  const cut = (text: string) => (fits(text) ? text : `${cutForEllipsis(text, fits)}…`)
+  const shown = cut(title)
+
+  return { title: shown, after: statusAfterTitle(`${DOT}${cut(label)}`, shown, fits) }
+}

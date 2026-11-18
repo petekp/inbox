@@ -338,7 +338,8 @@ export function paneRows(
     )
     // The `view-` Box is what select() scrolls into view. Drawn on the selected row alone, so the key exists only
     // once that row has redrawn expanded.
-    const desktopAfter = f?.isAfterTitle && !isStatusUnder ? statusAfterTitle(`${DOT}${f.text}`, row.title, fitsTitleLine) : null
+    const desktopAfter =
+      f?.isAfterTitle && !isStatusUnder ? statusAfterTitle(`${DOT}${f.text}`, row.title, fitsTitleLine) : null
     const desktopTitle = hasClient ? (
       <elements.Client
         key={`collapse-${row.id}`}

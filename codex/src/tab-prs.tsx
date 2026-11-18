@@ -69,7 +69,7 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
             <span class="part what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="part">
+            <span class="part settled-result">
               <Sep />
               <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
             </span>

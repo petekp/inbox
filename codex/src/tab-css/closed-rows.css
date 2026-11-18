@@ -74,13 +74,13 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-/* A settled row's title takes two lines at most, as a closed row's does. */
-.settled-line .what {
+/* A settled row's title and its result each take one line, cut with an ellipsis, in every look, so the list does not
+   jump when the row folds into the one-line Closed fold. */
+.settled-line .what,
+.settled-line .settled-result {
+  white-space: nowrap;
   overflow: clip;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 .settled .outcome-label {
   color: var(--muted);
