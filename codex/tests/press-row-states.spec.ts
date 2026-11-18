@@ -155,6 +155,7 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     HTMLElement: window.HTMLElement,
     Element: window.Element,
     KeyboardEvent: window.KeyboardEvent,
+    ResizeObserver: window.ResizeObserver,
     sessionStorage: window.sessionStorage,
     matchMedia: () => media,
     getComputedStyle: window.getComputedStyle.bind(window),

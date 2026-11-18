@@ -22,6 +22,7 @@ import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
 import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
+import { settleAnswers, watchAnswerWidths } from './tab-ask-tree'
 import { pressUndoKey } from './undo-key'
 import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
 
@@ -99,7 +100,10 @@ function draw() {
   tabState.lastStatus = step?.status ?? null
   tabState.lastBanners = step?.banners ?? null
   wakeForMoves()
-  render(<App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />, root)
+  const app = () => <App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />
+  render(app(), root)
+  if (settleAnswers(root)) render(app(), root)
+  watchAnswers()
   animateDraw(before, step?.changed ?? new Set())
   noteStatusInView()
   const fieldToFocus =
@@ -111,6 +115,7 @@ function draw() {
 }
 
 tabState.draw = draw
+const watchAnswers = watchAnswerWidths(root, draw, instanceAbort.signal)
 
 /** Notes the Status subject rows on screen now, while the tab shows the real Status, for the look under way. The demo's ids name sample rows. */
 function noteStatusInView() {

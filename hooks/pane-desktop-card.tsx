@@ -4,7 +4,7 @@ import type { paneDesktopTree } from './pane-desktop-tree'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
-import { CHILD_GAP_PT, ITEM_GAP_PT } from './layout'
+import { CHILD_GAP_PT, ITEM_GAP_PT, LIST_GAP_PT } from './layout'
 import {
   DESKTOP_ANSWER_BUTTON_PT,
   DESKTOP_ANSWER_LABEL_CELLS,
@@ -18,6 +18,8 @@ import {
 
 /** An answer's arm meets its button's middle, which sits lower than a line of text's middle. */
 const ANSWER_ARM_AT = (DESKTOP_ANSWER_BUTTON_PT - DESKTOP_HAIR_PT) / 2 / DESKTOP_ROW_PT
+
+const isAnswer = (en: AskEntry | undefined) => en?.option !== undefined || en?.options !== undefined
 
 /**
  * A selected row's card on desktop when its lines hang from the row's ◆ on a tree: the title, each branch, and the
@@ -49,12 +51,16 @@ export function paneDesktopCard({
     </Text>
   )
   const line = (rowId: string, en: AskEntry) =>
-    en.option ? (
+    en.options ? (
+      <Box key={en.key} flexDirection="row" columnGap={space.buttonGap}>
+        {en.options.map(keyedButton(rowId))}
+      </Box>
+    ) : en.option ? (
       <Box key={en.key} flexDirection="row">
         {keyedButton(rowId)(en.option)}
       </Box>
     ) : en.noteOf ? (
-      <Box key={en.key} marginTop={desktopPad(CHILD_GAP_PT)} paddingLeft={DESKTOP_ANSWER_LABEL_CELLS}>
+      <Box key={en.key} marginTop={desktopPad(LIST_GAP_PT)} paddingLeft={DESKTOP_ANSWER_LABEL_CELLS}>
         {text(en)}
       </Box>
     ) : (
@@ -78,11 +84,11 @@ export function paneDesktopCard({
     })
   /**
    * The padding that puts a gap between two groups: half under the one above and half above the one below. Two answers
-   * sit `ITEM_GAP_PT` apart, a step more than the `CHILD_GAP_PT` between an answer's button and its note, and the other
+   * sit `ITEM_GAP_PT` apart, more than the `LIST_GAP_PT` between an answer's button and its note, and the other
    * lines `CHILD_GAP_PT`.
    */
   const halfGapBetween = (above: AskEntry[] | undefined, below: AskEntry[] | undefined) =>
-    above?.[0]?.option && below?.[0]?.option ? desktopPad(ITEM_GAP_PT / 2) : desktopPad(CHILD_GAP_PT / 2)
+    isAnswer(above?.[0]) && isAnswer(below?.[0]) ? desktopPad(ITEM_GAP_PT / 2) : desktopPad(CHILD_GAP_PT / 2)
 
   return ({
     row,
@@ -146,7 +152,7 @@ export function paneDesktopCard({
                     shape,
                     padY,
                     padBelow,
-                    group[0]!.option ? ANSWER_ARM_AT : undefined,
+                    isAnswer(group[0]) ? ANSWER_ARM_AT : undefined,
                   )
                 : null,
               children: group.map(en => line(row.id, en)),

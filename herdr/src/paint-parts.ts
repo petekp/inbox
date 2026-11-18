@@ -48,8 +48,10 @@ export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false):
       : base
   if (b.isHidden) return shaped.invisible().disabled(true)
   if (b.isOut) return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true)
-  const styled =
-    b.emphasis === 'primary'
+  const isRecommendedAnswer = b.isOption === true && b.emphasis === 'primary'
+  const styled = isRecommendedAnswer
+    ? shaped.border_color(t.accent).bg(t.accent).text_color(t.accent_foreground)
+    : b.emphasis === 'primary'
       ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground)
       : b.emphasis === 'normal'
         ? shaped.border_color(t.input).text_color(t.foreground)

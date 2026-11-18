@@ -72,6 +72,7 @@ export function paneRows(
     fieldActions,
     actionRows,
     keyedButton,
+    answersFit,
     desktopFrame,
   }: PaneClient &
     Pick<
@@ -116,7 +117,14 @@ export function paneRows(
     > &
     Pick<
       PaneRowKeys,
-      'rowActions' | 'desktopRowTextPt' | 'keyLines' | 'keyRow' | 'fieldActions' | 'actionRows' | 'keyedButton'
+      | 'rowActions'
+      | 'desktopRowTextPt'
+      | 'keyLines'
+      | 'keyRow'
+      | 'fieldActions'
+      | 'actionRows'
+      | 'keyedButton'
+      | 'answersFit'
     > &
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
@@ -124,9 +132,10 @@ export function paneRows(
   const newTitleColor = newTitleTint({ look, pal, now, shownTab })
   const handleTint = (row: Row) => newTitleColor(row.id, row.handleTone ? pal.mark[row.handleTone] : pal.muted)
   const { askTree, askEntries, hasTree, treeTextIndent } = paneAskTree(
-    { look, Box, Text, pal },
+    { look, Box, Text, pal, space },
     { branch },
     keyedButton,
+    answersFit,
   )
   const { desktopTreeLine } = paneDesktopTree({ Box, desktopHairline, pal })
   const desktopCard = paneDesktopCard({
@@ -179,7 +188,9 @@ export function paneRows(
         </Box>
       )
     }
-    const { options, keys, more } = isSelected ? rowActions(row) : { options: [], keys: [], more: [] }
+    const { options, keys, more, answerRow } = isSelected
+      ? rowActions(row)
+      : { options: [], keys: [], more: [], answerRow: null }
     const handleText =
       row.handle && !row.isHandleRunning ? (
         <Text color={handleTint(row) ?? pal.muted}>{row.handle}</Text>
@@ -242,10 +253,11 @@ export function paneRows(
         : null
     const body =
       bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
-    const treeEntries = row.view && look === 'desktop' && isSelected ? askEntries(row.view, options) : []
+    const treeEntries =
+      row.view && look === 'desktop' && isSelected ? askEntries(row.view, options, answerRow, Infinity) : []
     const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
     const isTrunkBridged = look === 'terminal' && isSelected && row.view !== undefined && hasTree(row.view, options)
-    const descriptionsBlock = row.view && !isDesktopTree ? askTree(row.view, options, textWidth) : null
+    const descriptionsBlock = row.view && !isDesktopTree ? askTree(row.view, options, answerRow, textWidth) : null
     const trunked = (above: JSX.Element) =>
       isTrunkBridged ? (
         <Box

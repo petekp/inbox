@@ -1,6 +1,7 @@
+import { answersFitLine } from '../../hooks/action-plan'
 import { earlierLineText } from '../../hooks/earlier-answers'
 import type { Button, Line } from './panel-lines'
-import { wrapText } from './panel-text'
+import { visibleLength, wrapText } from './panel-text'
 import type { Style } from './panel'
 
 /** The three cells before a tree line's text: its trunk or arm under the ◆, then the gap to the title's column. */
@@ -12,7 +13,8 @@ const NONE = '   '
 /**
  * An open ask's Holds up line, context, earlier answer and answers' lines, in that order, as a tree that hangs from the ◆
  * before its title. The arms start under the ◆ and the text starts in the title's column. With no answer line or Holds
- * up, the context draws alone with no tree. `pad` is the row's extra indent.
+ * up, the context draws alone with no tree. Answers the line's `answerRow` lets sit side by side, and that fit the
+ * room, share one arm, with the recommendation's reason under them. `pad` is the row's extra indent.
  */
 export function askTreeLines(
   line: Line,
@@ -33,7 +35,10 @@ export function askTreeLines(
   const draw = (arm: string, text: string, rest: string, indent = 0): string[] =>
     wrapText(text, room - indent).map((l, i) => s.dim(margin + (i === 0 ? arm : rest) + ' '.repeat(indent)) + s.dim(l))
   const heads = holdsUp ? [{ text: holdsUp }] : []
-  const lastBranch = heads.length + branches.length - 1
+  const answerRow = line.answerRow ?? null
+  const oneLine = branches.map(a => cell(a.b, a.index, Infinity)[0]!)
+  const isSideBySide = answerRow !== null && answersFitLine(oneLine.map(visibleLength), 0, room)
+  const lastBranch = heads.length + (isSideBySide ? 1 : branches.length) - 1
   const drawHead = (text: string, n: number): string[] => {
     const isLast = n === lastBranch
 
@@ -67,7 +72,10 @@ export function askTreeLines(
       )
     })
   }
-  branches.forEach((b, n) => out.push(...drawAnswer(b, heads.length + n)))
+  if (answerRow && isSideBySide && branches[0]) {
+    out.push(s.dim(margin + LAST) + oneLine.join(''))
+    if (answerRow.recLine) out.push(...draw(NONE, answerRow.recLine, NONE, labelCells(branches[0].b)))
+  } else branches.forEach((b, n) => out.push(...drawAnswer(b, heads.length + n)))
 
   return out
 }

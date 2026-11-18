@@ -3,6 +3,7 @@ import { actionId } from '../../hooks/press-labels'
 import type { RowPress } from '../../hooks/presses'
 import { actionLabel, ROW_COPY } from '../../hooks/rows'
 import { rowKeyPlan } from '../../hooks/action-plan'
+import type { AnswerRow } from '../../hooks/action-plan'
 
 const ICONS = {
   check: 'M20 6 9 17l-5-5',
@@ -65,7 +66,7 @@ export function ledgerActions(
     discard: () => void
     showOptions: () => void
   },
-): { options: LedgerAction[]; keys: LedgerAction[]; more: LedgerAction[] } {
+): { options: LedgerAction[]; keys: LedgerAction[]; more: LedgerAction[]; answerRow: AnswerRow | null } {
   const planned = rowKeyPlan(row, allOptions)
   type Drawn =
     | (typeof planned.keys)[number]
@@ -91,6 +92,7 @@ export function ledgerActions(
     })),
     keys: planned.keys.map(draw),
     more: planned.more.map(draw),
+    answerRow: planned.answerRow,
   }
 }
 

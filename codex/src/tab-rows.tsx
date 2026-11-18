@@ -2,6 +2,7 @@ import { ledgerActions } from './row-actions'
 import { clipLabel } from '../../hooks/text'
 import { allRows, DOT, replyHint, ROW_COPY, shortAgo } from '../../hooks/rows'
 import { drawnLists, rowAfterClose } from '../../hooks/action-plan'
+import type { AnswerRow } from '../../hooks/action-plan'
 import { isRowTab } from '../../hooks/tabs'
 import { feedbackOf } from '../../hooks/feedback'
 import { earliestOf, isDrawnInPlace, SETTLED_MS } from '../../hooks/timing'
@@ -224,7 +225,7 @@ function sendReply(id: string, text: string) {
   })
 }
 
-function rowKeys(r: RowView): { options: Key[]; keys: Key[]; more: Key[] } {
+function rowKeys(r: RowView): { options: Key[]; keys: Key[]; more: Key[]; answerRow: AnswerRow | null } {
   const actions = ledgerActions(r, optionsShown.has(r.id), sending.get(r.id)?.action ?? null, {
     press: p => {
       const step = p.action === 'step' ? r.steps[p.step] : undefined
@@ -248,7 +249,7 @@ function rowKeys(r: RowView): { options: Key[]; keys: Key[]; more: Key[] } {
 function itemRow(v: View, r: RowView): Row {
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
-  const actions = rowKeys(r)
+  const { answerRow, ...actions } = rowKeys(r)
 
   return {
     id,
@@ -258,7 +259,7 @@ function itemRow(v: View, r: RowView): Row {
     title: r.title,
     ...(r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
-    ...askTree(r, actions.options, isOpenGuarded),
+    ...askTree(r, actions.options, answerRow, isOpenGuarded),
     ...actions,
     typing: {
       hint: replyHint(r, 'Codex'),
@@ -280,7 +281,7 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
-    body: (
+    body: () => (
       <div>
         <p style={{ whiteSpace: 'pre-line' }}>{inlineHtml(r.detail ?? '')}</p>
         {f.path ? (
@@ -343,7 +344,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
     title: text.title,
     meta: text.meta,
     age: t.at === null ? undefined : shortAgo(v.at - t.at),
-    body: (
+    body: () => (
       <div>
         {rest ? <p class="quote">{inlineHtml(clipLabel(rest, PR_QUOTE_CHARS))}</p> : null}
         <p class="muted">
@@ -381,7 +382,7 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
     title: text.title,
     meta: ran,
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
-    body: <div class="muted">{ran}</div>,
+    body: () => <div class="muted">{ran}</div>,
     options: [],
     keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, pr, a)),
     more: [],
