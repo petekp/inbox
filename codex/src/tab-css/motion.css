@@ -1,7 +1,7 @@
 .banner,
 .empty,
 main {
-  transition: opacity var(--quick);
+  transition: opacity var(--page-fade);
   @starting-style {
     opacity: 0;
   }

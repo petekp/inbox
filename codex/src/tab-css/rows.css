@@ -412,7 +412,6 @@ code {
 }
 .key.out {
   opacity: 0.4;
-  transition: opacity var(--quick);
 }
 .actions {
   display: flex;
