@@ -107,7 +107,12 @@ const GAP_ABOVE: Record<Exclude<RowPart, 'title'>, (above: RowPart) => PartGap> 
   context: above => (TITLE_PARTS.includes(above) ? UNDER_TITLE : gap('child', 0)),
   earlier: above =>
     TITLE_PARTS.includes(above) ? UNDER_TITLE : gap('child', 0, above === 'context' ? { desktopFrame: 0 } : {}),
-  detail: () => gap('inside', 1, { codex: CONTROL_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT }),
+  detail: () =>
+    gap('inside', 1, {
+      codex: CONTROL_GAP_PT,
+      desktopCard: DESKTOP_BLANK_LINE_PT,
+      desktopFrame: DESKTOP_BLANK_LINE_PT,
+    }),
   file: above =>
     above === 'detail'
       ? gap('inside', 1, { codex: LIST_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT })
