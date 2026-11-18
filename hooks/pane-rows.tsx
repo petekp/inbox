@@ -18,6 +18,7 @@ import {
   DESKTOP_LINE_PT,
   DESKTOP_MARK_CELLS,
   DESKTOP_REPLY_ROWS,
+  DESKTOP_SIDE_CELLS,
   fieldRows,
   FRAME_INSET_PT,
   REPLY_ROWS,
@@ -208,8 +209,11 @@ export function paneRows(
     const submitLabel = look === 'desktop' ? ROW_COPY.send : 'send'
     /** The terminal draws `⏎` and the submit label beside the field. */
     const terminalFieldColumns = textWidth - cellWidth(`⏎ ${submitLabel}`) - 1
-    /** The desktop field's Box shrinks it below its own width when the row cannot also hold its Send button. */
-    const desktopFieldPt = Math.min(DESKTOP_FIELD_PT, desktopRowTextPt - desktopButtonPt(submitLabel, true))
+    const isDesktopFieldLine = isTyping && look === 'desktop'
+    /** The field's line runs under the row's side column, which holds only the age beside the title. */
+    const desktopFieldLinePt = desktopRowTextPt + DESKTOP_SIDE_CELLS * DESKTOP_CELL_PT
+    /** The desktop field's Box shrinks it below its own width when its line cannot also hold its Send button. */
+    const desktopFieldPt = Math.min(DESKTOP_FIELD_PT, desktopFieldLinePt - desktopButtonPt(submitLabel, true))
     /**
      * A terminal field that passes one row takes all `REPLY_ROWS`. Claude Code's hint beside a field of several rows
      * changes with the pane's width, so the rows its text wraps to cannot be counted here.
@@ -362,6 +366,7 @@ export function paneRows(
         body: body ? { node: body, end: bodyEnd } : null,
         status,
         keys: keysBlock,
+        isKeysBelow: isDesktopFieldLine,
         gapY: selectedGapY,
       })
     if (look === 'desktop' && isSelected)
@@ -396,8 +401,9 @@ export function paneRows(
                   ))}
                 </Box>
               ) : null,
-              keysBlock,
+              isDesktopFieldLine ? null : keysBlock,
             ],
+            below: isDesktopFieldLine ? keysBlock : null,
           })}
         </Box>
       )

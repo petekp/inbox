@@ -97,6 +97,7 @@ export function paneDesktopCard({
     body,
     status,
     keys,
+    isKeysBelow,
     gapY,
   }: {
     row: Row
@@ -106,6 +107,8 @@ export function paneDesktopCard({
     body: { node: JSX.Element; end: RowPart } | null
     status: { text: string; color: string | undefined }[]
     keys: JSX.Element
+    /** Draws `keys` across the side column too, as `desktopFrame`'s `below`. */
+    isKeysBelow: boolean
     gapY: number
   }) => {
     const top = body?.end ?? 'title'
@@ -188,8 +191,9 @@ export function paneDesktopCard({
                   ))}
                 </Box>
               ) : null,
-              keys,
+              isKeysBelow ? null : keys,
             ],
+            below: isKeysBelow ? keys : null,
           })}
         </Box>
       </Box>
