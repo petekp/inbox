@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T06:48:23.525Z. 294363 characters follow.
+// Built at 2026-11-18T07:23:23.310Z. 294413 characters follow.
 
 // src/main.ts
 import { View, div as div11 } from "gpui-kit";
@@ -5776,7 +5776,11 @@ var GAP_ABOVE = {
   holdsUp: () => UNDER_TITLE,
   context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child", 0),
   earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child", 0, above === "context" ? { desktopFrame: 0 } : {}),
-  detail: () => gap("inside", 1, { codex: CONTROL_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT }),
+  detail: () => gap("inside", 1, {
+    codex: CONTROL_GAP_PT,
+    desktopCard: DESKTOP_BLANK_LINE_PT,
+    desktopFrame: DESKTOP_BLANK_LINE_PT
+  }),
   file: (above) => above === "detail" ? gap("inside", 1, { codex: LIST_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT }) : GAP_ABOVE.detail(above),
   answer: (above) => TITLE_PARTS.includes(above) ? ANSWERS_UNDER_TITLE : above === "answer" || above === "note" ? gap("item", 0) : gap("child", 0),
   note: () => gap("list", 0),
