@@ -1,6 +1,7 @@
 import { ENTER_FADE_MS, LEAVE_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import type { RowTrack } from '../../hooks/row-motion'
-import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
+import { HEIGHT_SETTLE_MS, HEIGHT_SPRING, springStep } from '../../hooks/springs'
+import type { SpringState } from '../../hooks/springs'
 
 /** The draw after a move's first frame, which starts its transition or spring. */
 export const NEXT_FRAME_MS = 16
@@ -126,3 +127,7 @@ function openedAt(g: Glide, now: number): Glide {
 
   return { ...g, box: isOpen ? 'open' : 'shut', isShown: isOpen || g.fadeMs === 0 }
 }
+
+/** Where a box `height` tall has sprung to after shutting for `ms`, and how fast, or no height at rest when it opens from shut. */
+export const shutTo = (height: number, ms: number | null): SpringState =>
+  ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING)

@@ -123,8 +123,9 @@
 .row.closing .line .text {
   display: inline;
 }
-/* A closing row's full title keeps the open form's weight until the row's height rests. The clamped title it fades to draws the closed weight. */
-.row.selected .line .text,
+/* A moving row's full title draws the open form's weight, and a closing row's keeps it until the row's height rests.
+   The clamped title it fades across with draws the closed weight, so it wraps as the closed row does. */
+.row.selected .line .text:not(.short),
 .row.closing .line .text:not(.short) {
   font-weight: 600;
   font-variation-settings: 'wght' 600;

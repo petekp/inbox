@@ -30,8 +30,8 @@ When the system asks for reduced motion, every duration is 0, and Undo's fill st
 
 1. **A row arrives.** Its height grows from 0 and it fades in, 300 ms. The rows below slide down with it.
 2. **A row opens or closes, as an accordion.** The row's line, its mark, title and age, stays where it is in both states. Opening reveals a panel under it, and closing hides that panel again. The row being closed and the row being opened move together, 200 ms on the move curve, so the rows below slide once.
-   - **Opening:** the row's height grows to fit the panel, which stays opaque and is revealed as the row grows. The title unclamps to its full length in place.
-   - **Closing:** the panel stays drawn, and takes no clicks, while the row's height shrinks over it to the line. It does not fade, so no empty space shows while the row shrinks. Then it is removed.
+   - **Opening:** the row's height grows to fit the panel, and the panel fades in once the space is nearly open. The title unclamps to its full length in place.
+   - **Closing:** the panel stays drawn, takes no clicks and fades out while the row holds its height. Then the height shrinks to the line, so the shrinking edge never cuts a line that shows, and the panel is removed.
    - **The line never moves.** Open and closed rows have the same padding, and the title keeps its weight, because a bolder title rewraps the line. The open row is marked by its fill and its panel. The kind label, as "Opportunity", moves into the panel, under the line.
 
    Reason: the old open row replaced the line with a block that put the kind label above the title, so the title jumped down a line, and closing removed the content at once, so the row shrank around an empty space.

@@ -334,16 +334,19 @@ test('a row the selection leaves keeps closing when another block starts to leav
   expect(rises).toEqual([])
 })
 
-test('the row the person’s selection moves to fades its panel in once its space is open, so none of it is cut', () => {
-  const frames = framesOf(
-    [
-      [0, asks(ALL, 'd11')],
-      [0, asks(ALL, 'd12'), 'input'],
-    ],
-    600,
-  )
+test('the row the person’s selection moves to fades its panel in once its space is open, and the row it leaves fades its panel out before its space closes, so neither panel is cut, turned back or not, and the list never grows before it shrinks', () => {
+  const moves: Step[] = [
+    [0, asks(ALL, 'd11')],
+    [0, asks(ALL, 'd12'), 'input'],
+  ]
+  const frames = framesOf(moves, 900)
   expect(frames.fading.filter(f => f.id === 'panel d12').at(-1)?.opacity).toBeCloseTo(1)
-  expect(frames.cuts.filter(c => c.box === 'panel d12')).toEqual([])
+  expect(Math.max(...frames.heights) - (frames.heights[0] ?? 0)).toBeLessThan(0.5)
+  for (const backAt of [null, 50, 100]) {
+    const steps: Step[] = backAt === null ? moves : [...moves, [backAt, asks(ALL, 'd11'), 'input']]
+    const cuts = framesOf(steps, 900).cuts.filter(c => c.box === 'panel d11' || c.box === 'panel d12')
+    expect({ backAt, cuts }).toEqual({ backAt, cuts: [] })
+  }
 })
 
 test('a block listed again while it fades out fades back in where it is, and nothing below it dips', () => {

@@ -23,10 +23,10 @@ import {
   mixInto,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
-import { titleId } from './heights'
+import { panelId, titleId } from './heights'
+import { shutTo } from './block-glide'
 import { SLIDE_PX, enterDelayMs } from '../../hooks/row-motion'
-import { HEIGHT_SPRING, springStep } from '../../hooks/springs'
-import type { SpringState } from '../../hooks/springs'
+import { HEIGHT_SPRING } from '../../hooks/springs'
 
 /** A group's Closed fold, which ends its list. */
 const isClosedFold = (b: Block): boolean => b.kind === 'fold' && 'closedFold' in b.change
@@ -100,9 +100,6 @@ function aboveOf(prev: Block | null, b: Block, section: number | null): number {
 
   return Math.max(0, gap - padOf(prev) - padOf(b))
 }
-
-/** The key a row's panel is measured under, beside the row's own height. */
-export const panelId = (id: string): string => `panel ${id}`
 
 /** The key a row's lines under its title, with its panel, are measured under. */
 export const restId = (id: string): string => `rest ${id}`
@@ -375,10 +372,6 @@ function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): E
 
   return [...(path ? pathEls(path) : []), ...treeEls]
 }
-
-/** Where a box `height` tall has sprung to after shutting for `ms`, and how fast, or no height at rest when it opens from shut. */
-export const shutTo = (height: number, ms: number | null): SpringState =>
-  ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING)
 
 /**
  * Each block in a box that never shrinks, with its space above it. Every distance that can change is the height of a

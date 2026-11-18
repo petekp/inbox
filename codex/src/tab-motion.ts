@@ -61,6 +61,15 @@ export function measure(): Drawing {
  */
 let heightWaitMs = 0
 
+/**
+ * When the panel of the last row that closed while its panel showed has faded out, so that row's height starts to
+ * shrink, and how long a row or block that starts to open or enter in this draw waits for it, in ms. A row the
+ * selection opens grows only then, so the two heights start together and the list never grows before it shrinks. Its
+ * selection shows at once.
+ */
+let closeHoldsUntil = 0
+let closeWaitMs = 0
+
 /** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. Measured at the end weights. */
 function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
@@ -107,6 +116,7 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   const carried = new Set<Element>()
   const els = [...root.querySelectorAll<HTMLElement>('[data-motion]')].reverse()
   heightWaitMs = startsLeave(els, changed) ? LEAVE_FADE_MS : 0
+  closeWaitMs = closeWaitOf(els, changed)
   for (const el of els) {
     if (!el.dataset.closing) moveOne(el, before.heights.get(el.dataset.motion!), changed, carried)
     if (isRunning(glides.get(el)?.anim)) {
@@ -119,6 +129,26 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   showFieldKeys(before)
   entering.clear()
   heightWaitMs = 0
+  closeWaitMs = 0
+}
+
+/** A closing row's panel while any of it shows. */
+function shownPanel(el: HTMLElement): HTMLElement | null {
+  const part = el.querySelector<HTMLElement>('.closing[inert]')
+
+  return part && opacityOf(part) > 0.01 ? part : null
+}
+
+/** How long a row that starts to open in this draw waits for the panels of closing rows to fade out, in ms. */
+function closeWaitOf(els: HTMLElement[], changed: ReadonlySet<string>): number {
+  const now = performance.now()
+  const startsClose = els.some(
+    el =>
+      changed.has(el.dataset.motion!) && drawnRows.get(el.dataset.motion!)?.track.state === 'closing' && shownPanel(el),
+  )
+  if (startsClose) closeHoldsUntil = now + LEAVE_FADE_MS
+
+  return Math.max(0, closeHoldsUntil - now)
 }
 
 /** A group's empty note this draw brings in. */
@@ -175,13 +205,22 @@ function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const key = el.dataset.motion!
   const state = drawnRows.get(key)?.track.state
   const isRowMoving = isUnderWay(el)
+  const part = drawnRows.has(key) ? el.querySelector(OPEN_PART) : null
+  const turnsCloseBack = part !== null && was?.openPart === part
+  const closeWait = state === 'opening' && changed.has(key) && !turnsCloseBack ? closeWaitMs : 0
   const held = state === 'closing' ? null : releaseLine(el, state === 'opening')
-  moveRow(el, was, changed, carried)
-  const wait = tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0
+  moveRow(el, was, changed, carried, closeWait)
+  const wait = Math.max(tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0, closeWait)
   if (state === 'opening' && (held || changed.has(key))) openTitle(el, wait, held)
 }
 
-function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<string>, carried: Set<Element>) {
+function moveRow(
+  el: HTMLElement,
+  was: Drawn | undefined,
+  changed: ReadonlySet<string>,
+  carried: Set<Element>,
+  closeWait: number,
+) {
   const key = el.dataset.motion!
   const state = drawnRows.get(key)?.track.state
   const isFresh = !was || was.el !== el
@@ -192,11 +231,11 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const waitLeft = waitLeftMs(el)
   const scalesEdges = isScalingEdges(el)
   const waitsForLeave = state === 'opening' || waitLeft > 0 || el.querySelector(NEW_NOTE) !== null
-  const delay = isOwnMove ? 0 : Math.max(waitsForLeave ? heightWaitMs : 0, waitLeft)
+  const delay = Math.max(isOwnMove ? 0 : Math.max(waitsForLeave ? heightWaitMs : 0, waitLeft), closeWait)
   if (state && changed.has(key) && startState(el, state, from, isFresh, was?.openTop ?? null)) return
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
-    if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, heightWaitMs)
+    if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, Math.max(heightWaitMs, closeWaitMs))
     return
   }
   if (carried.has(el) && !(state && isMoving(state))) {
@@ -217,8 +256,22 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
  * still drew as it closed turns back from the opacity it shows, and one that shows whole stays as it is.
  */
 function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
-  const opacity = wasDrawn ? opacityOf(part) : 0
-  if (opacity < 0.99) fade(part, opacity, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
+  const waits = delay + enterDelayMs(target, from)
+  if (!wasDrawn) return fade(part, 0, 1, ENTER_FADE_MS, false, false, waits)
+  for (const el of new Set([part, ...fadingParts(part)])) {
+    const opacity = opacityOf(el)
+    if (opacity < 0.99) fade(el, opacity, 1, ENTER_FADE_MS, false, false, waits)
+  }
+}
+
+/** A panel's Holds up line, which the closed line draws in the same place once the row's close ends. */
+const HOLDS_UP = '.branch.holds-up'
+
+/** The parts of a closing row's panel that fade out: all of it but its Holds up line, which stays shown. */
+function fadingParts(el: HTMLElement): HTMLElement[] {
+  if (!el.querySelector(HOLDS_UP)) return [el]
+
+  return [...el.children].flatMap(c => (c.matches(HOLDS_UP) ? [] : fadingParts(c as HTMLElement)))
 }
 
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */
@@ -226,13 +279,13 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
   switch (state) {
     case 'entering': {
       const isTurn = !isFresh && el.getAnimations().length > 0
-      const delay = isTurn && !isSpaceShort(el) ? 0 : heightWaitMs
+      const delay = isTurn && !isSpaceShort(el) ? 0 : Math.max(heightWaitMs, closeWaitMs)
       growIn(el, isTurn ? from : { x: 0, v: 0 }, isTurn ? opacityOf(el) : 0, delay)
       return true
     }
     case 'closing':
     case 'settling':
-      collapse(el, from, state === 'settling' ? openTop : null, tabState.isReadDraw ? heightWaitMs : 0)
+      collapse(el, from, state, openTop, tabState.isReadDraw ? heightWaitMs : 0)
       return true
     case 'leaving':
       fadeAway(el, from, !isInsideLeaving(el))
@@ -251,10 +304,19 @@ function isInsideLeaving(el: HTMLElement): boolean {
 
 /**
  * Shrinks an entry to the height it comes to rest at, over what it drew open and still draws, inert: a closing row's
- * panel or a PR block's body. A settling PR block's dismissed head replaces the line above its body, so the body keeps
- * the top it had at `openTop` while the height shrinks over it. A settling row draws only its settled line.
+ * panel or a PR block's body. A closing row's panel fades out first, while the entry holds its height, so the shrinking
+ * height never cuts a line of it that shows. A panel that shows nothing yet, as one still waiting to fade in, stays
+ * hidden and holds nothing. A settling PR block's dismissed head replaces the line above its body, so
+ * the body keeps the top it had at `openTop` while the height shrinks over it. A settling row draws only its settled
+ * line.
  */
-function collapse(el: HTMLElement, from: SpringState, openTop: number | null, delay: number) {
+function collapse(
+  el: HTMLElement,
+  from: SpringState,
+  state: 'closing' | 'settling',
+  openTop: number | null,
+  delay: number,
+) {
   const part = el.querySelector<HTMLElement>('.closing[inert]')
   // A closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
   const row = el.querySelector<HTMLElement>('.row.closing')
@@ -268,9 +330,12 @@ function collapse(el: HTMLElement, from: SpringState, openTop: number | null, de
   const lineTo = title ? atEndWeight(title, () => title.getBoundingClientRect().height) : null
   if (part) part.style.display = ''
   row?.classList.add('closing')
-  if (part && openTop !== null) keepTop(el, part, openTop)
+  if (part && state === 'settling' && openTop !== null) keepTop(el, part, openTop)
+  const shown = state === 'closing' ? shownPanel(el) : null
+  if (shown) for (const p of fadingParts(shown)) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
+  else if (part && state === 'closing') fade(part, 0, 0, 0, true)
   const opacity = opacityOf(el)
-  glide(el, 'height', from, target, true, false, delay)
+  glide(el, 'height', from, target, true, false, Math.max(delay, shown ? LEAVE_FADE_MS : 0))
   if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, delay)
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)
 }

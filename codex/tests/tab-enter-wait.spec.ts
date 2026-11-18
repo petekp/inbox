@@ -145,7 +145,7 @@ type Harness = {
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens moves at once and fades its panel in once its space is nearly open, a close they turn back keeps its panel shown, a closing row’s clamped title draws the closed weight, and a dismissed open row draws only its settled line', async context => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, a moving row’s clamped title draws the closed weight, and a dismissed open row draws only its settled line', async context => {
   await inTab(async ({ state, moves, fades, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-read')
@@ -191,19 +191,33 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
         .filter(f => f.el.matches('.panel') && rowOf(id).contains(f.el))
         .map(({ from, to, delay }) => ({ from, to, delay }))
     await press(pressed.id)
+    const shrinks = moves.filter(m => m.key.includes('i1'))
+    assert.ok(shrinks.length > 0, 'closing i1 started no glide')
+    for (const m of shrinks)
+      assert.ok(m.delay >= LEAVE_FADE_MS, `${m.key} shrinks ${m.delay} ms in, before its panel fades`)
+    assert.ok(
+      panelFades('i1').some(f => f.from === 1 && f.to === 0 && f.delay === 0),
+      `the closing panel does not fade out at once: ${JSON.stringify(panelFades('i1'))}`,
+    )
     const opens = moves.filter(m => m.key.includes(pressed.id))
     assert.ok(opens.length > 0, `pressing ${pressed.id} started no glide`)
-    for (const m of opens) assert.ok(m.delay === 0, `${m.key} waits ${m.delay} ms after the person pressed it`)
+    for (const m of opens)
+      assert.ok(
+        Math.abs(m.delay - LEAVE_FADE_MS) < 1,
+        `${m.key} waits ${m.delay} ms, not until the closing panel fades`,
+      )
     const shows = panelFades(pressed.id)
     assert.ok(
-      shows.some(f => f.from === 0 && f.to === 1 && f.delay > 0),
+      shows.some(f => f.from === 0 && f.to === 1 && f.delay > LEAVE_FADE_MS),
       `the opened panel does not wait for its space: ${JSON.stringify(shows)}`,
     )
     const style = document.createElement('style')
     style.textContent = [...TAB_HTML.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n')
     document.head.append(style)
-    await after(ROW_STATE_MS.opening + 50)
+    await after(ROW_STATE_MS.closing + 50)
     await press('i1')
+    const opening = rowOf('i1').querySelector<HTMLElement>('.row.selected .line .text.short')!
+    assert.notEqual(getComputedStyle(opening).fontWeight, '600')
     const title = (clamped: boolean) =>
       rowOf(pressed.id).querySelector<HTMLElement>(`.row.closing .line .text${clamped ? '.short' : ':not(.short)'}`)!
     assert.equal(getComputedStyle(title(false)).fontWeight, '600')
@@ -212,9 +226,9 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     fades.length = 0
     await press(pressed.id)
     assert.deepEqual(
-      panelFades(pressed.id).filter(f => f.from < 0.99),
+      panelFades(pressed.id).filter(f => f.from === 0),
       [],
-      'a close the person turned back fades its shown panel in again from less than shown',
+      'a close the person turned back fades its panel in again from nothing',
     )
     await after(ROW_STATE_MS.opening + 50)
     const dismissed = {
