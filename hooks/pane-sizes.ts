@@ -1,7 +1,7 @@
-import { DESKTOP_CHARS_PER_CELL, DESKTOP_LINE_PT } from './desktop-metrics'
+import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { cellWidth } from './text'
 import { fitTabs, tabName, type TabNaming } from './tabs'
-import { LIST_GAP_PT, LIST_MARGIN_PT, ROW_PAD_PT, SECTION_GAP_PT } from './layout'
+import { DESKTOP_LINE_PT, LIST_GAP_PT, LIST_MARGIN_PT, ROW_PAD_PT, SECTION_GAP_PT } from './layout'
 import { TAB_COUNT_GAP } from './tabs-client'
 
 export const REPLY_ROWS = 3

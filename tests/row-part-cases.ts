@@ -2,7 +2,7 @@ import type { Feedback } from '../hooks/feedback'
 import type { RowView } from '../hooks/rows'
 
 export type RowKind = 'question' | 'task' | 'finding'
-export type FeedbackPlace = 'none' | 'above' | 'under'
+type FeedbackPlace = 'none' | 'above' | 'under'
 
 export type RowCase = {
   kind: RowKind

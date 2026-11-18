@@ -1,5 +1,12 @@
-import { CHILD_GAP_PT, CONTROL_GAP_PT, INSIDE_GAP_PT, ITEM_GAP_PT, LIST_GAP_PT, ROW_PAD_PT } from './layout'
-import { DESKTOP_LINE_PT } from './desktop-metrics'
+import {
+  CHILD_GAP_PT,
+  CONTROL_GAP_PT,
+  DESKTOP_LINE_PT,
+  INSIDE_GAP_PT,
+  ITEM_GAP_PT,
+  LIST_GAP_PT,
+  ROW_PAD_PT,
+} from './layout'
 import type { RowView } from './rows'
 
 /**
@@ -45,8 +52,8 @@ export type RowPart = (typeof ROW_PARTS)[number]
  * its step. The other looks draw some pairs at their own value, and for those the rule can break.
  */
 export const GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT } as const
-export const BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT } as const
-export type GapStep = keyof typeof GROUP_STEPS | keyof typeof BETWEEN_STEPS
+const BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT } as const
+type GapStep = keyof typeof GROUP_STEPS | keyof typeof BETWEEN_STEPS
 
 const STEP_PT: Record<GapStep, number> = { ...GROUP_STEPS, ...BETWEEN_STEPS }
 
@@ -60,10 +67,10 @@ export type PartForm = 'herdr' | 'codex' | 'desktopCard' | 'desktopFrame'
  * The gap between two parts: its step, the points a form draws where it differs from the step, and the blank rows
  * the docked terminal draws. omp and the inline terminal draw no blank row inside a row.
  */
-export type PartGap = { step: GapStep; forms: Partial<Record<PartForm, number>>; rows: 0 | 1 }
+type PartGap = { step: GapStep; forms: Partial<Record<PartForm, number>>; rows: 0 | 1 }
 
 /** A blank line on desktop: a written 1, which the pane draws as half its line. */
-export const DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2
+const DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2
 
 const TITLE_PARTS: readonly RowPart[] = ['title', 'titleStatus']
 const TREE_TEXT: readonly RowPart[] = ['holdsUp', 'context', 'earlier']
@@ -160,7 +167,7 @@ export function partRows(above: RowPart, below: Exclude<RowPart, 'title'>, isDoc
 export type AnswersForm = { is: 'stacked'; hasNotes: boolean[] } | { is: 'side by side'; hasReason: boolean }
 
 /** What a look shows of an open row beyond its view: the parts that come from its presses, its field and its form. */
-export type ShownParts = {
+type ShownParts = {
   answers: AnswersForm | null
   hasTitleStatus: boolean
   hasStatus: boolean

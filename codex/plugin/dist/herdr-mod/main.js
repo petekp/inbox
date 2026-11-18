@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T08:22:58.408Z. 295856 characters follow.
+// Built at 2026-11-18T08:26:34.732Z. 295518 characters follow.
 
 // src/main.ts
 import { View, div as div13 } from "gpui-kit";
@@ -4147,6 +4147,7 @@ function prTabBlocks(screen, selected) {
 // ../hooks/layout.ts
 var SPACE_UNIT = 4;
 var LINE_PT = 5 * SPACE_UNIT;
+var DESKTOP_LINE_PT = 19;
 var INSIDE_GAP_PT = 0;
 var LIST_GAP_PT = SPACE_UNIT;
 var ITEM_GAP_PT = 3 * SPACE_UNIT;
@@ -5753,18 +5754,6 @@ function nextDrawAt(now, ui, screen, moved) {
 // src/paint-blocks.ts
 import { div as div12 } from "gpui-kit";
 import { h_flex as h_flex7, v_flex as v_flex5 } from "gpui-base";
-
-// ../hooks/desktop-metrics.ts
-var DESKTOP_LINE_PT = 19;
-var DESKTOP_CHAR_GROUPS = [
-  ["ijl|I ',.:;/\\!", 4],
-  ["ftr()[]{}", 4.9],
-  ['aceksvxyz-*"`?1J', 7.4],
-  ["bdghnopqu_EFL27", 7.95],
-  ["ABKPRSTVXYZ0345689#$+<=>^~", 8.8],
-  ["CDGHNOQUw&", 10]
-];
-var DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [...chars].map((c) => [c, pt])));
 
 // ../hooks/row-parts.ts
 var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };

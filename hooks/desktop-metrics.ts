@@ -2,8 +2,6 @@ import { cellWidth, graphemesOf } from './text'
 // About how many characters of desktop's proportional text fit in one column of `bodyColumns`: sentences and
 // the tab labels run 1.23 to 1.30, bold or not.
 export const DESKTOP_CHARS_PER_CELL = 1.25
-/** The height of one line of the desktop pane's text, in points. */
-export const DESKTOP_LINE_PT = 19
 // A lower guess for text that must stay one line, since desktop wraps text that is too long.
 export const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
 // The widest character in each group, in points, in the pane's 13 pt system font as AppKit measures it. Any other

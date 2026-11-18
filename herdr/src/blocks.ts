@@ -99,7 +99,7 @@ export type BodyLine = {
 }
 
 /** The parts of a row the look draws as lines under its title. A PR row's lines are its `detail`. */
-export type BodyPart = Extract<
+type BodyPart = Extract<
   RowPart,
   'holdsUp' | 'context' | 'earlier' | 'detail' | 'file' | 'answer' | 'note' | 'answers' | 'reason'
 >
