@@ -18,7 +18,7 @@ The sweep relies on the last three facts. It removes nothing unless the list hol
 
 Herdr's mod runtime is gpui-shell 0.7.1, built into the Herdr app. It runs a mod on QuickJS, through the `rquickjs` crate. The app's binary names its engine files under `vendor/gpui-kit/crates/shell/src/engine/quickjs/`. The source of the app and of gpui-kit is not on this Mac, so this list was not read from source. `~/Code/herdr`, at `70389c38`, is `herdr`, the terminal multiplexer. It holds no gpui-kit or app code.
 
-The list comes from the runtime itself. It was checked on 2026-11-18 with Herdr app 0.1.16, by running `herdr-app check` with a scratch `HERDR_APP_HOME` on a mod whose `main.js` throws `Object.getOwnPropertyNames(globalThis)` in its error. `herdr-app check` loads a mod in the same gpui-shell the window runs. Whether the window installs anything more on the global object is unverified.
+The list comes from the runtime itself. It was checked on 2026-11-18 with Herdr app 0.1.16, by running `herdr-app check` with a scratch `HERDR_APP_HOME` on a mod whose `main.js` throws `Object.getOwnPropertyNames(globalThis)` in its error. `herdr-app` is a link to the app's binary, `/Applications/Herdr.app/Contents/MacOS/Herdr`, so `herdr-app check` and the window run the same gpui-shell 0.7.1. Whether the window's runtime installs the same globals as `herdr-app check` is unverified.
 
 A mod's global object holds these 89 names. `HERDR_GLOBALS` in `herdr/tests/herdr-runtime.ts` holds the same list.
 
@@ -31,5 +31,7 @@ The global object also holds 232 names that start with `__`, which gpui-shell's 
 A mod has none of the globals Node, Bun or a browser add beyond that list. That includes `Intl`, `eval`, `TextEncoder`, `TextDecoder`, `structuredClone`, `navigator`, `WebAssembly`, `Temporal` and `ShadowRealm`. `window` is an ordinary object, not the global object. Its own keys are the window calls in `gpui-kit.d.ts`, such as `paint_path`, `open_dialog` and `viewport_size`, plus `localStorage` and `sessionStorage`. `process` holds only `run`, `nextTick`, `exit`, `platform` and `arch`. `performance` holds `now` and `timeOrigin`.
 
 The runtime freezes `Object.prototype`, `Array.prototype` and `String.prototype`, so a mod cannot add to them. The global object itself is not frozen. Whether the other built-in prototypes are frozen is unverified.
+
+With no `Intl`, QuickJS formats dates and numbers its own way and ignores the options. `toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })` gives `08:33:05 PM`, with seconds. `(1234.5).toLocaleString()` gives `1234.5`. The load spec runs on Bun's formatting, so it cannot catch a difference in this output.
 
 `herdr/tests/mod-load.spec.ts` loads the built `herdr/mod/inbox/main.js` with only these globals. After a Herdr app update, run the probe again and update `HERDR_GLOBALS` to match.
