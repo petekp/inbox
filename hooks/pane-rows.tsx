@@ -4,6 +4,7 @@ import { paneState } from './mod-state'
 import { paneAskTree } from './pane-ask-tree'
 import { paneDesktopCard } from './pane-desktop-card'
 import { paneDesktopTree } from './pane-desktop-tree'
+import { partSpace } from './pane-part-space'
 import { newTitleTint } from './pane-title-tint'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { fieldKey, openFields } from './pane-keys'
@@ -24,6 +25,7 @@ import {
   TERMINAL_SIDE_CELLS,
   TREE_LINE_AT,
 } from './pane-sizes'
+import type { RowPart } from './row-parts'
 import { DOT, ROW_COPY } from './rows'
 import { lineCount, SELECTION_BAR, type TreePos } from './terminal-text'
 import { cellWidth } from './text'
@@ -138,12 +140,14 @@ export function paneRows(
     answersFit,
   )
   const { desktopTreeLine } = paneDesktopTree({ Box, desktopHairline, pal })
+  const cardSpace = partSpace(look, isInline, 'desktopCard')
+  const frameSpace = partSpace(look, isInline, 'desktopFrame')
   const desktopCard = paneDesktopCard({
     Box,
     Text,
     pal,
     space,
-    blankLine,
+    partSpace: cardSpace,
     desktopFrame,
     desktopTreeLine,
     gutterMark,
@@ -257,7 +261,13 @@ export function paneRows(
       row.view && look === 'desktop' && isSelected ? askEntries(row.view, options, answerRow, Infinity) : []
     const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
     const isTrunkBridged = look === 'terminal' && isSelected && row.view !== undefined && hasTree(row.view, options)
-    const descriptionsBlock = row.view && !isDesktopTree ? askTree(row.view, options, answerRow, textWidth) : null
+    const descriptionEntries = row.view && !isDesktopTree ? askEntries(row.view, options, answerRow, textWidth) : []
+    const descriptionsBlock = row.view ? askTree(row.view.id, descriptionEntries, textWidth, frameSpace) : null
+    const partSpaceOf = isDesktopTree ? cardSpace : frameSpace
+    const bodyEnd: RowPart = body ? (row.bodyEnd ?? 'detail') : 'title'
+    const treeEnd = (isDesktopTree ? treeEntries : descriptionEntries).at(-1)?.part ?? bodyEnd
+    const actionsPart = isTyping ? 'field' : 'buttons'
+    const bodyBlock = body ? <Box marginTop={frameSpace('title', 'detail')}>{body}</Box> : null
     const trunked = (above: JSX.Element) =>
       isTrunkBridged ? (
         <Box
@@ -274,7 +284,11 @@ export function paneRows(
         above
       )
     const keysBlock = (
-      <Box flexDirection="column" marginTop={isDesktopTree ? 0 : blankLine}>
+      <Box
+        key="actions"
+        flexDirection="column"
+        marginTop={partSpaceOf(status.length > 0 ? 'status' : treeEnd, actionsPart)}
+      >
         {isTyping ? (
           look === 'desktop' ? (
             <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap} rowGap={1}>
@@ -301,9 +315,11 @@ export function paneRows(
           actionRows(row.id, keys, more, textWidth)
         )}
         {isStatusUnder ? (
-          <Text color={pal.muted} wrap="wrap">
-            {withDoneMark(f.text, f.doneMark)}
-          </Text>
+          <Box key="result" marginTop={partSpaceOf(actionsPart, 'result')}>
+            <Text color={pal.muted} wrap="wrap">
+              {withDoneMark(f.text, f.doneMark)}
+            </Text>
+          </Box>
         ) : null}
       </Box>
     )
@@ -366,10 +382,10 @@ export function paneRows(
               <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
               desktopTitle,
               row.subtitle ?? null,
-              row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
+              bodyBlock,
               descriptionsBlock,
               status.length > 0 ? (
-                <Box flexDirection="column" marginTop={blankLine}>
+                <Box key="status" flexDirection="column" marginTop={frameSpace(treeEnd, 'status')}>
                   {status.map(st => (
                     <Text color={st.color} wrap="wrap">
                       {st.text}
@@ -430,12 +446,12 @@ export function paneRows(
                   </Button>,
                 )}
                 {row.subtitle}
-                {body ? <Box marginTop={blankLine}>{body}</Box> : null}
+                {bodyBlock}
               </Box>,
             )}
             {descriptionsBlock}
             {status.length > 0 ? (
-              <Box flexDirection="column" marginTop={blankLine}>
+              <Box key="status" flexDirection="column" marginTop={frameSpace(treeEnd, 'status')}>
                 {status.map(s => (
                   <Text color={s.color} wrap="wrap">
                     {s.text}

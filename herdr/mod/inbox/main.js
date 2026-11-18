@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T05:12:30.673Z. 290881 characters follow.
+// Built at 2026-11-18T06:20:40.996Z. 294062 characters follow.
 
 // src/main.ts
 import { View, div as div11 } from "gpui-kit";
@@ -3930,9 +3930,9 @@ function threadRow(screen, pr, t, presses) {
     isDim: text.mark.isDone,
     isSelectable: text.fold === null,
     body: [
-      ...rest ? [{ text: clipLabel(rest, PR_QUOTE_CHARS), tone: null }] : [],
-      { text: `${threadWhere(t)}${DOT}@${t.author}`, tone: "muted" },
-      ...reply ? [{ text: reply, tone: null }] : []
+      ...rest ? [{ part: "detail", text: clipLabel(rest, PR_QUOTE_CHARS), tone: null }] : [],
+      { part: "detail", text: `${threadWhere(t)}${DOT}@${t.author}`, tone: "muted" },
+      ...reply ? [{ part: "detail", text: reply, tone: null }] : []
     ],
     buttons: [...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
     field: null
@@ -3952,7 +3952,7 @@ function checkRow(screen, pr, c, presses) {
     settled: null,
     isDim: false,
     isSelectable: text.fold === null,
-    body: [{ text: text.meta, tone: "muted" }],
+    body: [{ part: "detail", text: text.meta, tone: "muted" }],
     buttons: checkActions(pr, c, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
     field: null
   };
@@ -4138,7 +4138,6 @@ var CHILD_GAP_PT = 2 * SPACE_UNIT;
 var HEAD_GAP_PT = 2 * SPACE_UNIT;
 var LIST_MARGIN_PT = SPACE_UNIT;
 var CONTROL_GAP_PT = 2 * SPACE_UNIT;
-var titleToBodyGapPt = (startsWithButtons) => startsWithButtons ? CONTROL_GAP_PT : INSIDE_GAP_PT;
 var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
 var BUTTON_BORDER_PT = 1;
 var SECTION_GAP_PT = 6 * SPACE_UNIT;
@@ -4512,36 +4511,28 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
 }
 function rowBody(row, isAllShown) {
   const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
-    { optionId: `${row.id} ${n}`, text: "", tone: "muted" },
-    ...o.note ? [{ text: o.note, tone: "muted", gapAbove: "list", isOptionNote: true }] : []
+    { part: "answer", optionId: `${row.id} ${n}`, text: "", tone: "muted" },
+    ...o.note ? [{ part: "note", text: o.note, tone: "muted", isOptionNote: true }] : []
   ]);
-  const holdsUp = row.holdsUpLine ? [[{ text: row.holdsUpLine, tone: "muted" }]] : [];
+  const holdsUp = row.holdsUpLine ? [[{ part: "holdsUp", text: row.holdsUpLine, tone: "muted" }]] : [];
   const branches = [...holdsUp, ...options];
   const lastBranch = branches.length - 1;
   const isTrunkAfterHoldsUp = options.length > 0;
   const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
-  const isOptionAfterOption = (branch) => branch > holdsUp.length;
   const branchLines = (branch) => (branches[branch] ?? []).map((l, line) => {
     const placed = tree(branch, line);
-    const startGap = isOptionAfterOption(branch) ? "item" : "child";
-    return { ...l, ...placed ? { tree: placed } : {}, ...line === 0 ? { gapAbove: startGap } : {} };
+    return placed ? { ...l, tree: placed } : l;
   });
   const contextTree = isTrunkAfterHoldsUp ? { tree: "trunk" } : {};
   const lines = [
     ...holdsUp.flatMap((_, branch) => branchLines(branch)),
-    { text: row.contextLine ?? "", tone: "muted", gapAbove: "child", ...contextTree },
-    {
-      text: row.earlierLine ? earlierLineText(row.earlierLine) : "",
-      tone: "muted",
-      gapAbove: "child",
-      ...contextTree
-    },
-    { text: row.detail ?? "", tone: null },
-    { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
+    { part: "context", text: row.contextLine ?? "", tone: "muted", ...contextTree },
+    { part: "earlier", text: row.earlierLine ? earlierLineText(row.earlierLine) : "", tone: "muted", ...contextTree },
+    { part: "detail", text: row.detail ?? "", tone: null },
+    { part: "file", text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
     ...options.flatMap((_, n) => branchLines(holdsUp.length + n))
   ];
-  const shown = lines.filter((l) => l.text || l.lead || l.optionId);
-  return shown.map(({ gapAbove, ...l }, n) => n === 0 ? { ...l, gapAbove: "title" } : gapAbove ? { ...l, gapAbove } : l);
+  return lines.filter((l) => l.text || l.lead || l.optionId);
 }
 function sideBySideOf(row, isAllShown) {
   const { options, answerRow } = rowKeyPlan(row, isAllShown);
@@ -5743,6 +5734,72 @@ function nextDrawAt(now, ui, screen, moved) {
 import { div as div10 } from "gpui-kit";
 import { Input, h_flex as h_flex6, v_flex as v_flex3 } from "gpui-base";
 
+// ../hooks/desktop-metrics.ts
+var DESKTOP_LINE_PT = 19;
+var DESKTOP_CHAR_GROUPS = [
+  ["ijl|I ',.:;/\\!", 4],
+  ["ftr()[]{}", 4.9],
+  ['aceksvxyz-*"`?1J', 7.4],
+  ["bdghnopqu_EFL27", 7.95],
+  ["ABKPRSTVXYZ0345689#$+<=>^~", 8.8],
+  ["CDGHNOQUw&", 10]
+];
+var DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [...chars].map((c) => [c, pt])));
+var graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+// ../hooks/row-parts.ts
+var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
+var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
+var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
+var DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2;
+var CODEX_TREE_PAD_PX = 1;
+var TITLE_PARTS = ["title", "titleStatus"];
+var TREE_TEXT = ["holdsUp", "context", "earlier"];
+var BODY_PARTS = ["detail", "file"];
+var ANSWER_PARTS = ["answer", "note", "answers", "reason"];
+var TREE_PARTS = [...TREE_TEXT, ...ANSWER_PARTS];
+var gap = (step, rows, forms = {}) => ({ step, forms, rows });
+var UNDER_TITLE = gap("inside", 0);
+var ANSWERS_UNDER_TITLE = gap("control", 0, { codex: CONTROL_GAP_PT - CODEX_TREE_PAD_PX });
+function aboveButtons(above) {
+  const desktopFrame = DESKTOP_BLANK_LINE_PT;
+  if (TREE_PARTS.includes(above))
+    return gap("control", 1, { desktopCard: ROW_PAD_PT, desktopFrame });
+  if (above === "status")
+    return gap("control", 1, { desktopCard: 0, desktopFrame });
+  return gap("control", 1, { desktopFrame });
+}
+var GAP_ABOVE = {
+  titleStatus: () => gap("inside", 0),
+  holdsUp: () => UNDER_TITLE,
+  context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child", 0),
+  earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child", 0, above === "context" ? { desktopFrame: 0 } : {}),
+  detail: () => gap("inside", 1, { codex: CONTROL_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT }),
+  file: (above) => above === "detail" ? gap("inside", 1, { codex: LIST_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT }) : GAP_ABOVE.detail(above),
+  answer: (above) => TITLE_PARTS.includes(above) ? ANSWERS_UNDER_TITLE : above === "answer" || above === "note" ? gap("item", 0) : gap("child", 0),
+  note: () => gap("list", 0),
+  answers: (above) => TITLE_PARTS.includes(above) ? ANSWERS_UNDER_TITLE : gap("child", 0),
+  reason: () => gap("list", 0),
+  status: (above) => {
+    if (TITLE_PARTS.includes(above))
+      return gap("inside", 1, { codex: CONTROL_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT });
+    if (BODY_PARTS.includes(above))
+      return gap("control", 1, { desktopFrame: DESKTOP_BLANK_LINE_PT });
+    return gap("control", 1, { desktopCard: ROW_PAD_PT + DESKTOP_BLANK_LINE_PT, desktopFrame: DESKTOP_BLANK_LINE_PT });
+  },
+  buttons: aboveButtons,
+  field: aboveButtons,
+  result: () => gap("control", 0, { desktopCard: 0, desktopFrame: 0 }),
+  copy: () => gap("control", 0)
+};
+function partGap(above, below) {
+  return GAP_ABOVE[below](above);
+}
+function partPt(above, below, form) {
+  const g = partGap(above, below);
+  return g.forms[form] ?? STEP_PT[g.step];
+}
+
 // src/paint-parts.ts
 import { div as div3 } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -5787,11 +5844,11 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
   });
 }
 var CLEAR = "#00000000";
-var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false) => {
+var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, above = CONTROL_GAP) => {
   const outdent = followsAnswers ? BUTTON_LABEL_X : 0;
   const followUps = buttons.filter((b) => b.isFollowUp);
   const others = buttons.filter((b) => !b.isFollowUp);
-  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent - outdent).children(others.map((b) => buttonEl(b, p, isInert, true))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().ml(outdent).gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
+  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(above).pl(indent - outdent).children(others.map((b) => buttonEl(b, p, isInert, true))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().ml(outdent).gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
 };
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
@@ -6131,8 +6188,7 @@ var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
 // src/paint-blocks.ts
 var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
-var bodyLineEl = (l, t, isSelected, answers = [], p = null, isInert = false) => {
-  const above = l.gapAbove === "title" ? titleToBodyGapPt(answers.length > 0) : l.gapAbove === "item" ? ITEM_GAP : l.gapAbove === "child" ? CHILD_GAP : l.gapAbove === "list" ? LIST_GAP : INSIDE_GAP;
+var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
   const color = lineColor(t, isSelected ? t.selected : t.background);
   if (answers.length > 0 && p) {
     const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
@@ -6165,28 +6221,43 @@ function rowEl(r, p) {
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
     ...r.heldLine ? [r.heldLine] : []
   ];
-  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l) => {
-    const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, t, r.isSelected);
+  const titleEnd = lines.length > 0 ? "titleStatus" : "title";
+  return v_flex3().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex3().children(lines.map((l, n) => {
+    const above = partPt(n === 0 ? "title" : "titleStatus", "titleStatus", "herdr");
+    const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, above, t, r.isSelected);
     return "isHidden" in l && l.isHidden ? el.opacity(0) : el;
-  })).children(panelEl(r, m, p, isLeaving))));
+  })).children(panelEl(r, m, p, isLeaving, titleEnd))));
 }
-function bodyEls(from, isSelected, p, isInert) {
+function bodyEls(from, isSelected, p, isInert, titleEnd) {
   const buttonOf = (id) => from.buttons.filter((b) => b.id === id);
-  if (!isSideBySide(from, p))
-    return from.body.map((l) => bodyLineEl(l, p.t, isSelected, buttonOf(l.optionId), p, isInert));
-  const { optionIds, recLine } = from.sideBySide;
+  const sideBySide = isSideBySide(from, p) ? from.sideBySide : null;
+  const answers = sideBySide ? from.buttons.filter((b) => sideBySide.optionIds.includes(b.id)) : [];
   const first = from.body.find((l) => l.optionId);
-  const answers = from.buttons.filter((b) => optionIds.includes(b.id));
-  const reason = recLine ? [bodyLineEl({ text: recLine, tone: "muted", gapAbove: "list", isOptionNote: true }, p.t, isSelected)] : [];
-  return from.body.flatMap((l) => {
+  const shown = sideBySide ? from.body.flatMap((l) => {
     if (l === first)
-      return [bodyLineEl({ ...l, tree: "last" }, p.t, isSelected, answers, p, isInert), ...reason];
-    if (l.optionId || l.isOptionNote)
-      return [];
-    return [bodyLineEl(l, p.t, isSelected, [], p, isInert)];
+      return [
+        { ...l, part: "answers", tree: "last" },
+        ...sideBySide.recLine ? [
+          {
+            part: "reason",
+            text: sideBySide.recLine,
+            tone: "muted",
+            isOptionNote: true
+          }
+        ] : []
+      ];
+    return l.optionId || l.isOptionNote ? [] : [l];
+  }) : from.body;
+  let end = titleEnd;
+  const els = shown.map(({ part, ...l }) => {
+    const above = partPt(end, part, "herdr");
+    end = part;
+    const buttons = part === "answers" ? answers : buttonOf(l.optionId);
+    return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert);
   });
+  return { els, end };
 }
-function panelEl(r, m, p, isLeaving) {
+function panelEl(r, m, p, isLeaving, titleEnd) {
   const { t } = p;
   const from = m?.closing ?? r;
   const isInert = isLeaving || from !== r;
@@ -6194,11 +6265,13 @@ function panelEl(r, m, p, isLeaving) {
   const actions = from.buttons.filter((b) => !b.isOption);
   const hasAnswers = from.buttons.some((b) => b.isOption);
   const followsAnswers = hasAnswers && actions[0]?.emphasis !== "quiet";
+  const body = bodyEls(from, r.isSelected, p, isInert, titleEnd);
+  const end = from.field ? "field" : actions.length > 0 ? "buttons" : body.end;
   const parts = [
-    ...bodyEls(from, r.isSelected, p, isInert),
-    ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers)] : [],
-    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : [],
-    ...under ? [bodyLineEl(under, t, r.isSelected).pt(CONTROL_GAP)] : []
+    ...body.els,
+    ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, "buttons", "herdr"))] : [],
+    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, "field", "herdr"))] : [],
+    ...under ? [bodyLineEl(under, partPt(end, "result", "herdr"), t, r.isSelected)] : []
   ];
   if (parts.length === 0)
     return [];

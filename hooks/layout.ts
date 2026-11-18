@@ -39,13 +39,6 @@ export const LIST_MARGIN_PT = SPACE_UNIT
 /** Text to the buttons under it, and one button to the next. */
 export const CONTROL_GAP_PT = 2 * SPACE_UNIT
 
-/**
- * A row's title to the first thing its body draws: text sits `INSIDE_GAP_PT` under it, as a title's detail, and
- * buttons, such as a question's answers, `CONTROL_GAP_PT`, as under any text.
- */
-export const titleToBodyGapPt = (startsWithButtons: boolean): number =>
-  startsWithButtons ? CONTROL_GAP_PT : INSIDE_GAP_PT
-
 /** The side padding inside a pill button, from its border to its label. */
 export const BUTTON_PAD_X_PT = 3 * SPACE_UNIT
 

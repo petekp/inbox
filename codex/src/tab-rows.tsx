@@ -63,6 +63,7 @@ import {
 import { applyView, replies, holds } from './tab-read'
 import { isNotSent, showCopyFallback, startTyping, discardReply, lastPressKey } from './tab-press'
 import { askTree } from './tab-ask-tree'
+import { partAttrs } from './tab-part-gap'
 import { resultHandle, inlineHtml } from './tab-parts'
 
 function isListed(v: View, id: string): boolean {
@@ -283,15 +284,18 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
     body: () => (
       <div>
-        <p style={{ whiteSpace: 'pre-line' }}>{inlineHtml(r.detail ?? '')}</p>
+        <p class="pre-line" {...partAttrs('title', 'detail')}>
+          {inlineHtml(r.detail ?? '')}
+        </p>
         {f.path ? (
-          <p>
+          <p {...partAttrs('detail', 'file')}>
             <span class="muted">{ROW_COPY.relevantFile}</span>
             <code title={f.path}>{r.fileName}</code>
           </p>
         ) : null}
       </div>
     ),
+    bodyEnd: () => (f.path ? 'file' : 'detail'),
     ...rowKeys(r),
     typing: {
       hint: replyHint(r, 'Codex'),

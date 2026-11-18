@@ -9,12 +9,17 @@ import { UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
+import { partRows } from '../../hooks/row-parts'
+import type { RowPart } from '../../hooks/row-parts'
 import { askTreeLines } from './panel-ask-tree'
 import { focusOf } from './panel-keys'
 import { AGENT, INDENT, UNLED_INDENT, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
 import { cutTitle, fit, indented, spread, visibleLength, wrapText } from './panel-text'
 import type { PanelScreen, PanelUi, Style, Tone } from './panel'
+
+/** omp draws the panel in place of the prompt, so a row's parts sit flush, as in the inline terminal. */
+const IS_DOCKED = false
 
 /** The tint a row's title, lead and mark take, at its strength now. */
 type Tint = { tone: 'key' | 'done' | 'muted' | 'error'; share: number }
@@ -214,27 +219,35 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const title = tint ? s.tint(tint.tone, tint.share, ownTitle) : ownTitle
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
+  let above: RowPart = 'title'
+  const putPart = (part: Exclude<RowPart, 'title'>, lines: string[]) => {
+    if (lines.length === 0) return
+    out.push(...Array<string>(partRows(above, part, IS_DOCKED)).fill(''), ...lines)
+    above = part
+  }
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   const holdsUp = line.row?.holdsUpLine
   const focused = ui.typing === line.id ? -1 : focusOf(line, ui)
   const answerCell = (b: ButtonFace, n: number, room: number) =>
     buttonCellLines(b, n === focused, s, labelMark(b, Infinity, s), room)
   const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell, buttonLabelCells) : []
-  if (tree.length > 0) out.push(...tree)
-  else if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width))
+  if (tree.length > 0) tree.forEach(t => putPart(t.part, t.lines))
+  else if (holdsUp) putPart('holdsUp', [fit(`${' '.repeat(indent)}${s.dim(holdsUp)}`, width)])
   if (line.body && isOpen) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
-  if (line.detail && (isOpen || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
+  if (line.detail && (isOpen || line.isDetailShown)) putPart('detail', indented(line.detail, indent, width, 4, s.dim))
   if (!isOpen) return out
-  if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
+  if (line.file) putPart('file', [' '.repeat(indent) + s.tone('accent', line.file)])
   // As in the terminal, an open reply field replaces the row's buttons: Enter sends, so no button reads as focused.
   if (line.buttons.some(b => !b.option) && ui.typing !== line.id)
-    out.push(...buttonLines(line, ui, indent - 1, width, s))
+    putPart('buttons', buttonLines(line, ui, indent - 1, width, s))
   if (ui.typing === line.id) {
     const hint = line.row ? replyHint(line.row, AGENT) : 'Your reply'
     const text = ui.drafts[line.id]?.text ?? ''
-    out.push(' '.repeat(indent) + s.dim(`${hint}:`))
     const field = wrapText(`${text}\u0000`, Math.max(10, width - indent - 1))
-    out.push(...field.map(l => ' '.repeat(indent) + l.replace('\u0000', s.inverse(' '))))
+    putPart('field', [
+      ' '.repeat(indent) + s.dim(`${hint}:`),
+      ...field.map(l => ' '.repeat(indent) + l.replace('\u0000', s.inverse(' '))),
+    ])
   }
   if (statusUnder) {
     const markCells = mark ? 2 : 0
@@ -245,7 +258,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       4,
       feedbackPaint(statusUnder.tone, s),
     )
-    if (first !== undefined) out.push(' '.repeat(indent) + mark + first.slice(indent + markCells), ...rest)
+    if (first !== undefined) putPart('result', [' '.repeat(indent) + mark + first.slice(indent + markCells), ...rest])
   }
 
   return out

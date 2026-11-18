@@ -1,4 +1,4 @@
-import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
+import { DESKTOP_CHARS_PER_CELL, DESKTOP_LINE_PT } from './desktop-metrics'
 import { cellWidth } from './text'
 import { fitTabs, tabName, type TabNaming } from './tabs'
 import { LIST_GAP_PT, LIST_MARGIN_PT, ROW_PAD_PT, SECTION_GAP_PT } from './layout'
@@ -20,7 +20,7 @@ export function fieldRows(text: string, lineRows: (line: string) => number, most
 }
 export const DESKTOP_WIDE_AT = 50
 export const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
-export const DESKTOP_LINE_PT = 19
+export { DESKTOP_LINE_PT }
 /**
  * A row of the desktop pane's scroll, the unit of its `scroll.offset` and `bodyRows`: one line of text, in points,
  * measured on app 4.4212.0 with engine 2.1.309.

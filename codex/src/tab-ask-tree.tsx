@@ -1,14 +1,26 @@
 import type { ComponentChildren } from 'preact'
 import { answersFitLine } from '../../hooks/action-plan'
 import type { AnswerRow } from '../../hooks/action-plan'
+import type { RowPart } from '../../hooks/row-parts'
 import type { RowView } from '../../hooks/rows'
 import { ActionButton } from './row-actions'
+import { partAttrs } from './tab-part-gap'
 import type { Key, Row } from './tab-state'
 
-/** A line of the tree. `isBranch` joins it to the trunk with an arm. */
-type Entry = { isBranch: boolean; draw: (place: string) => ComponentChildren }
+/** A line of the tree, the part `part`. `isBranch` joins it to the trunk with an arm. */
+type Entry = {
+  part: 'holdsUp' | 'context' | 'earlier'
+  isBranch: boolean
+  draw: (place: string, above: RowPart) => ComponentChildren
+}
 
-type AnswersProps = { rowId: string; options: Key[]; answerRow: AnswerRow | null; isBlocked: () => boolean }
+type AnswersProps = {
+  rowId: string
+  options: Key[]
+  answerRow: AnswerRow | null
+  above: RowPart
+  isBlocked: () => boolean
+}
 
 /** The attribute on a tree whose answers may sit side by side, naming its row. */
 const ANSWERS_ATTRIBUTE = 'data-answers'
@@ -65,33 +77,53 @@ export function watchAnswerWidths(root: HTMLElement, redraw: () => void, signal:
  * of the tree, they share one branch with the recommendation's reason under them. Otherwise each answer is its own
  * branch with its note under it. `settleAnswers` measures them.
  */
-function Answers({ rowId, options, answerRow, isBlocked }: AnswersProps) {
-  const isSideBySide = answerRow !== null && (answersFit.get(rowId) ?? true)
-
-  if (isSideBySide)
+function Answers({ rowId, options, answerRow, above, isBlocked }: AnswersProps) {
+  if (isSideBySide(rowId, answerRow))
     return (
-      <p class="option-choice option-row tree-last">
+      <p class="option-choice option-row tree-last" {...partAttrs(above, 'answers', true)}>
         <span class="option-button">
           {options.map((o, n) => (
             <ActionButton key={n} action={o} isBlocked={isBlocked} />
           ))}
         </span>
-        {answerRow.recLine ? <span class="muted option-note">{answerRow.recLine}</span> : null}
+        {answerRow.recLine ? (
+          <span class="muted option-note" {...partAttrs('answers', 'reason')}>
+            {answerRow.recLine}
+          </span>
+        ) : null}
       </p>
     )
 
   return (
     <>
       {options.map((o, n) => (
-        <p key={n} class={`option-choice tree-${n === options.length - 1 ? 'last' : 'before'}`}>
+        <p
+          key={n}
+          class={`option-choice tree-${n === options.length - 1 ? 'last' : 'before'}`}
+          {...partAttrs(n === 0 ? above : options[n - 1]!.note ? 'note' : 'answer', 'answer', true)}
+        >
           <span class="option-button">
             <ActionButton action={o} isBlocked={isBlocked} />
           </span>
-          {o.note ? <span class="muted option-note">{o.note}</span> : null}
+          {o.note ? (
+            <span class="muted option-note" {...partAttrs('answer', 'note')}>
+              {o.note}
+            </span>
+          ) : null}
         </p>
       ))}
     </>
   )
+}
+
+const isSideBySide = (rowId: string, answerRow: AnswerRow | null): answerRow is AnswerRow =>
+  answerRow !== null && (answersFit.get(rowId) ?? true)
+
+/** The last part the answers draw, in the form they are drawn in now. */
+function answersEnd(rowId: string, options: Key[], answerRow: AnswerRow | null): RowPart {
+  if (isSideBySide(rowId, answerRow)) return answerRow.recLine ? 'reason' : 'answers'
+
+  return options.at(-1)?.note ? 'note' : 'answer'
 }
 
 /**
@@ -104,7 +136,7 @@ export function askTree(
   options: Key[],
   answerRow: AnswerRow | null,
   isBlocked: () => boolean,
-): Pick<Row, 'body' | 'hasTree'> {
+): Pick<Row, 'body' | 'bodyEnd' | 'hasTree'> {
   const holdsUp = r.state.is === 'open' ? r.holdsUpLine : null
   const hasTree = options.length > 0 || holdsUp !== null
   const earlier = r.earlierLine
@@ -112,17 +144,38 @@ export function askTree(
 
   const entries: Entry[] = [
     ...(holdsUp
-      ? [{ isBranch: true, draw: (place: string) => <p class={`branch holds-up muted tree-${place}`}>{holdsUp}</p> }]
+      ? [
+          {
+            part: 'holdsUp' as const,
+            isBranch: true,
+            draw: (place: string, above: RowPart) => (
+              <p class={`branch holds-up muted tree-${place}`} {...partAttrs(above, 'holdsUp', true)}>
+                {holdsUp}
+              </p>
+            ),
+          },
+        ]
       : []),
     ...(r.contextLine
-      ? [{ isBranch: false, draw: (place: string) => <p class={`context-line tree-${place}`}>{r.contextLine}</p> }]
+      ? [
+          {
+            part: 'context' as const,
+            isBranch: false,
+            draw: (place: string, above: RowPart) => (
+              <p class={`context-line tree-${place}`} {...partAttrs(above, 'context', true)}>
+                {r.contextLine}
+              </p>
+            ),
+          },
+        ]
       : []),
     ...(earlier
       ? [
           {
+            part: 'earlier' as const,
             isBranch: false,
-            draw: (place: string) => (
-              <p class={`context-line tree-${place}`}>
+            draw: (place: string, above: RowPart) => (
+              <p class={`context-line tree-${place}`} {...partAttrs(above, 'earlier', true)}>
                 {earlier.lead}
                 <strong class="option-label">{earlier.answer}</strong>
                 {earlier.rest}
@@ -134,14 +187,20 @@ export function askTree(
   ]
   const hasAnswers = options.length > 0
   const lastBranch = hasAnswers ? entries.length : entries.findLastIndex(e => e.isBranch)
+  const textEnd: RowPart = entries.at(-1)?.part ?? 'title'
 
   return {
     hasTree,
     body: () => (
       <div class={hasTree ? 'tree' : 'tree plain'} {...(answerRow ? { [ANSWERS_ATTRIBUTE]: r.id } : {})}>
-        {entries.map((e, n) => e.draw(n === lastBranch ? 'last' : n > lastBranch ? 'after' : 'before'))}
-        {hasAnswers ? <Answers rowId={r.id} options={options} answerRow={answerRow} isBlocked={isBlocked} /> : null}
+        {entries.map((e, n) =>
+          e.draw(n === lastBranch ? 'last' : n > lastBranch ? 'after' : 'before', entries[n - 1]?.part ?? 'title'),
+        )}
+        {hasAnswers ? (
+          <Answers rowId={r.id} options={options} answerRow={answerRow} above={textEnd} isBlocked={isBlocked} />
+        ) : null}
       </div>
     ),
+    bodyEnd: () => (hasAnswers ? answersEnd(r.id, options, answerRow) : textEnd),
   }
 }

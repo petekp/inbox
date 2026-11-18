@@ -3030,7 +3030,7 @@ export const register: Register = on => {
       showAsk: askId => showAsk($, askId),
     }
     const { itemRow, findingRow } = paneAskRows(
-      { now, look, Text, pal, optionsShown, Box, blankLine, terminalText, inlineText },
+      { now, look, isInline, Text, pal, optionsShown, Box, terminalText, inlineText },
       handlers,
     )
     const isThreadSent = threadSentIn(lastActions)
