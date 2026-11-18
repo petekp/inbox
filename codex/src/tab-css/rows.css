@@ -357,6 +357,12 @@ code {
   align-items: center;
   gap: var(--control-gap);
 }
+.keys.follows-answers {
+  margin-left: calc(var(--unit) - var(--button-pad-x));
+}
+.keys.follows-answers > .follow-ups {
+  margin-left: calc(var(--button-pad-x) - var(--unit));
+}
 .follow-ups {
   display: flex;
   flex-wrap: wrap;
