@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T08:07:03.241Z. 293686 characters follow.
+// Built at 2026-11-18T08:08:27.133Z. 293775 characters follow.
 
 // src/main.ts
 import { View, div as div12 } from "gpui-kit";
@@ -6350,7 +6350,8 @@ function blockEl(b, p) {
   if (b.kind === "field") {
     const m = p.motion.get(b.id);
     const isShownAsOpening = m?.state === "entering" && m.box !== null && m.fadeMs === 0;
-    const opening = isShownAsOpening ? { isOpen: m.box === "open", height: p.heights.get(b.id) ?? 0 } : null;
+    const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null;
+    const opening = isShownAsOpening ? { isOpen: m.box === "open", height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade;
     return div11().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
   }
   if (b.kind === "note")

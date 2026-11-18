@@ -105,7 +105,9 @@ const bodyLineEl = (
 
 /**
  * A field and its buttons. A field a press brings in shows its text field as soon as its box opens, while its buttons,
- * at the bottom of that box, fade in once the box is nearly open (`opening`), as an entering block's content does.
+ * at the bottom of that box, fade in once the box is nearly open (`opening`), as an entering block's content does. A
+ * leaving field keeps its buttons' fade toward shown, so buttons closed mid-fade go on from where they are while the
+ * field fades out, instead of drawing at full opacity.
  */
 function fieldEl(
   f: Field,
@@ -486,7 +488,8 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'field') {
     const m = p.motion.get(b.id)
     const isShownAsOpening = m?.state === 'entering' && m.box !== null && m.fadeMs === 0
-    const opening = isShownAsOpening ? { isOpen: m.box === 'open', height: p.heights.get(b.id) ?? 0 } : null
+    const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null
+    const opening = isShownAsOpening ? { isOpen: m.box === 'open', height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade
 
     return div()
       .pl(b.isAtEdge ? EDGE : TEXT_X)
