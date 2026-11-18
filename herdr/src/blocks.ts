@@ -10,6 +10,7 @@ import type { StatusStall } from '../../hooks/status-page'
 import type { PathLine } from '../../hooks/status-path'
 import type { EmptyTab, EmptyText } from '../../hooks/empty-tab'
 import type { ShownTab } from '../../hooks/tabs'
+import type { RowPart } from '../../hooks/row-parts'
 
 /**
  * A color the paint maps onto Herdr's theme. The first ten are the shared tones of `hooks/tones.ts`, so a tone means
@@ -86,6 +87,23 @@ export const button = (
 /** The field a row or the goal draws while the person types in it, with its Send or Save, and Cancel or Discard. */
 export type Field = { rowId: string; buttons: Button[] }
 
+/** A line under a row's title. */
+export type BodyLine = {
+  part: BodyPart
+  lead?: string
+  text: string
+  tone: Tone
+  tree?: 'trunk' | 'tee' | 'last'
+  isOptionNote?: true
+  optionId?: string
+}
+
+/** The parts of a row the look draws as lines under its title. A PR row's lines are its `detail`. */
+type BodyPart = Extract<
+  RowPart,
+  'holdsUp' | 'context' | 'earlier' | 'detail' | 'file' | 'answer' | 'note' | 'answers' | 'reason'
+>
+
 export type RowBlock = {
   kind: 'row'
   id: string
@@ -108,25 +126,14 @@ export type RowBlock = {
   isSelected: boolean
   /** The person collapsed it, so it draws closed while selected. */
   isCollapsed?: true
-  /** What the selected row shows under its line, in order, each line with the mark that leads it, if any. */
   /**
-   * The row's lines under its title. `tree` places a line on the tree that hangs from the title's mark: `trunk` passes
-   * it, `tee` joins a branch to the trunk, and `last` ends the trunk at the last branch. `gapAbove` starts a line a
-   * `LIST_GAP_PT`, a `CHILD_GAP_PT` or an `ITEM_GAP_PT` below the line above, as one option starts an item step below
-   * the option before it and its note a list step below its button. On the first line, `title` starts it
-   * `titleToBodyGapPt` below the title. `isOptionNote` indents an option's note to its button's label. `lead` is an option's label, drawn in the
-   * foreground color before `text`, which takes `tone`. `optionId` draws the row's option button of that id in place
-   * of text.
+   * The row's lines under its title, each tagged with the part of the row it draws, which places it `partGap` under the
+   * part above. `tree` places a line on the tree that hangs from the title's mark: `trunk` passes it, `tee` joins a
+   * branch to the trunk, and `last` ends the trunk at the last branch. `isOptionNote` indents an option's note to its
+   * button's label. `lead` is an option's label, drawn in the foreground color before `text`, which takes `tone`.
+   * `optionId` draws the row's option button of that id in place of text.
    */
-  body: {
-    lead?: string
-    text: string
-    tone: Tone
-    tree?: 'trunk' | 'tee' | 'last'
-    gapAbove?: 'title' | 'list' | 'child' | 'item'
-    isOptionNote?: true
-    optionId?: string
-  }[]
+  body: BodyLine[]
   buttons: Button[]
   /**
    * Set when the row's answers may sit side by side, as `rowKeyPlan` offers it: the answers' button ids, and the

@@ -105,7 +105,7 @@ const GRAPHEME = new RegExp(
 )
 
 /** The characters a reader sees in `text`, in order. */
-function graphemesOf(text: string): string[] {
+export function graphemesOf(text: string): string[] {
   return segmenter ? Array.from(segmenter.segment(text), s => s.segment) : (text.match(GRAPHEME) ?? [])
 }
 const ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u
