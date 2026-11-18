@@ -8403,87 +8403,6 @@ async function rerunRun(host, e) {
 `)[0] || `gh exited with ${r.exitCode}`;
 }
 
-// ../hooks/layout.ts
-var SPACE_UNIT = 4;
-var LINE_PT = 5 * SPACE_UNIT;
-var INSIDE_GAP_PT = 0;
-var LIST_GAP_PT = SPACE_UNIT;
-var ITEM_GAP_PT = 3 * SPACE_UNIT;
-var CHILD_GAP_PT = 2 * SPACE_UNIT;
-var HEAD_GAP_PT = 2 * SPACE_UNIT;
-var CONTROL_GAP_PT = 2 * SPACE_UNIT;
-var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
-var SECTION_GAP_PT = 6 * SPACE_UNIT;
-var EDGE_PT = 4 * SPACE_UNIT;
-var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
-var MARK_PT = 6 * SPACE_UNIT;
-var ROW_PAD_PT = ITEM_GAP_PT / 2;
-
-// ../hooks/desktop-metrics.ts
-var DESKTOP_LINE_PT = 19;
-var DESKTOP_CHAR_GROUPS = [
-  ["ijl|I ',.:;/\\!", 4],
-  ["ftr()[]{}", 4.9],
-  ['aceksvxyz-*"`?1J', 7.4],
-  ["bdghnopqu_EFL27", 7.95],
-  ["ABKPRSTVXYZ0345689#$+<=>^~", 8.8],
-  ["CDGHNOQUw&", 10]
-];
-var DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [...chars].map((c) => [c, pt])));
-var graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-// ../hooks/row-parts.ts
-var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
-var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
-var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
-var DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2;
-var CODEX_TREE_PAD_PX = 1;
-var TITLE_PARTS = ["title", "titleStatus"];
-var TREE_TEXT = ["holdsUp", "context", "earlier"];
-var BODY_PARTS = ["detail", "file"];
-var ANSWER_PARTS = ["answer", "note", "answers", "reason"];
-var TREE_PARTS = [...TREE_TEXT, ...ANSWER_PARTS];
-var gap = (step, rows, forms = {}) => ({ step, forms, rows });
-var UNDER_TITLE = gap("inside", 0);
-var ANSWERS_UNDER_TITLE = gap("control", 0, { codex: CONTROL_GAP_PT - CODEX_TREE_PAD_PX });
-function aboveButtons(above) {
-  const desktopFrame = DESKTOP_BLANK_LINE_PT;
-  if (TREE_PARTS.includes(above))
-    return gap("control", 1, { desktopCard: ROW_PAD_PT, desktopFrame });
-  if (above === "status")
-    return gap("control", 1, { desktopCard: 0, desktopFrame });
-  return gap("control", 1, { desktopFrame });
-}
-var GAP_ABOVE = {
-  titleStatus: () => gap("inside", 0),
-  holdsUp: () => UNDER_TITLE,
-  context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child", 0),
-  earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child", 0, above === "context" ? { desktopFrame: 0 } : {}),
-  detail: () => gap("inside", 1, { codex: CONTROL_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT }),
-  file: (above) => above === "detail" ? gap("inside", 1, { codex: LIST_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT }) : GAP_ABOVE.detail(above),
-  answer: (above) => TITLE_PARTS.includes(above) ? ANSWERS_UNDER_TITLE : above === "answer" || above === "note" ? gap("item", 0) : gap("child", 0),
-  note: () => gap("list", 0),
-  answers: (above) => TITLE_PARTS.includes(above) ? ANSWERS_UNDER_TITLE : gap("child", 0),
-  reason: () => gap("list", 0),
-  status: (above) => {
-    if (TITLE_PARTS.includes(above))
-      return gap("inside", 1, { codex: CONTROL_GAP_PT, desktopFrame: DESKTOP_BLANK_LINE_PT });
-    if (BODY_PARTS.includes(above))
-      return gap("control", 1, { desktopFrame: DESKTOP_BLANK_LINE_PT });
-    return gap("control", 1, { desktopCard: ROW_PAD_PT + DESKTOP_BLANK_LINE_PT, desktopFrame: DESKTOP_BLANK_LINE_PT });
-  },
-  buttons: aboveButtons,
-  field: aboveButtons,
-  result: () => gap("control", 0, { desktopCard: 0, desktopFrame: 0 }),
-  copy: () => gap("control", 0)
-};
-function partGap(above, below) {
-  return GAP_ABOVE[below](above);
-}
-function partRows2(above, below, isDocked) {
-  return isDocked ? partGap(above, below).rows : 0;
-}
-
 // src/panel-text.ts
 var ANSI = /\x1b\[[0-9;]*m/g;
 var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
@@ -8565,35 +8484,35 @@ function askTreeLines(line, pad, width, s, cell, labelCells) {
   const lastBranch = heads.length + (isSideBySide ? 1 : branches.length) - 1;
   const drawHead = (text, n) => {
     const isLast = n === lastBranch;
-    return { part: "holdsUp", lines: draw(isLast ? LAST : TEE, text, isLast ? NONE : TRUNK) };
+    return draw(isLast ? LAST : TEE, text, isLast ? NONE : TRUNK);
   };
   const drawAnswer = (a, n) => {
     const isLast = n === lastBranch;
     const rest = isLast ? NONE : TRUNK;
     const [first, ...more] = cell(a.b, a.index, room);
     return [
-      {
-        part: "answer",
-        lines: [s.dim(margin + (isLast ? LAST : TEE)) + first, ...more.map((l) => s.dim(margin + rest) + l)]
-      },
-      ...a.note ? [{ part: "note", lines: draw(rest, a.note, rest, labelCells(a.b)) }] : []
+      s.dim(margin + (isLast ? LAST : TEE)) + first,
+      ...more.map((l) => s.dim(margin + rest) + l),
+      ...a.note ? draw(rest, a.note, rest, labelCells(a.b)) : []
     ];
   };
   const contextArm = branches.length > 0 ? TRUNK : NONE;
-  const out = heads.map((b, n) => drawHead(b.text, n));
+  const out = heads.flatMap((b, n) => drawHead(b.text, n));
   if (row.contextLine)
-    out.push({ part: "context", lines: draw(contextArm, row.contextLine, contextArm) });
+    out.push(...draw(contextArm, row.contextLine, contextArm));
   const earlier = row.earlierLine;
   if (earlier) {
     const head = earlier.lead + earlier.answer;
-    const arms = s.dim(margin + contextArm);
-    const lines = wrapText(earlierLineText(earlier), room).map((l, i) => i === 0 && l.startsWith(head) ? arms + s.dim(earlier.lead) + s.bold(earlier.answer) + s.dim(l.slice(head.length)) : arms + s.dim(l));
-    out.push({ part: "earlier", lines });
+    wrapText(earlierLineText(earlier), room).forEach((l, i) => {
+      const arms = s.dim(margin + contextArm);
+      const isAnswerWhole = i === 0 && l.startsWith(head);
+      out.push(isAnswerWhole ? arms + s.dim(earlier.lead) + s.bold(earlier.answer) + s.dim(l.slice(head.length)) : arms + s.dim(l));
+    });
   }
   if (answerRow && isSideBySide && branches[0]) {
-    out.push({ part: "answers", lines: [s.dim(margin + LAST) + oneLine.join("")] });
+    out.push(s.dim(margin + LAST) + oneLine.join(""));
     if (answerRow.recLine)
-      out.push({ part: "reason", lines: draw(NONE, answerRow.recLine, NONE, labelCells(branches[0].b)) });
+      out.push(...draw(NONE, answerRow.recLine, NONE, labelCells(branches[0].b)));
   } else
     branches.forEach((b, n) => out.push(...drawAnswer(b, heads.length + n)));
   return out;
@@ -9949,7 +9868,6 @@ var drawnKeys = (target) => target.keys.filter((k) => k.press.action !== "toggle
 var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
 
 // src/panel-draw.ts
-var IS_DOCKED = false;
 function boxed(inner, tone, width, s) {
   const room = width - 4;
   const fill = (l) => s.banner(tone, "fill", ` ${l}${" ".repeat(Math.max(0, room - visibleLength(l)))} `);
@@ -10073,46 +9991,37 @@ function drawLine(line, isSelected, d) {
   out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width));
   if (line.settled || isShut(line, ui))
     return out;
-  let above = "title";
-  const putPart = (part, lines) => {
-    if (lines.length === 0)
-      return;
-    out.push(...Array(partRows2(above, part, IS_DOCKED)).fill(""), ...lines);
-    above = part;
-  };
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const holdsUp = line.row?.holdsUpLine;
   const focused = ui.typing === line.id ? -1 : focusOf2(line, ui);
   const answerCell = (b, n, room) => buttonCellLines(b, n === focused, s, labelMark(b, Infinity, s), room);
   const tree = isOpen ? askTreeLines(line, pad, width, s, answerCell, buttonLabelCells) : [];
   if (tree.length > 0)
-    tree.forEach((t) => putPart(t.part, t.lines));
+    out.push(...tree);
   else if (holdsUp)
-    putPart("holdsUp", [fit(`${" ".repeat(indent)}${s.dim(holdsUp)}`, width)]);
+    out.push(fit(`${" ".repeat(indent)}${s.dim(holdsUp)}`, width));
   if (line.body && isOpen)
     out.push(...indented(line.body, indent, width, BODY_LINES, (t) => t));
   if (line.detail && (isOpen || line.isDetailShown))
-    putPart("detail", indented(line.detail, indent, width, 4, s.dim));
+    out.push(...indented(line.detail, indent, width, 4, s.dim));
   if (!isOpen)
     return out;
   if (line.file)
-    putPart("file", [" ".repeat(indent) + s.tone("accent", line.file)]);
+    out.push(" ".repeat(indent) + s.tone("accent", line.file));
   if (line.buttons.some((b) => !b.option) && ui.typing !== line.id)
-    putPart("buttons", buttonLines(line, ui, indent - 1, width, s));
+    out.push(...buttonLines(line, ui, indent - 1, width, s));
   if (ui.typing === line.id) {
     const hint = line.row ? replyHint(line.row, AGENT) : "Your reply";
     const text = ui.drafts[line.id]?.text ?? "";
+    out.push(" ".repeat(indent) + s.dim(`${hint}:`));
     const field = wrapText(`${text}\x00`, Math.max(10, width - indent - 1));
-    putPart("field", [
-      " ".repeat(indent) + s.dim(`${hint}:`),
-      ...field.map((l) => " ".repeat(indent) + l.replace("\x00", s.inverse(" ")))
-    ]);
+    out.push(...field.map((l) => " ".repeat(indent) + l.replace("\x00", s.inverse(" "))));
   }
   if (statusUnder) {
     const markCells = mark ? 2 : 0;
     const [first, ...rest] = indented(statusUnder.text, indent + markCells, width, 4, feedbackPaint(statusUnder.tone, s));
     if (first !== undefined)
-      putPart("result", [" ".repeat(indent) + mark + first.slice(indent + markCells), ...rest]);
+      out.push(" ".repeat(indent) + mark + first.slice(indent + markCells), ...rest);
   }
   return out;
 }
