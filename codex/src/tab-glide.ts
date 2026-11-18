@@ -8,11 +8,19 @@ export const FADE_EASING = 'ease-out'
 type Size = 'height' | 'width'
 
 /**
- * A size move under way: where its spring started, where it goes, how long it waits to start, and the animation that
- * plays it. An element that comes or goes also scales its vertical padding and top margin with its height, so it truly
+ * A size move under way: where its spring started, where it goes, how long it waits to start, when that wait ends as a
+ * `Date.now()` time, and the animation that plays it. An element that comes or goes also scales its vertical padding and top margin with its height, so it truly
  * grows from and shrinks to no height.
  */
-type Glide = { size: Size; from: SpringState; to: number; delay: number; anim: Animation; scalesEdges: boolean }
+type Glide = {
+  size: Size
+  from: SpringState
+  to: number
+  delay: number
+  startsAt: number
+  anim: Animation
+  scalesEdges: boolean
+}
 
 export const glides = new WeakMap<HTMLElement, Glide>()
 
@@ -38,6 +46,13 @@ export function isUnderWay(el: HTMLElement): boolean {
   const g = glides.get(el)
 
   return g !== undefined && isRunning(g.anim) && Number(g.anim.currentTime ?? 0) >= g.delay
+}
+
+/** How long an element's glide still waits to start, in ms: 0 for an element with no glide, or one under way. */
+export function waitLeftMs(el: HTMLElement): number {
+  const g = glides.get(el)
+
+  return g !== undefined && isRunning(g.anim) ? Math.max(0, g.startsAt - Date.now()) : 0
 }
 
 /** Where an element's size is and how fast it moves, from its glide, or `size` at rest without one. */
@@ -90,7 +105,7 @@ export function glide(
     easing: 'linear',
     fill: fillOf(hold, delay),
   })
-  glides.set(el, { size, from, to, delay, anim, scalesEdges })
+  glides.set(el, { size, from, to, delay, startsAt: Date.now() + delay, anim, scalesEdges })
 }
 
 /** An element's opacity: full unless an animation fades it. */
