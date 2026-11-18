@@ -2,7 +2,7 @@ import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
 import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
-import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import { STALL_GAP } from '../../hooks/status-page'
 import { isOpenRow } from './blocks'
 import type { Block, Button, Field, LineBlock, PrBlock, RowBlock, StatusLine } from './blocks'
@@ -104,7 +104,17 @@ const bodyLineEl = (
   return line.relative().children(strokes)
 }
 
-function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
+/**
+ * A field and its buttons. A field a press brings in shows its text field as soon as its box opens, while its buttons,
+ * at the bottom of that box, fade in once the box is nearly open (`opening`), as an entering block's content does.
+ */
+function fieldEl(
+  f: Field,
+  p: Paint,
+  indent: number,
+  isInert = false,
+  opening: { isOpen: boolean; height: number } | null = null,
+): Element {
   const { t } = p
   const state = p.input(f.rowId)
   const input = state
@@ -120,10 +130,19 @@ function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
       ]
     : []
 
+  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0, easing: 'ease-out' as const }
+
   return v_flex()
     .pl(indent)
     .children(input)
-    .child(buttonsEl(f.buttons, p, 0, isInert))
+    .child(
+      buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, e =>
+        e
+          .id(`buttons ${f.rowId}`)
+          .opacity(opening?.isOpen ? 1 : 0)
+          .transition('opacity', glide),
+      ),
+    )
 }
 
 function rowEl(r: RowBlock, p: Paint): Element {
@@ -506,11 +525,16 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'empty') return emptyEl(b, p, isLeaving)
   if (b.kind === 'fold' || b.kind === 'more') return foldEl(b, p, isLeaving)
   if (b.kind === 'rule') return ruleEl(b, t)
-  if (b.kind === 'field')
+  if (b.kind === 'field') {
+    const m = p.motion.get(b.id)
+    const isShownAsOpening = m?.state === 'entering' && m.box !== null && m.fadeMs === 0
+    const opening = isShownAsOpening ? { isOpen: m.box === 'open', height: p.heights.get(b.id) ?? 0 } : null
+
     return div()
       .pl(b.isAtEdge ? EDGE : TEXT_X)
       .pr(EDGE)
-      .child(fieldEl(b.field, p, 0, isLeaving))
+      .child(fieldEl(b.field, p, 0, isLeaving, opening))
+  }
   if (b.kind === 'note')
     return noteEl(
       b,

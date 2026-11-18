@@ -169,7 +169,7 @@ function easeOut(x: number): number {
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
 
-const FADE_PREFIXES = ['box ', 'panel ', 'wrapped ', 'one line ']
+const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'wrapped ', 'one line ']
 const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))
 
 function boxOf(n: Painted): string | null {

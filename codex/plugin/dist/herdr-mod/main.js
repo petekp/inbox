@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T04:48:27.499Z. 290688 characters follow.
+// Built at 2026-11-18T06:54:55.849Z. 291189 characters follow.
 
 // src/main.ts
 import { View, div as div11 } from "gpui-kit";
@@ -6143,13 +6143,14 @@ var bodyLineEl = (l, t, isSelected, answers = [], p = null, isInert = false) => 
   const line = l.lead ? h_flex6().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above);
   return line.relative().children(strokes);
 };
-function fieldEl(f, p, indent, isInert = false) {
+function fieldEl(f, p, indent, isInert = false, opening = null) {
   const { t } = p;
   const state = p.input(f.rowId);
   const input = state ? [
     div10().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
-  return v_flex3().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
+  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0, easing: "ease-out" };
+  return v_flex3().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => e.id(`buttons ${f.rowId}`).opacity(opening?.isOpen ? 1 : 0).transition("opacity", glide)));
 }
 function rowEl(r, p) {
   const { t } = p;
@@ -6291,8 +6292,12 @@ function blockEl(b, p) {
     return foldEl(b, p, isLeaving);
   if (b.kind === "rule")
     return ruleEl(b, t);
-  if (b.kind === "field")
-    return div10().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving));
+  if (b.kind === "field") {
+    const m = p.motion.get(b.id);
+    const isShownAsOpening = m?.state === "entering" && m.box !== null && m.fadeMs === 0;
+    const opening = isShownAsOpening ? { isOpen: m.box === "open", height: p.heights.get(b.id) ?? 0 } : null;
+    return div10().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
+  }
   if (b.kind === "note")
     return noteEl(b, t, (b.buttons ?? []).map((x) => buttonEl(x, p, isLeaving)));
   if (b.kind === "caption")

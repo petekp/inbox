@@ -426,6 +426,21 @@ test('opening the goal field never raises the Status page’s height', () => {
   expect(Math.max(...heights)).toBeLessThanOrEqual(start + 0.5)
 })
 
+test('opening the goal field shows its text field as soon as its box opens and cuts no text as the box grows', () => {
+  const { cuts, fading } = framesOf(
+    [
+      [0, tabBlocks(demoScreen(), uiOn('overview'))],
+      [0, tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' })), 'input'],
+    ],
+    900,
+  )
+  const opened = fading.filter(f => f.id === 'box goal field' && f.at >= 0 && f.height > 0)
+  expect({ cuts: cuts.filter(c => c.at >= 0), isShownOnceOpen: opened.every(f => f.opacity === 1) }).toEqual({
+    cuts: [],
+    isShownOnceOpen: true,
+  })
+})
+
 test('reopening the goal field while it still closes never raises the Status page above its closed height', () => {
   const closed = tabBlocks(demoScreen(), uiOn('overview'))
   const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
