@@ -27,6 +27,7 @@ import {
   TREE_LINE_AT,
 } from './pane-sizes'
 import type { RowProps } from './row-client'
+import { COLLAPSED_TITLE_LINES } from './row-parts'
 import { DOT, type ResultMark, rowMark, rowResultMark, type RowView, shortAgo } from './rows'
 import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './terminal-text'
 import { ago, clipLabel } from './text'
@@ -220,7 +221,7 @@ export function paneRowLines({
     const room = Math.max(12, budget - (meta ? 0 : (line.after?.length ?? 0)))
     const text = line.text.trim()
     const space = text.lastIndexOf(' ', room)
-    const isWrapped = look === 'terminal' && row.hasSecondLine === true && text.length > room && space > 0
+    const isWrapped = look === 'terminal' && text.length > room && space > 0
     const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
     const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
     const afterRoom = budget - first.length
@@ -259,7 +260,7 @@ export function paneRowLines({
         </Box>
         {second ? <Box paddingLeft={line.before?.length ?? 0}>{titleButton(`title-${row.id}-2`, second)}</Box> : null}
         {meta ? (
-          <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
+          <Text wrap="wrap" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
             {withDoneText(meta, line.afterDoneText)}
           </Text>
         ) : null}
@@ -309,7 +310,7 @@ export function paneRowLines({
     const f = feedbackLabel(row.id, row)
     const before = row.line?.before ?? ''
     const text = (row.line?.text ?? row.title).trim()
-    const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, row.hasSecondLine ? 4 : 2, {
+    const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, COLLAPSED_TITLE_LINES, {
       isCutAtWord: true,
     })
 

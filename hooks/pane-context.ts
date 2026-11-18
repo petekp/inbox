@@ -49,11 +49,12 @@ export type Row = {
   at?: number
   subtitle?: JSX.Element
   line?: { before?: string; text: string; after?: string; afterTone?: Tone; age?: string }
-  hasSecondLine?: boolean
   body?: JSX.Element | null
   /** The last part `body` draws, where it is a finding's file. A body is otherwise one `detail` part. */
   bodyEnd?: Extract<RowPart, 'detail' | 'file'>
   clippedBody?: (lines: number, width: number) => JSX.Element | null
+  /** The body as the terminal draws it in `width` cells, for a body whose lines depend on the width. */
+  bodyAt?: (width: number) => JSX.Element
   /** The answers, which the question's tree draws. */
   optionKeys?: () => KeyAction[]
   /** Whether the answers may sit side by side, as `rowKeyPlan` offers it. */
@@ -79,7 +80,6 @@ export type PaneBase = {
   isAgeInSide: boolean
   isAgeDropped: boolean
   glued: (after: string) => string
-  unbroken: (after: string, title: string, fits: (text: string) => boolean) => string
   isInline: boolean
   blankLine: 0 | 1
   space: { rowPad: number; settledPad: number; buttonGap: number; isFoldGapped: boolean }

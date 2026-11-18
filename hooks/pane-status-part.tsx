@@ -1,8 +1,7 @@
 import type { PaneBase } from './pane-context'
-import type { PaneRowLines } from './pane-row-lines'
 import type { PaneStatusLines } from './pane-status-lines'
 import { ITEM_GAP_PT, LIST_GAP_PT, SECTION_GAP_PT } from './layout'
-import { DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_LINE_PT, DESKTOP_MARK_CELLS, FRAME_INSET_PT } from './pane-sizes'
+import { DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_LINE_PT, FRAME_INSET_PT } from './pane-sizes'
 import { desktopSpaceLines, desktopTextLines, exactly, inkLines, stackedIn } from './pane-status-tops'
 import type { Drawn } from './pane-status-tops'
 import { cellWidth } from './text'
@@ -15,18 +14,16 @@ export function paneStatusPart({
   pal,
   listColumns,
   statusMarkAt,
-  markWidth,
   statusFrameEdge,
   desktopBlockWidth,
   statusTextWidth,
 }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'listColumns'> &
-  Pick<PaneRowLines, 'markWidth'> &
   Pick<PaneStatusLines, 'statusMarkAt' | 'statusFrameEdge' | 'desktopBlockWidth' | 'statusTextWidth'>) {
-  // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
-  // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
-  const statusRuleAt = statusMarkAt + markWidth
+  // A Status part's name, such as Later or Other work, starts at the mark column, where the Goal heading starts. In
+  // the terminal its rule stops at the end of the list's columns. On desktop it runs to the pane's edge.
+  const statusRuleAt = statusMarkAt
   const statusRuleCells = Math.max(0, listColumns - statusRuleAt)
-  const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
+  const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT
   /** A part drawn on one terminal line, and in `desktopLines` on desktop. */
   const oneLine = (el: JSX.Element, desktopLines: number): Drawn => ({
     el,
@@ -86,7 +83,7 @@ export function paneStatusPart({
       [...above, line, ...description],
     )
   }
-  /** The head's description under its title's rule, wrapped at the text column. */
+  /** The head's description under its title's rule, wrapped from the column the title starts at. */
   const statusPartDescription = (id: string, text: string): Drawn => {
     const lines =
       look === 'desktop'

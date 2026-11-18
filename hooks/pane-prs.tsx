@@ -34,8 +34,8 @@ import { checkActions, prBlockActions, threadActions } from './pr-tab'
 import { type DrawnPr, isDismissed } from './pr-views'
 import { checkKey, commentLine, commentParts, readableComment, readiness, threadWhere } from './prs'
 import { DOT, settledLabel, settledMark, type SettledState } from './rows'
-import { lineCount, terminalTextLines } from './terminal-text'
-import { clipLabel } from './text'
+import { lineCount, statusAfterTitle, terminalTextLines } from './terminal-text'
+import { cellWidth, clipLabel } from './text'
 import { runningMark } from './timing'
 
 export function panePrRows(
@@ -91,18 +91,34 @@ export function panePrRows(
   const threadRow = (pr: PrView, t: PrThread): Row => {
     const id = prThreadId(pr, t)
     const { rest } = commentParts(t.body)
-    const where = (
-      <Text color={pal.muted} wrap="wrap">
+    /** The thread's file and line, then its author, on the same line when both fit in `width` cells. */
+    const where = (width: number | null) => {
+      const link = (
         <Link href={t.reply?.url || t.url}>
           <Text underline>{threadWhere(t)}</Text>
         </Link>
-        {`${look === 'terminal' ? `${DOT.trimEnd()} ` : DOT}@${t.author}`}
-      </Text>
-    )
-    const comment = (
+      )
+      const author = `${DOT}@${t.author}`
+      const by = width === null ? null : statusAfterTitle(author, threadWhere(t), s => cellWidth(s) <= width)
+
+      return by?.isUnder ? (
+        <Box flexDirection="column">
+          <Text color={pal.muted} wrap="wrap">
+            {link}
+          </Text>
+          <Text color={pal.muted}>{by.text}</Text>
+        </Box>
+      ) : (
+        <Text color={pal.muted} wrap="wrap">
+          {link}
+          {by ? by.text : author}
+        </Text>
+      )
+    }
+    const commentAt = (width: number | null) => (
       <Box flexDirection="column">
         {rest ? <Markdown text={clipLabel(rest, PR_QUOTE_CHARS)} /> : null}
-        {where}
+        {where(width)}
         {t.reply ? (
           <Markdown text={`**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}`} />
         ) : null}
@@ -114,7 +130,7 @@ export function panePrRows(
       const restLines = terminalTextLines(rest, width).length
       const replyLines = terminalTextLines(replyText, width).length
       const rawTextLines = lineCount(rest, width) + 1 + lineCount(replyText, width)
-      if (rawTextLines <= lines && restLines + 1 + replyLines <= lines) return comment
+      if (rawTextLines <= lines && restLines + 1 + replyLines <= lines) return commentAt(width)
       const restShown = Math.min(restLines, lines - 1)
       const replyShown = Math.min(replyLines, lines - 1 - restShown)
 
@@ -123,7 +139,7 @@ export function panePrRows(
           {rest && restShown > 0 ? (
             <Text wrap="wrap">{terminalText(terminalTextLines(rest, width, restShown))}</Text>
           ) : null}
-          {where}
+          {where(width)}
           {replyShown > 0 ? (
             <Text wrap="wrap">{terminalText(terminalTextLines(replyText, width, replyShown))}</Text>
           ) : null}
@@ -147,7 +163,8 @@ export function panePrRows(
         text: commentLine(t.body),
         after: text.meta,
       },
-      body: comment,
+      body: commentAt(null),
+      bodyAt: commentAt,
       clippedBody: clippedComment,
       keys: () => actions.keys.map(a => prKeyAction(a, t.id)),
       moreKeys: () => actions.more.map(a => prKeyAction(a, t.id)),

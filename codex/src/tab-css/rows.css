@@ -94,6 +94,10 @@
   font-variation-settings: 'wght' 400;
   transition: font-variation-settings var(--fade);
   min-width: 0;
+}
+/* A closed row's title takes two lines at most, cut with an ellipsis. Its status is a part of its own, so the cut never
+   reaches it. */
+.line .text .title-part {
   overflow: clip;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -119,9 +123,9 @@
 .row.closing .line {
   display: block;
 }
-.row.selected .line .text,
-.row.closing .line .text {
-  display: inline;
+.row.selected .line .text:not(.short) .title-part,
+.row.closing .line .text:not(.short) .title-part {
+  display: block;
 }
 /* A closing row's title keeps the open form's weight until the row's height rests, and the weight then eases. */
 .row.selected .line .text,
@@ -134,8 +138,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  display: -webkit-box;
+  width: calc(100% + var(--sep-w));
   opacity: 0;
   pointer-events: none;
 }
@@ -202,7 +205,7 @@
   overflow-wrap: anywhere;
 }
 .body p {
-  margin: 0;
+  margin-block: 0;
 }
 /* A PR row's lines sit a list step apart. */
 .body p + p:not([data-part]) {
@@ -388,8 +391,12 @@ code {
   width: 14px;
   height: 14px;
 }
+/* A ghost button keeps its side padding as hit area, and is drawn left by it so its label starts at the text edge. A
+   shift, unlike a negative margin, leaves the line's width alone, so a short label never wraps inside itself. */
 .key.ghost {
   padding: 0 var(--unit);
+  position: relative;
+  left: calc(-1 * var(--unit));
   border-color: transparent;
   background: none;
   color: var(--muted);

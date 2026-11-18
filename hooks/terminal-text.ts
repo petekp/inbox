@@ -183,14 +183,21 @@ export function wrapped(text: string, width: number): string[] {
 }
 
 export const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-// The Codex tab wraps a suffix too long for one line between words, so this does too. Claude Code's terminal
-// wraps only at a plain space, not at DOT's en space, so a suffix that moves to the next line follows a plain one.
-export const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
-  const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
-  if (fits(lastWord + after)) return glued(after)
-  const dot = after.startsWith(DOT) ? `${DOT.trimEnd()} ` : ''
-  const rest = after.slice(dot.length)
-  const firstBreak = rest.indexOf(' ')
 
-  return dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
+/**
+ * A status drawn after a title, `after`, which starts with DOT. It stays beside the title when the title and the whole
+ * status fit on one line. Otherwise it starts a line of its own under the title, without the DOT, since no line starts
+ * or ends in a separator. There it wraps between words when it is too long for one line, as the Codex tab's does.
+ */
+export function statusAfterTitle(
+  after: string,
+  title: string,
+  fits: (text: string) => boolean,
+): { text: string; isUnder: boolean } {
+  if (fits(title + after)) return { text: glued(after), isUnder: false }
+  const rest = after.replace(LEADING_DOT, '')
+  const firstBreak = rest.indexOf(' ')
+  const text = fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak)
+
+  return { text, isUnder: true }
 }

@@ -28,7 +28,7 @@ import {
 } from './pane-sizes'
 import type { RowPart } from './row-parts'
 import { DOT, ROW_COPY } from './rows'
-import { lineCount, SELECTION_BAR, type TreePos } from './terminal-text'
+import { lineCount, SELECTION_BAR, statusAfterTitle, type TreePos } from './terminal-text'
 import { cellWidth } from './text'
 
 export function paneRows(
@@ -49,7 +49,6 @@ export function paneRows(
     now,
     isAgeInSide,
     listColumns,
-    unbroken,
     isInline,
     e,
     blankLine,
@@ -95,7 +94,6 @@ export function paneRows(
       | 'now'
       | 'isAgeInSide'
       | 'listColumns'
-      | 'unbroken'
       | 'isInline'
       | 'e'
       | 'optionsShown'
@@ -156,11 +154,13 @@ export function paneRows(
     sideAge,
     keyedButton,
   })
+  /** Whether the row draws open: the cursor rests on it and it is not collapsed. */
+  const isRowOpen = (id: string) => (indexOf.get(id) ?? -1) === at && !collapsed.has(id)
   const listRow = (row: Row, tree: TreePos) => {
     const columns = columnsFor(row)
     const index = indexOf.get(row.id) ?? -1
     const isCursor = index === at
-    const isSelected = isCursor && !collapsed.has(row.id)
+    const isSelected = isRowOpen(row.id)
     /** The terminal marks the cursor on a collapsed row, which j and k reach. */
     const isCursorMarked = isCursor && look === 'terminal'
     // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
@@ -250,18 +250,27 @@ export function paneRows(
     const titleWidth = textWidth - TERMINAL_SIDE_CELLS
     const fitsTitleLine = (text: string) =>
       look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : text.length <= titleWidth
-    const shownAfter = titleAfter ? unbroken(titleAfter, row.title, fitsTitleLine) : ''
+    const after = titleAfter ? statusAfterTitle(titleAfter, row.title, fitsTitleLine) : null
+    // Claude Code's terminal starts a new line at a line feed inside wrapped text.
+    const shownAfter = after ? `${after.isUnder ? '\n' : ''}${after.text}` : ''
+    const titleLines = after?.isUnder
+      ? lineCount(row.title, titleWidth) + lineCount(after.text, titleWidth)
+      : lineCount(`${row.title}${shownAfter}`, titleWidth)
     const bodyLines =
       isSelected && isInline && look === 'terminal' && row.clippedBody
         ? e.props.scroll.bodyRows -
           2 * space.rowPad -
-          lineCount(`${row.title}${shownAfter}`, titleWidth) -
+          titleLines -
           status.length -
           keyLines(keys, more, textWidth) -
           (isStatusUnder ? lineCount(f.text, textWidth) : 0)
         : null
     const body =
-      bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
+      bodyLines !== null && row.clippedBody && row.body
+        ? row.clippedBody(bodyLines, textWidth)
+        : look === 'terminal' && row.bodyAt
+          ? row.bodyAt(textWidth)
+          : (row.body ?? null)
     const treeEntries =
       row.view && look === 'desktop' && isSelected ? askEntries(row.view, options, answerRow, Infinity) : []
     const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
@@ -329,7 +338,7 @@ export function paneRows(
     )
     // The `view-` Box is what select() scrolls into view. Drawn on the selected row alone, so the key exists only
     // once that row has redrawn expanded.
-    const desktopAfter = f?.isAfterTitle && !isStatusUnder ? unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine) : ''
+    const desktopAfter = f?.isAfterTitle && !isStatusUnder ? statusAfterTitle(`${DOT}${f.text}`, row.title, fitsTitleLine) : null
     const desktopTitle = hasClient ? (
       <elements.Client
         key={`collapse-${row.id}`}
@@ -338,7 +347,8 @@ export function paneRows(
         props={{
           title: row.title,
           titleColor: newTitleColor(row.id) ?? null,
-          after: desktopAfter,
+          after: desktopAfter?.text ?? '',
+          isAfterUnder: desktopAfter?.isUnder ?? false,
           colors: {
             muted: pal.muted,
             hover: pal.raised,
@@ -348,12 +358,19 @@ export function paneRows(
         }}
       />
     ) : (
-      <Text wrap="wrap">
-        <Text bold color={newTitleColor(row.id)}>
-          {row.title}
+      <Box flexDirection="column">
+        <Text wrap="wrap">
+          <Text bold color={newTitleColor(row.id)}>
+            {row.title}
+          </Text>
+          {desktopAfter && !desktopAfter.isUnder ? <Text color={pal.muted}>{desktopAfter.text}</Text> : null}
         </Text>
-        {desktopAfter ? <Text color={pal.muted}>{desktopAfter}</Text> : null}
-      </Text>
+        {desktopAfter?.isUnder ? (
+          <Text wrap="wrap" color={pal.muted}>
+            {desktopAfter.text}
+          </Text>
+        ) : null}
+      </Box>
     )
     const selectedGapY = (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT
     if (isDesktopTree)
@@ -515,7 +532,7 @@ export function paneRows(
     )
   }
 
-  return { listRow }
+  return { listRow, isRowOpen }
 }
 
 export type PaneRows = ReturnType<typeof paneRows>

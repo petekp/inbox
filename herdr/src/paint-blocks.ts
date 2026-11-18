@@ -35,6 +35,7 @@ import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { titleTextEl } from './paint-title-text'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
+import { partedEl } from './paint-parted'
 import { ARM_END, answersEl, armEl, isSideBySide, trunkEl } from './paint-tree'
 
 const NO_BREAK_SPACE = '\u00a0'
@@ -277,23 +278,18 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     .items_start()
     .child(div().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title))
     .when(!p.isNarrow, e => e.child(div().flex_none().ml(INSET).text_color(t.muted).child(b.number)))
-  const hasReasons = b.unlisted.length > 0
-  const word = h_flex()
-    .items_start()
-    .min_w(0)
-    .max_w_full()
-    .child(div().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text))
-    .when(hasReasons, e => e.child(div().flex_none().text_color(t.muted).child(SEP)))
-  const reasons = b.unlisted.map((u, i) =>
-    statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted),
-  )
-  const status = h_flex()
-    .flex_wrap()
-    .items_start()
+  const status = div()
     .pt(INSIDE_GAP)
-    .when(p.isNarrow, e => e.child(div().flex_none().text_color(t.muted).child(`${b.number}${SEP}`)))
-    .child(word)
-    .children(reasons)
+    .child(
+      partedEl(
+        [
+          ...(p.isNarrow ? [div().flex_none().text_color(t.muted).child(b.number)] : []),
+          statusPartEl(b.status.text).text_color(colorOf(t, b.status.tone)),
+          ...b.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
+        ],
+        t.muted,
+      ),
+    )
 
   return v_flex()
     .pl(EDGE)
@@ -381,23 +377,24 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
     .child(buttons)
 }
 
-/** Other work's counts: the label, then each mark in its tone with its count, as items of a wrapping row so a count stays with its mark. */
-const countsEl = (counts: NonNullable<Extract<Block, { kind: 'fold' }>['counts']>, t: Theme): Element =>
-  h_flex()
+/** Other work's counts: the label, then each mark in its tone with its count, as parts so a count stays with its mark. */
+const countsEl = (counts: NonNullable<Extract<Block, { kind: 'fold' }>['counts']>, t: Theme): Element => {
+  const items = counts.items.map(c =>
+    h_flex()
+      .flex_none()
+      .children([
+        div().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+        statusPartEl(`${NO_BREAK_SPACE}${c.text}`).text_color(t.muted),
+      ]),
+  )
+  const [first, ...rest] = items
+  const head = h_flex()
     .flex_wrap()
     .min_w(0)
-    .children([
-      ...wordEls(counts.label, t.muted),
-      ...counts.items.flatMap((c, n) => [
-        ...(n > 0 ? wordEls('·', t.muted) : []),
-        h_flex()
-          .flex_none()
-          .children([
-            div().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
-            statusPartEl(`${NO_BREAK_SPACE}${c.text}${NO_BREAK_SPACE}`).text_color(t.muted),
-          ]),
-      ]),
-    ])
+    .children([...wordEls(counts.label, t.muted), ...(first ? [first] : [])])
+
+  return partedEl([head, ...rest], t.muted)
+}
 
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p

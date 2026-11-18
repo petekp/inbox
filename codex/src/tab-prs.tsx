@@ -1,4 +1,5 @@
-import { settledMark, DOT, settledLabel } from '../../hooks/rows'
+import { settledMark, settledLabel } from '../../hooks/rows'
+import { Sep } from './tab-parted'
 import { bannerOf } from '../../hooks/banners'
 import { emptyTab } from '../../hooks/empty-tab'
 import type { SettledState } from '../../hooks/rows'
@@ -64,13 +65,20 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
       <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">
-          <div class="settled-line">
-            <span class="what">
+          <div class="settled-line parted">
+            <span class="part what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="muted">{DOT}</span>
-            <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
-            {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
+            <span class="part">
+              <Sep />
+              <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
+            </span>
+            {error ? (
+              <span class="part tone-error">
+                <Sep />
+                {error}
+              </span>
+            ) : null}
           </div>
           <UndoPlace
             start={start}
@@ -193,8 +201,15 @@ function PrHead({ v, pr }: DrawnPrBlock & { v: View }) {
   return (
     <div class="pr-head">
       <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
-      <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
-      <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
+      <span class="parted inline">
+        <span class={tone ? `part pr-verdict tone-${tone}` : 'part pr-verdict muted'}>{head}</span>
+        {unlisted.map(r => (
+          <span class="part pr-verdict muted">
+            <Sep />
+            {r}
+          </span>
+        ))}
+      </span>
     </div>
   )
 }

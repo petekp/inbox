@@ -73,6 +73,9 @@
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+/* A settled row's title takes two lines at most, as a closed row's does. */
+.settled-line .what {
   overflow: clip;
   text-overflow: ellipsis;
   display: -webkit-box;

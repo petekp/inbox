@@ -164,7 +164,7 @@ import {
 import { lookOf, paletteFor } from './palettes'
 import { endOfTints } from './pane-title-tint'
 import { animateRunningMarks } from './running-mark-timer'
-import { glued, unbroken } from './terminal-text'
+import { glued } from './terminal-text'
 import {
   lastUndoEnd,
   NO_CURSOR,
@@ -3145,7 +3145,7 @@ export const register: Register = on => {
       Button,
     })
     const { desktopFrame } = paneRowFrame({ space, Box })
-    const { listRow } = paneRows(
+    const rowFns = paneRows(
       {
         ...client,
         indexOf,
@@ -3162,7 +3162,6 @@ export const register: Register = on => {
         now,
         isAgeInSide,
         listColumns,
-        unbroken,
         isInline,
         e,
         optionsShown,
@@ -3295,7 +3294,7 @@ export const register: Register = on => {
         findingEntries,
         lists,
         divided,
-        listRow,
+        ...rowFns,
         settledRow,
         closedFold,
         section,
@@ -3336,7 +3335,7 @@ export const register: Register = on => {
       divided,
       lastActionText,
       withDoneText,
-      listRow,
+      ...rowFns,
       prKeyAction,
       desktopLabel,
       keyRow,

@@ -35,6 +35,7 @@ import {
 import { exactly, type Lines } from './pane-status-tops'
 import { pressRowId, type PrPress } from './pr-press'
 import type { RowPress } from './presses'
+import { foldGapRows } from './row-parts'
 import {
   canUndoRefused,
   closedLineAction,
@@ -364,19 +365,23 @@ export function paneRowParts(
       onPress={() => void updateClosedAll(a => (a.includes(kind) ? a : [...a, kind]))}
     />
   )
-  /** A group's Closed fold, its label at `textAt`, where the group's rows start their text. */
+  /**
+   * A group's Closed fold, its label at `textAt`, where the group's rows start their text. `isAfterOpenRow` says the
+   * row above it draws open, with its own blank row under its text.
+   */
   const closedFold = (
     kind: FoldKind,
     closed: ClosedLine[],
     total: number,
     isUnfolded: boolean,
+    isAfterOpenRow: boolean,
     textAt: number = ROW_COLUMNS.tree.textAt,
   ) => {
     const earlier = earlierLabel(total, closed.length)
     return closed.length === 0
       ? []
       : [
-          ...(space.isFoldGapped ? titleGap(false) : []),
+          ...(space.isFoldGapped && foldGapRows(isAfterOpenRow, !isInline) > 0 ? titleGap(false) : []),
           foldRow(
             kind,
             foldLabel(total),

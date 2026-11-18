@@ -165,7 +165,6 @@ export function paneStatus(
     pal,
     listColumns,
     statusMarkAt,
-    markWidth,
     statusFrameEdge,
     desktopBlockWidth,
     statusTextWidth,

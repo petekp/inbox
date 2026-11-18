@@ -8,6 +8,7 @@ export type RowProps = {
   title: string
   /** The title's tint, or null for the theme's own. */
   titleColor: string | null
+  /** The row's status, drawn whole on the lines under the title. */
   after: string
   /** A muted line under the title and `after`, or empty for none. */
   note: string
@@ -76,7 +77,6 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
   const columns = surface.columns || props.fallbackColumns
   const textCells = columns - FRAME_CELLS - props.markCells - props.sideCells
   const perLine = Math.floor(textCells * props.charsPerCell)
-  const after = clipAtSpace(props.after, perLine)
   const note = clipAtSpace(props.note, perLine)
   const background = pressed ? props.colors.pressed : hover ? props.colors.hover : null
   const isRaised = background !== null && background === props.colors.hover
@@ -110,7 +110,7 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
               props.title,
             ],
           }),
-          ...(after ? [Text({ wrap: 'truncate-end', ...colored(ageColor), children: after })] : []),
+          ...(props.after ? [Text({ wrap: 'wrap', ...colored(ageColor), children: props.after })] : []),
           ...(note
             ? [
                 Text({

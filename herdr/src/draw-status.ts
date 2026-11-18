@@ -106,7 +106,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
     return [
       { kind: 'gap', id: `gap ${row.id}` },
       { kind: 'rule', id: row.id, text: row.text, ...(row.isTitle ? { isTitle: true as const } : {}) },
-      ...(row.description ? [note(`${row.id} description`, row.description, 'muted')] : []),
+      ...(row.description ? [{ ...note(`${row.id} description`, row.description, 'muted'), isAtEdge: true }] : []),
     ]
   if (row.kind === 'done-fold' || row.kind === 'counts')
     return [
