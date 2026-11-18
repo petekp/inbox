@@ -1,5 +1,6 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
+import { countsText, countsUnits } from '../hooks/status-folds'
 import Fold, { type FoldProps } from '../hooks/fold-client'
 
 type Node = { texts?: string[]; children?: unknown }
@@ -41,4 +42,18 @@ test('a fold draws its chevron after a no-break space, so a narrow pane wraps th
   })
   expect(counts.at(-1)).toBe(' v')
   expect(counts.join('')).not.toMatch(/ [›v]/)
+})
+
+test('a counts fold wraps between units with the dot ending a line, never starting one', () => {
+  const counts = [
+    { mark: '●', text: '3 working', tone: null },
+    { mark: '◌', text: '3 waiting', tone: null },
+    { mark: '◐', text: '2 paused', tone: null },
+  ] as never
+  const units = countsUnits(counts)
+  const texts = units.map(unit => unit.map(part => part.text).join(''))
+  expect(texts.slice(1).every(t => !t.startsWith('·') && !t.startsWith(' '))).toBe(true)
+  expect(texts.slice(1, -1).every(t => t.endsWith('\u00a0· '))).toBe(true)
+  expect(texts.at(-1)).not.toMatch(/·/)
+  expect(texts.join('').replaceAll('\u00a0', ' ')).toBe(countsText(counts))
 })

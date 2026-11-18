@@ -40,13 +40,15 @@ export const COUNTS_LABEL = 'Also open: '
 export const countsText = (counts: StatusCount[]) =>
   `${COUNTS_LABEL}${counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP)}`
 
-/** The closed counts fold's line as units that wrap whole: the label, then each count with its gap and mark. A mark has its tone. */
+/** `STALL_GAP` with a no-break space before its dot, so a wrapped line ends with the dot and never starts with it. */
+export const COUNTS_GAP = STALL_GAP.replace(' ', '\u00a0')
+
+/** The closed counts fold's line as units that wrap whole: the label, then each count with its mark and, but for the last, the gap after it. A mark has its tone. */
 export const countsUnits = (counts: StatusCount[]): { text: string; tone: StatusCount['tone'] | 'plain' }[][] => [
   [{ text: COUNTS_LABEL, tone: 'plain' }],
   ...counts.map((c, n) => [
-    ...(n > 0 ? [{ text: STALL_GAP, tone: 'plain' as const }] : []),
     { text: c.mark, tone: c.tone },
-    { text: ` ${c.text}`, tone: 'plain' as const },
+    { text: ` ${c.text}${n < counts.length - 1 ? COUNTS_GAP : ''}`, tone: 'plain' as const },
   ]),
 ]
 
