@@ -203,7 +203,7 @@ export function moveRows(
     )
     const isReleased = isInput && opensRow && track.state === 'closing'
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
-    const under = stepUnder(last?.under ?? null, block, now)
+    const under = stepUnder(last?.under ?? null, block, now, isInput)
     rows.set(block.id, { track, block, opened, glide, title, springId, isInputMove, under })
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'

@@ -442,15 +442,32 @@ test('opening the goal field shows its text field as soon as its box opens and c
   })
 })
 
-test('a press’s status under a row’s buttons fades in once the row’s box is nearly open, and fades out before its space closes', () => {
-  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
+function sendingOn(open: Block[]): Block[] {
   const out = { pressId: 'p5', rowId: 'd11', path: '/x', action: 'discuss', label: 'Discuss', pending: null, result: null }
-  const sending = drawOuts(open, [{ ...out, before: '', isWritten: true, waitingSince: NOW, isTaken: false }], {}, NOW)
+
+  return drawOuts(open, [{ ...out, before: '', isWritten: true, waitingSince: NOW, isTaken: false }], {}, NOW)
+}
+
+test('a press’s status under a row’s buttons shows in the press’s own draw', () => {
+  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
+  const { fading } = framesOf(
+    [
+      [0, open],
+      [0, sendingOn(open), 'input'],
+    ],
+    400,
+  )
+  const hidden = fading.filter(f => f.id === 'status d11' && f.at >= 0 && f.opacity < 1)
+  expect(hidden).toEqual([])
+})
+
+test('a status under a row’s buttons that no press brought fades in once the row’s box is nearly open, and fades out before its space closes', () => {
+  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
   const endsAt = 700
   const { cuts, fading, heights } = framesOf(
     [
       [0, open],
-      [0, sending, 'input'],
+      [0, sendingOn(open)],
       [endsAt, open],
     ],
     1400,

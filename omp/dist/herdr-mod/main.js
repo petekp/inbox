@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T07:58:16.920Z. 293540 characters follow.
+// Built at 2026-11-18T08:07:03.241Z. 293686 characters follow.
 
 // src/main.ts
 import { View, div as div12 } from "gpui-kit";
@@ -5394,12 +5394,12 @@ var titleTimes = (g) => g === null ? [] : [g.fadesAt ?? 0, g.boxHeldUntil, g.end
 // src/under-line.ts
 var LEAVE_ENDS_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
 var lineOf2 = (b) => b.kind === "row" && isStatusUnder(b) ? b.feedback : null;
-function stepUnder(last, b, now) {
+function stepUnder(last, b, now, isInput = false) {
   const line = lineOf2(b);
   if (line)
-    return last && !last.isLeaving ? { ...last, line } : { line, since: now, isLeaving: false };
+    return last && !last.isLeaving ? { ...last, line } : { line, since: now, isLeaving: false, isInput };
   const isSameForm = b.kind === "row" && isOpenRow(b) && !b.settled;
-  if (!last || !isSameForm)
+  if (!last || !isSameForm || isInput)
     return null;
   if (!last.isLeaving)
     return { ...last, since: now, isLeaving: true };
@@ -5408,6 +5408,8 @@ function stepUnder(last, b, now) {
 function underMotion(u, now, height) {
   if (!u)
     return null;
+  if (u.isInput && !u.isLeaving)
+    return { line: u.line, opacity: null, fadeMs: 0, delayMs: 0 };
   const isStart = now === u.since;
   if (u.isLeaving)
     return { line: u.line, opacity: isStart ? 1 : 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 };
@@ -5494,7 +5496,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, isPressed, isFieldPressed, heightOf(block.id));
     const isReleased = isInput && opensRow && track.state === "closing";
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
-    const under = stepUnder(last?.under ?? null, block, now);
+    const under = stepUnder(last?.under ?? null, block, now, isInput);
     rows.set(block.id, { track, block, opened, glide, title, springId, isInputMove, under });
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
