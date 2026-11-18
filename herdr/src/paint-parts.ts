@@ -4,7 +4,16 @@ import { h_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS } from '../../hooks/help'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import type { Button, Mark } from './blocks'
-import { BUTTON_H, BUTTON_LABEL_X, BUTTON_PAD_X, BUTTON_PAD_Y, CONTROL_GAP, INSIDE_GAP, MARK_W, colorOf } from './paint-theme'
+import {
+  BUTTON_H,
+  BUTTON_LABEL_X,
+  BUTTON_PAD_X,
+  BUTTON_PAD_Y,
+  CONTROL_GAP,
+  INSIDE_GAP,
+  MARK_W,
+  colorOf,
+} from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { checkboxEl } from './paint-checkbox'
 import { TIMED_W, timeLeftEl } from './paint-timer'
