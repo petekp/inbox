@@ -57,7 +57,10 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
         width: props.status ? props.markCells + 1 : props.markCells,
         flexShrink: 0,
         children: props.status?.mark
-          ? Text({ ...(props.status.mark.color ? { color: props.status.mark.color } : {}), children: props.status.mark.text })
+          ? Text({
+              ...(props.status.mark.color ? { color: props.status.mark.color } : {}),
+              children: props.status.mark.text,
+            })
           : [],
       }),
       props.units

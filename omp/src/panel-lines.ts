@@ -275,7 +275,14 @@ type ClosedLine = {
 }
 
 /** `isRowLed`: the group's rows draw a lead before their titles, as asks do and findings do not. */
-export type Group = { kind: FoldKind; title: string; mark?: Lead; isRowLed: boolean; rows: RowView[]; closed: ClosedLine[] }
+export type Group = {
+  kind: FoldKind
+  title: string
+  mark?: Lead
+  isRowLed: boolean
+  rows: RowView[]
+  closed: ClosedLine[]
+}
 
 const settledIn = (g: Group) => new Set(g.rows.filter(r => r.state.is === 'settled').map(r => r.id))
 export const isGroupEmpty = (g: Group) => g.rows.length === 0 && closedTotal(g.closed, settledIn(g)) === 0

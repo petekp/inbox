@@ -73,7 +73,10 @@ test('a met goal hangs a ✓ beside Goal met, folds its finished milestones into
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
   await clock.settle()
-  expect(await desktop.find({ key: `fold-status-${foldId}` })).toMatchObject({ type: 'Client', props: { props: { status: { mark: null } } } })
+  expect(await desktop.find({ key: `fold-status-${foldId}` })).toMatchObject({
+    type: 'Client',
+    props: { props: { status: { mark: null } } },
+  })
   await desktop.post({ isUnfolded: false }, { in: `fold-status-${foldId}` })
   await clock.settle()
   expect(await desktop.find({ key: 'goal-m1-name' })).toBeUndefined()
