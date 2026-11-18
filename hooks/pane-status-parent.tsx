@@ -33,37 +33,14 @@ export function paneStatusParent(
     statusNameLine,
     nameLineSpans,
     statusTextWidth,
-    statusKeyRow,
   }: PaneClient &
-    Pick<PaneBase, 'look' | 'Box' | 'Text' | 'Button' | 'pal' | 'terminalText' | 'statusKeyRow'> &
+    Pick<PaneBase, 'look' | 'Box' | 'Text' | 'Button' | 'pal' | 'terminalText'> &
     Pick<PaneStatusLines, 'statusNameLine' | 'nameLineSpans' | 'statusTextWidth'>,
   { toggleParent }: Pick<PaneHandlers, 'toggleParent'>,
 ) {
-  /** The key that folds the parent, which the terminal shows on the selected parent as other selected buttons show theirs. */
-  const parentHotkey = (id: string) =>
-    look === 'terminal' && statusKeyRow?.id === id
-      ? statusKeyRow.keys.find(k => k.press.action === 'toggle-collapse')?.hotkey
-      : undefined
-  /** What the terminal draws after the name: the chevron, led by the hotkey on the selected parent. */
-  const chevronText = (id: string, fold: { isCollapsed: boolean; count: number }) => {
-    const chevron = parentChevron(fold.isCollapsed, fold.count)
-    const hotkey = parentHotkey(id)
-
-    return hotkey ? `${hotkey}: ${chevron}` : chevron
-  }
-  const chevronButton = (id: string, chevron: string) => {
-    const hotkey = parentHotkey(id)
-    const onPress = () => void toggleParent(id)
-
-    return hotkey ? (
-      <Button plain dimColor key={`${PARENT_PREFIX}${id}`} onPress={onPress}>
-        <Text color={pal.key}>{hotkey}</Text>
-        {chevron.slice(hotkey.length)}
-      </Button>
-    ) : (
-      <Button plain dimColor key={`${PARENT_PREFIX}${id}`} label={chevron} onPress={onPress} />
-    )
-  }
+  const chevronButton = (id: string, chevron: string) => (
+    <Button plain dimColor key={`${PARENT_PREFIX}${id}`} label={chevron} onPress={() => void toggleParent(id)} />
+  )
   const desktopName = (
     id: string,
     name: TerminalSpan,
@@ -145,7 +122,7 @@ export function paneStatusParent(
     depth: number,
     fold: { isCollapsed: boolean; count: number },
   ): Drawn => {
-    const chevron = chevronText(id, fold)
+    const chevron = parentChevron(fold.isCollapsed, fold.count)
 
     return look === 'desktop'
       ? desktopName(id, name, stall, depth, chevron)
