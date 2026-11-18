@@ -41,7 +41,8 @@ export type RowPart = (typeof ROW_PARTS)[number]
 /**
  * The steps of the scale a gap between two parts takes. `inside` and `list` join two parts into one group, as a title
  * and the line under it, or an answer and its note. `child`, `control` and `item` sit between groups. Every step inside
- * a group is smaller than every step between groups, so space shows what belongs together.
+ * a group is smaller than every step between groups, so space shows what belongs together. Herdr draws every gap at
+ its step. The other looks draw some pairs at their own value, and for those the rule can break.
  */
 export const GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT } as const
 export const BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT } as const
@@ -56,7 +57,7 @@ const STEP_PT: Record<GapStep, number> = { ...GROUP_STEPS, ...BETWEEN_STEPS }
 export type PartForm = 'herdr' | 'codex' | 'desktopCard' | 'desktopFrame'
 
 /**
- * The gap between two parts: the step every form draws, the points a form draws where it differs today, and the blank
+ * The gap between two parts: the step every form draws, the points a form draws where it differs from the step, and the blank
  * rows the docked terminal draws. omp and the inline terminal draw no blank row inside a row.
  */
 export type PartGap = { step: GapStep; forms: Partial<Record<PartForm, number>>; rows: 0 | 1 }

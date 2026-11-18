@@ -2,8 +2,8 @@ import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import { rowKeyPlan } from '../hooks/action-plan'
 import { demoSession } from '../hooks/demo'
-import { BETWEEN_STEPS, GROUP_STEPS, partGap, partPairs, partPt, ROW_PARTS, rowParts } from '../hooks/row-parts'
-import type { RowPart } from '../hooks/row-parts'
+import { GROUP_STEPS, partGap, partPairs, partPt, ROW_PARTS, rowParts } from '../hooks/row-parts'
+import type { PartForm, RowPart } from '../hooks/row-parts'
 import type { RowView } from '../hooks/rows'
 import { sessionView } from '../hooks/session-view'
 import { SETTLED_MS } from '../hooks/timing'
@@ -11,10 +11,20 @@ import { caseRow, rowCases } from './row-part-cases'
 
 const NOW = 1_000_000
 const BASE_ID = { question: 'd12', task: 'd14', finding: 'd23' } as const
+const FORMS: PartForm[] = ['herdr', 'codex', 'desktopCard', 'desktopFrame']
+const DRAWN_OWN_WAY = [
+  'title → detail',
+  'titleStatus → detail',
+  'detail → file',
+  'title → status',
+  'titleStatus → status',
+  'status → buttons',
+  'status → field',
+  'buttons → result',
+  'field → result',
+  'context → earlier',
+]
 
-test('every step that joins two parts into a group is smaller than every step between groups', () => {
-  expect(Math.max(...Object.values(GROUP_STEPS))).toBeLessThan(Math.min(...Object.values(BETWEEN_STEPS)))
-})
 
 function casePartLists(): RowPart[][] {
   const demo = sessionView(demoSession(NOW, 'Claude'), NOW, SETTLED_MS)
@@ -136,4 +146,17 @@ test('each pair of neighboring parts in the row cases draws the gap listed for i
   )
 
   expect(drawn).toEqual(DRAWN)
+})
+
+test('in every look, each gap that joins two parts into a group draws smaller than each gap between groups, but for the pairs a look draws its own way', () => {
+  const pairs = [...new Map(casePartLists().flatMap(partPairs).map(p => [`${p[0]} → ${p[1]}`, p])).entries()].filter(
+    ([name]) => !DRAWN_OWN_WAY.includes(name),
+  )
+  const isGroup = ([above, below]: [RowPart, Exclude<RowPart, 'title'>]) => partGap(above, below).step in GROUP_STEPS
+  const widest = (form: PartForm) =>
+    Math.max(...pairs.filter(([, p]) => isGroup(p)).map(([, [a, b]]) => partPt(a, b, form)))
+  const narrowest = (form: PartForm) =>
+    Math.min(...pairs.filter(([, p]) => !isGroup(p)).map(([, [a, b]]) => partPt(a, b, form)))
+
+  expect(FORMS.filter(form => widest(form) >= narrowest(form))).toEqual([])
 })
