@@ -57,7 +57,7 @@ export type ButtonFace = Omit<Button, 'press'>
  * `last` rows draw an arm off the trunk, and the trunk runs beside a `mid` row's other lines. `off` lines, such as the
  * Closed fold, sit in the group under the tree's last row, with no arm.
  */
-export type TreePlace = 'mid' | 'last' | 'off'
+type TreePlace = 'mid' | 'last' | 'off'
 
 /** `dim` draws the lead as the panel's other muted marks. */
 export type Lead = { text: string; tone: Tone | 'dim' | null }
@@ -321,7 +321,9 @@ function closedLines(d: ClosedLine): Line {
 export function onTree(entries: Entry[]): Entry[] {
   const last = entries.findLastIndex(e => e.kind === 'row')
 
-  return entries.map((e, n) => (e.kind === 'row' ? { ...e, line: { ...e.line, tree: n === last ? 'last' : 'mid' } } : e))
+  return entries.map((e, n) =>
+    e.kind === 'row' ? { ...e, line: { ...e.line, tree: n === last ? 'last' : 'mid' } } : e,
+  )
 }
 
 export function groupEntries(
@@ -333,7 +335,9 @@ export function groupEntries(
   const out: Entry[] = [
     { kind: 'heading', text: g.title, count: waitingCount(g.rows), ...(g.mark ? { mark: g.mark } : {}) },
   ]
-  out.push(...onTree(g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row, optionsShown.includes(row.id)) }))))
+  out.push(
+    ...onTree(g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row, optionsShown.includes(row.id)) }))),
+  )
   if (g.rows.length === 0) out.push({ kind: 'note', text: groupEmptyText(g.title), indent: 4 })
   if (total === 0) return out
   const isUnfolded = unfolded.includes(g.kind)

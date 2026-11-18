@@ -258,10 +258,19 @@ test('the rows of an Asks, Finds or PR group hang from the mark of its heading, 
     for (const [k, heading] of headings.entries()) {
       const last = lines.findIndex((l, n) => n > heading && l[1] === '└')
       const end = headings[k + 1] ?? lines.length
-      expect(lines.slice(heading + 1, last).every(l => l[1] === '├' || l[1] === '│'), lines[heading]).toBe(true)
-      expect(lines.slice(last + 1, end).some(l => isArm(l) || l[1] === '│'), lines[heading]).toBe(false)
+      expect(
+        lines.slice(heading + 1, last).every(l => l[1] === '├' || l[1] === '│'),
+        lines[heading],
+      ).toBe(true)
+      expect(
+        lines.slice(last + 1, end).some(l => isArm(l) || l[1] === '│'),
+        lines[heading],
+      ).toBe(false)
     }
-    expect(lines.some(l => /^❯[├└]─ /.test(l)), ui.tab).toBe(true)
+    expect(
+      lines.some(l => /^❯[├└]─ /.test(l)),
+      ui.tab,
+    ).toBe(true)
     expect(lines.filter(l => l.startsWith(' │ ')).length, ui.tab).toBeGreaterThan(1)
   }
 })
