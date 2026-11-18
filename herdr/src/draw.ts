@@ -223,7 +223,9 @@ function rowBody(row: RowView, isAllShown: boolean): RowBlock['body'] {
   ]
   const shown = lines.filter(l => l.text || l.lead || l.optionId)
 
-  return shown.map(({ gapAbove, ...l }, n) => (gapAbove && n > 0 ? { ...l, gapAbove } : l))
+  return shown.map(({ gapAbove, ...l }, n) =>
+    n === 0 ? { ...l, gapAbove: 'title' } : gapAbove ? { ...l, gapAbove } : l,
+  )
 }
 
 function sideBySideOf(row: RowView, isAllShown: boolean): Pick<RowBlock, 'sideBySide'> {

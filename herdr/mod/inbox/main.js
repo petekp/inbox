@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T04:48:27.499Z. 290688 characters follow.
+// Built at 2026-11-18T05:12:30.673Z. 290881 characters follow.
 
 // src/main.ts
 import { View, div as div11 } from "gpui-kit";
@@ -4138,6 +4138,7 @@ var CHILD_GAP_PT = 2 * SPACE_UNIT;
 var HEAD_GAP_PT = 2 * SPACE_UNIT;
 var LIST_MARGIN_PT = SPACE_UNIT;
 var CONTROL_GAP_PT = 2 * SPACE_UNIT;
+var titleToBodyGapPt = (startsWithButtons) => startsWithButtons ? CONTROL_GAP_PT : INSIDE_GAP_PT;
 var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
 var BUTTON_BORDER_PT = 1;
 var SECTION_GAP_PT = 6 * SPACE_UNIT;
@@ -4540,7 +4541,7 @@ function rowBody(row, isAllShown) {
     ...options.flatMap((_, n) => branchLines(holdsUp.length + n))
   ];
   const shown = lines.filter((l) => l.text || l.lead || l.optionId);
-  return shown.map(({ gapAbove, ...l }, n) => gapAbove && n > 0 ? { ...l, gapAbove } : l);
+  return shown.map(({ gapAbove, ...l }, n) => n === 0 ? { ...l, gapAbove: "title" } : gapAbove ? { ...l, gapAbove } : l);
 }
 function sideBySideOf(row, isAllShown) {
   const { options, answerRow } = rowKeyPlan(row, isAllShown);
@@ -6131,7 +6132,7 @@ var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
 var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
 var bodyLineEl = (l, t, isSelected, answers = [], p = null, isInert = false) => {
-  const above = l.gapAbove === "item" ? ITEM_GAP : l.gapAbove === "child" ? CHILD_GAP : l.gapAbove === "list" ? LIST_GAP : INSIDE_GAP;
+  const above = l.gapAbove === "title" ? titleToBodyGapPt(answers.length > 0) : l.gapAbove === "item" ? ITEM_GAP : l.gapAbove === "child" ? CHILD_GAP : l.gapAbove === "list" ? LIST_GAP : INSIDE_GAP;
   const color = lineColor(t, isSelected ? t.selected : t.background);
   if (answers.length > 0 && p) {
     const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
