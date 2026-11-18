@@ -55,6 +55,13 @@ export function waitLeftMs(el: HTMLElement): number {
   return g !== undefined && isRunning(g.anim) ? Math.max(0, g.startsAt - Date.now()) : 0
 }
 
+/** Whether an element's running glide scales its padding and top margin with its height, as one that comes or goes. */
+export function isScalingEdges(el: HTMLElement): boolean {
+  const g = glides.get(el)
+
+  return g !== undefined && isRunning(g.anim) && g.scalesEdges
+}
+
 /** Where an element's size is and how fast it moves, from its glide, or `size` at rest without one. */
 export function springOf(el: HTMLElement, size: number): SpringState {
   const g = glides.get(el)
@@ -81,7 +88,8 @@ function sizeFrames(size: Size, xs: number[], edges: number[] | null, full: numb
 
 /**
  * Moves an element's size on the spring from `from` to `to`, after `delay` ms. `hold` keeps it at `to` once there,
- * until released. `comesOrGoes` marks an element growing in from nothing or shrinking away.
+ * until released. `comesOrGoes` marks an element growing in from nothing or shrinking away, or one that was when this
+ * move restarts it.
  */
 export function glide(
   el: HTMLElement,

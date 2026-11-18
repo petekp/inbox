@@ -22,7 +22,7 @@ const item = (id: string, ask: string, at: number): Item => ({
   at,
 })
 
-type Move = { key: string; delay: number; startsAt: number }
+type Move = { key: string; delay: number; startsAt: number; scalesEdges: boolean }
 
 async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext) {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
@@ -34,7 +34,7 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
     const key = this.dataset.motion
     if (key && Array.isArray(frames) && frames.some(f => 'height' in f)) {
       const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
-      moves.push({ key, delay, startsAt: Date.now() + delay })
+      moves.push({ key, delay, startsAt: Date.now() + delay, scalesEdges: frames.some(f => 'paddingTop' in f) })
     }
     const animation = animate.apply(this, args)
     animation.finished.catch(() => {})
@@ -136,13 +136,13 @@ type Harness = {
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait when a redraw lands 40 or 80 ms into it, so the list never grows before it shrinks', async context => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks', async context => {
   await inTab(async ({ state, moves, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-read')
     await settle()
     let last = item('i2', 'Tag the release', 2)
-    for (const [n, redrawAtMs] of [40, 80].entries()) {
+    for (const [n, redrawAtMs] of [40, 80, 180].entries()) {
       const arriving = item(`i${3 + n}`, `Reply to review ${n}`, 3 + n)
       state.ledger = { ...state.ledger, items: [item('i1', 'Check the build', 1), arriving] }
       moves.length = 0
@@ -158,6 +158,7 @@ test('a row that enters while another leaves keeps the rest of its wait when a r
       await read()
       await settle()
       assert.ok(growth().length > 0, `the redraw ${redrawAtMs} ms in restarted no glide of ${arriving.id}`)
+      for (const m of growth()) assert.ok(m.scalesEdges, `${m.key} restarts without scaling its padding and margin`)
       for (const m of growth())
         assert.ok(m.startsAt >= shrinksAt - 2, `${m.key} grows ${shrinksAt - m.startsAt} ms before ${last.id} shrinks`)
       await after(ROW_STATE_MS.leaving + 200)
