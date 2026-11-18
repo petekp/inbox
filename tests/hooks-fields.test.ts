@@ -1,5 +1,7 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
+import { DESKTOP_MARK_CELLS } from '../hooks/pane-sizes'
+import type { TabsProps } from '../hooks/tabs-client'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { PANE, selectRow, replyField, replyKey } from './hooks-helpers'
@@ -148,6 +150,68 @@ test('a reply field that opens without the keys says to click it, until it has t
   await clock.settle()
   expect(await replyField(pane, 'i1')).toBeDefined()
   expect(await pane.find({ text: 'Click the field to type' })).toBeUndefined()
+})
+
+test('a desktop reply field’s line takes the row’s whole width less its mark column, beside nothing, in a docked pane', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+  w.surfaces = ['desktop']
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Node or Python?', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'finding',
+    finding_kind: 'issue',
+    title: 'README is stale',
+    detail: 'It names the old command.',
+  })
+  await clock.settle()
+
+  type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
+  const pathTo = (node: unknown, isEnd: (n: Drawn) => boolean): Drawn[] => {
+    if (typeof node !== 'object' || node === null) return []
+    const n = node as Drawn
+    if (isEnd(n)) return [n]
+    const rest = (n.children ?? []).map(c => pathTo(c, isEnd)).find(p => p.length > 0)
+    return rest ? [n, ...rest] : []
+  }
+  const cells = (v: unknown) => (typeof v === 'number' ? v : 0)
+  const cellsBesideField = async (id: string) => {
+    const path = pathTo(await pane.find({ key: `row-${id}` }), n => n.type === 'Input')
+    expect(path.length, id).toBeGreaterThan(0)
+    return path.reduce((sum, n, k) => {
+      const isRow = n.props.flexDirection === undefined || n.props.flexDirection === 'row'
+      const beside = isRow
+        ? (n.children ?? [])
+            .filter(c => c !== path[k + 1] && typeof c === 'object' && c !== null && (c as Drawn).type === 'Box')
+            .reduce<number>((s, c) => s + cells((c as Drawn).props.width ?? (c as Drawn).props.minWidth), 0)
+        : 0
+      const padding = cells(n.props.paddingLeft) + cells(n.props.paddingRight) + 2 * cells(n.props.paddingX)
+      return sum + beside + padding
+    }, 0)
+  }
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 26 } })
+  await pane.press({ key: 'typekey-i1' })
+  await clock.settle()
+  expect(await cellsBesideField('i1')).toBe(DESKTOP_MARK_CELLS)
+
+  const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  const findingsAt = tabs
+    .slice(
+      0,
+      tabs.findIndex(t => t.id === 'findings'),
+    )
+    .reduce((x, t) => x + t.width + gap, 0)
+  await pane.pointer({ type: 'down', x: findingsAt, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  await pane.press({ key: 'typekey-f3' })
+  await clock.settle()
+  expect(await cellsBesideField('f3')).toBe(DESKTOP_MARK_CELLS)
 })
 
 test('a press on a question Claude closed since the draw sends nothing and says so', async ($, on) => {

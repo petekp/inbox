@@ -18,6 +18,7 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
     hasSide = true,
     isBordered = true,
     children,
+    below = null,
   }: {
     key?: string
     mark?: JSX.Element | null
@@ -40,9 +41,12 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
     /** Space above and below the frame, in the hooks tree's half lines. */
     gapY?: number
     children: JSX.Element | (JSX.Element | null)[]
+    /** Drawn under the text, from its left edge across the side column, for a line that needs the row's whole width. */
+    below?: JSX.Element | null
   }) => {
+    const markWidth = indent + markCells + (isMarkHung ? 0 : 1)
     const markColumn = (
-      <Box key="mark" width={indent + markCells + (isMarkHung ? 0 : 1)} flexShrink={0} paddingLeft={indent}>
+      <Box key="mark" width={markWidth} flexShrink={0} paddingLeft={indent}>
         {tree}
         {mark ? (
           <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
@@ -56,37 +60,48 @@ export function paneRowFrame({ space, Box }: Pick<PaneBase, 'space' | 'Box'>) {
         {children}
       </Box>
     )
-    return (
+    const alignItems = isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'
+    const main = isSideCentered ? (
+      <Box flexDirection="row" alignItems="flex-start" flexShrink={1} flexGrow={1} minWidth={0}>
+        {markColumn}
+        {textColumn}
+      </Box>
+    ) : (
+      [markColumn, textColumn]
+    )
+    const sideColumn = hasSide ? (
       <Box
-        key={key}
+        minWidth={DESKTOP_SIDE_CELLS}
+        flexShrink={0}
         flexDirection="row"
-        alignItems={isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
-        marginY={gapY}
-        {...(isBordered ? { borderStyle: 'single', borderColor: '#0000' } : {})}
-        paddingTop={padY}
-        paddingBottom={padBelow}
-        {...(fill ? { backgroundColor: fill } : {})}
+        justifyContent="flex-end"
+        alignItems="flex-start"
+        paddingLeft={1}
       >
-        {isSideCentered ? (
-          <Box flexDirection="row" alignItems="flex-start" flexShrink={1} flexGrow={1} minWidth={0}>
-            {markColumn}
-            {textColumn}
-          </Box>
-        ) : (
-          [markColumn, textColumn]
-        )}
-        {hasSide ? (
-          <Box
-            minWidth={DESKTOP_SIDE_CELLS}
-            flexShrink={0}
-            flexDirection="row"
-            justifyContent="flex-end"
-            alignItems="flex-start"
-            paddingLeft={1}
-          >
-            {side}
-          </Box>
-        ) : null}
+        {side}
+      </Box>
+    ) : null
+    const frame = {
+      marginY: gapY,
+      ...(isBordered ? { borderStyle: 'single', borderColor: '#0000' } : {}),
+      paddingTop: padY,
+      paddingBottom: padBelow,
+      ...(fill ? { backgroundColor: fill } : {}),
+    }
+    return below ? (
+      <Box key={key} flexDirection="column" {...frame}>
+        <Box key="line" flexDirection="row" alignItems={alignItems}>
+          {main}
+          {sideColumn}
+        </Box>
+        <Box key="below" flexDirection="column" paddingLeft={markWidth}>
+          {below}
+        </Box>
+      </Box>
+    ) : (
+      <Box key={key} flexDirection="row" alignItems={alignItems} {...frame}>
+        {main}
+        {sideColumn}
       </Box>
     )
   }
