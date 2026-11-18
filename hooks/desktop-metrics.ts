@@ -1,4 +1,4 @@
-import { cellWidth } from './text'
+import { cellWidth, graphemesOf } from './text'
 // About how many characters of desktop's proportional text fit in one column of `bodyColumns`: sentences and
 // the tab labels run 1.23 to 1.30, bold or not.
 export const DESKTOP_CHARS_PER_CELL = 1.25
@@ -20,11 +20,10 @@ const DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [..
 const DESKTOP_WIDEST_CHAR_PT = 12.6
 /** An emoji or a wide East Asian character, which a terminal draws in two cells. */
 const DESKTOP_WIDE_CHAR_PT = 17
-const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 /** Desktop cuts a label wider than its control, so a control is sized from each character's width. */
 export function desktopTextPt(text: string): number {
   let pt = 0
-  for (const { segment } of graphemes.segment(text)) {
+  for (const segment of graphemesOf(text)) {
     const cells = cellWidth(segment)
     pt +=
       cells === 0 ? 0 : cells === 2 ? DESKTOP_WIDE_CHAR_PT : (DESKTOP_CHAR_PT.get(segment) ?? DESKTOP_WIDEST_CHAR_PT)
@@ -72,7 +71,7 @@ export function desktopLines(text: string, widthPt: number): string[] {
 /** The longest start of `text` that fits `widthPt`, and at least its first character. */
 function longestStart(text: string, widthPt: number): string {
   let head = ''
-  for (const { segment } of graphemes.segment(text)) {
+  for (const segment of graphemesOf(text)) {
     if (head && desktopTextPt(head + segment) > widthPt) break
     head += segment
   }

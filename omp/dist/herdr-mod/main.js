@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T07:23:23.310Z. 294413 characters follow.
+// Built at 2026-11-18T07:32:38.908Z. 294337 characters follow.
 
 // src/main.ts
 import { View, div as div11 } from "gpui-kit";
@@ -5745,7 +5745,6 @@ var DESKTOP_CHAR_GROUPS = [
   ["CDGHNOQUw&", 10]
 ];
 var DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [...chars].map((c) => [c, pt])));
-var graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 // ../hooks/row-parts.ts
 var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
