@@ -185,7 +185,7 @@ test('after a failed update, the next reply catches up over the whole conversati
   await clock.settle()
   expect(await pane.find({ key: 'row-f3' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-f3' })).toBeUndefined()
-  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed ›')
+  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('1 closed\u00a0›')
 })
 
 test('a failed forked catch-up is saved with no model, since the fork runs on the conversation’s model', async ($, on) => {

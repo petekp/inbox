@@ -19,7 +19,6 @@ import {
 import type { Drawn } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import type { PaneStatusPath } from './pane-status-path'
-import type { StatusTone } from './help'
 import type { GoalBlock, MilestoneRow } from './status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from './status-goal-page'
 import { paneGoalField, uncounted } from './pane-status-goal-field'
@@ -186,29 +185,6 @@ export function paneStatusGoal(
 
     return [offerBlock(), ...keysRow({ id: GOAL_KEYS_ID, keys: offerKeys }, width)]
   }
-  /** Marks in their tones, each with its text, on lines that wrap between them, as the Other work counts draw. */
-  const markRun = (
-    key: string,
-    parts: { mark: string; tone: StatusTone; text: string }[],
-    gap: string,
-    isMuted = false,
-  ) => (
-    <Box key={key} flexDirection="row" flexWrap="wrap">
-      {parts.flatMap((part, n) => [
-        ...(n > 0
-          ? [
-              <Text key={`${key}-gap-${n}`} color={pal.muted}>
-                {gap}
-              </Text>,
-            ]
-          : []),
-        <Box key={`${key}-${n}`} flexDirection="row" flexShrink={0}>
-          {markGlyph({ text: part.mark, isRunning: false }, `${key}-${n}`, part.tone ? pal.mark[part.tone] : pal.muted)}
-          <Text color={isMuted ? pal.muted : undefined}>{` ${part.text}`}</Text>
-        </Box>,
-      ])}
-    </Box>
-  )
   const { spaceAboveOf, laterLines } = paneMilestoneSpace({ look, Box, statusPartLine, isUnfolded, isCollapsed })
   /** A milestone frame's padding above and below on desktop: half of its own gap, as a subject with no neighbor pads. */
   const milestonePad = (m: MilestoneRow) => desktopPad(milestonePadPt(m))
@@ -474,5 +450,5 @@ export function paneStatusGoal(
           ...(setGoal.suggestion === null ? [] : offerLines(setGoal.suggestion, setGoal.offerKeys, blockWidth)),
           ...(setGoal.keys.length === 0 ? [] : keysLine({ id: GOAL_KEYS_ID, keys: setGoal.keys })),
         ]
-  return { goalSection, setGoalBare, markRun, isTypingGoal }
+  return { goalSection, setGoalBare, isTypingGoal }
 }

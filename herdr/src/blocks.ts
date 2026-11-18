@@ -270,6 +270,8 @@ export type Block =
       text: string
       isOpen: boolean
       change: ViewChange
+      /** Other work's counts fold: its words are drawn as `label`, then each mark in its tone with its count. `text` still names it. */
+      counts?: { label: string; items: { mark: Mark; text: string }[] }
       mark?: Mark
       path?: PathSide
       tree?: TreeStroke[]
