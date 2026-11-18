@@ -34,6 +34,29 @@ test.failing(
   },
 )
 
+function emptyStatus(typing: 'goal' | null): Block[] {
+  const screen = demoScreen()
+  const statusPage = { ...screen.view.statusPage, goal: null, rows: [], isEmpty: true, suggestedGoal: null }
+
+  return tabBlocks({ ...screen, view: { ...screen.view, statusPage } }, uiOn('overview', { typing }))
+}
+
+test('the empty Status page’s goal field opens and closes with no jump, and cuts no text', () => {
+  for (const [from, to] of [
+    [null, 'goal'],
+    ['goal', null],
+  ] as const) {
+    const { jumps, cuts } = framesOf(
+      [
+        [0, emptyStatus(from)],
+        [0, emptyStatus(to), 'input'],
+      ],
+      900,
+    )
+    expect({ to, jumps, cuts: cuts.filter(c => c.at >= 0) }).toEqual({ to, jumps: [], cuts: [] })
+  }
+})
+
 function sendingOn(open: Block[]): Block[] {
   const out = {
     pressId: 'p5',

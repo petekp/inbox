@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T09:27:57.488Z. 298639 characters follow.
+// Built at 2026-11-18T10:20:23.640Z. 299069 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -5921,79 +5921,12 @@ function fieldEl(f, p, indent, isInert = false, opening = null) {
 }
 
 // src/paint-empty.ts
-import { div as div5 } from "gpui-kit";
-import { h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
-function emptyEl(b, p, isInert) {
-  return v_flex2().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(emptyContentEl(b, p, isInert));
-}
-function emptyContentEl(b, p, isInert) {
-  const { t } = p;
-  const { empty, under } = b;
-  const centred = (text, color = t.foreground) => div5().text_center().whitespace_normal().text_color(color).child(text);
-  return v_flex2().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children((under?.buttons ?? []).map((x) => buttonEl(x, p, isInert))))).when(under?.field != null, (e) => e.child(div5().w_full().pt(CONTROL_GAP).child(under?.field ? fieldEl(under.field, p, 0, isInert) : div5()))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)));
-}
-
-// src/paint-chevron.ts
-import { PathBuilder as PathBuilder2, div as div6 } from "gpui-kit";
-import { h_flex as h_flex3 } from "gpui-base";
-var SIZE_PX = 12;
-var STROKE_PX = 1;
-var GRID = 24;
-var CORNERS = {
-  folded: [
-    [9, 18],
-    [15, 12],
-    [9, 6]
-  ],
-  open: [
-    [6, 9],
-    [12, 15],
-    [18, 9]
-  ]
-};
-var pathOf = (isOpen) => {
-  const [first, ...rest] = CORNERS[isOpen ? "open" : "folded"].map(([x, y]) => [`${x / GRID * 100}%`, `${y / GRID * 100}%`]);
-  const path = PathBuilder2.stroke(STROKE_PX).move_to(first[0], first[1]);
-  return rest.reduce((p, [x, y]) => p.line_to(x, y), path).build();
-};
-var FOLDED_PATH = pathOf(false);
-var OPEN_PATH = pathOf(true);
-function chevronEl(isOpen, t, isLive) {
-  const path = isOpen ? OPEN_PATH : FOLDED_PATH;
-  const shape = (color) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`);
-  return div6().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div6().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
-}
-function foldChevronEl(t, fold) {
-  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div6().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
-}
-
-// src/paint-status-line.ts
-import { div as div7 } from "gpui-kit";
-import { h_flex as h_flex4, v_flex as v_flex3 } from "gpui-base";
-var statusPartEl = (text) => div7().min_w(0).max_w_full().whitespace_normal().child(text);
-function keyEl(s, does, t) {
-  return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div7().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div7().font_semibold().child(s.name))).child(div7().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
-}
-function statusEl(s, p, isInert) {
-  const { t } = p;
-  if (s.does !== undefined)
-    return keyEl(s, s.does, t);
-  const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
-  const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
-  const toggle = s.fold?.toggle;
-  const chevron = s.fold ? [
-    foldChevronEl(t, {
-      isOpen: !s.fold.isFolded,
-      isLive: toggle !== undefined && !isInert,
-      ...s.fold.isFolded ? { count: s.fold.count } : {}
-    })
-  ] : [];
-  return v_flex3().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
-}
+import { div as div6 } from "gpui-kit";
+import { h_flex as h_flex2, v_flex as v_flex3 } from "gpui-base";
 
 // src/paint-space.ts
-import { div as div8 } from "gpui-kit";
-import { v_flex as v_flex4 } from "gpui-base";
+import { div as div5 } from "gpui-kit";
+import { v_flex as v_flex2 } from "gpui-base";
 var isClosedFold = (b) => b.kind === "fold" && ("closedFold" in b.change);
 function padOf(b) {
   if (isClosedFold(b))
@@ -6068,8 +6001,8 @@ function spacesOf(blocks, isShut, formOf = (b) => b) {
   return out;
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
-var springBox = (id, height) => springHeight(v_flex4().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
-var sizeEl = (key, p, el) => div8().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
+var springBox = (id, height) => springHeight(v_flex2().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
+var sizeEl = (key, p, el) => div5().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
 function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
@@ -6108,7 +6041,7 @@ function contentEl(b, m, p, el, strokes) {
 }
 function spaceEl(s, p, columns) {
   const id = `space ${p.motion.get(s.block.id)?.springId ?? s.block.id}`;
-  const box = springHeight(div8().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
+  const box = springHeight(div5().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
 }
 var TREE_LINE_SHARE = 0.2;
@@ -6117,12 +6050,12 @@ var PATH_X = EDGE + 4;
 function pathLineEl(line, top, height, t) {
   if (line === null)
     return [];
-  const el = div8().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div5().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
   const sized = height === null ? el.bottom(0) : el.h(height);
   return [line === "to-next" ? sized.border_dashed() : sized];
 }
 var columnEl = (depth, top, height, t) => {
-  const el = div8().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div5().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
   return height === null ? el.bottom(0) : el.h(height);
 };
 var pathColumn = (line) => line === null ? [] : [{ depth: 0, isDashed: line === "to-next" }];
@@ -6160,7 +6093,7 @@ function contentStrokeEls(b, t, fade) {
   const armAt = Math.round(top + LINE_HEIGHT / 2);
   const pathEls = (side) => side.is === "work" ? pathLineEl(side.line, 0, null, t) : [...pathLineEl(side.above, 0, top, t), ...pathLineEl(side.below, top + LINE_HEIGHT, null, t)];
   const treeEls = tree.flatMap(({ depth, is }) => {
-    const arm = fade(div8().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)));
+    const arm = fade(div5().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)));
     if (is === "down")
       return [columnEl(depth, top + LINE_HEIGHT, null, t)];
     if (is === "past")
@@ -6197,11 +6130,89 @@ function spacedEls(blocks, p, el) {
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
     const fade = (e) => m?.box ? e.opacity(isShown ? 1 : 0).transition("opacity", glide) : e;
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
-    return v_flex4().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
+    return v_flex2().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
       ...contentStrokeEls(b, p.t, fade),
       ...passes.map((c) => wholeColumnEl(c, p.t))
     ]));
   });
+}
+
+// src/paint-empty.ts
+function emptyEl(b, p, isInert) {
+  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(fitEl(`${b.id} content`, p, emptyContentEl(b, p, isInert)));
+}
+function controlsEl(b, p, isInert) {
+  const key = `${b.id} field`;
+  const field = b.under?.field ?? null;
+  const buttons = b.under?.buttons ?? [];
+  const height = p.heights.get(key) ?? 0;
+  const opening = { isOpen: height > 0, height };
+  const fieldBox = field ? div6().w_full().pt(CONTROL_GAP).child(fieldEl(field, p, 0, isInert, opening)) : div6();
+  return v_flex3().w_full().items_center().child(sizeEl(key, p, fieldBox).w_full()).when(buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(buttons.map((x) => buttonEl(x, p, isInert)))));
+}
+function emptyContentEl(b, p, isInert) {
+  const { t } = p;
+  const { empty, under } = b;
+  const centred = (text, color = t.foreground) => div6().text_center().whitespace_normal().text_color(color).child(text);
+  return v_flex3().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0 || under?.field != null, (e) => e.child(controlsEl(b, p, isInert))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)));
+}
+
+// src/paint-chevron.ts
+import { PathBuilder as PathBuilder2, div as div7 } from "gpui-kit";
+import { h_flex as h_flex3 } from "gpui-base";
+var SIZE_PX = 12;
+var STROKE_PX = 1;
+var GRID = 24;
+var CORNERS = {
+  folded: [
+    [9, 18],
+    [15, 12],
+    [9, 6]
+  ],
+  open: [
+    [6, 9],
+    [12, 15],
+    [18, 9]
+  ]
+};
+var pathOf = (isOpen) => {
+  const [first, ...rest] = CORNERS[isOpen ? "open" : "folded"].map(([x, y]) => [`${x / GRID * 100}%`, `${y / GRID * 100}%`]);
+  const path = PathBuilder2.stroke(STROKE_PX).move_to(first[0], first[1]);
+  return rest.reduce((p, [x, y]) => p.line_to(x, y), path).build();
+};
+var FOLDED_PATH = pathOf(false);
+var OPEN_PATH = pathOf(true);
+function chevronEl(isOpen, t, isLive) {
+  const path = isOpen ? OPEN_PATH : FOLDED_PATH;
+  const shape = (color) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`);
+  return div7().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div7().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
+}
+function foldChevronEl(t, fold) {
+  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div7().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
+}
+
+// src/paint-status-line.ts
+import { div as div8 } from "gpui-kit";
+import { h_flex as h_flex4, v_flex as v_flex4 } from "gpui-base";
+var statusPartEl = (text) => div8().min_w(0).max_w_full().whitespace_normal().child(text);
+function keyEl(s, does, t) {
+  return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div8().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div8().font_semibold().child(s.name))).child(div8().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+}
+function statusEl(s, p, isInert) {
+  const { t } = p;
+  if (s.does !== undefined)
+    return keyEl(s, s.does, t);
+  const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
+  const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
+  const toggle = s.fold?.toggle;
+  const chevron = s.fold ? [
+    foldChevronEl(t, {
+      isOpen: !s.fold.isFolded,
+      isLive: toggle !== undefined && !isInert,
+      ...s.fold.isFolded ? { count: s.fold.count } : {}
+    })
+  ] : [];
+  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 
 // src/paint-chrome.ts
