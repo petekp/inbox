@@ -43,7 +43,8 @@ export function measure(): Drawing {
  * How long a height move that starts in this draw waits, in ms: while a block that leaves holds its space as its
  * content fades, nothing a read brings in grows before that space starts to close: a block that enters, a row a read
  * selects and the row it closes, and a group's end growing to hold its empty note. In a draw that is not a read, the
- * selection's rows move at once. A leave turned back, a glide under way and a block's own change of height never wait.
+ * selection's rows move at once. A leave turned back waits only once it no longer holds its space, as a block that
+ * enters does. A glide under way and a block's own change of height never wait.
  */
 let heightWaitMs = 0
 
@@ -54,15 +55,24 @@ function naturalHeight(el: HTMLElement): number {
   return atEndWeight(el, () => atEndLines(el, () => el.getBoundingClientRect().height))
 }
 
+/** Whether a leaving element no longer holds its space: its space has begun to shrink, or it left before its space opened. */
+function isSpaceShort(el: HTMLElement): boolean {
+  const g = glides.get(el)
+  if (!g || g.size !== 'height' || g.to !== 0 || !isRunning(g.anim)) return false
+  const hasShrunk = Number(g.anim.currentTime ?? 0) >= g.delay
+
+  return hasShrunk || g.from.x < 0.5
+}
+
 /**
- * Grows an element in from `from`, then fades its content in once its space is nearly open. A leave turned back moves at
- * once, without waiting for another leave's fade, and its content, if still partly shown, fades back in at once.
+ * Grows an element in from `from` after `delay` ms, holding it there until then, then fades its content in once its
+ * space is nearly open. Content still partly shown, as in a leave turned back, fades back in at once.
  */
-function growIn(el: HTMLElement, from: SpringState, opacity: number, isTurn: boolean) {
+function growIn(el: HTMLElement, from: SpringState, opacity: number, delay: number) {
   const to = naturalHeight(el)
-  const delay = isTurn ? 0 : heightWaitMs
-  glide(el, 'height', from, to, false, true, delay)
-  const waits = opacity > 0.01 ? 0 : enterDelayMs(to, from)
+  const start = delay > 0 ? { x: from.x, v: 0 } : from
+  glide(el, 'height', start, to, false, true, delay)
+  const waits = opacity > 0.01 ? 0 : enterDelayMs(to, start)
   fade(el, opacity, 1, ENTER_FADE_MS, false, true, delay + waits)
 }
 
@@ -151,7 +161,7 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   if (state && changed.has(key) && startState(el, state, from, isFresh, was?.openTop ?? null)) return
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
-    if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, false)
+    if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, heightWaitMs)
     return
   }
   if (carried.has(el) && !(state && isMoving(state))) {
@@ -173,7 +183,8 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
   switch (state) {
     case 'entering': {
       const isTurn = !isFresh && el.getAnimations().length > 0
-      growIn(el, isTurn ? from : { x: 0, v: 0 }, isTurn ? opacityOf(el) : 0, isTurn)
+      const delay = isTurn && !isSpaceShort(el) ? 0 : heightWaitMs
+      growIn(el, isTurn ? from : { x: 0, v: 0 }, isTurn ? opacityOf(el) : 0, delay)
       return true
     }
     case 'closing':
