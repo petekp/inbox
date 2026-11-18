@@ -2230,14 +2230,16 @@ function parseReply(text, source = null) {
         asks.push({ id, target });
     } else if (key === "NEW") {
       const fields = value.split("|");
-      const isLabelSkipped = !dash(fields[2]) && /\s/.test((fields[1] ?? "").trim());
+      const isLabelWords = /\s/.test((fields[1] ?? "").trim());
+      const isLabelSkipped = isLabelWords && (!dash(fields[2]) || readsAsChoices(fields[2] ?? ""));
       const [kind, label, ask, ...rest] = (isLabelSkipped ? [fields[0], "-", ...fields.slice(1)] : fields).map(dash);
       const last = rest.at(-1);
       const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ""));
       if (isDesignField)
         rest.pop();
       const rec = rest.length > 1 ? rest.pop() : null;
-      if (!ask) {
+      const isAskTheChoices = readKind(kind) === "question" && readsAsChoices(ask ?? "");
+      if (!ask || isAskTheChoices) {
         newLines.push(undefined);
         continue;
       }
@@ -2286,6 +2288,11 @@ function parseReply(text, source = null) {
       asked.push({ id, item });
   }
   return seen === 0 ? null : { closed, added, helped, updated, asked, todos };
+}
+function readsAsChoices(field) {
+  const text = field.trim();
+  const choices = text.split(/\s+\/\s+/);
+  return choices.length > 1 && !text.endsWith("?") && choices.every((c) => c !== "" && words2(c).length <= 5);
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
