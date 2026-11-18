@@ -276,10 +276,10 @@ function paintOf(
   } as unknown as Paint
 }
 
-/** Draws `blocks` once, at rest, and lays them out. `widths` sets what earlier draws measured, such as an answer's width. */
-export function restingLayout(blocks: Block[], widths: Record<string, number> = {}) {
+export function layoutAtRest(blocks: Block[], measuredWidths: Record<string, number> = {}) {
   const heights = new Heights()
-  for (const [key, width] of Object.entries(widths)) heights.measure(key, { width, height: LINE_HEIGHT }, 1, true)
+  for (const [key, width] of Object.entries(measuredWidths))
+    heights.measure(key, { width, height: LINE_HEIGHT }, 1, true)
   const now = 1_000_000
   const moved = moveRows(blocks, NO_TRACKS, now, true, false, key => heights.get(key))
   const paint = paintOf(moved.motion, heights, () => true, now, new Map(), PANE_WIDTH)

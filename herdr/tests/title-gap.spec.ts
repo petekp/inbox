@@ -5,7 +5,7 @@ import type { RowView } from '../../hooks/rows'
 import type { Painted } from './gpui-stand-in'
 import { demoScreen, uiOn } from './fixtures'
 
-const { restingLayout } = await import('./frames')
+const { layoutAtRest } = await import('./frames')
 const { tabBlocks } = await import('../src/draw')
 
 type Form = 'side by side' | 'stacked'
@@ -42,12 +42,11 @@ function questionOf(c: Case, base: RowView): RowView {
   }
 }
 
-/** The first thing a row's panel draws: a button's top edge, or a line of text's top past its own padding. */
-function firstDrawn(n: Painted): Painted | null {
+function firstButtonOrTextLine(n: Painted): Painted | null {
   const flow = n.kids.filter(k => !k.style.isAbsolute)
   if (n.id?.startsWith('button ') || (n.text !== null && flow.length === 0)) return n
   for (const k of flow) {
-    const found = firstDrawn(k)
+    const found = firstButtonOrTextLine(k)
     if (found) return found
   }
 
@@ -62,10 +61,10 @@ test('a question’s first body element sits under its title by the scale’s ga
     const view = { ...screen.view, needsYou: { ...screen.view.needsYou, questions: [question] } }
     const blocks = tabBlocks({ ...screen, view }, uiOn('needsYou', { selected: question.id }))
     const wide = Object.fromEntries(question.optionDescriptions.map((_, n) => [`answer ${question.id} ${n}`, 1000]))
-    const { placed } = restingLayout(blocks, c.form === 'stacked' ? wide : {})
+    const { placed } = layoutAtRest(blocks, c.form === 'stacked' ? wide : {})
     const nodes = [...placed.keys()]
     const title = placed.get(nodes.find(n => n.id === `title ${question.id}`)!)!
-    const first = firstDrawn(nodes.find(n => n.id === `panel ${question.id}`)!)!
+    const first = firstButtonOrTextLine(nodes.find(n => n.id === `panel ${question.id}`)!)!
     const isButton = first.id?.startsWith('button ') === true
     const top = placed.get(first)!.top + (isButton ? 0 : (first.style.pt ?? 0))
 
