@@ -12204,22 +12204,28 @@ function failureOf(kind, heard, isParsed, at) {
     process: text === null ? report?.process ?? null : null
   };
 }
-function answerOf(kind, heard, isParsed, at, turn) {
+function withAnswer(s, kind, heard, isParsed, at, turn) {
   if (heard.text === null)
-    return null;
+    return s;
   const { text } = heard;
-  return { at, turn, reads: kind.reads, isParsed, text: text.slice(0, ANSWER_CHARS), chars: text.length };
+  const answer = {
+    at,
+    turn,
+    reads: kind.reads,
+    isParsed,
+    text: text.slice(0, ANSWER_CHARS),
+    chars: text.length
+  };
+  return { ...s, lastAnswers: { ...s.lastAnswers, [kind.call]: answer } };
 }
-function withCall(s, kind, heard, isParsed, at, turn) {
-  const answer = answerOf(kind, heard, isParsed, at, turn);
-  const answered = answer ? { ...s, lastAnswers: { ...s.lastAnswers, [kind.call]: answer } } : s;
+function withCall(s, kind, heard, isParsed, at) {
   const record = s.callFailures[kind.call];
   const failure = failureOf(kind, heard, isParsed, at);
   const isRecovery = !failure && record.lastFailure !== null && record.recoveredAt === null;
   if (!failure && !isRecovery)
-    return answered;
+    return s;
   const next = failure ? { lastFailure: failure, recoveredAt: null } : { ...record, recoveredAt: at };
-  return { ...answered, callFailures: { ...s.callFailures, [kind.call]: next } };
+  return { ...s, callFailures: { ...s.callFailures, [kind.call]: next } };
 }
 
 // ../hooks/status-records.ts
@@ -12303,7 +12309,14 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
   let before = null;
   let isWritten = false;
   const answeredTurn = (x) => call.exchange.kind === "reply" ? call.exchange.exchange.turn : x.ledger.turn;
-  const noted = (current, now) => heards.reduce((x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now, answeredTurn(x)), current);
+  const noted = (current, now) => {
+    const isCurrent = isStatusCallCurrent(current, appliedAfter);
+    return heards.reduce((x, h) => {
+      const isParsed = h.heard.text !== null && parseStatus(h.heard.text) !== null;
+      const recorded = withCall(x, h.kind, h.heard, isParsed, now);
+      return isCurrent ? withAnswer(recorded, h.kind, h.heard, isParsed, now, answeredTurn(x)) : recorded;
+    }, current);
+  };
   const after = await host.update(async (current) => {
     const now = await host.now();
     const x = noted(current, now);
@@ -12439,7 +12452,7 @@ async function runUpdates(host) {
               }
               const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
               const at = await host.now();
-              const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at, x.ledger.turn) : x;
+              const noted = (x) => reply.heard ? withAnswer(withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at), CATCH_UP_CALL, reply.heard, parsed !== null, at, x.ledger.turn) : x;
               const after = await host.update((x) => appliedCatchUp(noted(x), s, parsed, at));
               if (!parsed)
                 return "stop";
@@ -12455,7 +12468,8 @@ async function runUpdates(host) {
             let isApplied = false;
             const after = await host.update(async (current) => {
               const at = await host.now();
-              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at, next.ex.turn);
+              const heard = { ...asked, ms: at - promptAt };
+              const x = withAnswer(withCall(current, kind, heard, parsed !== null, at), kind, heard, parsed !== null, at, next.ex.turn);
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn)
                 return x;

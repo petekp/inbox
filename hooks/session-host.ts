@@ -10,7 +10,7 @@ import { needsCatchUp, appliedCatchUp } from './session-status'
 import type { SendOutcome } from './session-presses'
 import type { CallKind, ProcessFailure, Session, HostTask } from '../types'
 import { askAndWriteStatus, readForStatus } from './status-records'
-import { askedCall, heardCall, withCall } from './call-record'
+import { askedCall, heardCall, withAnswer, withCall } from './call-record'
 import type { HeardCall } from './call-record'
 import type { StatusCall, StatusRecords } from './status-records'
 
@@ -277,7 +277,16 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
               const at = await host.now()
               const noted = (x: S) =>
-                reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at, x.ledger.turn) : x
+                reply.heard
+                  ? withAnswer(
+                      withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at),
+                      CATCH_UP_CALL,
+                      reply.heard,
+                      parsed !== null,
+                      at,
+                      x.ledger.turn,
+                    )
+                  : x
               const after = await host.update(x => appliedCatchUp(noted(x), s, parsed, at))
               if (!parsed) return 'stop' as const
               if (reply.kind === 'reply' && reply.statusCall)
@@ -292,7 +301,15 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             let isApplied = false as boolean
             const after = await host.update(async current => {
               const at = await host.now()
-              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at, next.ex.turn)
+              const heard = { ...asked, ms: at - promptAt }
+              const x = withAnswer(
+                withCall(current, kind, heard, parsed !== null, at),
+                kind,
+                heard,
+                parsed !== null,
+                at,
+                next.ex.turn,
+              )
               isApplied = false
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
               isApplied = parsed !== null

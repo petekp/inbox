@@ -65,21 +65,11 @@ function failureOf(kind: CallKind, heard: HeardCall, isParsed: boolean, at: numb
   }
 }
 
-/** The answer `heard` gave, for `lastAnswers`, or null when it gave no text. */
-function answerOf(kind: CallKind, heard: HeardCall, isParsed: boolean, at: number, turn: number): CallAnswer | null {
-  if (heard.text === null) return null
-  const { text } = heard
-
-  return { at, turn, reads: kind.reads, isParsed, text: text.slice(0, ANSWER_CHARS), chars: text.length }
-}
-
 /**
- * The session with one model call noted: an answer with text becomes its call's entry in `lastAnswers`, and its
- * call's record in `callFailures` changes as follows. A call with no usable answer becomes the record's
- * `lastFailure` and clears its `recoveredAt`. A usable answer sets `recoveredAt` when a failure is saved and no call
- * has answered since, and otherwise leaves the record as it was. `turn` is the turn the call answered.
+ * The session with the answer `heard` gave as its call's entry in `lastAnswers`: the start of its text, its length,
+ * when it arrived and the `turn` it answered. A call that gave no text leaves the session as it was.
  */
-export function withCall<S extends Session>(
+export function withAnswer<S extends Session>(
   s: S,
   kind: CallKind,
   heard: HeardCall,
@@ -87,13 +77,31 @@ export function withCall<S extends Session>(
   at: number,
   turn: number,
 ): S {
-  const answer = answerOf(kind, heard, isParsed, at, turn)
-  const answered = answer ? { ...s, lastAnswers: { ...s.lastAnswers, [kind.call]: answer } } : s
+  if (heard.text === null) return s
+  const { text } = heard
+  const answer: CallAnswer = {
+    at,
+    turn,
+    reads: kind.reads,
+    isParsed,
+    text: text.slice(0, ANSWER_CHARS),
+    chars: text.length,
+  }
+
+  return { ...s, lastAnswers: { ...s.lastAnswers, [kind.call]: answer } }
+}
+
+/**
+ * The session with one model call noted in its call's record. A call with no usable answer becomes the record's
+ * `lastFailure` and clears its `recoveredAt`. A usable answer sets `recoveredAt` when a failure is saved and no call
+ * has answered since, and otherwise leaves the session as it was.
+ */
+export function withCall<S extends Session>(s: S, kind: CallKind, heard: HeardCall, isParsed: boolean, at: number): S {
   const record = s.callFailures[kind.call]
   const failure = failureOf(kind, heard, isParsed, at)
   const isRecovery = !failure && record.lastFailure !== null && record.recoveredAt === null
-  if (!failure && !isRecovery) return answered
+  if (!failure && !isRecovery) return s
   const next = failure ? { lastFailure: failure, recoveredAt: null } : { ...record, recoveredAt: at }
 
-  return { ...answered, callFailures: { ...s.callFailures, [kind.call]: next } }
+  return { ...s, callFailures: { ...s.callFailures, [kind.call]: next } }
 }
