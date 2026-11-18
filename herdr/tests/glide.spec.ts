@@ -11,6 +11,7 @@ type Step = import('./frames').Step
 const { LINE_HEIGHT } = await import('../src/paint-theme')
 const { tabBlocks } = await import('../src/draw')
 const { AGENT, ALL, NOW, asks, demoScreen, uiOn } = await import('./fixtures')
+const { drawOuts } = await import('../src/out')
 
 function asksIn(order: string[], selected: string | null = null): Block[] {
   const screen = demoScreen()
@@ -439,6 +440,31 @@ test('opening the goal field shows its text field as soon as its box opens and c
     cuts: [],
     isShownOnceOpen: true,
   })
+})
+
+test('a press’s status under a row’s buttons fades in once the row’s box is nearly open, and fades out before its space closes', () => {
+  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
+  const out = { pressId: 'p5', rowId: 'd11', path: '/x', action: 'discuss', label: 'Discuss', pending: null, result: null }
+  const sending = drawOuts(open, [{ ...out, before: '', isWritten: true, waitingSince: NOW, isTaken: false }], {}, NOW)
+  const endsAt = 700
+  const { cuts, fading, heights } = framesOf(
+    [
+      [0, open],
+      [0, sending, 'input'],
+      [endsAt, open],
+    ],
+    1400,
+  )
+  const status = fading.filter(f => f.id === 'status d11')
+  const goneAt = status.at(-1)?.at ?? 0
+  const heightAt = (at: number) => heights[Math.round((at + 500) / 16)] ?? NaN
+  const whileFading = status.filter(f => f.at >= endsAt).map(f => heightAt(f.at))
+  expect({
+    cuts: cuts.filter(c => c.at >= 0),
+    fadesOut: (status.at(-1)?.opacity ?? 1) < 0.05,
+    holds: whileFading.every(h => h >= heightAt(endsAt) - 0.5),
+    shrinks: heightAt(goneAt + 300) < heightAt(endsAt) - 1,
+  }).toEqual({ cuts: [], fadesOut: true, holds: true, shrinks: true })
 })
 
 test('reopening the goal field while it still closes never raises the Status page above its closed height', () => {
