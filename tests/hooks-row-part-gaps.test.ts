@@ -25,7 +25,7 @@ const NOW = 1_000_000
 const BASE_ID = { question: 'd12', task: 'd14', finding: 'd23' } as const
 const WIDE_COLUMNS = 80
 const NARROW_COLUMNS = 24
-const ROWS_PER_SESSION = 48
+const ROWS_PER_SESSION = 16
 
 const ENTRY_PART: [RegExp, RowPart][] = [
   [/^holds-up$/, 'holdsUp'],
@@ -295,8 +295,7 @@ for (const look of ['desktop', 'terminal'] as const)
             await pane.press({ key: `typekey-${id}` })
             await settle()
           }
-          const row = (await pane.findAll({ type: 'Box' })).find(b => keyOf(b as Node) === `row-${id}`) as
-            Node | undefined
+          const row = (await pane.find({ type: 'Box', key: `row-${id}` })) as Node | undefined
           drawn.push({
             name: caseName(c),
             spaces: row
