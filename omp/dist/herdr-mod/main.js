@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T03:09:15.518Z. 287043 characters follow.
+// Built at 2026-11-18T04:23:55.522Z. 287182 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -5734,10 +5734,11 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
   });
 }
 var CLEAR = "#00000000";
-var buttonsEl = (buttons, p, indent, isInert = false) => {
+var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false) => {
+  const outdent = followsAnswers ? BUTTON_LABEL_X : 0;
   const followUps = buttons.filter((b) => b.isFollowUp);
   const others = buttons.filter((b) => !b.isFollowUp);
-  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent).children(others.map((b) => buttonEl(b, p, isInert, true))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
+  return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(CONTROL_GAP).pl(indent - outdent).children(others.map((b) => buttonEl(b, p, isInert, true))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().ml(outdent).gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
 };
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
@@ -6126,7 +6127,7 @@ function panelEl(r, m, p, isLeaving) {
   const parts = [
     ...bodyEls(from, r.isSelected, p, isInert),
     ...from.buttons.some((b) => !b.isOption) ? [
-      buttonsEl(from.buttons.filter((b) => !b.isOption), p, MARK_W, isInert)
+      buttonsEl(from.buttons.filter((b) => !b.isOption), p, MARK_W, isInert, from.buttons.some((b) => b.isOption))
     ] : [],
     ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(CONTROL_GAP)] : [],
     ...under ? [bodyLineEl(under, t, r.isSelected).pt(CONTROL_GAP)] : []

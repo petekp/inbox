@@ -234,6 +234,7 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
             p,
             MARK_W,
             isInert,
+            from.buttons.some(b => b.isOption),
           ),
         ]
       : []),

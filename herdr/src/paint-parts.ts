@@ -4,7 +4,7 @@ import { h_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS } from '../../hooks/help'
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import type { Button, Mark } from './blocks'
-import { BUTTON_H, BUTTON_PAD_X, BUTTON_PAD_Y, CONTROL_GAP, INSIDE_GAP, MARK_W, colorOf } from './paint-theme'
+import { BUTTON_H, BUTTON_LABEL_X, BUTTON_PAD_X, BUTTON_PAD_Y, CONTROL_GAP, INSIDE_GAP, MARK_W, colorOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { checkboxEl } from './paint-checkbox'
 import { TIMED_W, timeLeftEl } from './paint-timer'
@@ -74,7 +74,14 @@ const CLEAR = '#00000000'
  * The buttons wrap by line, and a button wider than its line wraps its label. The follow-ups, which come last, share
  * one group, so they wrap to the next line together.
  */
-export const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false): Element => {
+export const buttonsEl = (
+  buttons: Button[],
+  p: Paint,
+  indent: number,
+  isInert = false,
+  followsAnswers = false,
+): Element => {
+  const outdent = followsAnswers ? BUTTON_LABEL_X : 0
   const followUps = buttons.filter(b => b.isFollowUp)
   const others = buttons.filter(b => !b.isFollowUp)
 
@@ -83,13 +90,14 @@ export const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert =
     .items_center()
     .gap(CONTROL_GAP)
     .pt(CONTROL_GAP)
-    .pl(indent)
+    .pl(indent - outdent)
     .children(others.map(b => buttonEl(b, p, isInert, true)))
     .when(followUps.length > 0, e =>
       e.child(
         h_flex()
           .flex_wrap()
           .items_center()
+          .ml(outdent)
           .gap_x(CONTROL_GAP)
           .gap_y(INSIDE_GAP)
           .children(followUps.map(b => buttonEl(b, p, isInert))),

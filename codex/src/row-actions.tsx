@@ -127,10 +127,12 @@ export function RowActions({
   more,
   reply,
   isBlocked,
+  followsAnswers = false,
 }: {
   keys: RowAction[]
   more: RowAction[]
   reply: Reply | null
+  followsAnswers?: boolean
   isBlocked: () => boolean
 }) {
   if (reply)
@@ -162,7 +164,7 @@ export function RowActions({
   return (
     <div class="actions">
       {keys.length + more.length > 0 ? (
-        <div class="keys">
+        <div class={followsAnswers ? 'keys follows-answers' : 'keys'}>
           {keys.map(action => (
             <ActionButton action={action} isBlocked={isBlocked} />
           ))}
