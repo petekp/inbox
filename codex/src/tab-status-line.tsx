@@ -1,7 +1,7 @@
 import { Icon, RowActions } from './row-actions'
-import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
+import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
-import { unfoldedRows } from '../../hooks/status-folds'
+import { COUNTS_GAP, COUNTS_LABEL, countWords, unfoldedRows } from '../../hooks/status-folds'
 import { statusRowPads } from '../../hooks/status-gaps'
 import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
@@ -192,9 +192,11 @@ export function StatusLine({
         <div class="content tight muted">{row.text}</div>
       </div>
     )
-  if (row.kind === 'done-fold') {
+  if (row.kind === 'done-fold' || row.kind === 'counts') {
     const isUnfolded = statusUnfolded.has(row.id)
     const fold = foldMotion(row.id)
+    const chevron = <Icon name={isUnfolded ? 'down' : 'right'} />
+    const doneWords = row.kind === 'done-fold' ? row.text.split(' ') : []
 
     return (
       <>
@@ -205,8 +207,37 @@ export function StatusLine({
             data-fold={fold}
             onClick={e => clickFold(e, isUnfolded, () => toggleStatusFold(row.id))}
           >
-            {row.text}
-            <Icon name={isUnfolded ? 'down' : 'right'} />
+            {row.kind === 'counts' ? (
+              row.counts.map((c, n) => {
+                const isLast = n === row.counts.length - 1
+                const unit = (
+                  <>
+                    <span class={markClassOf(c.tone, false)}>
+                      <MarkGlyph text={c.mark} />
+                    </span>
+                    {countWords(c)}
+                    {isLast ? chevron : null}
+                  </>
+                )
+
+                return (
+                  <span key={n}>
+                    {n === 0 ? COUNTS_LABEL : null}
+                    <span class={isLast ? 'fold-end' : undefined}>{unit}</span>
+                    {isLast ? null : COUNTS_GAP}
+                  </span>
+                )
+              })
+            ) : (
+              <>
+                {doneWords.slice(0, -1).join(' ')}
+                {doneWords.length > 1 ? ' ' : null}
+                <span class="fold-end">
+                  {doneWords.at(-1)}
+                  {chevron}
+                </span>
+              </>
+            )}
           </button>
         </div>
         {isUnfolded || closingFolds.has(fold) ? (
@@ -224,26 +255,6 @@ export function StatusLine({
         {row.description ? <div class="muted part-description">{row.description}</div> : null}
       </div>
     )
-  if (row.kind === 'counts')
-    return (
-      <div class="row" style={rowStyle} {...lineMotion(motion)}>
-        <span class="mark" />
-        <div class="content tight">
-          <div>
-            {row.counts.map((c, n) => (
-              <span key={n}>
-                {n > 0 ? <span class="muted">{STALL_GAP}</span> : null}
-                <span class={markClassOf(c.tone, false)}>
-                  <MarkGlyph text={c.mark} />
-                </span>
-                <span class="muted"> {c.text}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-
   const subjects = seenSubjectIds(row)
 
   return (

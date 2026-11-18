@@ -1,7 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
-import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT, titleToBodyGapPt } from '../../hooks/layout'
 import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import { STALL_GAP } from '../../hooks/status-page'
 import { isOpenRow } from './blocks'
@@ -64,13 +64,15 @@ const bodyLineEl = (
   isInert = false,
 ): Element => {
   const above =
-    l.gapAbove === 'item'
-      ? ITEM_GAP
-      : l.gapAbove === 'child'
-        ? CHILD_GAP
-        : l.gapAbove === 'list'
-          ? LIST_GAP
-          : INSIDE_GAP
+    l.gapAbove === 'title'
+      ? titleToBodyGapPt(answers.length > 0)
+      : l.gapAbove === 'item'
+        ? ITEM_GAP
+        : l.gapAbove === 'child'
+          ? CHILD_GAP
+          : l.gapAbove === 'list'
+            ? LIST_GAP
+            : INSIDE_GAP
   const color = lineColor(t, isSelected ? t.selected : t.background)
   if (answers.length > 0 && p) {
     const trunk =
@@ -464,6 +466,24 @@ function emptyContentEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert:
     )
 }
 
+/** Other work's counts: the label, then each mark in its tone with its count, as items of a wrapping row so a count stays with its mark. */
+const countsEl = (counts: NonNullable<Extract<Block, { kind: 'fold' }>['counts']>, t: Theme): Element =>
+  h_flex()
+    .flex_wrap()
+    .min_w(0)
+    .children([
+      ...wordEls(counts.label, t.muted),
+      ...counts.items.flatMap((c, n) => [
+        ...(n > 0 ? wordEls('·', t.muted) : []),
+        h_flex()
+          .flex_none()
+          .children([
+            div().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+            statusPartEl(`${NO_BREAK_SPACE}${c.text}${NO_BREAK_SPACE}`).text_color(t.muted),
+          ]),
+      ]),
+    ])
+
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const press: Button = {
@@ -487,7 +507,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .accessibility_label(b.text)
     .when(!isInert, e => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
-    .child(div().min_w(0).whitespace_normal().child(b.text))
+    .child(fold?.counts ? countsEl(fold.counts, t) : div().min_w(0).whitespace_normal().child(b.text))
     .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))
 }
 

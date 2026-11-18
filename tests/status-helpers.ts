@@ -2,6 +2,7 @@ import { parseStatus } from '../hooks/status'
 import type { Op } from '../hooks/status'
 import { applyOps } from '../hooks/status-ops'
 import { emptySession } from '../hooks/session-files'
+import { countsText } from '../hooks/status-folds'
 import { statusPage } from '../hooks/status-page'
 import type { StatusRow } from '../hooks/status-page'
 import type { Item, SessionStatus, Session } from '../types'
@@ -58,7 +59,7 @@ export const shape = (rows: StatusRow[]) =>
           : r.kind === 'part'
             ? `== ${r.text}`
             : r.kind === 'counts'
-              ? r.counts.map(c => `${c.mark} ${c.text}`).join(' · ')
+              ? `${countsText(r.counts)} ›`
               : r.kind === 'done-fold'
                 ? `› ${r.text}`
                 : `${r.mark} ${r.text}`,

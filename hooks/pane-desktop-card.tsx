@@ -4,7 +4,7 @@ import type { paneDesktopTree } from './pane-desktop-tree'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
-import { CHILD_GAP_PT, ITEM_GAP_PT, LIST_GAP_PT } from './layout'
+import { CHILD_GAP_PT, ITEM_GAP_PT, LIST_GAP_PT, titleToBodyGapPt } from './layout'
 import {
   DESKTOP_ANSWER_BUTTON_PT,
   DESKTOP_ANSWER_LABEL_CELLS,
@@ -135,7 +135,7 @@ export function paneDesktopCard({
             children: [title, row.subtitle ?? null, row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null],
           })}
           {groups.map((group, n) => {
-            const padY = n > 0 ? halfGapBetween(groups[n - 1], group) : 0
+            const padY = n > 0 ? halfGapBetween(groups[n - 1], group) : desktopPad(titleToBodyGapPt(isAnswer(group[0])))
             const padBelow = n < groups.length - 1 ? halfGapBetween(group, groups[n + 1]) : 0
             const { pos } = group[0]!
             const shape = pos === 'mid' || pos === 'last' || pos === 'pass' ? pos : null

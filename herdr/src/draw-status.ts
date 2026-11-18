@@ -3,9 +3,9 @@ import { goalKeyGroups, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_I
 import type { StatusKey } from '../../hooks/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../hooks/status-goal-page'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
-import { STALL_GAP, WAS_PREFIX, mergedLine } from '../../hooks/status-page'
+import { WAS_PREFIX, mergedLine } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { isParentCollapsed, milestoneRows, unfoldedRows } from '../../hooks/status-folds'
+import { COUNTS_LABEL, countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../hooks/status-folds'
 import { statusGaps } from '../../hooks/status-gaps'
 import { LATER_TEXT, isSpacedAbove, workJoints } from '../../hooks/status-path'
 import type { PathLine, WorkJoint } from '../../hooks/status-path'
@@ -108,15 +108,21 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
       { kind: 'rule', id: row.id, text: row.text, ...(row.isTitle ? { isTitle: true as const } : {}) },
       ...(row.description ? [note(`${row.id} description`, row.description, 'muted')] : []),
     ]
-  if (row.kind === 'counts')
-    return [{ ...note(row.id, row.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP), 'muted'), depth: row.depth }]
-  if (row.kind === 'done-fold')
+  if (row.kind === 'done-fold' || row.kind === 'counts')
     return [
       {
         kind: 'fold',
         id: row.id,
         depth: row.depth,
-        text: row.text,
+        text: row.kind === 'counts' ? countsText(row.counts) : row.text,
+        ...(row.kind === 'counts'
+          ? {
+              counts: {
+                label: COUNTS_LABEL,
+                items: row.counts.map(c => ({ mark: markOf(c.mark, c.tone, false), text: c.text })),
+              },
+            }
+          : {}),
         isOpen: isUnfolded(row.id),
         change: { toggleFold: row.id },
       },

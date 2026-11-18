@@ -32,6 +32,9 @@
 .fold:hover {
   color: var(--text);
 }
+.fold .fold-end {
+  white-space: nowrap;
+}
 .fold .icon {
   width: 12px;
   height: 12px;
