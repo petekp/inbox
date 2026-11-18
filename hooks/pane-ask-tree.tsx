@@ -1,3 +1,4 @@
+import type { AnswerRow } from './action-plan'
 import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
 import type { KeyAction } from './pane-keys'
@@ -17,6 +18,8 @@ export type AskEntry = {
   rest: string
   /** An answer, drawn as its button in place of `label`. */
   option?: KeyAction
+  /** The answers side by side, drawn as their buttons on one line in place of `label`. */
+  options?: KeyAction[]
   /** The answer this line is the note of, which it nests under at the answer's label. */
   noteOf?: KeyAction
 }
@@ -24,23 +27,32 @@ export type AskEntry = {
 /**
  * An open question's or task's Holds up line, context, earlier answer and option lines, in that order. In the terminal
  * they hang from the row's ◆ on one connector: the Holds up line and each option on a branch, the context and earlier
- * answer beside it. `askEntries` gives desktop the same entries, which it draws on its own hairline pieces.
+ * answer beside it. Answers that `answerRow` lets sit side by side and that fit `width` share one branch, with the
+ * recommendation's reason under them. `askEntries` gives desktop the same entries, which it draws on its own hairline
+ * pieces.
  */
 export function paneAskTree(
-  { look, Box, Text, pal }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal'>,
+  { look, Box, Text, pal, space }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'space'>,
   { branch }: Pick<PaneRowLines, 'branch'>,
   keyedButton: (rowId: string, isFollowUp?: boolean, width?: number) => (action: KeyAction) => JSX.Element,
+  answersFit: (answers: KeyAction[], width: number) => boolean,
 ) {
-  const entriesOf = (view: RowView, answers: KeyAction[]): AskEntry[] => {
+  const sideBySide = (answers: KeyAction[], recLine: string | null): AskEntry[] => [
+    { key: 'options', pos: 'mid', label: '', rest: '', options: answers },
+    ...(recLine
+      ? [{ key: 'reason-options', pos: 'pass' as const, label: '', rest: recLine, noteOf: answers[0]! }]
+      : []),
+  ]
+  const stacked = (answers: KeyAction[]) =>
+    answers.flatMap((option, n): AskEntry[] => [
+      { key: `option-${n}`, pos: 'mid', label: option.label, rest: '', option },
+      ...(option.note
+        ? [{ key: `reason-${n}`, pos: 'pass' as const, label: '', rest: option.note, noteOf: option }]
+        : []),
+    ])
+  const entriesOf = (view: RowView, answers: KeyAction[], answerRow: AnswerRow | null, width: number): AskEntry[] => {
     if (view.type === 'finding' || view.state.is !== 'open') return []
-    const options = answers.flatMap((option, n): AskEntry[] => {
-      return [
-        { key: `option-${n}`, pos: 'mid', label: option.label, rest: '', option },
-        ...(option.note
-          ? [{ key: `reason-${n}`, pos: 'pass' as const, label: '', rest: option.note, noteOf: option }]
-          : []),
-      ]
-    })
+    const options = answerRow && answersFit(answers, width) ? sideBySide(answers, answerRow.recLine) : stacked(answers)
     const holdsUp = view.state.is === 'open' && view.holdsUpLine ? view.holdsUpLine : null
     const context: AskEntry[] = view.contextLine
       ? [{ key: 'context', pos: null, label: '', rest: view.contextLine }]
@@ -66,10 +78,10 @@ export function paneAskTree(
     })
   }
   const hasTree = (view: RowView, answers: KeyAction[]) =>
-    look === 'terminal' && entriesOf(view, answers).some(e => e.pos !== null)
+    look === 'terminal' && entriesOf(view, answers, null, Infinity).some(e => e.pos !== null)
   /** `width` is the cells of the row's text column, which an answer's label wraps to. */
-  const askTree = (view: RowView, answers: KeyAction[], width: number) => {
-    const entries = entriesOf(view, answers)
+  const askTree = (view: RowView, answers: KeyAction[], answerRow: AnswerRow | null, width: number) => {
+    const entries = entriesOf(view, answers, answerRow, width)
     if (entries.length === 0) return null
     const isTree = entries.some(e => e.pos !== null)
 
@@ -82,7 +94,11 @@ export function paneAskTree(
               flexShrink={1}
               paddingLeft={(isTree ? TREE_TEXT_INDENT : 0) + (e.noteOf ? terminalLabelCells(e.noteOf) : 0)}
             >
-              {e.option ? (
+              {e.options ? (
+                <Box flexDirection="row" columnGap={space.buttonGap}>
+                  {e.options.map(keyedButton(view.id, false, width))}
+                </Box>
+              ) : e.option ? (
                 keyedButton(view.id, false, width)(e.option)
               ) : (
                 <Text wrap="wrap">

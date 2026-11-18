@@ -6,7 +6,7 @@ import type { RowPress } from './presses'
 import type { PrPress } from './pr-press'
 import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
-import { ROW_COPY, OPTIONS_FOLD_AT, isWaitingRow, optionNote } from './rows'
+import { ROW_COPY, OPTIONS_FOLD_AT, isWaitingRow, optionNote, optionReasonLine } from './rows'
 import type { RowState, ActionView, RowView, SettledState } from './rows'
 import { pressOutAction, outAction, isAgain, fixLabel } from './feedback'
 import type { Feedback } from './feedback'
@@ -305,7 +305,7 @@ export type PlannedOption = {
 export function rowKeyPlan(
   r: RowView,
   isAllShown: boolean,
-): { options: PlannedOption[]; keys: PlannedKey[]; more: ActionKey[] } {
+): { options: PlannedOption[]; keys: PlannedKey[]; more: ActionKey[]; answerRow: AnswerRow | null } {
   const shown = r.actions.filter(a => isAllShown || !a.isFolded)
   const folded = r.actions.length - shown.length
   const lastOption = shown.map(a => a.press.action).lastIndexOf('answer')
@@ -341,11 +341,32 @@ export function rowKeyPlan(
       })
   }
 
-  return { options, keys, more }
+  return { options, keys, more, answerRow: answerRowOf(r, options) }
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */
 type ActionSpacing = { width: number; gap: number; separator: number }
+
+/**
+ * A question's answers drawn side by side on one line, under one arm of its tree, with `recLine`, the recommendation's
+ * reason, on one line under them. A plan offers it when two or more answers show and none has a description of its own.
+ * A look draws it only when `answersFitLine` says the answers fit its text column, and else stacks each answer on its
+ * own arm with its note under it.
+ */
+export type AnswerRow = { recLine: string | null }
+
+function answerRowOf(r: RowView, options: PlannedOption[]): AnswerRow | null {
+  const described = options.map(o => r.optionDescriptions.find(d => d.option === o.action.press.option))
+  const hasDescription = described.some(d => d !== undefined && d.description !== null)
+  if (options.length < 2 || hasDescription) return null
+
+  return { recLine: described.map(d => (d ? optionReasonLine(d) : null)).find(l => l !== null) ?? null }
+}
+
+/** Whether buttons `widths` wide fit side by side on a line `room` wide, `gap` apart, in one unit a look picks. */
+export function answersFitLine(widths: readonly number[], gap: number, room: number): boolean {
+  return widths.reduce((sum, w) => sum + w, 0) + gap * Math.max(0, widths.length - 1) <= room
+}
 
 /**
  * Lays out a row's buttons, then its follow-ups, filling each line before the next. The follow-ups stay on the

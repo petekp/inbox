@@ -20,6 +20,7 @@ import {
 import { feedbackOf, markedFeedbackText, isFailure, rowFeedbackText } from '../../hooks/feedback'
 import { groupEmptyText } from '../../hooks/banners'
 import { rowKeyPlan } from '../../hooks/action-plan'
+import type { AnswerRow } from '../../hooks/action-plan'
 import type { BannerView } from '../../hooks/banners'
 import type { ClosedDelivery, RowView, ResultMark } from '../../hooks/rows'
 import type { Feedback } from '../../hooks/feedback'
@@ -83,6 +84,8 @@ export type Line = {
     at: number
   } | null
   buttons: Button[]
+  /** Set when a question's answers may sit side by side, as `rowKeyPlan` offers it. */
+  answerRow?: AnswerRow
   row: RowView | null
   /** The group a Closed line folds. Enter unfolds or folds it. */
   fold: FoldKind | null
@@ -155,6 +158,12 @@ function feedbackTone(f: Feedback): Tone | null {
   if (f.is === 'done' || (f.is === 'local' && f.result.state === 'done') || f.is === 'closed') return 'done'
 
   return null
+}
+
+function answerRowOf(row: RowView, isAllShown: boolean): { answerRow?: AnswerRow } {
+  const { answerRow } = rowKeyPlan(row, isAllShown)
+
+  return answerRow ? { answerRow } : {}
 }
 
 function rowButtons(row: RowView, isAllShown: boolean): Button[] {
@@ -247,6 +256,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
           }
         : null,
     buttons: state.is === 'settled' ? [] : rowButtons(row, isAllShown),
+    ...answerRowOf(row, isAllShown),
     row,
     isWaiting: isWaitingRow(row),
     isFolded: state.is === 'handedOff',

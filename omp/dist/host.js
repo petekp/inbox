@@ -425,6 +425,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-tree": { kind: "full" },
+      "answers-side-by-side": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "earlier-answers": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
@@ -556,6 +557,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-tree": { kind: "full" },
+      "answers-side-by-side": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "earlier-answers": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
@@ -675,6 +677,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-tree": { kind: "full" },
+      "answers-side-by-side": { kind: "full" },
       "asks-context-line": { kind: "full" },
       "earlier-answers": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
@@ -7484,7 +7487,17 @@ function rowKeyPlan(r, isAllShown) {
         hotkey: a.hotkey
       });
   }
-  return { options, keys, more };
+  return { options, keys, more, answerRow: answerRowOf(r, options) };
+}
+function answerRowOf(r, options) {
+  const described = options.map((o) => r.optionDescriptions.find((d) => d.option === o.action.press.option));
+  const hasDescription = described.some((d) => d !== undefined && d.description !== null);
+  if (options.length < 2 || hasDescription)
+    return null;
+  return { recLine: described.map((d) => d ? optionReasonLine(d) : null).find((l) => l !== null) ?? null };
+}
+function answersFitLine(widths, gap, room) {
+  return widths.reduce((sum, w) => sum + w, 0) + gap * Math.max(0, widths.length - 1) <= room;
 }
 function actionLines(keys, more, { width, gap, separator }) {
   const lines = [];
@@ -8396,7 +8409,10 @@ function askTreeLines(line, pad, width, s, cell, labelCells) {
   const holdsUp = row.holdsUpLine;
   const draw = (arm, text, rest, indent = 0) => wrapText(text, room - indent).map((l, i) => s.dim(margin + (i === 0 ? arm : rest) + " ".repeat(indent)) + s.dim(l));
   const heads = holdsUp ? [{ text: holdsUp }] : [];
-  const lastBranch = heads.length + branches.length - 1;
+  const answerRow = line.answerRow ?? null;
+  const oneLine = branches.map((a) => cell(a.b, a.index, Infinity)[0]);
+  const isSideBySide = answerRow !== null && answersFitLine(oneLine.map(visibleLength), 0, room);
+  const lastBranch = heads.length + (isSideBySide ? 1 : branches.length) - 1;
   const drawHead = (text, n) => {
     const isLast = n === lastBranch;
     return draw(isLast ? LAST : TEE, text, isLast ? NONE : TRUNK);
@@ -8424,7 +8440,12 @@ function askTreeLines(line, pad, width, s, cell, labelCells) {
       out.push(isAnswerWhole ? arms + s.dim(earlier.lead) + s.bold(earlier.answer) + s.dim(l.slice(head.length)) : arms + s.dim(l));
     });
   }
-  branches.forEach((b, n) => out.push(...drawAnswer(b, heads.length + n)));
+  if (answerRow && isSideBySide && branches[0]) {
+    out.push(s.dim(margin + LAST) + oneLine.join(""));
+    if (answerRow.recLine)
+      out.push(...draw(NONE, answerRow.recLine, NONE, labelCells(branches[0].b)));
+  } else
+    branches.forEach((b, n) => out.push(...drawAnswer(b, heads.length + n)));
   return out;
 }
 
@@ -9079,6 +9100,10 @@ function feedbackTone(f) {
     return "done";
   return null;
 }
+function answerRowOf2(row, isAllShown) {
+  const { answerRow } = rowKeyPlan(row, isAllShown);
+  return answerRow ? { answerRow } : {};
+}
 function rowButtons(row, isAllShown) {
   const { options, keys, more } = rowKeyPlan(row, isAllShown);
   const recommended = row.item?.rec;
@@ -9155,6 +9180,7 @@ function lineOfRow(row, isAllShown) {
       at: state.at
     } : null,
     buttons: state.is === "settled" ? [] : rowButtons(row, isAllShown),
+    ...answerRowOf2(row, isAllShown),
     row,
     isWaiting: isWaitingRow(row),
     isFolded: state.is === "handedOff"

@@ -3072,6 +3072,7 @@ export const register: Register = on => {
       rowActions,
       fieldActions,
       keyedButton,
+      answersFit,
     } = paneRowKeys(
       { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
       handlers,
@@ -3158,6 +3159,7 @@ export const register: Register = on => {
         fieldActions,
         actionRows,
         keyedButton,
+        answersFit,
         desktopFrame,
       },
       handlers,

@@ -46,6 +46,7 @@ export type FeatureId =
   | 'status-failed-warning'
   | 'asks-holds-up-line'
   | 'asks-tree'
+  | 'answers-side-by-side'
   | 'asks-context-line'
   | 'earlier-answers'
   | 'status-mid-turn-refresh'

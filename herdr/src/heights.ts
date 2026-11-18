@@ -36,6 +36,11 @@ export class Heights {
     return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.height
   }
 
+  /** The width a box last measured, at zoom 1. */
+  widthOf(key: string): number | undefined {
+    return this.sizes.get(key)?.width
+  }
+
   /**
    * Saves a size gpui-kit's size callback reported at `zoom`. The callback reports a size the zoom has already scaled,
    * while a size set on an element, as `h`, is at zoom 1 and the app scales it, so the size is kept divided by the zoom.

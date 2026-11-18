@@ -15,7 +15,7 @@ test('the Codex tab draws a question’s earlier answer on the line after its co
   const window = new Window()
   Object.assign(globalThis, { document: window.document })
   const root = window.document.createElement('div')
-  render(askTree(row, [], () => false).body, root as never)
+  render(askTree(row, [], null, () => false).body, root as never)
   const lines = [...root.querySelectorAll('.context-line')]
   assert.deepEqual(
     lines.map(l => l.textContent),

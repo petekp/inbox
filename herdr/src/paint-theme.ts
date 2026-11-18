@@ -36,6 +36,8 @@ export type Theme = Record<
   | 'selected'
   | 'solid'
   | 'solid_foreground'
+  | 'accent'
+  | 'accent_foreground'
   | 'muted'
   | 'done'
   | 'ansi1'
@@ -191,7 +193,7 @@ export type Paint = {
   pick: (tab: ShownTab, cx: Context) => void
   motion: ReadonlyMap<string, RowMotion>
   /** Each block's height without its space, and each row's panel's, by `panelId`, from its last measure. */
-  heights: { get: (key: string) => number | undefined }
+  heights: { get: (key: string) => number | undefined; widthOf: (key: string) => number | undefined }
   /**
    * Whether a block's box takes its height at once in this draw: in the first draw of a tab, the Help page or a session,
    * and after its height changed with its width.
@@ -212,6 +214,8 @@ export type Paint = {
   isNarrow: boolean
   /** The list's height inside its padding, from its last measure, which an empty tab's block fills. Null until measured. */
   listRoom: number | null
+  /** The width of a top-level row's text column, from the text's left edge to the pane's padding. */
+  rowTextRoom: number
 }
 
 /**
@@ -221,6 +225,7 @@ export type Paint = {
 export const paneFit = (reported: { paneWidth: number; listHeight: number | null }, zoom: number) => ({
   isNarrow: reported.paneWidth / zoom < NARROW_PANE,
   listRoom: reported.listHeight === null ? null : Math.max(0, reported.listHeight / zoom - EDGE - END_SPACE),
+  rowTextRoom: Math.max(0, reported.paneWidth / zoom - TEXT_X - EDGE),
 })
 
 /** A size callback that keeps what `read` takes from a box's size as `view[key]`, and draws again when that changed. */
