@@ -1,5 +1,4 @@
 import type { ComponentChildren } from 'preact'
-import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { answersFitLine } from '../../hooks/action-plan'
 import type { AnswerRow } from '../../hooks/action-plan'
 import type { RowView } from '../../hooks/rows'
@@ -9,48 +8,53 @@ import type { Key, Row } from './tab-state'
 /** A line of the tree. `isBranch` joins it to the trunk with an arm. */
 type Entry = { isBranch: boolean; draw: (place: string) => ComponentChildren }
 
-type AnswersProps = { options: Key[]; answerRow: AnswerRow | null; isBlocked: () => boolean }
+type AnswersProps = { rowId: string; options: Key[]; answerRow: AnswerRow | null; isBlocked: () => boolean }
+
+/** The attribute on a tree whose answers may sit side by side, naming its row. */
+const ANSWERS_ATTRIBUTE = 'data-answers'
+
+/** Whether each row's answers last fit one line, by row id. A row not yet measured draws them side by side. */
+const answersFit = new Map<string, boolean>()
 
 /** Whether the answers' buttons, as drawn in `tree`, fit side by side on one line of it. */
-function fitsOneLine(tree: HTMLElement, line: HTMLElement): boolean {
+function fitsOneLine(tree: HTMLElement): boolean {
+  const line = tree.querySelector<HTMLElement>('.option-choice')
   const widths = Array.from(
     tree.querySelectorAll<HTMLElement>('.option-choice > .option-button > .key'),
     b => b.getBoundingClientRect().width,
   )
   const gap = parseFloat(getComputedStyle(tree).getPropertyValue('--control-gap')) || 0
 
-  return answersFitLine(widths, gap, line.clientWidth)
+  return line !== null && answersFitLine(widths, gap, line.clientWidth)
 }
 
 /**
- * A question's answers, the last branches of its tree. When `answerRow` lets them, and their buttons fit one line of
- * the tree, they share one branch with the recommendation's reason under them. Otherwise each answer is its own branch
- * with its note under it. The buttons are measured, in either form, before the page paints and whenever the tree's
- * width changes.
+ * Measures the answers of every tree under `root` that may draw them side by side, in the form they are drawn in now.
+ * True when a row's form changed, so the caller draws again before it measures the rows for their glides.
  */
-function Answers({ options, answerRow, isBlocked }: AnswersProps) {
-  const first = useRef<HTMLParagraphElement>(null)
-  const [isSideBySide, setSideBySide] = useState(answerRow !== null)
-  const labels = options.map(o => o.label).join('\n')
+export function settleAnswers(root: HTMLElement): boolean {
+  let isChanged = false
+  for (const tree of root.querySelectorAll<HTMLElement>(`[${ANSWERS_ATTRIBUTE}]`)) {
+    const rowId = tree.getAttribute(ANSWERS_ATTRIBUTE)!
+    const fits = fitsOneLine(tree)
+    if (answersFit.get(rowId) !== fits) isChanged = true
+    answersFit.set(rowId, fits)
+  }
 
-  useLayoutEffect(() => {
-    const tree = first.current?.parentElement
-    if (!tree) return
-    // The first line is a new element after the form changes, so each check finds it again.
-    const check = () => {
-      const line = first.current
-      setSideBySide(answerRow !== null && line !== null && fitsOneLine(tree, line))
-    }
-    check()
-    const resized = new ResizeObserver(check)
-    resized.observe(tree)
+  return isChanged
+}
 
-    return () => resized.disconnect()
-  }, [labels, answerRow?.recLine, answerRow === null])
+/**
+ * A question's answers, the last branches of its tree. When `answerRow` lets them, and their buttons last fit one line
+ * of the tree, they share one branch with the recommendation's reason under them. Otherwise each answer is its own
+ * branch with its note under it. `settleAnswers` measures them.
+ */
+function Answers({ rowId, options, answerRow, isBlocked }: AnswersProps) {
+  const isSideBySide = answerRow !== null && (answersFit.get(rowId) ?? true)
 
-  if (isSideBySide && answerRow)
+  if (isSideBySide)
     return (
-      <p ref={first} class="option-choice option-row tree-last">
+      <p class="option-choice option-row tree-last">
         <span class="option-button">
           {options.map((o, n) => (
             <ActionButton key={n} action={o} isBlocked={isBlocked} />
@@ -63,11 +67,7 @@ function Answers({ options, answerRow, isBlocked }: AnswersProps) {
   return (
     <>
       {options.map((o, n) => (
-        <p
-          key={n}
-          ref={n === 0 ? first : undefined}
-          class={`option-choice tree-${n === options.length - 1 ? 'last' : 'before'}`}
-        >
+        <p key={n} class={`option-choice tree-${n === options.length - 1 ? 'last' : 'before'}`}>
           <span class="option-button">
             <ActionButton action={o} isBlocked={isBlocked} />
           </span>
@@ -121,10 +121,10 @@ export function askTree(
 
   return {
     hasTree,
-    body: (
-      <div class={hasTree ? 'tree' : 'tree plain'}>
+    body: () => (
+      <div class={hasTree ? 'tree' : 'tree plain'} {...(answerRow ? { [ANSWERS_ATTRIBUTE]: r.id } : {})}>
         {entries.map((e, n) => e.draw(n === lastBranch ? 'last' : n > lastBranch ? 'after' : 'before'))}
-        {hasAnswers ? <Answers options={options} answerRow={answerRow} isBlocked={isBlocked} /> : null}
+        {hasAnswers ? <Answers rowId={r.id} options={options} answerRow={answerRow} isBlocked={isBlocked} /> : null}
       </div>
     ),
   }

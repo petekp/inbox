@@ -423,9 +423,8 @@ export default class Inbox extends View {
       motion: new Map(),
       heights: this.heights,
       isAtOnce: key => isFirst || resized.has(key),
-      measure: (key, size, cx) => {
-        if (this.heights.measure(key, size, zoomOf(settings()))) cx.notify()
-      },
+      measure: (key, size, cx, isWidthDrawn) =>
+        this.heights.measure(key, size, zoomOf(settings()), isWidthDrawn) && cx.notify(),
       now,
       newRows: this.ui.newRows,
       closedSeen: this.ui.closedSeen,

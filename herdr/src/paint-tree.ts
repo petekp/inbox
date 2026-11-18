@@ -72,7 +72,7 @@ export const answersEl = (
   const arm = armEl(PATH_X - EDGE, ARM_END, '50%', lineColor(t, isSelected ? t.selected : t.background))
   const isAlone = answers.length === 1
   const buttons = answers.map(b =>
-    buttonEl(b, p, isInert, isAlone).on_size_change((size, cx) => p.measure(answerKey(b.id), size, cx)),
+    buttonEl(b, p, isInert, isAlone).on_size_change((size, cx) => p.measure(answerKey(b.id), size, cx, true)),
   )
 
   return h_flex()

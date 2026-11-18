@@ -199,8 +199,8 @@ export type Paint = {
    * and after its height changed with its width.
    */
   isAtOnce: (key: string) => boolean
-  /** Saves a measured size under `key`, and draws again when its height changed. */
-  measure: (key: string, size: { width: number; height: number }, cx: Context) => void
+  /** Saves a measured size under `key`, and draws again when its height changed, or with `isWidthDrawn` its width. */
+  measure: (key: string, size: { width: number; height: number }, cx: Context, isWidthDrawn?: boolean) => void
   now: number
   /** The rows whose title is tinted as new, by id, and the tab the look draws. */
   newRows: NewRows

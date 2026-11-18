@@ -49,7 +49,8 @@ export type Row = {
   /** Whether the open row draws a tree under its title, which its ◆ in the mark column starts. */
   hasTree?: boolean
   age?: string
-  body?: JSX.Element | null
+  /** Draws the open row's body at each render, so a decision a draw makes after rendering, such as whether a question's answers fit one line, reaches it. */
+  body?: () => JSX.Element
   /** An open question's answers, which its tree draws as buttons. Their hotkeys press them. */
   options: Key[]
   keys: Key[]

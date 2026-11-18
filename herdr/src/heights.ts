@@ -47,9 +47,10 @@ export class Heights {
    * True when its height changed, so the look draws again to move to it, or when the zoom changed, so the look draws
    * again with the sizes it reads from the zoom, as whether the pane is narrow. A box whose height changed with its
    * width, as when the pane is resized, takes its new height in the next draw instead of gliding to it, so its text
-   * does not lag the pane.
+   * does not lag the pane. With `isWidthDrawn`, a change of width alone is also true, for a box whose width the look
+   * reads to choose a form, as answer buttons' widths choose whether they sit side by side.
    */
-  measure(key: string, reported: Size, zoom: number): boolean {
+  measure(key: string, reported: Size, zoom: number, isWidthDrawn = false): boolean {
     const size = { width: reported.width / zoom, height: reported.height / zoom }
     const isZoomChanged = this.zoom !== null && this.zoom !== zoom
     this.zoom = zoom
@@ -58,7 +59,7 @@ export class Heights {
     const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height
     if (isRewrapped) this.resized.add(key)
 
-    return was?.height !== size.height || isZoomChanged
+    return was?.height !== size.height || isZoomChanged || (isWidthDrawn && was?.width !== size.width)
   }
 
   /** The keys whose height changed with their width since the last draw. Each draws once at its own height. */

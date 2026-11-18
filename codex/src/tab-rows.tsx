@@ -281,7 +281,7 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
-    body: (
+    body: () => (
       <div>
         <p style={{ whiteSpace: 'pre-line' }}>{inlineHtml(r.detail ?? '')}</p>
         {f.path ? (
@@ -344,7 +344,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
     title: text.title,
     meta: text.meta,
     age: t.at === null ? undefined : shortAgo(v.at - t.at),
-    body: (
+    body: () => (
       <div>
         {rest ? <p class="quote">{inlineHtml(clipLabel(rest, PR_QUOTE_CHARS))}</p> : null}
         <p class="muted">
@@ -382,7 +382,7 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
     title: text.title,
     meta: ran,
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
-    body: <div class="muted">{ran}</div>,
+    body: () => <div class="muted">{ran}</div>,
     options: [],
     keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, pr, a)),
     more: [],

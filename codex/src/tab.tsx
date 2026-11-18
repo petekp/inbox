@@ -22,6 +22,7 @@ import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
 import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
+import { settleAnswers } from './tab-ask-tree'
 import { pressUndoKey } from './undo-key'
 import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
 
@@ -99,7 +100,9 @@ function draw() {
   tabState.lastStatus = step?.status ?? null
   tabState.lastBanners = step?.banners ?? null
   wakeForMoves()
-  render(<App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />, root)
+  const app = () => <App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />
+  render(app(), root)
+  if (settleAnswers(root)) render(app(), root)
   animateDraw(before, step?.changed ?? new Set())
   noteStatusInView()
   const fieldToFocus =
@@ -123,6 +126,7 @@ function noteStatusInView() {
 }
 window.addEventListener('scroll', noteStatusInView, { passive: true, signal: instanceAbort.signal })
 window.addEventListener('resize', noteStatusInView, { passive: true, signal: instanceAbort.signal })
+window.addEventListener('resize', () => settleAnswers(root) && draw(), { passive: true, signal: instanceAbort.signal })
 
 let pressedAt: { x: number; y: number } | null = null
 document.addEventListener(

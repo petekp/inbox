@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T23:43:16.217Z. 280181 characters follow.
+// Built at 2026-11-18T00:42:22.078Z. 280251 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -5222,7 +5222,7 @@ class Heights {
   widthOf(key) {
     return this.sizes.get(key)?.width;
   }
-  measure(key, reported, zoom) {
+  measure(key, reported, zoom, isWidthDrawn = false) {
     const size = { width: reported.width / zoom, height: reported.height / zoom };
     const isZoomChanged = this.zoom !== null && this.zoom !== zoom;
     this.zoom = zoom;
@@ -5231,7 +5231,7 @@ class Heights {
     const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
     if (isRewrapped)
       this.resized.add(key);
-    return was?.height !== size.height || isZoomChanged;
+    return was?.height !== size.height || isZoomChanged || isWidthDrawn && was?.width !== size.width;
   }
   takeResized() {
     const resized = this.resized;
@@ -5929,7 +5929,7 @@ function isSideBySide(r, p) {
 var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
   const arm = armEl(PATH_X - EDGE, ARM_END, "50%", lineColor(t, isSelected ? t.selected : t.background));
   const isAlone = answers.length === 1;
-  const buttons = answers.map((b) => buttonEl(b, p, isInert, isAlone).on_size_change((size, cx) => p.measure(answerKey(b.id), size, cx)));
+  const buttons = answers.map((b) => buttonEl(b, p, isInert, isAlone).on_size_change((size, cx) => p.measure(answerKey(b.id), size, cx, true)));
   return h_flex5().relative().min_w(0).pl(MARK_W).child(isAlone ? buttons[0] : h_flex5().flex_wrap().gap(CONTROL_GAP).children(buttons)).children(isLast ? [arm, trunkEl(0, "50%", t, isSelected)] : [arm]);
 };
 
@@ -6900,10 +6900,7 @@ class Inbox extends View {
       motion: new Map,
       heights: this.heights,
       isAtOnce: (key) => isFirst || resized.has(key),
-      measure: (key, size, cx) => {
-        if (this.heights.measure(key, size, zoomOf(settings())))
-          cx.notify();
-      },
+      measure: (key, size, cx, isWidthDrawn) => this.heights.measure(key, size, zoomOf(settings()), isWidthDrawn) && cx.notify(),
       now,
       newRows: this.ui.newRows,
       closedSeen: this.ui.closedSeen,

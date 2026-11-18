@@ -232,7 +232,8 @@ class Frames {
       motion: moved.motion,
       heights: this.heights,
       isAtOnce: (key: string) => isFirst || resized.has(key),
-      measure: (key: string, size: { width: number; height: number }) => void this.heights.measure(key, size, 1),
+      measure: (key: string, size: { width: number; height: number }, _cx: unknown, isWidthDrawn?: boolean) =>
+        void this.heights.measure(key, size, 1, isWidthDrawn),
       now,
       newRows: new Map(),
       tab: 'needsYou',

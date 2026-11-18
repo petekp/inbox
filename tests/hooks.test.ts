@@ -141,6 +141,7 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
       const texts = [...(await pane.findAll({ type: 'Text' })).map(t => t.text ?? ''), ...(open ? [open.title] : [])]
       return { buttons, controls, texts }
     }
+    const sideBySideRows: string[] = []
     for (const tab of tabs) {
       if (look === 'terminal') {
         if (await pane.find({ key: `tab-${tab.id}` })) await pane.press({ key: `tab-${tab.id}` })
@@ -175,8 +176,13 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
         expect(inOrder(controls, expectedLabels(row)), `${look} ${tab.id} row ${row.id}: ${controls.join(', ')}`).toBe(
           true,
         )
+        if (await pane.find({ key: 'options' })) sideBySideRows.push(row.id)
       }
     }
+    expect(sideBySideRows.length, `${look} rows drawing their answers side by side`).toBeGreaterThan(0)
+    expect(sideBySideRows, `${look} rows drawing their answers side by side`).toEqual(
+      tabs.flatMap(t => t.rows.filter(r => r.state.is === 'open' && rowKeyPlan(r, true).answerRow).map(r => r.id)),
+    )
     if (look === 'terminal') await pane.press({ key: 'tab-prs' })
     else {
       const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps

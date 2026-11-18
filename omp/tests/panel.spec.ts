@@ -45,7 +45,20 @@ test('a selected row draws its buttons in the shared key plan order', () => {
       expect(at).toBeGreaterThanOrEqual(from)
       from = at + label.length
     }
+    const { options, answerRow } = rowKeyPlan(row, true)
+    if (!answerRow) continue
+    const answers = options.map(o => o.action.label)
+    const answersLine = drawnRow.split('\n').find(l => l.includes(answers[0]!)) ?? ''
+    expect(
+      answers.map(a => answersLine.indexOf(a)),
+      `${row.id} answers side by side`,
+    ).toEqual(answers.map(a => answersLine.indexOf(a)).toSorted((a, b) => a - b))
+    expect(
+      answers.every(a => answersLine.includes(a)),
+      `${row.id} answers on one line`,
+    ).toBe(true)
   }
+  expect(rows.some(r => rowKeyPlan(r, true).answerRow)).toBe(true)
 })
 
 test('a row’s follow-ups share its buttons’ last line only when all of them fit there, and otherwise start a line of their own together', () => {
