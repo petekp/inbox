@@ -53,7 +53,10 @@ Part of [the look map](../looks.md#files).
 | `hooks/session-presses.ts` | Shared module. `pressOn` applies a press to a session, and `completedAttempt` records the outcome of sending a press's message. `recorded` applies the agent's `record` and `close` calls. Also the rows a look holds in place, `pruned`, which cuts closed records before each save, and `withFetchedPrs`, which merges fetched PRs into the session. |
 | `hooks/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including the PRs tab. `showsRunningMark` says whether a text look draws a running mark. |
 | `hooks/conversation.ts` | Shared module. `flattenConversation` turns a conversation's `Turn`s into the text a catch-up reads, and clips it. Each host maps its own conversation to turns. |
-| `hooks/clients.ts` | Shared module. The parity record: how each host supports each feature, and why where it does not. |
+| `hooks/clients.ts` | Shared module. The parity record: `CLIENTS`, built from one support table per host. |
+| `hooks/clients-claude-code.ts` | Shared module. How the Claude Code mod host supports each feature, and why where it does not. |
+| `hooks/clients-codex.ts` | Shared module. How the Codex host supports each feature, and why where it does not. |
+| `hooks/clients-omp.ts` | Shared module. How the omp host supports each feature, and why where it does not. |
 | `hooks/client-features.ts` | Shared module. `FeatureId`, every feature the parity record in `hooks/clients.ts` covers, and the record's `ClientId` and `Client` types. |
 | `hooks/session-host.ts` | Shared module. The `SessionHost` and `UpdateHost` types a host supplies, and the update flows that run on a host's store: `runUpdates`, `askOverConversation` and `reconcileUpdateStatus`. It also holds `exclusiveKeys` and `orderedKeys`, which keep runs of one key apart in a process. |
 | `hooks/clipboard-commands.ts` | Shared module. The commands that put text on the clipboard on each platform, and the words for when none starts. The Codex server and omp run them. |

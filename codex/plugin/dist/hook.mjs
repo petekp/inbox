@@ -4080,7 +4080,7 @@ var POLL_MS = 3e3;
 var SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS;
 
 // src/texts.ts
-var CODEX = {
+var CODEX2 = {
   agent: "Codex",
   surface: "the Inbox tab",
   band: null,
@@ -4098,13 +4098,13 @@ function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
 }
 function notePrompt2(s, text2, now) {
-  return notePrompt(CODEX, s, text2, isTabOpen(s, now));
+  return notePrompt(CODEX2, s, text2, isTabOpen(s, now));
 }
 function patchFiles(patch) {
   return [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => (m[1] ?? "").trim()).filter(Boolean);
 }
 function endTurn2(s, reply, now) {
-  return endTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s.shownTab) });
+  return endTurn(CODEX2, s, reply, isTabOpen(s, now), { tab: screenTabOf(s.shownTab) });
 }
 var MAX_PROMPT_TURNS = 10;
 function noteHook(s, hook, now, turnId) {
@@ -4669,7 +4669,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           remoteProtocol: 2,
           remoteHistoryAfter: s.remoteCommandFloor ?? 0,
           host: "codex",
-          agent: CODEX.agent,
+          agent: CODEX2.agent,
           sessionId: id,
           terminal: target.terminal,
           writtenAt: seq,
@@ -5514,7 +5514,7 @@ async function handleHook(input, deps) {
         )
       );
       if (isMarkedBehind) deps.startUpdate(id);
-      const context = startContext(CODEX, s, input.source);
+      const context = startContext(CODEX2, s, input.source);
       return context ? { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } } : null;
     }
     case "UserPromptSubmit": {
