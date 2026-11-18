@@ -1,8 +1,10 @@
 import type { Ask, CallReport } from './session-host'
-import type { CallFailure, CallKind, Session } from '../types'
+import type { CallAnswer, CallFailure, CallKind, Session } from '../types'
 
 /** How much of a host's reason a failure keeps. */
 const ERROR_CHARS = 500
+/** How much of an answer `lastAnswers` keeps. Every save writes the whole session, so a runaway answer must not grow each write. */
+export const ANSWER_CHARS = 4000
 
 /**
  * What the host gave for one model call: its answer or null, its report, the error it threw, and how long it ran.
@@ -63,17 +65,35 @@ function failureOf(kind: CallKind, heard: HeardCall, isParsed: boolean, at: numb
   }
 }
 
+/** The answer `heard` gave, for `lastAnswers`, or null when it gave no text. */
+function answerOf(kind: CallKind, heard: HeardCall, isParsed: boolean, at: number, turn: number): CallAnswer | null {
+  if (heard.text === null) return null
+  const { text } = heard
+
+  return { at, turn, reads: kind.reads, isParsed, text: text.slice(0, ANSWER_CHARS), chars: text.length }
+}
+
 /**
- * The session with one model call noted in its call's record. A call with no usable answer becomes the record's
+ * The session with one model call noted: an answer with text becomes its call's entry in `lastAnswers`, and its
+ * call's record in `callFailures` changes as follows. A call with no usable answer becomes the record's
  * `lastFailure` and clears its `recoveredAt`. A usable answer sets `recoveredAt` when a failure is saved and no call
- * has answered since, and otherwise leaves the session as it was.
+ * has answered since, and otherwise leaves the record as it was. `turn` is the turn the call answered.
  */
-export function withCall<S extends Session>(s: S, kind: CallKind, heard: HeardCall, isParsed: boolean, at: number): S {
+export function withCall<S extends Session>(
+  s: S,
+  kind: CallKind,
+  heard: HeardCall,
+  isParsed: boolean,
+  at: number,
+  turn: number,
+): S {
+  const answer = answerOf(kind, heard, isParsed, at, turn)
+  const answered = answer ? { ...s, lastAnswers: { ...s.lastAnswers, [kind.call]: answer } } : s
   const record = s.callFailures[kind.call]
   const failure = failureOf(kind, heard, isParsed, at)
   const isRecovery = !failure && record.lastFailure !== null && record.recoveredAt === null
-  if (!failure && !isRecovery) return s
+  if (!failure && !isRecovery) return answered
   const next = failure ? { lastFailure: failure, recoveredAt: null } : { ...record, recoveredAt: at }
 
-  return { ...s, callFailures: { ...s.callFailures, [kind.call]: next } }
+  return { ...answered, callFailures: { ...s.callFailures, [kind.call]: next } }
 }

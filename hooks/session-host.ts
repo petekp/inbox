@@ -276,7 +276,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               }
               const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
               const at = await host.now()
-              const noted = (x: S) => (reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at) : x)
+              const noted = (x: S) =>
+                reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at, x.ledger.turn) : x
               const after = await host.update(x => appliedCatchUp(noted(x), s, parsed, at))
               if (!parsed) return 'stop' as const
               if (reply.kind === 'reply' && reply.statusCall)
@@ -291,7 +292,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             let isApplied = false as boolean
             const after = await host.update(async current => {
               const at = await host.now()
-              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at)
+              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at, next.ex.turn)
               isApplied = false
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
               isApplied = parsed !== null

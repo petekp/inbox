@@ -442,11 +442,10 @@ export type HerdrEnvelope = Omit<EnvelopeSource, 'isFetchingPrs' | 'isNextBuild'
   session: Session
 }
 
-const SESSION_FIELDS = Object.keys(emptySession()).filter(
-  field => field !== 'remoteCommands' && field !== 'remoteViewers' && field !== 'remoteCommandFloor',
-)
+const UNPUBLISHED_FIELDS = new Set(['remoteCommands', 'remoteViewers', 'remoteCommandFloor', 'lastAnswers'])
+const SESSION_FIELDS = Object.keys(emptySession()).filter(field => !UNPUBLISHED_FIELDS.has(field))
 
-/** Publishes shared presentation state, excluding private command history, viewer leases and host-owned fields. */
+/** Publishes shared presentation state, without command history, viewer leases, host fields or model answers. */
 export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimmed = false): HerdrEnvelope {
   const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
 

@@ -5377,6 +5377,7 @@ function withCheckKeys(s, views) {
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
+var NO_ANSWERS = { ledger: null, status: null };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -5410,6 +5411,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     callFailures: NO_CALL_FAILURES,
+    lastAnswers: NO_ANSWERS,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -5494,6 +5496,7 @@ function sessionFields(saved, views) {
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
+    lastAnswers: { ...NO_ANSWERS, ...saved.lastAnswers },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -5721,7 +5724,8 @@ function herdrLabels(tokens) {
   ]));
 }
 var HERDR_FORMAT = 1;
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor");
+var UNPUBLISHED_FIELDS = new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
@@ -12166,6 +12170,7 @@ function statusCatchUpPrompt(input, transcript) {
 
 // ../hooks/call-record.ts
 var ERROR_CHARS = 500;
+var ANSWER_CHARS = 4000;
 async function askedCall(ask, prompt, system, kind) {
   let report = null;
   let thrown = null;
@@ -12199,14 +12204,22 @@ function failureOf(kind, heard, isParsed, at) {
     process: text === null ? report?.process ?? null : null
   };
 }
-function withCall(s, kind, heard, isParsed, at) {
+function answerOf(kind, heard, isParsed, at, turn) {
+  if (heard.text === null)
+    return null;
+  const { text } = heard;
+  return { at, turn, reads: kind.reads, isParsed, text: text.slice(0, ANSWER_CHARS), chars: text.length };
+}
+function withCall(s, kind, heard, isParsed, at, turn) {
+  const answer = answerOf(kind, heard, isParsed, at, turn);
+  const answered = answer ? { ...s, lastAnswers: { ...s.lastAnswers, [kind.call]: answer } } : s;
   const record = s.callFailures[kind.call];
   const failure = failureOf(kind, heard, isParsed, at);
   const isRecovery = !failure && record.lastFailure !== null && record.recoveredAt === null;
   if (!failure && !isRecovery)
-    return s;
+    return answered;
   const next = failure ? { lastFailure: failure, recoveredAt: null } : { ...record, recoveredAt: at };
-  return { ...s, callFailures: { ...s.callFailures, [kind.call]: next } };
+  return { ...answered, callFailures: { ...s.callFailures, [kind.call]: next } };
 }
 
 // ../hooks/status-records.ts
@@ -12289,7 +12302,8 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
   const answer = last.text === null ? null : parseStatus(last.text);
   let before = null;
   let isWritten = false;
-  const noted = (current, now) => heards.reduce((x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now), current);
+  const answeredTurn = (x) => call.exchange.kind === "reply" ? call.exchange.exchange.turn : x.ledger.turn;
+  const noted = (current, now) => heards.reduce((x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now, answeredTurn(x)), current);
   const after = await host.update(async (current) => {
     const now = await host.now();
     const x = noted(current, now);
@@ -12425,7 +12439,7 @@ async function runUpdates(host) {
               }
               const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
               const at = await host.now();
-              const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at) : x;
+              const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at, x.ledger.turn) : x;
               const after = await host.update((x) => appliedCatchUp(noted(x), s, parsed, at));
               if (!parsed)
                 return "stop";
@@ -12441,7 +12455,7 @@ async function runUpdates(host) {
             let isApplied = false;
             const after = await host.update(async (current) => {
               const at = await host.now();
-              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at);
+              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at, next.ex.turn);
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn)
                 return x;

@@ -688,6 +688,20 @@ export type CallFailure = {
  */
 export type CallRecord = { lastFailure: CallFailure | null; recoveredAt: number | null }
 
+/**
+ * The latest answer one of the update's calls gave, parsed or not: when it arrived, the `turn` it answered as an
+ * item's `turn` counts turns, what the call read, whether the answer parsed, the start of its text, and the whole
+ * text's length as `chars`. A call that gave no text leaves the answer before it.
+ */
+export type CallAnswer = {
+  at: number
+  turn: number
+  reads: CallKind['reads']
+  isParsed: boolean
+  text: string
+  chars: number
+}
+
 /** A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed. */
 export type RemoteViewerRecord = {
   generation: number
@@ -813,6 +827,8 @@ export type Session = {
   overviewFailure: StatusFailure | null
   /** The inbox model's calls with no usable answer, one record for the ledger call and one for the Status call. */
   callFailures: Record<CallKind['call'], CallRecord>
+  /** The inbox model's latest answer to the ledger call and to the Status call, null before the first. */
+  lastAnswers: Record<CallKind['call'], CallAnswer | null>
   /** When a Status call last wrote, or failed, or started while a turn ran. Null before the first. Saved under the tab's earlier name. */
   lastOverviewCallAt: number | null
   /**

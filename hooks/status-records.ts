@@ -189,9 +189,11 @@ export async function askAndWriteStatus<S extends Session>(
   const answer = last.text === null ? null : parseStatus(last.text)
   let before: SessionStatus | null = null
   let isWritten = false
+  const answeredTurn = (x: S) => (call.exchange.kind === 'reply' ? call.exchange.exchange.turn : x.ledger.turn)
   const noted = (current: S, now: number) =>
     heards.reduce(
-      (x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now),
+      (x, h) =>
+        withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now, answeredTurn(x)),
       current,
     )
   const after = await host.update(async current => {
