@@ -1,0 +1,108 @@
+import type { Client } from './client-features'
+
+export const CLAUDE_CODE: Client = {
+  support: {
+    'catch-up': { kind: 'full' },
+    'failed-update-recovery': { kind: 'full' },
+    'ledger-behind-state': { kind: 'full' },
+    'dialog-outcome': { kind: 'full' },
+    'dialog-answer': {
+      kind: 'different',
+      reason:
+        'The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
+    },
+    'dialog-answer-closes-copy': { kind: 'full' },
+    'dialog-descriptions': { kind: 'full' },
+    'tool-output-urls': { kind: 'full' },
+    'pr-link-from-output': { kind: 'full' },
+    'pr-arrivals': { kind: 'full' },
+    'prs-empty-hint': { kind: 'full' },
+    'gh-signed-out-notice': { kind: 'full' },
+    'link-open-rule': { kind: 'full' },
+    'fork-ledger': { kind: 'full' },
+    'band-and-stop-rows': { kind: 'full' },
+    'exchange-trigger': { kind: 'full' },
+    'settle-window': { kind: 'full' },
+    'fold-on-typed-message': { kind: 'full' },
+    'fold-waits-for-list-use': {
+      kind: 'different',
+      reason:
+        'The terminal reports no pointer, so a row due to fold waits only on presses, keys and scrolls. On desktop a settled row is drawn as text, which reports no pointer, so a row waits on presses and on pointer moves over open rows.',
+    },
+    'version-label': { kind: 'full' },
+    'status-tab': { kind: 'full' },
+    'turn-working': { kind: 'full' },
+    'host-task-list': { kind: 'full' },
+    'hooks-need-trust': {
+      kind: 'unsupported',
+      reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust.",
+    },
+    'compare-in-background': { kind: 'full' },
+    'compare-page': { kind: 'full' },
+    'running-marks': { kind: 'full' },
+    'title-tint': {
+      kind: 'different',
+      reason: 'The terminal steps the fade in 6 colors. Desktop holds the tint, then drops it.',
+    },
+    'weight-transitions': {
+      kind: 'unsupported',
+      reason: 'A terminal cell is bold or not, and the desktop pane has no CSS and no weight between.',
+    },
+    'pending-answer-mark': { kind: 'full' },
+    'tab-symbols': { kind: 'full' },
+    'dim-pressed-button': {
+      kind: 'different',
+      reason:
+        "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it.",
+    },
+    'herdr-sidebar': { kind: 'full' },
+    'herdr-look': { kind: 'full' },
+    'herdr-open': { kind: 'full' },
+    'herdr-install': { kind: 'full' },
+    'status-children': { kind: 'full' },
+    'child-names': { kind: 'full' },
+    'status-failed-warning': { kind: 'full' },
+    'asks-holds-up-line': { kind: 'full' },
+    'asks-tree': { kind: 'full' },
+    'answers-side-by-side': { kind: 'full' },
+    'asks-context-line': { kind: 'full' },
+    'earlier-answers': { kind: 'full' },
+    'status-mid-turn-refresh': { kind: 'full' },
+    'ran-call-activity': { kind: 'full' },
+    'ran-call-delegates': { kind: 'full' },
+    'tool-result-line': { kind: 'full' },
+    'status-call-records': { kind: 'full' },
+    'pr-order': { kind: 'full' },
+    'pr-rank-again': { kind: 'full' },
+    'clear-merged-and-closed-prs': { kind: 'full' },
+    'pr-check-rerun': { kind: 'full' },
+    'pr-fetch-notice': { kind: 'full' },
+    'help-page': {
+      kind: 'different',
+      reason:
+        "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks.",
+    },
+    'status-view-ask': { kind: 'full' },
+    'status-goal': { kind: 'full' },
+    'status-done-fold': { kind: 'full' },
+    'status-named-fold': { kind: 'full' },
+    'status-parent-fold': { kind: 'full' },
+    'seen-on-screen': { kind: 'full' },
+    'status-idle-age': { kind: 'full' },
+    'question-back-stays-open': { kind: 'full' },
+    'collapse-rows': { kind: 'full' },
+    'fold-all': {
+      kind: 'different',
+      reason:
+        'The engine binds a hotkey by its letter and ignores Shift, so the terminal folds every fold or opens them all with the w key. The desktop pane takes no keys, so it reads an Option-click on a fold: the Claude app reports `alt` on a click, which a VM run showed. The engine types say the pointer event of a Client carries the modifier keys the terminal reported held, and no terminal run has shown an Option-click folding all there.',
+    },
+    'suggested-goal': { kind: 'full' },
+    'remote-typed-reply-admission': { kind: 'full' },
+    'remote-draft-retention': { kind: 'full' },
+    'show-explanation': {
+      kind: 'different',
+      reason:
+        'Only the fullscreen terminal lets a plugin scroll the conversation, so the classic terminal and the Claude app draw no Show explanation.',
+    },
+  },
+}

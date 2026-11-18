@@ -4890,7 +4890,7 @@ var POLL_MS = 3e3;
 var SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS;
 
 // src/texts.ts
-var CODEX = {
+var CODEX2 = {
   agent: "Codex",
   surface: "the Inbox tab",
   band: null,
@@ -5267,7 +5267,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           remoteProtocol: 2,
           remoteHistoryAfter: s.remoteCommandFloor ?? 0,
           host: "codex",
-          agent: CODEX.agent,
+          agent: CODEX2.agent,
           sessionId: id,
           terminal: target.terminal,
           writtenAt: seq,
@@ -6645,7 +6645,7 @@ var statusRecords = (dir, sessionId) => ({
 var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStatus({
   ...codexStore(dir, sessionId, now, onWrite),
   ask,
-  names: CODEX,
+  names: CODEX2,
   inOrder: inOrderFor(dir, sessionId),
   records
 });
@@ -6654,7 +6654,7 @@ var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
   return runUpdates({
     ...store,
     ask,
-    names: CODEX,
+    names: CODEX2,
     inOrder: inOrderFor(dir, sessionId),
     records,
     catchUp: async (s) => {
@@ -6662,9 +6662,9 @@ var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
       const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath;
       return askOverConversation(
         { ask, now: store.now },
-        CODEX,
+        CODEX2,
         s,
-        screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
+        screenText(CODEX2, isTabOpen(s, now()), screenTabOf(s.shownTab)),
         (await readRollout(path, s.root))?.conversation ?? null
       );
     }
