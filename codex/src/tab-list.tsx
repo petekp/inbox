@@ -200,7 +200,7 @@ export function ListRow({
   const lineForm = (isOpen: boolean): LineForm => {
     const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
     const last = statusUnder ? null : label
-    const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : last ? null : row.age
+    const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : row.age
 
     return { last, side }
   }
