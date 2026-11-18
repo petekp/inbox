@@ -17,7 +17,7 @@ import {
   ASK_MARK,
   settledLabel,
 } from '../../hooks/rows'
-import { feedbackOf, markedFeedbackText, isFailure, rowFeedbackText } from '../../hooks/feedback'
+import { feedbackOf, feedbackTone, markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
 import { groupEmptyText } from '../../hooks/banners'
 import { rowKeyPlan } from '../../hooks/action-plan'
 import type { AnswerRow } from '../../hooks/action-plan'
@@ -160,11 +160,10 @@ export const blankLine = (id: string): Line => ({
   isTabButtons: false,
 })
 
-function feedbackTone(f: Feedback): Tone | null {
-  if (isFailure(f)) return 'error'
-  if (f.is === 'done' || (f.is === 'local' && f.result.state === 'done') || f.is === 'closed') return 'done'
+function feedbackToneOf(f: Feedback): Tone | null {
+  const tone = feedbackTone(f)
 
-  return null
+  return tone === 'muted' ? null : tone
 }
 
 function answerRowOf(row: RowView, isAllShown: boolean): { answerRow?: AnswerRow } {
@@ -251,7 +250,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
     age: f?.is === 'done' ? f.at : row.at,
     detail: row.detail,
     file: row.fileName,
-    feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
+    feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackToneOf(f), source: f } : null,
     settled:
       state.is === 'settled'
         ? {
@@ -377,7 +376,7 @@ export function groupEntries(
 export function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone = false): Line['feedback'] {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now)
 
-  return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null
+  return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackToneOf(f), source: f } : null
 }
 
 export const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)

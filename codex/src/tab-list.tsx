@@ -4,7 +4,7 @@ import { partAttrs } from './tab-part-gap'
 import { closedTitleTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
-import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hooks/feedback'
+import { feedbackText, feedbackTone, hasAge, isStatusUnderActions, type FeedbackTone } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
@@ -92,8 +92,8 @@ export function stepLists(v: View): {
       kept.add(id)
       drawn.push(x)
       if (track.hasPanel && 'row' in x) {
-        const text = statusUnderOf(x.row)
-        const lines = text ? [{ id: x.row.id, text }] : []
+        const { text, tone } = statusUnderOf(x.row)
+        const lines = text ? [{ id: x.row.id, text, tone }] : []
         pressLines.set(x.row.id, stepLines(lines, lastPressLines.get(x.row.id), pressMotion, now, changed, kept))
       }
     }
@@ -133,18 +133,19 @@ function pressOf(row: Row) {
   const isSending = isPressing && sending.get(row.id)?.pending === null
   const f = isFeedbackShown(row) ? row.feedback : null
   const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
+  const tone: FeedbackTone = isPressing ? 'muted' : feedbackTone(f)
 
-  return { isPressing, pending, isSending, f, label }
+  return { isPressing, pending, isSending, f, label, tone }
 }
 
-/** The status an open row draws under its buttons, while its press is out. */
-function statusUnderOf(row: Row): string | null {
-  const { pending, isSending, f, label } = pressOf(row)
+/** The status an open row draws under its buttons, while its press is out, and its tone. */
+function statusUnderOf(row: Row): { text: string | null; tone: FeedbackTone } {
+  const { pending, isSending, f, label, tone } = pressOf(row)
 
-  return !isSending && isStatusUnderActions(pending ?? f, true) ? label : null
+  return { text: !isSending && isStatusUnderActions(pending ?? f, true) ? label : null, tone }
 }
 
-const pressLines = new Map<string, TextLine[]>()
+const pressLines = new Map<string, (TextLine & { tone: FeedbackTone })[]>()
 const pressMotion = (id: string) => `press-${id}`
 
 /** What a row's line and side column draw, in its open form or its closed one. */
@@ -184,7 +185,7 @@ export function ListRow({
     </span>
   )
 
-  const { isPressing, pending, isSending, f, label } = pressOf(row)
+  const { isPressing, pending, isSending, f, label, tone } = pressOf(row)
   const ageAt = !isPressing && f && hasAge(f) ? f.at : null
   const lineForm = (isOpen: boolean): LineForm => {
     const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
@@ -196,7 +197,7 @@ export function ListRow({
   const drawn = lineForm(isSelected || isClosing)
   // A closing row also draws its closed line, hidden, so that collapse() measures the height it comes to rest at.
   const closed = isClosing ? lineForm(false) : null
-  const afterTone = !isPressing && isFailure(row.feedback) ? 'error' : undefined
+  const afterTone = tone === 'muted' ? undefined : tone
   const after = (form: LineForm, only?: 'open' | 'closed') =>
     form.last ? (
       <span class={only === 'open' ? 'open-only' : only === 'closed' ? 'closed-only' : undefined}>
@@ -315,7 +316,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
       {lines.map((l, n) => (
         <div
           key={l.id}
-          class="muted"
+          class={l.tone === 'muted' ? 'muted' : `tone-${l.tone}`}
           {...partAttrs(n === 0 ? actionsPart : 'result', 'result')}
           {...lineMotion(pressMotion(l.id))}
         >

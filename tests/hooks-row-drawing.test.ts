@@ -119,7 +119,7 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
   }
 })
 
-test('in a theme without tone colors, a replied question’s ✓ takes the done color whether its row is selected or not', async ($, on) => {
+test('in a theme without tone colors, a replied question’s ✓ and its label take the done color whether its row is selected or not', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -142,13 +142,13 @@ test('in a theme without tone colors, a replied question’s ✓ takes the done 
   await pane.press({ key: 'send-i1' })
   await clock.settle()
   type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
-  const markIn = (el: Drawn | undefined): Drawn | undefined =>
-    el?.type === 'Text' && el.children?.join('') === '✓'
+  const resultIn = (el: Drawn | undefined): Drawn | undefined =>
+    el?.type === 'Text' && el.children?.join('') === '✓ Replied: Deno'
       ? el
       : (el?.children ?? [])
           .filter((c): c is Drawn => typeof c === 'object')
-          .reduce<Drawn | undefined>((found, c) => found ?? markIn(c), undefined)
-  const doneMark = async () => markIn(await pane.find({ key: 'row-i1' }))?.props.color
+          .reduce<Drawn | undefined>((found, c) => found ?? resultIn(c), undefined)
+  const doneMark = async () => resultIn(await pane.find({ key: 'row-i1' }))?.props.color
   expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied: Deno/)
   expect(await doneMark()).toBe('suggestion')
 
@@ -156,6 +156,30 @@ test('in a theme without tone colors, a replied question’s ✓ takes the done 
   expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied: Deno/)
   expect(await doneMark()).toBe('suggestion')
 })
+
+for (const surface of ['terminal', 'desktop'] as const)
+  test(`in the ${surface} look, a handed-off task’s result label takes the done color of its ✓`, async ($, on) => {
+    mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
+    await $.command.run({ command: 'inbox', args: 'demo' } as never)
+    w.paneState = { isShown: true, isFocused: true }
+    const pane = await $.ui.mount({ ...PANE, surface })
+    type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
+    const labelIn = (el: Drawn | undefined): Drawn | undefined =>
+      el?.type === 'Text' && el.children?.join('') === '✓ Run gesture tests'
+        ? el
+        : (el?.children ?? [])
+            .filter((c): c is Drawn => typeof c === 'object')
+            .reduce<Drawn | undefined>((found, c) => found ?? labelIn(c), undefined)
+    const row = (await pane.find({ key: 'select-d18' })) as Drawn | undefined
+    const color =
+      surface === 'desktop'
+        ? (row?.props.props as { colors: { after: string } }).colors.after
+        : labelIn((await pane.find({ key: 'row-d18' })) as Drawn)?.props.color
+
+    expect(color).toBe('suggestion')
+  })
 
 test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismissed one’s ✕ as text, so the two read apart, and the terminal labels the dismissed one’s Reopen as plainly as any other button', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })

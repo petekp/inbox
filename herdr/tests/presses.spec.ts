@@ -90,7 +90,7 @@ test('the host’s last press ends the press it names, and a taken press older t
   expect(passed.lines[rowId]?.text).toBe('Reply not confirmed: Call it hello')
 })
 
-test('every press button on a row with a press out draws out, and its row reads Sending… or the look’s own result', () => {
+test('every press button on a row with a press out draws out, and its row reads Sending… or the look’s own result, in the error color or in the done color of its ✓', () => {
   const screen = demoScreen()
   const row = screen.view.needsYou.questions.find(r => r.state.is === 'open')!
   const blocks = tabBlocks(screen, uiOn('needsYou', { selected: row.id }))
@@ -106,6 +106,9 @@ test('every press button on a row with a press out draws out, and its row reads 
   failed.parts[0] = { ...failed.parts[0]!, error: 'no such file' }
   const ran = rowsOf(drawOuts(blocks, [outOn(row.id, { result: failed })], {}, NOW)).find(b => b.id === row.id)!
   expect(ran.feedback).toMatchObject({ text: 'Could not open plan.md: no such file', tone: 'error' })
+  const opened = { ...pendingResult(open, NOW), state: 'done' as const }
+  const done = rowsOf(drawOuts(blocks, [outOn(row.id, { result: opened })], {}, NOW)).find(b => b.id === row.id)!
+  expect(done.feedback).toMatchObject({ text: '✓ Opened plan.md', tone: 'done' })
 })
 
 test('a press keeps its status under an open row’s buttons until it ends, even once the look’s own open is done', () => {

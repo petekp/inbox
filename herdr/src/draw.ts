@@ -28,8 +28,7 @@ import { stepEffects } from '../../hooks/help-steps'
 import { groupEmptyText, tabBarBanners } from '../../hooks/banners'
 import type { BannerView } from '../../hooks/banners'
 import { emptyTab } from '../../hooks/empty-tab'
-import { isFailure, rowFeedbackText } from '../../hooks/feedback'
-import type { Feedback } from '../../hooks/feedback'
+import { feedbackTone, rowFeedbackText } from '../../hooks/feedback'
 import { FINDING_GROUPS } from '../../hooks/help'
 import { earlierLineText } from '../../hooks/earlier-answers'
 import type { SessionView } from '../../hooks/session-view'
@@ -39,7 +38,7 @@ import { QUEUED_AFTER_MS, SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerError } from '../../hooks/view'
 import type { PressKind } from '../../types'
 import { button, emptyBlock } from './blocks'
-import type { Block, BodyLine, Button, Does, Field, Mark, RowBlock, Tone } from './blocks'
+import type { Block, BodyLine, Button, Does, Field, Mark, RowBlock } from './blocks'
 import { prTabBlocks } from './draw-prs'
 import { prRowWaits } from '../../hooks/pr-rows'
 import { openPrViews } from '../../hooks/pr-views'
@@ -89,9 +88,6 @@ export type LookScreen = {
   /** Whether the host has a PR fetch running, from the published file. */
   isFetchingPrs: boolean
 }
-
-const toneOfFeedback = (f: Feedback): Tone =>
-  isFailure(f) ? 'error' : f.is === 'done' || (f.is === 'local' && f.result.state === 'done') ? 'done' : 'muted'
 
 const markOf = (m: ResultMark | null): Mark | null =>
   m ? { text: m.text, tone: m.tone ?? 'muted', isRunning: m.isRunning } : null
@@ -241,7 +237,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     mark: markOf(rowMark(row)),
     title: rowTitle(row, LOOK),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
-    feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
+    feedback: text && f ? { text, tone: feedbackTone(f), source: f } : null,
     settled: isSettled
       ? {
           label: settledLabel(state.label, state.delivery, state.reply),

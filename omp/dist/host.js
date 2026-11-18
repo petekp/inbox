@@ -5189,6 +5189,11 @@ var STILL_WAITING_AFTER = new Set(["check-fix"]);
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
+function feedbackTone(f) {
+  if (isFailure(f))
+    return "error";
+  return f?.is === "done" || f?.is === "local" && f.result.state === "done" ? "done" : "muted";
+}
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
@@ -9185,12 +9190,9 @@ var blankLine = (id) => ({
   isFolded: false,
   isTabButtons: false
 });
-function feedbackTone(f) {
-  if (isFailure(f))
-    return "error";
-  if (f.is === "done" || f.is === "local" && f.result.state === "done" || f.is === "closed")
-    return "done";
-  return null;
+function feedbackToneOf(f) {
+  const tone = feedbackTone(f);
+  return tone === "muted" ? null : tone;
 }
 function answerRowOf2(row, isAllShown) {
   const { answerRow } = rowKeyPlan(row, isAllShown);
@@ -9263,7 +9265,7 @@ function lineOfRow(row, isAllShown) {
     age: f?.is === "done" ? f.at : row.at,
     detail: row.detail,
     file: row.fileName,
-    feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
+    feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackToneOf(f), source: f } : null,
     settled: state.is === "settled" ? {
       label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
@@ -9349,7 +9351,7 @@ function groupEntries(g, { unfolded, closedAll, optionsShown }) {
 }
 function pressFeedback(screen, id, now, isMarkDone = false) {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now);
-  return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null;
+  return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackToneOf(f), source: f } : null;
 }
 var doneAt = (f) => f?.source?.is === "done" ? f.source.at : null;
 var linesOf = (entries) => entries.flatMap((e) => e.kind === "row" ? [e.line] : []);

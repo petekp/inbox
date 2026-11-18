@@ -61,7 +61,8 @@ export function paneRows(
     rowClientProps,
     feedbackLabel,
     pressedAge,
-    withDoneMark,
+    withDoneText,
+    feedbackColor,
     sideAge,
     withSideAge,
     unselectedLine,
@@ -110,7 +111,8 @@ export function paneRows(
       | 'rowClientProps'
       | 'feedbackLabel'
       | 'pressedAge'
-      | 'withDoneMark'
+      | 'withDoneText'
+      | 'feedbackColor'
       | 'sideAge'
       | 'withSideAge'
       | 'unselectedLine'
@@ -238,7 +240,7 @@ export function paneRows(
     const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
     const status = [
       ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
-      ...(f && !f.isAfterTitle ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
+      ...(f && !f.isAfterTitle ? [{ text: f.text, color: feedbackColor(f.tone) }] : []),
       ...(isTyping && paneState.fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
     ]
 
@@ -317,7 +319,7 @@ export function paneRows(
         {isStatusUnder ? (
           <Box key="result" marginTop={partSpaceOf(actionsPart, 'result')}>
             <Text color={pal.muted} wrap="wrap">
-              {withDoneMark(f.text, f.doneMark)}
+              {withDoneText(f.text, f.doneText)}
             </Text>
           </Box>
         ) : null}
@@ -441,7 +443,7 @@ export function paneRows(
                         {row.title}
                       </Text>
                       {titleAfter ? (
-                        <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
+                        <Text color={pal.muted}>{withDoneText(shownAfter, isStatusUnder ? null : f?.doneText)}</Text>
                       ) : null}
                     </Text>
                   </Button>,

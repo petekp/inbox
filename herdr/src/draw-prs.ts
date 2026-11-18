@@ -1,5 +1,5 @@
 import type { PrCheck, PrThread, PrView } from '../../types'
-import { feedbackOf, feedbackText, hasAge, isFailure, markedFeedbackText } from '../../hooks/feedback'
+import { feedbackOf, feedbackText, feedbackTone, hasAge, markedFeedbackText } from '../../hooks/feedback'
 import type { PressState } from '../../hooks/feedback'
 import { prPressEffect } from '../../hooks/pr-press'
 import type { PrAction } from '../../hooks/pr-press'
@@ -63,7 +63,7 @@ function prFeedback(screen: LookScreen, id: string): RowBlock['feedback'] {
   const { view, now } = screen
   const f = feedbackOf(id, view.lastActions[id], undefined, view.turns, now)
   if (!f) return null
-  const tone = isFailure(f) ? 'error' : 'muted'
+  const tone = feedbackTone(f)
   if (!hasAge(f)) return { text: feedbackText(f, LOOK), tone, source: f }
   const aged = { lead: markedFeedbackText(f, false, LOOK), at: f.at }
 

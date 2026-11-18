@@ -82,6 +82,15 @@ test('Discard on a held row drops the draft and records the discard', () => {
   expect(result.ui.discarded.d11).toBe(NOW)
 })
 
+test('a held row’s close label has no ✓, so it draws muted, not in the done color', () => {
+  const state = demoState(NOW)
+  state.ledger = closeItem(state.ledger, 'd11', { how: 'claude', outcome: 'closed by omp: answered in chat' }, NOW)
+  const holds = { replies: { d11: NOW }, discarded: {}, shownSince: NOW, listInput: null }
+  const held = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, holds) }
+  const line = drawn(held, INITIAL_UI).find(l => l.includes('Closed by omp: answered in chat'))
+  expect(line).toContain(`${ESC}2mClosed by omp: answered in chat${ESC}22m`)
+})
+
 async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>['press']>[0][]) {
   let now = NOW
   const later: (() => void)[] = []

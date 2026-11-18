@@ -91,6 +91,9 @@ button {
 .tone-success {
   color: var(--success);
 }
+.tone-done {
+  color: var(--done);
+}
 .tone-error {
   color: var(--error);
 }

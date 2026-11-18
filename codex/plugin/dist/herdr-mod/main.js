@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T10:26:11.582Z. 299137 characters follow.
+// Built at 2026-11-18T11:37:59.270Z. 299338 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -2363,6 +2363,11 @@ var STILL_WAITING_AFTER = new Set(["check-fix"]);
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
+function feedbackTone(f) {
+  if (isFailure(f))
+    return "error";
+  return f?.is === "done" || f?.is === "local" && f.result.state === "done" ? "done" : "muted";
+}
 function hasAge(f) {
   return f.is === "done" || f.is === "working" || f.is === "stillOpen" || f.is === "noComparison" || f.is === "sending" || f.is === "queued" || f.is === "unconfirmed" || f.is === "closed";
 }
@@ -3917,7 +3922,7 @@ function prFeedback(screen, id) {
   const f = feedbackOf(id, view.lastActions[id], undefined, view.turns, now);
   if (!f)
     return null;
-  const tone = isFailure(f) ? "error" : "muted";
+  const tone = feedbackTone(f);
   if (!hasAge(f))
     return { text: feedbackText(f, LOOK), tone, source: f };
   const aged = { lead: markedFeedbackText(f, false, LOOK), at: f.at };
@@ -4466,7 +4471,6 @@ var freshUi = (tab) => ({
   newRows: new Map,
   closedSeen: new Map
 });
-var toneOfFeedback = (f) => isFailure(f) ? "error" : f.is === "done" || f.is === "local" && f.result.state === "done" ? "done" : "muted";
 var markOf3 = (m) => m ? { text: m.text, tone: m.tone ?? "muted", isRunning: m.isRunning } : null;
 function rowDoes(row, press, kind, agent) {
   if (press.action === "type")
@@ -4575,7 +4579,7 @@ function rowBlock(row, ui, selected, screen) {
     mark: markOf3(rowMark(row)),
     title: rowTitle(row, LOOK2),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
-    feedback: text && f ? { text, tone: toneOfFeedback(f), source: f } : null,
+    feedback: text && f ? { text, tone: feedbackTone(f), source: f } : null,
     settled: isSettled ? {
       label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
@@ -6312,6 +6316,12 @@ var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
 // src/paint-blocks.ts
 var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
+function feedbackEl(f, t) {
+  const cut = f.aged?.lead.length ?? f.text.length;
+  if (f.tone === "muted" || cut >= f.text.length)
+    return resultLineEl(f.text, colorOf(t, f.tone), 0);
+  return h_flex8().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), t.muted)]);
+}
 var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
   const color = lineColor(t, isSelected ? t.selected : t.background);
   if (answers.length > 0 && p) {
@@ -6414,11 +6424,11 @@ function prEl(b, p, isInert) {
   const word = h_flex8().items_start().min_w(0).max_w_full().child(div13().min_w(0).whitespace_normal().text_color(colorOf(t, b.status.tone)).child(b.status.text)).when(hasReasons, (e) => e.child(div13().flex_none().text_color(t.muted).child(SEP)));
   const reasons = b.unlisted.map((u, i) => statusPartEl(i < b.unlisted.length - 1 ? `${u}${SEP}` : u).text_color(t.muted));
   const status = h_flex8().flex_wrap().items_start().pt(INSIDE_GAP).when(p.isNarrow, (e) => e.child(div13().flex_none().text_color(t.muted).child(`${b.number}${SEP}`))).child(word).children(reasons);
-  return v_flex6().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(resultLineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex6().pl(EDGE).pr(EDGE).child(title).child(status).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex6().pl(EDGE).pr(EDGE).child(h_flex8().gap(CONTROL_GAP).items_center().child(div13().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex8().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(resultLineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex6().pl(EDGE).pr(EDGE).child(h_flex8().gap(CONTROL_GAP).items_center().child(div13().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex8().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
 function headingEl(b, p, isInert) {
   const { t } = p;
@@ -6482,7 +6492,7 @@ function blockEl(b, p) {
   if (b.kind === "caption")
     return div13().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
-    return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? resultLineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null);
+    return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? feedbackEl(b.feedback, t) : null);
   return div13();
 }
 
@@ -6499,7 +6509,7 @@ function rowSignature(view, rowId) {
 }
 var resultLine = (result) => ({
   text: feedbackText({ is: "local", result }, "herdr"),
-  tone: result.state === "failed" ? "error" : "muted",
+  tone: feedbackTone({ is: "local", result }),
   source: { is: "local", result }
 });
 function unconfirmedLine(out, now) {

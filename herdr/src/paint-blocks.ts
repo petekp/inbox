@@ -6,7 +6,7 @@ import { partPt } from '../../hooks/row-parts'
 import type { RowPart } from '../../hooks/row-parts'
 import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import { isOpenRow } from './blocks'
-import type { Block, BodyLine, Button, LineBlock, PrBlock, RowBlock } from './blocks'
+import type { Aged, Block, BodyLine, Button, LineBlock, PrBlock, RowBlock, Tone } from './blocks'
 import {
   BUTTON_LABEL_X,
   CONTROL_GAP,
@@ -50,6 +50,17 @@ const wordEls = (text: string, color: Color): Element[] =>
     .split(' ')
     .filter(word => word)
     .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
+
+/** A press's result under its buttons. An aged result's age stays muted whatever the result's color. */
+function feedbackEl(f: { text: string; tone: Tone; aged?: Aged }, t: Theme): Element {
+  const cut = f.aged?.lead.length ?? f.text.length
+  if (f.tone === 'muted' || cut >= f.text.length) return resultLineEl(f.text, colorOf(t, f.tone), 0)
+
+  return h_flex()
+    .flex_wrap()
+    .pt(CONTROL_GAP)
+    .children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), t.muted)])
+}
 
 /** A line under a row's title, `above` under the part above it, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (
@@ -291,9 +302,7 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     .child(status)
     .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
     .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
-    .when(b.feedback !== null, e =>
-      e.child(resultLineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)),
-    )
+    .when(b.feedback !== null, e => e.child(feedbackEl(b.feedback!, t)))
 }
 
 function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
@@ -323,9 +332,7 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
         ),
     )
     .when(b.under !== null, e => e.child(lineEl(b.under ?? '', t.muted, 0)))
-    .when(b.feedback !== null, e =>
-      e.child(resultLineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)),
-    )
+    .when(b.feedback !== null, e => e.child(feedbackEl(b.feedback!, t)))
 }
 
 /** A group's heading. A marked one hangs its mark in the mark column, with its text where its rows' text starts. One with no mark starts at the edge, where its rows' marks do. A label heading starts at the edge and rules the goal's text to its buttons. */
@@ -457,7 +464,7 @@ export function blockEl(b: Block, p: Paint): Element {
       b.banner,
       t,
       b.buttons.map(x => buttonEl(x, p, isLeaving)),
-      b.feedback ? resultLineEl(b.feedback.text, colorOf(t, b.feedback.tone), 0) : null,
+      b.feedback ? feedbackEl(b.feedback, t) : null,
     )
 
   return div()
