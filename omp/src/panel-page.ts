@@ -10,7 +10,7 @@ import { pageFocus } from './panel-keys'
 import type { ButtonFace } from './panel-lines'
 import { collapsedIn, indented, wrapText } from './panel-text'
 import { foldGlyph } from '../../hooks/fold-chevron'
-import { isParentCollapsed, parentChevron } from '../../hooks/status-folds'
+import { countsText, isParentCollapsed, parentChevron } from '../../hooks/status-folds'
 import type { Style } from './panel'
 
 const TREE_ARMS: Record<StatusBranch, { first: string; rest: string }> = {
@@ -214,10 +214,11 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
 
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s)
   }
-  if (row.kind === 'done-fold') {
+  if (row.kind === 'done-fold' || row.kind === 'counts') {
     const chevron = foldGlyph(d.ui.statusUnfolded.includes(row.id))
+    const text = row.kind === 'counts' ? countsText(row.counts) : row.text
 
-    return pageLine(d, at, ' ', row.text, isSelected ? s.bold : s.dim, {
+    return pageLine(d, at, ' ', text, isSelected ? s.bold : s.dim, {
       chevron: { text: chevron, paint: isSelected ? t => s.tone('accent', t) : s.dim },
     })
   }
@@ -227,34 +228,5 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
       partHeading(row.text, width, s, PAGE_TEXT_AT, row.isTitle),
       ...(row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []),
     ]
-  if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
-}
-
-/**
- * Other work's counts, each mark in its tone with its count, joined by `STALL_GAP`. A count that does not fit starts the
- * next line without the gap, so a count stays with its mark.
- */
-function countLines(
-  counts: (StatusRow & { kind: 'counts' })['counts'],
-  textAt: number,
-  width: number,
-  s: Style,
-): string[] {
-  const room = Math.max(1, width - textAt)
-  const gap = { cells: cellWidth(STALL_GAP), text: s.dim(STALL_GAP) }
-  const lines: { cells: number; text: string }[] = []
-  for (const c of counts) {
-    const count = {
-      cells: cellWidth(`${c.mark} ${c.text}`),
-      text: feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`),
-    }
-    const line = lines.at(-1)
-    if (line && line.cells + gap.cells + count.cells <= room) {
-      line.cells += gap.cells + count.cells
-      line.text += gap.text + count.text
-    } else lines.push(count)
-  }
-
-  return lines.map(l => ' '.repeat(textAt) + l.text)
 }

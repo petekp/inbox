@@ -1,9 +1,8 @@
-import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
-import { RUNNING_SVG_CELLS } from './desktop-svg'
+import { desktopButtonPt, desktopLines } from './desktop-metrics'
 import { DESKTOP_BUTTON_PT, DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_ROW_PT } from './pane-sizes'
 import { ITEM_GAP_PT } from './layout'
 import { statusGaps } from './status-gaps'
-import { STALL_GAP, type StatusCount, type StatusRow } from './status-page'
+import type { StatusRow } from './status-page'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
 
@@ -108,22 +107,6 @@ export function desktopButtonLines(labels: string[], widthPt: number): Lines {
   const rows = desktopWrapLines(widths, DESKTOP_CELL_PT, widthPt)
 
   return { least: 1, most: rows * DESKTOP_BUTTON_LINES + (rows - 1) * desktopSpaceLines(1) }
-}
-
-/**
- * The lines Other work's counts take on desktop in a column about `widthPt` wide, as `markRun` wraps them. Each mark
- * counts at least the two cells of a mark's Svg, and each count moves to the next line whole, with the gap before it.
- */
-export function desktopCountsLines(counts: StatusCount[], widthPt: number): Lines {
-  const gapPt = desktopTextPt(STALL_GAP)
-  const widths = counts.map(
-    (x, n) =>
-      (n > 0 ? gapPt : 0) +
-      Math.max(desktopTextPt(x.mark), RUNNING_SVG_CELLS * DESKTOP_CELL_PT) +
-      desktopTextPt(` ${x.text}`),
-  )
-
-  return { least: 1, most: desktopWrapLines(widths, 0, widthPt) }
 }
 
 /**

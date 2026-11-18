@@ -1,7 +1,7 @@
 import { Icon, RowActions } from './row-actions'
 import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
-import { unfoldedRows } from '../../hooks/status-folds'
+import { COUNTS_LABEL, unfoldedRows } from '../../hooks/status-folds'
 import { statusRowPads } from '../../hooks/status-gaps'
 import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
@@ -192,7 +192,7 @@ export function StatusLine({
         <div class="content tight muted">{row.text}</div>
       </div>
     )
-  if (row.kind === 'done-fold') {
+  if (row.kind === 'done-fold' || row.kind === 'counts') {
     const isUnfolded = statusUnfolded.has(row.id)
     const fold = foldMotion(row.id)
 
@@ -205,7 +205,22 @@ export function StatusLine({
             data-fold={fold}
             onClick={e => clickFold(e, isUnfolded, () => toggleStatusFold(row.id))}
           >
-            {row.text}
+            {row.kind === 'counts' ? (
+              <>
+                {COUNTS_LABEL}
+                {row.counts.map((c, n) => (
+                  <span key={n}>
+                    {n > 0 ? STALL_GAP : null}
+                    <span class={markClassOf(c.tone, false)}>
+                      <MarkGlyph text={c.mark} />
+                    </span>
+                    {` ${c.text}`}
+                  </span>
+                ))}
+              </>
+            ) : (
+              row.text
+            )}
             <Icon name={isUnfolded ? 'down' : 'right'} />
           </button>
         </div>
@@ -224,26 +239,6 @@ export function StatusLine({
         {row.description ? <div class="muted part-description">{row.description}</div> : null}
       </div>
     )
-  if (row.kind === 'counts')
-    return (
-      <div class="row" style={rowStyle} {...lineMotion(motion)}>
-        <span class="mark" />
-        <div class="content tight">
-          <div>
-            {row.counts.map((c, n) => (
-              <span key={n}>
-                {n > 0 ? <span class="muted">{STALL_GAP}</span> : null}
-                <span class={markClassOf(c.tone, false)}>
-                  <MarkGlyph text={c.mark} />
-                </span>
-                <span class="muted"> {c.text}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-
   const subjects = seenSubjectIds(row)
 
   return (

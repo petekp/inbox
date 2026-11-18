@@ -191,7 +191,7 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   const rule = lines.find(l => l.includes('Other work'))!
   expect(rule).toMatch(/^ {3}Other work ─{4,}$/)
   expect(rule.length).toBeLessThanOrEqual(60)
-  expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting')
+  expect(lines.find(l => l.includes('1 waiting'))).toBe('   Also open: ◌ 1 waiting ›')
   expect(lines.slice(lineAt(lines, '1 waiting') + 1, lineAt(lines, '1 waiting') + 3)).toEqual([
     ' ✓ Fade-out',
     '   dismissed glances fade',

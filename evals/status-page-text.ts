@@ -1,4 +1,5 @@
 import { EMPTY_STATUS_TEXT } from '../hooks/empty-tab'
+import { countsText } from '../hooks/status-folds'
 import { mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/status-page'
 import type { StatusPage, StatusRow, StatusStall } from '../hooks/status-page'
 import type { MilestoneRow } from '../hooks/status-goal-page'
@@ -39,7 +40,7 @@ function rowText(r: StatusRow): string[] {
     case 'part':
       return [`── ${r.text}`, ...(r.description ? [r.description] : [])]
     case 'counts':
-      return [`${pad}${r.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP)}`]
+      return [`${pad}${countsText(r.counts)} ›`]
   }
 }
 

@@ -1,7 +1,8 @@
 import type { Ledger } from '../types'
 import { foldGlyph } from './fold-chevron'
 import type { MilestoneRow } from './status-goal-page'
-import type { StatusPage, StatusRow } from './status-page'
+import { STALL_GAP } from './status-page'
+import type { StatusCount, StatusPage, StatusRow } from './status-page'
 
 /**
  * Status parents and what waits on the person under each, by parent id. A parent is a subject with a delegate under it,
@@ -32,6 +33,13 @@ export function waitingUnderParents(ledger: Pick<Ledger, 'overview' | 'items'>):
   ])
 }
 
+/** What the closed counts fold says before its counts. */
+export const COUNTS_LABEL = 'Also open: '
+
+/** The closed counts fold's line as one string, as "Also open: ● 3 working · ◌ 3 waiting", for a look that draws a fold as plain text. */
+export const countsText = (counts: StatusCount[]) =>
+  `${COUNTS_LABEL}${counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP)}`
+
 /** What follows a parent's name: v while its rows show, else › and how many rows of work its fold hides. */
 export const parentChevron = (isCollapsed: boolean, foldCount: number) =>
   isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true)
@@ -53,7 +61,7 @@ function withoutCollapsed(rows: StatusRow[], isCollapsed: IsCollapsed): StatusRo
 }
 
 /**
- * `rows` as a look draws them: each done fold that `isUnfolded` names by id followed by the finished rows it holds, and
+ * `rows` as a look draws them: each done fold and counts fold that `isUnfolded` names by id followed by the finished rows it holds, and
  * none of the rows under a subject `isCollapsed` names.
  */
 export function unfoldedRows(
@@ -62,7 +70,7 @@ export function unfoldedRows(
   isCollapsed: IsCollapsed = NONE_COLLAPSED,
 ): StatusRow[] {
   return withoutCollapsed(rows, isCollapsed).flatMap(r =>
-    r.kind === 'done-fold' && isUnfolded(r.id) ? [r, ...r.rows] : [r],
+    (r.kind === 'done-fold' || r.kind === 'counts') && isUnfolded(r.id) ? [r, ...r.rows] : [r],
   )
 }
 
