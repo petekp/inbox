@@ -24,7 +24,7 @@ import { ROW_COPY } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
-import { SETTLED_MS, heldReplies, isGuarded, keptDiscards, withListInput } from '../../hooks/timing'
+import { SETTLED_MS, heldReplies, keptDiscards, withListInput } from '../../hooks/timing'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft } from '../../types'
@@ -51,11 +51,11 @@ import {
 } from './keys'
 import type { LastWaits } from './keys'
 import { withCollapses, writeCollapse } from './collapse'
-import { foldAllIn, foldClickOpens } from './fold-all'
+import { foldAllIn, foldClick, foldClickOpens } from './fold-all'
 import type { Collapses } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
 import type { LinesAbove } from './held-line'
-import { NO_TRACKS, moveRows } from './motion'
+import { NO_TRACKS, heldTabs, moveRows } from './motion'
 import { nextDrawAt } from './wake'
 import type { Tracks } from './motion'
 import { Heights, zoomOf } from './heights'
@@ -77,7 +77,7 @@ import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, statusDrawn } from '
 
 type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; queue: PressQueue }
 
-const { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile })
+const { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home })
 
 type Timer = { cancel(): void }
 
@@ -106,10 +106,11 @@ export default class Inbox extends View {
   /** When a click opened a row, so a double click does not collapse it. */
   clickedOpenAt = 0
   tracks: Tracks = NO_TRACKS
+  drawnTabs: TabCell[] = []
   heights = new Heights()
   tracksOf = ''
   /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
-  lastWaits: LastWaits = { tab: 'needsYou', rows: null }
+  lastWaits: LastWaits = { tab: 'needsYou', rows: null, pressed: [] }
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
@@ -313,14 +314,7 @@ export default class Inbox extends View {
     const projectFolder = target?.projectFolder ?? null
     cx.spawn(async cx => {
       await sent.finish(
-        (effects, pending) =>
-          runHere(effects, pending, {
-            run: herdrRun,
-            probe,
-            home: home(),
-            projectFolder,
-            copy: t => cx.write_to_clipboard(t),
-          }),
+        (effects, pending) => runHere(effects, pending, hereIo(projectFolder, cx)),
         () => cx.notify(),
       )
       cx.notify()
@@ -354,6 +348,7 @@ export default class Inbox extends View {
     const c = { isCollapsed, at: Date.now() }
     this.collapses = { ...this.collapses, [id]: c }
     if (isSelecting) this.ui = withCollapsed(this.ui, id, isCollapsed)
+    this.listInput = withListInput(this.listInput, c.at)
     this.closeStaleField()
     const to = { appHome: appHome(), sessionId: this.sessionId }
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c))
@@ -390,9 +385,9 @@ export default class Inbox extends View {
       })
     let screen = screenFor(this.ui)
     const inbox = screen.is === 'inbox' ? screen : null
-    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown)
-    if (ui !== this.ui) screen = screenFor((this.ui = ui))
-    this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null }
+    const drew = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, this.queue.outs)
+    if (drew.ui !== this.ui) screen = screenFor((this.ui = drew.ui))
+    this.lastWaits = drew.last
     this.view = inbox?.view ?? null
     this.drawTimer?.cancel()
     this.drawTimer = null
@@ -403,12 +398,7 @@ export default class Inbox extends View {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
       press: (b, cx, isAll) => this.press(b, cx, isAll),
-      collapse: (id, isCollapsed, cx, isAll) => {
-        if (isAll) return foldAllIn(this, !isCollapsed, cx)
-        if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now())) return
-        if (!isCollapsed) this.clickedOpenAt = Date.now()
-        this.collapse(id, isCollapsed, cx)
-      },
+      collapse: (id, isCollapsed, cx, isAll) => foldClick(this, id, isCollapsed, cx, isAll),
       select: (id, cx) => {
         this.clickedOpenAt = Date.now()
         this.ui = withSelected(this.ui, id)
@@ -451,10 +441,12 @@ export default class Inbox extends View {
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst)
+    const isInput = drew.isAnswer || (this.listInput?.last ?? 0) > this.tracks.drawnAt
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
+    this.drawnTabs = heldTabs(screen.tabs, this.drawnTabs, moved.motion)
     const read = drawn.read?.is === 'read' && this.ui.tab === 'overview' && !this.isHelpShown ? drawn.read : null
     const room = moved.nextAt === null ? paint.listRoom : null
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
@@ -467,7 +459,7 @@ export default class Inbox extends View {
     return root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(fitEl('tabs', paint, tabsEl(screen.tabs, this.isHelpShown, paint)))
+      .child(fitEl('tabs', paint, tabsEl(this.drawnTabs, this.isHelpShown, paint)))
       .child(
         fitEl(
           'chrome',

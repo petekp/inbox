@@ -166,6 +166,8 @@ class TabState {
   isHelpShown = false
   typing: string | null = null
   focusTyping = false
+  /** Whether the draw under way shows a read of the view, not the person's input. */
+  isReadDraw = false
   discarded: Record<string, number> = {}
   lineNote: { text: string; at: number; isError?: boolean } | null = null
   seen = new Map<string, number>()

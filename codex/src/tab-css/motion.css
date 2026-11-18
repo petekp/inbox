@@ -11,6 +11,7 @@ main {
   *::before,
   *::after {
     transition-duration: 0s !important;
+    transition-delay: 0s !important;
   }
   .time-left,
   .key.undo.undoing .icon,

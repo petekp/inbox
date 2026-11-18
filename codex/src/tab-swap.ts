@@ -14,7 +14,7 @@ import {
 } from './tab-state'
 import type { Kept, CandidatePage, PageHandoff } from './tab-state'
 import { later, cancelTimer, dispose, callTool, READ_TIMEOUT_MS } from './tab-host'
-import { applyPageVariables } from './tab-motion'
+import { applyPageVariables } from './tab-page-variables'
 
 const KEPT_KEY = 'inbox-tab-kept'
 

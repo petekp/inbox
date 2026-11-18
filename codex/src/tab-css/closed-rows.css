@@ -12,11 +12,10 @@
   padding: var(--row-pad) var(--edge) var(--row-pad) var(--text-x);
   color: var(--muted);
 }
+/* A group's empty note fades out in its place, and its space closes once the note has gone. */
 .group-empty.leaving {
-  position: absolute;
-  inset: auto 0 100% 0;
   pointer-events: none;
-  animation: fade-out var(--space-fade) forwards;
+  animation: fade-out var(--leave-fade) forwards;
 }
 @keyframes fade-out {
   to {

@@ -39,7 +39,12 @@ export function applyView(next: View, seq: number) {
     if (id) selection[t] = { id, openedAt: 0 }
   }
   follow(next, isOpening ? openRows(next) : rows.added)
-  tabState.draw()
+  tabState.isReadDraw = true
+  try {
+    tabState.draw()
+  } finally {
+    tabState.isReadDraw = false
+  }
 }
 
 export async function read() {

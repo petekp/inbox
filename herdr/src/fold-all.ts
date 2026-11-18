@@ -1,4 +1,5 @@
 import { foldAllOn } from '../../hooks/fold-all'
+import { isGuarded } from '../../hooks/timing'
 import type { SessionView } from '../../hooks/session-view'
 import type { Does } from './blocks'
 import type { LookUi } from './draw'
@@ -40,4 +41,21 @@ export function foldAllIn<C extends { notify(): void }>(look: FoldingLook<C>, is
   }
   for (const c of change.collapses) look.collapse(c.id, c.isCollapsed, cx, false)
   cx.notify()
+}
+
+/**
+ * A click on a fold, or on every fold of the tab with `isAll`. A click that folds within the press guard of a click that
+ * opened something does nothing, so a double click does not undo its own first click.
+ */
+export function foldClick<C extends { notify(): void }>(
+  look: FoldingLook<C> & { clickedOpenAt: number },
+  id: string,
+  isCollapsed: boolean,
+  cx: C,
+  isAll = false,
+): void {
+  if (isAll) return foldAllIn(look, !isCollapsed, cx)
+  if (isCollapsed && isGuarded(look.clickedOpenAt, Date.now())) return
+  if (!isCollapsed) look.clickedOpenAt = Date.now()
+  look.collapse(id, isCollapsed, cx, true)
 }

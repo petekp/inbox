@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T03:05:23.524Z. 281699 characters follow.
+// Built at 2026-11-18T03:09:15.518Z. 287043 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -4924,10 +4924,14 @@ function withShownNewRows(ui, at) {
   const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
   return isSame ? ui : { ...ui, newRows };
 }
-function withDrawnRows(ui, last, rows, at, isTabShown) {
+var waitsIn = (rows, id) => rows.some((r) => r.id === id && r.isWaiting);
+function withDrawnRows(ui, last, rows, at, isTabShown, outs) {
   const lastRows = last.tab === ui.tab ? last.rows : null;
-  const arrived = rows !== null && lastRows !== null ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
-  return isTabShown ? withShownNewRows(arrived, at) : arrived;
+  const isCompared = rows !== null && lastRows !== null;
+  const arrived = isCompared ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
+  const isAnswer = isCompared && last.pressed.some((id) => waitsIn(lastRows, id) && !waitsIn(rows, id));
+  const drawn = isTabShown ? withShownNewRows(arrived, at) : arrived;
+  return { ui: drawn, last: { tab: drawn.tab, rows, pressed: outs.map((o) => o.rowId) }, isAnswer };
 }
 var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
 var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
@@ -5070,6 +5074,15 @@ function foldAllIn(look, isOpening, cx) {
     look.collapse(c.id, c.isCollapsed, cx, false);
   cx.notify();
 }
+function foldClick(look, id, isCollapsed, cx, isAll = false) {
+  if (isAll)
+    return foldAllIn(look, !isCollapsed, cx);
+  if (isCollapsed && isGuarded(look.clickedOpenAt, Date.now()))
+    return;
+  if (!isCollapsed)
+    look.clickedOpenAt = Date.now();
+  look.collapse(id, isCollapsed, cx, true);
+}
 
 // src/held-line.ts
 var NO_LINES_ABOVE = new Map;
@@ -5162,28 +5175,36 @@ var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
 
 // ../hooks/row-motion.ts
 var FADE_MS = 200;
-var SPACE_FADE_MS = HEIGHT_SETTLE_MS;
+var LEAVE_FADE_MS = 120;
+var ENTER_FADE_MS = 150;
 var SLIDE_PX = 8;
+function enterDelayMs(height) {
+  const at = springFrames({ x: 0, v: 0 }, height).findIndex((x) => height - x <= SLIDE_PX / 2);
+  return Math.min(Math.max(0, at) * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
+}
 var ROW_FADE_MS = {
-  entering: SPACE_FADE_MS,
-  opening: SPACE_FADE_MS,
-  closing: SPACE_FADE_MS,
+  entering: ENTER_FADE_MS,
+  opening: ENTER_FADE_MS,
+  closing: LEAVE_FADE_MS,
   settling: FADE_MS,
-  leaving: SPACE_FADE_MS,
+  leaving: LEAVE_FADE_MS,
   closed: 0,
   open: 0,
   settled: 0,
   undoing: 0
 };
-var ROW_STATE_MS = Object.fromEntries(Object.entries(ROW_FADE_MS).map(([state, fadeMs]) => [state, fadeMs > 0 ? Math.max(fadeMs, HEIGHT_SETTLE_MS) : 0]));
+var ROW_STATE_MS = Object.fromEntries(Object.entries(ROW_FADE_MS).map(([state, fadeMs]) => {
+  const springStarts = state === "leaving" ? LEAVE_FADE_MS : 0;
+  return [state, fadeMs > 0 ? Math.max(fadeMs, springStarts + HEIGHT_SETTLE_MS) : 0];
+}));
 function isMoving(state) {
   return ROW_STATE_MS[state] > 0;
 }
 function stepRow2(track, target, now, isNew = false, isReduced = false) {
   const form = target === "undoing" ? "settled" : target;
   if (!track) {
-    if (isNew && !isReduced && (form === "closed" || form === "open"))
-      return { state: "entering", since: now, hasPanel: form === "open" };
+    if (isNew && !isReduced && form !== "gone")
+      return entering(form, now);
     return rest(undefined, form, target, now);
   }
   const next = formOf(track) === form ? track : moveToward(track, form, now);
@@ -5191,10 +5212,14 @@ function stepRow2(track, target, now, isNew = false, isReduced = false) {
     return next;
   return rest(next, form, target, now);
 }
-function formOf({ state, hasPanel }) {
+function entering(form, now) {
+  const track = { state: "entering", since: now, hasPanel: form === "open" };
+  return form === "settled" ? { ...track, entersSettled: true } : track;
+}
+function formOf({ state, hasPanel, entersSettled }) {
   switch (state) {
     case "entering":
-      return hasPanel ? "open" : "closed";
+      return entersSettled ? "settled" : hasPanel ? "open" : "closed";
     case "opening":
     case "open":
       return "open";
@@ -5214,7 +5239,7 @@ function moveToward(track, form, now) {
     case "open":
       return { state: "opening", since: now, hasPanel: true };
     case "closed":
-      return track.state === "leaving" ? { state: "entering", since: now, hasPanel: false } : { state: "closing", since: now, hasPanel: track.hasPanel };
+      return track.state === "leaving" ? entering("closed", now) : { state: "closing", since: now, hasPanel: track.hasPanel };
     case "settled":
       return { state: "settling", since: now, hasPanel: track.hasPanel };
     case "gone":
@@ -5271,26 +5296,55 @@ class Heights {
 }
 
 // src/motion.ts
-var NO_TRACKS = { rows: new Map, order: [] };
+var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
 var NEXT_FRAME_MS = 16;
+var HOLD_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
 var restAt = (now, fadeMs) => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS;
-function glideOf(track, isStart, last, now) {
+function glideOf(track, isStart, last, now, holdsUntil, isPressed, isReplaced) {
   const { state } = track;
   const isLive = last !== null && now < last.endsAt;
-  if (state === "entering" || state === "leaving") {
-    const to = state === "entering" ? "open" : "shut";
-    if (!isStart && last !== null)
-      return { ...last, box: to };
-    if (isLive)
-      return { box: to, fadeMs: last.fadeMs, endsAt: restAt(now, last.fadeMs) };
-    const fadeMs = ROW_FADE_MS[state];
-    return { box: to === "open" ? "shut" : "open", fadeMs, endsAt: restAt(now, fadeMs) };
+  if (state === "leaving") {
+    if (!isStart && last !== null) {
+      const box = last.shutAt !== null && now >= last.shutAt ? "shut" : last.box;
+      return { ...last, box, isShown: false };
+    }
+    const fadeMs = isReplaced ? 0 : LEAVE_FADE_MS;
+    const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + fadeMs;
+    const from = isLive || isReplaced ? { box: last?.box ?? "open", isShown: false } : { box: "open", isShown: true };
+    const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt };
+    return { ...glide, endsAt: restAt(shutAt, 0) };
   }
-  if (!isLive || last.box !== "open")
+  if (state === "entering") {
+    if (!isStart && last !== null)
+      return openedAt(last, now);
+    if (isLive) {
+      const isShutting = last.shutAt !== null && now > last.shutAt;
+      const shutForMs = isShutting && last.shutAt !== null ? now - last.shutAt : null;
+      const waitsForSpace = isShutting || last.box !== "open";
+      const glide = { box: "open", isShown: true, fadeMs: ENTER_FADE_MS, waitsForSpace, shutForMs };
+      return { ...glide, opensAt: null, shutAt: null, endsAt: restAt(now, ENTER_FADE_MS) };
+    }
+    const opensAt = !isPressed && holdsUntil > now ? holdsUntil : now + NEXT_FRAME_MS;
+    const glide = { box: "shut", isShown: isPressed, fadeMs: isPressed ? 0 : ENTER_FADE_MS };
+    return {
+      ...glide,
+      waitsForSpace: !isPressed,
+      shutForMs: null,
+      opensAt,
+      shutAt: null,
+      endsAt: restAt(opensAt, glide.fadeMs)
+    };
+  }
+  if (!isLive || last.box !== "open" && last.opensAt === null)
     return null;
-  return isStart ? { ...last, endsAt: restAt(now, last.fadeMs) } : last;
+  const glide = openedAt(last, now);
+  return isStart ? { ...glide, endsAt: Math.max(glide.endsAt, restAt(now, glide.fadeMs)) } : glide;
+}
+function openedAt(g, now) {
+  const isOpen = g.opensAt === null || now >= g.opensAt;
+  return { ...g, box: isOpen ? "open" : "shut", isShown: isOpen || g.fadeMs === 0 };
 }
 function panelOf(state, isStart, was, closing) {
   const isFrom = isStart && !isFolding(was);
@@ -5330,11 +5384,25 @@ function movedOf(blocks, was) {
   const stays = longestRun(at);
   return new Set(kept.filter((_, i) => !stays.has(i)).map((b) => b.id));
 }
-function moveRows(blocks, last, now, isFirst) {
+function moveRows(blocks, last, now, isFirst, isInput = false) {
   const was = isFirst ? NO_TRACKS : last;
   const wasDrawn = new Set(was.order);
   const moved = movedOf(blocks, was);
   const copies = new Map([...moved].map((id) => [id, copyIdOf(id, now)]));
+  const isDrawn = new Set(blocks.map((b) => b.id));
+  const isFieldBack = (id) => !wasDrawn.has(id) || was.rows.get(id)?.track.state === "leaving";
+  const isFieldPressed = !isFirst && blocks.some((b) => b.kind === "field" && isFieldBack(b.id));
+  const startsLeave = was.order.some((id) => {
+    const state = was.rows.get(id)?.track.state;
+    return state !== undefined && state !== "leaving" && (copies.has(id) || !isDrawn.has(id));
+  });
+  const holdsUntil = startsLeave && !isFieldPressed ? now + HOLD_MS : was.holdsUntil;
+  const isHolding = holdsUntil > now;
+  const opensRow = blocks.some((b) => {
+    const old = was.rows.get(b.id);
+    return old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
+  });
+  const waiting = new Map;
   const rows = new Map;
   const motion = new Map;
   const add = (block, track, last, springId = null) => {
@@ -5343,31 +5411,43 @@ function moveRows(blocks, last, now, isFirst) {
     const wrapEndsAt = isOpen ? null : wasOpen ? restAt(now, 0) : last?.wrapEndsAt ?? null;
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
-    const glide = glideOf(track, isStart, last?.glide ?? null, now);
-    rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId });
+    const isPressed = block.kind === "field";
+    const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, isPressed, isFieldPressed);
+    const isReleased = isInput && opensRow && track.state === "closing";
+    const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
+    rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId, isInputMove });
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
+    const isHeld = closing !== null && isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
     motion.set(block.id, {
       state: track.state,
       isStart,
       box: glide?.box ?? null,
+      isShown: glide?.isShown ?? true,
       fadeMs: glide?.fadeMs ?? 0,
+      waitsForSpace: glide?.waitsForSpace ?? false,
+      shutForMs: glide?.shutForMs ?? null,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
+      isPanelWaiting: track.state === "opening" && !isInputMove,
       closing,
-      isPanelLeftOut: closing !== null && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
+      isPanelLeftOut: closing !== null && !isHeld && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
       isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt,
+      isHeightHeld: isHeld,
       springId
     });
   };
   for (const b of blocks) {
     const isMoved = moved.has(b.id);
     const old = isMoved ? undefined : was.rows.get(b.id);
-    const track = stepRow2(old?.track, targetOf(b), now, isMoved || !isFirst && !wasDrawn.has(b.id));
+    const waits = !isInput && isHolding && old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
+    if (waits)
+      waiting.set(b.id, old.block);
+    const drawn = waits ? old.block : b;
+    const track = stepRow2(old?.track, targetOf(drawn), now, isMoved || !isFirst && !wasDrawn.has(b.id));
     if (track)
-      add(b, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : old?.springId ?? null);
+      add(drawn, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : old?.springId ?? null);
   }
-  const shown = [...blocks];
-  const isDrawn = new Set(blocks.map((b) => b.id));
+  const shown = blocks.map((b) => waiting.get(b.id) ?? b);
   was.order.forEach((id, i) => {
     const old = was.rows.get(id);
     const copyId = copies.get(id);
@@ -5381,17 +5461,34 @@ function moveRows(blocks, last, now, isFirst) {
     add(block, track, old, copyId === undefined ? old.springId : null);
     shown.splice(placeAfter(shown, was.order.slice(0, i).map((above) => copies.get(above) ?? above)), 0, block);
   });
+  const isStarting = [...motion.values()].some((m) => m.isStart);
+  const drawn = isStarting ? shown.map((b) => heldForm(b, was, motion)) : shown;
   const ends = [...rows.values()].flatMap((t) => [
     ...isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : [],
-    ...t.glide ? [t.glide.endsAt] : [],
-    ...t.wrapEndsAt !== null ? [t.wrapEndsAt] : []
+    ...t.glide ? [t.glide.endsAt, t.glide.opensAt ?? 0, t.glide.shutAt ?? 0] : [],
+    ...t.wrapEndsAt !== null ? [t.wrapEndsAt] : [],
+    holdsUntil
   ]).filter((at) => at > now);
   return {
-    blocks: shown,
-    tracks: { rows, order: shown.map((b) => b.id) },
+    blocks: drawn,
+    tracks: { rows, order: shown.map((b) => b.id), holdsUntil, drawnAt: now },
     motion,
     nextAt: ends.length ? Math.min(...ends) : null
   };
+}
+function heldForm(b, was, motion) {
+  const last = was.rows.get(b.id)?.block;
+  const state = motion.get(b.id)?.state;
+  const isHeld = last !== undefined && b.kind !== "row" && b.kind !== "empty" && state !== undefined && !isMoving(state);
+  return isHeld && JSON.stringify(last) !== JSON.stringify(b) ? last : b;
+}
+function heldTabs(tabs, last, motion) {
+  if (![...motion.values()].some((m) => m.isStart))
+    return tabs;
+  return tabs.map((t) => {
+    const was = last.find((l) => l.id === t.id);
+    return was ? { ...t, badge: was.badge } : t;
+  });
 }
 function placeAfter(shown, above) {
   for (let i = above.length - 1;i >= 0; i--) {
@@ -5763,7 +5860,7 @@ function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
 }
-var titleHeightOf = (r, p) => isOpenRow(r) ? p.heights.get(titleId(r.id)) : LINE_HEIGHT;
+var titleHeightOf = (r, p) => isOpenRow(r) || p.motion.get(r.id)?.isHeightHeld ? p.heights.get(titleId(r.id)) : LINE_HEIGHT;
 function titleEl(r, p, el) {
   const key = titleId(r.id);
   const height = isOpenRow(r) && p.isAtOnce(key) ? undefined : titleHeightOf(r, p);
@@ -5857,6 +5954,7 @@ function contentStrokeEls(b, t, fade) {
   });
   return [...path ? pathEls(path) : [], ...treeEls];
 }
+var shutTo = (height, ms) => ms === null ? 0 : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING).x;
 function spacedEls(blocks, p, el) {
   const isShut = (b) => p.motion.get(b.id)?.box === "shut";
   const spaces = spacesOf(blocks, isShut);
@@ -5867,9 +5965,12 @@ function spacedEls(blocks, p, el) {
     const comesIn = runsIn(b);
     const intoSpace = [...comesIn, ...passes.filter((c) => !comesIn.some((o) => o.depth === c.depth))];
     const m = p.motion.get(b.id);
-    const isOpen = m?.box === "open" && fitHeight(b, m, p) !== undefined;
-    const fade = (e) => m?.box ? e.opacity(isOpen ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" }) : e;
-    const slide = (e) => m?.box ? e.relative().top(isOpen ? 0 : -SLIDE_PX).transition("top", { duration: m.fadeMs, easing: "ease-out" }) : e;
+    const height = fitHeight(b, m, p);
+    const isShown = m?.box === "open" && m.isShown && height !== undefined;
+    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height - shutTo(height, m.shutForMs)) : 0;
+    const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
+    const fade = (e) => m?.box ? e.opacity(isShown ? 1 : 0).transition("opacity", glide) : e;
+    const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
     return v_flex().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
       ...contentStrokeEls(b, p.t, fade),
       ...passes.map((c) => wholeColumnEl(c, p.t))
@@ -6034,7 +6135,8 @@ function panelEl(r, m, p, isLeaving) {
     return [];
   const key = panelId(r.id);
   const opacity = m?.panel ?? null;
-  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], easing: "ease-out" };
+  const delay = m?.isPanelWaiting ? enterDelayMs(p.heights.get(key) ?? 0) : 0;
+  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], delay, easing: "ease-out" };
   return [
     v_flex3().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];
@@ -6374,7 +6476,7 @@ class PressQueue {
 }
 
 // src/io.ts
-function herdrIo({ exec, hc, readTextFile, writeTextFile }) {
+function herdrIo({ exec, hc, readTextFile, writeTextFile, home }) {
   const herdrRun = (args, opts) => exec(args[0] ?? "", args.slice(1), { cwd: opts.cwd, timeout: opts.timeoutMs }).catch((e) => ({
     code: 127,
     stdout: "",
@@ -6406,7 +6508,14 @@ function herdrIo({ exec, hc, readTextFile, writeTextFile }) {
       await hc(["label", terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null);
     }
   };
-  return { herdrRun, probe, queueIo };
+  const hereIo = (projectFolder, cx) => ({
+    run: herdrRun,
+    probe,
+    home: home(),
+    projectFolder,
+    copy: (text) => cx.write_to_clipboard(text)
+  });
+  return { queueIo, hereIo };
 }
 
 // src/screen.ts
@@ -6602,7 +6711,7 @@ class LookReports {
 }
 
 // src/main.ts
-var { herdrRun, probe, queueIo } = herdrIo({ exec, hc, readTextFile, writeTextFile });
+var { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home });
 
 class Inbox extends View {
   tab = null;
@@ -6626,9 +6735,10 @@ class Inbox extends View {
   collapses = {};
   clickedOpenAt = 0;
   tracks = NO_TRACKS;
+  drawnTabs = [];
   heights = new Heights;
   tracksOf = "";
-  lastWaits = { tab: "needsYou", rows: null };
+  lastWaits = { tab: "needsYou", rows: null, pressed: [] };
   timeLeft = new Map;
   linesAbove = NO_LINES_ABOVE;
   focus = null;
@@ -6804,13 +6914,7 @@ class Inbox extends View {
     const queue = this.queue;
     const projectFolder = target?.projectFolder ?? null;
     cx.spawn(async (cx) => {
-      await sent.finish((effects, pending) => runHere(effects, pending, {
-        run: herdrRun,
-        probe,
-        home: home(),
-        projectFolder,
-        copy: (t) => cx.write_to_clipboard(t)
-      }), () => cx.notify());
+      await sent.finish((effects, pending) => runHere(effects, pending, hereIo(projectFolder, cx)), () => cx.notify());
       cx.notify();
       if (queue === this.queue)
         this.checkOutsAt(queue.nextCheckAt(), cx);
@@ -6847,6 +6951,7 @@ class Inbox extends View {
     this.collapses = { ...this.collapses, [id]: c };
     if (isSelecting)
       this.ui = withCollapsed(this.ui, id, isCollapsed);
+    this.listInput = withListInput(this.listInput, c.at);
     this.closeStaleField();
     const to = { appHome: appHome(), sessionId: this.sessionId };
     cx.spawn(() => writeCollapse(queueIo, to, read, id, c));
@@ -6888,10 +6993,10 @@ class Inbox extends View {
     });
     let screen = screenFor(this.ui);
     const inbox = screen.is === "inbox" ? screen : null;
-    const ui = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown);
-    if (ui !== this.ui)
-      screen = screenFor(this.ui = ui);
-    this.lastWaits = { tab: this.ui.tab, rows: inbox?.waits ?? null };
+    const drew = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, this.queue.outs);
+    if (drew.ui !== this.ui)
+      screen = screenFor(this.ui = drew.ui);
+    this.lastWaits = drew.last;
     this.view = inbox?.view ?? null;
     this.drawTimer?.cancel();
     this.drawTimer = null;
@@ -6902,15 +7007,7 @@ class Inbox extends View {
       t,
       mono: theme().typography?.mono ?? "Menlo",
       press: (b, cx, isAll) => this.press(b, cx, isAll),
-      collapse: (id, isCollapsed, cx, isAll) => {
-        if (isAll)
-          return foldAllIn(this, !isCollapsed, cx);
-        if (isCollapsed && isGuarded(this.clickedOpenAt, Date.now()))
-          return;
-        if (!isCollapsed)
-          this.clickedOpenAt = Date.now();
-        this.collapse(id, isCollapsed, cx);
-      },
+      collapse: (id, isCollapsed, cx, isAll) => foldClick(this, id, isCollapsed, cx, isAll),
       select: (id, cx) => {
         this.clickedOpenAt = Date.now();
         this.ui = withSelected(this.ui, id);
@@ -6944,10 +7041,12 @@ class Inbox extends View {
     const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now);
     this.linesAbove = held.held;
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst);
+    const isInput = drew.isAnswer || (this.listInput?.last ?? 0) > this.tracks.drawnAt;
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput);
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
+    this.drawnTabs = heldTabs(screen.tabs, this.drawnTabs, moved.motion);
     const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
     const room = moved.nextAt === null ? paint.listRoom : null;
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
@@ -6957,7 +7056,7 @@ class Inbox extends View {
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(screen.tabs, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div10().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex4().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div10().flex_1().min_h(0).relative().child(v_flex4().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

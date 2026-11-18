@@ -7,8 +7,10 @@ import { SLIDE_PX } from '../../hooks/row-motion'
 import { SETTLED_MS } from '../../hooks/timing'
 
 const { framesOf, jumpsOf } = await import('./frames')
+type Step = import('./frames').Step
 const { LINE_HEIGHT } = await import('../src/paint-theme')
 const { tabBlocks } = await import('../src/draw')
+const { isOpenRow } = await import('../src/blocks')
 const { AGENT, NOW, demoScreen, uiOn } = await import('./fixtures')
 
 const ALL = ['d11', 'd12', 'd13', 'd15']
@@ -355,10 +357,12 @@ test('a block that leaves slides its content up by the slide offset as it fades,
   expect(offsets([[0, some]])).toEqual(new Set())
 })
 
-test('a block that enters or leaves is never blank while its box holds space', () => {
+test('no text is cut through its letters while a row or a whole section enters or leaves', () => {
   const some = asks(['d11', 'd12'])
   const fewer = asks(['d11'])
-  const moves: Record<string, [number, Block[]][]> = {
+  const full = asks(ALL)
+  const none = asks([])
+  const moves: Record<string, Step[]> = {
     leaves: [
       [0, some],
       [0, fewer],
@@ -367,7 +371,172 @@ test('a block that enters or leaves is never blank while its box holds space', (
       [0, fewer],
       [0, some],
     ],
+    fills: [
+      [0, none],
+      [0, full],
+    ],
+    empties: [
+      [0, full],
+      [0, none],
+    ],
   }
-  for (const [name, steps] of Object.entries(moves))
-    expect({ name, blanks: framesOf(steps, 800).blanks }).toEqual({ name, blanks: [] })
+  const openTitles = (blocks: Block[]) => blocks.flatMap(b => (b.kind === 'row' && isOpenRow(b) ? [b.title] : []))
+  for (const [name, steps] of Object.entries(moves)) {
+    const before = openTitles(steps[0]![1])
+    const after = openTitles(steps.at(-1)![1])
+    const folds = [...before, ...after].filter(title => !before.includes(title) || !after.includes(title))
+    const cuts = framesOf(steps, 900).cuts.filter(c => !folds.includes(c.text))
+    expect({ name, cuts }).toEqual({ name, cuts: [] })
+  }
+})
+
+test('a leaving block’s space closes as soon as its content has faded, and not before', () => {
+  const fading = framesOf(
+    [
+      [0, asks(['d11', 'd12'])],
+      [0, asks(['d11'])],
+    ],
+    900,
+  ).fading.filter(f => f.id === 'box d12')
+  const full = fading[0]?.height ?? 0
+  const fadedAt = fading.find(f => f.opacity < 0.05)?.at ?? Infinity
+  const closesAt = fading.find(f => f.height < full - 0.5)?.at ?? Infinity
+  expect(full).toBeGreaterThan(0)
+  expect(closesAt).toBeGreaterThanOrEqual(fadedAt)
+  expect(closesAt - fadedAt).toBeLessThanOrEqual(3 * 16)
+})
+
+test('a settled row the view brings in opens from no height, so the rows below it glide', () => {
+  const steps: [number, Block[]][] = [
+    [0, asks(ALL)],
+    [0, asks([...ALL, 'd10'])],
+  ]
+  const frames = framesOf(steps, 900)
+  expect(asks([...ALL, 'd10']).some(b => b.id === 'd10')).toBe(true)
+  expect(jumpsOf(steps)).toEqual([])
+  expect(frames.fading.find(f => f.id === 'box d10')?.height).toBe(0)
+  expect(frames.cuts).toEqual([])
+})
+
+test('a row the selection leaves keeps closing when another block starts to leave', () => {
+  const titleBoxes = framesOf(
+    [
+      [0, asks(ALL, 'd11')],
+      [0, asks(ALL, 'd12'), 'input'],
+      [100, asks(['d11', 'd12', 'd13'], 'd12')],
+    ],
+    900,
+  )
+    .titles.filter(t => t.id === 'd11')
+    .map(t => t.box)
+  const rises = titleBoxes.filter((box, i) => i > 0 && box > (titleBoxes[i - 1] ?? box) + 0.5)
+  expect(titleBoxes.length).toBeGreaterThan(10)
+  expect(rises).toEqual([])
+})
+
+test('the row the person’s selection moves to shows its panel from the next frame', () => {
+  const fading = framesOf(
+    [
+      [0, asks(ALL, 'd11')],
+      [0, asks(ALL, 'd12'), 'input'],
+    ],
+    300,
+  ).fading.filter(f => f.id === 'panel d12')
+  const start = fading[0]?.at ?? 0
+  expect(fading.find(f => f.opacity > 0.01)?.at ?? Infinity).toBeLessThanOrEqual(start + 2 * 16)
+})
+
+test('a block listed again while it fades out fades back in where it is, and nothing below it dips', () => {
+  const all = asks(['d11', 'd12', 'd13'])
+  const frames = framesOf(
+    [
+      [0, all],
+      [0, asks(['d11', 'd13'])],
+      [50, all],
+    ],
+    900,
+  )
+  const box = frames.fading.filter(f => f.id === 'box d12')
+  const full = box[0]?.height ?? 0
+  expect(full).toBeGreaterThan(0)
+  expect(Math.min(...box.map(f => f.height))).toBeGreaterThan(full - 0.5)
+  expect(box.at(-1)?.opacity).toBeCloseTo(1)
+  expect(Math.min(...frames.heights)).toBeGreaterThan((frames.heights[0] ?? 0) - 0.5)
+})
+
+test('a block listed again after its space began to close fades in once its space is nearly open again', () => {
+  const all = asks(['d11', 'd12', 'd13'])
+  const box = framesOf(
+    [
+      [0, all],
+      [0, asks(['d11', 'd13'])],
+      [200, all],
+    ],
+    1200,
+  ).fading.filter(f => f.id === 'box d12' && f.at >= 200)
+  const full = Math.max(...box.map(f => f.height))
+  const nearlyOpenAt = box.find(f => f.height >= full - SLIDE_PX / 2)?.at ?? Infinity
+  const showsAt = box.find(f => f.opacity > 0.02)?.at ?? Infinity
+  expect(showsAt).toBeGreaterThanOrEqual(nearlyOpenAt - 16)
+  expect(showsAt - nearlyOpenAt).toBeLessThanOrEqual(2 * 16)
+})
+
+test('when a publish moves the selection as another block leaves, the list never grows before it shrinks', () => {
+  const moves: Record<string, Step[]> = {
+    selectedLeaves: [
+      [0, asks(ALL, 'd11')],
+      [0, asks(['d12', 'd13', 'd15'], 'd12')],
+    ],
+    firstLeaves: [
+      [0, asks(ALL)],
+      [0, asks(['d12', 'd13', 'd15'])],
+    ],
+    otherLeaves: [
+      [0, asks(ALL, 'd11')],
+      [0, asks(['d11', 'd12', 'd13'], 'd12')],
+    ],
+    empties: [
+      [0, asks(ALL)],
+      [0, asks([])],
+    ],
+    keyAfter: [
+      [0, asks(ALL, 'd11')],
+      [0, asks(['d11', 'd12', 'd13'], 'd12')],
+      [50, asks(['d11', 'd12', 'd13'], 'd13'), 'input'],
+    ],
+  }
+  for (const [name, steps] of Object.entries(moves)) {
+    const heights = framesOf(steps, 900).heights
+    const start = heights[0] ?? 0
+    const rise = Math.max(...heights) - start
+    expect({ name, rise: rise > 0.5 ? rise : 0 }).toEqual({ name, rise: 0 })
+  }
+})
+
+test('opening the goal field never raises the Status page’s height', () => {
+  const heights = framesOf(
+    [
+      [0, tabBlocks(demoScreen(), uiOn('overview'))],
+      [0, tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' })), 'input'],
+    ],
+    900,
+  ).heights
+  const start = heights[0] ?? 0
+  expect(heights.at(-1)).not.toBe(start)
+  expect(Math.max(...heights)).toBeLessThanOrEqual(start + 0.5)
+})
+
+test('reopening the goal field while it still closes never raises the Status page above its closed height', () => {
+  const closed = tabBlocks(demoScreen(), uiOn('overview'))
+  const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
+  const heights = framesOf(
+    [
+      [0, closed],
+      [0, typing, 'input'],
+      [900, closed, 'input'],
+      [1200, typing, 'input'],
+    ],
+    2200,
+  ).heights
+  expect(Math.max(...heights)).toBeLessThan((heights[0] ?? 0) + 1)
 })

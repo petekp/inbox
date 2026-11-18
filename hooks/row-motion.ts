@@ -1,22 +1,16 @@
-import { HEIGHT_SETTLE_MS } from './springs'
+import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames } from './springs'
 
 /** How long a fade lasts when it does not move space, such as a hover or a row's fill, in ms. */
 export const FADE_MS = 200
 
 /**
- * How long content fades as its space enters, leaves, opens or closes, in ms: as long as the height spring takes to
- * come to rest. Content then stays shown until its space has closed, and shows in full only as its space has grown.
+ * How long the content of a block that leaves fades out, in ms. Its space holds its height meanwhile and closes as soon
+ * as the content has faded, so no text is cut by a closing space. A row's panel fades out as fast as its row closes.
  */
-export const SPACE_FADE_MS = HEIGHT_SETTLE_MS
+export const LEAVE_FADE_MS = 120
 
-/**
- * The opacity of content whose space is `height` px tall out of `full`: the height's share of the shorter of `full`
- * and `SPACE_FADE_PX`, raised to one third. Content stays visible until its space is nearly gone, since opacity under
- * 20% reads as blank, and shows in full only as its space has grown.
- */
-const SPACE_FADE_PX = 200
-export const spaceOpacity = (height: number, full: number): number =>
-  full <= 0 ? 1 : Math.min(1, (Math.max(0, height) / Math.min(full, SPACE_FADE_PX)) ** (1 / 3))
+/** How long the content of a block that enters, or a row's panel as it opens, fades in once its wait ends, in ms. */
+export const ENTER_FADE_MS = 150
 
 /** How long a closed row's line fades back in as its close ends, in ms. */
 export const LINE_RETURN_FADE_MS = 300
@@ -26,6 +20,18 @@ export const LINE_RETURN_FADE_MS = 300
  * offset as it fades, and one that enters slides down from it, so the offset is always its share of the fade.
  */
 export const SLIDE_PX = 8
+
+/**
+ * How long the content of a space that opens `height` px from none waits before it fades in, in ms: until the space is
+ * within half of `SLIDE_PX` of open, so the edge of a space still opening never cuts the letters of content that
+ * slides down into it. A tall space comes the last few px slowly, so the wait is at most what lets the fade end as the
+ * height spring comes to rest.
+ */
+export function enterDelayMs(height: number): number {
+  const at = springFrames({ x: 0, v: 0 }, height).findIndex(x => height - x <= SLIDE_PX / 2)
+
+  return Math.min(Math.max(0, at) * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
+}
 
 /** The vertical offset of content at `opacity`: none when shown, `SLIDE_PX` above its place when faded out. */
 export const slideOffset = (opacity: number): number => -SLIDE_PX * (1 - Math.min(1, Math.max(0, opacity)))
@@ -44,17 +50,17 @@ export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
 
 /**
  * A row's state, when it entered it, and whether it draws the open row's panel: an open row, one growing in open,
- * and a row closing, settling or leaving from a state that drew it.
+ * and a row closing, settling or leaving from a state that drew it. `entersSettled` marks a row growing in settled.
  */
-export type RowTrack = { state: RowState; since: number; hasPanel: boolean }
+export type RowTrack = { state: RowState; since: number; hasPanel: boolean; entersSettled?: true }
 
 /** How long each state's fade lasts, in ms. Resting states are 0. */
 export const ROW_FADE_MS: Record<RowState, number> = {
-  entering: SPACE_FADE_MS,
-  opening: SPACE_FADE_MS,
-  closing: SPACE_FADE_MS,
+  entering: ENTER_FADE_MS,
+  opening: ENTER_FADE_MS,
+  closing: LEAVE_FADE_MS,
   settling: FADE_MS,
-  leaving: SPACE_FADE_MS,
+  leaving: LEAVE_FADE_MS,
   closed: 0,
   open: 0,
   settled: 0,
@@ -63,10 +69,15 @@ export const ROW_FADE_MS: Record<RowState, number> = {
 
 /**
  * How long each moving state lasts, in ms: until its height spring and its fade have both come to rest, so a row
- * keeps what it moves away from drawn while any of it shows. Resting states are 0.
+ * keeps what it moves away from drawn while any of it shows. A leaving row's spring starts once its fade ends. Resting
+ * states are 0.
  */
 export const ROW_STATE_MS: Record<RowState, number> = Object.fromEntries(
-  Object.entries(ROW_FADE_MS).map(([state, fadeMs]) => [state, fadeMs > 0 ? Math.max(fadeMs, HEIGHT_SETTLE_MS) : 0]),
+  Object.entries(ROW_FADE_MS).map(([state, fadeMs]) => {
+    const springStarts = state === 'leaving' ? LEAVE_FADE_MS : 0
+
+    return [state, fadeMs > 0 ? Math.max(fadeMs, springStarts + HEIGHT_SETTLE_MS) : 0]
+  }),
 ) as Record<RowState, number>
 
 type Form = Exclude<RowTarget, 'undoing'>
@@ -78,8 +89,8 @@ export function isMoving(state: RowState): boolean {
 /**
  * A row's next track, at each draw. A new target starts the move toward it from wherever the row is drawn. A moving
  * state comes to rest once its length has passed, so an animation that never reports its end cannot hold a row.
- * `isNew` grows a row the view just brought in, closed or open; any other row the tab has not drawn yet shows its
- * form at once. With `isReduced`, every move ends in the draw that starts it. Null when the row is no longer drawn.
+ * `isNew` grows a row the view just brought in, in any form; any other row the tab has not drawn yet shows its form at
+ * once. With `isReduced`, every move ends in the draw that starts it. Null when the row is no longer drawn.
  */
 export function stepRow(
   track: RowTrack | undefined,
@@ -90,8 +101,7 @@ export function stepRow(
 ): RowTrack | null {
   const form: Form = target === 'undoing' ? 'settled' : target
   if (!track) {
-    if (isNew && !isReduced && (form === 'closed' || form === 'open'))
-      return { state: 'entering', since: now, hasPanel: form === 'open' }
+    if (isNew && !isReduced && form !== 'gone') return entering(form, now)
     return rest(undefined, form, target, now)
   }
   const next = formOf(track) === form ? track : moveToward(track, form, now)
@@ -100,10 +110,16 @@ export function stepRow(
   return rest(next, form, target, now)
 }
 
-function formOf({ state, hasPanel }: RowTrack): Form {
+function entering(form: Exclude<Form, 'gone'>, now: number): RowTrack {
+  const track: RowTrack = { state: 'entering', since: now, hasPanel: form === 'open' }
+
+  return form === 'settled' ? { ...track, entersSettled: true } : track
+}
+
+function formOf({ state, hasPanel, entersSettled }: RowTrack): Form {
   switch (state) {
     case 'entering':
-      return hasPanel ? 'open' : 'closed'
+      return entersSettled ? 'settled' : hasPanel ? 'open' : 'closed'
     case 'opening':
     case 'open':
       return 'open'
@@ -125,7 +141,7 @@ function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
       return { state: 'opening', since: now, hasPanel: true }
     case 'closed':
       return track.state === 'leaving'
-        ? { state: 'entering', since: now, hasPanel: false }
+        ? entering('closed', now)
         : { state: 'closing', since: now, hasPanel: track.hasPanel }
     case 'settled':
       return { state: 'settling', since: now, hasPanel: track.hasPanel }

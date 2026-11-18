@@ -10,6 +10,7 @@ import {
   shortAgo,
 } from '../../hooks/rows'
 import { groupEmptyText } from '../../hooks/banners'
+import { LEAVE_FADE_MS } from '../../hooks/row-motion'
 import { emptyTab } from '../../hooks/empty-tab'
 import { entryId, settledIn } from '../../hooks/action-plan'
 import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../hooks/help'
@@ -79,8 +80,16 @@ function staying(entries: Entry[]): Entry[] {
 
 type GroupEmpty = { text: string; isLeaving: boolean }
 
+/**
+ * A group's empty note, and whether it leaves: it stays in its place, fading out, until the group's first rows have
+ * waited `LEAVE_FADE_MS` to arrive, and then its space closes as theirs opens.
+ */
 function groupEmpty(title: string, rest: Entry[]): GroupEmpty | null {
-  const isArriving = rest.every(x => drawnRows.get(entryId(x))?.track.state === 'entering')
+  const now = Date.now()
+  const isArriving = rest.every(x => {
+    const track = drawnRows.get(entryId(x))?.track
+    return track?.state === 'entering' && now - track.since < LEAVE_FADE_MS
+  })
 
   return rest.length === 0 || isArriving ? { text: groupEmptyText(title), isLeaving: rest.length > 0 } : null
 }
