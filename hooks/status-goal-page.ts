@@ -2,7 +2,7 @@ import type { Item, SessionStatus, StatusGoal } from '../types'
 import { HELD_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
-import { namedList } from './status-page-parts'
+import { namedList, textBeyondName } from './status-page-parts'
 import { milestonePath, namesOnlyMilestoneUnderWay } from './status-path'
 import { hasRunningGoal } from './status-suggest'
 import type { PathLine, PathPlace, PathStep } from './status-path'
@@ -149,7 +149,7 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     isMuted: step.place === 'later' || step.place === 'dropped' || step.place === 'done',
     foldId: null,
     foldCount: 0,
-    text: m.text || null,
+    text: textBeyondName(m.name, m.text),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
     rows: [],
