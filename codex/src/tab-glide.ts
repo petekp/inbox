@@ -9,8 +9,8 @@ type Size = 'height' | 'width'
 
 /**
  * A size move under way: where its spring started, where it goes, how long it waits to start, when that wait ends as a
- * `Date.now()` time, and the animation that plays it. An element that comes or goes also scales its vertical padding and top margin with its height, so it truly
- * grows from and shrinks to no height.
+ * `Date.now()` time, and the animation that plays it. An element that comes or goes also scales its vertical padding
+ * and top margin with its height, so it truly grows from and shrinks to no height.
  */
 type Glide = {
   size: Size
