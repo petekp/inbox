@@ -1,20 +1,13 @@
 import { atEndWeight } from './weight-ease'
-import {
-  ENTER_FADE_MS,
-  enterDelayMs,
-  FADE_MS,
-  isMoving,
-  LEAVE_FADE_MS,
-  ROW_STATE_MS,
-  slideOffset,
-} from '../../hooks/row-motion'
+import { ENTER_FADE_MS, enterDelayMs, FADE_MS, isMoving, LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
 import type { RowState } from '../../hooks/row-motion'
-import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames, springStep } from '../../hooks/springs'
+import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
-import { tabState, entering, closingFolds, drawnRows, root, animations } from './tab-state'
+import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
 import { later, cancelTimer } from './tab-host'
+import { atEndLines, closeTitle, openTitle, releaseLine, LINE } from './tab-title-motion'
+import { fade, glide, glides, isFadingIn, isRunning, isUnderWay, opacityOf, springOf } from './tab-glide'
 
-export const FADE_EASING = 'ease-out'
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
 /** An element's height before a draw, and the top of the part it draws open, a row's panel or a PR block's body. */
@@ -46,15 +39,6 @@ export function measure(): Drawing {
   return { heights, tabWidths }
 }
 
-type Size = 'height' | 'width'
-
-/**
- * A size move under way: where its spring started, where it goes, how long it waits to start, and the animation that
- * plays it. An element that comes or goes also scales its vertical padding and top margin with its height, so it truly
- * grows from and shrinks to no height.
- */
-type Glide = { size: Size; from: SpringState; to: number; delay: number; anim: Animation; scalesEdges: boolean }
-
 /**
  * How long a height move that starts in this draw waits, in ms: while a block that leaves holds its space as its
  * content fades, nothing a read brings in grows before that space starts to close: a block that enters, a row a read
@@ -62,130 +46,12 @@ type Glide = { size: Size; from: SpringState; to: number; delay: number; anim: A
  * selection's rows move at once. A leave turned back, a glide under way and a block's own change of height never wait.
  */
 let heightWaitMs = 0
-const glides = new WeakMap<HTMLElement, Glide>()
-
-function play(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions): Animation {
-  el.style.overflow = 'clip'
-  const a = el.animate(frames, timing)
-  animations.add(a)
-  const done = () => {
-    animations.delete(a)
-    if (tabState.isDisposed) return
-    if (el.getAnimations().length === 0) el.style.overflow = ''
-  }
-  a.onfinish = done
-  a.oncancel = done
-
-  return a
-}
-
-const isRunning = (a: Animation | undefined) => a?.playState === 'running'
-
-/** Whether an element's glide is moving now, past any wait it started with. */
-function isUnderWay(el: HTMLElement): boolean {
-  const g = glides.get(el)
-
-  return g !== undefined && isRunning(g.anim) && Number(g.anim.currentTime ?? 0) >= g.delay
-}
-
-/** Where an element's size is and how fast it moves, from its glide, or `size` at rest without one. */
-function springOf(el: HTMLElement, size: number): SpringState {
-  const g = glides.get(el)
-  if (!g || !isRunning(g.anim)) return { x: size, v: 0 }
-  const ms = Number(g.anim.currentTime ?? 0) - g.delay
-
-  return ms < 0 ? { x: g.from.x, v: 0 } : springStep(g.from, g.to, ms)
-}
-
-const EDGES = ['paddingTop', 'paddingBottom', 'marginTop'] as const
-
-/** One keyframe per spring frame. Edges, when given, scale with the height's share of `full`. */
-function sizeFrames(size: Size, xs: number[], edges: number[] | null, full: number): Keyframe[] {
-  return xs.map(x => {
-    const frame: Keyframe = { [size]: `${x}px` }
-    if (edges) {
-      const share = full > 0 ? Math.min(1, Math.max(0, x / full)) : 0
-      EDGES.forEach((edge, i) => (frame[edge] = `${(edges[i] ?? 0) * share}px`))
-    }
-
-    return frame
-  })
-}
-
-/**
- * Moves an element's size on the spring from `from` to `to`, after `delay` ms. `hold` keeps it at `to` once there,
- * until released. `comesOrGoes` marks an element growing in from nothing or shrinking away.
- */
-function glide(
-  el: HTMLElement,
-  size: Size,
-  from: SpringState,
-  to: number,
-  hold = false,
-  comesOrGoes = false,
-  delay = 0,
-) {
-  const was = glides.get(el)
-  const scalesEdges = size === 'height' && (comesOrGoes || (isRunning(was?.anim) && was!.scalesEdges))
-  was?.anim.cancel()
-  const style = scalesEdges ? getComputedStyle(el) : null
-  const edges = style ? EDGES.map(edge => parseFloat(style[edge]) || 0) : null
-  const xs = springFrames(from, to)
-  if (xs.length < 2) xs.push(to)
-  const anim = play(el, sizeFrames(size, xs, edges, Math.max(from.x, to)), {
-    duration: (xs.length - 1) * FRAME_MS,
-    delay,
-    easing: 'linear',
-    fill: fillOf(hold, delay),
-  })
-  glides.set(el, { size, from, to, delay, anim, scalesEdges })
-}
 
 /** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. Measured at the end weights. */
 function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
 
   return atEndWeight(el, () => atEndLines(el, () => el.getBoundingClientRect().height))
-}
-
-/** An element's opacity: full unless an animation fades it. */
-function opacityOf(el: HTMLElement): number {
-  const opacity = parseFloat(getComputedStyle(el).opacity)
-
-  return el.getAnimations().length > 0 && !Number.isNaN(opacity) ? opacity : 1
-}
-
-/** A fade under way, and the opacity it goes to. */
-const fades = new WeakMap<HTMLElement, { to: number; anim: Animation }>()
-
-/** Elements that enter, leave or fold: their fades also slide them, so a fade that restores one slides it back. */
-const slides = new WeakSet<HTMLElement>()
-
-const frameOf = (opacity: number, slides: boolean): Keyframe =>
-  slides ? { opacity, transform: `translateY(${slideOffset(opacity)}px)` } : { opacity }
-
-/** A move that waits draws its first frame while it waits, and one that holds keeps its last. */
-const fillOf = (hold: boolean, delay: number): FillMode =>
-  hold && delay > 0 ? 'both' : hold ? 'forwards' : delay > 0 ? 'backwards' : 'none'
-
-function fade(el: HTMLElement, from: number, to: number, ms: number, hold = false, slide = false, delay = 0) {
-  fades.get(el)?.anim.cancel()
-  if (slide) slides.add(el)
-  const isSliding = slides.has(el)
-  if (isSliding) el.style.pointerEvents = to === 0 ? 'none' : ''
-  const anim = play(el, [frameOf(from, isSliding), frameOf(to, isSliding)], {
-    duration: ms,
-    delay,
-    easing: FADE_EASING,
-    fill: fillOf(hold, delay),
-  })
-  fades.set(el, { to, anim })
-}
-
-const isFadingIn = (el: HTMLElement) => {
-  const f = fades.get(el)
-
-  return f !== undefined && f.to === 1 && isRunning(f.anim)
 }
 
 /**
@@ -265,9 +131,11 @@ function startsLeave(els: HTMLElement[], changed: ReadonlySet<string>): boolean 
 function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<string>, carried: Set<Element>) {
   const key = el.dataset.motion!
   const state = drawnRows.get(key)?.track.state
-  const resumeLine = state === 'closing' ? null : releaseLine(el, state === 'opening')
+  const isRowMoving = isUnderWay(el)
+  const held = state === 'closing' ? null : releaseLine(el, state === 'opening')
   moveRow(el, was, changed, carried)
-  resumeLine?.()
+  const wait = tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0
+  if (state === 'opening' && (held || changed.has(key))) openTitle(el, wait, held)
 }
 
 function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<string>, carried: Set<Element>) {
@@ -342,60 +210,15 @@ function collapse(el: HTMLElement, from: SpringState, openTop: number | null, de
   row?.classList.remove('closing')
   if (part) part.style.display = 'none'
   const target = naturalHeight(el)
-  const title = line?.querySelector<HTMLElement>('.text')
+  const title = line?.querySelector<HTMLElement>(':scope > .text:not(.short)')
   const lineTo = title ? atEndWeight(title, () => title.getBoundingClientRect().height) : null
   if (part) part.style.display = ''
   row?.classList.add('closing')
   if (part && openTop !== null) keepTop(el, part, openTop)
   const opacity = opacityOf(el)
   glide(el, 'height', from, target, true, false, delay)
-  if (line && lineFrom && lineTo !== null) glide(line, 'height', lineFrom, lineTo, true, false, delay)
+  if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, delay)
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)
-}
-
-/**
- * A row's line. While the row closes it is a block that draws the title, wrapped as the open row's is, with its
- * after-label inline, so its height can glide to the closed title's.
- */
-const LINE = '.line'
-
-/**
- * Lets go of a line held at the closed title's height, once its row's state is no longer `closing`, so the row measures
- * its natural height. When the row turns back to `opening`, the function it returns glides the line from the height it
- * was drawn at to the open form's, at once while the row's glide is under way. A row whose close has ended takes the
- * closed form's, with its meta, at once, since its own height already holds that space. Null when the row holds no
- * line, or needs no glide.
- */
-function releaseLine(el: HTMLElement, isOpening: boolean): (() => void) | null {
-  const line = el.querySelector<HTMLElement>(LINE)
-  const was = line && glides.get(line)
-  if (!line || !was || was.anim.playState === 'idle') return null
-  const from = springOf(line, line.getBoundingClientRect().height)
-  const isRowMoving = isUnderWay(el)
-  was.anim.cancel()
-  if (!isOpening) return null
-
-  return () => {
-    const to = atEndWeight(line, () => line.getBoundingClientRect().height)
-    const delay = tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0
-    if (Math.abs(from.x - to) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
-      glide(line, 'height', from, to, false, false, delay)
-  }
-}
-
-/** Runs `measure` with every line glide inside `el` at its end, then puts each back, so `el` measures its natural height. */
-function atEndLines<T>(el: HTMLElement, measure: () => T): T {
-  const running = [...el.querySelectorAll<HTMLElement>(LINE)].flatMap(line => {
-    const g = glides.get(line)
-
-    return g && isRunning(g.anim) ? [g.anim] : []
-  })
-  const times = running.map(a => a.currentTime)
-  running.forEach(a => (a.currentTime = a.effect?.getComputedTiming().endTime ?? 0))
-  const result = measure()
-  running.forEach((a, i) => (a.currentTime = times[i] ?? 0))
-
-  return result
 }
 
 function keepTop(el: HTMLElement, part: HTMLElement, top: number) {

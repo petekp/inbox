@@ -99,7 +99,7 @@ function aboveOf(prev: Block | null, b: Block, section: number | null): number {
 export const panelId = (id: string): string => `panel ${id}`
 
 /** The key a row's title is measured under. */
-const titleId = (id: string): string => `title ${id}`
+export const titleId = (id: string): string => `title ${id}`
 
 /** The key a row's lines under its title, with its panel, are measured under. */
 export const restId = (id: string): string => `rest ${id}`
@@ -169,16 +169,20 @@ export function fitEl(key: string, p: Paint, el: Element, isPaneSized = false): 
 }
 
 /**
- * The height a row's title box moves to: one line unless the row is open or a closing row holds its height, else the
- * title's measured height, which is undefined until its first measure.
+ * The height a row's title box moves to: one line unless the row is open, a closing row holds its height, or a closing
+ * title's wrapped lines still fade out, else the title's measured height, which is undefined until its first measure.
  */
-const titleHeightOf = (r: RowBlock, p: Paint): number | undefined =>
-  isOpenRow(r) || p.motion.get(r.id)?.isHeightHeld ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
+const titleHeightOf = (r: RowBlock, p: Paint): number | undefined => {
+  const m = p.motion.get(r.id)
+  const isWrapped = isOpenRow(r) || m?.isHeightHeld === true || m?.title?.isBoxWrapped === true
+
+  return isWrapped ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
+}
 
 /**
- * A row's title in a box whose height springs to `titleHeightOf`. The box clips, so a title that keeps its wrap while
- * the row closes loses the lines under its first as the box glides to one line. An open row's title box takes its
- * content's height in a draw that takes heights at once.
+ * A row's title in a box whose height springs to `titleHeightOf`. The box clips, and a title's wrapped lines show only
+ * once its box is nearly open and until it starts to shrink, so the box never cuts them. An open row's title box takes
+ * its content's height in a draw that takes heights at once.
  */
 export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
   const key = titleId(r.id)

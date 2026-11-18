@@ -10,7 +10,6 @@ const { framesOf, jumpsOf } = await import('./frames')
 type Step = import('./frames').Step
 const { LINE_HEIGHT } = await import('../src/paint-theme')
 const { tabBlocks } = await import('../src/draw')
-const { isOpenRow } = await import('../src/blocks')
 const { AGENT, NOW, demoScreen, uiOn } = await import('./fixtures')
 
 const ALL = ['d11', 'd12', 'd13', 'd15']
@@ -123,21 +122,25 @@ test('when the selection moves between rows whose titles wrap open, the rows clo
   ).toEqual([])
 })
 
-function titleOf(steps: [number, Block[]][]) {
-  const { jumps, titles } = framesOf(steps)
+function titleOf(steps: Step[]) {
+  const { jumps, titles, cuts } = framesOf(steps, 900)
   const d11 = titles.filter(t => t.id === 'd11' && t.at >= 0)
+  const wrappedHeight = Math.max(...d11.map(t => t.box))
 
   return {
     jumps,
-    isWrappedAtFirst: d11[0]?.isCut === false,
-    isCutOnlyAtRest: d11.filter(t => t.isCut).every(t => t.isBoxResting && Math.abs(t.box - LINE_HEIGHT) < 0.5),
-    isWrappedWhileGliding: d11.some(t => !t.isCut && t.box > LINE_HEIGHT + 0.5 && t.box < 2 * LINE_HEIGHT - 0.5),
-    isCutAtEnd: d11.at(-1)?.isCut === true,
+    wrapsAtFirst: d11[0]?.wrapped,
+    wrapsAtEnd: d11.at(-1)?.wrapped,
+    boxAtEnd: Math.round(d11.at(-1)?.box ?? NaN),
+    isWrapShownOnlyNearlyOpen: d11.every(t => t.wrapped < 0.02 || t.box >= wrappedHeight - SLIDE_PX / 2),
+    titleCuts: cuts.filter(c => c.text === TITLE_D11),
   }
 }
 
-test('a closing row keeps its title wrapped while the title box glides to one line, and cuts it once the box rests', () => {
-  const closes: [string, [number, Block[]][]][] = [
+const TITLE_D11 = asks(ALL).flatMap(b => (b.kind === 'row' && b.id === 'd11' ? [b.title] : []))[0]
+
+test('a closing row fades its wrapped title to one line before its title box shrinks', () => {
+  const closes: [string, Step[]][] = [
     [
       'the open row collapses',
       [
@@ -149,7 +152,7 @@ test('a closing row keeps its title wrapped while the title box glides to one li
       'the selection moves to the next row',
       [
         [0, asks(ALL, 'd11')],
-        [0, asks(ALL, 'd12')],
+        [0, asks(ALL, 'd12'), 'input'],
       ],
     ],
   ]
@@ -157,27 +160,75 @@ test('a closing row keeps its title wrapped while the title box glides to one li
     expect({ name, ...titleOf(steps) }).toEqual({
       name,
       jumps: [],
-      isWrappedAtFirst: true,
-      isCutOnlyAtRest: true,
-      isWrappedWhileGliding: true,
-      isCutAtEnd: true,
+      wrapsAtFirst: 1,
+      wrapsAtEnd: 0,
+      boxAtEnd: LINE_HEIGHT,
+      isWrapShownOnlyNearlyOpen: true,
+      titleCuts: [],
     })
 })
 
-test('an opening row wraps its title from its first frame, and a close that turns back never cuts it', () => {
-  expect(
-    titleOf([
-      [0, asks(ALL)],
-      [0, asks(ALL, 'd11')],
-    ]),
-  ).toMatchObject({ jumps: [], isWrappedAtFirst: true, isCutAtEnd: false })
-  expect(
-    titleOf([
+test('an opening row shows its title on one line at once, and fades in its wrapped lines once the title box is nearly open', () => {
+  const opens: [string, Step[]][] = [
+    [
+      'the person opens the row',
+      [
+        [0, asks(ALL, 'd11', null, ['d11'])],
+        [0, asks(ALL, 'd11'), 'input'],
+      ],
+    ],
+    [
+      'the selection moves to the row',
+      [
+        [0, asks(ALL, 'd12')],
+        [0, asks(ALL, 'd11'), 'input'],
+      ],
+    ],
+    [
+      'a publish opens the row',
+      [
+        [0, asks(ALL, 'd11', null, ['d11'])],
+        [0, asks(ALL, 'd11')],
+      ],
+    ],
+  ]
+  for (const [name, steps] of opens) {
+    const title = titleOf(steps)
+    expect({ name, ...title }).toEqual({
+      name,
+      jumps: [],
+      wrapsAtFirst: 0,
+      wrapsAtEnd: 1,
+      boxAtEnd: title.boxAtEnd,
+      isWrapShownOnlyNearlyOpen: true,
+      titleCuts: [],
+    })
+    expect(title.boxAtEnd).toBeGreaterThan(LINE_HEIGHT)
+  }
+})
+
+test('a row whose close or open turns back moves its title from where it is and never cuts it', () => {
+  for (const at of [60, 200]) {
+    const reopens = titleOf([
       [0, asks(ALL, 'd11')],
       [0, asks(ALL, 'd11', null, ['d11'])],
-      [200, asks(ALL, 'd11')],
-    ]),
-  ).toMatchObject({ jumps: [], isWrappedAtFirst: true, isCutOnlyAtRest: true, isCutAtEnd: false })
+      [at, asks(ALL, 'd11')],
+    ])
+    const recloses = titleOf([
+      [0, asks(ALL, 'd11', null, ['d11'])],
+      [0, asks(ALL, 'd11'), 'input'],
+      [at, asks(ALL, 'd11', null, ['d11']), 'input'],
+    ])
+    expect({ at, ...reopens }).toMatchObject({
+      at,
+      jumps: [],
+      wrapsAtEnd: 1,
+      isWrapShownOnlyNearlyOpen: true,
+      titleCuts: [],
+    })
+    expect({ at, ...recloses }).toMatchObject({ at, jumps: [], wrapsAtEnd: 0, boxAtEnd: LINE_HEIGHT, titleCuts: [] })
+    expect(recloses.isWrapShownOnlyNearlyOpen).toBe(true)
+  }
 })
 
 type Overview = NonNullable<ReturnType<typeof demoSession>['ledger']['overview']>
@@ -380,14 +431,8 @@ test('no text is cut through its letters while a row or a whole section enters o
       [0, none],
     ],
   }
-  const openTitles = (blocks: Block[]) => blocks.flatMap(b => (b.kind === 'row' && isOpenRow(b) ? [b.title] : []))
-  for (const [name, steps] of Object.entries(moves)) {
-    const before = openTitles(steps[0]![1])
-    const after = openTitles(steps.at(-1)![1])
-    const folds = [...before, ...after].filter(title => !before.includes(title) || !after.includes(title))
-    const cuts = framesOf(steps, 900).cuts.filter(c => !folds.includes(c.text))
-    expect({ name, cuts }).toEqual({ name, cuts: [] })
-  }
+  for (const [name, steps] of Object.entries(moves))
+    expect({ name, cuts: framesOf(steps, 900).cuts }).toEqual({ name, cuts: [] })
 })
 
 test('a leaving block’s space closes as soon as its content has faded, and not before', () => {

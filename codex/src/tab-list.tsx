@@ -214,6 +214,22 @@ export function ListRow({
       </span>
     ) : null
   const isSideSplit = closed !== null && closed.side !== drawn.side
+  // An opening or closing row also draws its title clamped, as the closed row does, over its full title.
+  const isTitleMoving = isClosing || (track.hasPanel && track.state === 'opening')
+  const textParts = () => (
+    <>
+      {row.lead ? (
+        <>
+          <span class="lead">{row.lead}</span>{' '}
+        </>
+      ) : null}
+      <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
+        {row.title}
+      </TitleTint>
+      {after(drawn, closed ? 'open' : undefined)}
+      {closed ? after(closed, 'closed') : null}
+    </>
+  )
 
   return (
     <div
@@ -228,18 +244,12 @@ export function ListRow({
           aria-expanded={isSelected}
           onClick={isSelected ? e => onSelect(e.altKey) : undefined}
         >
-          <span class="text">
-            {row.lead ? (
-              <>
-                <span class="lead">{row.lead}</span>{' '}
-              </>
-            ) : null}
-            <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
-              {row.title}
-            </TitleTint>
-            {after(drawn, closed ? 'open' : undefined)}
-            {closed ? after(closed, 'closed') : null}
-          </span>
+          <span class="text">{textParts()}</span>
+          {isTitleMoving ? (
+            <span class="text short" aria-hidden="true">
+              {textParts()}
+            </span>
+          ) : null}
           {row.meta ? <span class="meta">{row.meta}</span> : null}
           {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>

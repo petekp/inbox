@@ -5,11 +5,13 @@ import type { Block, RowBlock } from './blocks'
 import type { TabCell } from './draw'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import { MOVED_TO, copyIdOf } from './heights'
+import { stepTitle, titleMotion, titleTimes } from './title-motion'
+import type { TitleGlide, TitleMotion } from './title-motion'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
- * its last enter or leave set, which runs on until `endsAt` even if the block's state moves on. `wrapEndsAt` is when
- * the title of a row that last closed stops keeping its wrap. `springId` names the boxes of a block that moved to another
+ * its last enter or leave set, which runs on until `endsAt` even if the block's state moves on. `title` is the glide
+ * of a row's title between its one-line and wrapped forms. `springId` names the boxes of a block that moved to another
  * place, which are new so that they start from no height, and is null for a block that never moved. `isInputMove` says
  * the block's move started in a draw that followed the person's input.
  */
@@ -18,7 +20,7 @@ type Tracked = {
   block: Block
   opened: RowBlock | null
   glide: Glide | null
-  wrapEndsAt: number | null
+  title: TitleGlide | null
   springId: string | null
   isInputMove: boolean
 }
@@ -63,8 +65,7 @@ type Glide = {
  * its measured height less its panel's: through a close after its first draw, through all of a close that turns an
  * open back, and in the draw after a close, before the row measures without the panel. A close's first draw keeps the
  * panel's height, so the row the selection moves to measures its new height in that draw and both start together.
- * `isWrapHeld` says a row that is not open keeps its title wrapped, from the draw it stops being open until its title's
- * box has glided to one line and come to rest, so only the end of the first line changes as the title is cut.
+ * `title` is how a row's title draws while it moves between its one-line and wrapped forms, null when it draws one.
  * `isHeightHeld` says a row whose close starts in the draw a block starts to leave keeps its open height, its title's
  * and its panel's, while its panel fades and the leaving block holds its space. `shutForMs` is how long the box of a block that turned
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
@@ -82,7 +83,7 @@ export type RowMotion = {
   isPanelWaiting: boolean
   closing: RowBlock | null
   isPanelLeftOut: boolean
-  isWrapHeld: boolean
+  title: TitleMotion | null
   isHeightHeld: boolean
   springId: string | null
 }
@@ -254,6 +255,7 @@ export function moveRows(
   now: number,
   isFirst: boolean,
   isInput = false,
+  titleHeight: (id: string) => number | undefined = () => undefined,
 ): { blocks: Block[]; tracks: Tracks; motion: ReadonlyMap<string, RowMotion>; nextAt: number | null } {
   const was = isFirst ? NO_TRACKS : last
   const wasDrawn = new Set(was.order)
@@ -279,14 +281,15 @@ export function moveRows(
   const add = (block: Block, track: RowTrack, last: Tracked | undefined, springId: string | null = null) => {
     const isOpen = block.kind === 'row' && isOpenRow(block)
     const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
-    const wrapEndsAt = isOpen ? null : wasOpen ? restAt(now, 0) : (last?.wrapEndsAt ?? null)
+    const title =
+      block.kind === 'row' && last ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, titleHeight(block.id)) : null
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const isPressed = block.kind === 'field'
     const glide = glideOf(track, isStart, last?.glide ?? null, now, holdsUntil, isPressed, isFieldPressed)
     const isReleased = isInput && opensRow && track.state === 'closing'
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
-    rows.set(block.id, { track, block, opened, glide, wrapEndsAt, springId, isInputMove })
+    rows.set(block.id, { track, block, opened, glide, title, springId, isInputMove })
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
     const isHeld = closing !== null && isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove
@@ -304,7 +307,7 @@ export function moveRows(
       isPanelLeftOut:
         (closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))) ||
         (wasClosing && block.kind === 'row'),
-      isWrapHeld: wrapEndsAt !== null && now < wrapEndsAt,
+      title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,
     })
@@ -343,7 +346,7 @@ export function moveRows(
     .flatMap(t => [
       ...(isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : []),
       ...(t.glide ? [t.glide.endsAt, t.glide.opensAt ?? 0, t.glide.shutAt ?? 0] : []),
-      ...(t.wrapEndsAt !== null ? [t.wrapEndsAt] : []),
+      ...titleTimes(t.title),
       holdsUntil,
     ])
     .filter(at => at > now)
