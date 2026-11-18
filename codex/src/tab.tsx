@@ -92,8 +92,14 @@ function App({
   )
 }
 
+/** The page last drawn, its tab and whether Help shows, so that a switch to another page draws it at once. */
+let drawnPage: string | null = null
+
 function draw() {
   if (tabState.isDisposed || !tabState.isActive) return
+  const page = `${drawnTab()}${tabState.isHelpShown ? ' help' : ''}`
+  if (drawnPage !== null && page !== drawnPage) document.documentElement.classList.add('page-switched')
+  drawnPage = page
   const before = measure()
   const step = tabState.view ? stepLists(tabState.view) : null
   tabState.lastLists = step?.lists ?? null

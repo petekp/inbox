@@ -16,7 +16,6 @@
   --soft: color-mix(in oklab, var(--text) 8%, transparent);
   --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);
   --row-hover: color-mix(in oklab, var(--soft) 50%, transparent);
-  --quick: 150ms ease;
   --mark-x: var(--edge);
   --text-x: calc(var(--edge) + var(--mark));
 }

@@ -83,7 +83,7 @@ Tasks
 • Add STRIPE_KEY to .env
 ```
 
-A desktop row Client reserves a side column for the age at narrow widths too. The status is in the footer. An open row's actions wrap in the shared order: retry, options or help, Done or Fix, then follow-ups. The recommended option, Done, Fix or Do it has primary emphasis. The shared action's icon kind maps to the native glyph.
+A desktop row Client reserves a side column for the age at narrow widths too. The status is in the footer. An open row's actions wrap in the shared order: retry, options or help, Done or Fix, then follow-ups. The recommended option and Address have primary emphasis. A task row has no primary action. The shared action's icon kind maps to the native glyph.
 
 **After [Explain] is pressed**, the row stays open and records the press:
 

@@ -1,7 +1,7 @@
 import { HEIGHT_SPRING, springStep } from '../../hooks/springs'
 import type { Block } from '../src/blocks'
 import type { Paint } from '../src/paint-theme'
-import { columnOf } from './gpui-stand-in'
+import { columnOf, fieldOf } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 
 const { spacedEls } = await import('../src/paint-space')
@@ -169,7 +169,7 @@ function easeOut(x: number): number {
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
 
-const FADE_PREFIXES = ['box ', 'panel ', 'wrapped ', 'one line ']
+const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'status ', 'wrapped ', 'one line ']
 const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))
 
 function boxOf(n: Painted): string | null {
@@ -182,7 +182,8 @@ const isThroughLetters = (hidden: number, line: number): boolean =>
 
 function cutTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[] {
   return [...placed].flatMap(([n, b]) => {
-    if (n.text === null || n.kids.some(k => !k.style.isAbsolute) || b.height <= 0) return []
+    const isText = n.text !== null || n.field !== null
+    if (!isText || n.kids.some(k => !k.style.isAbsolute) || b.height <= 0) return []
     let top = b.top
     let bottom = b.top + b.height
     for (let up = n.parent; up; up = up.parent) {
@@ -242,6 +243,8 @@ class Fades {
   }
 }
 
+const fieldState = fieldOf('Pinch ships in the beta')
+
 function paintOf(
   motion: Paint['motion'],
   heights: InstanceType<typeof Heights>,
@@ -268,7 +271,7 @@ function paintOf(
     closedSeen,
     tab: 'needsYou',
     timeLeft: new Map(),
-    input: () => null,
+    input: () => fieldState,
     mono: 'Menlo',
     isNarrow: false,
     listRoom: null,
@@ -332,7 +335,8 @@ class Frames {
     for (const { node, share } of cutTexts(placed)) {
       const box = boxOf(node)
       const opacity = this.fades.opacityOf(node)
-      if (opacity >= CUT_MAX_OPACITY) this.cuts.push({ at: now, box: box ?? '', text: node.text ?? '', share, opacity })
+      const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
+      if (opacity >= CUT_MAX_OPACITY) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
     }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)

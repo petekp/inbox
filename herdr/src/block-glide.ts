@@ -41,7 +41,8 @@ export type Glide = {
  * open, measured by `height`, turns back as it came: it hides at once and its box springs shut from where it is, in the
  * same draw, holding no space. Once its box is nearly open, it leaves as any block does. A block the
  * field replaces (`isReplaced`) hides at once
- * and its box shuts from the next draw. A block that leaves stays drawn until its glide comes to rest. A row selected as it
+ * and its box shuts from the next draw, or in the same draw if it was still gliding, so it starts to shut in the draw
+ * the field starts to open. A block that leaves stays drawn until its glide comes to rest. A row selected as it
  * enters keeps its box: the box springs on to the row's new height, which arrives in the draw after the open starts,
  * and lets go once that comes to rest.
  */
@@ -68,7 +69,7 @@ export function glideOf(
     const from = isTurned
       ? { box: 'shut' as const, isShown: false }
       : isLive || isReplaced
-        ? { box: last?.box ?? 'open', isShown: false }
+        ? { box: shutAt <= now ? ('shut' as const) : (last?.box ?? 'open'), isShown: false }
         : { box: 'open' as const, isShown: true }
 
     const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt }

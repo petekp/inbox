@@ -8,13 +8,16 @@ import { HOLD_MS, glideOf, isShownAtOnce } from './block-glide'
 import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
 import type { TitleGlide, TitleMotion } from './title-motion'
+import { stepUnder, underId, underMotion, underTimes } from './under-line'
+import type { UnderLine, UnderMotion } from './under-line'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
  * its last enter or leave set, which runs on until `endsAt` even if the block's state moves on. `title` is the glide
  * of a row's title between its one-line and wrapped forms. `springId` names the boxes of a block that moved to another
  * place, which are new so that they start from no height, and is null for a block that never moved. `isInputMove` says
- * the block's move started in a draw that followed the person's input.
+ * the block's move started in a draw that followed the person's input. `under` is the status under a row's buttons as
+ * it comes and goes.
  */
 type Tracked = {
   track: RowTrack
@@ -24,6 +27,7 @@ type Tracked = {
   title: TitleGlide | null
   springId: string | null
   isInputMove: boolean
+  under: UnderLine | null
 }
 
 /**
@@ -52,7 +56,9 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * `isHeightHeld` says a row whose close starts in the draw a block starts to leave keeps its open height, its title's
  * and its panel's, while its panel fades and the leaving block holds its space. `shutForMs` is how long the box of a block that turned
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
- * still drawn, and a new box starts from the height it is drawn at.
+ * still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a row's buttons
+ * draws as it comes and goes. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
+ * is dismissed, so its box keeps that form's height until the new form measures.
  */
 export type RowMotion = {
   state: RowState
@@ -69,6 +75,8 @@ export type RowMotion = {
   title: TitleMotion | null
   isHeightHeld: boolean
   springId: string | null
+  under: UnderMotion | null
+  former: Block | null
 }
 
 const targetOf = (b: Block): RowTarget =>
@@ -195,7 +203,8 @@ export function moveRows(
     )
     const isReleased = isInput && opensRow && track.state === 'closing'
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
-    rows.set(block.id, { track, block, opened, glide, title, springId, isInputMove })
+    const under = stepUnder(last?.under ?? null, block, now, isInput)
+    rows.set(block.id, { track, block, opened, glide, title, springId, isInputMove, under })
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
     const isHeld = closing !== null && isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove
@@ -216,6 +225,8 @@ export function moveRows(
       title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,
+      under: underMotion(under, now, heightOf(underId(block.id))),
+      former: last && last.block.kind !== block.kind ? last.block : null,
     })
   }
   for (const b of blocks) {
@@ -253,6 +264,7 @@ export function moveRows(
       ...(isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : []),
       ...(t.glide ? [t.glide.endsAt, t.glide.opensAt ?? 0, t.glide.shutAt ?? 0] : []),
       ...titleTimes(t.title),
+      ...underTimes(t.under),
       holdsUntil,
     ])
     .filter(at => at > now)

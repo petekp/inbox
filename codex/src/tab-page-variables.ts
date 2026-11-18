@@ -1,6 +1,6 @@
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import * as layout from '../../hooks/layout'
-import { ENTER_FADE_MS, enterDelayMs, FADE_MS, LEAVE_FADE_MS, LINE_RETURN_FADE_MS } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, enterDelayMs, FADE_MS, LEAVE_FADE_MS } from '../../hooks/row-motion'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import { FADE_EASING } from './tab-glide'
 
@@ -32,7 +32,7 @@ export function applyPageVariables() {
   document.documentElement.style.setProperty('--fade', `${FADE_MS}ms ${FADE_EASING}`)
   document.documentElement.style.setProperty('--settle', `${HEIGHT_SETTLE_MS}ms ease-out`)
   document.documentElement.style.setProperty('--leave-fade', `${LEAVE_FADE_MS}ms ${FADE_EASING}`)
+  document.documentElement.style.setProperty('--page-fade', `${ENTER_FADE_MS}ms ${FADE_EASING}`)
   const lineWait = enterDelayMs(layout.LINE_PT)
   document.documentElement.style.setProperty('--enter-fade', `${ENTER_FADE_MS}ms ${FADE_EASING} ${lineWait}ms`)
-  document.documentElement.style.setProperty('--line-return-fade', `${LINE_RETURN_FADE_MS}ms ${FADE_EASING}`)
 }

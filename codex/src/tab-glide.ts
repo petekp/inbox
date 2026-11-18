@@ -8,11 +8,19 @@ export const FADE_EASING = 'ease-out'
 type Size = 'height' | 'width'
 
 /**
- * A size move under way: where its spring started, where it goes, how long it waits to start, and the animation that
- * plays it. An element that comes or goes also scales its vertical padding and top margin with its height, so it truly
- * grows from and shrinks to no height.
+ * A size move under way: where its spring started, where it goes, how long it waits to start, when that wait ends as a
+ * `Date.now()` time, and the animation that plays it. An element that comes or goes also scales its vertical padding
+ * and top margin with its height, so it truly grows from and shrinks to no height.
  */
-type Glide = { size: Size; from: SpringState; to: number; delay: number; anim: Animation; scalesEdges: boolean }
+type Glide = {
+  size: Size
+  from: SpringState
+  to: number
+  delay: number
+  startsAt: number
+  anim: Animation
+  scalesEdges: boolean
+}
 
 export const glides = new WeakMap<HTMLElement, Glide>()
 
@@ -38,6 +46,20 @@ export function isUnderWay(el: HTMLElement): boolean {
   const g = glides.get(el)
 
   return g !== undefined && isRunning(g.anim) && Number(g.anim.currentTime ?? 0) >= g.delay
+}
+
+/** How long an element's glide still waits to start, in ms: 0 for an element with no glide, or one under way. */
+export function waitLeftMs(el: HTMLElement): number {
+  const g = glides.get(el)
+
+  return g !== undefined && isRunning(g.anim) ? Math.max(0, g.startsAt - Date.now()) : 0
+}
+
+/** Whether an element's running glide scales its padding and top margin with its height, as one that comes or goes. */
+export function isScalingEdges(el: HTMLElement): boolean {
+  const g = glides.get(el)
+
+  return g !== undefined && isRunning(g.anim) && g.scalesEdges
 }
 
 /** Where an element's size is and how fast it moves, from its glide, or `size` at rest without one. */
@@ -66,7 +88,8 @@ function sizeFrames(size: Size, xs: number[], edges: number[] | null, full: numb
 
 /**
  * Moves an element's size on the spring from `from` to `to`, after `delay` ms. `hold` keeps it at `to` once there,
- * until released. `comesOrGoes` marks an element growing in from nothing or shrinking away.
+ * until released. `comesOrGoes` marks an element growing in from nothing or shrinking away, or one that was when this
+ * move restarts it.
  */
 export function glide(
   el: HTMLElement,
@@ -78,7 +101,7 @@ export function glide(
   delay = 0,
 ) {
   const was = glides.get(el)
-  const scalesEdges = size === 'height' && (comesOrGoes || (isRunning(was?.anim) && was!.scalesEdges))
+  const scalesEdges = size === 'height' && (comesOrGoes || isScalingEdges(el))
   was?.anim.cancel()
   const style = scalesEdges ? getComputedStyle(el) : null
   const edges = style ? EDGES.map(edge => parseFloat(style[edge]) || 0) : null
@@ -90,7 +113,7 @@ export function glide(
     easing: 'linear',
     fill: fillOf(hold, delay),
   })
-  glides.set(el, { size, from, to, delay, anim, scalesEdges })
+  glides.set(el, { size, from, to, delay, startsAt: Date.now() + delay, anim, scalesEdges })
 }
 
 /** An element's opacity: full unless an animation fades it. */

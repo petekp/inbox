@@ -13,9 +13,6 @@ export const LEAVE_FADE_MS = 120
 /** How long the content of a block that enters, or a row's panel as it opens, fades in once its wait ends, in ms. */
 export const ENTER_FADE_MS = 150
 
-/** How long a closed row's line fades back in as its close ends, in ms. */
-export const LINE_RETURN_FADE_MS = 300
-
 /**
  * How far a row's content sits above its place when it is fully faded out, in px. A row that leaves slides up to this
  * offset as it fades, and one that enters slides down from it, so the offset is always its share of the fade.
