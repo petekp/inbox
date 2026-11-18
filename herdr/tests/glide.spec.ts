@@ -10,7 +10,7 @@ const { framesOf, jumpsOf } = await import('./frames')
 type Step = import('./frames').Step
 const { LINE_HEIGHT } = await import('../src/paint-theme')
 const { tabBlocks } = await import('../src/draw')
-const { AGENT, ALL, NOW, asks, demoScreen, uiOn } = await import('./fixtures')
+const { AGENT, ALL, NOW, asks, demoScreen, dismissedPr, uiOn } = await import('./fixtures')
 const { drawOuts } = await import('../src/out')
 
 function asksIn(order: string[], selected: string | null = null): Block[] {
@@ -465,6 +465,18 @@ test('a press’s status under a row’s buttons fades in once the row’s box i
     holds: whileFading.every(h => h >= heightAt(endsAt) - 0.5),
     shrinks: heightAt(goneAt + 300) < heightAt(endsAt) - 1,
   }).toEqual({ cuts: [], fadesOut: true, holds: true, shrinks: true })
+})
+
+test('a dismissed PR’s block glides between its open and dismissed forms in both directions', () => {
+  const open = tabBlocks(demoScreen(), uiOn('prs'))
+  const dismissed = dismissedPr('acme/visor#29').blocks
+  for (const [name, from, to] of [
+    ['dismiss', open, dismissed],
+    ['undo', dismissed, open],
+  ] as const) {
+    const jumps = framesOf([[0, [...from]], [0, [...to]]], 900).jumps.filter(j => j.at >= 0)
+    expect({ name, jumps }).toEqual({ name, jumps: [] })
+  }
 })
 
 test('reopening the goal field while it still closes never raises the Status page above its closed height', () => {

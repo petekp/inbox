@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T06:59:22.713Z. 293086 characters follow.
+// Built at 2026-11-18T07:03:47.814Z. 293240 characters follow.
 
 // src/main.ts
 import { View, div as div12 } from "gpui-kit";
@@ -5514,7 +5514,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,
-      under: underMotion(under, now, heightOf(underId(block.id)))
+      under: underMotion(under, now, heightOf(underId(block.id))),
+      former: last && last.block.kind !== block.kind ? last.block : null
     });
   };
   for (const b of blocks) {
@@ -5979,13 +5980,14 @@ function titleEl(r, p, el) {
 function fitHeight(b, m, p) {
   const id = b.id;
   const panel = m?.isPanelLeftOut ? p.heights.get(panelId(id)) ?? 0 : 0;
+  const former = () => m?.former ? fitHeight(m.former, undefined, p) : undefined;
   if (b.kind !== "row") {
     const measured = p.heights.get(id);
-    return measured === undefined ? undefined : measured - panel;
+    return measured === undefined ? former() : measured - panel;
   }
   const title = titleHeightOf(b, p);
   const rest = p.heights.get(restId(id));
-  return title === undefined || rest === undefined ? undefined : 2 * padOf(b) + title + rest - panel;
+  return title === undefined || rest === undefined ? former() : 2 * padOf(b) + title + rest - panel;
 }
 function contentEl(b, m, p, el, strokes) {
   const id = b.id;

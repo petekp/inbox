@@ -192,20 +192,22 @@ export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
 /**
  * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
  * A row's height is its padding, its title's and the rest's, each measured on its own, so the row's box springs in step
- * with its title's box. Undefined until the block's first measure.
+ * with its title's box. A block that changed kind takes its former form's height until its new form measures, so its
+ * box glides between the two. Undefined until the block's first measure.
  */
 function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undefined {
   const id = b.id
   const panel = m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0
+  const former = () => (m?.former ? fitHeight(m.former, undefined, p) : undefined)
   if (b.kind !== 'row') {
     const measured = p.heights.get(id)
 
-    return measured === undefined ? undefined : measured - panel
+    return measured === undefined ? former() : measured - panel
   }
   const title = titleHeightOf(b, p)
   const rest = p.heights.get(restId(id))
 
-  return title === undefined || rest === undefined ? undefined : 2 * padOf(b) + title + rest - panel
+  return title === undefined || rest === undefined ? former() : 2 * padOf(b) + title + rest - panel
 }
 
 /**

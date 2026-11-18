@@ -57,7 +57,8 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * and its panel's, while its panel fades and the leaving block holds its space. `shutForMs` is how long the box of a block that turned
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
  * still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a row's buttons
- * draws as it comes and goes.
+ * draws as it comes and goes. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
+ * is dismissed, so its box keeps that form's height until the new form measures.
  */
 export type RowMotion = {
   state: RowState
@@ -75,6 +76,7 @@ export type RowMotion = {
   isHeightHeld: boolean
   springId: string | null
   under: UnderMotion | null
+  former: Block | null
 }
 
 const targetOf = (b: Block): RowTarget =>
@@ -224,6 +226,7 @@ export function moveRows(
       isHeightHeld: isHeld,
       springId,
       under: underMotion(under, now, heightOf(underId(block.id))),
+      former: last && last.block.kind !== block.kind ? last.block : null,
     })
   }
   for (const b of blocks) {
