@@ -143,14 +143,13 @@ export function paneRows(
     answersFit,
   )
   const { desktopTreeLine } = paneDesktopTree({ Box, desktopHairline, pal })
-  const cardSpace = partSpace(look, isInline, 'desktopCard')
-  const frameSpace = partSpace(look, isInline, 'desktopFrame')
+  const spaceBetween = partSpace(look, isInline)
   const desktopCard = paneDesktopCard({
     Box,
     Text,
     pal,
     space,
-    partSpace: cardSpace,
+    partSpace: spaceBetween,
     desktopFrame,
     desktopTreeLine,
     gutterMark,
@@ -268,12 +267,11 @@ export function paneRows(
     const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
     const isTrunkBridged = look === 'terminal' && isSelected && row.view !== undefined && hasTree(row.view, options)
     const descriptionEntries = row.view && !isDesktopTree ? askEntries(row.view, options, answerRow, textWidth) : []
-    const descriptionsBlock = row.view ? askTree(row.view.id, descriptionEntries, textWidth, frameSpace) : null
-    const partSpaceOf = isDesktopTree ? cardSpace : frameSpace
+    const descriptionsBlock = row.view ? askTree(row.view.id, descriptionEntries, textWidth, spaceBetween) : null
     const bodyEnd: RowPart = body ? (row.bodyEnd ?? 'detail') : 'title'
     const treeEnd = (isDesktopTree ? treeEntries : descriptionEntries).at(-1)?.part ?? bodyEnd
     const actionsPart = isTyping ? 'field' : 'buttons'
-    const bodyBlock = body ? <Box marginTop={frameSpace('title', 'detail')}>{body}</Box> : null
+    const bodyBlock = body ? <Box marginTop={spaceBetween('title', 'detail')}>{body}</Box> : null
     const trunked = (above: JSX.Element) =>
       isTrunkBridged ? (
         <Box
@@ -293,7 +291,7 @@ export function paneRows(
       <Box
         key="actions"
         flexDirection="column"
-        marginTop={partSpaceOf(status.length > 0 ? 'status' : treeEnd, actionsPart)}
+        marginTop={spaceBetween(status.length > 0 ? 'status' : treeEnd, actionsPart)}
       >
         {isTyping ? (
           look === 'desktop' ? (
@@ -321,7 +319,7 @@ export function paneRows(
           actionRows(row.id, keys, more, textWidth)
         )}
         {isStatusUnder ? (
-          <Box key="result" marginTop={partSpaceOf(actionsPart, 'result')}>
+          <Box key="result" marginTop={spaceBetween(actionsPart, 'result')}>
             <Text color={pal.muted} wrap="wrap">
               {withDoneText(f.text, f.doneText)}
             </Text>
@@ -393,7 +391,7 @@ export function paneRows(
               bodyBlock,
               descriptionsBlock,
               status.length > 0 ? (
-                <Box key="status" flexDirection="column" marginTop={frameSpace(treeEnd, 'status')}>
+                <Box key="status" flexDirection="column" marginTop={spaceBetween(treeEnd, 'status')}>
                   {status.map(st => (
                     <Text color={st.color} wrap="wrap">
                       {st.text}
@@ -460,7 +458,7 @@ export function paneRows(
             )}
             {descriptionsBlock}
             {status.length > 0 ? (
-              <Box key="status" flexDirection="column" marginTop={frameSpace(treeEnd, 'status')}>
+              <Box key="status" flexDirection="column" marginTop={spaceBetween(treeEnd, 'status')}>
                 {status.map(s => (
                   <Text color={s.color} wrap="wrap">
                     {s.text}

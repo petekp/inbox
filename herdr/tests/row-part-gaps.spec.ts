@@ -73,7 +73,7 @@ function expectedGaps(c: RowCase): number[] {
     hasCopy: false,
   })
 
-  return partPairs(parts).map(([above, below]) => partPt(above, below, 'herdr'))
+  return partPairs(parts).map(([above, below]) => partPt(above, below))
 }
 
 test('each part of an open question, task and finding sits partGap under the part above, wide and narrow', () => {
