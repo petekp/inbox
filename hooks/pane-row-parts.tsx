@@ -277,7 +277,7 @@ export function paneRowParts(
               )}
               {lineAction(d)}
             </Box>
-            <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
+            <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end">
               <Text color={pal.age}>{shortAgo(now - d.at)}</Text>
             </Box>
           </Box>,
