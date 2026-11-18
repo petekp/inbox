@@ -196,7 +196,7 @@ function growIn(el: HTMLElement, from: SpringState, opacity: number, isTurn: boo
   const to = naturalHeight(el)
   const delay = isTurn ? 0 : heightWaitMs
   glide(el, 'height', from, to, false, true, delay)
-  const waits = opacity > 0.01 ? 0 : enterDelayMs(to - from.x)
+  const waits = opacity > 0.01 ? 0 : enterDelayMs(to, from)
   fade(el, opacity, 1, ENTER_FADE_MS, false, true, delay + waits)
 }
 
@@ -241,7 +241,7 @@ function showNotes(before: Drawing) {
     const end = note.closest<HTMLElement>('[data-motion]')
     const g = end && before.heights.has(end.dataset.motion!) ? glides.get(end) : undefined
     if (!g || !isRunning(g.anim) || g.to <= g.from.x) continue
-    fade(note, 0, 1, ENTER_FADE_MS, false, true, g.delay + enterDelayMs(g.to - g.from.x))
+    fade(note, 0, 1, ENTER_FADE_MS, false, true, g.delay + enterDelayMs(g.to, g.from))
   }
 }
 
@@ -297,7 +297,7 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
     glide(el, 'height', from, target, false, false, delay)
   if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
   if (part && state === 'opening' && changed.has(key) && tabState.isReadDraw)
-    fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target - from.x))
+    fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
 }
 
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */

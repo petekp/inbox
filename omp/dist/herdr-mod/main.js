@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T03:09:15.518Z. 287043 characters follow.
+// Built at 2026-11-18T03:28:03.185Z. 287347 characters follow.
 
 // src/main.ts
 import { View, div as div10 } from "gpui-kit";
@@ -5178,9 +5178,9 @@ var FADE_MS = 200;
 var LEAVE_FADE_MS = 120;
 var ENTER_FADE_MS = 150;
 var SLIDE_PX = 8;
-function enterDelayMs(height) {
-  const at = springFrames({ x: 0, v: 0 }, height).findIndex((x) => height - x <= SLIDE_PX / 2);
-  return Math.min(Math.max(0, at) * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
+function enterDelayMs(height, from = { x: 0, v: 0 }) {
+  const at = springFrames(from, height).findLastIndex((x) => height - x > SLIDE_PX / 2) + 1;
+  return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
 }
 var ROW_FADE_MS = {
   entering: ENTER_FADE_MS,
@@ -5310,9 +5310,10 @@ function glideOf(track, isStart, last, now, holdsUntil, isPressed, isReplaced) {
       const box = last.shutAt !== null && now >= last.shutAt ? "shut" : last.box;
       return { ...last, box, isShown: false };
     }
-    const fadeMs = isReplaced ? 0 : LEAVE_FADE_MS;
+    const isTurned = isShownAtOnce(last, now);
+    const fadeMs = isReplaced || isTurned ? 0 : LEAVE_FADE_MS;
     const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + fadeMs;
-    const from = isLive || isReplaced ? { box: last?.box ?? "open", isShown: false } : { box: "open", isShown: true };
+    const from = isTurned ? { box: "shut", isShown: false } : isLive || isReplaced ? { box: last?.box ?? "open", isShown: false } : { box: "open", isShown: true };
     const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt };
     return { ...glide, endsAt: restAt(shutAt, 0) };
   }
@@ -5342,6 +5343,7 @@ function glideOf(track, isStart, last, now, holdsUntil, isPressed, isReplaced) {
   const glide = openedAt(last, now);
   return isStart ? { ...glide, endsAt: Math.max(glide.endsAt, restAt(now, glide.fadeMs)) } : glide;
 }
+var isShownAtOnce = (g, now) => g !== null && now < g.endsAt && g.box === "open" && g.shutAt === null && g.fadeMs === 0;
 function openedAt(g, now) {
   const isOpen = g.opensAt === null || now >= g.opensAt;
   return { ...g, box: isOpen ? "open" : "shut", isShown: isOpen || g.fadeMs === 0 };
@@ -5393,8 +5395,9 @@ function moveRows(blocks, last, now, isFirst, isInput = false) {
   const isFieldBack = (id) => !wasDrawn.has(id) || was.rows.get(id)?.track.state === "leaving";
   const isFieldPressed = !isFirst && blocks.some((b) => b.kind === "field" && isFieldBack(b.id));
   const startsLeave = was.order.some((id) => {
-    const state = was.rows.get(id)?.track.state;
-    return state !== undefined && state !== "leaving" && (copies.has(id) || !isDrawn.has(id));
+    const old = was.rows.get(id);
+    const holdsSpace = old !== undefined && old.track.state !== "leaving" && !isShownAtOnce(old.glide, now);
+    return holdsSpace && (copies.has(id) || !isDrawn.has(id));
   });
   const holdsUntil = startsLeave && !isFieldPressed ? now + HOLD_MS : was.holdsUntil;
   const isHolding = holdsUntil > now;
@@ -5954,7 +5957,7 @@ function contentStrokeEls(b, t, fade) {
   });
   return [...path ? pathEls(path) : [], ...treeEls];
 }
-var shutTo = (height, ms) => ms === null ? 0 : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING).x;
+var shutTo = (height, ms) => ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING);
 function spacedEls(blocks, p, el) {
   const isShut = (b) => p.motion.get(b.id)?.box === "shut";
   const spaces = spacesOf(blocks, isShut);
@@ -5967,7 +5970,7 @@ function spacedEls(blocks, p, el) {
     const m = p.motion.get(b.id);
     const height = fitHeight(b, m, p);
     const isShown = m?.box === "open" && m.isShown && height !== undefined;
-    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height - shutTo(height, m.shutForMs)) : 0;
+    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0;
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
     const fade = (e) => m?.box ? e.opacity(isShown ? 1 : 0).transition("opacity", glide) : e;
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;

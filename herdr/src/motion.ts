@@ -109,7 +109,9 @@ const restAt = (now: number, fadeMs: number): number => now + Math.max(fadeMs, H
  * content fades in once the box is nearly open. A block that turns back mid-glide was already in its box, so it moves
  * to its new end from where it is, at once: one that turns back to enter fades in from where its fade is, and if its box
  * had begun to shut or had not yet opened, once the box is nearly open. A field enters as soon as its press, so it never
- * waits for a leaving block, and shows as soon as its box opens. A block the field replaces (`isReplaced`) hides at once
+ * waits for a leaving block, and shows as soon as its box opens. A field that leaves while it still opens turns back as
+ * it came: it hides at once and its box springs shut from where it is, in the same draw, holding no space. A block the
+ * field replaces (`isReplaced`) hides at once
  * and its box shuts from the next draw. A block that leaves stays drawn until its glide comes to rest. A row selected as it
  * enters keeps its box: the box springs on to the row's new height, which arrives in the draw after the open starts,
  * and lets go once that comes to rest.
@@ -130,10 +132,14 @@ function glideOf(
       const box = last.shutAt !== null && now >= last.shutAt ? 'shut' : last.box
       return { ...last, box, isShown: false }
     }
-    const fadeMs = isReplaced ? 0 : LEAVE_FADE_MS
+    const isTurned = isShownAtOnce(last, now)
+    const fadeMs = isReplaced || isTurned ? 0 : LEAVE_FADE_MS
     const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + fadeMs
-    const from =
-      isLive || isReplaced ? { box: last?.box ?? 'open', isShown: false } : { box: 'open' as const, isShown: true }
+    const from = isTurned
+      ? { box: 'shut' as const, isShown: false }
+      : isLive || isReplaced
+        ? { box: last?.box ?? 'open', isShown: false }
+        : { box: 'open' as const, isShown: true }
 
     const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt }
 
@@ -166,6 +172,10 @@ function glideOf(
 
   return isStart ? { ...glide, endsAt: Math.max(glide.endsAt, restAt(now, glide.fadeMs)) } : glide
 }
+
+/** Whether `g` is the glide of a field still opening, whose content showed as soon as its box began to open. */
+const isShownAtOnce = (g: Glide | null, now: number): boolean =>
+  g !== null && now < g.endsAt && g.box === 'open' && g.shutAt === null && g.fadeMs === 0
 
 /** An entering glide in a draw after its first: open and shown from `opensAt`, shut and hidden before it unless it shows at once. */
 function openedAt(g: Glide, now: number): Glide {
@@ -253,8 +263,9 @@ export function moveRows(
   const isFieldBack = (id: string) => !wasDrawn.has(id) || was.rows.get(id)?.track.state === 'leaving'
   const isFieldPressed = !isFirst && blocks.some(b => b.kind === 'field' && isFieldBack(b.id))
   const startsLeave = was.order.some(id => {
-    const state = was.rows.get(id)?.track.state
-    return state !== undefined && state !== 'leaving' && (copies.has(id) || !isDrawn.has(id))
+    const old = was.rows.get(id)
+    const holdsSpace = old !== undefined && old.track.state !== 'leaving' && !isShownAtOnce(old.glide, now)
+    return holdsSpace && (copies.has(id) || !isDrawn.has(id))
   })
   const holdsUntil = startsLeave && !isFieldPressed ? now + HOLD_MS : was.holdsUntil
   const isHolding = holdsUntil > now
