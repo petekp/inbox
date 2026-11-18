@@ -73,7 +73,8 @@ export function feedbackOf(
     return { is: 'note', note: note.note, at: note.at }
   if (result && (result.state !== 'done' || now - result.at < SETTLED_MS)) {
     const under = last.kind === 'talk' ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now) : null
-    const talkOutSince = under?.is === 'working' || under?.is === 'sending' ? under.at : undefined
+    const isTalkOut = under?.is === 'working' || under?.is === 'sending' || under?.is === 'queued'
+    const talkOutSince = isTalkOut ? under.at : undefined
 
     return { is: 'local', result, ...(talkOutSince === undefined ? {} : { talkOutSince }) }
   }

@@ -2135,7 +2135,11 @@ async function applyConversation(
   // The pane now shows another conversation, so it starts a new showing.
   await syncShown($, { since: loadedAt })
   const turns = await $.session.turns().catch(() => null)
-  const cutOff = (s: Session) => statusChanged(cutOffTurn(cutOffUpdate(s), loadedAt), o => childrenCutOff(o, loadedAt))
+  const cutOff = (s: Session) => {
+    const loaded = statusChanged(cutOffTurn(cutOffUpdate(s), loadedAt), o => childrenCutOff(o, loadedAt))
+
+    return { ...loaded, lastActions: withReplyWaitEnded(loaded.lastActions) }
+  }
   // Before notePlace's save, so this conversation is never saved with the previous one's tool fields.
   await replaceDrawn($, s => withLoadedToolFields(cutOff(s), by, saved?.session, parent, turns))
   if (revision !== sessionState.loadRevision) return

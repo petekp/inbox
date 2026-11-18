@@ -2509,7 +2509,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
     return { is: "note", note: note.note, at: note.at };
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
     const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now) : null;
-    const talkOutSince = under?.is === "working" || under?.is === "sending" ? under.at : void 0;
+    const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
+    const talkOutSince = isTalkOut ? under.at : void 0;
     return { is: "local", result, ...talkOutSince === void 0 ? {} : { talkOutSince } };
   }
   if (!last || last.kind === "local") return null;

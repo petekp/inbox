@@ -2,7 +2,7 @@ import { expect, mock } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { test } from './test-with-timeout'
-import { SETTLED_MS } from '../hooks/timing'
+import { QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/timing'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 import type { LinksProps } from '../hooks/links-client'
@@ -55,7 +55,7 @@ const savedExplanation = () =>
 const hasShowExplanation = async (pane: { find(q: { key: string }): Promise<unknown> }) =>
   (await pane.find({ key: 'show-explanation-i1' })) !== undefined
 
-test('after an answered Explain, the fullscreen terminal offers Show explanation, and its press scrolls the conversation', async ($, on) => {
+test("after an answered Explain, the fullscreen terminal offers Show explanation for the reply's first text, and its press reports a refused scroll", async ($, on) => {
   const clock = await planReady($, on)
   const pane = await $.ui.mount({ ...PANE, viewport: FULLSCREEN })
   const classic = await $.ui.mount({ ...PANE, requestId: 'classic', viewport: { ...FULLSCREEN, isFullscreen: false } })
@@ -144,4 +144,24 @@ test('Show explanation pressed while Explain again is out keeps Explain again ou
 
   expect(w.sent.length).toBe(sentBefore)
   expect(await hasShowExplanation(pane)).toBe(true)
+})
+
+test('Show explanation pressed while Explain again is queued keeps Explain again out', async ($, on) => {
+  const clock = await planReady($, on)
+  const pane = await $.ui.mount({ ...PANE, viewport: FULLSCREEN })
+  await explain($, pane, 't2')
+  await reply($, 'reply-1', 'It ships today.')
+  await endTurn($, 't2')
+  await clock.advance(SETTLED_MS)
+
+  w.submitAnswer = 'hold'
+  w.inFlight.push(pane.press({ key: 'explain-i1-key' }))
+  await clock.advance(QUEUED_AFTER_MS + 500)
+  const sentBefore = w.sent.length
+  await pane.press({ key: 'show-explanation-i1-key' })
+  await clock.settle()
+  await pane.press({ key: 'explain-i1-key' })
+  await clock.settle()
+
+  expect(w.sent.length).toBe(sentBefore)
 })

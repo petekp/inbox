@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-17T23:48:18.683Z. 278726 characters follow.
+// Built at 2026-11-18T00:07:43.454Z. 278785 characters follow.
 
 // src/main.ts
 import { View, div as div9 } from "gpui-kit";
@@ -2086,7 +2086,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
     return { is: "note", note: note.note, at: note.at };
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
     const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now) : null;
-    const talkOutSince = under?.is === "working" || under?.is === "sending" ? under.at : undefined;
+    const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
+    const talkOutSince = isTalkOut ? under.at : undefined;
     return { is: "local", result, ...talkOutSince === undefined ? {} : { talkOutSince } };
   }
   if (!last || last.kind === "local")
