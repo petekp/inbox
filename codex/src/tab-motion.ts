@@ -24,7 +24,7 @@ export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 /** An element's height before a draw, and the top of the part it draws open, a row's panel or a PR block's body. */
 type Drawn = { el: HTMLElement; height: number; openTop: number | null }
 type TabWidth = { el: HTMLElement; width: number; isShown: boolean }
-type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth> }
+type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; fieldKeys: Set<Element> }
 
 /** The part an entry draws open: a row's panel, or a PR block's body. */
 const OPEN_PART = '.panel, .pr-body'
@@ -47,7 +47,7 @@ export function measure(): Drawing {
   for (const el of root.querySelectorAll<HTMLElement>('[data-tab]'))
     tabWidths.set(el.dataset.tab!, { el, width: el.getBoundingClientRect().width, isShown: isShownTab(el) })
 
-  return { heights, tabWidths }
+  return { heights, tabWidths, fieldKeys: new Set(root.querySelectorAll(FIELD_KEYS)) }
 }
 
 /**
@@ -115,6 +115,7 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   }
   glideTabs(before.tabWidths)
   showNotes(before)
+  showFieldKeys(before)
   entering.clear()
   heightWaitMs = 0
 }
@@ -130,6 +131,25 @@ function showNotes(before: Drawing) {
     const g = end && before.heights.has(end.dataset.motion!) ? glides.get(end) : undefined
     if (!g || !isRunning(g.anim) || g.to <= g.from.x) continue
     fade(note, 0, 1, ENTER_FADE_MS, false, true, g.delay + enterDelayMs(g.to, g.from))
+  }
+}
+
+/** A text field's buttons, such as the goal field's Save and Cancel. */
+const FIELD_KEYS = '.field-keys'
+
+/**
+ * A field's buttons that this draw brings into a moving block fade in while the text field shows at once, as in Herdr.
+ * While the field's box grows they wait until it has nearly grown to hold them. The empty page's field sits in no
+ * moving block, and shows its buttons at once, as Herdr's does.
+ */
+function showFieldKeys(before: Drawing) {
+  for (const keys of root.querySelectorAll<HTMLElement>(FIELD_KEYS)) {
+    if (before.fieldKeys.has(keys)) continue
+    const box = keys.closest<HTMLElement>('[data-motion]')
+    if (!box) continue
+    const g = glides.get(box)
+    const isGrowing = g !== undefined && isRunning(g.anim) && g.to > g.from.x
+    fade(keys, 0, 1, ENTER_FADE_MS, false, false, isGrowing ? g.delay + enterDelayMs(g.to, g.from) : 0)
   }
 }
 

@@ -109,9 +109,15 @@ type Space = { block: Block; above: number }
  * Each drawn block with the space above it, from the last block above it that is not shut. A gap block draws nothing
  * and opens a section's space above the next block, or a milestone step's smaller space. A shut block, one that enters
  * or leaves at no height, has no space, and a shut gap opens none, so the space a gap held closes in the same glide as the
- * rows beside it instead of waiting for the gap to leave the list.
+ * rows beside it instead of waiting for the gap to leave the list. `formOf` gives the form a block's spaces are measured
+ * from, so a block whose content box keeps its former form's height keeps that form's spaces too, and both start to
+ * glide in the same draw.
  */
-export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[] {
+export function spacesOf(
+  blocks: Block[],
+  isShut: (b: Block) => boolean,
+  formOf: (b: Block) => Block = b => b,
+): Space[] {
   const out: Space[] = []
   let prev: Block | null = null
   let section: number | null = null
@@ -125,8 +131,9 @@ export function spacesOf(blocks: Block[], isShut: (b: Block) => boolean): Space[
       out.push({ block: b, above: 0 })
       continue
     }
-    out.push({ block: b, above: aboveOf(prev, b, section) })
-    prev = b
+    const form = formOf(b)
+    out.push({ block: b, above: aboveOf(prev, form, section) })
+    prev = form
     section = null
   }
 
@@ -192,20 +199,22 @@ export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
 /**
  * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
  * A row's height is its padding, its title's and the rest's, each measured on its own, so the row's box springs in step
- * with its title's box. Undefined until the block's first measure.
+ * with its title's box. A block that changed kind takes its former form's height until its new form measures, so its
+ * box glides between the two. Undefined until the block's first measure.
  */
 function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undefined {
   const id = b.id
   const panel = m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0
+  const former = () => (m?.former ? fitHeight(m.former, undefined, p) : undefined)
   if (b.kind !== 'row') {
     const measured = p.heights.get(id)
 
-    return measured === undefined ? undefined : measured - panel
+    return measured === undefined ? former() : measured - panel
   }
   const title = titleHeightOf(b, p)
   const rest = p.heights.get(restId(id))
 
-  return title === undefined || rest === undefined ? undefined : 2 * padOf(b) + title + rest - panel
+  return title === undefined || rest === undefined ? former() : 2 * padOf(b) + title + rest - panel
 }
 
 /**
@@ -377,7 +386,14 @@ const shutTo = (height: number, ms: number | null): SpringState =>
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
   const isShut = (b: Block) => p.motion.get(b.id)?.box === 'shut'
-  const spaces = spacesOf(blocks, isShut)
+  const heldForm = (b: Block) => {
+    const m = p.motion.get(b.id)
+    if (!m?.former) return b
+    const isNewFormUnmeasured = fitHeight(b, { ...m, former: null }, p) === undefined
+
+    return isNewFormUnmeasured ? m.former : b
+  }
+  const spaces = spacesOf(blocks, isShut, heldForm)
   const passing = passingOf(
     spaces.map(s => s.block),
     isShut,

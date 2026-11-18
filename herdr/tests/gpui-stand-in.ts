@@ -76,6 +76,7 @@ export const focusTerminal = (address: string) => {
   focusedTerminal = address
 }
 export const typeIn = (state: unknown, text: string) => (state as StandInField).typeIn(text)
+export const fieldOf = (value: string): StandInField => new StandInField({ value })
 export const keysHolder = () => keys
 export const giveKeysElsewhere = () => {
   keys = null

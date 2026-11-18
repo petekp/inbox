@@ -5,20 +5,16 @@ import { ROW_PAD_PT } from '../../hooks/layout'
 import { partPt } from '../../hooks/row-parts'
 import type { RowPart } from '../../hooks/row-parts'
 import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
-import { STALL_GAP } from '../../hooks/status-page'
 import { isOpenRow } from './blocks'
-import type { Block, BodyLine, Button, LineBlock, PrBlock, RowBlock, StatusLine } from './blocks'
+import type { Block, BodyLine, Button, LineBlock, PrBlock, RowBlock } from './blocks'
 import {
   BUTTON_LABEL_X,
   CONTROL_GAP,
   EDGE,
-  HELP_COLUMN,
-  HELP_INDENT,
   END_SPACE,
   INSET,
   INSIDE_GAP,
   LINE_HEIGHT,
-  LIST_GAP,
   MARK_W,
   NEST,
   SEP,
@@ -30,6 +26,8 @@ import { emptyEl } from './paint-empty'
 import { buttonEl, buttonsEl, lineEl, markEl, resultLineEl } from './paint-parts'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
+import { underId } from './under-line'
+import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
 import { PATH_X, lineColor, padOf, panelId, restId, sizeEl, titleEl } from './paint-space'
 import type { Paint, Theme } from './paint-theme'
@@ -210,10 +208,8 @@ function bodyEls(
  * opacity glides as the row opens or closes, and it reports its height, so a closing row's box can leave it out.
  */
 function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boolean, titleEnd: RowPart): Element[] {
-  const { t } = p
   const from = m?.closing ?? r
   const isInert = isLeaving || from !== r
-  const under = from === r && isStatusUnder(r) ? r.feedback : null
   const actions = from.buttons.filter(b => !b.isOption)
   const hasAnswers = from.buttons.some(b => b.isOption)
   const followsAnswers = hasAnswers && actions[0]?.emphasis !== 'quiet'
@@ -225,7 +221,7 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
       ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons', 'herdr'))]
       : []),
     ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field', 'herdr'))] : []),
-    ...(under ? [bodyLineEl(under, partPt(end, 'result', 'herdr'), t, r.isSelected)] : []),
+    ...underEls(r, m, p, partPt(end, 'result', 'herdr')),
   ]
   if (parts.length === 0) return []
   const key = panelId(r.id)
@@ -243,62 +239,21 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
 }
 
 /**
- * One part of a line built from parts, such as a PR's status line or a Status line's name and stall. gpui-kit has no
- * inline span, so each part is an item of a wrapping row. A part that does not fit moves whole to the next line, which
- * starts at the left edge. A part wider than the line wraps inside it.
+ * The status under a row's buttons, such as "Sending…". It fades in once the row's box is nearly open, and out while
+ * the box holds, as `underMotion` says. A row drawn with no motion, as a tab's first draw, shows it at rest.
  */
-const statusPartEl = (text: string): Element => div().min_w(0).max_w_full().whitespace_normal().child(text)
+function underEls(r: RowBlock, m: RowMotion | undefined, p: Paint, above: number): Element[] {
+  const u = m ? m.under : isStatusUnder(r) ? { line: r.feedback, opacity: null, fadeMs: 0, delayMs: 0 } : null
+  if (!u?.line) return []
+  const key = underId(r.id)
+  const glide = { duration: u.fadeMs, delay: u.delayMs, easing: 'ease-out' as const }
 
-/** A Help line: a key or a mark in the left column, then its words. */
-function keyEl(s: StatusLine, does: string, t: Theme): Element {
-  return h_flex()
-    .items_start()
-    .pl(EDGE + HELP_INDENT)
-    .pr(EDGE)
-    .pb(LIST_GAP)
-    .child(
-      div()
-        .flex_none()
-        .w(HELP_COLUMN)
-        .child(s.mark ? markEl(s.mark, t) : div().font_semibold().child(s.name)),
-    )
-    .child(div().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does))
-}
-
-function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
-  const { t } = p
-  if (s.does !== undefined) return keyEl(s, s.does, t)
-  const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)
-    .when(s.isBold, e => e.font_semibold())
-    .when(s.isMuted, e => e.text_color(t.muted))
-  const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : []
-  const toggle = s.fold?.toggle
-  const chevron = s.fold
-    ? [
-        foldChevronEl(t, {
-          isOpen: !s.fold.isFolded,
-          isLive: toggle !== undefined && !isInert,
-          ...(s.fold.isFolded ? { count: s.fold.count } : {}),
-        }),
-      ]
-    : []
-
-  return v_flex()
-    .pl(EDGE + s.depth * NEST)
-    .pr(EDGE)
-    .child(
-      h_flex()
-        .id(`fold ${s.id}`)
-        .items_start()
-        .when(toggle !== undefined && !isInert, e =>
-          e.on_click((e, cx) => (toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)),
-        )
-        .child(markEl(s.mark, t))
-        .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
-    )
-    .when(s.waitsOn !== undefined, e => e.child(lineEl(s.waitsOn ?? '', colorOf(t, 'needsYou'))))
-    .children(s.under.map(l => lineEl(l, t.muted)))
-    .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)))
+  return [
+    bodyLineEl(u.line, above, p.t, r.isSelected)
+      .id(key)
+      .on_size_change((size, cx) => p.measure(key, size, cx))
+      .when(u.opacity !== null, e => e.opacity(u.opacity ?? 1).transition('opacity', glide)),
+  ]
 }
 
 /**
@@ -479,11 +434,17 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'empty') return emptyEl(b, p, isLeaving)
   if (b.kind === 'fold' || b.kind === 'more') return foldEl(b, p, isLeaving)
   if (b.kind === 'rule') return ruleEl(b, t)
-  if (b.kind === 'field')
+  if (b.kind === 'field') {
+    const m = p.motion.get(b.id)
+    const isShownAsOpening = m?.state === 'entering' && m.box !== null && m.fadeMs === 0
+    const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null
+    const opening = isShownAsOpening ? { isOpen: m.box === 'open', height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade
+
     return div()
       .pl(b.isAtEdge ? EDGE : TEXT_X)
       .pr(EDGE)
-      .child(fieldEl(b.field, p, 0, isLeaving))
+      .child(fieldEl(b.field, p, 0, isLeaving, opening))
+  }
   if (b.kind === 'note')
     return noteEl(
       b,

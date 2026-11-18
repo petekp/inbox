@@ -429,16 +429,22 @@ test('opening the goal field never raises the Status page’s height', () => {
 test('reopening the goal field while it still closes never raises the Status page above its closed height', () => {
   const closed = tabBlocks(demoScreen(), uiOn('overview'))
   const typing = tabBlocks(demoScreen(), uiOn('overview', { typing: 'goal' }))
-  const heights = framesOf(
-    [
-      [0, closed],
-      [0, typing, 'input'],
-      [900, closed, 'input'],
-      [1200, typing, 'input'],
-    ],
-    2200,
-  ).heights
-  expect(Math.max(...heights)).toBeLessThan((heights[0] ?? 0) + 1)
+  for (const reopensAt of [1100, 1200, 1300]) {
+    const heights = framesOf(
+      [
+        [0, closed],
+        [0, typing, 'input'],
+        [900, closed, 'input'],
+        [reopensAt, typing, 'input'],
+      ],
+      reopensAt + 1000,
+    ).heights
+    const closedHeight = heights[0] ?? 0
+    expect({ reopensAt, isAboveClosed: Math.max(...heights) >= closedHeight + 1 }).toEqual({
+      reopensAt,
+      isAboveClosed: false,
+    })
+  }
 })
 
 test('closing the goal field while it opens takes the Status page to its closed height without passing it, and cuts no text as it closes', () => {
