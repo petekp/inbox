@@ -208,7 +208,7 @@ function moveRow(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
     glide(el, 'height', from, target, false, scalesEdges, delay)
   if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
-  if (part && state === 'opening' && changed.has(key) && tabState.isReadDraw)
+  if (part && state === 'opening' && changed.has(key))
     fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
 }
 
@@ -241,9 +241,9 @@ function isInsideLeaving(el: HTMLElement): boolean {
 }
 
 /**
- * Shrinks an entry to the height it comes to rest at, over what it drew open and still draws, inert: a row's panel or
- * a PR block's body. A settling entry's settled line replaces the line above that part, so the part keeps the top it
- * had at `openTop` while the height shrinks over it.
+ * Shrinks an entry to the height it comes to rest at, over what it drew open and still draws, inert: a closing row's
+ * panel or a PR block's body. A settling PR block's dismissed head replaces the line above its body, so the body keeps
+ * the top it had at `openTop` while the height shrinks over it. A settling row draws only its settled line.
  */
 function collapse(el: HTMLElement, from: SpringState, openTop: number | null, delay: number) {
   const part = el.querySelector<HTMLElement>('.closing[inert]')

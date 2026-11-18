@@ -87,8 +87,7 @@ export function stepLists(v: View): {
       const track = stepRow(before?.track, target, now, entering.has(id), reducedMotion.matches)
       if (!track) continue
       if (track !== before?.track) changed.add(id)
-      const openRow = !track.hasPanel ? undefined : 'row' in x && listedIds.has(id) ? x.row : before?.openRow
-      drawnRows.set(id, { track, openRow })
+      drawnRows.set(id, { track })
       kept.add(id)
       drawn.push(x)
       if (track.hasPanel && 'row' in x) {
@@ -343,7 +342,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   )
 }
 
-function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | undefined }) {
+function SettledView({ settled: r, wasOpen }: { settled: RowView; wasOpen: boolean }) {
   const { state } = r
   if (state.is !== 'settled') return null
   const start = tabState.seen.get(r.id) ?? Date.now()
@@ -352,7 +351,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
   const error = errors.get(r.id)
 
   return (
-    <div class={panel ? 'row settled was-open' : 'row settled'}>
+    <div class={wasOpen ? 'row settled was-open' : 'row settled'}>
       <ResultMarkView mark={settledMark(state)} tint={{ row: clock, tone }} />
       <div class="content">
         <div class="settled-head">
@@ -379,7 +378,6 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
             onUndo={() => void undo(r)}
           />
         </div>
-        {panel ? <Panel row={panel} isClosing /> : null}
       </div>
     </div>
   )
@@ -406,7 +404,7 @@ export function Entries({ entries, group, all, now }: { entries: Entry[]; group:
                 onSelect={isAll => pressTitle(t, all, all.indexOf(x.row), isAll ? foldAllHere : undefined)}
               />
             ) : (
-              <SettledView settled={x.settled} panel={drawn.openRow} />
+              <SettledView settled={x.settled} wasOpen={drawn.track.hasPanel} />
             )}
           </div>
         )

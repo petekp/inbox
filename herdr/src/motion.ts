@@ -48,11 +48,12 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * whose height springs and whose content fades over `fadeMs`, once the box is nearly open if `waitsForSpace`: `box` is `open` at the block's
  * measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
  * `closing` the open form whose panel a closing row keeps drawn. `isPanelWaiting` says an opening row's panel fades in
- * once its space is nearly open, as an entering block's content does, unless the person's input opened it. `isPanelLeftOut` says the row's content box moves to
+ * once its space is nearly open, as an entering block's content does, the person's own move included. `isPanelLeftOut` says the row's content box moves to
  * its measured height less its panel's: through a close after its first draw, through all of a close that turns an
  * open back, and in the draw after a close, before the row measures without the panel. A close's first draw keeps the
  * panel's height, so the row the selection moves to measures its new height in that draw and both start together.
- * `title` is how a row's title draws while it moves between its one-line and wrapped forms, null when it draws one.
+ * `title` is how a row's title draws while it moves between its one-line and wrapped forms, null when it draws one. A
+ * settling row's title takes its one-line form at once, as its settled line and Undo swap in for its panel.
  * `isHeightHeld` says a row whose close starts in the draw a block starts to leave keeps its open height, its title's
  * and its panel's, while its panel fades and the leaving block holds its space. `shutForMs` is how long the box of a block that turned
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
@@ -140,9 +141,9 @@ function movedOf(blocks: Block[], was: Tracks): Set<string> {
  * spring. While a block that leaves holds its space, nothing that moves in a draw that did not follow the person's
  * input grows: a block that enters waits to open, a row that would open keeps its last form, and a row whose close
  * starts with or after the leave keeps its height while its panel fades. So the closing and the opening row start
- * together, as the leaving block's space starts to close. The person's own moves do not wait: in a draw that follows
- * their input (`isInput`), the row the selection opens and the row it closes move at once, and a field a press brings
- * in shows at once. When their input opens a row, a row whose close a publish began lets go of its height, so both move
+ * together, as the leaving block's space starts to close. The person's own moves do not wait for a leave: in a draw
+ * that follows their input (`isInput`), the row the selection opens and the row it closes start to move at once, and a
+ * field a press brings in shows at once. The opened row's panel still fades in once its space is nearly open. When their input opens a row, a row whose close a publish began lets go of its height, so both move
  * together. A block that leaves in the draw a press's field enters, or comes back as it leaves, is what the field
  * replaces: it hides at once and shuts without holding anything. `isFirst` forgets the tracks and draws every block at
  * rest, as a newly shown tab does. `heightOf` gives the height measured under a key, as the
@@ -184,8 +185,9 @@ export function moveRows(
   const add = (block: Block, track: RowTrack, last: Tracked | undefined, springId: string | null = null) => {
     const isOpen = block.kind === 'row' && isOpenRow(block)
     const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
+    const isTitleSwapped = track.state === 'settling'
     const title =
-      block.kind === 'row' && last
+      block.kind === 'row' && last && !isTitleSwapped
         ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)))
         : null
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? (last?.opened ?? null) : null
@@ -217,7 +219,7 @@ export function moveRows(
       waitsForSpace: glide?.waitsForSpace ?? false,
       shutForMs: glide?.shutForMs ?? null,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
-      isPanelWaiting: track.state === 'opening' && !isInputMove,
+      isPanelWaiting: track.state === 'opening',
       closing,
       isPanelLeftOut:
         (closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))) ||

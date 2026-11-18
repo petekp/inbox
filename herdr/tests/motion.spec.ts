@@ -308,7 +308,7 @@ test('a tab that gains its first count shows none in the draw that sets the rows
   expect(heldTabs(after, before, starts.motion).find(t => t.id === 'needsYou')?.badge).toBeNull()
 })
 
-test('a click on a collapsed row’s title shows its panel without waiting for its space, as a key does', async () => {
+test('a click on a collapsed row’s title fades its panel in once its space is nearly open, as a key does', async () => {
   let at = NOW
   const tick = () => setSystemTime(new Date((at += PRESS_GUARD_MS + 1)))
   const panel = await openPanel()
@@ -324,7 +324,7 @@ test('a click on a collapsed row’s title shows its panel without waiting for i
       allOf(panel.paint())
         .find(n => n.id === `panel ${rowId}`)
         ?.delays.get('opacity'),
-    ).toBe(0)
+    ).toBeGreaterThan(0)
   } finally {
     setSystemTime(new Date(NOW))
   }
@@ -357,7 +357,7 @@ async function nextPanelDelay(isPressed: boolean) {
   }
 }
 
-test('a press that closes the open row opens the next row in the draw of the publish that answers it, as a key does', async () => {
-  expect(await nextPanelDelay(true)).toBe(0)
+test('the row a press opens fades its panel in once its space is nearly open, as a row a publish opens does', async () => {
+  expect(await nextPanelDelay(true)).toBeGreaterThan(0)
   expect(await nextPanelDelay(false)).toBeGreaterThan(0)
 })

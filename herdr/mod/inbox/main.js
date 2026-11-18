@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T11:37:59.270Z. 299338 characters follow.
+// Built at 2026-11-18T20:24:27.520Z. 299521 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -5506,7 +5506,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
   const add = (block, track, last, springId = null) => {
     const isOpen = block.kind === "row" && isOpenRow(block);
     const wasOpen = last?.block.kind === "row" && isOpenRow(last.block);
-    const title = block.kind === "row" && last ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id))) : null;
+    const isTitleSwapped = track.state === "settling";
+    const title = block.kind === "row" && last && !isTitleSwapped ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id))) : null;
     const opened = isOpen ? block : track.hasPanel && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const isPressed = block.kind === "field";
@@ -5527,7 +5528,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       waitsForSpace: glide?.waitsForSpace ?? false,
       shutForMs: glide?.shutForMs ?? null,
       panel: panelOf(track.state, isStart, last?.track.state, closing),
-      isPanelWaiting: track.state === "opening" && !isInputMove,
+      isPanelWaiting: track.state === "opening",
       closing,
       isPanelLeftOut: closing !== null && !isHeld && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
       title: titleMotion(title, now),
@@ -5932,9 +5933,12 @@ import { h_flex as h_flex2, v_flex as v_flex3 } from "gpui-base";
 import { div as div5 } from "gpui-kit";
 import { v_flex as v_flex2 } from "gpui-base";
 var isClosedFold = (b) => b.kind === "fold" && ("closedFold" in b.change);
+var isSettledPr = (b) => b.kind === "row" && b.settled !== null && b.id.startsWith("pr:");
 function padOf(b) {
   if (isClosedFold(b))
     return LIST_MARGIN;
+  if (isSettledPr(b))
+    return 0;
   return b.kind === "row" || b.kind === "fold" || b.kind === "more" ? ROW_PAD_PT : 0;
 }
 var LIST_MARGIN_TO_TEXT = LIST_MARGIN + ROW_PAD_PT;
@@ -6348,7 +6352,7 @@ function rowEl(r, p) {
     ...r.heldLine ? [r.heldLine] : []
   ];
   const titleEnd = lines.length > 0 ? "titleStatus" : "title";
-  return v_flex6().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(ROW_PAD_PT).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex6().children(lines.map((l, n) => {
+  return v_flex6().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex6().children(lines.map((l, n) => {
     const above = partPt(n === 0 ? "title" : "titleStatus", "titleStatus", "herdr");
     const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, above, t, r.isSelected);
     return "isHidden" in l && l.isHidden ? el.opacity(0) : el;

@@ -139,7 +139,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .id(`row ${r.id}`)
     .pl(EDGE + r.depth * NEST)
     .pr(EDGE)
-    .py(ROW_PAD_PT)
+    .py(padOf(r))
     .when(r.isSelected, e => e.bg(t.selected))
     .when(isPressable && !isOpen, e =>
       e

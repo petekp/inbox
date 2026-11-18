@@ -38,8 +38,8 @@ export const slideOffset = (opacity: number): number => -SLIDE_PX * (1 - Math.mi
 /**
  * A row's state. The resting states draw one form: `closed` its line, `open` its line and panel, `settled` its
  * settled line, `undoing` that line while an Undo press is out. The moving states animate toward a form, and each
- * keeps what it moves away from drawn: `closing` keeps the panel, `settling` keeps the last open panel under the
- * settled line, and `leaving` keeps the row's last form while it fades and collapses.
+ * keeps what it moves away from drawn: `closing` keeps the panel, and `leaving` keeps the row's last form while it fades
+ * and collapses. `settling` swaps the settled line in for the whole open row at once, and the height shrinks under it.
  */
 export type RowState =
   'entering' | 'closed' | 'opening' | 'open' | 'closing' | 'settling' | 'settled' | 'undoing' | 'leaving'
