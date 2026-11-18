@@ -102,6 +102,7 @@ Each fact also carries one of these labels when its kind is not obvious:
 - [Checked against Codex 0.163.0, and live checks](codex-plugins/checked-0.163.md)
 - [Checked against Codex 0.164.0](codex-plugins/checked-0.164.md)
 - [Checked against Codex 0.166.0](codex-plugins/checked-0.166.md)
+- [Checked against Codex 0.167.0](codex-plugins/checked-0.167.md)
 - [Where sources disagree](codex-plugins/disagreements.md)
 - [Subagents, guardians and hooks](codex-plugins/subagents.md)
 - [Unknown, and how to check](codex-plugins/unknowns.md)
