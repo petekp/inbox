@@ -2,31 +2,20 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Window } from 'happy-dom'
 import { shortAgo } from '../../hooks/rows'
-import type { LastAction } from '../../types'
+import type { LastAction, Ledger } from '../../types'
 import { updateState } from '../src/state'
 import { makeServer } from '../src/server'
 import TAB_HTML from '../src/tab.html'
 import { fakeRunner, removeTempDir, tempDir } from './helpers'
 import { task } from './row-actions-fixtures'
 
-test('the built tab keeps a collapsed row’s age beside a status that has no age of its own, as Not sent', async () => {
+async function builtTab(items: Ledger['items'], lastActions: Record<string, LastAction>) {
   const dir = tempDir()
-  const now = Date.now()
-  const askedAt = now - 2 * 60 * 60 * 1000
   const { ledger } = task()
-  const first = { ...ledger.items[0]!, at: askedAt }
-  const failed = { ...first, id: 'i2', ask: 'Tag the release', helps: [] }
-  const notSent: LastAction = {
-    kind: 'talk',
-    action: 'explain',
-    text: 'Explain',
-    at: now - 60_000,
-    delivery: { state: 'failed', reason: 'The session ended', id: 'd1' },
-  }
   await updateState(dir, 'renderer', state => ({
     ...state,
-    ledger: { ...ledger, items: [first, failed] },
-    lastActions: { i2: notSent },
+    ledger: { ...ledger, items },
+    lastActions,
     heard: { ...state.heard, startAt: 1 },
     presence: { ...state.presence, turnsStarted: 1, turnsApplied: 1 },
   }))
@@ -59,18 +48,63 @@ test('the built tab keeps a collapsed row’s age beside a status that has no ag
         : handle({ ...request, params: { ...request.params, _meta: { thread_id: 'renderer' } } })
     void response.then(data => queueMicrotask(() => host.dispatchEvent(new host.MessageEvent('message', { data }))))
   }
-  const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
   const document = host.document
-  const failedRow = () => [...document.querySelectorAll('.row')].find(r => r.textContent?.includes('Tag the release'))
+  const rowWith = (text: string) => [...document.querySelectorAll('.row')].find(r => r.textContent?.includes(text))
+  const until = async (isDrawn: () => boolean) => {
+    for (let n = 0; n < 280 && !isDrawn(); n++) await new Promise<void>(resolve => setTimeout(resolve, 25))
+  }
+  document.write(resource.contents[0]!.text)
+
+  return {
+    rowWith,
+    until,
+    close: async () => {
+      await host.happyDOM.close()
+      await removeTempDir(dir, handle)
+    },
+  }
+}
+
+test('the built tab keeps a collapsed row’s age beside a status that has no age of its own, as Not sent', async () => {
+  const now = Date.now()
+  const askedAt = now - 2 * 60 * 60 * 1000
+  const first = { ...task().ledger.items[0]!, at: askedAt }
+  const failed = { ...first, id: 'i2', ask: 'Tag the release', helps: [] }
+  const notSent: LastAction = {
+    kind: 'talk',
+    action: 'explain',
+    text: 'Explain',
+    at: now - 60_000,
+    delivery: { state: 'failed', reason: 'The session ended', id: 'd1' },
+  }
+  const tab = await builtTab([first, failed], { i2: notSent })
   try {
-    document.write(resource.contents[0]!.text)
-    for (let n = 0; n < 280 && !/Not sent/.test(failedRow()?.textContent ?? ''); n++) await pause(25)
-    const row = failedRow()
+    await tab.until(() => /Not sent/.test(tab.rowWith('Tag the release')?.textContent ?? ''))
+    const row = tab.rowWith('Tag the release')
     assert.match(row?.textContent ?? '', /Not sent: The session ended/)
     assert.ok(!row?.classList.contains('selected'), 'the failed row is open')
     assert.equal(row?.querySelector('.side')?.textContent?.trim(), shortAgo(now - askedAt))
   } finally {
-    await host.happyDOM.close()
-    await removeTempDir(dir, handle)
+    await tab.close()
+  }
+})
+
+test('the built tab draws a handed-off task’s result in the done color of its ✓', async () => {
+  const now = Date.now()
+  const handedOff: LastAction = {
+    kind: 'handoff',
+    action: 'step-0',
+    text: 'Run tests',
+    at: now - 60_000,
+    turnsStarted: 1,
+  }
+  const tab = await builtTab([{ ...task().ledger.items[0]!, at: now - 120_000 }], { i1: handedOff })
+  try {
+    await tab.until(() => /Run tests/.test(tab.rowWith('Check the build')?.textContent ?? ''))
+    const row = tab.rowWith('Check the build')
+    assert.ok(row?.querySelector('.mark.done'), 'the row has no done mark')
+    assert.equal(row?.querySelector('.line .after')?.className, 'after tone-done')
+  } finally {
+    await tab.close()
   }
 })

@@ -186,6 +186,7 @@ export function panePrBlocks({
   markGlyph,
   divided,
   lastActionText,
+  withDoneText,
   listRow,
   prKeyAction,
   desktopLabel,
@@ -213,7 +214,7 @@ export function panePrBlocks({
 > &
   Pick<PaneRowParts, 'section' | 'undoPlace' | 'settledContent' | 'groupTitle' | 'titleGap' | 'sections'> &
   Pick<PaneRowFrame, 'desktopFrame'> &
-  Pick<PaneRowLines, 'markGlyph' | 'divided' | 'lastActionText'> &
+  Pick<PaneRowLines, 'markGlyph' | 'divided' | 'lastActionText' | 'withDoneText'> &
   Pick<PaneRows, 'listRow'> &
   Pick<PanePrRows, 'prKeyAction'> &
   Pick<PaneRowKeys, 'desktopLabel' | 'keyRow'> &
@@ -311,8 +312,8 @@ export function panePrBlocks({
         </Box>
         {prLast ? (
           <Box marginTop={look === 'desktop' ? 1 : 0}>
-            <Text color={prLast.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-              {prLast.text}
+            <Text color={prLast.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
+              {withDoneText(prLast.text, prLast.doneText)}
             </Text>
           </Box>
         ) : null}
@@ -384,8 +385,8 @@ export function panePrBlocks({
               {prOrderKeys.length > 0 ? keyRow(RANK_AGAIN_ID, prOrderKeys) : null}
             </Box>
             {pressed ? (
-              <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-                {pressed.text}
+              <Text color={pressed.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
+                {withDoneText(pressed.text, pressed.doneText)}
               </Text>
             ) : null}
           </Box>
@@ -402,8 +403,8 @@ export function panePrBlocks({
     const pressed = refresh?.showsPress ? lastActionText(PR_REFRESH_ID) : null
 
     return pressed ? (
-      <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-        {pressed.text}
+      <Text color={pressed.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
+        {withDoneText(pressed.text, pressed.doneText)}
       </Text>
     ) : null
   }

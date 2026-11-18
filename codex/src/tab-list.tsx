@@ -4,7 +4,7 @@ import { partAttrs } from './tab-part-gap'
 import { closedTitleTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
-import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hooks/feedback'
+import { feedbackText, feedbackTone, hasAge, isStatusUnderActions, type FeedbackTone } from '../../hooks/feedback'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
@@ -93,7 +93,7 @@ export function stepLists(v: View): {
       drawn.push(x)
       if (track.hasPanel && 'row' in x) {
         const text = statusUnderOf(x.row)
-        const lines = text ? [{ id: x.row.id, text }] : []
+        const lines = text ? [{ id: x.row.id, text, tone: feedbackTone(x.row.feedback) }] : []
         pressLines.set(x.row.id, stepLines(lines, lastPressLines.get(x.row.id), pressMotion, now, changed, kept))
       }
     }
@@ -144,7 +144,7 @@ function statusUnderOf(row: Row): string | null {
   return !isSending && isStatusUnderActions(pending ?? f, true) ? label : null
 }
 
-const pressLines = new Map<string, TextLine[]>()
+const pressLines = new Map<string, (TextLine & { tone: FeedbackTone })[]>()
 const pressMotion = (id: string) => `press-${id}`
 
 /** What a row's line and side column draw, in its open form or its closed one. */
@@ -196,7 +196,8 @@ export function ListRow({
   const drawn = lineForm(isSelected || isClosing)
   // A closing row also draws its closed line, hidden, so that collapse() measures the height it comes to rest at.
   const closed = isClosing ? lineForm(false) : null
-  const afterTone = !isPressing && isFailure(row.feedback) ? 'error' : undefined
+  const tone = isPressing ? 'muted' : feedbackTone(row.feedback)
+  const afterTone = tone === 'muted' ? undefined : tone
   const after = (form: LineForm, only?: 'open' | 'closed') =>
     form.last ? (
       <span class={only === 'open' ? 'open-only' : only === 'closed' ? 'closed-only' : undefined}>
@@ -315,7 +316,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
       {lines.map((l, n) => (
         <div
           key={l.id}
-          class="muted"
+          class={l.tone === 'muted' ? 'muted' : `tone-${l.tone}`}
           {...partAttrs(n === 0 ? actionsPart : 'result', 'result')}
           {...lineMotion(pressMotion(l.id))}
         >

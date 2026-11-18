@@ -6,9 +6,10 @@ import { WORKING } from './palettes'
 import {
   feedbackOf,
   feedbackText,
+  feedbackTone,
+  type FeedbackTone,
   hasAge,
   isAfterTitle,
-  isFailure,
   markedFeedbackText,
   rowFeedbackText,
 } from './feedback'
@@ -74,30 +75,27 @@ export function paneRowLines({
     if (!f) return null
     const mark = look === 'terminal' && row?.view ? rowResultMark(row.view) : null
     const lead = mark === null ? '' : `${resultGlyph(mark, now)} `
+    const label = row?.view
+      ? rowFeedbackText(row.view, look)!
+      : hasAge(f)
+        ? markedFeedbackText(f, row?.isMarkDone ?? false, look)
+        : feedbackText(f, look)
+    const text = `${lead}${label}`
+    const tone = feedbackTone(f)
+    const doneText = tone === 'done' ? text : null
 
     return hasAge(f)
-      ? {
-          text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.isMarkDone ?? false, look)}`,
-          age: ago(now - f.at),
-          isAfterTitle: true,
-          isFailure: false,
-          doneMark: mark?.tone === 'done' ? mark.text : null,
-          feedback: f,
-        }
-      : {
-          text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : feedbackText(f, look)}`,
-          age: '',
-          isAfterTitle: isAfterTitle(f),
-          isFailure: isFailure(f),
-          doneMark: null,
-          feedback: f,
-        }
+      ? { text, age: ago(now - f.at), isAfterTitle: true, tone, doneText, feedback: f }
+      : { text, age: '', isAfterTitle: isAfterTitle(f), tone, doneText, feedback: f }
   }
   const lastActionText = (id: string) => {
     const f = feedbackLabel(id)
 
-    return f ? { text: [f.text, f.age].filter(Boolean).join(DOT), isFailure: f.isFailure } : null
+    return f ? { text: [f.text, f.age].filter(Boolean).join(DOT), tone: f.tone, doneText: f.doneText } : null
   }
+  /** A press result's color: the error color, the done color of the ✓ it carries, or muted. */
+  const feedbackColor = (tone: FeedbackTone) =>
+    tone === 'error' ? pal.tone.error : tone === 'done' ? pal.mark.done : pal.muted
   const pressedAge = (row: Row) => {
     const f = feedbackLabel(row.id, row)
 
@@ -181,27 +179,30 @@ export function paneRowLines({
       return {
         ...plain,
         after: `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}`,
-        afterTone: f.isFailure ? ('error' as const) : undefined,
-        afterDoneMark: f.doneMark,
+        afterTone: f.tone === 'error' ? ('error' as const) : undefined,
+        afterDoneText: f.doneText,
       }
 
     return {
       ...plain,
       after: [plain.after, isAgeDropped ? '' : plain.age].filter(Boolean).join('') || undefined,
-      afterDoneMark: null,
+      afterDoneText: null,
     }
   }
-  /** A feedback text with its done mark in the done mark's color, which every palette defines. */
-  const withDoneMark = (text: string, doneMark: string | null | undefined) => {
-    const at = doneMark ? text.indexOf(doneMark) : -1
-    if (!doneMark || at < 0) return text
+  /**
+   * A line with its done press result in the done mark's color, which every palette defines. The line may glue its
+   * words with no-break spaces, so the result is found with plain spaces.
+   */
+  const withDoneText = (text: string, doneText: string | null | undefined) => {
+    const at = doneText ? text.replaceAll('\u00a0', ' ').indexOf(doneText) : -1
+    if (!doneText || at < 0) return text
 
     return [
       text.slice(0, at),
       <Text key="done" color={pal.mark.done}>
-        {doneMark}
+        {text.slice(at, at + doneText.length)}
       </Text>,
-      text.slice(at + doneMark.length),
+      text.slice(at + doneText.length),
     ]
   }
   const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number, titleColor?: string) => {
@@ -252,14 +253,14 @@ export function paneRowLines({
           <Box flexShrink={0}>{titleButton(`title-${row.id}`, first)}</Box>
           {after ? (
             <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-              {withDoneMark(after, line.afterDoneMark)}
+              {withDoneText(after, line.afterDoneText)}
             </Text>
           ) : null}
         </Box>
         {second ? <Box paddingLeft={line.before?.length ?? 0}>{titleButton(`title-${row.id}-2`, second)}</Box> : null}
         {meta ? (
           <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-            {withDoneMark(meta, line.afterDoneMark)}
+            {withDoneText(meta, line.afterDoneText)}
           </Text>
         ) : null}
         {holdsUpLine ? (
@@ -326,8 +327,8 @@ export function paneRowLines({
       fallbackColumns: e.props.bodyColumns - 2,
       colors: {
         muted: pal.muted,
-        after: f?.isFailure ? (pal.tone.error ?? null) : pal.muted,
-        afterHover: f?.isFailure ? (pal.tone.error ?? null) : pal.muted,
+        after: f ? (feedbackColor(f.tone) ?? null) : pal.muted,
+        afterHover: f ? (feedbackColor(f.tone) ?? null) : pal.muted,
         side: pal.age,
         hover: pal.raised,
         hoverText: pal.raisedText ?? null,
@@ -367,7 +368,8 @@ export function paneRowLines({
     markWidth,
     treeRow,
     divided,
-    withDoneMark,
+    withDoneText,
+    feedbackColor,
     unselectedLine,
     ToneSvg,
     svgCell,

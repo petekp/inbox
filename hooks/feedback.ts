@@ -195,6 +195,18 @@ export function isFailure(f: Feedback | null): boolean {
   return f?.is === 'notSent' || (f?.is === 'local' && f.result.state === 'failed')
 }
 
+export type FeedbackTone = 'error' | 'done' | 'muted'
+
+/**
+ * A press result's color. A done result carries the ✓ that says the press was made, in its text or in its row's mark
+ * column, and takes that ✓'s color.
+ */
+export function feedbackTone(f: Feedback | null): FeedbackTone {
+  if (isFailure(f)) return 'error'
+
+  return f?.is === 'done' || (f?.is === 'local' && f.result.state === 'done') ? 'done' : 'muted'
+}
+
 export function hasAge(
   f: Feedback,
 ): f is Extract<

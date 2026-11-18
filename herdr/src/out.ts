@@ -1,4 +1,4 @@
-import { feedbackText } from '../../hooks/feedback'
+import { feedbackText, feedbackTone, type FeedbackTone } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
 import { actionId } from '../../hooks/press-labels'
 import { isPressConfirmed } from '../../hooks/press-reducer'
@@ -44,7 +44,7 @@ export type Out = {
 }
 
 /** A line the look draws on a row in place of the one the publish gave, and the press result it reads. */
-export type RowLine = { text: string; tone: 'error' | 'muted'; source: Feedback }
+export type RowLine = { text: string; tone: FeedbackTone; source: Feedback }
 
 /** The id the look tells a button's press by: a row press's `actionId`, a PR press's action. */
 export const outAction = (p: RowPress | PrPress): string => ('id' in p ? actionId(p) : p.action)
@@ -61,7 +61,7 @@ export function rowSignature(view: SessionView, rowId: string): string {
 /** How the opens and copies the look ran went: "✓ Opened x", or in red why one could not run. */
 const resultLine = (result: LocalResult): RowLine => ({
   text: feedbackText({ is: 'local', result }, 'herdr'),
-  tone: result.state === 'failed' ? 'error' : 'muted',
+  tone: feedbackTone({ is: 'local', result }),
   source: { is: 'local', result },
 })
 

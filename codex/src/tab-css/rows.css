@@ -103,14 +103,17 @@
 .line .after {
   color: var(--muted);
 }
-.row.collapsed .line .after:not(.tone-error) {
+.row.collapsed .line .after:not(.tone-error, .tone-done) {
   color: var(--age);
 }
-.row.collapsed:hover .line .after:not(.tone-error) {
+.row.collapsed:hover .line .after:not(.tone-error, .tone-done) {
   color: var(--muted);
 }
 .line .after.tone-error {
   color: var(--error);
+}
+.line .after.tone-done {
+  color: var(--done);
 }
 .row.selected .line,
 .row.closing .line {

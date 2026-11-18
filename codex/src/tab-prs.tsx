@@ -247,7 +247,12 @@ function PrBody({
 }
 
 function PrLine({ line }: { line: PressLine }) {
-  return <div class={line.isError ? 'pr-last tone-error' : 'pr-last muted'}>{line.text}</div>
+  return (
+    <div class={line.tone === 'muted' ? 'pr-last muted' : 'pr-last'}>
+      {line.tone === 'muted' ? line.text : <span class={`tone-${line.tone}`}>{line.text}</span>}
+      {line.age ? <span class="muted">{line.age}</span> : null}
+    </div>
+  )
 }
 
 /** A PR group's title and rows, the rows still leaving among them. The title counts only the rows the view lists. */

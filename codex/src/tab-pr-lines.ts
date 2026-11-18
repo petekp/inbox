@@ -1,6 +1,6 @@
 import { ago } from '../../hooks/text'
 import { DOT } from '../../hooks/rows'
-import { feedbackOf, feedbackText, hasAge, isFailure } from '../../hooks/feedback'
+import { feedbackOf, feedbackText, feedbackTone, hasAge, type FeedbackTone } from '../../hooks/feedback'
 import { prMarkId, isBlockPressShown } from '../../hooks/pr-rows'
 import { isDismissed } from '../../hooks/pr-views'
 import type { PrView } from '../../types'
@@ -9,7 +9,8 @@ import { sending, SENDING, errors } from './tab-state'
 import { outPending } from './tab-press'
 import { noteOf } from './tab-parts'
 
-export type PressLine = { text: string; isError: boolean }
+/** A press status, and its age after it, which stays muted. */
+export type PressLine = { text: string; age: string | null; tone: FeedbackTone }
 
 /** A PR block's press status, under its buttons. */
 export function prLastLine(v: View, pr: PrView): PressLine | null {
@@ -20,15 +21,14 @@ export function prLastLine(v: View, pr: PrView): PressLine | null {
 export function pressLine(v: View, id: string, showsLast: boolean): PressLine | null {
   const out = sending.get(id)
   const pending = outPending(v, id)
-  if (pending) return { text: feedbackText(pending, 'codex'), isError: false }
-  if (out && out.pending === null) return { text: SENDING, isError: false }
+  if (pending) return { text: feedbackText(pending, 'codex'), age: null, tone: 'muted' }
+  if (out && out.pending === null) return { text: SENDING, age: null, tone: 'muted' }
   const error = errors.get(id)
-  if (error) return { text: error, isError: true }
+  if (error) return { text: error, age: null, tone: 'error' }
   const note = noteOf(id)
-  if (note) return { text: note, isError: false }
+  if (note) return { text: note, age: null, tone: 'muted' }
   const f = showsLast ? feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at) : null
   if (!f) return null
-  const text = feedbackText(f, 'codex')
 
-  return { text: hasAge(f) ? `${text}${DOT}${ago(v.at - f.at)}` : text, isError: isFailure(f) }
+  return { text: feedbackText(f, 'codex'), age: hasAge(f) ? `${DOT}${ago(v.at - f.at)}` : null, tone: feedbackTone(f) }
 }
