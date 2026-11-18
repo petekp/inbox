@@ -10,8 +10,9 @@
 # scripts/build-types.mjs, that the inbox tools' input types match their
 # schemas, with scripts/build-tool-inputs.mjs, its types with tsc, and its tests with
 # `claude plugin test`. Then the Codex plugin in codex/, the omp extension in
-# omp/ and the Herdr look in herdr/. Exits 1 on any failure, and when a check
-# cannot run.
+# omp/ and the Herdr look in herdr/, and, when the Herdr app is installed, a
+# load of the built Herdr mod in the app's own runtime with `herdr-app check`.
+# Exits 1 on any failure, and when a check cannot run.
 #
 # Needs npx, bun, the claude CLI and the Herdr app, whose type files the
 # Herdr look's types check against.
@@ -26,7 +27,8 @@ DIR=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
 PRETTIER=prettier@3.9.9
 status=0
 log=$(mktemp)
-trap 'rm -f "$log"' EXIT
+herdr_scratch=
+trap 'rm -f "$log"; [ -z "$herdr_scratch" ] || rm -rf "$herdr_scratch"' EXIT
 
 # Runs one check and prints the check's output only when it fails. A log that
 # lists every test, as the root tests step's does, prints each failed test's
@@ -129,6 +131,22 @@ else
     check "herdr mod" npm --prefix "$DIR/herdr" run --silent check
     check "herdr types" npm --prefix "$DIR/herdr" run --silent types
     check "herdr tests" bun test --cwd "$DIR/herdr" tests
+fi
+
+# The Herdr app's own check loads the built mod once in the app's runtime, which lacks globals Bun has, such as Intl.
+# It runs on a copy of the mod folder, since it writes type files beside the mod. env -i leaves out HC_TERMINAL_ID and
+# every HERDR_ variable of the shell, and HOME and HERDR_APP_HOME both name the scratch folder, so no variable the
+# check reads names the real app home.
+if command -v herdr-app >/dev/null 2>&1; then
+    herdr_scratch=$(mktemp -d)
+    mkdir "$herdr_scratch/home" "$herdr_scratch/inbox"
+    cp "$DIR/herdr/mod/inbox/main.js" "$DIR/herdr/mod/inbox/mod.json" "$herdr_scratch/inbox/"
+    check "herdr app check" env -i PATH="$PATH" HOME="$herdr_scratch/home" HERDR_APP_HOME="$herdr_scratch/home" \
+        herdr-app check "$herdr_scratch/inbox"
+    rm -rf "$herdr_scratch"
+    herdr_scratch=
+else
+    echo "  - herdr app check: skipped, herdr-app is not installed"
 fi
 
 exit "$status"
