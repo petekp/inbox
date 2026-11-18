@@ -180,6 +180,11 @@ test('a dismissed PR’s block glides between its open and dismissed forms in bo
     )
     const jumps = frames.jumps.filter(j => j.at >= 0)
     const cuts = frames.cuts.filter(c => c.at >= 0)
-    expect({ name, jumps, cuts, outside: heightsPast(frames.heights, 900) }).toEqual({ name, jumps: [], cuts: [], outside: [] })
+    expect({ name, jumps, cuts, outside: heightsPast(frames.heights, 900) }).toEqual({
+      name,
+      jumps: [],
+      cuts: [],
+      outside: [],
+    })
   }
 })

@@ -1,7 +1,6 @@
 import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
-import { ROW_PAD_PT } from '../../hooks/layout'
 import { partPt } from '../../hooks/row-parts'
 import type { RowPart } from '../../hooks/row-parts'
 import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
