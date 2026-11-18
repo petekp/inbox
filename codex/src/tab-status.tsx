@@ -418,7 +418,10 @@ function GoalSection({
   )
 }
 
-/** New, the suggested goal's offer, or the field New opened, under the empty page's centred text. */
+/**
+ * New, the suggested goal's offer, or the field New opened, under the empty page's centred text. Its height glides as
+ * the field opens or closes, so the centred text moves with it.
+ */
 function SetGoal({
   page,
   keys,
@@ -433,7 +436,7 @@ function SetGoal({
   suggestion: string | null
 }) {
   return (
-    <div class="status-head">
+    <div class="status-head" data-motion="empty-goal">
       {isFieldOpen ? (
         <GoalField page={page} />
       ) : (

@@ -4,8 +4,8 @@
 main {
   transition: opacity var(--page-fade);
 }
-.banner,
-.empty,
+:root:not(.page-switching) .banner,
+:root:not(.page-switching) .empty,
 :root:not(.page-switched) main {
   @starting-style {
     opacity: 0;
