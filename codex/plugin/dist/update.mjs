@@ -1661,13 +1661,15 @@ function parseReply(text2, source = null) {
       if (id && /^f\d+$/.test(id) && target) asks.push({ id, target });
     } else if (key === "NEW") {
       const fields2 = value.split("|");
-      const isLabelSkipped = !dash(fields2[2]) && /\s/.test((fields2[1] ?? "").trim());
+      const isLabelWords = /\s/.test((fields2[1] ?? "").trim());
+      const isLabelSkipped = isLabelWords && (!dash(fields2[2]) || readsAsChoices(fields2[2] ?? ""));
       const [kind, label, ask, ...rest] = (isLabelSkipped ? [fields2[0], "-", ...fields2.slice(1)] : fields2).map(dash);
       const last = rest.at(-1);
       const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ""));
       if (isDesignField) rest.pop();
       const rec = rest.length > 1 ? rest.pop() : null;
-      if (!ask) {
+      const isAskTheChoices = readKind(kind) === "question" && readsAsChoices(ask ?? "");
+      if (!ask || isAskTheChoices) {
         newLines.push(void 0);
         continue;
       }
@@ -1712,6 +1714,11 @@ function parseReply(text2, source = null) {
     if (item !== void 0 && item !== -1) asked.push({ id, item });
   }
   return seen === 0 ? null : { closed, added, helped, updated, asked, todos };
+}
+function readsAsChoices(field) {
+  const text2 = field.trim();
+  const choices = text2.split(/\s+\/\s+/);
+  return choices.length > 1 && !text2.endsWith("?") && choices.every((c) => c !== "" && words2(c).length <= 5);
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
