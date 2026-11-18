@@ -75,3 +75,6 @@ export class Heights {
     this.resized.clear()
   }
 }
+
+/** The key a row's title is measured under. */
+export const titleId = (id: string): string => `title ${id}`

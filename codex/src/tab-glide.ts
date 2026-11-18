@@ -1,0 +1,148 @@
+import { slideOffset } from '../../hooks/row-motion'
+import { FRAME_MS, springFrames, springStep } from '../../hooks/springs'
+import type { SpringState } from '../../hooks/springs'
+import { tabState, animations } from './tab-state'
+
+export const FADE_EASING = 'ease-out'
+
+type Size = 'height' | 'width'
+
+/**
+ * A size move under way: where its spring started, where it goes, how long it waits to start, and the animation that
+ * plays it. An element that comes or goes also scales its vertical padding and top margin with its height, so it truly
+ * grows from and shrinks to no height.
+ */
+type Glide = { size: Size; from: SpringState; to: number; delay: number; anim: Animation; scalesEdges: boolean }
+
+export const glides = new WeakMap<HTMLElement, Glide>()
+
+function play(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions): Animation {
+  el.style.overflow = 'clip'
+  const a = el.animate(frames, timing)
+  animations.add(a)
+  const done = () => {
+    animations.delete(a)
+    if (tabState.isDisposed) return
+    if (el.getAnimations().length === 0) el.style.overflow = ''
+  }
+  a.onfinish = done
+  a.oncancel = done
+
+  return a
+}
+
+export const isRunning = (a: Animation | undefined) => a?.playState === 'running'
+
+/** Whether an element's glide is moving now, past any wait it started with. */
+export function isUnderWay(el: HTMLElement): boolean {
+  const g = glides.get(el)
+
+  return g !== undefined && isRunning(g.anim) && Number(g.anim.currentTime ?? 0) >= g.delay
+}
+
+/** Where an element's size is and how fast it moves, from its glide, or `size` at rest without one. */
+export function springOf(el: HTMLElement, size: number): SpringState {
+  const g = glides.get(el)
+  if (!g || !isRunning(g.anim)) return { x: size, v: 0 }
+  const ms = Number(g.anim.currentTime ?? 0) - g.delay
+
+  return ms < 0 ? { x: g.from.x, v: 0 } : springStep(g.from, g.to, ms)
+}
+
+const EDGES = ['paddingTop', 'paddingBottom', 'marginTop'] as const
+
+/** One keyframe per spring frame. Edges, when given, scale with the height's share of `full`. */
+function sizeFrames(size: Size, xs: number[], edges: number[] | null, full: number): Keyframe[] {
+  return xs.map(x => {
+    const frame: Keyframe = { [size]: `${x}px` }
+    if (edges) {
+      const share = full > 0 ? Math.min(1, Math.max(0, x / full)) : 0
+      EDGES.forEach((edge, i) => (frame[edge] = `${(edges[i] ?? 0) * share}px`))
+    }
+
+    return frame
+  })
+}
+
+/**
+ * Moves an element's size on the spring from `from` to `to`, after `delay` ms. `hold` keeps it at `to` once there,
+ * until released. `comesOrGoes` marks an element growing in from nothing or shrinking away.
+ */
+export function glide(
+  el: HTMLElement,
+  size: Size,
+  from: SpringState,
+  to: number,
+  hold = false,
+  comesOrGoes = false,
+  delay = 0,
+) {
+  const was = glides.get(el)
+  const scalesEdges = size === 'height' && (comesOrGoes || (isRunning(was?.anim) && was!.scalesEdges))
+  was?.anim.cancel()
+  const style = scalesEdges ? getComputedStyle(el) : null
+  const edges = style ? EDGES.map(edge => parseFloat(style[edge]) || 0) : null
+  const xs = springFrames(from, to)
+  if (xs.length < 2) xs.push(to)
+  const anim = play(el, sizeFrames(size, xs, edges, Math.max(from.x, to)), {
+    duration: (xs.length - 1) * FRAME_MS,
+    delay,
+    easing: 'linear',
+    fill: fillOf(hold, delay),
+  })
+  glides.set(el, { size, from, to, delay, anim, scalesEdges })
+}
+
+/** An element's opacity: full unless an animation fades it. */
+export function opacityOf(el: HTMLElement): number {
+  const opacity = parseFloat(getComputedStyle(el).opacity)
+
+  return el.getAnimations().length > 0 && !Number.isNaN(opacity) ? opacity : 1
+}
+
+/** A fade under way, and the opacity it goes to. */
+const fades = new WeakMap<HTMLElement, { to: number; anim: Animation }>()
+
+/** Elements that enter, leave or fold: their fades also slide them, so a fade that restores one slides it back. */
+const slides = new WeakSet<HTMLElement>()
+
+const frameOf = (opacity: number, slides: boolean): Keyframe =>
+  slides ? { opacity, transform: `translateY(${slideOffset(opacity)}px)` } : { opacity }
+
+/** A move that waits draws its first frame while it waits, and one that holds keeps its last. */
+const fillOf = (hold: boolean, delay: number): FillMode =>
+  hold && delay > 0 ? 'both' : hold ? 'forwards' : delay > 0 ? 'backwards' : 'none'
+
+export function fade(el: HTMLElement, from: number, to: number, ms: number, hold = false, slide = false, delay = 0) {
+  fades.get(el)?.anim.cancel()
+  if (slide) slides.add(el)
+  const isSliding = slides.has(el)
+  if (isSliding) el.style.pointerEvents = to === 0 ? 'none' : ''
+  const anim = play(el, [frameOf(from, isSliding), frameOf(to, isSliding)], {
+    duration: ms,
+    delay,
+    easing: FADE_EASING,
+    fill: fillOf(hold, delay),
+  })
+  fades.set(el, { to, anim })
+}
+
+/** The opacity an element's fade draws now, or null when no fade has drawn it since its last cancel. */
+export function fadeShown(el: HTMLElement): number | null {
+  const f = fades.get(el)
+  const opacity = parseFloat(getComputedStyle(el).opacity)
+
+  return f && f.anim.playState !== 'idle' && !Number.isNaN(opacity) ? opacity : null
+}
+
+/** Ends a fade out that holds, so the element shows as its style draws it. */
+export function stopFadeOut(el: HTMLElement) {
+  const f = fades.get(el)
+  if (f?.to === 0) f.anim.cancel()
+}
+
+export const isFadingIn = (el: HTMLElement) => {
+  const f = fades.get(el)
+
+  return f !== undefined && f.to === 1 && isRunning(f.anim)
+}

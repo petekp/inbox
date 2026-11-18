@@ -7,7 +7,9 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab.tsx` | Codex adapter. The tab's entry: `App`, `draw`, the key and pointer listeners, and the start that connects to Codex. |
 | `codex/src/tab-state.ts` | Codex adapter. The page's state. `tabState` holds each value that more than one tab file sets, and the file also holds the shared maps and sets and the row types. |
 | `codex/src/tab-host.ts` | Codex adapter. The bridge to Codex: timers, `request` and `callTool`, the message listener, the host's theme, and `dispose`. |
-| `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the spring glide each height change plays, the animation each row state starts, tab widths, folds, and the draws that end a move. |
+| `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the animation each row state starts, tab widths, folds, and the draws that end a move. |
+| `codex/src/tab-glide.ts` | Codex adapter. The Web Animations each move plays: the spring glide of a height or offset, and fades. |
+| `codex/src/tab-title-motion.ts` | Codex adapter. How a row's title fades between its full and clamped forms while its line grows or shrinks, so the line never cuts a line of the title that shows. |
 | `codex/src/tab-page-variables.ts` | Codex adapter. The shared spacing scale and motion lengths, set as the CSS variables the tab's styles read. |
 | `codex/src/weight-ease.ts` | Codex adapter. Runs a measurement with every running font-weight ease at its end, so a height or line count is for the weight the text eases to. |
 | `codex/src/tab-fold-all.ts` | Codex adapter. `foldAllHere` applies a fold-all to the tab's folds through each fold's own toggle, so each animates and saves as a single click would, and `clickFold` turns an Option-click on a fold into a fold-all. |

@@ -23,8 +23,10 @@ import {
   mixInto,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
+import { titleId } from './heights'
 import { SLIDE_PX, enterDelayMs } from '../../hooks/row-motion'
 import { HEIGHT_SPRING, springStep } from '../../hooks/springs'
+import type { SpringState } from '../../hooks/springs'
 
 /** A group's Closed fold, which ends its list. */
 const isClosedFold = (b: Block): boolean => b.kind === 'fold' && 'closedFold' in b.change
@@ -97,9 +99,6 @@ function aboveOf(prev: Block | null, b: Block, section: number | null): number {
 /** The key a row's panel is measured under, beside the row's own height. */
 export const panelId = (id: string): string => `panel ${id}`
 
-/** The key a row's title is measured under. */
-const titleId = (id: string): string => `title ${id}`
-
 /** The key a row's lines under its title, with its panel, are measured under. */
 export const restId = (id: string): string => `rest ${id}`
 
@@ -168,16 +167,20 @@ export function fitEl(key: string, p: Paint, el: Element, isPaneSized = false): 
 }
 
 /**
- * The height a row's title box moves to: one line unless the row is open or a closing row holds its height, else the
- * title's measured height, which is undefined until its first measure.
+ * The height a row's title box moves to: one line unless the row is open, a closing row holds its height, or a closing
+ * title's wrapped lines still fade out, else the title's measured height, which is undefined until its first measure.
  */
-const titleHeightOf = (r: RowBlock, p: Paint): number | undefined =>
-  isOpenRow(r) || p.motion.get(r.id)?.isHeightHeld ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
+const titleHeightOf = (r: RowBlock, p: Paint): number | undefined => {
+  const m = p.motion.get(r.id)
+  const isWrapped = isOpenRow(r) || m?.isHeightHeld === true || m?.title?.isBoxWrapped === true
+
+  return isWrapped ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
+}
 
 /**
- * A row's title in a box whose height springs to `titleHeightOf`. The box clips, so a title that keeps its wrap while
- * the row closes loses the lines under its first as the box glides to one line. An open row's title box takes its
- * content's height in a draw that takes heights at once.
+ * A row's title in a box whose height springs to `titleHeightOf`. The box clips, and a title's wrapped lines show only
+ * once its box is nearly open and until it starts to shrink, so the box never cuts them. An open row's title box takes
+ * its content's height in a draw that takes heights at once.
  */
 export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
   const key = titleId(r.id)
@@ -359,9 +362,9 @@ function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): E
   return [...(path ? pathEls(path) : []), ...treeEls]
 }
 
-/** Where a box `height` tall has sprung to after shutting for `ms`, or no height when it opens from shut. */
-const shutTo = (height: number, ms: number | null): number =>
-  ms === null ? 0 : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING).x
+/** Where a box `height` tall has sprung to after shutting for `ms`, and how fast, or no height at rest when it opens from shut. */
+const shutTo = (height: number, ms: number | null): SpringState =>
+  ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING)
 
 /**
  * Each block in a box that never shrinks, with its space above it. Every distance that can change is the height of a
@@ -388,7 +391,7 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const m = p.motion.get(b.id)
     const height = fitHeight(b, m, p)
     const isShown = m?.box === 'open' && m.isShown && height !== undefined
-    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height - shutTo(height, m.shutForMs)) : 0
+    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: 'ease-out' as const }
     const fade = (e: Element): Element => (m?.box ? e.opacity(isShown ? 1 : 0).transition('opacity', glide) : e)
     const slide = (e: Element): Element =>
