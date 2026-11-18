@@ -1,7 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
 import { Input, h_flex, v_flex } from 'gpui-base'
-import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { EMPTY_STATE_MAX_WIDTH_PT, ROW_PAD_PT, titleToBodyGapPt } from '../../hooks/layout'
 import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import { STALL_GAP } from '../../hooks/status-page'
 import { isOpenRow } from './blocks'
@@ -64,13 +64,15 @@ const bodyLineEl = (
   isInert = false,
 ): Element => {
   const above =
-    l.gapAbove === 'item'
-      ? ITEM_GAP
-      : l.gapAbove === 'child'
-        ? CHILD_GAP
-        : l.gapAbove === 'list'
-          ? LIST_GAP
-          : INSIDE_GAP
+    l.gapAbove === 'title'
+      ? titleToBodyGapPt(answers.length > 0)
+      : l.gapAbove === 'item'
+        ? ITEM_GAP
+        : l.gapAbove === 'child'
+          ? CHILD_GAP
+          : l.gapAbove === 'list'
+            ? LIST_GAP
+            : INSIDE_GAP
   const color = lineColor(t, isSelected ? t.selected : t.background)
   if (answers.length > 0 && p) {
     const trunk =

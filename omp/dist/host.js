@@ -4289,6 +4289,7 @@ function waitingUnderParents(ledger) {
 }
 var COUNTS_LABEL = "Also open: ";
 var countsText = (counts) => `${COUNTS_LABEL}${counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP)}`;
+var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
 var parentChevron = (isCollapsed, foldCount) => isCollapsed ? `${foldGlyph(false)} ${foldCount}` : foldGlyph(true);
 var NONE_COLLAPSED = () => false;
 function withoutCollapsed(rows, isCollapsed) {

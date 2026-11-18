@@ -242,6 +242,57 @@ class Fades {
   }
 }
 
+function paintOf(
+  motion: Paint['motion'],
+  heights: InstanceType<typeof Heights>,
+  isAtOnce: (key: string) => boolean,
+  now: number,
+  closedSeen = new Map<string, number>(),
+  rowTextRoom?: number,
+): Paint {
+  const noop = () => {}
+
+  return {
+    t: new Proxy({}, { get: () => '#808080' }),
+    press: noop,
+    select: noop,
+    collapse: noop,
+    pick: noop,
+    motion,
+    heights,
+    isAtOnce,
+    measure: (key: string, size: { width: number; height: number }, _cx: unknown, isWidthDrawn?: boolean) =>
+      void heights.measure(key, size, 1, isWidthDrawn),
+    now,
+    newRows: new Map(),
+    closedSeen,
+    tab: 'needsYou',
+    timeLeft: new Map(),
+    input: () => null,
+    mono: 'Menlo',
+    isNarrow: false,
+    listRoom: null,
+    ...(rowTextRoom === undefined ? {} : { rowTextRoom }),
+  } as unknown as Paint
+}
+
+export function layoutAtRest(blocks: Block[], measuredWidths: Record<string, number> = {}) {
+  const heights = new Heights()
+  for (const [key, width] of Object.entries(measuredWidths))
+    heights.measure(key, { width, height: LINE_HEIGHT }, 1, true)
+  const now = 1_000_000
+  const moved = moveRows(blocks, NO_TRACKS, now, true, false, key => heights.get(key))
+  const paint = paintOf(moved.motion, heights, () => true, now, new Map(), PANE_WIDTH)
+
+  return layout(
+    columnOf(
+      spacedEls(moved.blocks, paint, b => blockEl(b, paint)),
+      LINE,
+    ),
+    () => undefined,
+  )
+}
+
 class Frames {
   private tracks = NO_TRACKS
   private heights = new Heights()
@@ -266,28 +317,7 @@ class Frames {
     this.linesAbove = held.held
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
     this.tracks = moved.tracks
-    const noop = () => {}
-    const paint = {
-      t: new Proxy({}, { get: () => '#808080' }),
-      press: noop,
-      select: noop,
-      collapse: noop,
-      pick: noop,
-      motion: moved.motion,
-      heights: this.heights,
-      isAtOnce: (key: string) => isFirst || resized.has(key),
-      measure: (key: string, size: { width: number; height: number }, _cx: unknown, isWidthDrawn?: boolean) =>
-        void this.heights.measure(key, size, 1, isWidthDrawn),
-      now,
-      newRows: new Map(),
-      closedSeen: this.closedSeen,
-      tab: 'needsYou',
-      timeLeft: new Map(),
-      input: () => null,
-      mono: 'Menlo',
-      isNarrow: false,
-      listRoom: null,
-    } as unknown as Paint
+    const paint = paintOf(moved.motion, this.heights, key => isFirst || resized.has(key), now, this.closedSeen)
     const tree = columnOf(
       spacedEls(moved.blocks, paint, b => blockEl(b, paint)),
       LINE,
