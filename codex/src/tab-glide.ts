@@ -101,7 +101,7 @@ export function glide(
   delay = 0,
 ) {
   const was = glides.get(el)
-  const scalesEdges = size === 'height' && (comesOrGoes || (isRunning(was?.anim) && was!.scalesEdges))
+  const scalesEdges = size === 'height' && (comesOrGoes || isScalingEdges(el))
   was?.anim.cancel()
   const style = scalesEdges ? getComputedStyle(el) : null
   const edges = style ? EDGES.map(edge => parseFloat(style[edge]) || 0) : null
